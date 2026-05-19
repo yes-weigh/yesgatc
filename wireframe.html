@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>GATC Workflow System | Full Stack Demo</title>
+    <!-- Font Awesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f1f5f9;
+            overflow-x: hidden;
+        }
+
+        /* APP WRAPPER */
+        .app-wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* ========= COLLAPSIBLE SIDEBAR ========= */
+        .sidebar {
+            width: 280px;
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            z-index: 50;
+            box-shadow: 4px 0 20px rgba(0,0,0,0.1);
+        }
+
+        .sidebar.collapsed {
+            width: 80px;
+        }
+
+        .sidebar-header {
+            padding: 24px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 24px;
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .logo-area i {
+            font-size: 28px;
+            color: #3b82f6;
+        }
+
+        .logo-text {
+            font-weight: 700;
+            font-size: 1.2rem;
+            letter-spacing: -0.3px;
+        }
+
+        .collapse-btn {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 1.2rem;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+        }
+
+        .collapse-btn:hover {
+            background: #334155;
+            color: white;
+        }
+
+        /* Sidebar Navigation */
+        .nav-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 0 16px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #cbd5e1;
+            white-space: nowrap;
+        }
+
+        .nav-item i {
+            width: 24px;
+            font-size: 1.2rem;
+            text-align: center;
+        }
+
+        .nav-item span {
+            font-weight: 500;
+        }
+
+        .nav-item:hover {
+            background: #334155;
+            color: white;
+        }
+
+        .nav-item.active {
+            background: #3b82f6;
+            color: white;
+            box-shadow: 0 4px 8px rgba(59,130,246,0.3);
+        }
+
+        /* Sidebar collapsed text hidden */
+        .sidebar.collapsed .nav-item span {
+            display: none;
+        }
+        .sidebar.collapsed .logo-text {
+            display: none;
+        }
+        .sidebar.collapsed .sidebar-header {
+            justify-content: center;
+        }
+        .sidebar.collapsed .nav-item {
+            justify-content: center;
+            padding: 12px;
+        }
+
+        /* MAIN CONTENT */
+        .main-content {
+            flex: 1;
+            margin-left: 280px;
+            transition: margin-left 0.3s ease;
+            padding: 24px 32px;
+            min-height: 100vh;
+        }
+
+        .main-content.expanded {
+            margin-left: 80px;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            background: white;
+            border-radius: 24px;
+            padding: 16px 28px;
+            margin-bottom: 28px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+
+        .page-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #0f172a, #2d3a5e);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        .user-chip {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #f1f5f9;
+            padding: 8px 20px;
+            border-radius: 40px;
+            font-weight: 500;
+        }
+
+        .logout-btn {
+            background: #ef4444;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 30px;
+            color: white;
+            cursor: pointer;
+            font-weight: 500;
+            transition: 0.2s;
+        }
+
+        /* Cards & Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+            gap: 24px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 24px;
+            padding: 24px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #e9eef3;
+        }
+
+        .card h3 {
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            font-weight: 500;
+            font-size: 0.85rem;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #cbd5e1;
+            border-radius: 14px;
+            font-family: inherit;
+        }
+
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 40px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: 0.2s;
+        }
+
+        button.secondary {
+            background: #64748b;
+        }
+
+        .job-item, .product-item {
+            background: #f8fafc;
+            border-radius: 16px;
+            padding: 14px;
+            margin-bottom: 12px;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 40px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .status-assigned { background: #fef3c7; color: #92400e; }
+        .status-review { background: #fed7aa; color: #9a3412; }
+        .status-completed { background: #d1fae5; color: #065f46; }
+
+        .alert {
+            padding: 12px;
+            border-radius: 16px;
+            margin-bottom: 16px;
+        }
+
+        .flex-between {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 80px;
+            }
+            .main-content {
+                margin-left: 80px;
+                padding: 16px;
+            }
+            .sidebar .nav-item span {
+                display: none;
+            }
+            .logo-text { display: none; }
+        }
+    </style>
+</head>
+<body>
+<div class="app-wrapper">
+    <!-- COLLAPSIBLE SIDEBAR (dynamic content will be injected) -->
+    <div id="sidebar" class="sidebar"></div>
+
+    <!-- MAIN CONTENT -->
+    <div id="mainContent" class="main-content"></div>
+</div>
+
+<script>
+    // ======================== FULL APPLICATION STATE ========================
+    let currentUser = null;        // { username, role }
+    let sidebarCollapsed = false;
+    let activeMenuItem = null;
+
+    // Data Models
+    let jobs = [];
+    let products = [];       // For Admin: product configurations
+    let certificates = [];   // For VCT
+
+    // Load / persist data using localStorage
+    function loadData() {
+        const stored = localStorage.getItem('gatc_full_app');
+        if (stored) {
+            const data = JSON.parse(stored);
+            jobs = data.jobs || [];
+            products = data.products || [];
+            certificates = data.certificates || [];
+        } else {
+            // seed data
+            products = [
+                { id: 'P001', name: 'Smart Meter X3', ovFee: 150, rvFee: 295 },
+                { id: 'P002', name: 'Energy Gateway Pro', ovFee: 150, rvFee: 295 }
+            ];
+            jobs = [
+                { id: 'JOB-1001', customer: 'GreenTech Solutions', product: 'Smart Meter X3', serial: 'SN-8821A', jobType: 'OV', status: 'assigned', assignedTo: 'vct', technicalData: null, photos: [], paymentStatus: 'not_required', rcWorkflowMode: 'auto', rcApproved: false, createdAt: new Date().toISOString() },
+                { id: 'JOB-1002', customer: 'EcoPower Ltd', product: 'Energy Gateway Pro', serial: 'EG-7742C', jobType: 'RV', status: 'pending_review', assignedTo: 'vct', technicalData: { mfgYear: '2024', maxError: '±0.2%', sealId: 'SEAL-ABC123' }, photos: ['photo1.jpg'], paymentStatus: 'paid', rcWorkflowMode: 'manual', rcApproved: false, createdAt: new Date().toISOString() }
+            ];
+            certificates = [
+                { id: 'CERT-001', jobId: 'JOB-1002', issuedAt: new Date().toISOString() }
+            ];
+            saveData();
+        }
+    }
+
+    function saveData() {
+        localStorage.setItem('gatc_full_app', JSON.stringify({ jobs, products, certificates }));
+    }
+
+    // Helper: update job & re-render
+    function updateJob(jobId, updates) {
+        const index = jobs.findIndex(j => j.id === jobId);
+        if (index !== -1) {
+            jobs[index] = { ...jobs[index], ...updates };
+            saveData();
+            renderApp();
+        }
+    }
+
+    function addJob(job) {
+        jobs.unshift(job);
+        saveData();
+        renderApp();
+    }
+
+    // ========== BUSINESS LOGIC ==========
+    function createJobOrder(customer, productName, serial, jobType, rcMode) {
+        const newJob = {
+            id: `JOB-${Date.now()}`,
+            customer, product: productName, serial, jobType,
+            status: 'assigned',
+            assignedTo: 'vct',
+            technicalData: null,
+            photos: [],
+            paymentStatus: jobType === 'RV' ? 'pending' : 'not_required',
+            rcWorkflowMode: rcMode,
+            rcApproved: false,
+            createdAt: new Date().toISOString()
+        };
+        addJob(newJob);
+        alert(`✅ Job ${newJob.id} created!`);
+    }
+
+    // VCT submit job (technical form)
+    function vctSubmitJob(jobId, mfgYear, maxError, sealId, photoFiles) {
+        const job = jobs.find(j => j.id === jobId);
+        if (!job) return false;
+        if (!mfgYear || !maxError || !sealId) { alert("Fill all technical fields"); return false; }
+        if (photoFiles.length === 0) { alert("Upload at least one photo"); return false; }
+        if (job.jobType === 'RV' && job.paymentStatus !== 'paid') { alert("RV requires payment first"); return false; }
+
+        const photoUrls = photoFiles.map(f => URL.createObjectURL(f));
+        const technical = { mfgYear, maxError, sealId, photos: photoUrls };
+        if (job.rcWorkflowMode === 'auto') {
+            // auto mode: complete immediately and generate certificate
+            updateJob(jobId, { 
+                status: 'completed', 
+                technicalData: technical, 
+                photos: photoUrls,
+                completedAt: new Date().toISOString(),
+                paymentStatus: job.jobType === 'RV' ? 'paid' : job.paymentStatus
+            });
+            // create certificate
+            certificates.push({ id: `CERT-${Date.now()}`, jobId: job.id, issuedAt: new Date().toISOString() });
+            saveData();
+            alert("✅ AUTO MODE: Job completed & Certificate generated!");
+        } else {
+            updateJob(jobId, { status: 'pending_review', technicalData: technical, photos: photoUrls });
+            alert("📋 Manual Mode: Submitted for RC Admin approval.");
+        }
+        renderApp();
+        return true;
+    }
+
+    // RC Approve
+    function rcApproveJob(jobId) {
+        const job = jobs.find(j => j.id === jobId);
+        if (job && job.status === 'pending_review') {
+            updateJob(jobId, { status: 'completed', completedAt: new Date().toISOString(), rcApproved: true, paymentStatus: job.jobType === 'RV' ? 'paid' : job.paymentStatus });
+            certificates.push({ id: `CERT-${Date.now()}`, jobId: job.id, issuedAt: new Date().toISOString() });
+            saveData();
+            alert(`✅ Job ${jobId} approved & finalized. Certificate issued.`);
+        } else { alert("No pending review or invalid job"); }
+    }
+
+    function processRVPayment(jobId) {
+        const job = jobs.find(j => j.id === jobId);
+        if (job && job.jobType === 'RV' && job.paymentStatus === 'pending') {
+            if (confirm("Simulate Zoho Payment Gateway: ₹295?")) {
+                updateJob(jobId, { paymentStatus: 'paid' });
+                alert("Payment successful! VCT can now submit.");
+            }
+        } else { alert("Payment not required or already paid"); }
+    }
+
+    // Admin: product management
+    function addProduct(name, ovFee, rvFee) {
+        if (!name) return;
+        products.push({ id: `PROD-${Date.now()}`, name, ovFee: Number(ovFee), rvFee: Number(rvFee) });
+        saveData();
+        renderApp();
+    }
+
+    function deleteProduct(prodId) {
+        products = products.filter(p => p.id !== prodId);
+        saveData();
+        renderApp();
+    }
+
+    // ========== RENDER LOGIC: SIDEBAR + CONTENT ==========
+    function renderSidebar() {
+        const sidebarDiv = document.getElementById('sidebar');
+        if (!sidebarDiv) return;
+        if (!currentUser) {
+            sidebarDiv.innerHTML = '';
+            return;
+        }
+        let navItems = [];
+        if (currentUser.role === 'super_admin') {
+            navItems = [
+                { id: 'dashboard', icon: 'fas fa-tachometer-alt', label: 'Dashboard' },
+                { id: 'rc', icon: 'fas fa-building', label: 'RC' },
+                { id: 'products', icon: 'fas fa-boxes', label: 'Products' },
+                { id: 'reports', icon: 'fas fa-chart-line', label: 'Reports' }
+            ];
+        } else if (currentUser.role === 'rc_admin') {
+            navItems = [
+                { id: 'dashboard', icon: 'fas fa-tachometer-alt', label: 'Dashboard' },
+                { id: 'vct', icon: 'fas fa-mobile-alt', label: 'VCT' },
+                { id: 'jobQueue', icon: 'fas fa-tasks', label: 'Job Queue' },
+                { id: 'reports', icon: 'fas fa-chart-line', label: 'Reports' }
+            ];
+        } else if (currentUser.role === 'vct') {
+            navItems = [
+                { id: 'jobQueue', icon: 'fas fa-tasks', label: 'Job Queue' },
+                { id: 'certificates', icon: 'fas fa-certificate', label: 'Certificates' },
+                { id: 'reports', icon: 'fas fa-chart-line', label: 'Reports' }
+            ];
+        }
+
+        const collapsedClass = sidebarCollapsed ? 'collapsed' : '';
+        sidebarDiv.className = `sidebar ${collapsedClass}`;
+        sidebarDiv.innerHTML = `
+            <div class="sidebar-header">
+                <div class="logo-area">
+                    <i class="fas fa-microchip"></i>
+                    <span class="logo-text">GATC Flow</span>
+                </div>
+                <button class="collapse-btn" id="collapseSidebarBtn"><i class="fas ${sidebarCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'}"></i></button>
+            </div>
+            <div class="nav-menu">
+                ${navItems.map(item => `
+                    <div class="nav-item ${activeMenuItem === item.id ? 'active' : ''}" data-nav="${item.id}">
+                        <i class="${item.icon}"></i>
+                        <span>${item.label}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        // attach events
+        document.querySelectorAll('.nav-item').forEach(el => {
+            el.addEventListener('click', (e) => {
+                const navId = el.getAttribute('data-nav');
+                if (navId) {
+                    activeMenuItem = navId;
+                    renderApp();
+                }
+            });
+        });
+        const collapseBtn = document.getElementById('collapseSidebarBtn');
+        if (collapseBtn) {
+            collapseBtn.addEventListener('click', () => {
+                sidebarCollapsed = !sidebarCollapsed;
+                const main = document.getElementById('mainContent');
+                if (sidebarCollapsed) {
+                    main.classList.add('expanded');
+                } else {
+                    main.classList.remove('expanded');
+                }
+                renderSidebar();
+                renderApp(); // keep content aligned
+            });
+        }
+    }
+
+    function renderApp() {
+        if (!currentUser) {
+            renderLoginScreen();
+            return;
+        }
+        renderSidebar();
+        const mainContainer = document.getElementById('mainContent');
+        if (!mainContainer) return;
+        const mainClass = sidebarCollapsed ? 'main-content expanded' : 'main-content';
+        mainContainer.className = mainClass;
+
+        // top bar always
+        let roleDisplay = currentUser.role === 'super_admin' ? '👑 Super Admin' : (currentUser.role === 'rc_admin' ? '🏢 RC Admin' : '🔧 VCT Technician');
+        mainContainer.innerHTML = `
+            <div class="top-bar">
+                <div class="page-title">${getPageTitle()}</div>
+                <div class="user-chip">
+                    <i class="fas fa-user-circle"></i> ${currentUser.username} (${roleDisplay})
+                    <button class="logout-btn" id="logoutBtn">Logout</button>
+                </div>
+            </div>
+            <div id="dynamicPanel"></div>
+        `;
+        document.getElementById('logoutBtn')?.addEventListener('click', () => {
+            currentUser = null;
+            activeMenuItem = null;
+            renderApp();
+        });
+        renderDynamicContent();
+    }
+
+    function getPageTitle() {
+        if (!activeMenuItem) return "Dashboard";
+        const titles = {
+            dashboard: "📊 Dashboard", rc: "🏢 Regional Centers", products: "📦 Product Management",
+            reports: "📈 Analytics & Reports", vct: "📱 VCT Oversight", jobQueue: "📋 Job Queue",
+            certificates: "🎓 Certificates"
+        };
+        return titles[activeMenuItem] || "GATC Workflow";
+    }
+
+    function renderDynamicContent() {
+        const panel = document.getElementById('dynamicPanel');
+        if (!panel) return;
+        const role = currentUser.role;
+        const menu = activeMenuItem || (role === 'super_admin' ? 'dashboard' : (role === 'rc_admin' ? 'dashboard' : 'jobQueue'));
+
+        if (role === 'super_admin') {
+            if (menu === 'dashboard') renderSuperDashboard(panel);
+            else if (menu === 'rc') renderRCManagement(panel);
+            else if (menu === 'products') renderProductManagement(panel);
+            else if (menu === 'reports') renderReports(panel);
+            else renderSuperDashboard(panel);
+        } 
+        else if (role === 'rc_admin') {
+            if (menu === 'dashboard') renderRCDashboard(panel);
+            else if (menu === 'vct') renderVCTMonitoring(panel);
+            else if (menu === 'jobQueue') renderRCJobQueue(panel);
+            else if (menu === 'reports') renderReports(panel);
+            else renderRCDashboard(panel);
+        } 
+        else if (role === 'vct') {
+            if (menu === 'jobQueue') renderVCTJobQueue(panel);
+            else if (menu === 'certificates') renderCertificates(panel);
+            else if (menu === 'reports') renderReports(panel);
+            else renderVCTJobQueue(panel);
+        }
+    }
+
+    // ---------- Super Admin Views ----------
+    function renderSuperDashboard(container) {
+        container.innerHTML = `<div class="dashboard-grid">
+            <div class="card"><h3><i class="fas fa-chart-simple"></i> System Stats</h3><p>Total Jobs: ${jobs.length}<br>Completed: ${jobs.filter(j=>j.status==='completed').length}<br>Products: ${products.length}</p></div>
+            <div class="card"><h3><i class="fas fa-globe"></i> Global Config</h3><p>OV Standard Fee: ₹150 | RV Fee ₹295 (incl GST)</p><button onclick="alert('Demo: fees updated')">Update Master Fees</button></div>
+            <div class="card"><h3>🔄 Recent Jobs</h3>${jobs.slice(0,3).map(j=>`<div><strong>${j.id}</strong> - ${j.status}</div>`).join('')}</div>
+        </div>`;
+    }
+
+    function renderRCManagement(container) {
+        container.innerHTML = `<div class="card"><h3><i class="fas fa-building"></i> Regional Centers</h3><p>North Zone, South Zone, East Zone</p><button class="secondary" onclick="alert('Provision new RC')">+ Add Regional Center</button></div>`;
+    }
+
+    function renderProductManagement(container) {
+        container.innerHTML = `<div class="card"><h3>📦 Products & Fees</h3><div class="form-group"><input id="prodName" placeholder="Product Name"><input id="ovFee" placeholder="OV Fee (₹150)" value="150"><input id="rvFee" placeholder="RV Fee (₹295)" value="295"><button onclick="addProduct(document.getElementById('prodName').value, document.getElementById('ovFee').value, document.getElementById('rvFee').value)">Add Product</button></div><div id="productList"></div></div>`;
+        const listDiv = document.getElementById('productList');
+        if(listDiv) listDiv.innerHTML = products.map(p => `<div class="flex-between"><span>${p.name} | OV:₹${p.ovFee} RV:₹${p.rvFee}</span><button class="secondary" onclick="deleteProduct('${p.id}')">Delete</button></div>`).join('');
+    }
+
+    // ---------- RC Admin Views ----------
+    function renderRCDashboard(container) {
+        const pendingJobs = jobs.filter(j => j.status === 'pending_review');
+        container.innerHTML = `<div class="dashboard-grid"><div class="card"><h3>⚙️ Workflow Control</h3><label>Default Mode</label><select id="globalMode"><option value="auto">Auto</option><option value="manual">Manual</option></select><button onclick="alert('Mode updated for future jobs')">Save</button></div>
+        <div class="card"><h3>➕ Create Skeletal Job</h3><div class="form-group"><input id="custName" placeholder="Customer"><input id="prodType" placeholder="Product"><input id="serialNum" placeholder="Serial"><select id="jobTypeSelect"><option value="OV">OV</option><option value="RV">RV</option></select><select id="modeSelect"><option value="auto">Auto</option><option value="manual">Manual</option></select><button onclick="createJobOrder(document.getElementById('custName').value, document.getElementById('prodType').value, document.getElementById('serialNum').value, document.getElementById('jobTypeSelect').value, document.getElementById('modeSelect').value)">Create Job</button></div></div>
+        ${pendingJobs.length ? `<div class="card"><h3>⏳ Pending Approval</h3>${pendingJobs.map(j=>`<div><strong>${j.id}</strong> - ${j.customer}<button onclick="rcApproveJob('${j.id}')">Approve</button></div>`).join('')}</div>` : ''}</div>`;
+    }
+
+    function renderVCTMonitoring(container) {
+        const vctJobs = jobs.filter(j => j.assignedTo === 'vct');
+        container.innerHTML = `<div class="card"><h3>👥 VCT Field Jobs</h3>${vctJobs.map(j=>`<div class="job-item">${j.id} | ${j.customer} | ${j.status}</div>`).join('')}</div>`;
+    }
+
+    function renderRCJobQueue(container) {
+        container.innerHTML = `<div class="card"><h3>📋 All Jobs Queue</h3>${jobs.map(j=>`<div class="flex-between"><span>${j.id} | ${j.customer} | ${j.status}</span>${j.status === 'pending_review' ? `<button onclick="rcApproveJob('${j.id}')">Approve</button>` : ''}</div>`).join('')}</div>`;
+    }
+
+    // ---------- VCT Views ----------
+    function renderVCTJobQueue(container) {
+        const assigned = jobs.filter(j => j.assignedTo === 'vct' && j.status !== 'completed');
+        const selectedJob = assigned.length ? assigned[0] : null;
+        container.innerHTML = `<div class="dashboard-grid"><div class="card"><h3>📱 My Job Queue</h3>${assigned.map(j=>`<div class="job-item" onclick="selectTempJob('${j.id}')" style="cursor:pointer;"><strong>${j.id}</strong> - ${j.customer} (${j.jobType})<br>status: ${j.status}</div>`).join('')}</div>
+        ${selectedJob ? renderVCTJobForm(selectedJob) : '<div class="card"><p>Select a job to process</p></div>'}</div>`;
+        window.selectTempJob = (jobId) => {
+            const job = jobs.find(j => j.id === jobId);
+            if(job) renderVCTJobFormDetailed(job);
+        };
+    }
+
+    function renderVCTJobForm(job) {
+        return `<div class="card"><h3>🔧 Process: ${job.id}</h3>${job.status === 'assigned' ? `
+            <div class="form-group"><label>Mfg Year</label><input id="vctMfg" placeholder="2024"></div>
+            <div class="form-group"><label>Max Error</label><input id="vctErr" placeholder="±0.2%"></div>
+            <div class="form-group"><label>Seal ID</label><input id="vctSeal" placeholder="SEAL-ID"></div>
+            <div class="form-group"><label>Upload Photos</label><input type="file" id="vctPhotos" multiple></div>
+            ${job.jobType === 'RV' && job.paymentStatus !== 'paid' ? `<button onclick="processRVPayment('${job.id}')">💳 Pay ₹295</button>` : ''}
+            <button onclick="submitVCTJobFromUI('${job.id}')" ${(job.jobType === 'RV' && job.paymentStatus !== 'paid') ? 'disabled' : ''}>Submit for Processing</button>
+        ` : (job.status === 'pending_review' ? `<p>⏳ Waiting RC approval</p>` : `<p>✅ Completed</p>`)}</div>`;
+    }
+
+    function renderVCTJobFormDetailed(job) {
+        const panel = document.getElementById('dynamicPanel');
+        if(!panel) return;
+        panel.innerHTML = `<div class="dashboard-grid"><div class="card"><h3>📱 Job Queue</h3>${jobs.filter(j=>j.assignedTo==='vct' && j.status !=='completed').map(j=>`<div class="job-item" onclick="selectTempJob('${j.id}')">${j.id} - ${j.customer}</div>`).join('')}</div>${renderVCTJobForm(job)}</div>`;
+        window.submitVCTJobFromUI = (jobId) => {
+            const mfg = document.getElementById('vctMfg')?.value;
+            const err = document.getElementById('vctErr')?.value;
+            const seal = document.getElementById('vctSeal')?.value;
+            const photos = document.getElementById('vctPhotos')?.files || [];
+            vctSubmitJob(jobId, mfg, err, seal, photos);
+        };
+    }
+
+    function renderCertificates(container) {
+        const myCerts = certificates.filter(c => jobs.find(j => j.id === c.jobId && j.assignedTo === 'vct'));
+        container.innerHTML = `<div class="card"><h3>🎓 My Certificates</h3>${myCerts.map(c=>`<div class="job-item">Certificate: ${c.id} for Job ${c.jobId} - issued ${new Date(c.issuedAt).toLocaleDateString()}</div>`).join('') || '<p>No certificates yet</p>'}</div>`;
+    }
+
+    function renderReports(container) {
+        container.innerHTML = `<div class="card"><h3>📊 System Reports</h3><p>Total Jobs: ${jobs.length} | Completion Rate: ${Math.round((jobs.filter(j=>j.status==='completed').length/jobs.length)*100)||0}%</p><canvas id="reportChart" style="height:200px"></canvas></div>`;
+    }
+
+    // Login Screen
+    function renderLoginScreen() {
+        const mainDiv = document.getElementById('mainContent');
+        mainDiv.className = 'main-content';
+        mainDiv.innerHTML = `
+            <div style="display:flex; justify-content:center; align-items:center; min-height:80vh;">
+                <div class="card" style="max-width:400px; text-align:center;">
+                    <h2><i class="fas fa-laptop-code"></i> GATC Workflow</h2>
+                    <p>Login with role:</p>
+                    <div style="display:flex; gap:12px; margin-top:20px; flex-wrap:wrap;">
+                        <button onclick="quickRoleLogin('admin')">👑 Super Admin</button>
+                        <button onclick="quickRoleLogin('rc')">🏢 RC Admin</button>
+                        <button onclick="quickRoleLogin('vct')">🔧 VCT Technician</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        window.quickRoleLogin = (role) => {
+            if(role === 'admin') currentUser = { username: 'admin', role: 'super_admin' };
+            else if(role === 'rc') currentUser = { username: 'rc_admin', role: 'rc_admin' };
+            else if(role === 'vct') currentUser = { username: 'vct_tech', role: 'vct' };
+            activeMenuItem = null;
+            renderApp();
+        };
+    }
+
+    // Expose global functions
+    window.addProduct = addProduct;
+    window.deleteProduct = deleteProduct;
+    window.createJobOrder = createJobOrder;
+    window.rcApproveJob = rcApproveJob;
+    window.processRVPayment = processRVPayment;
+    window.submitVCTJobFromUI = (jobId) => {
+        const mfg = document.getElementById('vctMfg')?.value;
+        const err = document.getElementById('vctErr')?.value;
+        const seal = document.getElementById('vctSeal')?.value;
+        const photos = document.getElementById('vctPhotos')?.files || [];
+        vctSubmitJob(jobId, mfg, err, seal, photos);
+    };
+    window.selectTempJob = (jobId) => {
+        const job = jobs.find(j => j.id === jobId);
+        if(job) renderVCTJobFormDetailed(job);
+    };
+
+    // Bootstrap
+    loadData();
+    renderApp();
+</script>
+</body>
+</html>
