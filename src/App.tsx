@@ -16,6 +16,7 @@ import { RCProfile } from './pages/rc/RCProfile';
 import { RCJobQueue } from './pages/rc/RCJobQueue';
 import { VCTDashboard } from './pages/vct/VCTDashboard';
 import { Certificates } from './pages/vct/Certificates';
+import { Reports } from './pages/shared/Reports';
 import { Placeholder } from './pages/Placeholder';
 
 const App: React.FC = () => {
@@ -34,7 +35,7 @@ const App: React.FC = () => {
                 <Route path="rc" element={<RCList />} />
                 <Route path="products" element={<Products />} />
                 <Route path="users" element={<UserManagement />} />
-                <Route path="reports" element={<Placeholder />} />
+                <Route path="reports" element={<Reports />} />
               </Route>
             </Route>
 
@@ -44,7 +45,7 @@ const App: React.FC = () => {
                 <Route index element={<RCDashboard />} />
                 <Route path="vct" element={<VCTManagement />} />
                 <Route path="queue" element={<RCJobQueue />} />
-                <Route path="reports" element={<Placeholder />} />
+                <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<RCProfile />} />
               </Route>
             </Route>
