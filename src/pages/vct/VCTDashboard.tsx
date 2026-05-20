@@ -78,7 +78,7 @@ export const VCTDashboard: React.FC = () => {
                 onClick={() => setSelectedJobId(job.id)}
               >
                 <div className="flex justify-between items-start mb-1">
-                  <h4 className="font-bold" style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>
+                  <h4 className="font-bold text-mono-xs">
                     {job.id.slice(0, 20)}…
                   </h4>
                   <span className={`status-badge ${job.status}`}>{job.status.replace('_', ' ')}</span>
@@ -108,12 +108,12 @@ export const VCTDashboard: React.FC = () => {
         <div className="panel-body">
           {!selectedJob ? (
             <div className="empty-state">
-              <Camera size={48} className="text-muted mb-4" style={{ display: 'block', margin: '0 auto 1rem' }} />
+              <Camera size={48} className="text-muted empty-state-icon" />
               <p className="text-muted text-center">Select a job from the queue to start processing</p>
             </div>
           ) : selectedJob.status === 'pending_review' ? (
             <div className="text-center py-8">
-              <Clock size={32} className="text-orange" style={{ display: 'block', margin: '0 auto 0.75rem' }} />
+              <Clock size={32} className="text-orange icon-block-center" />
               <p className="font-medium">Awaiting RC Admin Approval</p>
               <p className="text-muted text-sm mt-2">
                 Job submitted and waiting for review.
@@ -133,22 +133,22 @@ export const VCTDashboard: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label>Manufacturing Year</label>
-                <input type="text" className="input-field" placeholder="e.g. 2024" value={mfgYear} onChange={e => setMfgYear(e.target.value)} required />
+                <label htmlFor="mfgYear">Manufacturing Year</label>
+                <input id="mfgYear" type="text" className="input-field" placeholder="e.g. 2024" value={mfgYear} onChange={e => setMfgYear(e.target.value)} required />
               </div>
               <div className="form-group">
-                <label>Max Error</label>
-                <input type="text" className="input-field" placeholder="e.g. ±0.2%" value={maxError} onChange={e => setMaxError(e.target.value)} required />
+                <label htmlFor="maxError">Max Error</label>
+                <input id="maxError" type="text" className="input-field" placeholder="e.g. ±0.2%" value={maxError} onChange={e => setMaxError(e.target.value)} required />
               </div>
               <div className="form-group">
-                <label>Seal ID</label>
-                <input type="text" className="input-field" placeholder="e.g. SEAL-2024-001" value={sealId} onChange={e => setSealId(e.target.value)} required />
+                <label htmlFor="sealId">Seal ID</label>
+                <input id="sealId" type="text" className="input-field" placeholder="e.g. SEAL-2024-001" value={sealId} onChange={e => setSealId(e.target.value)} required />
               </div>
 
               <div className="form-group">
                 <label>Site Photos</label>
                 <div className="upload-box">
-                  <UploadCloud size={24} style={{ display: 'block', margin: '0 auto 0.5rem' }} className="text-muted" />
+                  <UploadCloud size={24} className="text-muted icon-block-center" />
                   <span className="text-sm text-muted">Click to upload photos</span>
                 </div>
               </div>

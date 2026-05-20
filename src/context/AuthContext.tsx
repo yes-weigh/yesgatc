@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   signInWithEmailAndPassword,
@@ -79,7 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ? 'Invalid email or password.'
           : raw;
       setError(friendly);
-      throw new Error(friendly);
+      throw new Error(friendly, { cause: err });
     } finally {
       setLoading(false);
     }

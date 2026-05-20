@@ -3,30 +3,87 @@ import { deleteDoc, doc, collection, getDocs, query, where } from 'firebase/fire
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-import { ClipboardList, Search, Filter, Trash2, CheckCircle2, Clock, PlayCircle } from 'lucide-react';
-import type { FirestoreUserDoc } from '../../types';
+import { ClipboardList, Search, Filter, Trash2, CheckCircle2, Clock, PlayCircle, Plus, X, Zap, Users } from 'lucide-react';
+import type { FirestoreUserDoc, WorkflowMode } from '../../types';
+
+interface VCTOption {
+  uid: string;
+  username: string;
+  email: string;
+  workflowMode: WorkflowMode;
+}
 
 export const RCJobQueue: React.FC = () => {
   const { user } = useAuth();
-  const { jobs } = useAppContext();
+  const { jobs, createJob, products } = useAppContext();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [vctOptions, setVctOptions] = useState<{uid: string, username: string, email: string}[]>([]);
+  const [vctOptions, setVctOptions] = useState<VCTOption[]>([]);
+  const [loadingVCTs, setLoadingVCTs] = useState(true);
+
+  // Form states
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [customer, setCustomer] = useState('');
+  const [product, setProduct] = useState('');
+  const [serial, setSerial] = useState('');
+  const [jobType, setJobType] = useState<'OV' | 'RV'>('OV');
+  const [assignedTo, setAssignedTo] = useState('');
+
+  // Derived: mode of the currently selected VCT
+  const selectedVCT = vctOptions.find(v => v.uid === assignedTo) ?? null;
+  const inheritedMode: WorkflowMode = selectedVCT?.workflowMode ?? 'auto';
 
   useEffect(() => {
     if (!user?.uid) return;
     const fetchVCTs = async () => {
+      setLoadingVCTs(true);
       const q = query(collection(db, 'users'), where('role', '==', 'vct'), where('rcId', '==', user.uid));
       const snap = await getDocs(q);
-      setVctOptions(snap.docs.map(d => ({
+      const list = snap.docs.map(d => ({
         uid: d.id,
         username: (d.data() as FirestoreUserDoc).username || '',
-        email: (d.data() as FirestoreUserDoc).email || ''
-      })));
+        email: (d.data() as FirestoreUserDoc).email || '',
+        workflowMode: (d.data() as FirestoreUserDoc).workflowMode ?? 'auto'
+      }));
+      setVctOptions(list);
+      if (list.length > 0) setAssignedTo(list[0].uid);
+      setLoadingVCTs(false);
     };
     fetchVCTs();
   }, [user?.uid]);
+
+  const handleCreateJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customer || !product || !serial) return;
+    if (!assignedTo) {
+      alert('Please add a VCT Technician to your centre first.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createJob({
+        customer,
+        product,
+        serial,
+        jobType,
+        status: 'assigned',
+        assignedTo,
+        technicalData: null,
+        photos: [],
+        paymentStatus: jobType === 'RV' ? 'pending' : 'not_required',
+        rcWorkflowMode: inheritedMode,
+        rcApproved: false,
+        createdAt: new Date().toISOString(),
+        createdByUid: user?.uid,
+      });
+      setCustomer(''); setProduct(''); setSerial('');
+      setShowAddForm(false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // Only show jobs created by this RC Admin
   const myJobs = useMemo(() => {
@@ -80,7 +137,99 @@ export const RCJobQueue: React.FC = () => {
           <p className="text-muted">Manage and track all jobs created by your Regional Center.</p>
         </div>
         
-        {/* Filters */}
+        <div className="flex items-center gap-2">
+          <button className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3" onClick={() => setShowAddForm(p => !p)}>
+            {showAddForm ? <X size={15} /> : <Plus size={15} />}
+            {showAddForm ? 'Cancel' : 'Create New Job'}
+          </button>
+        </div>
+      </div>
+
+      {/* Create Job Form */}
+      {showAddForm && (
+        <div className="panel glass mb-6 fade-in">
+          <div className="panel-header">
+            <h2><Plus className="inline-icon" /> Create Job</h2>
+          </div>
+          <div className="panel-body">
+            <form onSubmit={handleCreateJob} className="vct-create-grid">
+              <div className="form-group">
+                <label htmlFor="job-vct"><Users size={14} className="inline-icon-sm" /> Assign to Technician</label>
+                {loadingVCTs ? (
+                  <div className="text-muted text-sm py-2">
+                    <span className="spinner-inline"></span> Loading technicians…
+                  </div>
+                ) : vctOptions.length === 0 ? (
+                  <div className="rc-empty-hint">
+                    No VCT Technicians yet — add them via "My Technicians".
+                  </div>
+                ) : (
+                  <select
+                    id="job-vct"
+                    className="input-field"
+                    value={assignedTo}
+                    onChange={e => setAssignedTo(e.target.value)}
+                    required
+                  >
+                    {vctOptions.map(v => (
+                      <option key={v.uid} value={v.uid}>
+                        {v.username} ({v.email})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {selectedVCT && (
+                <div className="inherited-mode-banner">
+                  <span className="text-muted text-xs-soft">Job mode for this technician:</span>
+                  <span className={`mode-badge ${inheritedMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
+                    {inheritedMode === 'auto'
+                      ? <><Zap size={12} /> Auto-approve</>
+                      : <><ClipboardList size={12} /> Manual review</>}
+                  </span>
+                </div>
+              )}
+
+              <div className="form-group">
+                <label htmlFor="job-customer">Customer Name</label>
+                <input id="job-customer" type="text" className="input-field" placeholder="Customer Name" value={customer}
+                  onChange={e => setCustomer(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label htmlFor="job-product">Product</label>
+                <select id="job-product" className="input-field" value={product}
+                  onChange={e => setProduct(e.target.value)} required>
+                  <option value="">Select Product…</option>
+                  {products.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="job-serial">Serial Number</label>
+                <input id="job-serial" type="text" className="input-field" placeholder="Serial Number" value={serial}
+                  onChange={e => setSerial(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label htmlFor="job-type">Job Type</label>
+                <select id="job-type" className="input-field" value={jobType}
+                  onChange={e => setJobType(e.target.value as 'OV' | 'RV')}>
+                  <option value="OV">OV</option>
+                  <option value="RV">RV</option>
+                </select>
+              </div>
+
+              <div className="form-actions mt-2 col-span-all">
+                <button type="submit" className="btn btn-primary" disabled={submitting || vctOptions.length === 0}>
+                  {submitting ? <span className="spinner-inline"></span> : <><Plus size={16} /> Create & Assign Job</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Filters Bar */}
+      <div className="flex justify-end items-end mb-4 flex-wrap gap-4">
         <div className="flex gap-3 flex-wrap">
           <div className="search-wrap">
             <Search size={16} className="search-icon" />
@@ -96,6 +245,8 @@ export const RCJobQueue: React.FC = () => {
           <div className="flex items-center gap-2 bg-dark-glass px-3 py-1.5 rounded-lg border border-white-5">
             <Filter size={16} className="text-muted" />
             <select 
+              id="status-filter"
+              title="Filter by Status"
               className="bg-transparent text-sm outline-none cursor-pointer"
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
@@ -127,7 +278,7 @@ export const RCJobQueue: React.FC = () => {
             <tbody>
               {filteredJobs.map(job => (
                 <tr key={job.id}>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', opacity: 0.8 }}>
+                  <td className="text-mono-muted">
                     {job.id.slice(0, 16)}...
                   </td>
                   <td>

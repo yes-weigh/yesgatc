@@ -36,10 +36,10 @@ export const Certificates: React.FC = () => {
                 const job = jobs.find(j => j.id === cert.jobId);
                 return (
                   <tr key={cert.id}>
-                    <td className="font-bold text-blue" style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                    <td className="font-bold text-blue text-mono-xs">
                       {cert.id.slice(0, 16)}…
                     </td>
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    <td className="text-mono-muted">
                       {cert.jobId.slice(0, 16)}…
                     </td>
                     <td className="font-medium">{job?.customer ?? '—'}</td>
@@ -50,7 +50,7 @@ export const Certificates: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td className="text-muted" style={{ fontSize: '0.875rem' }}>
+                    <td className="text-muted text-sm">
                       {new Date(cert.issuedAt).toLocaleDateString('en-IN', {
                         day: '2-digit', month: 'short', year: 'numeric',
                       })}

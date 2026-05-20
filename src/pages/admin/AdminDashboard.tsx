@@ -106,7 +106,7 @@ export const AdminDashboard: React.FC = () => {
             <h2>Global Configuration</h2>
           </div>
           <div className="panel-body">
-            <p className="text-muted mb-4" style={{ fontSize: '0.9rem' }}>
+            <p className="text-muted text-md-soft mb-4">
               Standard fee templates applied across all Regional Centers.
             </p>
             <div className="config-box">
@@ -143,18 +143,18 @@ export const AdminDashboard: React.FC = () => {
               <tbody>
                 {jobs.slice(0, 8).map(job => (
                   <tr key={job.id}>
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    <td className="text-mono-muted">
                       {job.id.slice(0, 16)}…
                     </td>
                     <td className="font-medium">{job.customer}</td>
-                    <td className="text-muted" style={{ fontSize: '0.875rem' }}>{job.product}</td>
+                    <td className="text-muted text-sm">{job.product}</td>
                     <td>
                       <span className={`role-badge ${job.jobType === 'OV' ? 'badge-rc' : 'badge-vct'}`}>
                         {job.jobType}
                       </span>
                     </td>
                     <td><span className={`status-badge ${job.status}`}>{job.status.replace('_', ' ')}</span></td>
-                    <td className="text-muted" style={{ fontSize: '0.8rem' }}>
+                    <td className="text-muted text-xs">
                       {new Date(job.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                     </td>
                   </tr>

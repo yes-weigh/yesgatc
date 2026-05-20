@@ -59,14 +59,16 @@ body {
 /* Base Glass Effect */
 .glass {
   background: var(--bg-glass);
-  backdrop-filter: var(--blur-glass);
   -webkit-backdrop-filter: var(--blur-glass);
+  backdrop-filter: var(--blur-glass);
   border: 1px solid var(--border-glass);
   box-shadow: var(--shadow-glass);
 }
 
 /* Utilities */
 .flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.flex-wrap { display: flex; flex-wrap: wrap; }
 .items-center { align-items: center; }
 .justify-between { justify-content: space-between; }
 .text-muted { color: var(--text-muted); }
@@ -86,6 +88,36 @@ body {
 .max-w-4xl { max-width: 56rem; margin-left: auto; margin-right: auto; }
 .max-w-xs { max-width: 20rem; }
 .inline-icon { display: inline-block; vertical-align: text-bottom; margin-right: 8px; }
+.text-mono { font-family: monospace; }
+.text-xs { font-size: 0.75rem; }
+.text-xs-soft { font-size: 0.82rem; }
+.text-sm { font-size: 0.85rem; }
+.text-mono-xs { font-family: monospace; font-size: 0.82rem; }
+.text-mono-muted { font-family: monospace; font-size: 0.8rem; opacity: 0.8; }
+.text-xs-soft-muted { font-size: 0.8rem; opacity: 0.6; }
+.justify-end { justify-content: flex-end; }
+.gap-2 { gap: 0.5rem; }
+.gap-3 { gap: 0.75rem; }
+.gap-4 { gap: 1rem; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.text-md-soft { font-size: 0.9rem; }
+.text-xs { font-size: 0.8rem; }
+.text-xxs { font-size: 0.75rem; }
+.cursor-pointer { cursor: pointer; }
+.empty-state-icon { display: block; margin: 0 auto 1rem; opacity: 0.3; }
+.shape-sm { width: 150px !important; height: 150px !important; }
+.mb-xs { margin-bottom: 0.1rem; }
+.kpi-product-title { line-height: 1.2; padding-top: 0.2rem; }
+.chart-container { height: 300px; }
+.icon-block-center { display: block; margin: 0 auto 0.5rem; }
+.col-span-all { grid-column: 1 / -1; }
+.full-screen-loader-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: #030712;
+}
 
 /* Dashboard Layout */
 .app-wrapper {
@@ -97,6 +129,7 @@ body {
 .sidebar {
   width: var(--sidebar-width);
   background: rgba(10, 15, 28, 0.8);
+  -webkit-backdrop-filter: var(--blur-glass);
   backdrop-filter: var(--blur-glass);
   border-right: 1px solid var(--border-glass);
   display: flex;
@@ -145,6 +178,7 @@ body {
   font-weight: 700;
   background: linear-gradient(to right, #fff, #9ca3af);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -446,12 +480,11 @@ select.input-field option {
   margin-bottom: 3rem;
 }
 
-.logo-icon-lg {
-  width: 64px; height: 64px;
-  background: linear-gradient(135deg, var(--accent-primary), #60a5fa);
-  border-radius: 16px;
+.login-logo {
+  max-width: 620px;
+  height: auto;
   margin: 0 auto 1.5rem;
-  box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+  display: block;
 }
 
 .login-header h2 {
@@ -941,7 +974,7 @@ select.input-field option {
    ────────────────────────────────────────────────────────────────── */
 .vct-create-grid {
   display: grid;
-  grid-template-columns: 1.2fr 1.5fr 1.2fr auto;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 1rem;
   align-items: end;
 }

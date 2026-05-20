@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   collection,
@@ -38,12 +39,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     if (!user) {
-      setJobs([]); setProducts([]); setCertificates([]);
-      setLoadingData(false);
+      Promise.resolve().then(() => {
+        setJobs([]);
+        setProducts([]);
+        setCertificates([]);
+        setLoadingData(false);
+      });
       return;
     }
 
-    setLoadingData(true);
+    Promise.resolve().then(() => setLoadingData(true));
     let loaded = 0;
     const done = () => { loaded++; if (loaded >= 3) setLoadingData(false); };
 

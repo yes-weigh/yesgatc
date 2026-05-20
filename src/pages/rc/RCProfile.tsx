@@ -117,13 +117,13 @@ export const RCProfile: React.FC = () => {
     <div className="fade-in max-w-3xl mx-auto">
       <div className="panel glass">
         {/* Header */}
-        <div className="panel-header" style={{ justifyContent: 'space-between' }}>
+        <div className="panel-header justify-between">
           <div className="flex items-center gap-3">
             <div className="rc-avatar">
               <Building2 size={22} />
             </div>
             <div>
-              <h2 style={{ marginBottom: '0.1rem' }}>
+              <h2 className="mb-xs">
                 {profile.companyName || profile.username || 'Regional Center Profile'}
               </h2>
               <span className="role-badge badge-rc">RC Admin</span>
@@ -208,7 +208,7 @@ export const RCProfile: React.FC = () => {
           {/* Read-only info block */}
           <div className="profile-meta-bar mt-6">
             <span className="text-muted text-sm">Account created: <strong>{profile.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</strong></span>
-            <span className="text-muted text-sm">UID: <span style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{user?.uid}</span></span>
+            <span className="text-muted text-sm">UID: <span className="text-mono-muted">{user?.uid}</span></span>
           </div>
         </div>
       </div>

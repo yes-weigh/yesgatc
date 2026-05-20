@@ -11,7 +11,7 @@ export const Placeholder: React.FC = () => {
         <h2 className="mb-4">{title} Module</h2>
         <p className="text-muted mb-6">This module is currently under development.</p>
         <div className="bg-shapes absolute inset-0 -z-10 opacity-20 pointer-events-none">
-           <div className="shape shape-1" style={{ width: '150px', height: '150px' }}></div>
+           <div className="shape shape-1 shape-sm"></div>
         </div>
       </div>
     </div>

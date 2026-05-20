@@ -27,7 +27,11 @@ export const Login: React.FC = () => {
     setError('');
     setSubmitting(true);
     try {
-      await login(email, password);
+      let loginEmail = email.trim();
+      if (!loginEmail.includes('@') && /^\d+$/.test(loginEmail)) {
+        loginEmail = `${loginEmail}@yesweigh.in`;
+      }
+      await login(loginEmail, password);
       // Navigation handled by useEffect above
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed');
@@ -53,8 +57,7 @@ export const Login: React.FC = () => {
     <div className="login-container">
       <div className="login-box glass">
         <div className="login-header">
-          <div className="logo-icon-lg"></div>
-          <h2>GATC Flow</h2>
+          <img src="/dark logo.png" alt="YES LAB" className="login-logo" />
           <p>Sign in to your account</p>
         </div>
 
@@ -66,13 +69,13 @@ export const Login: React.FC = () => {
           )}
 
           <div className="form-group">
-            <label>Email Address</label>
+            <label>Email Address / Phone / Aadhar</label>
             <div className="input-icon-wrap">
               <Mail size={18} className="input-icon" />
               <input
-                type="email"
+                type="text"
                 className="input-field input-with-icon"
-                placeholder="you@example.com"
+                placeholder="you@example.com or 10-digit Phone or 12-digit Aadhar"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 required

@@ -75,5 +75,8 @@ export interface FirestoreUserDoc {
   address?: string;     // full postal address
   gstNumber?: string;   // GSTIN
   phone?: string;       // primary contact number
+
+  // VCT specific fields
+  aadhar?: string;      // 12-digit Aadhar number
 }
 

@@ -37,7 +37,6 @@ export const Layout: React.FC = () => {
           { path: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
           { path: '/admin/rc', icon: <Building2 size={20} />, label: 'Regional Centers' },
           { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
-          { path: '/admin/users', icon: <Users size={20} />, label: 'User Management' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
         ];
       case 'rc_admin':
@@ -82,7 +81,7 @@ export const Layout: React.FC = () => {
               <span className="logo-text">GATC Flow</span>
             </div>
           )}
-          {collapsed && <div className="logo-icon" style={{ margin: '0 auto' }}></div>}
+          {collapsed && <div className="logo-icon mx-auto"></div>}
           <button className="collapse-btn" onClick={() => setCollapsed(!collapsed)} title="Toggle sidebar">
             {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </button>

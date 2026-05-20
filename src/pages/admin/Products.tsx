@@ -31,8 +31,9 @@ export const Products: React.FC = () => {
         <div className="panel-body">
           <form className="form-grid" onSubmit={handleAdd}>
             <div className="form-group">
-              <label>Product Name</label>
+              <label htmlFor="product-name">Product Name</label>
               <input
+                id="product-name"
                 type="text"
                 className="input-field"
                 placeholder="e.g., Smart Meter X4"
@@ -42,20 +43,24 @@ export const Products: React.FC = () => {
               />
             </div>
             <div className="form-group">
-              <label>OV Fee (₹)</label>
+              <label htmlFor="ov-fee">OV Fee (₹)</label>
               <input
+                id="ov-fee"
                 type="number"
                 className="input-field"
+                placeholder="OV Fee"
                 value={ovFee}
                 onChange={e => setOvFee(e.target.value)}
                 required
               />
             </div>
             <div className="form-group">
-              <label>RV Fee (₹)</label>
+              <label htmlFor="rv-fee">RV Fee (₹)</label>
               <input
+                id="rv-fee"
                 type="number"
                 className="input-field"
+                placeholder="RV Fee"
                 value={rvFee}
                 onChange={e => setRvFee(e.target.value)}
                 required
@@ -88,7 +93,7 @@ export const Products: React.FC = () => {
             <tbody>
               {products.map(p => (
                 <tr key={p.id}>
-                  <td className="text-muted" style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{p.id}</td>
+                  <td className="text-muted text-mono text-xs">{p.id}</td>
                   <td className="font-medium">{p.name}</td>
                   <td>₹{p.ovFee}</td>
                   <td>₹{p.rvFee}</td>

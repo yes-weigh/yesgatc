@@ -104,7 +104,7 @@ export const Reports: React.FC = () => {
           <div className="stat-icon text-orange"><PieIcon /></div>
           <div className="stat-content">
             <h3>Top Product</h3>
-            <p className="stat-value text-lg" style={{ lineHeight: '1.2', paddingTop: '0.2rem' }}>
+            <p className="stat-value text-lg kpi-product-title">
               {productData[0]?.name || 'N/A'}
             </p>
           </div>
@@ -119,7 +119,7 @@ export const Reports: React.FC = () => {
           <div className="panel-header">
             <h3>Job Volume (Last 7 Days)</h3>
           </div>
-          <div className="panel-body" style={{ height: 300 }}>
+          <div className="panel-body chart-container">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={timeData}>
                 <defs>
@@ -146,7 +146,7 @@ export const Reports: React.FC = () => {
           <div className="panel-header">
             <h3>Current Job Status Pipeline</h3>
           </div>
-          <div className="panel-body" style={{ height: 300 }}>
+          <div className="panel-body chart-container">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={statusData} layout="vertical" margin={{ left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
@@ -171,7 +171,7 @@ export const Reports: React.FC = () => {
           <div className="panel-header">
             <h3>Top Products Serviced</h3>
           </div>
-          <div className="panel-body" style={{ height: 300 }}>
+          <div className="panel-body chart-container">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie

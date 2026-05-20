@@ -8,7 +8,6 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { Products } from './pages/admin/Products';
-import { UserManagement } from './pages/admin/UserManagement';
 import { RCList } from './pages/admin/RCList';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
@@ -34,7 +33,6 @@ const App: React.FC = () => {
                 <Route index element={<AdminDashboard />} />
                 <Route path="rc" element={<RCList />} />
                 <Route path="products" element={<Products />} />
-                <Route path="users" element={<UserManagement />} />
                 <Route path="reports" element={<Reports />} />
               </Route>
             </Route>
