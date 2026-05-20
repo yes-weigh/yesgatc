@@ -221,7 +221,7 @@ export const VCTManagement: React.FC = () => {
         <div className="panel-body">
           {error   && <div className="login-error mb-4">{error}</div>}
           {success && <div className="login-success mb-4">{success}</div>}
-          <form className="vct-create-grid" onSubmit={handleCreate}>
+          <form className="vct-create-grid" onSubmit={handleCreate} autoComplete="off">
             <div className="form-group">
               <label htmlFor="vct-fullname">Full Name</label>
               <input id="vct-fullname" type="text" className="input-field" placeholder="e.g. Amit Sharma"
@@ -245,6 +245,7 @@ export const VCTManagement: React.FC = () => {
                   type={showPw ? 'text' : 'password'}
                   className="input-field"
                   placeholder="min. 6 chars"
+                  autoComplete="new-password"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
                   required minLength={6}

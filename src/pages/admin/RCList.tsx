@@ -208,7 +208,7 @@ export const RCList: React.FC = () => {
           <div className="panel-body">
             {error && <div className="login-error mb-4">{error}</div>}
             {success && <div className="login-success mb-4">{success}</div>}
-            <form onSubmit={handleCreate} className="vct-create-grid">
+            <form onSubmit={handleCreate} className="vct-create-grid" autoComplete="off">
               <div className="form-group">
                 <label>Company / Center Name</label>
                 <input type="text" className="input-field" placeholder="e.g. Meezan Electronic Scales"
@@ -227,6 +227,7 @@ export const RCList: React.FC = () => {
               <div className="form-group">
                 <label>Email Address</label>
                 <input type="email" className="input-field" placeholder="rc@example.com"
+                  autoComplete="off"
                   value={newEmail} onChange={e => setNewEmail(e.target.value)} required />
               </div>
               <div className="form-group">
@@ -236,6 +237,7 @@ export const RCList: React.FC = () => {
                     type={showPw ? 'text' : 'password'}
                     className="input-field"
                     placeholder="min. 6 characters"
+                    autoComplete="new-password"
                     value={newPassword}
                     onChange={e => setNewPassword(e.target.value)}
                     required minLength={6}
