@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { PackagePlus, Trash2 } from 'lucide-react';
-import type { Product } from '../../types';
 
 const INITIAL_STATE = {
   modelid: '',
