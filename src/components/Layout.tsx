@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -10,8 +10,8 @@ import {
   ClipboardList,
   Award,
   LogOut,
-  ChevronLeft,
-  ChevronRight,
+  Menu,
+  X,
   UserCircle,
   ShieldCheck,
   Settings,
@@ -21,7 +21,23 @@ export const Layout: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Desktop: collapsed = narrow icon-only sidebar
   const [collapsed, setCollapsed] = useState(false);
+  // Mobile: mobileOpen = slide-in overlay sidebar
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     await logout();
@@ -71,47 +87,107 @@ export const Layout: React.FC = () => {
     vct: 'VCT Technician',
   }[user.role];
 
+  const sidebarContent = (mobile: boolean) => (
+    <>
+      {/* Header / Logo */}
+      <div
+        className="sidebar-header"
+        style={{ cursor: mobile ? 'default' : 'pointer' }}
+        onClick={mobile ? undefined : () => setCollapsed(!collapsed)}
+        title={mobile ? undefined : (collapsed ? 'Expand sidebar' : 'Collapse sidebar')}
+      >
+        {mobile && (
+          <button
+            className="collapse-btn"
+            onClick={() => setMobileOpen(false)}
+            title="Close menu"
+            style={{ marginRight: '0.5rem' }}
+          >
+            <X size={20} />
+          </button>
+        )}
+        <div
+          className="logo-area"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            width: '100%',
+            justifyContent: (!mobile && collapsed) ? 'center' : 'flex-start',
+          }}
+        >
+          <img
+            src="/dark logo.png"
+            alt="YES LAB"
+            style={
+              (!mobile && collapsed)
+                ? { maxHeight: '40px', maxWidth: '64px', objectFit: 'contain' }
+                : { maxHeight: '40px', maxWidth: '160px', objectFit: 'contain' }
+            }
+          />
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="nav-menu">
+        {navItems.map((item) => (
+          <div
+            key={item.path}
+            className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
+            onClick={() => navigate(item.path)}
+            title={(!mobile && collapsed) ? item.label : undefined}
+          >
+            <div className="nav-icon">{item.icon}</div>
+            <span className="nav-label">{item.label}</span>
+          </div>
+        ))}
+      </nav>
+
+      {/* Role badge */}
+      {(mobile || !collapsed) && (
+        <div className="sidebar-footer">
+          <ShieldCheck size={14} />
+          <span>{roleLabel}</span>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="app-wrapper">
-      <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
-        <div className="sidebar-header">
-          {!collapsed && (
-            <div className="logo-area">
-              <div className="logo-icon"></div>
-              <span className="logo-text">GATC Flow</span>
-            </div>
-          )}
-          {collapsed && <div className="logo-icon mx-auto"></div>}
-          <button className="collapse-btn" onClick={() => setCollapsed(!collapsed)} title="Toggle sidebar">
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </button>
-        </div>
 
-        <nav className="nav-menu">
-          {navItems.map((item) => (
-            <div
-              key={item.path}
-              className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
-              onClick={() => navigate(item.path)}
-              title={collapsed ? item.label : undefined}
-            >
-              <div className="nav-icon">{item.icon}</div>
-              <span className="nav-label">{item.label}</span>
-            </div>
-          ))}
-        </nav>
+      {/* ── Desktop Sidebar ── */}
+      {!isMobile && (
+        <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+          {sidebarContent(false)}
+        </aside>
+      )}
 
-        {/* Role badge at bottom of sidebar */}
-        {!collapsed && (
-          <div className="sidebar-footer">
-            <ShieldCheck size={14} />
-            <span>{roleLabel}</span>
-          </div>
-        )}
-      </aside>
+      {/* ── Mobile: Backdrop ── */}
+      {isMobile && mobileOpen && (
+        <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} />
+      )}
 
-      <main className={`main-content ${collapsed ? 'expanded' : ''}`}>
+      {/* ── Mobile: Slide-in Sidebar ── */}
+      {isMobile && (
+        <aside className={`sidebar sidebar-mobile ${mobileOpen ? 'mobile-open' : ''}`}>
+          {sidebarContent(true)}
+        </aside>
+      )}
+
+      {/* ── Main Content ── */}
+      <main className={`main-content ${(!isMobile && collapsed) ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}`}>
         <header className="top-bar glass">
+          {/* Mobile hamburger */}
+          {isMobile && (
+            <button
+              className="collapse-btn"
+              onClick={() => setMobileOpen(true)}
+              title="Open menu"
+              style={{ marginRight: '1rem' }}
+            >
+              <Menu size={22} />
+            </button>
+          )}
           <h1 className="page-title">{getPageTitle()}</h1>
           <div className="user-chip">
             <UserCircle size={20} className="text-blue" />

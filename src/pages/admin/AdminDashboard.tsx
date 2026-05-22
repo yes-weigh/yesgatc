@@ -61,9 +61,8 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ── User Breakdown + Config ── */}
-      <div className="grid-2 mt-6">
-
+      {/* ── User Breakdown ── */}
+      <div className="mt-6">
         {/* User counts */}
         <div className="panel glass">
           <div className="panel-header">
@@ -97,25 +96,6 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Global config */}
-        <div className="panel glass">
-          <div className="panel-header">
-            <h2>Global Configuration</h2>
-          </div>
-          <div className="panel-body">
-            <p className="text-muted text-md-soft mb-4">
-              Standard fee templates applied across all Regional Centers.
-            </p>
-            <div className="config-box">
-              <p>OV Standard Fee: <span className="highlight">₹150</span></p>
-              <p>RV Fee (incl. GST): <span className="highlight">₹295</span></p>
-            </div>
-            <button className="btn btn-primary mt-4" onClick={() => alert('Fee editor coming soon.')}>
-              Update Master Fees
-            </button>
           </div>
         </div>
       </div>

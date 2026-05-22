@@ -16,10 +16,21 @@ export interface User {
 }
 
 export interface Product {
-  id: string;
+  id: string; // The firestore ID
+  modelid: string; // Unique Model ID
   name: string;
-  ovFee: number;
-  rvFee: number;
+  typeOfInstrument: string;
+  manufacturerBrandSeries: string;
+  accuracyClass: string;
+  maximumCapacity: number;
+  minimumCapacity: number;
+  verificationScaleInterval: number;
+  unitOfMeasurement: 'kg' | 'g';
+  actualScaleInterval: number;
+  noOfVerificationIntervals: number;
+  maximumPermissibleError: number;
+  supplyVoltage: string;
+  modelApprovalNo: string;
 }
 
 export type JobType = 'OV' | 'RV';
