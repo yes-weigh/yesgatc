@@ -18,21 +18,11 @@ import {
   Settings,
 } from 'lucide-react';
 
-type NavLink = {
-  kind: 'link';
+type NavItem = {
   path: string;
   icon: React.ReactNode;
   label: string;
 };
-
-type NavGroup = {
-  kind: 'group';
-  label: string;
-  icon: React.ReactNode;
-  children: { path: string; icon: React.ReactNode; label: string }[];
-};
-
-type NavEntry = NavLink | NavGroup;
 
 export const Layout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -60,55 +50,40 @@ export const Layout: React.FC = () => {
 
   if (!user) return null;
 
-  const getNavEntries = (): NavEntry[] => {
+  const getNavItems = (): NavItem[] => {
     switch (user.role) {
       case 'super_admin':
         return [
-          { kind: 'link', path: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          {
-            kind: 'group',
-            label: 'Regional Center',
-            icon: <Building2 size={20} />,
-            children: [
-              { path: '/admin/rc', icon: <Building2 size={18} />, label: 'Regional Centers' },
-              { path: '/admin/vct', icon: <Users size={18} />, label: 'VCT' },
-            ],
-          },
-          { kind: 'link', path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
-          { kind: 'link', path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { path: '/admin/rc', icon: <Building2 size={20} />, label: 'Regional Centers' },
+          { path: '/admin/vct', icon: <Users size={20} />, label: 'VCT' },
+          { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
+          { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
         ];
       case 'rc_admin':
         return [
-          { kind: 'link', path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { kind: 'link', path: '/rc/vct', icon: <Users size={20} />, label: 'My Technicians' },
-          { kind: 'link', path: '/rc/queue', icon: <ClipboardList size={20} />, label: 'Job Queue' },
-          { kind: 'link', path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
-          { kind: 'link', path: '/rc/profile', icon: <Settings size={20} />, label: 'My Profile' },
+          { path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { path: '/rc/vct', icon: <Users size={20} />, label: 'My Technicians' },
+          { path: '/rc/queue', icon: <ClipboardList size={20} />, label: 'Job Queue' },
+          { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My Profile' },
         ];
       case 'vct':
         return [
-          { kind: 'link', path: '/vct', icon: <ClipboardList size={20} />, label: 'Job Queue' },
-          { kind: 'link', path: '/vct/certificates', icon: <Award size={20} />, label: 'Certificates' },
-          { kind: 'link', path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/vct', icon: <ClipboardList size={20} />, label: 'Job Queue' },
+          { path: '/vct/certificates', icon: <Award size={20} />, label: 'Certificates' },
+          { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
         ];
       default:
         return [];
     }
   };
 
-  const navEntries = getNavEntries();
+  const navItems = getNavItems();
 
   const getPageTitle = () => {
-    for (const entry of navEntries) {
-      if (entry.kind === 'link' && entry.path === location.pathname) {
-        return entry.label;
-      }
-      if (entry.kind === 'group') {
-        const child = entry.children.find(c => c.path === location.pathname);
-        if (child) return child.label;
-      }
-    }
-    return 'Dashboard';
+    const item = navItems.find(n => n.path === location.pathname);
+    return item ? item.label : 'Dashboard';
   };
 
   const roleLabel = {
@@ -117,96 +92,67 @@ export const Layout: React.FC = () => {
     vct: 'VCT Technician',
   }[user.role];
 
-  const renderNavLink = (
-    path: string,
-    icon: React.ReactNode,
-    label: string,
-    sub = false,
-  ) => (
-    <div
-      key={path}
-      className={`nav-item${sub ? ' nav-item--sub' : ''} ${location.pathname === path ? 'active' : ''}`}
-      onClick={() => navigate(path)}
-      title={!isMobile && collapsed ? label : undefined}
-    >
-      <div className="nav-icon">{icon}</div>
-      <span className="nav-label">{label}</span>
-    </div>
-  );
-
-  const sidebarContent = (mobile: boolean) => {
-    const showLabels = mobile || !collapsed;
-
-    return (
-      <>
-        <div
-          className="sidebar-header"
-          style={{ cursor: mobile ? 'default' : 'pointer' }}
-          onClick={mobile ? undefined : () => setCollapsed(!collapsed)}
-          title={mobile ? undefined : collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {mobile && (
-            <button
-              className="collapse-btn"
-              onClick={() => setMobileOpen(false)}
-              title="Close menu"
-              style={{ marginRight: '0.5rem' }}
-            >
-              <X size={20} />
-            </button>
-          )}
-          <div
-            className="logo-area"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              width: '100%',
-              justifyContent: !mobile && collapsed ? 'center' : 'flex-start',
-            }}
+  const sidebarContent = (mobile: boolean) => (
+    <>
+      <div
+        className="sidebar-header"
+        style={{ cursor: mobile ? 'default' : 'pointer' }}
+        onClick={mobile ? undefined : () => setCollapsed(!collapsed)}
+        title={mobile ? undefined : collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {mobile && (
+          <button
+            className="collapse-btn"
+            onClick={() => setMobileOpen(false)}
+            title="Close menu"
+            style={{ marginRight: '0.5rem' }}
           >
-            <img
-              src="/dark logo.png"
-              alt="YES LAB"
-              style={
-                !mobile && collapsed
-                  ? { maxHeight: '40px', maxWidth: '64px', objectFit: 'contain' }
-                  : { maxHeight: '40px', maxWidth: '160px', objectFit: 'contain' }
-              }
-            />
-          </div>
-        </div>
-
-        <nav className="nav-menu">
-          {navEntries.map(entry => {
-            if (entry.kind === 'link') {
-              return renderNavLink(entry.path, entry.icon, entry.label);
-            }
-
-            const groupActive = entry.children.some(c => c.path === location.pathname);
-
-            return (
-              <div key={entry.label} className={`nav-group${groupActive ? ' nav-group--active' : ''}`}>
-                {showLabels && (
-                  <div className="nav-group-label">
-                    <span className="nav-group-label-icon">{entry.icon}</span>
-                    <span>{entry.label}</span>
-                  </div>
-                )}
-                {entry.children.map(child => renderNavLink(child.path, child.icon, child.label, showLabels))}
-              </div>
-            );
-          })}
-        </nav>
-
-        {showLabels && (
-          <div className="sidebar-footer">
-            <ShieldCheck size={14} />
-            <span>{roleLabel}</span>
-          </div>
+            <X size={20} />
+          </button>
         )}
-      </>
-    );
-  };
+        <div
+          className="logo-area"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            width: '100%',
+            justifyContent: !mobile && collapsed ? 'center' : 'flex-start',
+          }}
+        >
+          <img
+            src="/dark logo.png"
+            alt="YES LAB"
+            style={
+              !mobile && collapsed
+                ? { maxHeight: '40px', maxWidth: '64px', objectFit: 'contain' }
+                : { maxHeight: '40px', maxWidth: '160px', objectFit: 'contain' }
+            }
+          />
+        </div>
+      </div>
+
+      <nav className="nav-menu">
+        {navItems.map(item => (
+          <div
+            key={item.path}
+            className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
+            onClick={() => navigate(item.path)}
+            title={!mobile && collapsed ? item.label : undefined}
+          >
+            <div className="nav-icon">{item.icon}</div>
+            <span className="nav-label">{item.label}</span>
+          </div>
+        ))}
+      </nav>
+
+      {(mobile || !collapsed) && (
+        <div className="sidebar-footer">
+          <ShieldCheck size={14} />
+          <span>{roleLabel}</span>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="app-wrapper">
