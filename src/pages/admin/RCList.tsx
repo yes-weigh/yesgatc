@@ -66,9 +66,9 @@ function rcHasStandardWeightsCert(rc: FirestoreUserDoc): boolean {
 }
 
 function formatRcCertDueDate(rc: FirestoreUserDoc): string {
-  const iso =
-    rc.standardWeightsCertExpiry?.trim() ||
-    standardWeightsCertExpiryFromDate(rc.standardWeightsCertDate ?? '');
+  const iso = rc.standardWeightsCertDate?.trim()
+    ? standardWeightsCertExpiryFromDate(rc.standardWeightsCertDate)
+    : rc.standardWeightsCertExpiry?.trim() || '';
   if (!iso) return '—';
   const d = new Date(`${iso}T12:00:00`);
   if (Number.isNaN(d.getTime())) return iso;

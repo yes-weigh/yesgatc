@@ -1,13 +1,12 @@
 import type { FirestoreUserDoc } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
 
-/** Certificate date + 1 year + 1 day (YYYY-MM-DD). */
+/** Certificate date + 1 year (YYYY-MM-DD). */
 export function standardWeightsCertExpiryFromDate(certDate: string): string {
   if (!certDate.trim()) return '';
   const d = new Date(`${certDate.trim()}T12:00:00`);
   if (Number.isNaN(d.getTime())) return '';
   d.setFullYear(d.getFullYear() + 1);
-  d.setDate(d.getDate() + 1);
   return d.toISOString().slice(0, 10);
 }
 

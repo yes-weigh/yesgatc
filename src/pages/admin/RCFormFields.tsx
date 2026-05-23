@@ -236,7 +236,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
               readOnly
               tabIndex={-1}
               aria-readonly="true"
-              title="Certificate date + 1 year + 1 day"
+              title="Certificate date + 1 year"
             />
           </div>
           <UploadField

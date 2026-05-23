@@ -260,8 +260,9 @@ export const RCProfile: React.FC = () => {
               icon={<FileText size={16} />}
               label="Due date"
               value={
-                profile.standardWeightsCertExpiry ||
-                standardWeightsCertExpiryFromDate(profile.standardWeightsCertDate ?? '')
+                profile.standardWeightsCertDate
+                  ? standardWeightsCertExpiryFromDate(profile.standardWeightsCertDate)
+                  : profile.standardWeightsCertExpiry || ''
               }
               editing={false}
               readOnly
