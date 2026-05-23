@@ -4,11 +4,14 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { isValidPhone, normalizePhone, requireValidEmail } from '../../lib/contactFields';
-import { Building2, CreditCard, MapPin, FileText, Save, Pencil, X, Mail, Phone } from 'lucide-react';
+import { Building2, CreditCard, MapPin, FileText, Save, Pencil, X, Mail, Phone, User, ExternalLink } from 'lucide-react';
+import { standardWeightsCertExpiryFromDate } from '../../lib/rcProfileFields';
 import type { FirestoreUserDoc } from '../../types';
 
 interface RCProfile extends FirestoreUserDoc {
   companyName: string;
+  contactPerson: string;
+  place: string;
   address: string;
   gstNumber: string;
   email: string;
@@ -99,11 +102,14 @@ export const RCProfile: React.FC = () => {
     }
 
     setSaving(true);
+    const place = (draft.place ?? draft.address ?? '').trim();
     const updates: Partial<FirestoreUserDoc> = {
       companyName: draft.companyName ?? '',
-      address: draft.address ?? '',
+      contactPerson: (draft.contactPerson ?? '').trim(),
+      place,
+      address: place,
       gstNumber: draft.gstNumber ?? '',
-      username: draft.username ?? profile.username ?? '',
+      username: draft.companyName ?? profile.username ?? '',
       email: (draft.email ?? '').trim(),
       phone: normalizePhone(draft.phone ?? ''),
     };
@@ -199,6 +205,14 @@ export const RCProfile: React.FC = () => {
               placeholder="10-digit mobile"
             />
             <Field
+              icon={<User size={16} />}
+              label="Contact Person"
+              value={p.contactPerson ?? ''}
+              editing={editing}
+              onChange={set('contactPerson')}
+              placeholder="Primary contact name"
+            />
+            <Field
               icon={<FileText size={16} />}
               label="GST Number (GSTIN)"
               value={p.gstNumber ?? ''}
@@ -208,21 +222,62 @@ export const RCProfile: React.FC = () => {
             />
             <Field
               icon={<MapPin size={16} />}
-              label="Full Address"
-              value={p.address ?? ''}
+              label="Place"
+              value={p.place ?? p.address ?? ''}
               editing={editing}
-              onChange={set('address')}
-              placeholder="Street, City, State, PIN"
-              multiline
+              onChange={set('place')}
+              placeholder="City / town / area with pin code"
+            />
+          </div>
+
+          <div className="profile-grid mt-6 pt-6 border-t border-subtle">
+            <p className="col-span-all text-muted text-sm font-medium mb-2">Standard weights certificate (managed by Super Admin)</p>
+            <Field
+              icon={<FileText size={16} />}
+              label="Certificate Number"
+              value={profile.standardWeightsCertNumber ?? ''}
+              editing={false}
+              readOnly
+              onChange={() => {}}
             />
             <Field
-              icon={<Building2 size={16} />}
-              label="Display Name / Contact Person"
-              value={p.username ?? ''}
-              editing={editing}
-              onChange={set('username')}
-              placeholder="e.g. Admin - Meezan"
+              icon={<FileText size={16} />}
+              label="Certificate Date"
+              value={profile.standardWeightsCertDate ?? ''}
+              editing={false}
+              readOnly
+              onChange={() => {}}
             />
+            <Field
+              icon={<FileText size={16} />}
+              label="Due date"
+              value={
+                profile.standardWeightsCertExpiry ||
+                standardWeightsCertExpiryFromDate(profile.standardWeightsCertDate ?? '')
+              }
+              editing={false}
+              readOnly
+              onChange={() => {}}
+            />
+            <div className="profile-field col-span-all">
+              <div className="profile-field-label">
+                <span className="profile-icon"><FileText size={16} /></span>
+                <span>Certificate Document</span>
+              </div>
+              {profile.standardWeightsCertUrl ? (
+                <a
+                  href={profile.standardWeightsCertUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary text-sm inline-flex items-center gap-1.5 mt-1"
+                >
+                  <ExternalLink size={14} />
+                  {profile.standardWeightsCertName || 'View certificate'}
+                </a>
+              ) : (
+                <p className="profile-value text-muted">Not uploaded</p>
+              )}
+            </div>
           </div>
 
           <div className="profile-meta-bar mt-6">

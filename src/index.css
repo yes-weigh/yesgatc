@@ -649,6 +649,11 @@ select.input-field option {
   vertical-align: middle;
 }
 
+.data-table--rc .rc-col-serial {
+  width: 3rem;
+  text-align: center;
+}
+
 .data-table--rc .rc-col-company {
   width: auto;
 }
@@ -659,13 +664,35 @@ select.input-field option {
 }
 
 .data-table--rc .rc-col-vcts,
-.data-table--rc .rc-col-jobs {
+.data-table--rc .rc-col-jobs,
+.data-table--rc .rc-col-status {
   width: 9rem;
   text-align: center;
 }
 
 .data-table--rc .rc-col-actions {
   width: 6.5rem;
+}
+
+.rc-status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rc-status-badge--active {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.rc-status-badge--inactive {
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.22);
 }
 
 .data-table--rc .table-cell-truncate {
@@ -1015,16 +1042,154 @@ select.input-field option {
   flex-direction: column;
 }
 
+.modal-overlay.rc-modal-overlay {
+  overflow: hidden;
+  align-items: center;
+  padding: 0.75rem;
+}
+
 .modal-dialog.rc-modal {
-  max-width: min(92vw, 44rem);
+  max-width: min(96vw, 76rem);
+  max-height: calc(100vh - 1.5rem);
+  margin: auto;
 }
 
-.rc-form-body {
-  padding: 1.25rem 1.5rem;
+.product-modal--wide.rc-modal .product-form-panel,
+.product-modal--wide.rc-modal .product-form {
+  flex: none;
+  min-height: 0;
 }
 
-.rc-form-body .vct-create-grid {
-  gap: 1rem 1.25rem;
+.product-modal--wide.rc-modal .product-form-body {
+  overflow: visible;
+  flex: none;
+  padding: 0.45rem 0.85rem 0.35rem;
+}
+
+.product-modal--wide.rc-modal .product-form-topbar {
+  padding: 0.5rem 0.85rem;
+  align-items: center;
+}
+
+.product-modal--wide.rc-modal .product-form-topbar h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.product-modal--wide.rc-modal .product-form-footer {
+  padding: 0.45rem 0.85rem;
+}
+
+.rc-form-topbar-error {
+  margin: 0.2rem 0 0;
+  min-height: 1rem;
+  font-size: 0.75rem;
+  color: var(--accent-red, #f87171);
+  line-height: 1.25;
+}
+
+.rc-form-flat {
+  gap: 0.35rem;
+}
+
+.rc-form-flat .product-form-flat-row {
+  padding: 0.35rem 0.5rem;
+}
+
+.rc-form-grid {
+  display: grid;
+  gap: 0.35rem 0.5rem;
+  width: 100%;
+}
+
+.rc-form-grid--main {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.rc-form-grid--cert {
+  grid-template-columns: 0.9fr 0.8fr 0.7fr 1.4fr;
+  align-items: stretch;
+}
+
+.rc-form-row-cert .product-form-flat-row-title {
+  font-size: 0.65rem;
+}
+
+.rc-form-aadhar-readonly label {
+  font-size: 0.72rem;
+  margin-bottom: 0.15rem;
+}
+
+.rc-form-aadhar-value {
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border-glass);
+}
+
+.product-modal--wide.rc-modal .product-upload-field--compact {
+  min-height: 3rem;
+}
+
+.product-modal--wide.rc-modal .product-upload-field--compact .product-upload-field-head {
+  width: 4.5rem;
+  padding: 0.35rem 0.45rem;
+}
+
+.product-modal--wide.rc-modal .product-upload-preview--compact .product-upload-preview-img,
+.product-modal--wide.rc-modal .product-upload-preview--compact .product-upload-preview-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.product-modal--wide.rc-modal .product-upload-preview-actions {
+  margin-top: 0.15rem;
+  gap: 0.25rem;
+}
+
+.product-modal--wide.rc-modal .product-form-flat .form-group label {
+  font-size: 0.72rem;
+  margin-bottom: 0.15rem;
+}
+
+.product-modal--wide.rc-modal .product-form-flat .input-field {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8125rem;
+}
+
+.product-modal--wide.rc-modal .product-form-flat-row--scale {
+  grid-template-columns: auto 1fr;
+}
+
+@media (max-width: 900px) {
+  .rc-form-grid--main {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rc-form-grid--cert {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .rc-form-grid--cert .product-upload-field--compact {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 1100px) {
+  .product-modal--wide.rc-modal .product-form-body {
+    overflow: visible;
+    max-height: none;
+    flex: none;
+  }
+
+  .product-modal--wide.rc-modal .product-form-panel,
+  .product-modal--wide.rc-modal .product-form {
+    flex: none;
+    min-height: auto;
+  }
 }
 
 .product-modal--wide .product-form-topbar {

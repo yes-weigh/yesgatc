@@ -56,6 +56,8 @@ export const UploadField: React.FC<{
   submitting: boolean;
   variant?: 'image' | 'document';
   compact?: boolean;
+  /** Keep dropzone visible (disabled) instead of swapping to the info panel */
+  uploadDisabled?: boolean;
 }> = ({
   label,
   hint,
@@ -72,6 +74,7 @@ export const UploadField: React.FC<{
   submitting,
   variant = 'document',
   compact = false,
+  uploadDisabled = false,
 }) => (
   <div
     className={`product-upload-field product-upload-field--${variant}${compact ? ' product-upload-field--compact' : ''}`}
@@ -82,7 +85,7 @@ export const UploadField: React.FC<{
     </div>
 
     <div className="product-upload-field-body">
-      {disabledReason ? (
+      {disabledReason && !uploadDisabled ? (
         <div className="product-upload-disabled">
           <Info size={16} className="text-muted shrink-0" />
           <p>{disabledReason}</p>
@@ -102,8 +105,10 @@ export const UploadField: React.FC<{
             <button
               type="button"
               className={`product-upload-dropzone${compact ? ' product-upload-dropzone--compact' : ''}`}
-              onClick={() => inputRef.current?.click()}
-              disabled={submitting}
+              onMouseDown={e => uploadDisabled && e.preventDefault()}
+              onClick={() => !uploadDisabled && inputRef.current?.click()}
+              disabled={submitting || uploadDisabled}
+              title={uploadDisabled ? disabledReason : undefined}
             >
               <Upload size={compact ? 18 : 22} className="text-muted shrink-0" />
               <span className="product-upload-dropzone-text">

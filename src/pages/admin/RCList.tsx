@@ -9,23 +9,48 @@ import {
   assertAadharAvailable,
   authErrorMessage,
   createAuthUserForAadhar,
-  formatAadharDisplay,
   isValidAadhar,
   normalizeAadhar,
   syncAuthPassword,
 } from '../../lib/aadharAuth';
-import { isValidPhone, normalizePhone, requireValidEmail } from '../../lib/contactFields';
+import { isValidPhone, requireValidEmail } from '../../lib/contactFields';
+import {
+  EMPTY_RC_FORM,
+  buildRcFirestoreFields,
+  rcFormFromUser,
+  type RcFormValues,
+} from '../../lib/rcProfileFields';
+import {
+  deleteRcStorageFile,
+  uploadRcStandardWeightsCert,
+} from '../../lib/rcCertificateUpload';
+import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
   Building2, Users, Briefcase, RefreshCw,
-  Plus, Pencil, Trash2, Eye, EyeOff, Save, X,
+  Plus, Pencil, Trash2, Save, X,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
+import { RCFormFields } from './RCFormFields';
 
 interface RCRecord extends FirestoreUserDoc {
   uid: string;
   vctCount: number;
   totalJobs: number;
   completedJobs: number;
+}
+
+function certMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
+  if (!rc.standardWeightsCertUrl) return null;
+  return {
+    url: rc.standardWeightsCertUrl,
+    path: rc.standardWeightsCertPath || '',
+    name: rc.standardWeightsCertName || 'Certificate',
+    contentType: rc.standardWeightsCertContentType || '',
+  };
+}
+
+function rcHasStandardWeightsCert(rc: FirestoreUserDoc): boolean {
+  return Boolean(rc.standardWeightsCertUrl?.trim() || rc.standardWeightsCertPath?.trim());
 }
 
 export const RCList: React.FC = () => {
@@ -36,26 +61,18 @@ export const RCList: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newCompanyName, setNewCompanyName] = useState('');
-  const [newAadhar, setNewAadhar] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [newGstNumber, setNewGstNumber] = useState('');
-  const [newAddress, setNewAddress] = useState('');
-  const [newPassword, setNewPassword] = useState('');
+  const [formValues, setFormValues] = useState<RcFormValues>(EMPTY_RC_FORM);
   const [showPw, setShowPw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
 
   const [editingUid, setEditingUid] = useState<string | null>(null);
-  const [editCompanyName, setEditCompanyName] = useState('');
-  const [editEmail, setEditEmail] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [editGstNumber, setEditGstNumber] = useState('');
-  const [editAddress, setEditAddress] = useState('');
-  const [editPassword, setEditPassword] = useState('');
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [cert, setCert] = useState<ProductFileMeta | null>(null);
+  const [certRemoved, setCertRemoved] = useState(false);
+  const [certUploading, setCertUploading] = useState(false);
+  const [certProgress, setCertProgress] = useState(0);
+  const [pendingCertFile, setPendingCertFile] = useState<File | null>(null);
+
   const fetchRCs = useCallback(async () => {
     setLoading(true);
     const snap = await getDocs(collection(db, 'users'));
@@ -79,16 +96,24 @@ export const RCList: React.FC = () => {
   }, [fetchRCs]);
 
   const showForm = showAddForm || editingUid !== null;
-  const formBusy = submitting || savingEdit;
+  const formBusy = submitting || certUploading;
   const editingRc = editingUid ? rcList.find(r => r.uid === editingUid) : null;
+  const formMode = showAddForm ? 'create' : 'edit';
+
+  const resetCertState = () => {
+    setCert(null);
+    setCertRemoved(false);
+    setPendingCertFile(null);
+    setCertProgress(0);
+  };
 
   const handleCloseModal = () => {
     if (formBusy) return;
     setShowAddForm(false);
     setEditingUid(null);
-    setEditPassword('');
+    setFormValues(EMPTY_RC_FORM);
+    resetCertState();
     setError('');
-    setSuccess('');
   };
 
   useEffect(() => {
@@ -109,64 +134,117 @@ export const RCList: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [showForm, formBusy]);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const patchForm = (patch: Partial<RcFormValues>) => {
+    setFormValues(prev => ({ ...prev, ...patch }));
+  };
+
+  const validateForm = (mode: 'create' | 'edit'): string | null => {
+    if (!formValues.companyName.trim()) return 'Company / Center Name is required.';
+    if (!formValues.contactPerson.trim()) return 'Contact Person is required.';
+    if (!formValues.place.trim()) return 'Place is required.';
+    if (mode === 'create' && !isValidAadhar(normalizeAadhar(formValues.aadhar))) {
+      return 'Aadhar number must be exactly 12 digits.';
+    }
+    if (!requireValidEmail(formValues.email)) return 'A valid email is required.';
+    if (!isValidPhone(formValues.phone)) return 'Phone number must be exactly 10 digits.';
+    if (!formValues.gstNumber.trim()) return 'GST Number is required.';
+    if (mode === 'create' && formValues.password.length < 6) {
+      return 'Password must be at least 6 characters.';
+    }
+    if (mode === 'edit' && formValues.password.trim().length > 0 && formValues.password.trim().length < 6) {
+      return 'New password must be at least 6 characters.';
+    }
+    return null;
+  };
+
+  const handleCertSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const uid = editingUid;
+    if (!uid && formMode === 'create') {
+      setPendingCertFile(file);
+      setCertRemoved(false);
+      return;
+    }
+    if (!uid) return;
+
+    setCertUploading(true);
+    setCertProgress(0);
     setError('');
-    setSuccess('');
+    try {
+      const meta = await uploadRcStandardWeightsCert(uid, file, setCertProgress);
+      const prevPath = cert?.path || editingRc?.standardWeightsCertPath;
+      if (prevPath && prevPath !== meta.path) {
+        await deleteRcStorageFile(prevPath).catch(() => undefined);
+      }
+      setCert(meta);
+      setCertRemoved(false);
+      setPendingCertFile(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Certificate upload failed.');
+    } finally {
+      setCertUploading(false);
+    }
+  };
 
-    const cleanAadhar = normalizeAadhar(newAadhar);
+  const handleCertRemove = () => {
+    setCert(null);
+    setCertRemoved(true);
+    setPendingCertFile(null);
+  };
 
-    if (!newCompanyName.trim()) {
-      setError('Company Name is required.');
-      return;
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (showAddForm) {
+      await handleCreate();
+    } else if (editingUid) {
+      await handleSaveEdit(editingUid);
     }
-    if (!isValidAadhar(cleanAadhar)) {
-      setError('Aadhar number must be exactly 12 digits.');
-      return;
-    }
-    if (!requireValidEmail(newEmail)) {
-      setError('A valid contact email is required.');
-      return;
-    }
-    if (!isValidPhone(newPhone)) {
-      setError('Phone number must be exactly 10 digits.');
-      return;
-    }
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters.');
+  };
+
+  const handleCreate = async () => {
+    setError('');
+
+    const validationError = validateForm('create');
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
+    const cleanAadhar = normalizeAadhar(formValues.aadhar);
     setSubmitting(true);
     try {
       await assertAadharAvailable(cleanAadhar);
-      const cred = await createAuthUserForAadhar(cleanAadhar, newPassword);
+      const cred = await createAuthUserForAadhar(cleanAadhar, formValues.password);
+      const uid = cred.user.uid;
+
+      let certMeta: ProductFileMeta | null = null;
+      if (pendingCertFile) {
+        setCertUploading(true);
+        try {
+          certMeta = await uploadRcStandardWeightsCert(uid, pendingCertFile, setCertProgress);
+        } finally {
+          setCertUploading(false);
+        }
+      }
 
       const profile: FirestoreUserDoc = {
         aadhar: cleanAadhar,
         role: 'rc_admin',
-        username: newCompanyName.trim(),
-        clearTextPassword: newPassword,
         createdAt: new Date().toISOString(),
         createdByUid: user?.uid,
-        rcId: cred.user.uid,
-        companyName: newCompanyName.trim(),
-        address: newAddress.trim(),
-        gstNumber: newGstNumber.trim(),
-        email: newEmail.trim(),
-        phone: normalizePhone(newPhone),
-      };
-      await setDoc(doc(db, 'users', cred.user.uid), profile);
+        rcId: uid,
+        ...buildRcFirestoreFields(formValues, certMeta, {
+          includePassword: formValues.password,
+          isCreate: true,
+        }),
+      } as FirestoreUserDoc;
 
-      setSuccess(`✅ Center "${newCompanyName.trim()}" registered successfully.`);
-      setNewCompanyName('');
-      setNewAadhar('');
-      setNewEmail('');
-      setNewPhone('');
-      setNewGstNumber('');
-      setNewAddress('');
-      setNewPassword('');
-      setShowAddForm(false);
+      await setDoc(doc(db, 'users', uid), profile);
+
+      handleCloseModal();
       await fetchRCs();
     } catch (err: unknown) {
       setError(authErrorMessage(err, 'Failed to register regional center.'));
@@ -178,61 +256,54 @@ export const RCList: React.FC = () => {
   const startEdit = (rc: RCRecord) => {
     setShowAddForm(false);
     setError('');
-    setSuccess('');
     setEditingUid(rc.uid);
-    setEditCompanyName(rc.companyName || rc.username || '');
-    setEditEmail(rc.email || '');
-    setEditPhone(rc.phone || '');
-    setEditGstNumber(rc.gstNumber || '');
-    setEditAddress(rc.address || '');
-    setEditPassword('');
+    setFormValues(rcFormFromUser(rc));
+    setCert(certMetaFromUser(rc));
+    setCertRemoved(false);
+    setPendingCertFile(null);
   };
 
   const handleSaveEdit = async (uid: string) => {
-    if (!editCompanyName.trim()) {
-      alert('Company Name is required.');
-      return;
-    }
-    if (!requireValidEmail(editEmail)) {
-      alert('A valid contact email is required.');
-      return;
-    }
-    if (!isValidPhone(editPhone)) {
-      alert('Phone number must be exactly 10 digits.');
+    const validationError = validateForm('edit');
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     const rc = rcList.find(r => r.uid === uid);
     if (!rc) return;
 
-    setSavingEdit(true);
+    setSubmitting(true);
+    setError('');
     try {
-      const updates: Partial<FirestoreUserDoc> = {
-        companyName: editCompanyName.trim(),
-        username: editCompanyName.trim(),
-        gstNumber: editGstNumber.trim(),
-        address: editAddress.trim(),
-        email: editEmail.trim(),
-        phone: normalizePhone(editPhone),
-      };
+      const updates = buildRcFirestoreFields(formValues, cert, { isCreate: false });
 
-      if (editPassword.trim().length >= 6) {
+      if (certRemoved && !cert) {
+        updates.standardWeightsCertUrl = '';
+        updates.standardWeightsCertPath = '';
+        updates.standardWeightsCertName = '';
+        updates.standardWeightsCertContentType = '';
+        const oldPath = rc.standardWeightsCertPath;
+        if (oldPath) await deleteRcStorageFile(oldPath).catch(() => undefined);
+      }
+
+      if (formValues.password.trim().length >= 6) {
         const current = rc.clearTextPassword;
         if (!current) {
-          alert('Cannot reset password: stored credential missing.');
+          setError('Cannot reset password: stored credential missing.');
           return;
         }
-        await syncAuthPassword(rc.aadhar, current, editPassword.trim());
-        updates.clearTextPassword = editPassword.trim();
+        await syncAuthPassword(rc.aadhar, current, formValues.password.trim());
+        updates.clearTextPassword = formValues.password.trim();
       }
 
       await updateDoc(doc(db, 'users', uid), updates);
       handleCloseModal();
       await fetchRCs();
     } catch (err: unknown) {
-      alert(authErrorMessage(err, 'Failed to update regional center.'));
+      setError(authErrorMessage(err, 'Failed to update regional center.'));
     } finally {
-      setSavingEdit(false);
+      setSubmitting(false);
     }
   };
 
@@ -241,6 +312,7 @@ export const RCList: React.FC = () => {
       alert("You can't delete your own account.");
       return;
     }
+    const rc = rcList.find(r => r.uid === uid);
     const ok = await confirm({
       title: 'Delete regional center?',
       message: `Are you sure you want to delete Regional Center "${name}"?\nThis will remove their administration access. (Technicians are stored separately).`,
@@ -250,6 +322,9 @@ export const RCList: React.FC = () => {
     if (!ok) return;
 
     try {
+      if (rc?.standardWeightsCertPath) {
+        await deleteRcStorageFile(rc.standardWeightsCertPath).catch(() => undefined);
+      }
       await deleteDoc(doc(db, 'users', uid));
       await fetchRCs();
     } catch (err: unknown) {
@@ -259,9 +334,9 @@ export const RCList: React.FC = () => {
 
   const handleStartRegister = () => {
     setEditingUid(null);
-    setEditPassword('');
+    setFormValues(EMPTY_RC_FORM);
+    resetCertState();
     setError('');
-    setSuccess('');
     setShowAddForm(true);
   };
 
@@ -325,20 +400,24 @@ export const RCList: React.FC = () => {
             <table className="data-table data-table--rc">
               <thead>
                 <tr>
+                  <th className="rc-col-serial">#</th>
                   <th className="rc-col-company">Company</th>
                   <th className="rc-col-phone">Phone</th>
                   <th className="rc-col-vcts">VCTs</th>
                   <th className="rc-col-jobs">Jobs</th>
+                  <th className="rc-col-status">Status</th>
                   <th className="rc-col-actions text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {rcList.map(rc => {
+                {rcList.map((rc, index) => {
                   const completionRate =
                     rc.totalJobs > 0 ? Math.round((rc.completedJobs / rc.totalJobs) * 100) : 0;
                   const company = rc.companyName || rc.username || '—';
+                  const isActive = rcHasStandardWeightsCert(rc);
                   return (
                     <tr key={rc.uid}>
+                      <td className="rc-col-serial text-muted text-sm">{index + 1}</td>
                       <td className="rc-col-company font-medium table-cell-truncate" title={company}>
                         {company}
                       </td>
@@ -353,6 +432,18 @@ export const RCList: React.FC = () => {
                           {rc.totalJobs > 0 && (
                             <span className="text-muted"> ({completionRate}%)</span>
                           )}
+                        </span>
+                      </td>
+                      <td className="rc-col-status">
+                        <span
+                          className={`rc-status-badge ${isActive ? 'rc-status-badge--active' : 'rc-status-badge--inactive'}`}
+                          title={
+                            isActive
+                              ? 'Standard weights certificate uploaded'
+                              : 'Standard weights certificate not uploaded'
+                          }
+                        >
+                          {isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                       <td className="rc-col-actions text-right">
@@ -378,7 +469,7 @@ export const RCList: React.FC = () => {
                 })}
                 {rcList.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="text-center py-10 text-muted">
+                    <td colSpan={7} className="text-center py-10 text-muted">
                       No regional centers yet. Click &quot;Register Center&quot; to add one.
                     </td>
                   </tr>
@@ -393,14 +484,14 @@ export const RCList: React.FC = () => {
       {showForm &&
         createPortal(
           <div
-            className="modal-overlay"
+            className="modal-overlay rc-modal-overlay"
             role="dialog"
             aria-modal="true"
             aria-labelledby="rc-form-title"
             onClick={handleCloseModal}
           >
             <div
-              className="modal-dialog rc-modal glass"
+              className="modal-dialog product-modal product-modal--wide rc-modal glass"
               onClick={e => e.stopPropagation()}
             >
               <div className="product-form-panel">
@@ -417,10 +508,8 @@ export const RCList: React.FC = () => {
                         </>
                       )}
                     </h2>
-                    <p className="text-muted text-sm">
-                      {showAddForm
-                        ? 'Create a new RC admin account. Fields marked * are required.'
-                        : 'Update center profile and contact details.'}
+                    <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
+                      {error || '\u00a0'}
                     </p>
                   </div>
                   <button
@@ -434,228 +523,47 @@ export const RCList: React.FC = () => {
                   </button>
                 </div>
 
-                {showAddForm ? (
-                  <form onSubmit={handleCreate} className="product-form" autoComplete="off">
-                    <div className="product-form-body rc-form-body">
-                      {error && <div className="login-error product-form-alert">{error}</div>}
-                      {success && <div className="login-success product-form-alert">{success}</div>}
-                      <div className="vct-create-grid">
-                        <div className="form-group">
-                          <label>Company / Center Name *</label>
-                          <input
-                            type="text"
-                            className="input-field"
-                            placeholder="e.g. Meezan Electronic Scales"
-                            value={newCompanyName}
-                            onChange={e => setNewCompanyName(e.target.value)}
-                            required
-                            autoFocus
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Aadhar Number (login ID) *</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className="input-field"
-                            placeholder="12-digit Aadhar"
-                            value={newAadhar}
-                            onChange={e => setNewAadhar(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                            required
-                            maxLength={12}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Contact Email *</label>
-                          <input
-                            type="email"
-                            className="input-field"
-                            placeholder="rc@example.com"
-                            autoComplete="off"
-                            value={newEmail}
-                            onChange={e => setNewEmail(e.target.value)}
-                            required
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Primary Phone *</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className="input-field"
-                            placeholder="10-digit mobile"
-                            value={newPhone}
-                            onChange={e => setNewPhone(normalizePhone(e.target.value))}
-                            required
-                            maxLength={10}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>GST Number</label>
-                          <input
-                            type="text"
-                            className="input-field"
-                            placeholder="e.g. 27AAAAA1111A1Z1"
-                            value={newGstNumber}
-                            onChange={e => setNewGstNumber(e.target.value)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Password *</label>
-                          <div className="input-icon-wrap">
-                            <input
-                              type={showPw ? 'text' : 'password'}
-                              className="input-field"
-                              placeholder="min. 6 characters"
-                              autoComplete="new-password"
-                              value={newPassword}
-                              onChange={e => setNewPassword(e.target.value)}
-                              required
-                              minLength={6}
-                            />
-                            <button
-                              type="button"
-                              className="input-icon-right"
-                              onClick={() => setShowPw(p => !p)}
-                            >
-                              {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                          </div>
-                        </div>
-                        <div className="form-group col-span-all">
-                          <label>Address with Pin</label>
-                          <textarea
-                            className="input-field"
-                            rows={3}
-                            placeholder="Full physical postal address of the center with pin code"
-                            value={newAddress}
-                            onChange={e => setNewAddress(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="product-form-footer">
-                      <button type="button" className="btn btn-secondary" onClick={handleCloseModal} disabled={formBusy}>
-                        Cancel
-                      </button>
-                      <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={formBusy}>
-                        {submitting ? (
-                          <span className="spinner-inline"></span>
-                        ) : (
-                          <>
-                            <Plus size={16} /> Register Center
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  editingRc && (
-                    <div className="product-form">
-                      <div className="product-form-body rc-form-body">
-                        <div className="vct-create-grid">
-                          <div className="form-group">
-                            <label htmlFor="edit-company">Company Name *</label>
-                            <input
-                              id="edit-company"
-                              type="text"
-                              className="input-field"
-                              value={editCompanyName}
-                              onChange={e => setEditCompanyName(e.target.value)}
-                              required
-                              autoFocus
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Login Aadhar</label>
-                            <p className="text-sm text-muted py-2 m-0">
-                              {formatAadharDisplay(editingRc.aadhar)}
-                            </p>
-                          </div>
-                          <div className="form-group">
-                            <label htmlFor="edit-email">Contact Email *</label>
-                            <input
-                              id="edit-email"
-                              type="email"
-                              className="input-field"
-                              value={editEmail}
-                              onChange={e => setEditEmail(e.target.value)}
-                              required
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label htmlFor="edit-phone">Primary Phone *</label>
-                            <input
-                              id="edit-phone"
-                              type="text"
-                              inputMode="numeric"
-                              className="input-field"
-                              value={editPhone}
-                              onChange={e => setEditPhone(normalizePhone(e.target.value))}
-                              maxLength={10}
-                              required
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label htmlFor="edit-gst">GST Number</label>
-                            <input
-                              id="edit-gst"
-                              type="text"
-                              className="input-field"
-                              value={editGstNumber}
-                              onChange={e => setEditGstNumber(e.target.value)}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label htmlFor="edit-password">Reset Password (optional)</label>
-                            <input
-                              id="edit-password"
-                              type="text"
-                              className="input-field text-mono"
-                              placeholder="min. 6 characters to reset"
-                              value={editPassword}
-                              onChange={e => setEditPassword(e.target.value)}
-                            />
-                          </div>
-                          <div className="form-group col-span-all">
-                            <label htmlFor="edit-address">Address with Pin</label>
-                            <textarea
-                              id="edit-address"
-                              className="input-field"
-                              rows={3}
-                              value={editAddress}
-                              onChange={e => setEditAddress(e.target.value)}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="product-form-footer">
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={handleCloseModal}
-                          disabled={formBusy}
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-primary flex items-center gap-2"
-                          onClick={() => editingUid && handleSaveEdit(editingUid)}
-                          disabled={formBusy}
-                        >
-                          {savingEdit ? (
-                            <span className="spinner-inline"></span>
-                          ) : (
-                            <>
-                              <Save size={18} /> Save Changes
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  )
-                )}
+                <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
+                  <div className="product-form-body">
+                    <RCFormFields
+                      mode={showAddForm ? 'create' : 'edit'}
+                      values={formValues}
+                      onChange={patchForm}
+                      cert={cert}
+                      certUploading={certUploading}
+                      certProgress={certProgress}
+                      onCertSelect={handleCertSelect}
+                      onCertRemove={handleCertRemove}
+                      submitting={submitting}
+                      showPassword={showPw}
+                      onTogglePassword={() => setShowPw(p => !p)}
+                      loginAadhar={editingRc?.aadhar}
+                    />
+                  </div>
+                  <div className="product-form-footer">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleCloseModal}
+                      disabled={formBusy}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={formBusy}>
+                      {formBusy ? (
+                        <span className="spinner-inline"></span>
+                      ) : showAddForm ? (
+                        <>
+                          <Plus size={16} /> Register Center
+                        </>
+                      ) : (
+                        <>
+                          <Save size={18} /> Save Changes
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           </div>,

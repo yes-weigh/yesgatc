@@ -98,6 +98,15 @@ export interface FirestoreUserDoc {
 
   // RC Admin business profile fields
   companyName?: string;
-  address?: string;
+  contactPerson?: string;
+  place?: string;
+  address?: string; // legacy; mirrored from place on save
   gstNumber?: string;
+  standardWeightsCertUrl?: string;
+  standardWeightsCertPath?: string;
+  standardWeightsCertName?: string;
+  standardWeightsCertContentType?: string;
+  standardWeightsCertNumber?: string;
+  standardWeightsCertDate?: string; // YYYY-MM-DD
+  standardWeightsCertExpiry?: string; // YYYY-MM-DD, cert date + 1 year + 1 day (due date)
 }
