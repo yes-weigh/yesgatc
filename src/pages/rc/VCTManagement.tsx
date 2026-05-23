@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import {
   assertAadharAvailable,
   authErrorMessage,
@@ -60,6 +61,7 @@ const ModeToggle = ({
 
 export const VCTManagement: React.FC = () => {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [vcts, setVcts] = useState<VCTRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -219,7 +221,13 @@ export const VCTManagement: React.FC = () => {
   };
 
   const handleDelete = async (uid: string, identifier: string) => {
-    if (!confirm(`Remove technician "${identifier}" from your centre?`)) return;
+    const ok = await confirm({
+      title: 'Remove technician?',
+      message: `Remove technician "${identifier}" from your centre?`,
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
     await deleteDoc(doc(db, 'users', uid));
     await fetchVCTs();
   };

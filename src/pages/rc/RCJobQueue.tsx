@@ -3,6 +3,7 @@ import { deleteDoc, doc, collection, getDocs, query, where } from 'firebase/fire
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { ClipboardList, Search, Filter, Trash2, CheckCircle2, Clock, PlayCircle, Plus, X, Zap, Users } from 'lucide-react';
 import { formatTechnicianLabel } from '../../lib/contactFields';
 import type { FirestoreUserDoc, WorkflowMode } from '../../types';
@@ -18,6 +19,7 @@ interface VCTOption {
 export const RCJobQueue: React.FC = () => {
   const { user } = useAuth();
   const { jobs, createJob, products } = useAppContext();
+  const confirm = useConfirm();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -110,7 +112,13 @@ export const RCJobQueue: React.FC = () => {
   }, [myJobs, statusFilter, searchTerm]);
 
   const handleDelete = async (jobId: string) => {
-    if (!confirm('Are you sure you want to cancel and delete this job? This cannot be undone.')) return;
+    const ok = await confirm({
+      title: 'Delete job?',
+      message: 'Are you sure you want to cancel and delete this job? This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await deleteDoc(doc(db, 'jobs', jobId));
     } catch (err) {

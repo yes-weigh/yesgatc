@@ -3,6 +3,7 @@ import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc } from 'firebase
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import {
   assertAadharAvailable,
   authErrorMessage,
@@ -28,6 +29,7 @@ interface RCRecord extends FirestoreUserDoc {
 
 export const RCList: React.FC = () => {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const { jobs } = useAppContext();
   const [rcList, setRcList] = useState<RCRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -229,13 +231,13 @@ export const RCList: React.FC = () => {
       alert("You can't delete your own account.");
       return;
     }
-    if (
-      !confirm(
-        `⚠️ Are you sure you want to delete Regional Center "${name}"?\nThis will remove their administration access. (Technicians are stored separately).`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Delete regional center?',
+      message: `Are you sure you want to delete Regional Center "${name}"?\nThis will remove their administration access. (Technicians are stored separately).`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
 
     try {
       await deleteDoc(doc(db, 'users', uid));

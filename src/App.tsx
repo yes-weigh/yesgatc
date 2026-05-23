@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
+import { ConfirmProvider } from './context/ConfirmContext';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -22,6 +23,7 @@ const App: React.FC = () => {
   return (
     <AuthProvider>
       <AppProvider>
+        <ConfirmProvider>
         <Router>
           <Routes>
             <Route path="/login" element={<Login />} />
@@ -59,6 +61,7 @@ const App: React.FC = () => {
 
           </Routes>
         </Router>
+        </ConfirmProvider>
       </AppProvider>
     </AuthProvider>
   );

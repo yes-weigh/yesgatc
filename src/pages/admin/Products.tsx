@@ -1,5 +1,7 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppContext } from '../../context/AppContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { PackagePlus, Trash2, Pencil, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
 import { CalcLabel, DefaultsStrip, FormSection, UploadField } from './productFormUi';
 import type { Product } from '../../types';
@@ -33,6 +35,7 @@ const INITIAL_STATE = {
 
 export const Products: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct } = useAppContext();
+  const confirm = useConfirm();
   const [formData, setFormData] = useState(INITIAL_STATE);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -47,7 +50,9 @@ export const Products: React.FC = () => {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const formPanelRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  const formBusy = submitting || uploadingDoc || uploadingImage;
 
   const canUploadFiles = formData.modelid.trim().length > 0;
   const canUploadApprovalDoc =
@@ -87,9 +92,6 @@ export const Products: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (imageInputRef.current) imageInputRef.current.value = '';
     setShowForm(true);
-    requestAnimationFrame(() => {
-      formPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
   };
 
   const handleEditClick = (product: Product) => {
@@ -141,9 +143,7 @@ export const Products: React.FC = () => {
     }
     setUploadProgress(0);
     setImageUploadProgress(0);
-    requestAnimationFrame(() => {
-      formPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    setError(null);
   };
 
   const handleCancelEdit = () => {
@@ -158,6 +158,29 @@ export const Products: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (imageInputRef.current) imageInputRef.current.value = '';
   };
+
+  const handleOverlayClose = () => {
+    if (formBusy) return;
+    handleCancelEdit();
+  };
+
+  useEffect(() => {
+    if (!showForm) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showForm]);
+
+  useEffect(() => {
+    if (!showForm) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleOverlayClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showForm, formBusy]);
 
   const handleApprovalFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -235,7 +258,13 @@ export const Products: React.FC = () => {
 
   const handleRemoveProductImage = async () => {
     if (!productImage) return;
-    if (!confirm('Remove the product image?')) return;
+    const ok = await confirm({
+      title: 'Remove image?',
+      message: 'Remove the product image?',
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
 
     setUploadingImage(true);
     try {
@@ -252,13 +281,13 @@ export const Products: React.FC = () => {
 
   const handleDeleteProduct = async (product: Product) => {
     const label = product.name || product.modelid;
-    if (
-      !confirm(
-        `Delete product "${label}" (Model ID: ${product.modelid})?\nThis cannot be undone.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Delete product?',
+      message: `Delete product "${label}" (Model ID: ${product.modelid})?\nThis cannot be undone.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
 
     try {
       if (product.modelApprovalDocPath) {
@@ -286,7 +315,13 @@ export const Products: React.FC = () => {
 
   const handleRemoveApprovalDoc = async () => {
     if (!approvalDoc) return;
-    if (!confirm('Remove the uploaded model approval document?')) return;
+    const ok = await confirm({
+      title: 'Remove document?',
+      message: 'Remove the uploaded model approval document?',
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
 
     setUploadingDoc(true);
     try {
@@ -397,15 +432,13 @@ export const Products: React.FC = () => {
       <div className="panel glass mb-6">
         <div className="panel-header justify-between">
           <h2>Configured Products</h2>
-          {!showForm && (
-            <button
-              type="button"
-              className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
-              onClick={handleStartAdd}
-            >
-              <Plus size={16} /> Add Product
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
+            onClick={handleStartAdd}
+          >
+            <Plus size={16} /> Add Product
+          </button>
         </div>
         <div className="panel-body p-0 overflow-x-auto">
           <table className="data-table">
@@ -499,31 +532,47 @@ export const Products: React.FC = () => {
         </div>
       </div>
 
-      {showForm && (
-      <div ref={formPanelRef} className="panel glass product-form-panel mb-6 fade-in">
-        <div className="product-form-topbar">
-          <div className="product-form-topbar-text">
-            <h2>
-              <PackagePlus className="inline-icon" />
-              {editingId ? 'Edit Product' : 'Add New Product'}
-            </h2>
-            <p className="text-muted text-sm">
-              {editingId
-                ? 'Update model details, scale values, and attachments.'
-                : 'Complete each section below. Fields marked * are required.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-            onClick={handleCancelEdit}
+      {showForm &&
+        createPortal(
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="product-form-title"
+          onClick={handleOverlayClose}
+        >
+          <div
+            ref={modalRef}
+            className="modal-dialog product-modal glass"
+            onClick={e => e.stopPropagation()}
           >
-            <X size={15} /> Close
-          </button>
-        </div>
+            <div className="product-form-panel">
+              <div className="product-form-topbar">
+                <div className="product-form-topbar-text">
+                  <h2 id="product-form-title">
+                    <PackagePlus className="inline-icon" />
+                    {editingId ? 'Edit Product' : 'Add New Product'}
+                  </h2>
+                  <p className="text-muted text-sm">
+                    {editingId
+                      ? 'Update model details, scale values, and attachments.'
+                      : 'Complete each section below. Fields marked * are required.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
+                  onClick={handleCancelEdit}
+                  disabled={formBusy}
+                  aria-label="Close"
+                >
+                  <X size={15} /> Close
+                </button>
+              </div>
 
-        <form onSubmit={handleSubmit} className="product-form">
-          {error && <div className="login-error product-form-alert">{error}</div>}
+              <form onSubmit={handleSubmit} className="product-form">
+                <div className="product-form-body">
+                  {error && <div className="login-error product-form-alert">{error}</div>}
           <FormSection
             step={1}
             title="Basic details"
@@ -768,29 +817,37 @@ export const Products: React.FC = () => {
               />
             </div>
           </FormSection>
+                </div>
 
-          <div className="product-form-footer">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleCancelEdit}
-              disabled={submitting}
-            >
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={submitting}>
-              {submitting ? (
-                <span className="spinner-inline"></span>
-              ) : (
-                <>
-                  <Save size={18} />
-                  {editingId ? 'Update Product' : 'Save Product'}
-                </>
-              )}
-            </button>
+                <div className="product-form-footer">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleCancelEdit}
+                    disabled={formBusy}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary flex items-center gap-2"
+                    disabled={formBusy}
+                  >
+                    {submitting ? (
+                      <span className="spinner-inline"></span>
+                    ) : (
+                      <>
+                        <Save size={18} />
+                        {editingId ? 'Update Product' : 'Save Product'}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </form>
-      </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
