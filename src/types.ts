@@ -38,6 +38,10 @@ export interface Product {
   modelApprovalDocPath?: string;
   modelApprovalDocName?: string;
   modelApprovalDocContentType?: string;
+  productImageUrl?: string;
+  productImagePath?: string;
+  productImageName?: string;
+  productImageContentType?: string;
 }
 
 export type JobType = 'OV' | 'RV';

@@ -808,6 +808,15 @@ select.input-field option {
   border: 1px solid var(--border-glass);
 }
 
+.approval-doc-thumb-lg {
+  width: 72px;
+  height: 72px;
+}
+
+.product-image-upload {
+  background: rgba(59, 130, 246, 0.05);
+}
+
 .approval-doc-meta {
   min-width: 0;
 }

@@ -3,7 +3,7 @@ import { auth, storage } from '../firebase';
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
-const ACCEPTED_TYPES = new Set([
+const APPROVAL_TYPES = new Set([
   'application/pdf',
   'image/jpeg',
   'image/png',
@@ -11,12 +11,22 @@ const ACCEPTED_TYPES = new Set([
   'image/gif',
 ]);
 
-export interface ModelApprovalDocMeta {
+const IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
+
+export interface ProductFileMeta {
   url: string;
   path: string;
   name: string;
   contentType: string;
 }
+
+/** @deprecated Use ProductFileMeta */
+export type ModelApprovalDocMeta = ProductFileMeta;
 
 export function sanitizeModelIdForStorage(modelid: string): string {
   const s = modelid.trim().replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -24,7 +34,7 @@ export function sanitizeModelIdForStorage(modelid: string): string {
 }
 
 export function validateApprovalFile(file: File): string | null {
-  if (!ACCEPTED_TYPES.has(file.type)) {
+  if (!APPROVAL_TYPES.has(file.type)) {
     return 'Only PDF and image files (JPEG, PNG, WebP, GIF) are allowed.';
   }
   if (file.size > MAX_BYTES) {
@@ -33,17 +43,28 @@ export function validateApprovalFile(file: File): string | null {
   return null;
 }
 
-export function buildApprovalStoragePath(modelid: string, file: File): string {
+export function validateProductImageFile(file: File): string | null {
+  if (!IMAGE_TYPES.has(file.type)) {
+    return 'Only image files (JPEG, PNG, WebP, GIF) are allowed.';
+  }
+  if (file.size > MAX_BYTES) {
+    return 'File must be 15 MB or smaller.';
+  }
+  return null;
+}
+
+function buildStoragePath(modelid: string, folder: string, file: File): string {
   const safeId = sanitizeModelIdForStorage(modelid);
   const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
   const stamp = Date.now();
-  return `products/${safeId}/model-approval/${stamp}${ext}`;
+  return `products/${safeId}/${folder}/${stamp}${ext}`;
 }
 
 function mapStorageError(err: unknown): Error {
-  const code = typeof err === 'object' && err !== null && 'code' in err
-    ? String((err as { code: string }).code)
-    : '';
+  const code =
+    typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code: string }).code)
+      : '';
   if (code === 'storage/unauthorized' || code === 'storage/unauthenticated') {
     return new Error(
       'Upload denied. Sign in again as Super Admin. If this persists, deploy Storage rules: firebase deploy --only storage',
@@ -52,20 +73,22 @@ function mapStorageError(err: unknown): Error {
   return err instanceof Error ? err : new Error('Upload failed');
 }
 
-export async function uploadModelApprovalDoc(
+async function uploadProductFile(
   modelid: string,
   file: File,
+  folder: string,
+  validate: (f: File) => string | null,
   onProgress?: (percent: number) => void,
-): Promise<ModelApprovalDocMeta> {
-  const validation = validateApprovalFile(file);
+): Promise<ProductFileMeta> {
+  const validation = validate(file);
   if (validation) throw new Error(validation);
 
   await auth.authStateReady();
   if (!auth.currentUser) {
-    throw new Error('You must be signed in to upload documents.');
+    throw new Error('You must be signed in to upload files.');
   }
 
-  const path = buildApprovalStoragePath(modelid, file);
+  const path = buildStoragePath(modelid, folder, file);
   const storageRef = ref(storage, path);
   const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
 
@@ -90,10 +113,29 @@ export async function uploadModelApprovalDoc(
   });
 }
 
-export async function deleteModelApprovalDoc(storagePath: string): Promise<void> {
+export function uploadModelApprovalDoc(
+  modelid: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ProductFileMeta> {
+  return uploadProductFile(modelid, file, 'model-approval', validateApprovalFile, onProgress);
+}
+
+export function uploadProductImage(
+  modelid: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ProductFileMeta> {
+  return uploadProductFile(modelid, file, 'product-image', validateProductImageFile, onProgress);
+}
+
+export async function deleteProductStorageFile(storagePath: string): Promise<void> {
   if (!storagePath) return;
   await deleteObject(ref(storage, storagePath));
 }
+
+/** @deprecated Use deleteProductStorageFile */
+export const deleteModelApprovalDoc = deleteProductStorageFile;
 
 export function isPdfContentType(contentType?: string): boolean {
   return contentType === 'application/pdf';

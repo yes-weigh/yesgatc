@@ -23,5 +23,10 @@ service firebase.storage {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin() || isAuthenticated();
     }
+
+    match /products/{modelId}/product-image/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || isAuthenticated();
+    }
   }
 }

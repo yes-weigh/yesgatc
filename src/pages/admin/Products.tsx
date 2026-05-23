@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { PackagePlus, Trash2, Pencil, Info, Upload, FileText, ExternalLink, X } from 'lucide-react';
+import { PackagePlus, Trash2, Pencil, Info, Upload, FileText, ExternalLink, X, Image as ImageIcon } from 'lucide-react';
 import type { Product } from '../../types';
 import {
   PRODUCT_CALC_TOOLTIPS,
@@ -9,10 +9,11 @@ import {
   parseProductNumber,
 } from '../../lib/productCalculations';
 import {
-  deleteModelApprovalDoc,
+  deleteProductStorageFile,
   isPdfContentType,
   uploadModelApprovalDoc,
-  type ModelApprovalDocMeta,
+  uploadProductImage,
+  type ProductFileMeta,
 } from '../../lib/productApprovalUpload';
 
 const INITIAL_STATE = {
@@ -45,13 +46,19 @@ export const Products: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [approvalDoc, setApprovalDoc] = useState<ModelApprovalDocMeta | null>(null);
+  const [approvalDoc, setApprovalDoc] = useState<ProductFileMeta | null>(null);
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [productImage, setProductImage] = useState<ProductFileMeta | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageUploadProgress, setImageUploadProgress] = useState(0);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const canUploadFiles = formData.modelid.trim().length > 0;
   const canUploadApprovalDoc =
-    formData.modelApprovalNo.trim().length > 0 && formData.modelid.trim().length > 0;
+    canUploadFiles && formData.modelApprovalNo.trim().length > 0;
 
   const maxNum = parseProductNumber(formData.maximumCapacity);
   const eNum = parseProductNumber(formData.verificationScaleInterval);
@@ -112,7 +119,18 @@ export const Products: React.FC = () => {
     } else {
       setApprovalDoc(null);
     }
+    if (product.productImageUrl && product.productImagePath) {
+      setProductImage({
+        url: product.productImageUrl,
+        path: product.productImagePath,
+        name: product.productImageName || 'Product image',
+        contentType: product.productImageContentType || 'image/jpeg',
+      });
+    } else {
+      setProductImage(null);
+    }
     setUploadProgress(0);
+    setImageUploadProgress(0);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -120,9 +138,12 @@ export const Products: React.FC = () => {
     setEditingId(null);
     setFormData(INITIAL_STATE);
     setApprovalDoc(null);
+    setProductImage(null);
     setUploadProgress(0);
+    setImageUploadProgress(0);
     setError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
   const handleApprovalFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,7 +170,7 @@ export const Products: React.FC = () => {
       setApprovalDoc(meta);
       if (previousPath && previousPath !== meta.path) {
         try {
-          await deleteModelApprovalDoc(previousPath);
+          await deleteProductStorageFile(previousPath);
         } catch {
           /* ignore orphan cleanup failures */
         }
@@ -159,6 +180,60 @@ export const Products: React.FC = () => {
     } finally {
       setUploadingDoc(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleProductImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!canUploadFiles) {
+      setError('Enter Model ID before uploading a product image.');
+      if (imageInputRef.current) imageInputRef.current.value = '';
+      return;
+    }
+
+    setError(null);
+    setUploadingImage(true);
+    setImageUploadProgress(0);
+
+    try {
+      const previousPath = productImage?.path;
+      const meta = await uploadProductImage(
+        formData.modelid,
+        file,
+        pct => setImageUploadProgress(pct),
+      );
+      setProductImage(meta);
+      if (previousPath && previousPath !== meta.path) {
+        try {
+          await deleteProductStorageFile(previousPath);
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Image upload failed');
+    } finally {
+      setUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveProductImage = async () => {
+    if (!productImage) return;
+    if (!confirm('Remove the product image?')) return;
+
+    setUploadingImage(true);
+    try {
+      await deleteProductStorageFile(productImage.path);
+      setProductImage(null);
+      setImageUploadProgress(0);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to remove image');
+    } finally {
+      setUploadingImage(false);
+      if (imageInputRef.current) imageInputRef.current.value = '';
     }
   };
 
@@ -175,7 +250,14 @@ export const Products: React.FC = () => {
     try {
       if (product.modelApprovalDocPath) {
         try {
-          await deleteModelApprovalDoc(product.modelApprovalDocPath);
+          await deleteProductStorageFile(product.modelApprovalDocPath);
+        } catch {
+          /* storage cleanup is best-effort */
+        }
+      }
+      if (product.productImagePath) {
+        try {
+          await deleteProductStorageFile(product.productImagePath);
         } catch {
           /* storage cleanup is best-effort */
         }
@@ -195,7 +277,7 @@ export const Products: React.FC = () => {
 
     setUploadingDoc(true);
     try {
-      await deleteModelApprovalDoc(approvalDoc.path);
+      await deleteProductStorageFile(approvalDoc.path);
       setApprovalDoc(null);
       setUploadProgress(0);
     } catch (err: unknown) {
@@ -261,6 +343,19 @@ export const Products: React.FC = () => {
               modelApprovalDocName: '',
               modelApprovalDocContentType: '',
             }),
+        ...(productImage
+          ? {
+              productImageUrl: productImage.url,
+              productImagePath: productImage.path,
+              productImageName: productImage.name,
+              productImageContentType: productImage.contentType,
+            }
+          : {
+              productImageUrl: '',
+              productImagePath: '',
+              productImageName: '',
+              productImageContentType: '',
+            }),
       };
 
       if (editingId) {
@@ -271,8 +366,11 @@ export const Products: React.FC = () => {
       setFormData(INITIAL_STATE);
       setEditingId(null);
       setApprovalDoc(null);
+      setProductImage(null);
       setUploadProgress(0);
+      setImageUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = '';
+      if (imageInputRef.current) imageInputRef.current.value = '';
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to save product');
     } finally {
@@ -374,6 +472,97 @@ export const Products: React.FC = () => {
                   <option value="g">g</option>
                 </select>
               </div>
+            </div>
+
+            <div className="model-approval-upload product-image-upload mt-4">
+              <label className="block text-sm font-medium text-muted mb-2">
+                Product Image <span className="text-muted font-normal">(optional)</span>
+              </label>
+
+              {!canUploadFiles ? (
+                <p className="text-muted text-sm">
+                  Enter <strong>Model ID</strong> to enable image upload.
+                </p>
+              ) : (
+                <>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="sr-only"
+                    onChange={handleProductImageSelect}
+                    disabled={uploadingImage || submitting}
+                  />
+
+                  {!productImage && !uploadingImage && (
+                    <button
+                      type="button"
+                      className="upload-box w-full"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={submitting}
+                    >
+                      <ImageIcon size={28} className="text-muted mb-2 mx-auto" />
+                      <span className="text-sm">Click to upload product image</span>
+                      <span className="text-xs text-muted block mt-1">JPEG, PNG, WebP, GIF · Max 15 MB</span>
+                    </button>
+                  )}
+
+                  {uploadingImage && (
+                    <div className="approval-upload-progress">
+                      <span className="spinner-inline"></span>
+                      <span className="text-sm text-muted">Uploading image… {imageUploadProgress}%</span>
+                      <div className="approval-progress-bar">
+                        <div
+                          className="approval-progress-fill"
+                          style={{ width: `${imageUploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {productImage && !uploadingImage && (
+                    <div className="approval-doc-card">
+                      <div className="approval-doc-preview">
+                        <img
+                          src={productImage.url}
+                          alt="Product"
+                          className="approval-doc-thumb approval-doc-thumb-lg"
+                        />
+                        <div className="approval-doc-meta">
+                          <p className="font-medium text-sm truncate">{productImage.name}</p>
+                          <p className="text-xs text-muted">Product image</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        <a
+                          href={productImage.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-secondary text-sm py-1 px-2 flex items-center gap-1"
+                        >
+                          <ExternalLink size={14} /> View
+                        </a>
+                        <button
+                          type="button"
+                          className="btn btn-secondary text-sm py-1 px-2"
+                          onClick={() => imageInputRef.current?.click()}
+                          disabled={submitting}
+                        >
+                          Replace
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary text-sm py-1 px-2 flex items-center gap-1 text-red"
+                          onClick={handleRemoveProductImage}
+                          disabled={submitting}
+                        >
+                          <X size={14} /> Remove
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             <div className="product-scale-sections">
@@ -511,7 +700,7 @@ export const Products: React.FC = () => {
                     accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
                     className="sr-only"
                     onChange={handleApprovalFileSelect}
-                    disabled={uploadingDoc || submitting}
+                    disabled={uploadingDoc || uploadingImage || submitting}
                   />
 
                   {!approvalDoc && !uploadingDoc && (
