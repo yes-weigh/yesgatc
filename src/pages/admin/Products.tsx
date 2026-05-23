@@ -543,7 +543,7 @@ export const Products: React.FC = () => {
         >
           <div
             ref={modalRef}
-            className="modal-dialog product-modal glass"
+            className="modal-dialog product-modal product-modal--wide glass"
             onClick={e => e.stopPropagation()}
           >
             <div className="product-form-panel">
@@ -573,12 +573,9 @@ export const Products: React.FC = () => {
               <form onSubmit={handleSubmit} className="product-form">
                 <div className="product-form-body">
                   {error && <div className="login-error product-form-alert">{error}</div>}
-          <FormSection
-            step={1}
-            title="Basic details"
-            description="Unique identifiers and display name for this product model."
-          >
-            <div className="product-form-grid">
+                  <div className="product-form-sections-grid">
+          <FormSection step={1} title="Basic details" compact>
+            <div className="product-form-grid product-form-grid--basic">
               <div className="form-group mb-0">
                 <label htmlFor="pf-modelid">Model ID *</label>
                 <input
@@ -605,7 +602,7 @@ export const Products: React.FC = () => {
                   onChange={handleChange}
                 />
               </div>
-              <div className="form-group mb-0 product-form-span-2">
+              <div className="form-group mb-0 product-form-span-name">
                 <label htmlFor="pf-name">Product Name *</label>
                 <input
                   id="pf-name"
@@ -642,104 +639,76 @@ export const Products: React.FC = () => {
             />
           </FormSection>
 
-          <FormSection
-            step={2}
-            title="Scale specifications"
-            description="Enter max capacity and verification interval; other values are calculated automatically."
-          >
-            <div className="product-scale-sections">
-              <div className="product-scale-section product-scale-section--manual">
-                <h4 className="product-scale-section-title">You enter</h4>
-                <div className="product-form-grid product-form-grid--2">
-                  <div className="form-group mb-0">
-                    <label htmlFor="pf-max">Maximum Capacity (kg) *</label>
-                    <input
-                      id="pf-max"
-                      type="number"
-                      step="any"
-                      name="maximumCapacity"
-                      className="input-field"
-                      placeholder="e.g. 30"
-                      value={formData.maximumCapacity}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                  <div className="form-group mb-0">
-                    <label htmlFor="pf-e">Verification Scale Interval e (g) *</label>
-                    <input
-                      id="pf-e"
-                      type="number"
-                      step="any"
-                      name="verificationScaleInterval"
-                      className="input-field"
-                      placeholder="e.g. 5"
-                      value={formData.verificationScaleInterval}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                </div>
+          <FormSection step={2} title="Scale specifications" compact>
+            <p className="product-scale-formula-hint text-muted text-xs mb-2">
+              <Info size={12} className="inline-icon-sm" /> Hover field icons for formulas.
+            </p>
+            <div className="product-form-grid product-form-grid--scale">
+              <div className="form-group mb-0">
+                <label htmlFor="pf-max">Max capacity (kg) *</label>
+                <input
+                  id="pf-max"
+                  type="number"
+                  step="any"
+                  name="maximumCapacity"
+                  className="input-field"
+                  placeholder="e.g. 30"
+                  value={formData.maximumCapacity}
+                  onChange={handleChange}
+                  required
+                />
               </div>
-
-              <div className="product-scale-section product-scale-section--auto">
-                <h4 className="product-scale-section-title">Calculated for you</h4>
-                <p className="product-scale-section-hint text-muted text-sm">
-                  Hover <Info size={12} className="inline-icon-sm" /> for formulas.
-                </p>
-                <div className="product-form-grid product-form-grid--3">
-                  <div className="form-group mb-0 calc-field">
-                    <CalcLabel
-                      label="Minimum Capacity (Min) (g)"
-                      tooltip={PRODUCT_CALC_TOOLTIPS.minimumCapacity}
-                    />
-                    <input
-                      type="text"
-                      className="input-field input-readonly"
-                      value={derivedDisplay.minimumCapacity}
-                      readOnly
-                      tabIndex={-1}
-                      title={PRODUCT_CALC_TOOLTIPS.minimumCapacity}
-                    />
-                  </div>
-                  <div className="form-group mb-0 calc-field">
-                    <CalcLabel
-                      label="Actual Scale Interval (d)"
-                      tooltip={PRODUCT_CALC_TOOLTIPS.actualScaleInterval}
-                    />
-                    <input
-                      type="text"
-                      className="input-field input-readonly"
-                      value={derivedDisplay.actualScaleInterval}
-                      readOnly
-                      tabIndex={-1}
-                      title={PRODUCT_CALC_TOOLTIPS.actualScaleInterval}
-                    />
-                  </div>
-                  <div className="form-group mb-0 calc-field">
-                    <CalcLabel
-                      label="No. of Verification Intervals (n)"
-                      tooltip={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals}
-                    />
-                    <input
-                      type="text"
-                      className="input-field input-readonly"
-                      value={derivedDisplay.noOfVerificationIntervals}
-                      readOnly
-                      tabIndex={-1}
-                      title={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals}
-                    />
-                  </div>
-                </div>
+              <div className="form-group mb-0">
+                <label htmlFor="pf-e">Interval e (g) *</label>
+                <input
+                  id="pf-e"
+                  type="number"
+                  step="any"
+                  name="verificationScaleInterval"
+                  className="input-field"
+                  placeholder="e.g. 5"
+                  value={formData.verificationScaleInterval}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div className="form-group mb-0 calc-field">
+                <CalcLabel label="Min (g)" tooltip={PRODUCT_CALC_TOOLTIPS.minimumCapacity} />
+                <input
+                  type="text"
+                  className="input-field input-readonly"
+                  value={derivedDisplay.minimumCapacity}
+                  readOnly
+                  tabIndex={-1}
+                  title={PRODUCT_CALC_TOOLTIPS.minimumCapacity}
+                />
+              </div>
+              <div className="form-group mb-0 calc-field">
+                <CalcLabel label="Interval d" tooltip={PRODUCT_CALC_TOOLTIPS.actualScaleInterval} />
+                <input
+                  type="text"
+                  className="input-field input-readonly"
+                  value={derivedDisplay.actualScaleInterval}
+                  readOnly
+                  tabIndex={-1}
+                  title={PRODUCT_CALC_TOOLTIPS.actualScaleInterval}
+                />
+              </div>
+              <div className="form-group mb-0 calc-field">
+                <CalcLabel label="Intervals n" tooltip={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals} />
+                <input
+                  type="text"
+                  className="input-field input-readonly"
+                  value={derivedDisplay.noOfVerificationIntervals}
+                  readOnly
+                  tabIndex={-1}
+                  title={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals}
+                />
               </div>
             </div>
           </FormSection>
 
-          <FormSection
-            step={3}
-            title="Compliance & approval"
-            description="Regulatory reference numbers and maximum permissible error."
-          >
+          <FormSection step={3} title="Compliance & approval" compact>
             <div className="product-form-grid product-form-grid--2">
               <div className="form-group mb-0">
                 <label htmlFor="pf-mpe">Maximum Permissible Error (MPE)</label>
@@ -769,11 +738,7 @@ export const Products: React.FC = () => {
             </div>
           </FormSection>
 
-          <FormSection
-            step={4}
-            title="Attachments"
-            description="Optional product photo and model approval certificate."
-          >
+          <FormSection step={4} title="Attachments" compact>
             <div className="product-form-upload-row">
               <UploadField
                 label="Product image"
@@ -817,6 +782,7 @@ export const Products: React.FC = () => {
               />
             </div>
           </FormSection>
+                  </div>
                 </div>
 
                 <div className="product-form-footer">

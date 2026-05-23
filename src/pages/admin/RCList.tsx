@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
@@ -33,7 +34,6 @@ export const RCList: React.FC = () => {
   const { jobs } = useAppContext();
   const [rcList, setRcList] = useState<RCRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const formPanelRef = useRef<HTMLDivElement>(null);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -56,8 +56,6 @@ export const RCList: React.FC = () => {
   const [editAddress, setEditAddress] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
-  const [revealedUids, setRevealedUids] = useState<Set<string>>(new Set());
-
   const fetchRCs = useCallback(async () => {
     setLoading(true);
     const snap = await getDocs(collection(db, 'users'));
@@ -80,20 +78,36 @@ export const RCList: React.FC = () => {
     Promise.resolve().then(() => fetchRCs());
   }, [fetchRCs]);
 
-  const scrollToForm = () => {
-    requestAnimationFrame(() => {
-      formPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+  const showForm = showAddForm || editingUid !== null;
+  const formBusy = submitting || savingEdit;
+  const editingRc = editingUid ? rcList.find(r => r.uid === editingUid) : null;
+
+  const handleCloseModal = () => {
+    if (formBusy) return;
+    setShowAddForm(false);
+    setEditingUid(null);
+    setEditPassword('');
+    setError('');
+    setSuccess('');
   };
 
-  const toggleReveal = (uid: string) => {
-    setRevealedUids(prev => {
-      const n = new Set(prev);
-      if (n.has(uid)) n.delete(uid);
-      else n.add(uid);
-      return n;
-    });
-  };
+  useEffect(() => {
+    if (!showForm) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showForm]);
+
+  useEffect(() => {
+    if (!showForm) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleCloseModal();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showForm, formBusy]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,18 +177,14 @@ export const RCList: React.FC = () => {
 
   const startEdit = (rc: RCRecord) => {
     setShowAddForm(false);
+    setError('');
+    setSuccess('');
     setEditingUid(rc.uid);
     setEditCompanyName(rc.companyName || rc.username || '');
     setEditEmail(rc.email || '');
     setEditPhone(rc.phone || '');
     setEditGstNumber(rc.gstNumber || '');
     setEditAddress(rc.address || '');
-    setEditPassword('');
-    scrollToForm();
-  };
-
-  const handleCancelEdit = () => {
-    setEditingUid(null);
     setEditPassword('');
   };
 
@@ -217,7 +227,7 @@ export const RCList: React.FC = () => {
       }
 
       await updateDoc(doc(db, 'users', uid), updates);
-      handleCancelEdit();
+      handleCloseModal();
       await fetchRCs();
     } catch (err: unknown) {
       alert(authErrorMessage(err, 'Failed to update regional center.'));
@@ -248,21 +258,15 @@ export const RCList: React.FC = () => {
   };
 
   const handleStartRegister = () => {
-    handleCancelEdit();
-    setShowAddForm(true);
-    scrollToForm();
-  };
-
-  const handleCancelRegister = () => {
-    setShowAddForm(false);
+    setEditingUid(null);
+    setEditPassword('');
     setError('');
     setSuccess('');
+    setShowAddForm(true);
   };
 
-  const editingRc = editingUid ? rcList.find(r => r.uid === editingUid) : null;
-
   return (
-    <div className="fade-in max-w-6xl mx-auto">
+    <div className="fade-in page-content">
       <div className="stats-grid mb-6">
         <div className="stat-card glass">
           <div className="stat-icon text-blue"><Building2 /></div>
@@ -288,7 +292,7 @@ export const RCList: React.FC = () => {
         </div>
       </div>
 
-      <div className="panel glass mb-6">
+      <div className="panel glass panel--table mb-6">
         <div className="panel-header justify-between">
           <div>
             <h2>
@@ -299,73 +303,59 @@ export const RCList: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {!showAddForm && !editingUid && (
-              <button
-                type="button"
-                className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
-                onClick={handleStartRegister}
-              >
-                <Plus size={16} /> Register Center
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
+              onClick={handleStartRegister}
+            >
+              <Plus size={16} /> Register Center
+            </button>
             <button className="btn-icon" onClick={fetchRCs} title="Refresh" type="button">
               <RefreshCw size={18} />
             </button>
           </div>
         </div>
-        <div className="panel-body p-0 overflow-x-auto">
+        <div className="panel-body p-0">
           {loading ? (
             <div className="flex justify-center py-16">
               <span className="spinner-inline large"></span>
             </div>
           ) : (
-            <table className="data-table">
+            <div className="table-scroll-wrap">
+            <table className="data-table data-table--rc">
               <thead>
                 <tr>
-                  <th>Company</th>
-                  <th>Aadhar (login)</th>
-                  <th>Email</th>
-                  <th>Phone</th>
-                  <th>GST</th>
-                  <th>VCTs</th>
-                  <th>Jobs</th>
-                  <th>Completed</th>
-                  <th>Rate</th>
-                  <th>Password</th>
-                  <th className="text-right">Actions</th>
+                  <th className="rc-col-company">Company</th>
+                  <th className="rc-col-phone">Phone</th>
+                  <th className="rc-col-vcts">VCTs</th>
+                  <th className="rc-col-jobs">Jobs</th>
+                  <th className="rc-col-actions text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rcList.map(rc => {
                   const completionRate =
                     rc.totalJobs > 0 ? Math.round((rc.completedJobs / rc.totalJobs) * 100) : 0;
+                  const company = rc.companyName || rc.username || '—';
                   return (
                     <tr key={rc.uid}>
-                      <td className="font-medium">{rc.companyName || rc.username || '—'}</td>
-                      <td className="text-mono text-sm">{formatAadharDisplay(rc.aadhar)}</td>
-                      <td className="text-sm">{rc.email || '—'}</td>
-                      <td className="text-sm">{rc.phone || '—'}</td>
-                      <td className="text-mono text-sm">{rc.gstNumber || '—'}</td>
-                      <td>{rc.vctCount}</td>
-                      <td>{rc.totalJobs}</td>
-                      <td className="text-green">{rc.completedJobs}</td>
-                      <td className="text-sm text-muted">{completionRate}%</td>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <span className="text-mono text-sm">
-                            {revealedUids.has(rc.uid) ? (rc.clearTextPassword ?? '—') : '••••••••'}
-                          </span>
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            onClick={() => toggleReveal(rc.uid)}
-                            title="Toggle password visibility"
-                          >
-                            {revealedUids.has(rc.uid) ? <EyeOff size={14} /> : <Eye size={14} />}
-                          </button>
-                        </div>
+                      <td className="rc-col-company font-medium table-cell-truncate" title={company}>
+                        {company}
                       </td>
-                      <td className="text-right">
+                      <td className="rc-col-phone text-sm">{rc.phone || '—'}</td>
+                      <td className="rc-col-vcts">{rc.vctCount}</td>
+                      <td className="rc-col-jobs">
+                        <span
+                          className="rc-jobs-summary"
+                          title={`${rc.completedJobs} completed of ${rc.totalJobs} jobs`}
+                        >
+                          {rc.totalJobs} · <span className="text-green">{rc.completedJobs} done</span>
+                          {rc.totalJobs > 0 && (
+                            <span className="text-muted"> ({completionRate}%)</span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="rc-col-actions text-right">
                         <button
                           type="button"
                           className="btn-icon text-blue mr-2"
@@ -388,253 +378,289 @@ export const RCList: React.FC = () => {
                 })}
                 {rcList.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="text-center py-10 text-muted">
+                    <td colSpan={5} className="text-center py-10 text-muted">
                       No regional centers yet. Click &quot;Register Center&quot; to add one.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>
 
-      <div ref={formPanelRef}>
-        {showAddForm && (
-          <div className="panel glass mb-6 fade-in">
-            <div className="panel-header justify-between">
-              <h2>
-                <Building2 className="inline-icon" /> Register New Regional Center
-              </h2>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1"
-                onClick={handleCancelRegister}
-              >
-                <X size={15} /> Close
-              </button>
-            </div>
-            <div className="panel-body">
-              {error && <div className="login-error mb-4">{error}</div>}
-              {success && <div className="login-success mb-4">{success}</div>}
-              <form onSubmit={handleCreate} className="vct-create-grid" autoComplete="off">
-                <div className="form-group">
-                  <label>Company / Center Name</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="e.g. Meezan Electronic Scales"
-                    value={newCompanyName}
-                    onChange={e => setNewCompanyName(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Aadhar Number (login ID)</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    className="input-field"
-                    placeholder="12-digit Aadhar"
-                    value={newAadhar}
-                    onChange={e => setNewAadhar(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                    required
-                    maxLength={12}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Contact Email</label>
-                  <input
-                    type="email"
-                    className="input-field"
-                    placeholder="rc@example.com"
-                    autoComplete="off"
-                    value={newEmail}
-                    onChange={e => setNewEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Primary Phone</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    className="input-field"
-                    placeholder="10-digit mobile"
-                    value={newPhone}
-                    onChange={e => setNewPhone(normalizePhone(e.target.value))}
-                    required
-                    maxLength={10}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>GST Number</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="e.g. 27AAAAA1111A1Z1"
-                    value={newGstNumber}
-                    onChange={e => setNewGstNumber(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Password</label>
-                  <div className="input-icon-wrap">
-                    <input
-                      type={showPw ? 'text' : 'password'}
-                      className="input-field"
-                      placeholder="min. 6 characters"
-                      autoComplete="new-password"
-                      value={newPassword}
-                      onChange={e => setNewPassword(e.target.value)}
-                      required
-                      minLength={6}
-                    />
-                    <button type="button" className="input-icon-right" onClick={() => setShowPw(p => !p)}>
-                      {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
+      {showForm &&
+        createPortal(
+          <div
+            className="modal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rc-form-title"
+            onClick={handleCloseModal}
+          >
+            <div
+              className="modal-dialog rc-modal glass"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="product-form-panel">
+                <div className="product-form-topbar">
+                  <div className="product-form-topbar-text">
+                    <h2 id="rc-form-title">
+                      {showAddForm ? (
+                        <>
+                          <Building2 className="inline-icon" /> Register Regional Center
+                        </>
+                      ) : (
+                        <>
+                          <Pencil className="inline-icon" /> Edit Regional Center
+                        </>
+                      )}
+                    </h2>
+                    <p className="text-muted text-sm">
+                      {showAddForm
+                        ? 'Create a new RC admin account. Fields marked * are required.'
+                        : 'Update center profile and contact details.'}
+                    </p>
                   </div>
-                </div>
-                <div className="form-group col-span-all">
-                  <label>Address with Pin</label>
-                  <textarea
-                    className="input-field"
-                    rows={3}
-                    placeholder="Full physical postal address of the center with pin code"
-                    value={newAddress}
-                    onChange={e => setNewAddress(e.target.value)}
-                  />
-                </div>
-                <div className="form-actions mt-2 col-span-all flex gap-2 justify-end">
-                  <button type="button" className="btn btn-secondary" onClick={handleCancelRegister}>
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={submitting}>
-                    {submitting ? (
-                      <span className="spinner-inline"></span>
-                    ) : (
-                      <>
-                        <Plus size={16} /> Register Center
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {editingUid && editingRc && (
-          <div className="panel glass mb-6 fade-in">
-            <div className="panel-header justify-between">
-              <h2>
-                <Pencil className="inline-icon" /> Edit Regional Center
-              </h2>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1"
-                onClick={handleCancelEdit}
-              >
-                <X size={15} /> Close
-              </button>
-            </div>
-            <div className="panel-body">
-              <div className="vct-create-grid">
-                <div className="form-group">
-                  <label htmlFor="edit-company">Company Name</label>
-                  <input
-                    id="edit-company"
-                    type="text"
-                    className="input-field"
-                    value={editCompanyName}
-                    onChange={e => setEditCompanyName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Login Aadhar</label>
-                  <p className="text-sm text-muted py-2">{formatAadharDisplay(editingRc.aadhar)}</p>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="edit-email">Contact Email</label>
-                  <input
-                    id="edit-email"
-                    type="email"
-                    className="input-field"
-                    value={editEmail}
-                    onChange={e => setEditEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="edit-phone">Primary Phone</label>
-                  <input
-                    id="edit-phone"
-                    type="text"
-                    inputMode="numeric"
-                    className="input-field"
-                    value={editPhone}
-                    onChange={e => setEditPhone(normalizePhone(e.target.value))}
-                    maxLength={10}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="edit-gst">GST Number</label>
-                  <input
-                    id="edit-gst"
-                    type="text"
-                    className="input-field"
-                    value={editGstNumber}
-                    onChange={e => setEditGstNumber(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="edit-password">Reset Password (optional)</label>
-                  <input
-                    id="edit-password"
-                    type="text"
-                    className="input-field text-mono"
-                    placeholder="min. 6 characters to reset"
-                    value={editPassword}
-                    onChange={e => setEditPassword(e.target.value)}
-                  />
-                </div>
-                <div className="form-group col-span-all">
-                  <label htmlFor="edit-address">Address with Pin</label>
-                  <textarea
-                    id="edit-address"
-                    className="input-field"
-                    rows={3}
-                    value={editAddress}
-                    onChange={e => setEditAddress(e.target.value)}
-                  />
-                </div>
-                <div className="form-actions mt-2 col-span-all flex gap-2 justify-end">
-                  <button type="button" className="btn btn-secondary" onClick={handleCancelEdit}>
-                    Cancel
-                  </button>
                   <button
                     type="button"
-                    className="btn btn-primary flex items-center gap-2"
-                    onClick={() => handleSaveEdit(editingUid)}
-                    disabled={savingEdit}
+                    className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
+                    onClick={handleCloseModal}
+                    disabled={formBusy}
+                    aria-label="Close"
                   >
-                    {savingEdit ? (
-                      <span className="spinner-inline"></span>
-                    ) : (
-                      <>
-                        <Save size={18} /> Save Changes
-                      </>
-                    )}
+                    <X size={15} /> Close
                   </button>
                 </div>
+
+                {showAddForm ? (
+                  <form onSubmit={handleCreate} className="product-form" autoComplete="off">
+                    <div className="product-form-body rc-form-body">
+                      {error && <div className="login-error product-form-alert">{error}</div>}
+                      {success && <div className="login-success product-form-alert">{success}</div>}
+                      <div className="vct-create-grid">
+                        <div className="form-group">
+                          <label>Company / Center Name *</label>
+                          <input
+                            type="text"
+                            className="input-field"
+                            placeholder="e.g. Meezan Electronic Scales"
+                            value={newCompanyName}
+                            onChange={e => setNewCompanyName(e.target.value)}
+                            required
+                            autoFocus
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Aadhar Number (login ID) *</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            className="input-field"
+                            placeholder="12-digit Aadhar"
+                            value={newAadhar}
+                            onChange={e => setNewAadhar(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                            required
+                            maxLength={12}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Contact Email *</label>
+                          <input
+                            type="email"
+                            className="input-field"
+                            placeholder="rc@example.com"
+                            autoComplete="off"
+                            value={newEmail}
+                            onChange={e => setNewEmail(e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Primary Phone *</label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            className="input-field"
+                            placeholder="10-digit mobile"
+                            value={newPhone}
+                            onChange={e => setNewPhone(normalizePhone(e.target.value))}
+                            required
+                            maxLength={10}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>GST Number</label>
+                          <input
+                            type="text"
+                            className="input-field"
+                            placeholder="e.g. 27AAAAA1111A1Z1"
+                            value={newGstNumber}
+                            onChange={e => setNewGstNumber(e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Password *</label>
+                          <div className="input-icon-wrap">
+                            <input
+                              type={showPw ? 'text' : 'password'}
+                              className="input-field"
+                              placeholder="min. 6 characters"
+                              autoComplete="new-password"
+                              value={newPassword}
+                              onChange={e => setNewPassword(e.target.value)}
+                              required
+                              minLength={6}
+                            />
+                            <button
+                              type="button"
+                              className="input-icon-right"
+                              onClick={() => setShowPw(p => !p)}
+                            >
+                              {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="form-group col-span-all">
+                          <label>Address with Pin</label>
+                          <textarea
+                            className="input-field"
+                            rows={3}
+                            placeholder="Full physical postal address of the center with pin code"
+                            value={newAddress}
+                            onChange={e => setNewAddress(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="product-form-footer">
+                      <button type="button" className="btn btn-secondary" onClick={handleCloseModal} disabled={formBusy}>
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={formBusy}>
+                        {submitting ? (
+                          <span className="spinner-inline"></span>
+                        ) : (
+                          <>
+                            <Plus size={16} /> Register Center
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  editingRc && (
+                    <div className="product-form">
+                      <div className="product-form-body rc-form-body">
+                        <div className="vct-create-grid">
+                          <div className="form-group">
+                            <label htmlFor="edit-company">Company Name *</label>
+                            <input
+                              id="edit-company"
+                              type="text"
+                              className="input-field"
+                              value={editCompanyName}
+                              onChange={e => setEditCompanyName(e.target.value)}
+                              required
+                              autoFocus
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Login Aadhar</label>
+                            <p className="text-sm text-muted py-2 m-0">
+                              {formatAadharDisplay(editingRc.aadhar)}
+                            </p>
+                          </div>
+                          <div className="form-group">
+                            <label htmlFor="edit-email">Contact Email *</label>
+                            <input
+                              id="edit-email"
+                              type="email"
+                              className="input-field"
+                              value={editEmail}
+                              onChange={e => setEditEmail(e.target.value)}
+                              required
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label htmlFor="edit-phone">Primary Phone *</label>
+                            <input
+                              id="edit-phone"
+                              type="text"
+                              inputMode="numeric"
+                              className="input-field"
+                              value={editPhone}
+                              onChange={e => setEditPhone(normalizePhone(e.target.value))}
+                              maxLength={10}
+                              required
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label htmlFor="edit-gst">GST Number</label>
+                            <input
+                              id="edit-gst"
+                              type="text"
+                              className="input-field"
+                              value={editGstNumber}
+                              onChange={e => setEditGstNumber(e.target.value)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label htmlFor="edit-password">Reset Password (optional)</label>
+                            <input
+                              id="edit-password"
+                              type="text"
+                              className="input-field text-mono"
+                              placeholder="min. 6 characters to reset"
+                              value={editPassword}
+                              onChange={e => setEditPassword(e.target.value)}
+                            />
+                          </div>
+                          <div className="form-group col-span-all">
+                            <label htmlFor="edit-address">Address with Pin</label>
+                            <textarea
+                              id="edit-address"
+                              className="input-field"
+                              rows={3}
+                              value={editAddress}
+                              onChange={e => setEditAddress(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="product-form-footer">
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={handleCloseModal}
+                          disabled={formBusy}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-primary flex items-center gap-2"
+                          onClick={() => editingUid && handleSaveEdit(editingUid)}
+                          disabled={formBusy}
+                        >
+                          {savingEdit ? (
+                            <span className="spinner-inline"></span>
+                          ) : (
+                            <>
+                              <Save size={18} /> Save Changes
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         )}
-      </div>
     </div>
   );
 };

@@ -258,6 +258,8 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .main-content.expanded {
@@ -318,12 +320,26 @@ body {
 .content-area {
   padding: 2rem;
   flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.page-content {
+  width: 100%;
+  min-width: 0;
 }
 
 /* Panels & Cards */
 .panel {
   border-radius: 16px;
   padding: 1.5rem;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.panel.panel--table {
   overflow: hidden;
 }
 
@@ -530,6 +546,57 @@ select.input-field option {
 
 .data-table tr:hover td {
   background: rgba(255, 255, 255, 0.02);
+}
+
+.table-scroll-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.data-table--rc {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.data-table--rc th,
+.data-table--rc td {
+  padding: 0.75rem 1rem;
+  vertical-align: middle;
+}
+
+.data-table--rc .rc-col-company {
+  width: auto;
+}
+
+.data-table--rc .rc-col-phone {
+  width: 10rem;
+  white-space: nowrap;
+}
+
+.data-table--rc .rc-col-vcts,
+.data-table--rc .rc-col-jobs {
+  width: 9rem;
+  text-align: center;
+}
+
+.data-table--rc .rc-col-actions {
+  width: 6.5rem;
+}
+
+.data-table--rc .table-cell-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 0;
+}
+
+.data-table--rc .rc-jobs-summary {
+  font-size: 0.8rem;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
 .text-right { text-align: right !important; }
@@ -857,6 +924,179 @@ select.input-field option {
 
 .modal-dialog.product-modal {
   max-width: 52rem;
+}
+
+.modal-dialog.product-modal--wide {
+  max-width: min(96vw, 78rem);
+  max-height: calc(100vh - 1.5rem);
+}
+
+.modal-dialog.rc-modal {
+  max-width: min(92vw, 44rem);
+}
+
+.rc-form-body {
+  padding: 1.25rem 1.5rem;
+}
+
+.rc-form-body .vct-create-grid {
+  gap: 1rem 1.25rem;
+}
+
+.product-modal--wide .product-form-topbar {
+  padding: 0.85rem 1.25rem;
+}
+
+.product-modal--wide .product-form-topbar h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.product-modal--wide .product-form-topbar-text p {
+  display: none;
+}
+
+.product-modal--wide .product-form-body {
+  overflow-y: visible;
+}
+
+.product-modal--wide .product-form-sections-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+.product-modal--wide .product-form-section {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-glass);
+  border-right: 1px solid var(--border-glass);
+}
+
+.product-modal--wide .product-form-section:nth-child(2n) {
+  border-right: none;
+}
+
+.product-modal--wide .product-form-section:nth-child(3),
+.product-modal--wide .product-form-section:nth-child(4) {
+  border-bottom: none;
+}
+
+.product-modal--wide .product-form-section--compact .product-form-section-head {
+  margin-bottom: 0.5rem;
+}
+
+.product-modal--wide .product-form-section--compact .product-form-step {
+  width: 1.4rem;
+  height: 1.4rem;
+  font-size: 0.7rem;
+}
+
+.product-modal--wide .product-form-section-title {
+  font-size: 0.9rem;
+}
+
+.product-modal--wide .product-form-grid--basic {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem 0.75rem;
+}
+
+.product-modal--wide .product-form-span-name {
+  grid-column: span 2;
+}
+
+.product-modal--wide .product-form-defaults {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.product-modal--wide .product-form-grid--scale {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.65rem 0.75rem;
+}
+
+.product-modal--wide .product-scale-formula-hint {
+  margin-bottom: 0.35rem !important;
+}
+
+.product-modal--wide .product-form-grid--2 {
+  gap: 0.65rem 0.75rem;
+}
+
+.product-modal--wide .product-form-upload-row {
+  gap: 0.65rem;
+}
+
+.product-modal--wide .product-upload-field {
+  min-height: 0;
+}
+
+.product-modal--wide .product-upload-dropzone,
+.product-modal--wide .product-upload-progress {
+  min-height: 4.5rem;
+  padding: 0.5rem;
+}
+
+.product-modal--wide .product-upload-dropzone-title {
+  font-size: 0.75rem;
+}
+
+.product-modal--wide .product-upload-preview {
+  padding: 0.5rem;
+}
+
+.product-modal--wide .product-upload-preview-img,
+.product-modal--wide .product-upload-preview-icon {
+  width: 48px;
+  height: 48px;
+}
+
+.product-modal--wide .product-form-footer {
+  padding: 0.65rem 1.25rem;
+}
+
+.product-modal--wide .form-group label {
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+}
+
+.product-modal--wide .input-field {
+  padding: 0.5rem 0.65rem;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 1100px) {
+  .modal-dialog.product-modal--wide {
+    max-width: min(96vw, 52rem);
+  }
+
+  .product-modal--wide .product-form-body {
+    overflow-y: auto;
+    max-height: calc(100vh - 8rem);
+  }
+
+  .product-modal--wide .product-form-sections-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .product-modal--wide .product-form-section {
+    border-right: none;
+  }
+
+  .product-modal--wide .product-form-section:nth-child(3) {
+    border-bottom: 1px solid var(--border-glass);
+  }
+
+  .product-modal--wide .product-form-grid--basic {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .product-modal--wide .product-form-span-name {
+    grid-column: span 2;
+  }
+
+  .product-modal--wide .product-form-grid--scale {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .confirm-overlay {

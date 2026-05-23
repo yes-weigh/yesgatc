@@ -6,14 +6,15 @@ export const FormSection: React.FC<{
   step: number;
   title: string;
   description?: string;
+  compact?: boolean;
   children: React.ReactNode;
-}> = ({ step, title, description, children }) => (
-  <section className="product-form-section">
+}> = ({ step, title, description, compact, children }) => (
+  <section className={`product-form-section${compact ? ' product-form-section--compact' : ''}`}>
     <div className="product-form-section-head">
       <span className="product-form-step">{step}</span>
       <div>
         <h3 className="product-form-section-title">{title}</h3>
-        {description && <p className="product-form-section-desc">{description}</p>}
+        {description && !compact && <p className="product-form-section-desc">{description}</p>}
       </div>
     </div>
     <div className="product-form-section-body">{children}</div>
