@@ -18,6 +18,7 @@ import {
   EMPTY_RC_FORM,
   buildRcFirestoreFields,
   rcFormFromUser,
+  standardWeightsCertExpiryFromDate,
   type RcFormValues,
 } from '../../lib/rcProfileFields';
 import {
@@ -62,6 +63,16 @@ function sealMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
 
 function rcHasStandardWeightsCert(rc: FirestoreUserDoc): boolean {
   return Boolean(rc.standardWeightsCertUrl?.trim() || rc.standardWeightsCertPath?.trim());
+}
+
+function formatRcCertDueDate(rc: FirestoreUserDoc): string {
+  const iso =
+    rc.standardWeightsCertExpiry?.trim() ||
+    standardWeightsCertExpiryFromDate(rc.standardWeightsCertDate ?? '');
+  if (!iso) return '—';
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 export const RCList: React.FC = () => {
@@ -487,6 +498,7 @@ export const RCList: React.FC = () => {
                 <col className="rc-col-place" />
                 <col className="rc-col-vcts" />
                 <col className="rc-col-jobs" />
+                <col className="rc-col-due" />
                 <col className="rc-col-status" />
                 <col className="rc-col-actions" />
               </colgroup>
@@ -497,6 +509,7 @@ export const RCList: React.FC = () => {
                   <th className="rc-col-place">Place</th>
                   <th className="rc-col-vcts">VCTs</th>
                   <th className="rc-col-jobs">Jobs</th>
+                  <th className="rc-col-due">Cert. due</th>
                   <th className="rc-col-status">Status</th>
                   <th className="rc-col-actions text-right">Actions</th>
                 </tr>
@@ -507,6 +520,7 @@ export const RCList: React.FC = () => {
                     rc.totalJobs > 0 ? Math.round((rc.completedJobs / rc.totalJobs) * 100) : 0;
                   const company = rc.companyName || rc.username || '—';
                   const isActive = rcHasStandardWeightsCert(rc);
+                  const certDue = formatRcCertDueDate(rc);
                   return (
                     <tr key={rc.uid}>
                       <td className="rc-col-serial text-muted text-sm">{index + 1}</td>
@@ -531,6 +545,9 @@ export const RCList: React.FC = () => {
                             <span className="text-muted"> ({completionRate}%)</span>
                           )}
                         </span>
+                      </td>
+                      <td className="rc-col-due text-sm" title={certDue !== '—' ? certDue : undefined}>
+                        {certDue}
                       </td>
                       <td className="rc-col-status">
                         <span
@@ -567,7 +584,7 @@ export const RCList: React.FC = () => {
                 })}
                 {rcList.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center py-10 text-muted">
+                    <td colSpan={8} className="text-center py-10 text-muted">
                       No regional centers yet. Click &quot;Register Center&quot; to add one.
                     </td>
                   </tr>

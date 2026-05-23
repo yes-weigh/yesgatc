@@ -641,7 +641,11 @@ select.input-field option {
 .data-table--rc {
   table-layout: fixed;
   width: 100%;
-  min-width: 52rem;
+  min-width: 60rem;
+}
+
+.data-table--rc col.rc-col-due {
+  width: 7.5rem;
 }
 
 .data-table--rc th,
@@ -685,8 +689,13 @@ select.input-field option {
 
 .data-table--rc .rc-col-vcts,
 .data-table--rc .rc-col-jobs,
+.data-table--rc .rc-col-due,
 .data-table--rc .rc-col-status {
   text-align: center;
+}
+
+.data-table--rc .rc-col-due {
+  white-space: nowrap;
 }
 
 .rc-cell-ellipsis {
