@@ -288,6 +288,33 @@ export const RCProfile: React.FC = () => {
             </div>
           </div>
 
+          <div className="profile-grid mt-6 pt-6 border-t border-subtle">
+            <p className="col-span-all text-muted text-sm font-medium mb-2">RC seal (managed by Super Admin)</p>
+            <div className="profile-field col-span-all">
+              <div className="profile-field-label">
+                <span className="profile-icon"><FileText size={16} /></span>
+                <span>Seal image</span>
+              </div>
+              {profile.sealUrl ? (
+                <div className="rc-seal-preview mt-2">
+                  <img src={profile.sealUrl} alt="RC seal" className="rc-seal-preview-img" />
+                  <a
+                    href={profile.sealUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-secondary text-sm inline-flex items-center gap-1.5 mt-2"
+                  >
+                    <ExternalLink size={14} />
+                    {profile.sealName || 'View seal'}
+                  </a>
+                </div>
+              ) : (
+                <p className="profile-value text-muted">Not uploaded</p>
+              )}
+              <p className="text-muted text-xs mt-2 mb-0">PNG with transparent background required.</p>
+            </div>
+          </div>
+
           <div className="profile-meta-bar mt-6">
             <span className="text-muted text-sm">
               Account created:{' '}

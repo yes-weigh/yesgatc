@@ -1150,6 +1150,34 @@ select.input-field option {
   font-size: 0.65rem;
 }
 
+.rc-form-grid--seal {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.rc-form-seal-note {
+  align-self: center;
+  max-width: 11rem;
+  line-height: 1.35;
+}
+
+.rc-seal-preview-img {
+  max-width: 120px;
+  max-height: 120px;
+  object-fit: contain;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.06) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.06) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.06) 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+  border-radius: 8px;
+  padding: 0.35rem;
+  border: 1px solid var(--border-glass);
+}
+
 .rc-form-aadhar-readonly label {
   font-size: 0.72rem;
   margin-bottom: 0.15rem;

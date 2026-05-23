@@ -109,4 +109,8 @@ export interface FirestoreUserDoc {
   standardWeightsCertNumber?: string;
   standardWeightsCertDate?: string; // YYYY-MM-DD
   standardWeightsCertExpiry?: string; // YYYY-MM-DD, cert date + 1 year + 1 day (due date)
+  sealUrl?: string;
+  sealPath?: string;
+  sealName?: string;
+  sealContentType?: string;
 }

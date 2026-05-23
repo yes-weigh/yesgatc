@@ -16,11 +16,15 @@ type RCFormFieldsProps = {
   certProgress: number;
   onCertSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onCertRemove: () => void;
+  seal: ProductFileMeta | null;
+  sealUploading: boolean;
+  sealProgress: number;
+  onSealSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onSealRemove: () => void;
   submitting: boolean;
   showPassword: boolean;
   onTogglePassword: () => void;
   loginAadhar?: string;
-  pendingCertFileName?: string | null;
 };
 
 export const RCFormFields: React.FC<RCFormFieldsProps> = ({
@@ -32,22 +36,25 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
   certProgress,
   onCertSelect,
   onCertRemove,
+  seal,
+  sealUploading,
+  sealProgress,
+  onSealSelect,
+  onSealRemove,
   submitting,
   showPassword,
   onTogglePassword,
   loginAadhar,
-  pendingCertFileName,
 }) => {
   const certInputRef = useRef<HTMLInputElement>(null);
+  const sealInputRef = useRef<HTMLInputElement>(null);
   const certDueDate = standardWeightsCertExpiryFromDate(values.standardWeightsCertDate);
-  const canUploadCert = mode === 'edit' ? Boolean(loginAadhar) : values.aadhar.trim().length === 12;
-  const certUploadTitle = !canUploadCert
+  const canUploadFiles = mode === 'edit' ? Boolean(loginAadhar) : values.aadhar.trim().length === 12;
+  const fileUploadTitle = !canUploadFiles
     ? mode === 'create'
       ? 'Enter 12-digit Aadhar to upload'
       : 'Save center first'
-    : pendingCertFileName && !cert
-      ? `${pendingCertFileName} — uploads on register`
-      : undefined;
+    : undefined;
 
   return (
     <div className="product-form-flat rc-form-flat">
@@ -235,8 +242,8 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
           <UploadField
             label="Document"
             hint="PDF / image"
-            uploadDisabled={!canUploadCert}
-            disabledReason={certUploadTitle}
+            uploadDisabled={!canUploadFiles}
+            disabledReason={fileUploadTitle}
             file={cert}
             uploading={certUploading}
             progress={certProgress}
@@ -250,6 +257,33 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
             variant="document"
             compact
           />
+        </div>
+      </div>
+
+      <div className="product-form-flat-row product-form-flat-row--scale rc-form-row-seal">
+        <span className="product-form-flat-row-title">RC seal (optional)</span>
+        <div className="rc-form-grid rc-form-grid--seal">
+          <UploadField
+            label="Seal image"
+            hint="PNG only"
+            uploadDisabled={!canUploadFiles}
+            disabledReason={fileUploadTitle}
+            file={seal}
+            uploading={sealUploading}
+            progress={sealProgress}
+            accept="image/png"
+            uploadLabel="Upload PNG"
+            formats="Transparent background"
+            inputRef={sealInputRef}
+            onSelect={onSealSelect}
+            onRemove={onSealRemove}
+            submitting={submitting}
+            variant="image"
+            compact
+          />
+          <p className="rc-form-seal-note text-muted text-xs mb-0">
+            Strict: PNG with transparent background only.
+          </p>
         </div>
       </div>
     </div>

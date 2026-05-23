@@ -33,5 +33,10 @@ service firebase.storage {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin() || isAuthenticated();
     }
+
+    match /users/{userId}/seal/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || isAuthenticated();
+    }
   }
 }

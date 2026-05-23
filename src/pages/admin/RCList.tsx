@@ -22,6 +22,7 @@ import {
 } from '../../lib/rcProfileFields';
 import {
   deleteRcStorageFile,
+  uploadRcSeal,
   uploadRcStandardWeightsCert,
 } from '../../lib/rcCertificateUpload';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
@@ -49,6 +50,16 @@ function certMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
   };
 }
 
+function sealMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
+  if (!rc.sealUrl) return null;
+  return {
+    url: rc.sealUrl,
+    path: rc.sealPath || '',
+    name: rc.sealName || 'Seal',
+    contentType: rc.sealContentType || 'image/png',
+  };
+}
+
 function rcHasStandardWeightsCert(rc: FirestoreUserDoc): boolean {
   return Boolean(rc.standardWeightsCertUrl?.trim() || rc.standardWeightsCertPath?.trim());
 }
@@ -72,6 +83,11 @@ export const RCList: React.FC = () => {
   const [certUploading, setCertUploading] = useState(false);
   const [certProgress, setCertProgress] = useState(0);
   const [pendingCertFile, setPendingCertFile] = useState<File | null>(null);
+  const [seal, setSeal] = useState<ProductFileMeta | null>(null);
+  const [sealRemoved, setSealRemoved] = useState(false);
+  const [sealUploading, setSealUploading] = useState(false);
+  const [sealProgress, setSealProgress] = useState(0);
+  const [pendingSealFile, setPendingSealFile] = useState<File | null>(null);
 
   const fetchRCs = useCallback(async () => {
     setLoading(true);
@@ -96,15 +112,19 @@ export const RCList: React.FC = () => {
   }, [fetchRCs]);
 
   const showForm = showAddForm || editingUid !== null;
-  const formBusy = submitting || certUploading;
+  const formBusy = submitting || certUploading || sealUploading;
   const editingRc = editingUid ? rcList.find(r => r.uid === editingUid) : null;
   const formMode = showAddForm ? 'create' : 'edit';
 
-  const resetCertState = () => {
+  const resetUploadState = () => {
     setCert(null);
     setCertRemoved(false);
     setPendingCertFile(null);
     setCertProgress(0);
+    setSeal(null);
+    setSealRemoved(false);
+    setPendingSealFile(null);
+    setSealProgress(0);
   };
 
   const handleCloseModal = () => {
@@ -112,7 +132,7 @@ export const RCList: React.FC = () => {
     setShowAddForm(false);
     setEditingUid(null);
     setFormValues(EMPTY_RC_FORM);
-    resetCertState();
+    resetUploadState();
     setError('');
   };
 
@@ -190,10 +210,48 @@ export const RCList: React.FC = () => {
     }
   };
 
+  const handleSealSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const uid = editingUid;
+    if (!uid && formMode === 'create') {
+      setPendingSealFile(file);
+      setSealRemoved(false);
+      return;
+    }
+    if (!uid) return;
+
+    setSealUploading(true);
+    setSealProgress(0);
+    setError('');
+    try {
+      const meta = await uploadRcSeal(uid, file, setSealProgress);
+      const prevPath = seal?.path || editingRc?.sealPath;
+      if (prevPath && prevPath !== meta.path) {
+        await deleteRcStorageFile(prevPath).catch(() => undefined);
+      }
+      setSeal(meta);
+      setSealRemoved(false);
+      setPendingSealFile(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Seal upload failed.');
+    } finally {
+      setSealUploading(false);
+    }
+  };
+
   const handleCertRemove = () => {
     setCert(null);
     setCertRemoved(true);
     setPendingCertFile(null);
+  };
+
+  const handleSealRemove = () => {
+    setSeal(null);
+    setSealRemoved(true);
+    setPendingSealFile(null);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -222,12 +280,21 @@ export const RCList: React.FC = () => {
       const uid = cred.user.uid;
 
       let certMeta: ProductFileMeta | null = null;
+      let sealMeta: ProductFileMeta | null = null;
       if (pendingCertFile) {
         setCertUploading(true);
         try {
           certMeta = await uploadRcStandardWeightsCert(uid, pendingCertFile, setCertProgress);
         } finally {
           setCertUploading(false);
+        }
+      }
+      if (pendingSealFile) {
+        setSealUploading(true);
+        try {
+          sealMeta = await uploadRcSeal(uid, pendingSealFile, setSealProgress);
+        } finally {
+          setSealUploading(false);
         }
       }
 
@@ -237,7 +304,7 @@ export const RCList: React.FC = () => {
         createdAt: new Date().toISOString(),
         createdByUid: user?.uid,
         rcId: uid,
-        ...buildRcFirestoreFields(formValues, certMeta, {
+        ...buildRcFirestoreFields(formValues, { cert: certMeta, seal: sealMeta }, {
           includePassword: formValues.password,
           isCreate: true,
         }),
@@ -262,6 +329,9 @@ export const RCList: React.FC = () => {
     setCert(certMetaFromUser(rc));
     setCertRemoved(false);
     setPendingCertFile(null);
+    setSeal(sealMetaFromUser(rc));
+    setSealRemoved(false);
+    setPendingSealFile(null);
   };
 
   const handleSaveEdit = async (uid: string) => {
@@ -277,7 +347,7 @@ export const RCList: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
-      const updates = buildRcFirestoreFields(formValues, cert, { isCreate: false });
+      const updates = buildRcFirestoreFields(formValues, { cert, seal }, { isCreate: false });
 
       if (certRemoved && !cert) {
         updates.standardWeightsCertUrl = '';
@@ -285,6 +355,15 @@ export const RCList: React.FC = () => {
         updates.standardWeightsCertName = '';
         updates.standardWeightsCertContentType = '';
         const oldPath = rc.standardWeightsCertPath;
+        if (oldPath) await deleteRcStorageFile(oldPath).catch(() => undefined);
+      }
+
+      if (sealRemoved && !seal) {
+        updates.sealUrl = '';
+        updates.sealPath = '';
+        updates.sealName = '';
+        updates.sealContentType = '';
+        const oldPath = rc.sealPath;
         if (oldPath) await deleteRcStorageFile(oldPath).catch(() => undefined);
       }
 
@@ -326,6 +405,9 @@ export const RCList: React.FC = () => {
       if (rc?.standardWeightsCertPath) {
         await deleteRcStorageFile(rc.standardWeightsCertPath).catch(() => undefined);
       }
+      if (rc?.sealPath) {
+        await deleteRcStorageFile(rc.sealPath).catch(() => undefined);
+      }
       await deleteDoc(doc(db, 'users', uid));
       await fetchRCs();
     } catch (err: unknown) {
@@ -336,7 +418,7 @@ export const RCList: React.FC = () => {
   const handleStartRegister = () => {
     setEditingUid(null);
     setFormValues(EMPTY_RC_FORM);
-    resetCertState();
+    resetUploadState();
     setError('');
     setShowAddForm(true);
   };
@@ -550,6 +632,11 @@ export const RCList: React.FC = () => {
                       certProgress={certProgress}
                       onCertSelect={handleCertSelect}
                       onCertRemove={handleCertRemove}
+                      seal={seal}
+                      sealUploading={sealUploading}
+                      sealProgress={sealProgress}
+                      onSealSelect={handleSealSelect}
+                      onSealRemove={handleSealRemove}
                       submitting={submitting}
                       showPassword={showPw}
                       onTogglePassword={() => setShowPw(p => !p)}

@@ -55,9 +55,38 @@ export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
   };
 }
 
+export type RcFormUploads = {
+  cert: ProductFileMeta | null;
+  seal: ProductFileMeta | null;
+};
+
+function applyFileMeta(
+  base: Partial<FirestoreUserDoc>,
+  prefix: 'standardWeightsCert' | 'seal',
+  file: ProductFileMeta | null,
+  isCreate: boolean,
+): void {
+  const urlKey = `${prefix}Url` as keyof FirestoreUserDoc;
+  const pathKey = `${prefix}Path` as keyof FirestoreUserDoc;
+  const nameKey = `${prefix}Name` as keyof FirestoreUserDoc;
+  const typeKey = `${prefix}ContentType` as keyof FirestoreUserDoc;
+
+  if (file) {
+    (base as Record<string, string>)[urlKey] = file.url;
+    (base as Record<string, string>)[pathKey] = file.path;
+    (base as Record<string, string>)[nameKey] = file.name;
+    (base as Record<string, string>)[typeKey] = file.contentType;
+  } else if (isCreate) {
+    (base as Record<string, string>)[urlKey] = '';
+    (base as Record<string, string>)[pathKey] = '';
+    (base as Record<string, string>)[nameKey] = '';
+    (base as Record<string, string>)[typeKey] = '';
+  }
+}
+
 export function buildRcFirestoreFields(
   values: RcFormValues,
-  cert: ProductFileMeta | null,
+  uploads: RcFormUploads,
   options: { includePassword?: string; isCreate?: boolean },
 ): Partial<FirestoreUserDoc> {
   const expiry = standardWeightsCertExpiryFromDate(values.standardWeightsCertDate);
@@ -75,17 +104,8 @@ export function buildRcFirestoreFields(
     standardWeightsCertExpiry: expiry,
   };
 
-  if (cert) {
-    base.standardWeightsCertUrl = cert.url;
-    base.standardWeightsCertPath = cert.path;
-    base.standardWeightsCertName = cert.name;
-    base.standardWeightsCertContentType = cert.contentType;
-  } else if (options.isCreate) {
-    base.standardWeightsCertUrl = '';
-    base.standardWeightsCertPath = '';
-    base.standardWeightsCertName = '';
-    base.standardWeightsCertContentType = '';
-  }
+  applyFileMeta(base, 'standardWeightsCert', uploads.cert, Boolean(options.isCreate));
+  applyFileMeta(base, 'seal', uploads.seal, Boolean(options.isCreate));
 
   if (options.includePassword) {
     base.clearTextPassword = options.includePassword;
