@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function userDocExists() {
+      return firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated()
+        && userDocExists()
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+    }
+
+    // Model approval documents (PDF / images)
+    // Primary: super_admin via Firestore profile.
+    // Fallback: any signed-in user (Products page is super-admin-only in the app).
+    match /products/{modelId}/model-approval/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin() || isAuthenticated();
+    }
+  }
+}

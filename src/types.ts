@@ -34,6 +34,10 @@ export interface Product {
   maximumPermissibleError: number;
   supplyVoltage: string;
   modelApprovalNo: string;
+  modelApprovalDocUrl?: string;
+  modelApprovalDocPath?: string;
+  modelApprovalDocName?: string;
+  modelApprovalDocContentType?: string;
 }
 
 export type JobType = 'OV' | 'RV';

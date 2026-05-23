@@ -18,5 +18,11 @@
     "location": "nam5",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
-  }
+  },
+  "storage": [
+    {
+      "bucket": "yesgatc.firebasestorage.app",
+      "rules": "storage.rules"
+    }
+  ]
 }
