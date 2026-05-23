@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { formatContactSubtitle } from '../lib/contactFields';
 import {
   LayoutDashboard,
   Building2,
@@ -193,7 +194,7 @@ export const Layout: React.FC = () => {
             <UserCircle size={20} className="text-blue" />
             <div className="user-info">
               <span className="user-name">{user.username}</span>
-              <span className="user-email text-muted">{user.email}</span>
+              <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
             </div>
             <button className="logout-btn" onClick={handleLogout}>
               <LogOut size={16} />

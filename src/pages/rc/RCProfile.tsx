@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
-import { Building2, Phone, Mail, MapPin, FileText, Save, Pencil, X } from 'lucide-react';
+import { formatAadharDisplay } from '../../lib/aadharAuth';
+import { isValidPhone, normalizePhone, requireValidEmail } from '../../lib/contactFields';
+import { Building2, CreditCard, MapPin, FileText, Save, Pencil, X, Mail, Phone } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
 
 interface RCProfile extends FirestoreUserDoc {
   companyName: string;
   address: string;
   gstNumber: string;
+  email: string;
   phone: string;
 }
 
@@ -21,13 +24,14 @@ const Field: React.FC<{
   onChange: (v: string) => void;
   placeholder?: string;
   multiline?: boolean;
-}> = ({ icon, label, value, editing, inputType = 'text', onChange, placeholder, multiline }) => (
+  readOnly?: boolean;
+}> = ({ icon, label, value, editing, inputType = 'text', onChange, placeholder, multiline, readOnly }) => (
   <div className="profile-field">
     <div className="profile-field-label">
       <span className="profile-icon">{icon}</span>
       <span>{label}</span>
     </div>
-    {editing ? (
+    {editing && !readOnly ? (
       multiline ? (
         <textarea
           className="input-field"
@@ -56,9 +60,9 @@ export const RCProfile: React.FC = () => {
   const [profile, setProfile] = useState<Partial<RCProfile>>({});
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
-  const [saving,  setSaving]  = useState(false);
-  const [draft,   setDraft]   = useState<Partial<RCProfile>>({});
-  const [saved,   setSaved]   = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<Partial<RCProfile>>({});
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -85,13 +89,23 @@ export const RCProfile: React.FC = () => {
 
   const handleSave = async () => {
     if (!user?.uid) return;
+    if (!requireValidEmail(draft.email ?? '')) {
+      alert('A valid contact email is required.');
+      return;
+    }
+    if (!isValidPhone(draft.phone ?? '')) {
+      alert('Phone number must be exactly 10 digits.');
+      return;
+    }
+
     setSaving(true);
     const updates: Partial<FirestoreUserDoc> = {
       companyName: draft.companyName ?? '',
-      address:     draft.address     ?? '',
-      gstNumber:   draft.gstNumber   ?? '',
-      phone:       draft.phone       ?? '',
-      username:    draft.username    ?? profile.username ?? '',
+      address: draft.address ?? '',
+      gstNumber: draft.gstNumber ?? '',
+      username: draft.username ?? profile.username ?? '',
+      email: (draft.email ?? '').trim(),
+      phone: normalizePhone(draft.phone ?? ''),
     };
     await updateDoc(doc(db, 'users', user.uid), updates);
     setProfile(prev => ({ ...prev, ...updates }));
@@ -116,7 +130,6 @@ export const RCProfile: React.FC = () => {
   return (
     <div className="fade-in max-w-3xl mx-auto">
       <div className="panel glass">
-        {/* Header */}
         <div className="panel-header justify-between">
           <div className="flex items-center gap-3">
             <div className="rc-avatar">
@@ -147,11 +160,8 @@ export const RCProfile: React.FC = () => {
           </div>
         </div>
 
-        {/* Body */}
         <div className="panel-body">
-          {saved && (
-            <div className="login-success mb-6">✅ Profile updated successfully.</div>
-          )}
+          {saved && <div className="login-success mb-6">✅ Profile updated successfully.</div>}
 
           <div className="profile-grid">
             <Field
@@ -163,20 +173,30 @@ export const RCProfile: React.FC = () => {
               placeholder="e.g. Meezan Electronic Scales Pvt Ltd"
             />
             <Field
-              icon={<Mail size={16} />}
-              label="Contact Email"
-              value={p.email ?? ''}
-              editing={false}   /* email is immutable (Auth) */
+              icon={<CreditCard size={16} />}
+              label="Login Aadhar"
+              value={formatAadharDisplay(profile.aadhar ?? user?.aadhar ?? '')}
+              editing={false}
+              readOnly
               onChange={() => {}}
             />
             <Field
+              icon={<Mail size={16} />}
+              label="Contact Email"
+              value={p.email ?? ''}
+              editing={editing}
+              inputType="email"
+              onChange={set('email')}
+              placeholder="rc@example.com"
+            />
+            <Field
               icon={<Phone size={16} />}
-              label="Mobile / Phone"
+              label="Primary Phone"
               value={p.phone ?? ''}
               editing={editing}
               inputType="tel"
-              onChange={set('phone')}
-              placeholder="e.g. 9995424242"
+              onChange={v => set('phone')(normalizePhone(v))}
+              placeholder="10-digit mobile"
             />
             <Field
               icon={<FileText size={16} />}
@@ -205,10 +225,22 @@ export const RCProfile: React.FC = () => {
             />
           </div>
 
-          {/* Read-only info block */}
           <div className="profile-meta-bar mt-6">
-            <span className="text-muted text-sm">Account created: <strong>{profile.createdAt ? new Date(profile.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'}</strong></span>
-            <span className="text-muted text-sm">UID: <span className="text-mono-muted">{user?.uid}</span></span>
+            <span className="text-muted text-sm">
+              Account created:{' '}
+              <strong>
+                {profile.createdAt
+                  ? new Date(profile.createdAt).toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'long',
+                      year: 'numeric',
+                    })
+                  : '—'}
+              </strong>
+            </span>
+            <span className="text-muted text-sm">
+              UID: <span className="text-mono-muted">{user?.uid}</span>
+            </span>
           </div>
         </div>
       </div>

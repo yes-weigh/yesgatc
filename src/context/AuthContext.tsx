@@ -8,13 +8,19 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import {
+  authEmailForAadhar,
+  authErrorMessage,
+  isValidAadhar,
+  normalizeAadhar,
+} from '../lib/aadharAuth';
 import type { User, Role, FirestoreUserDoc } from '../types';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (aadhar: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -29,20 +35,22 @@ const resolveUser = async (fbUser: FirebaseUser): Promise<User | null> => {
 
     const data = snap.data() as FirestoreUserDoc;
     const role = VALID_ROLES.includes(data.role as Role) ? (data.role as Role) : null;
-    if (!role) return null;
+    const aadhar = normalizeAadhar(data.aadhar ?? '');
+    if (!role || !isValidAadhar(aadhar)) return null;
 
     return {
       uid: fbUser.uid,
-      email: fbUser.email ?? data.email,
-      username: data.username || fbUser.email?.split('@')[0] || 'User',
+      aadhar,
+      username: data.username || 'User',
       role,
       rcId: data.rcId,
+      email: data.email?.trim() || undefined,
+      phone: data.phone?.trim() || undefined,
     };
   } catch {
     return null;
   }
 };
-
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -62,11 +70,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return unsub;
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (aadharInput: string, password: string) => {
     setError(null);
     setLoading(true);
+    const aadhar = normalizeAadhar(aadharInput);
+    if (!isValidAadhar(aadhar)) {
+      const msg = 'Aadhar number must be exactly 12 digits.';
+      setError(msg);
+      setLoading(false);
+      throw new Error(msg);
+    }
+
     try {
-      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const cred = await signInWithEmailAndPassword(auth, authEmailForAadhar(aadhar), password);
       const resolved = await resolveUser(cred.user);
       if (!resolved) {
         await signOut(auth);
@@ -74,11 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       setUser(resolved);
     } catch (err: unknown) {
-      const raw = err instanceof Error ? err.message : 'Login failed';
-      const friendly =
-        raw.includes('invalid-credential') || raw.includes('wrong-password') || raw.includes('user-not-found')
-          ? 'Invalid email or password.'
-          : raw;
+      const friendly = authErrorMessage(err, 'Login failed');
       setError(friendly);
       throw new Error(friendly, { cause: err });
     } finally {

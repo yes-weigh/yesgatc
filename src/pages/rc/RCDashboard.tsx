@@ -9,7 +9,8 @@ import type { FirestoreUserDoc, WorkflowMode } from '../../types';
 interface VCTOption {
   uid: string;
   username: string;
-  email: string;
+  phone?: string;
+  email?: string;
   workflowMode: WorkflowMode;
 }
 
@@ -34,7 +35,8 @@ export const RCDashboard: React.FC = () => {
         const data = d.data() as FirestoreUserDoc;
         return {
           uid: d.id,
-          username: data.username || data.email,
+          username: data.username || data.aadhar,
+          phone: data.phone,
           email: data.email,
           workflowMode: data.workflowMode ?? 'auto',
         };

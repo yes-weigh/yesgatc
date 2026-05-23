@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { PackagePlus, Trash2 } from 'lucide-react';
+import { PackagePlus, Trash2, Pencil } from 'lucide-react';
 
 const INITIAL_STATE = {
   modelid: '',
   name: '',
-  typeOfInstrument: '',
-  manufacturerBrandSeries: '',
-  accuracyClass: '',
+  typeOfInstrument: 'Electronic',
+  manufacturerBrandSeries: 'YESWEIGH',
+  accuracyClass: 'III',
   maximumCapacity: '',
   minimumCapacity: '',
   verificationScaleInterval: '',
@@ -15,13 +15,14 @@ const INITIAL_STATE = {
   actualScaleInterval: '',
   noOfVerificationIntervals: '',
   maximumPermissibleError: '',
-  supplyVoltage: '',
+  supplyVoltage: '230 V AC',
   modelApprovalNo: ''
 };
 
 export const Products: React.FC = () => {
-  const { products, addProduct, deleteProduct } = useAppContext();
+  const { products, addProduct, updateProduct, deleteProduct } = useAppContext();
   const [formData, setFormData] = useState(INITIAL_STATE);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,15 +30,42 @@ export const Products: React.FC = () => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleAdd = async (e: React.FormEvent) => {
+  const handleEditClick = (product: any) => {
+    setEditingId(product.id);
+    setFormData({
+      modelid: product.modelid || '',
+      name: product.name || '',
+      typeOfInstrument: product.typeOfInstrument || 'Electronic',
+      manufacturerBrandSeries: product.manufacturerBrandSeries || 'YESWEIGH',
+      accuracyClass: product.accuracyClass || 'III',
+      maximumCapacity: product.maximumCapacity || '',
+      minimumCapacity: product.minimumCapacity || '',
+      verificationScaleInterval: product.verificationScaleInterval || '',
+      unitOfMeasurement: product.unitOfMeasurement || 'kg',
+      actualScaleInterval: product.actualScaleInterval || '',
+      noOfVerificationIntervals: product.noOfVerificationIntervals || '',
+      maximumPermissibleError: product.maximumPermissibleError || '',
+      supplyVoltage: product.supplyVoltage || '230 V AC',
+      modelApprovalNo: product.modelApprovalNo || ''
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setFormData(INITIAL_STATE);
+    setError(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.modelid) {
       setError('Product Name and Model ID are required.');
       return;
     }
     
-    // Check for unique modelid
-    if (products.some(p => p.modelid === formData.modelid)) {
+    // Check for unique modelid (exclude current product if editing)
+    if (products.some(p => p.modelid === formData.modelid && p.id !== editingId)) {
       setError('Model ID must be unique. A product with this Model ID already exists.');
       return;
     }
@@ -45,7 +73,7 @@ export const Products: React.FC = () => {
     setError(null);
     setSubmitting(true);
     try {
-      await addProduct({
+      const productData = {
         modelid: formData.modelid,
         name: formData.name,
         typeOfInstrument: formData.typeOfInstrument,
@@ -60,10 +88,17 @@ export const Products: React.FC = () => {
         maximumPermissibleError: Number(formData.maximumPermissibleError) || 0,
         supplyVoltage: formData.supplyVoltage,
         modelApprovalNo: formData.modelApprovalNo,
-      });
+      };
+
+      if (editingId) {
+        await updateProduct(editingId, productData);
+      } else {
+        await addProduct(productData);
+      }
       setFormData(INITIAL_STATE);
+      setEditingId(null);
     } catch (err: any) {
-      setError(err.message || 'Failed to add product');
+      setError(err.message || 'Failed to save product');
     } finally {
       setSubmitting(false);
     }
@@ -73,11 +108,11 @@ export const Products: React.FC = () => {
     <div className="fade-in max-w-6xl mx-auto">
       <div className="panel glass mb-6">
         <div className="panel-header">
-          <h2><PackagePlus className="inline-icon" /> Add New Product Model</h2>
+          <h2><PackagePlus className="inline-icon" /> {editingId ? 'Edit Product Model' : 'Add New Product Model'}</h2>
         </div>
         <div className="panel-body">
           {error && <div className="p-3 mb-4 text-sm text-red-500 bg-red-100 rounded border border-red-200">{error}</div>}
-          <form onSubmit={handleAdd}>
+          <form onSubmit={handleSubmit}>
             <div className="form-grid-3 mb-4">
               <div className="form-group mb-0">
                 <label>Model ID (Unique) *</label>
@@ -89,26 +124,28 @@ export const Products: React.FC = () => {
               </div>
               <div className="form-group mb-0">
                 <label>Type of Instrument</label>
-                <input type="text" name="typeOfInstrument" className="input-field" value={formData.typeOfInstrument} onChange={handleChange} />
+                <input type="text" name="typeOfInstrument" className="input-field" value={formData.typeOfInstrument} onChange={handleChange} readOnly />
               </div>
               <div className="form-group mb-0">
                 <label>Manufacturer / Model / Brand / Series Designation</label>
-                <input type="text" name="manufacturerBrandSeries" className="input-field" value={formData.manufacturerBrandSeries} onChange={handleChange} />
+                <input type="text" name="manufacturerBrandSeries" className="input-field" value={formData.manufacturerBrandSeries} onChange={handleChange} readOnly />
               </div>
               <div className="form-group mb-0">
-                <label>Accuracy Class (III)</label>
-                <input type="text" name="accuracyClass" className="input-field" value={formData.accuracyClass} onChange={handleChange} />
+                <label>Accuracy Class</label>
+                <select name="accuracyClass" className="input-field" value={formData.accuracyClass} onChange={handleChange}>
+                  <option value="III">III</option>
+                </select>
               </div>
               <div className="form-group mb-0">
-                <label>Maximum Capacity (Max)</label>
+                <label>Maximum Capacity (Max) (kg)</label>
                 <input type="number" step="any" name="maximumCapacity" className="input-field" value={formData.maximumCapacity} onChange={handleChange} />
               </div>
               <div className="form-group mb-0">
-                <label>Minimum Capacity (Min)</label>
+                <label>Minimum Capacity (Min) (g)</label>
                 <input type="number" step="any" name="minimumCapacity" className="input-field" value={formData.minimumCapacity} onChange={handleChange} />
               </div>
               <div className="form-group mb-0">
-                <label>Verification Scale Interval (e)</label>
+                <label>Verification Scale Interval (e) (g)</label>
                 <input type="number" step="any" name="verificationScaleInterval" className="input-field" value={formData.verificationScaleInterval} onChange={handleChange} />
               </div>
               <div className="form-group mb-0">
@@ -132,7 +169,7 @@ export const Products: React.FC = () => {
               </div>
               <div className="form-group mb-0">
                 <label>Supply Voltage (if electronic)</label>
-                <input type="text" name="supplyVoltage" className="input-field" value={formData.supplyVoltage} onChange={handleChange} />
+                <input type="text" name="supplyVoltage" className="input-field" value={formData.supplyVoltage} onChange={handleChange} readOnly />
               </div>
               <div className="form-group mb-0">
                 <label>Model Approval No</label>
@@ -140,10 +177,15 @@ export const Products: React.FC = () => {
               </div>
             </div>
             
-            <div className="form-actions mt-6 pt-4" style={{ borderTop: '1px solid var(--border-glass)' }}>
+            <div className="form-actions mt-6 pt-4 flex gap-3" style={{ borderTop: '1px solid var(--border-glass)' }}>
               <button type="submit" className="btn btn-primary" disabled={submitting}>
-                {submitting ? <span className="spinner-inline"></span> : 'Save Product'}
+                {submitting ? <span className="spinner-inline"></span> : editingId ? 'Update Product' : 'Save Product'}
               </button>
+              {editingId && (
+                <button type="button" className="btn btn-secondary" onClick={handleCancelEdit} disabled={submitting}>
+                  Cancel
+                </button>
+              )}
             </div>
           </form>
         </div>
@@ -173,6 +215,15 @@ export const Products: React.FC = () => {
                   <td>{p.maximumCapacity ? `${p.maximumCapacity} / ${p.minimumCapacity} ${p.unitOfMeasurement}` : '-'}</td>
                   <td className="text-right">
                     <button
+                      type="button"
+                      className="btn-icon text-blue mr-2"
+                      onClick={() => handleEditClick(p)}
+                      title="Edit"
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    <button
+                      type="button"
                       className="btn-icon text-red"
                       onClick={() => deleteProduct(p.id)}
                       title="Delete"

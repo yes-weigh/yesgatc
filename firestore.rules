@@ -6,6 +6,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
 
+    function validAadhar(data) {
+      return data.aadhar is string && data.aadhar.size() == 12;
+    }
+
     function isAuthenticated() { return request.auth != null; }
     function isSuperAdmin()    { return isAuthenticated() && role() == 'super_admin'; }
     function isRCAdmin()       { return isAuthenticated() && role() == 'rc_admin'; }
@@ -14,31 +18,32 @@ service cloud.firestore {
     // ── users ─────────────────────────────────────────────────────
     match /users/{uid} {
 
-      // Any authenticated user can read their own profile
       allow read: if isAuthenticated() && request.auth.uid == uid;
 
-      // Super Admin: full access to all user profiles
+      // Bootstrap / seed: signed-in user creates their own profile (uid must match)
+      allow create: if isAuthenticated()
+        && request.auth.uid == uid
+        && validAadhar(request.resource.data);
+
       allow read, write: if isSuperAdmin();
 
-      // RC Admin: read VCT profiles that belong to their centre
       allow read: if isRCAdmin()
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid;
 
-      // RC Admin: create a new VCT technician assigned to their centre
       allow create: if isRCAdmin()
         && request.resource.data.role == 'vct'
-        && request.resource.data.rcId == request.auth.uid;
+        && request.resource.data.rcId == request.auth.uid
+        && validAadhar(request.resource.data);
 
-      // RC Admin: update VCT technicians in their centre (name, password)
-      // They cannot change the role or reassign rcId
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid
         && request.resource.data.role == 'vct'
-        && request.resource.data.rcId == request.auth.uid;
+        && request.resource.data.rcId == request.auth.uid
+        && request.resource.data.aadhar == resource.data.aadhar
+        && validAadhar(request.resource.data);
 
-      // RC Admin: remove VCT technicians from their centre
       allow delete: if isRCAdmin()
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid;

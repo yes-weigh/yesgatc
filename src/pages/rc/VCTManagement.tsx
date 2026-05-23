@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
 import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where,
 } from 'firebase/firestore';
-import { secondaryAuth, db } from '../../firebase';
+import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
+import {
+  assertAadharAvailable,
+  authErrorMessage,
+  createAuthUserForAadhar,
+  formatAadharDisplay,
+  isValidAadhar,
+  normalizeAadhar,
+  syncAuthPassword,
+} from '../../lib/aadharAuth';
+import { isValidEmail, isValidPhone, normalizePhone } from '../../lib/contactFields';
 import {
   UserPlus, Trash2, Eye, EyeOff, RefreshCw, Users, Pencil, X, Check, Zap, ClipboardList,
 } from 'lucide-react';
@@ -18,9 +27,10 @@ interface EditState {
   uid: string;
   username: string;
   phone: string;
-  aadhar: string;
+  email: string;
   newPassword: string;
   workflowMode: WorkflowMode;
+  clearTextPassword?: string;
 }
 
 const ModeToggle = ({
@@ -53,22 +63,20 @@ export const VCTManagement: React.FC = () => {
   const [vcts, setVcts] = useState<VCTRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Create form
-  const [newName,          setNewName]         = useState('');
-  const [newPhone,         setNewPhone]        = useState('');
-  const [newAadhar,        setNewAadhar]       = useState('');
-  const [newPassword,      setNewPassword]     = useState('');
-  const [newMode,          setNewMode]         = useState<WorkflowMode>('auto');
-  const [showPw,           setShowPw]          = useState(false);
-  const [submitting,       setSubmitting]      = useState(false);
-  const [error,            setError]           = useState('');
-  const [success,          setSuccess]         = useState('');
+  const [newName, setNewName] = useState('');
+  const [newAadhar, setNewAadhar] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newMode, setNewMode] = useState<WorkflowMode>('auto');
+  const [showPw, setShowPw] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  // Edit state
-  const [editing,     setEditing]     = useState<EditState | null>(null);
-  const [editShowPw,  setEditShowPw]  = useState(false);
-  const [savingEdit,  setSavingEdit]  = useState(false);
-
+  const [editing, setEditing] = useState<EditState | null>(null);
+  const [editShowPw, setEditShowPw] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [revealedUids, setRevealedUids] = useState<Set<string>>(new Set());
 
   const fetchVCTs = useCallback(async () => {
@@ -90,21 +98,25 @@ export const VCTManagement: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(''); setSuccess('');
+    setError('');
+    setSuccess('');
 
-    const cleanPhone = newPhone.trim();
-    const cleanAadhar = newAadhar.trim();
+    const cleanAadhar = normalizeAadhar(newAadhar);
 
     if (!newName.trim()) {
       setError('Please enter a technician name.');
       return;
     }
-    if (!/^\d{10}$/.test(cleanPhone)) {
+    if (!isValidAadhar(cleanAadhar)) {
+      setError('Aadhar number must be exactly 12 digits.');
+      return;
+    }
+    if (!isValidPhone(newPhone)) {
       setError('Phone number must be exactly 10 digits.');
       return;
     }
-    if (!/^\d{12}$/.test(cleanAadhar)) {
-      setError('Aadhar number must be exactly 12 digits.');
+    if (!isValidEmail(newEmail)) {
+      setError('Enter a valid contact email or leave it blank.');
       return;
     }
     if (newPassword.length < 6) {
@@ -114,16 +126,15 @@ export const VCTManagement: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const email = `${cleanPhone}@yesweigh.in`;
-      const cred = await createUserWithEmailAndPassword(secondaryAuth, email, newPassword);
-      await secondaryAuth.signOut();
+      await assertAadharAvailable(cleanAadhar);
+      const cred = await createAuthUserForAadhar(cleanAadhar, newPassword);
 
       const profile: FirestoreUserDoc = {
-        email,
+        aadhar: cleanAadhar,
         role: 'vct',
         username: newName.trim(),
-        phone: cleanPhone,
-        aadhar: cleanAadhar,
+        phone: normalizePhone(newPhone),
+        email: newEmail.trim() || undefined,
         clearTextPassword: newPassword,
         workflowMode: newMode,
         createdAt: new Date().toISOString(),
@@ -133,11 +144,15 @@ export const VCTManagement: React.FC = () => {
       await setDoc(doc(db, 'users', cred.user.uid), profile);
 
       setSuccess(`✅ Technician "${newName.trim()}" added successfully.`);
-      setNewName(''); setNewPhone(''); setNewAadhar(''); setNewPassword(''); setNewMode('auto');
+      setNewName('');
+      setNewAadhar('');
+      setNewPhone('');
+      setNewEmail('');
+      setNewPassword('');
+      setNewMode('auto');
       await fetchVCTs();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed';
-      setError(msg.includes('email-already-in-use') || msg.includes('credential') ? 'That Phone Number is already registered.' : msg);
+      setError(authErrorMessage(err, 'Failed to add technician.'));
     } finally {
       setSubmitting(false);
     }
@@ -148,9 +163,10 @@ export const VCTManagement: React.FC = () => {
       uid: v.uid,
       username: v.username,
       phone: v.phone || '',
-      aadhar: v.aadhar || '',
+      email: v.email || '',
       newPassword: '',
-      workflowMode: v.workflowMode ?? 'auto'
+      workflowMode: v.workflowMode ?? 'auto',
+      clearTextPassword: v.clearTextPassword,
     });
     setEditShowPw(false);
   };
@@ -159,35 +175,44 @@ export const VCTManagement: React.FC = () => {
 
   const handleSaveEdit = async () => {
     if (!editing) return;
-    
-    const cleanPhone = editing.phone.trim();
-    const cleanAadhar = editing.aadhar.trim();
-    if (!/^\d{10}$/.test(cleanPhone)) {
+
+    if (!isValidPhone(editing.phone)) {
       alert('Phone number must be exactly 10 digits.');
       return;
     }
-    if (!/^\d{12}$/.test(cleanAadhar)) {
-      alert('Aadhar number must be exactly 12 digits.');
+    if (!isValidEmail(editing.email)) {
+      alert('Enter a valid contact email or leave it blank.');
       return;
     }
 
     setSavingEdit(true);
     try {
+      const record = vcts.find(v => v.uid === editing.uid);
+      if (!record) return;
+
       const updates: Partial<FirestoreUserDoc> = {
         username: editing.username.trim(),
-        phone: cleanPhone,
-        aadhar: cleanAadhar,
+        phone: normalizePhone(editing.phone),
+        email: editing.email.trim() || undefined,
         workflowMode: editing.workflowMode,
       };
+
       if (editing.newPassword.length >= 6) {
+        const current = record.clearTextPassword;
+        if (!current) {
+          alert('Cannot reset password: stored credential missing. Contact Super Admin.');
+          return;
+        }
+        await syncAuthPassword(record.aadhar, current, editing.newPassword);
         updates.clearTextPassword = editing.newPassword;
       }
+
       await updateDoc(doc(db, 'users', editing.uid), updates);
       setSuccess(`✅ Technician "${editing.username}" updated successfully.`);
       setEditing(null);
       await fetchVCTs();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to update technician');
+      alert(authErrorMessage(err, 'Failed to update technician'));
     } finally {
       setSavingEdit(false);
     }
@@ -202,40 +227,72 @@ export const VCTManagement: React.FC = () => {
   const toggleReveal = (uid: string) => {
     setRevealedUids(prev => {
       const n = new Set(prev);
-      if (n.has(uid)) {
-        n.delete(uid);
-      } else {
-        n.add(uid);
-      }
+      if (n.has(uid)) n.delete(uid);
+      else n.add(uid);
       return n;
     });
   };
 
   return (
     <div className="fade-in max-w-5xl mx-auto">
-      {/* ── Create VCT ── */}
       <div className="panel glass mb-6">
         <div className="panel-header">
           <h2><UserPlus className="inline-icon" /> Add VCT Technician</h2>
         </div>
         <div className="panel-body">
-          {error   && <div className="login-error mb-4">{error}</div>}
+          {error && <div className="login-error mb-4">{error}</div>}
           {success && <div className="login-success mb-4">{success}</div>}
           <form className="vct-create-grid" onSubmit={handleCreate} autoComplete="off">
             <div className="form-group">
               <label htmlFor="vct-fullname">Full Name</label>
-              <input id="vct-fullname" type="text" className="input-field" placeholder="e.g. Amit Sharma"
-                value={newName} onChange={e => setNewName(e.target.value)} required />
+              <input
+                id="vct-fullname"
+                type="text"
+                className="input-field"
+                placeholder="e.g. Amit Sharma"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="vct-aadhar">Aadhar Number (login ID)</label>
+              <input
+                id="vct-aadhar"
+                type="text"
+                inputMode="numeric"
+                className="input-field"
+                placeholder="12-digit Aadhar"
+                value={newAadhar}
+                onChange={e => setNewAadhar(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                required
+                maxLength={12}
+              />
             </div>
             <div className="form-group">
               <label htmlFor="vct-phone">Phone Number</label>
-              <input id="vct-phone" type="text" className="input-field" placeholder="10-digit Phone"
-                value={newPhone} onChange={e => setNewPhone(e.target.value)} required maxLength={10} />
+              <input
+                id="vct-phone"
+                type="text"
+                inputMode="numeric"
+                className="input-field"
+                placeholder="10-digit mobile"
+                value={newPhone}
+                onChange={e => setNewPhone(normalizePhone(e.target.value))}
+                required
+                maxLength={10}
+              />
             </div>
             <div className="form-group">
-              <label htmlFor="vct-aadhar">Aadhar Number</label>
-              <input id="vct-aadhar" type="text" className="input-field" placeholder="12-digit Aadhar"
-                value={newAadhar} onChange={e => setNewAadhar(e.target.value)} required minLength={12} maxLength={12} pattern="\d{12}" title="Aadhar number must be exactly 12 digits" />
+              <label htmlFor="vct-email">Contact Email (optional)</label>
+              <input
+                id="vct-email"
+                type="email"
+                className="input-field"
+                placeholder="tech@example.com"
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+              />
             </div>
             <div className="form-group">
               <label htmlFor="vct-password">Password</label>
@@ -248,7 +305,8 @@ export const VCTManagement: React.FC = () => {
                   autoComplete="new-password"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
-                  required minLength={6}
+                  required
+                  minLength={6}
                 />
                 <button type="button" className="input-icon-right" onClick={() => setShowPw(p => !p)}>
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -272,7 +330,6 @@ export const VCTManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* ── VCT Table ── */}
       <div className="panel glass">
         <div className="panel-header justify-between">
           <h2>
@@ -301,12 +358,11 @@ export const VCTManagement: React.FC = () => {
                 <tbody>
                   {vcts.map(v => (
                     <React.Fragment key={v.uid}>
-                      {/* Normal row */}
                       {editing?.uid !== v.uid && (
                         <tr>
                           <td className="font-medium">{v.username || '—'}</td>
                           <td className="text-muted text-sm">{v.phone || '—'}</td>
-                          <td className="text-muted text-sm">{v.aadhar || '—'}</td>
+                          <td className="text-muted text-sm">{formatAadharDisplay(v.aadhar)}</td>
                           <td>
                             <span className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
                               {v.workflowMode === 'auto'
@@ -331,49 +387,52 @@ export const VCTManagement: React.FC = () => {
                             <button className="btn-icon text-blue" onClick={() => startEdit(v)} title="Edit">
                               <Pencil size={16} />
                             </button>
-                            <button className="btn-icon text-red" onClick={() => handleDelete(v.uid, v.username || v.phone || '')} title="Remove">
+                            <button
+                              className="btn-icon text-red"
+                              onClick={() => handleDelete(v.uid, v.username || v.aadhar)}
+                              title="Remove"
+                            >
                               <Trash2 size={16} />
                             </button>
                           </td>
                         </tr>
                       )}
 
-                      {/* Inline edit row */}
                       {editing?.uid === v.uid && (
                         <tr className="edit-row">
                           <td>
-                            <input type="text" className="input-field input-sm"
+                            <input
+                              type="text"
+                              className="input-field input-sm"
                               placeholder="Name"
                               title="Edit Username"
                               value={editing.username}
-                              onChange={e => setEditing(p => p ? { ...p, username: e.target.value } : null)}
+                              onChange={e => setEditing(p => (p ? { ...p, username: e.target.value } : null))}
                             />
                           </td>
                           <td>
-                            <input type="text" className="input-field input-sm"
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              className="input-field input-sm mb-1"
                               placeholder="Phone"
                               maxLength={10}
-                              title="Edit Phone"
                               value={editing.phone}
-                              onChange={e => setEditing(p => p ? { ...p, phone: e.target.value } : null)}
+                              onChange={e => setEditing(p => (p ? { ...p, phone: normalizePhone(e.target.value) } : null))}
+                            />
+                            <input
+                              type="email"
+                              className="input-field input-sm"
+                              placeholder="Email (optional)"
+                              value={editing.email}
+                              onChange={e => setEditing(p => (p ? { ...p, email: e.target.value } : null))}
                             />
                           </td>
-                          <td>
-                            <input type="text" className="input-field input-sm"
-                              placeholder="Aadhar"
-                              minLength={12}
-                              maxLength={12}
-                              pattern="\d{12}"
-                              title="Aadhar number must be exactly 12 digits"
-                              value={editing.aadhar}
-                              onChange={e => setEditing(p => p ? { ...p, aadhar: e.target.value } : null)}
-                              required
-                            />
-                          </td>
+                          <td className="text-muted text-sm">{formatAadharDisplay(v.aadhar)}</td>
                           <td>
                             <ModeToggle
                               value={editing.workflowMode}
-                              onChange={m => setEditing(p => p ? { ...p, workflowMode: m } : null)}
+                              onChange={m => setEditing(p => (p ? { ...p, workflowMode: m } : null))}
                             />
                           </td>
                           <td>
@@ -383,7 +442,7 @@ export const VCTManagement: React.FC = () => {
                                 className="input-field input-sm"
                                 placeholder="New password (optional)"
                                 value={editing.newPassword}
-                                onChange={e => setEditing(p => p ? { ...p, newPassword: e.target.value } : null)}
+                                onChange={e => setEditing(p => (p ? { ...p, newPassword: e.target.value } : null))}
                               />
                               <button type="button" className="input-icon-right" onClick={() => setEditShowPw(p => !p)}>
                                 {editShowPw ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -404,7 +463,11 @@ export const VCTManagement: React.FC = () => {
                     </React.Fragment>
                   ))}
                   {vcts.length === 0 && (
-                    <tr><td colSpan={7} className="text-center py-10 text-muted">No technicians yet. Add one above.</td></tr>
+                    <tr>
+                      <td colSpan={7} className="text-center py-10 text-muted">
+                        No technicians yet. Add one above.
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>

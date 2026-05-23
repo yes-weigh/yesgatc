@@ -24,6 +24,7 @@ interface AppContextType {
   createJob: (job: Omit<Job, 'id'>) => Promise<void>;
   updateJob: (jobId: string, updates: Partial<Job>) => Promise<void>;
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  updateProduct: (productId: string, updates: Partial<Product>) => Promise<void>;
   deleteProduct: (productId: string) => Promise<void>;
   addCertificate: (cert: Omit<Certificate, 'id'>) => Promise<void>;
 }
@@ -89,6 +90,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await addDoc(collection(db, 'products'), product);
   };
 
+  const updateProduct = async (productId: string, updates: Partial<Product>) => {
+    await updateDoc(doc(db, 'products', productId), updates);
+  };
+
   const deleteProduct = async (productId: string) => {
     await deleteDoc(doc(db, 'products', productId));
   };
@@ -101,7 +106,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{
       jobs, products, certificates, loadingData,
-      createJob, updateJob, addProduct, deleteProduct, addCertificate,
+      createJob, updateJob, addProduct, updateProduct, deleteProduct, addCertificate,
     }}>
       {children}
     </AppContext.Provider>

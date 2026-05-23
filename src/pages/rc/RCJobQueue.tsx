@@ -4,12 +4,14 @@ import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { ClipboardList, Search, Filter, Trash2, CheckCircle2, Clock, PlayCircle, Plus, X, Zap, Users } from 'lucide-react';
+import { formatTechnicianLabel } from '../../lib/contactFields';
 import type { FirestoreUserDoc, WorkflowMode } from '../../types';
 
 interface VCTOption {
   uid: string;
   username: string;
-  email: string;
+  phone?: string;
+  email?: string;
   workflowMode: WorkflowMode;
 }
 
@@ -41,12 +43,16 @@ export const RCJobQueue: React.FC = () => {
       setLoadingVCTs(true);
       const q = query(collection(db, 'users'), where('role', '==', 'vct'), where('rcId', '==', user.uid));
       const snap = await getDocs(q);
-      const list = snap.docs.map(d => ({
-        uid: d.id,
-        username: (d.data() as FirestoreUserDoc).username || '',
-        email: (d.data() as FirestoreUserDoc).email || '',
-        workflowMode: (d.data() as FirestoreUserDoc).workflowMode ?? 'auto'
-      }));
+      const list = snap.docs.map(d => {
+        const data = d.data() as FirestoreUserDoc;
+        return {
+          uid: d.id,
+          username: data.username || '',
+          phone: data.phone,
+          email: data.email,
+          workflowMode: data.workflowMode ?? 'auto',
+        };
+      });
       setVctOptions(list);
       if (list.length > 0) setAssignedTo(list[0].uid);
       setLoadingVCTs(false);
@@ -124,7 +130,7 @@ export const RCJobQueue: React.FC = () => {
 
   const getTechName = (uid: string) => {
     const tech = vctOptions.find((v) => v.uid === uid);
-    return tech ? tech.username || tech.email : uid.slice(0, 8);
+    return tech ? formatTechnicianLabel(tech) : uid.slice(0, 8);
   };
 
   return (
@@ -173,7 +179,7 @@ export const RCJobQueue: React.FC = () => {
                   >
                     {vctOptions.map(v => (
                       <option key={v.uid} value={v.uid}>
-                        {v.username} ({v.email})
+                        {formatTechnicianLabel(v)}
                       </option>
                     ))}
                   </select>

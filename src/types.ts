@@ -9,10 +9,12 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export interface User {
   uid: string;
-  email: string;
+  aadhar: string;       // login ID only
   username: string;
   role: Role;
-  rcId?: string; // for vct: UID of their RC Admin; for rc_admin: their own UID
+  rcId?: string;        // for vct: UID of their RC Admin; for rc_admin: their own UID
+  email?: string;       // contact / business (not auth)
+  phone?: string;       // contact / business (not auth)
 }
 
 export interface Product {
@@ -72,22 +74,21 @@ export interface Certificate {
 
 // Shape of a document in the Firestore `users` collection
 export interface FirestoreUserDoc {
-  email: string;
-  role: Role;           // stored natively: 'super_admin' | 'rc_admin' | 'vct'
+  aadhar: string;       // 12-digit login ID (unique across all users)
+  role: Role;
   username: string;
   createdAt: string;
   createdByUid?: string;
-  clearTextPassword?: string;
+  clearTextPassword?: string; // admin password reveal / reset helper
   rcId?: string;        // VCT → UID of their RC Admin; RC Admin → their own UID
   workflowMode?: WorkflowMode; // VCT only — set by RC Admin (auto | manual)
 
+  // Contact (not used for login)
+  email?: string;
+  phone?: string;
+
   // RC Admin business profile fields
-  companyName?: string; // e.g. "Meezan Electronic Scales Pvt Ltd"
-  address?: string;     // full postal address
-  gstNumber?: string;   // GSTIN
-  phone?: string;       // primary contact number
-
-  // VCT specific fields
-  aadhar?: string;      // 12-digit Aadhar number
+  companyName?: string;
+  address?: string;
+  gstNumber?: string;
 }
-
