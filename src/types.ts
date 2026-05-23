@@ -20,6 +20,7 @@ export interface User {
 export interface Product {
   id: string; // The firestore ID
   modelid: string; // Unique Model ID
+  modelNo: string;
   name: string;
   typeOfInstrument: string;
   manufacturerBrandSeries: string;

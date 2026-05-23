@@ -4,6 +4,7 @@ import { PackagePlus, Trash2, Pencil } from 'lucide-react';
 
 const INITIAL_STATE = {
   modelid: '',
+  modelNo: '',
   name: '',
   typeOfInstrument: 'Electronic',
   manufacturerBrandSeries: 'YESWEIGH',
@@ -34,6 +35,7 @@ export const Products: React.FC = () => {
     setEditingId(product.id);
     setFormData({
       modelid: product.modelid || '',
+      modelNo: product.modelNo || '',
       name: product.name || '',
       typeOfInstrument: product.typeOfInstrument || 'Electronic',
       manufacturerBrandSeries: product.manufacturerBrandSeries || 'YESWEIGH',
@@ -75,6 +77,7 @@ export const Products: React.FC = () => {
     try {
       const productData = {
         modelid: formData.modelid,
+        modelNo: formData.modelNo,
         name: formData.name,
         typeOfInstrument: formData.typeOfInstrument,
         manufacturerBrandSeries: formData.manufacturerBrandSeries,
@@ -117,6 +120,10 @@ export const Products: React.FC = () => {
               <div className="form-group mb-0">
                 <label>Model ID (Unique) *</label>
                 <input type="text" name="modelid" className="input-field" value={formData.modelid} onChange={handleChange} required />
+              </div>
+              <div className="form-group mb-0">
+                <label>Model No</label>
+                <input type="text" name="modelNo" className="input-field" value={formData.modelNo} onChange={handleChange} />
               </div>
               <div className="form-group mb-0">
                 <label>Product Name *</label>
@@ -200,6 +207,7 @@ export const Products: React.FC = () => {
             <thead>
               <tr>
                 <th>Model ID</th>
+                <th>Model No</th>
                 <th>Product Name</th>
                 <th>Type</th>
                 <th>Capacity (Max/Min)</th>
@@ -210,6 +218,7 @@ export const Products: React.FC = () => {
               {products.map(p => (
                 <tr key={p.id}>
                   <td className="font-medium text-mono">{p.modelid}</td>
+                  <td className="text-mono">{p.modelNo || '—'}</td>
                   <td className="font-medium">{p.name}</td>
                   <td>{p.typeOfInstrument || '-'}</td>
                   <td>{p.maximumCapacity ? `${p.maximumCapacity} / ${p.minimumCapacity} ${p.unitOfMeasurement}` : '-'}</td>
@@ -235,7 +244,7 @@ export const Products: React.FC = () => {
               ))}
               {products.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-6 text-muted">No products configured yet.</td>
+                  <td colSpan={6} className="text-center py-6 text-muted">No products configured yet.</td>
                 </tr>
               )}
             </tbody>
