@@ -10,6 +10,7 @@ import { Login } from './pages/Login';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { Products } from './pages/admin/Products';
 import { RCList } from './pages/admin/RCList';
+import { AdminVCTList } from './pages/admin/AdminVCTList';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
@@ -34,6 +35,7 @@ const App: React.FC = () => {
               <Route path="/admin" element={<Layout />}>
                 <Route index element={<AdminDashboard />} />
                 <Route path="rc" element={<RCList />} />
+                <Route path="vct" element={<AdminVCTList />} />
                 <Route path="products" element={<Products />} />
                 <Route path="reports" element={<Reports />} />
               </Route>
