@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useAppContext } from '../../context/AppContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { PackagePlus, Trash2, Pencil, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
-import { CalcLabel, DefaultsStrip, FormSection, UploadField } from './productFormUi';
+import { CalcLabel, DefaultsStrip, UploadField } from './productFormUi';
 import type { Product } from '../../types';
 import {
   PRODUCT_CALC_TOOLTIPS,
@@ -553,10 +553,10 @@ export const Products: React.FC = () => {
                     <PackagePlus className="inline-icon" />
                     {editingId ? 'Edit Product' : 'Add New Product'}
                   </h2>
-                  <p className="text-muted text-sm">
+                  <p className="text-muted text-sm product-form-topbar-hint">
                     {editingId
                       ? 'Update model details, scale values, and attachments.'
-                      : 'Complete each section below. Fields marked * are required.'}
+                      : 'Fields marked * are required.'}
                   </p>
                 </div>
                 <button
@@ -573,215 +573,208 @@ export const Products: React.FC = () => {
               <form onSubmit={handleSubmit} className="product-form">
                 <div className="product-form-body">
                   {error && <div className="login-error product-form-alert">{error}</div>}
-                  <div className="product-form-sections-grid">
-          <FormSection step={1} title="Basic details" compact>
-            <div className="product-form-grid product-form-grid--basic">
-              <div className="form-group mb-0">
-                <label htmlFor="pf-modelid">Model ID *</label>
-                <input
-                  id="pf-modelid"
-                  type="text"
-                  name="modelid"
-                  className="input-field"
-                  placeholder="e.g. SXX-001"
-                  value={formData.modelid}
-                  onChange={handleChange}
-                  required
-                  autoFocus={!editingId}
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label htmlFor="pf-modelno">Model No</label>
-                <input
-                  id="pf-modelno"
-                  type="text"
-                  name="modelNo"
-                  className="input-field"
-                  placeholder="Catalogue / variant number"
-                  value={formData.modelNo}
-                  onChange={handleChange}
-                />
-              </div>
-              <div className="form-group mb-0 product-form-span-name">
-                <label htmlFor="pf-name">Product Name *</label>
-                <input
-                  id="pf-name"
-                  type="text"
-                  name="name"
-                  className="input-field"
-                  placeholder="e.g. 30 kg Electronic Platform Scale"
-                  value={formData.name}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label htmlFor="pf-unit">Unit of Measurement</label>
-                <select
-                  id="pf-unit"
-                  name="unitOfMeasurement"
-                  className="input-field"
-                  value={formData.unitOfMeasurement}
-                  onChange={handleChange}
-                >
-                  <option value="kg">kg</option>
-                  <option value="g">g</option>
-                </select>
-              </div>
-            </div>
-            <DefaultsStrip
-              items={[
-                { label: 'Type', value: formData.typeOfInstrument },
-                { label: 'Manufacturer', value: formData.manufacturerBrandSeries },
-                { label: 'Class', value: formData.accuracyClass },
-                { label: 'Supply', value: formData.supplyVoltage },
-              ]}
-            />
-          </FormSection>
+                  <div className="product-form-flat">
+                    <div className="product-form-flat-row">
+                      <div className="product-form-grid product-form-grid--basic">
+                        <div className="form-group mb-0">
+                          <label htmlFor="pf-modelid">Model ID *</label>
+                          <input
+                            id="pf-modelid"
+                            type="text"
+                            name="modelid"
+                            className="input-field"
+                            placeholder="e.g. SXX-001"
+                            value={formData.modelid}
+                            onChange={handleChange}
+                            required
+                            autoFocus={!editingId}
+                          />
+                        </div>
+                        <div className="form-group mb-0">
+                          <label htmlFor="pf-modelno">Model No</label>
+                          <input
+                            id="pf-modelno"
+                            type="text"
+                            name="modelNo"
+                            className="input-field"
+                            placeholder="Variant no."
+                            value={formData.modelNo}
+                            onChange={handleChange}
+                          />
+                        </div>
+                        <div className="form-group mb-0 product-form-span-name">
+                          <label htmlFor="pf-name">Product Name *</label>
+                          <input
+                            id="pf-name"
+                            type="text"
+                            name="name"
+                            className="input-field"
+                            placeholder="e.g. 30 kg Platform Scale"
+                            value={formData.name}
+                            onChange={handleChange}
+                            required
+                          />
+                        </div>
+                        <div className="form-group mb-0">
+                          <label htmlFor="pf-unit">Unit</label>
+                          <select
+                            id="pf-unit"
+                            name="unitOfMeasurement"
+                            className="input-field"
+                            value={formData.unitOfMeasurement}
+                            onChange={handleChange}
+                          >
+                            <option value="kg">kg</option>
+                            <option value="g">g</option>
+                          </select>
+                        </div>
+                      </div>
+                      <DefaultsStrip
+                        items={[
+                          { label: 'Type', value: formData.typeOfInstrument },
+                          { label: 'Mfr', value: formData.manufacturerBrandSeries },
+                          { label: 'Class', value: formData.accuracyClass },
+                          { label: 'Supply', value: formData.supplyVoltage },
+                        ]}
+                      />
+                    </div>
 
-          <FormSection step={2} title="Scale specifications" compact>
-            <p className="product-scale-formula-hint text-muted text-xs mb-2">
-              <Info size={12} className="inline-icon-sm" /> Hover field icons for formulas.
-            </p>
-            <div className="product-form-grid product-form-grid--scale">
-              <div className="form-group mb-0">
-                <label htmlFor="pf-max">Max capacity (kg) *</label>
-                <input
-                  id="pf-max"
-                  type="number"
-                  step="any"
-                  name="maximumCapacity"
-                  className="input-field"
-                  placeholder="e.g. 30"
-                  value={formData.maximumCapacity}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label htmlFor="pf-e">Interval e (g) *</label>
-                <input
-                  id="pf-e"
-                  type="number"
-                  step="any"
-                  name="verificationScaleInterval"
-                  className="input-field"
-                  placeholder="e.g. 5"
-                  value={formData.verificationScaleInterval}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-              <div className="form-group mb-0 calc-field">
-                <CalcLabel label="Min (g)" tooltip={PRODUCT_CALC_TOOLTIPS.minimumCapacity} />
-                <input
-                  type="text"
-                  className="input-field input-readonly"
-                  value={derivedDisplay.minimumCapacity}
-                  readOnly
-                  tabIndex={-1}
-                  title={PRODUCT_CALC_TOOLTIPS.minimumCapacity}
-                />
-              </div>
-              <div className="form-group mb-0 calc-field">
-                <CalcLabel label="Interval d" tooltip={PRODUCT_CALC_TOOLTIPS.actualScaleInterval} />
-                <input
-                  type="text"
-                  className="input-field input-readonly"
-                  value={derivedDisplay.actualScaleInterval}
-                  readOnly
-                  tabIndex={-1}
-                  title={PRODUCT_CALC_TOOLTIPS.actualScaleInterval}
-                />
-              </div>
-              <div className="form-group mb-0 calc-field">
-                <CalcLabel label="Intervals n" tooltip={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals} />
-                <input
-                  type="text"
-                  className="input-field input-readonly"
-                  value={derivedDisplay.noOfVerificationIntervals}
-                  readOnly
-                  tabIndex={-1}
-                  title={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals}
-                />
-              </div>
-            </div>
-          </FormSection>
+                    <div className="product-form-flat-row product-form-flat-row--scale">
+                      <span
+                        className="product-form-flat-row-title"
+                        title="Hover field icons for formulas"
+                      >
+                        Scale <Info size={12} className="inline-icon-sm" />
+                      </span>
+                      <div className="product-form-grid product-form-grid--scale">
+                        <div className="form-group mb-0">
+                          <label htmlFor="pf-max">Max (kg) *</label>
+                          <input
+                            id="pf-max"
+                            type="number"
+                            step="any"
+                            name="maximumCapacity"
+                            className="input-field"
+                            placeholder="30"
+                            value={formData.maximumCapacity}
+                            onChange={handleChange}
+                            required
+                          />
+                        </div>
+                        <div className="form-group mb-0">
+                          <label htmlFor="pf-e">Interval e (g) *</label>
+                          <input
+                            id="pf-e"
+                            type="number"
+                            step="any"
+                            name="verificationScaleInterval"
+                            className="input-field"
+                            placeholder="5"
+                            value={formData.verificationScaleInterval}
+                            onChange={handleChange}
+                            required
+                          />
+                        </div>
+                        <div className="form-group mb-0 calc-field">
+                          <CalcLabel label="Min (g)" tooltip={PRODUCT_CALC_TOOLTIPS.minimumCapacity} />
+                          <input
+                            type="text"
+                            className="input-field input-readonly"
+                            value={derivedDisplay.minimumCapacity}
+                            readOnly
+                            tabIndex={-1}
+                          />
+                        </div>
+                        <div className="form-group mb-0 calc-field">
+                          <CalcLabel label="d" tooltip={PRODUCT_CALC_TOOLTIPS.actualScaleInterval} />
+                          <input
+                            type="text"
+                            className="input-field input-readonly"
+                            value={derivedDisplay.actualScaleInterval}
+                            readOnly
+                            tabIndex={-1}
+                          />
+                        </div>
+                        <div className="form-group mb-0 calc-field">
+                          <CalcLabel label="n" tooltip={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals} />
+                          <input
+                            type="text"
+                            className="input-field input-readonly"
+                            value={derivedDisplay.noOfVerificationIntervals}
+                            readOnly
+                            tabIndex={-1}
+                          />
+                        </div>
+                      </div>
+                    </div>
 
-          <FormSection step={3} title="Compliance & approval" compact>
-            <div className="product-form-grid product-form-grid--2">
-              <div className="form-group mb-0">
-                <label htmlFor="pf-mpe">Maximum Permissible Error (MPE)</label>
-                <input
-                  id="pf-mpe"
-                  type="number"
-                  step="any"
-                  name="maximumPermissibleError"
-                  className="input-field"
-                  placeholder="Optional"
-                  value={formData.maximumPermissibleError}
-                  onChange={handleChange}
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label htmlFor="pf-approval-no">Model Approval No</label>
-                <input
-                  id="pf-approval-no"
-                  type="text"
-                  name="modelApprovalNo"
-                  className="input-field"
-                  placeholder="Required for approval document upload"
-                  value={formData.modelApprovalNo}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-          </FormSection>
-
-          <FormSection step={4} title="Attachments" compact>
-            <div className="product-form-upload-row">
-              <UploadField
-                label="Product image"
-                hint="Optional"
-                variant="image"
-                disabledReason={
-                  !canUploadFiles
-                    ? 'Enter Model ID above to enable upload.'
-                    : undefined
-                }
-                file={productImage}
-                uploading={uploadingImage}
-                progress={imageUploadProgress}
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                uploadLabel="Upload product photo"
-                formats="JPEG, PNG, WebP, GIF · max 15 MB"
-                inputRef={imageInputRef}
-                onSelect={handleProductImageSelect}
-                onRemove={handleRemoveProductImage}
-                submitting={submitting}
-              />
-              <UploadField
-                label="Approval document"
-                hint="PDF or image"
-                variant="document"
-                disabledReason={
-                  !canUploadApprovalDoc
-                    ? 'Enter Model ID and Model Approval No to enable upload.'
-                    : undefined
-                }
-                file={approvalDoc}
-                uploading={uploadingDoc}
-                progress={uploadProgress}
-                accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
-                uploadLabel="Upload approval document"
-                formats="PDF or image · max 15 MB"
-                inputRef={fileInputRef}
-                onSelect={handleApprovalFileSelect}
-                onRemove={handleRemoveApprovalDoc}
-                submitting={submitting}
-              />
-            </div>
-          </FormSection>
+                    <div className="product-form-flat-row product-form-flat-row--bottom">
+                      <div className="form-group mb-0">
+                        <label htmlFor="pf-mpe">MPE</label>
+                        <input
+                          id="pf-mpe"
+                          type="number"
+                          step="any"
+                          name="maximumPermissibleError"
+                          className="input-field"
+                          placeholder="Optional"
+                          value={formData.maximumPermissibleError}
+                          onChange={handleChange}
+                        />
+                      </div>
+                      <div className="form-group mb-0">
+                        <label htmlFor="pf-approval-no">Approval No</label>
+                        <input
+                          id="pf-approval-no"
+                          type="text"
+                          name="modelApprovalNo"
+                          className="input-field"
+                          placeholder="For doc upload"
+                          value={formData.modelApprovalNo}
+                          onChange={handleChange}
+                        />
+                      </div>
+                      <UploadField
+                        label="Image"
+                        hint="Optional"
+                        compact
+                        variant="image"
+                        disabledReason={
+                          !canUploadFiles ? 'Set Model ID first.' : undefined
+                        }
+                        file={productImage}
+                        uploading={uploadingImage}
+                        progress={imageUploadProgress}
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        uploadLabel="Upload photo"
+                        formats="Max 15 MB"
+                        inputRef={imageInputRef}
+                        onSelect={handleProductImageSelect}
+                        onRemove={handleRemoveProductImage}
+                        submitting={submitting}
+                      />
+                      <UploadField
+                        label="Approval doc"
+                        hint="PDF / image"
+                        compact
+                        variant="document"
+                        disabledReason={
+                          !canUploadApprovalDoc
+                            ? 'Set Model ID & Approval No.'
+                            : undefined
+                        }
+                        file={approvalDoc}
+                        uploading={uploadingDoc}
+                        progress={uploadProgress}
+                        accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
+                        uploadLabel="Upload document"
+                        formats="Max 15 MB"
+                        inputRef={fileInputRef}
+                        onSelect={handleApprovalFileSelect}
+                        onRemove={handleRemoveApprovalDoc}
+                        submitting={submitting}
+                      />
+                    </div>
                   </div>
                 </div>
 

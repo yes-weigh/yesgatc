@@ -7,9 +7,12 @@ export const FormSection: React.FC<{
   title: string;
   description?: string;
   compact?: boolean;
+  className?: string;
   children: React.ReactNode;
-}> = ({ step, title, description, compact, children }) => (
-  <section className={`product-form-section${compact ? ' product-form-section--compact' : ''}`}>
+}> = ({ step, title, description, compact, className, children }) => (
+  <section
+    className={`product-form-section${compact ? ' product-form-section--compact' : ''}${className ? ` ${className}` : ''}`}
+  >
     <div className="product-form-section-head">
       <span className="product-form-step">{step}</span>
       <div>
@@ -52,6 +55,7 @@ export const UploadField: React.FC<{
   onRemove: () => void;
   submitting: boolean;
   variant?: 'image' | 'document';
+  compact?: boolean;
 }> = ({
   label,
   hint,
@@ -67,94 +71,103 @@ export const UploadField: React.FC<{
   onRemove,
   submitting,
   variant = 'document',
+  compact = false,
 }) => (
-  <div className={`product-upload-field product-upload-field--${variant}`}>
+  <div
+    className={`product-upload-field product-upload-field--${variant}${compact ? ' product-upload-field--compact' : ''}`}
+  >
     <div className="product-upload-field-head">
       <span className="product-upload-field-label">{label}</span>
       <span className="product-upload-field-hint">{hint}</span>
     </div>
 
-    {disabledReason ? (
-      <div className="product-upload-disabled">
-        <Info size={16} className="text-muted shrink-0" />
-        <p>{disabledReason}</p>
-      </div>
-    ) : (
-      <>
-        <input
-          ref={inputRef}
-          type="file"
-          accept={accept}
-          className="sr-only"
-          onChange={onSelect}
-          disabled={uploading || submitting}
-        />
+    <div className="product-upload-field-body">
+      {disabledReason ? (
+        <div className="product-upload-disabled">
+          <Info size={16} className="text-muted shrink-0" />
+          <p>{disabledReason}</p>
+        </div>
+      ) : (
+        <>
+          <input
+            ref={inputRef}
+            type="file"
+            accept={accept}
+            className="sr-only"
+            onChange={onSelect}
+            disabled={uploading || submitting}
+          />
 
-        {!file && !uploading && (
-          <button
-            type="button"
-            className="product-upload-dropzone"
-            onClick={() => inputRef.current?.click()}
-            disabled={submitting}
-          >
-            <Upload size={22} className="text-muted" />
-            <span className="product-upload-dropzone-title">{uploadLabel}</span>
-            <span className="product-upload-dropzone-meta">{formats}</span>
-          </button>
-        )}
+          {!file && !uploading && (
+            <button
+              type="button"
+              className={`product-upload-dropzone${compact ? ' product-upload-dropzone--compact' : ''}`}
+              onClick={() => inputRef.current?.click()}
+              disabled={submitting}
+            >
+              <Upload size={compact ? 18 : 22} className="text-muted shrink-0" />
+              <span className="product-upload-dropzone-text">
+                <span className="product-upload-dropzone-title">{uploadLabel}</span>
+                <span className="product-upload-dropzone-meta">{formats}</span>
+              </span>
+            </button>
+          )}
 
-        {uploading && (
-          <div className="product-upload-progress">
-            <span className="spinner-inline"></span>
-            <span className="text-sm text-muted">{progress}%</span>
-            <div className="approval-progress-bar">
-              <div className="approval-progress-fill" style={{ width: `${progress}%` }} />
-            </div>
-          </div>
-        )}
-
-        {file && !uploading && (
-          <div className="product-upload-preview">
-            {variant === 'image' || !isPdfContentType(file.contentType) ? (
-              <img src={file.url} alt="" className="product-upload-preview-img" />
-            ) : (
-              <div className="product-upload-preview-icon">
-                <FileText size={28} className="text-red" />
-              </div>
-            )}
-            <div className="product-upload-preview-meta">
-              <p className="truncate font-medium text-sm">{file.name}</p>
-              <div className="flex gap-1.5 flex-wrap mt-2">
-                <a
-                  href={file.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-secondary text-xs py-1 px-2"
-                >
-                  <ExternalLink size={12} /> View
-                </a>
-                <button
-                  type="button"
-                  className="btn btn-secondary text-xs py-1 px-2"
-                  onClick={() => inputRef.current?.click()}
-                  disabled={submitting}
-                >
-                  Replace
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary text-xs py-1 px-2 text-red"
-                  onClick={onRemove}
-                  disabled={submitting}
-                >
-                  <X size={12} /> Remove
-                </button>
+          {uploading && (
+            <div className={`product-upload-progress${compact ? ' product-upload-progress--compact' : ''}`}>
+              <span className="spinner-inline"></span>
+              <span className="text-sm text-muted">{progress}%</span>
+              <div className="approval-progress-bar">
+                <div className="approval-progress-fill" style={{ width: `${progress}%` }} />
               </div>
             </div>
-          </div>
-        )}
-      </>
-    )}
+          )}
+
+          {file && !uploading && (
+            <div className={`product-upload-preview${compact ? ' product-upload-preview--compact' : ''}`}>
+              {variant === 'image' || !isPdfContentType(file.contentType) ? (
+                <img src={file.url} alt="" className="product-upload-preview-img" />
+              ) : (
+                <div className="product-upload-preview-icon">
+                  <FileText size={compact ? 22 : 28} className="text-red" />
+                </div>
+              )}
+              <div className="product-upload-preview-meta">
+                <p className="truncate font-medium text-sm" title={file.name}>
+                  {file.name}
+                </p>
+                <div className="product-upload-preview-actions">
+                  <a
+                    href={file.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-secondary text-xs py-1 px-2"
+                  >
+                    <ExternalLink size={12} /> View
+                  </a>
+                  <button
+                    type="button"
+                    className="btn btn-secondary text-xs py-1 px-2"
+                    onClick={() => inputRef.current?.click()}
+                    disabled={submitting}
+                  >
+                    Replace
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary text-xs py-1 px-2 text-red"
+                    onClick={onRemove}
+                    disabled={submitting}
+                  >
+                    <X size={12} /> Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   </div>
 );
 

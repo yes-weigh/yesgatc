@@ -929,6 +929,8 @@ select.input-field option {
 .modal-dialog.product-modal--wide {
   max-width: min(96vw, 78rem);
   max-height: calc(100vh - 1.5rem);
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-dialog.rc-modal {
@@ -952,102 +954,313 @@ select.input-field option {
   margin: 0;
 }
 
-.product-modal--wide .product-form-topbar-text p {
+.product-modal--wide .product-form-topbar-hint {
   display: none;
 }
 
+.product-modal--wide .product-form-panel {
+  display: flex;
+  flex-direction: column;
+}
+
 .product-modal--wide .product-form-body {
-  overflow-y: visible;
+  overflow: visible;
+  flex: none;
+  padding: 0.65rem 1rem 0.5rem;
 }
 
-.product-modal--wide .product-form-sections-grid {
+.product-modal--wide .product-form-alert {
+  margin: 0 0 0.5rem;
+}
+
+/* Flat single-screen product form */
+.product-form-flat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.product-form-flat-row {
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-glass);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.product-form-flat-row--scale {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.65rem 0.85rem;
+  padding: 0.45rem 0.65rem;
 }
 
-.product-modal--wide .product-form-section {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border-glass);
-  border-right: 1px solid var(--border-glass);
+.product-form-flat-row-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
-.product-modal--wide .product-form-section:nth-child(2n) {
-  border-right: none;
-}
-
-.product-modal--wide .product-form-section:nth-child(3),
-.product-modal--wide .product-form-section:nth-child(4) {
-  border-bottom: none;
-}
-
-.product-modal--wide .product-form-section--compact .product-form-section-head {
-  margin-bottom: 0.5rem;
-}
-
-.product-modal--wide .product-form-section--compact .product-form-step {
-  width: 1.4rem;
-  height: 1.4rem;
-  font-size: 0.7rem;
-}
-
-.product-modal--wide .product-form-section-title {
-  font-size: 0.9rem;
+.product-form-flat-row--bottom {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr 1.15fr 1.15fr;
+  gap: 0.5rem 0.65rem;
+  align-items: stretch;
+  padding: 0.5rem 0.65rem;
 }
 
 .product-modal--wide .product-form-grid--basic {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.65rem 0.75rem;
+  grid-template-columns: 0.85fr 0.75fr 1.5fr 0.55fr;
+  gap: 0.45rem 0.55rem;
 }
 
 .product-modal--wide .product-form-span-name {
-  grid-column: span 2;
+  grid-column: span 1;
 }
 
-.product-modal--wide .product-form-defaults {
-  margin-top: 0.5rem;
-  padding: 0.5rem 0.75rem;
+.product-modal--wide .product-form-flat-row .product-form-defaults {
+  margin-top: 0.4rem;
+  padding: 0.35rem 0.5rem;
 }
 
 .product-modal--wide .product-form-grid--scale {
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0.65rem 0.75rem;
+  gap: 0.45rem 0.55rem;
 }
 
-.product-modal--wide .product-scale-formula-hint {
-  margin-bottom: 0.35rem !important;
+.product-modal--wide .product-form-flat .form-group label {
+  font-size: 0.72rem;
+  margin-bottom: 0.15rem;
 }
 
-.product-modal--wide .product-form-grid--2 {
-  gap: 0.65rem 0.75rem;
+.product-modal--wide .product-form-flat .input-field {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8125rem;
 }
 
-.product-modal--wide .product-form-upload-row {
+.product-modal--wide .calc-field .input-readonly {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.product-modal--wide .product-form-topbar {
+  padding: 0.55rem 1rem;
+}
+
+.product-modal--wide .product-form-footer {
+  padding: 0.5rem 1rem;
+}
+
+.product-modal--wide .product-upload-field--compact {
+  min-height: 3.25rem;
+}
+
+.product-modal--wide .product-upload-field--compact .product-upload-field-head {
+  width: 4.75rem;
+  padding: 0.4rem 0.5rem;
+}
+
+.product-modal--wide .product-upload-field--compact .product-upload-field-label {
+  font-size: 0.72rem;
+}
+
+.product-modal--wide .product-upload-field--compact .product-upload-field-hint {
+  display: none;
+}
+
+.product-modal--wide .product-upload-dropzone--compact .product-upload-dropzone-meta {
+  display: none;
+}
+
+.product-modal--wide .product-upload-preview--compact .product-upload-preview-img,
+.product-modal--wide .product-upload-preview--compact .product-upload-preview-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.product-modal--wide .product-upload-preview-actions .btn {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.65rem;
+}
+
+/* Scale layout */
+.product-scale-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.product-scale-block {
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-glass);
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.product-scale-block--calc {
+  background: rgba(59, 130, 246, 0.07);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.product-scale-block-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.product-scale-block-hint {
+  display: inline-flex;
+  cursor: help;
+  opacity: 0.75;
+}
+
+.product-modal--wide .calc-field .input-readonly {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+/* Attachments — compact rows; side-by-side in wide modal */
+.product-attachments-layout {
+  display: flex;
+  flex-direction: column;
   gap: 0.65rem;
 }
 
-.product-modal--wide .product-upload-field {
+.product-modal--wide .product-attachments-layout {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.75rem;
+}
+
+.product-modal--wide .product-attachments-layout > .product-upload-field--compact {
+  flex: 1;
+  min-width: 0;
+}
+
+.product-upload-field-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.product-upload-field--compact {
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 4.25rem;
+  gap: 0;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+
+.product-upload-field--compact .product-upload-field-head {
+  width: 8.5rem;
+  flex-shrink: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.6rem 0.75rem;
+  margin: 0;
+  border-right: 1px solid var(--border-glass);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.product-upload-field--compact .product-upload-field-label {
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+
+.product-upload-field--compact .product-upload-field-hint {
+  font-size: 0.68rem;
+  margin-top: 0.1rem;
+}
+
+.product-upload-field--compact .product-upload-field-body {
+  padding: 0.5rem 0.65rem;
+}
+
+.product-upload-dropzone-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+  text-align: left;
+}
+
+.product-upload-dropzone--compact {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
   min-height: 0;
+  height: 100%;
+  padding: 0.35rem 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  gap: 0.6rem;
 }
 
-.product-modal--wide .product-upload-dropzone,
-.product-modal--wide .product-upload-progress {
-  min-height: 4.5rem;
-  padding: 0.5rem;
+.product-upload-dropzone--compact:hover {
+  background: rgba(59, 130, 246, 0.06);
 }
 
-.product-modal--wide .product-upload-dropzone-title {
-  font-size: 0.75rem;
+.product-upload-progress--compact {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 0;
+  padding: 0.25rem 0;
+  gap: 0.75rem;
 }
 
-.product-modal--wide .product-upload-preview {
-  padding: 0.5rem;
+.product-upload-progress--compact .approval-progress-bar {
+  flex: 1;
+  max-width: none;
 }
 
-.product-modal--wide .product-upload-preview-img,
-.product-modal--wide .product-upload-preview-icon {
-  width: 48px;
-  height: 48px;
+.product-upload-preview--compact {
+  width: 100%;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  gap: 0.65rem;
+}
+
+.product-upload-preview--compact .product-upload-preview-img,
+.product-upload-preview--compact .product-upload-preview-icon {
+  width: 52px;
+  height: 52px;
+}
+
+.product-upload-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.product-upload-field--compact .product-upload-disabled {
+  padding: 0.5rem 0;
+  border: none;
+  background: transparent;
+  font-size: 0.78rem;
 }
 
 .product-modal--wide .product-form-footer {
@@ -1071,19 +1284,27 @@ select.input-field option {
 
   .product-modal--wide .product-form-body {
     overflow-y: auto;
-    max-height: calc(100vh - 8rem);
+    max-height: calc(100vh - 7rem);
+    flex: 1;
+    min-height: 0;
   }
 
-  .product-modal--wide .product-form-sections-grid {
-    grid-template-columns: 1fr;
+  .product-modal--wide .product-form-panel {
+    flex: 1;
+    min-height: 0;
   }
 
-  .product-modal--wide .product-form-section {
-    border-right: none;
+  .product-modal--wide .product-form {
+    flex: 1;
+    min-height: 0;
   }
 
-  .product-modal--wide .product-form-section:nth-child(3) {
-    border-bottom: 1px solid var(--border-glass);
+  .product-form-flat-row--bottom {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .product-form-flat-row--bottom .product-upload-field--compact {
+    grid-column: span 1;
   }
 
   .product-modal--wide .product-form-grid--basic {
@@ -1092,6 +1313,10 @@ select.input-field option {
 
   .product-modal--wide .product-form-span-name {
     grid-column: span 2;
+  }
+
+  .product-form-flat-row--scale {
+    grid-template-columns: 1fr;
   }
 
   .product-modal--wide .product-form-grid--scale {
@@ -1356,12 +1581,15 @@ select.input-field option {
   gap: 0.35rem;
   flex: 1;
   min-height: 120px;
+  width: 100%;
   padding: 1rem;
   border: 2px dashed var(--border-glass);
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.08);
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
+  color: inherit;
+  font: inherit;
 }
 
 .product-upload-dropzone:hover {
