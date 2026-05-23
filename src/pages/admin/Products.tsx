@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { PackagePlus, Trash2, Pencil, Info, Upload, FileText, ExternalLink, X, Image as ImageIcon } from 'lucide-react';
+import { PackagePlus, Trash2, Pencil, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
+import { CalcLabel, DefaultsStrip, FormSection, UploadField } from './productFormUi';
 import type { Product } from '../../types';
 import {
   PRODUCT_CALC_TOOLTIPS,
@@ -10,7 +11,6 @@ import {
 } from '../../lib/productCalculations';
 import {
   deleteProductStorageFile,
-  isPdfContentType,
   uploadModelApprovalDoc,
   uploadProductImage,
   type ProductFileMeta,
@@ -31,19 +31,11 @@ const INITIAL_STATE = {
   modelApprovalNo: '',
 };
 
-const CalcLabel: React.FC<{ label: string; tooltip: string }> = ({ label, tooltip }) => (
-  <label className="calc-field-label">
-    <span>{label}</span>
-    <span className="calc-field-hint" title={tooltip} aria-label={tooltip}>
-      <Info size={14} />
-    </span>
-  </label>
-);
-
 export const Products: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct } = useAppContext();
   const [formData, setFormData] = useState(INITIAL_STATE);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approvalDoc, setApprovalDoc] = useState<ProductFileMeta | null>(null);
@@ -55,6 +47,7 @@ export const Products: React.FC = () => {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const formPanelRef = useRef<HTMLDivElement>(null);
 
   const canUploadFiles = formData.modelid.trim().length > 0;
   const canUploadApprovalDoc =
@@ -83,7 +76,24 @@ export const Products: React.FC = () => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  const handleStartAdd = () => {
+    setEditingId(null);
+    setFormData(INITIAL_STATE);
+    setApprovalDoc(null);
+    setProductImage(null);
+    setUploadProgress(0);
+    setImageUploadProgress(0);
+    setError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (imageInputRef.current) imageInputRef.current.value = '';
+    setShowForm(true);
+    requestAnimationFrame(() => {
+      formPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
   const handleEditClick = (product: Product) => {
+    setShowForm(true);
     setEditingId(product.id);
     setFormData({
       modelid: product.modelid || '',
@@ -131,11 +141,14 @@ export const Products: React.FC = () => {
     }
     setUploadProgress(0);
     setImageUploadProgress(0);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    requestAnimationFrame(() => {
+      formPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
+    setShowForm(false);
     setFormData(INITIAL_STATE);
     setApprovalDoc(null);
     setProductImage(null);
@@ -365,6 +378,7 @@ export const Products: React.FC = () => {
       }
       setFormData(INITIAL_STATE);
       setEditingId(null);
+      setShowForm(false);
       setApprovalDoc(null);
       setProductImage(null);
       setUploadProgress(0);
@@ -381,441 +395,23 @@ export const Products: React.FC = () => {
   return (
     <div className="fade-in max-w-6xl mx-auto">
       <div className="panel glass mb-6">
-        <div className="panel-header">
-          <h2>
-            <PackagePlus className="inline-icon" />{' '}
-            {editingId ? 'Edit Product Model' : 'Add New Product Model'}
-          </h2>
-        </div>
-        <div className="panel-body">
-          {error && (
-            <div className="p-3 mb-4 text-sm text-red-500 bg-red-100 rounded border border-red-200">
-              {error}
-            </div>
-          )}
-          <form onSubmit={handleSubmit}>
-            <div className="form-grid-3 mb-4">
-              <div className="form-group mb-0">
-                <label>Model ID (Unique) *</label>
-                <input
-                  type="text"
-                  name="modelid"
-                  className="input-field"
-                  value={formData.modelid}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label>Model No</label>
-                <input
-                  type="text"
-                  name="modelNo"
-                  className="input-field"
-                  value={formData.modelNo}
-                  onChange={handleChange}
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label>Product Name *</label>
-                <input
-                  type="text"
-                  name="name"
-                  className="input-field"
-                  value={formData.name}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label>Type of Instrument</label>
-                <input
-                  type="text"
-                  name="typeOfInstrument"
-                  className="input-field"
-                  value={formData.typeOfInstrument}
-                  onChange={handleChange}
-                  readOnly
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label>Manufacturer / Model / Brand / Series Designation</label>
-                <input
-                  type="text"
-                  name="manufacturerBrandSeries"
-                  className="input-field"
-                  value={formData.manufacturerBrandSeries}
-                  onChange={handleChange}
-                  readOnly
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label>Accuracy Class</label>
-                <select
-                  name="accuracyClass"
-                  className="input-field"
-                  value={formData.accuracyClass}
-                  onChange={handleChange}
-                >
-                  <option value="III">III</option>
-                </select>
-              </div>
-              <div className="form-group mb-0">
-                <label>Unit of Measurement</label>
-                <select
-                  name="unitOfMeasurement"
-                  className="input-field"
-                  value={formData.unitOfMeasurement}
-                  onChange={handleChange}
-                >
-                  <option value="kg">kg</option>
-                  <option value="g">g</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="model-approval-upload product-image-upload mt-4">
-              <label className="block text-sm font-medium text-muted mb-2">
-                Product Image <span className="text-muted font-normal">(optional)</span>
-              </label>
-
-              {!canUploadFiles ? (
-                <p className="text-muted text-sm">
-                  Enter <strong>Model ID</strong> to enable image upload.
-                </p>
-              ) : (
-                <>
-                  <input
-                    ref={imageInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    className="sr-only"
-                    onChange={handleProductImageSelect}
-                    disabled={uploadingImage || submitting}
-                  />
-
-                  {!productImage && !uploadingImage && (
-                    <button
-                      type="button"
-                      className="upload-box w-full"
-                      onClick={() => imageInputRef.current?.click()}
-                      disabled={submitting}
-                    >
-                      <ImageIcon size={28} className="text-muted mb-2 mx-auto" />
-                      <span className="text-sm">Click to upload product image</span>
-                      <span className="text-xs text-muted block mt-1">JPEG, PNG, WebP, GIF · Max 15 MB</span>
-                    </button>
-                  )}
-
-                  {uploadingImage && (
-                    <div className="approval-upload-progress">
-                      <span className="spinner-inline"></span>
-                      <span className="text-sm text-muted">Uploading image… {imageUploadProgress}%</span>
-                      <div className="approval-progress-bar">
-                        <div
-                          className="approval-progress-fill"
-                          style={{ width: `${imageUploadProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {productImage && !uploadingImage && (
-                    <div className="approval-doc-card">
-                      <div className="approval-doc-preview">
-                        <img
-                          src={productImage.url}
-                          alt="Product"
-                          className="approval-doc-thumb approval-doc-thumb-lg"
-                        />
-                        <div className="approval-doc-meta">
-                          <p className="font-medium text-sm truncate">{productImage.name}</p>
-                          <p className="text-xs text-muted">Product image</p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 flex-wrap">
-                        <a
-                          href={productImage.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn btn-secondary text-sm py-1 px-2 flex items-center gap-1"
-                        >
-                          <ExternalLink size={14} /> View
-                        </a>
-                        <button
-                          type="button"
-                          className="btn btn-secondary text-sm py-1 px-2"
-                          onClick={() => imageInputRef.current?.click()}
-                          disabled={submitting}
-                        >
-                          Replace
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary text-sm py-1 px-2 flex items-center gap-1 text-red"
-                          onClick={handleRemoveProductImage}
-                          disabled={submitting}
-                        >
-                          <X size={14} /> Remove
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="product-scale-sections">
-              <div className="product-scale-section product-scale-section--manual">
-                <h3 className="product-scale-section-title">Manual entry</h3>
-                <div className="form-grid-2">
-                  <div className="form-group mb-0">
-                    <label>Maximum Capacity (Max) (kg) *</label>
-                    <input
-                      type="number"
-                      step="any"
-                      name="maximumCapacity"
-                      className="input-field"
-                      value={formData.maximumCapacity}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                  <div className="form-group mb-0">
-                    <label>Verification Scale Interval (e) (g) *</label>
-                    <input
-                      type="number"
-                      step="any"
-                      name="verificationScaleInterval"
-                      className="input-field"
-                      value={formData.verificationScaleInterval}
-                      onChange={handleChange}
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="product-scale-section product-scale-section--auto">
-                <h3 className="product-scale-section-title">Auto-calculated</h3>
-                <p className="product-scale-section-hint text-muted text-sm">
-                  Hover the <Info size={12} className="inline-icon-sm" /> icon on each field to see the formula.
-                </p>
-                <div className="form-grid-3">
-                  <div className="form-group mb-0 calc-field">
-                    <CalcLabel
-                      label="Minimum Capacity (Min) (g)"
-                      tooltip={PRODUCT_CALC_TOOLTIPS.minimumCapacity}
-                    />
-                    <input
-                      type="text"
-                      className="input-field input-readonly"
-                      value={derivedDisplay.minimumCapacity}
-                      readOnly
-                      tabIndex={-1}
-                      title={PRODUCT_CALC_TOOLTIPS.minimumCapacity}
-                    />
-                  </div>
-                  <div className="form-group mb-0 calc-field">
-                    <CalcLabel
-                      label="Actual Scale Interval (d)"
-                      tooltip={PRODUCT_CALC_TOOLTIPS.actualScaleInterval}
-                    />
-                    <input
-                      type="text"
-                      className="input-field input-readonly"
-                      value={derivedDisplay.actualScaleInterval}
-                      readOnly
-                      tabIndex={-1}
-                      title={PRODUCT_CALC_TOOLTIPS.actualScaleInterval}
-                    />
-                  </div>
-                  <div className="form-group mb-0 calc-field">
-                    <CalcLabel
-                      label="No. of Verification Intervals (n)"
-                      tooltip={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals}
-                    />
-                    <input
-                      type="text"
-                      className="input-field input-readonly"
-                      value={derivedDisplay.noOfVerificationIntervals}
-                      readOnly
-                      tabIndex={-1}
-                      title={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="form-grid-3 mt-4">
-              <div className="form-group mb-0">
-                <label>Maximum Permissible Error (MPE)</label>
-                <input
-                  type="number"
-                  step="any"
-                  name="maximumPermissibleError"
-                  className="input-field"
-                  value={formData.maximumPermissibleError}
-                  onChange={handleChange}
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label>Supply Voltage (if electronic)</label>
-                <input
-                  type="text"
-                  name="supplyVoltage"
-                  className="input-field"
-                  value={formData.supplyVoltage}
-                  onChange={handleChange}
-                  readOnly
-                />
-              </div>
-              <div className="form-group mb-0">
-                <label>Model Approval No</label>
-                <input
-                  type="text"
-                  name="modelApprovalNo"
-                  className="input-field"
-                  value={formData.modelApprovalNo}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            <div className="model-approval-upload mt-4">
-              <label className="block text-sm font-medium text-muted mb-2">
-                Model Approval Document (PDF or image)
-              </label>
-
-              {!canUploadApprovalDoc ? (
-                <p className="text-muted text-sm">
-                  Enter <strong>Model ID</strong> and <strong>Model Approval No</strong> to enable upload.
-                </p>
-              ) : (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
-                    className="sr-only"
-                    onChange={handleApprovalFileSelect}
-                    disabled={uploadingDoc || uploadingImage || submitting}
-                  />
-
-                  {!approvalDoc && !uploadingDoc && (
-                    <button
-                      type="button"
-                      className="upload-box w-full"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={submitting}
-                    >
-                      <Upload size={28} className="text-muted mb-2 mx-auto" />
-                      <span className="text-sm">Click to upload PDF or image</span>
-                      <span className="text-xs text-muted block mt-1">Max 15 MB</span>
-                    </button>
-                  )}
-
-                  {uploadingDoc && (
-                    <div className="approval-upload-progress">
-                      <span className="spinner-inline"></span>
-                      <span className="text-sm text-muted">Uploading… {uploadProgress}%</span>
-                      <div className="approval-progress-bar">
-                        <div
-                          className="approval-progress-fill"
-                          style={{ width: `${uploadProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {approvalDoc && !uploadingDoc && (
-                    <div className="approval-doc-card">
-                      <div className="approval-doc-preview">
-                        {isPdfContentType(approvalDoc.contentType) ? (
-                          <FileText size={32} className="text-red" />
-                        ) : (
-                          <img
-                            src={approvalDoc.url}
-                            alt="Model approval preview"
-                            className="approval-doc-thumb"
-                          />
-                        )}
-                        <div className="approval-doc-meta">
-                          <p className="font-medium text-sm truncate">{approvalDoc.name}</p>
-                          <p className="text-xs text-muted">
-                            {isPdfContentType(approvalDoc.contentType) ? 'PDF document' : 'Image'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2 flex-wrap">
-                        <a
-                          href={approvalDoc.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn btn-secondary text-sm py-1 px-2 flex items-center gap-1"
-                        >
-                          <ExternalLink size={14} /> View
-                        </a>
-                        <button
-                          type="button"
-                          className="btn btn-secondary text-sm py-1 px-2"
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={submitting}
-                        >
-                          Replace
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary text-sm py-1 px-2 flex items-center gap-1 text-red"
-                          onClick={handleRemoveApprovalDoc}
-                          disabled={submitting}
-                        >
-                          <X size={14} /> Remove
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            <div
-              className="form-actions mt-6 pt-4 flex gap-3"
-              style={{ borderTop: '1px solid var(--border-glass)' }}
-            >
-              <button type="submit" className="btn btn-primary" disabled={submitting}>
-                {submitting ? (
-                  <span className="spinner-inline"></span>
-                ) : editingId ? (
-                  'Update Product'
-                ) : (
-                  'Save Product'
-                )}
-              </button>
-              {editingId && (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleCancelEdit}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <div className="panel glass">
-        <div className="panel-header">
+        <div className="panel-header justify-between">
           <h2>Configured Products</h2>
+          {!showForm && (
+            <button
+              type="button"
+              className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
+              onClick={handleStartAdd}
+            >
+              <Plus size={16} /> Add Product
+            </button>
+          )}
         </div>
         <div className="panel-body p-0 overflow-x-auto">
           <table className="data-table">
             <thead>
               <tr>
+                <th className="product-table-image-col">Image</th>
                 <th>Model ID</th>
                 <th>Model No</th>
                 <th>Product Name</th>
@@ -828,6 +424,26 @@ export const Products: React.FC = () => {
             <tbody>
               {products.map(p => (
                 <tr key={p.id}>
+                  <td className="product-table-image-col">
+                    {p.productImageUrl ? (
+                      <a
+                        href={p.productImageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="View product image"
+                      >
+                        <img
+                          src={p.productImageUrl}
+                          alt={p.name}
+                          className="product-table-thumb"
+                        />
+                      </a>
+                    ) : (
+                      <span className="product-table-thumb-placeholder" title="No image">
+                        <ImageIcon size={18} />
+                      </span>
+                    )}
+                  </td>
                   <td className="font-medium text-mono">{p.modelid}</td>
                   <td className="text-mono">{p.modelNo || '—'}</td>
                   <td className="font-medium">{p.name}</td>
@@ -873,8 +489,8 @@ export const Products: React.FC = () => {
               ))}
               {products.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center py-6 text-muted">
-                    No products configured yet.
+                  <td colSpan={8} className="text-center py-6 text-muted">
+                    No products configured yet. Click &quot;Add Product&quot; to create one.
                   </td>
                 </tr>
               )}
@@ -882,6 +498,300 @@ export const Products: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {showForm && (
+      <div ref={formPanelRef} className="panel glass product-form-panel mb-6 fade-in">
+        <div className="product-form-topbar">
+          <div className="product-form-topbar-text">
+            <h2>
+              <PackagePlus className="inline-icon" />
+              {editingId ? 'Edit Product' : 'Add New Product'}
+            </h2>
+            <p className="text-muted text-sm">
+              {editingId
+                ? 'Update model details, scale values, and attachments.'
+                : 'Complete each section below. Fields marked * are required.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
+            onClick={handleCancelEdit}
+          >
+            <X size={15} /> Close
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="product-form">
+          {error && <div className="login-error product-form-alert">{error}</div>}
+          <FormSection
+            step={1}
+            title="Basic details"
+            description="Unique identifiers and display name for this product model."
+          >
+            <div className="product-form-grid">
+              <div className="form-group mb-0">
+                <label htmlFor="pf-modelid">Model ID *</label>
+                <input
+                  id="pf-modelid"
+                  type="text"
+                  name="modelid"
+                  className="input-field"
+                  placeholder="e.g. SXX-001"
+                  value={formData.modelid}
+                  onChange={handleChange}
+                  required
+                  autoFocus={!editingId}
+                />
+              </div>
+              <div className="form-group mb-0">
+                <label htmlFor="pf-modelno">Model No</label>
+                <input
+                  id="pf-modelno"
+                  type="text"
+                  name="modelNo"
+                  className="input-field"
+                  placeholder="Catalogue / variant number"
+                  value={formData.modelNo}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="form-group mb-0 product-form-span-2">
+                <label htmlFor="pf-name">Product Name *</label>
+                <input
+                  id="pf-name"
+                  type="text"
+                  name="name"
+                  className="input-field"
+                  placeholder="e.g. 30 kg Electronic Platform Scale"
+                  value={formData.name}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              <div className="form-group mb-0">
+                <label htmlFor="pf-unit">Unit of Measurement</label>
+                <select
+                  id="pf-unit"
+                  name="unitOfMeasurement"
+                  className="input-field"
+                  value={formData.unitOfMeasurement}
+                  onChange={handleChange}
+                >
+                  <option value="kg">kg</option>
+                  <option value="g">g</option>
+                </select>
+              </div>
+            </div>
+            <DefaultsStrip
+              items={[
+                { label: 'Type', value: formData.typeOfInstrument },
+                { label: 'Manufacturer', value: formData.manufacturerBrandSeries },
+                { label: 'Class', value: formData.accuracyClass },
+                { label: 'Supply', value: formData.supplyVoltage },
+              ]}
+            />
+          </FormSection>
+
+          <FormSection
+            step={2}
+            title="Scale specifications"
+            description="Enter max capacity and verification interval; other values are calculated automatically."
+          >
+            <div className="product-scale-sections">
+              <div className="product-scale-section product-scale-section--manual">
+                <h4 className="product-scale-section-title">You enter</h4>
+                <div className="product-form-grid product-form-grid--2">
+                  <div className="form-group mb-0">
+                    <label htmlFor="pf-max">Maximum Capacity (kg) *</label>
+                    <input
+                      id="pf-max"
+                      type="number"
+                      step="any"
+                      name="maximumCapacity"
+                      className="input-field"
+                      placeholder="e.g. 30"
+                      value={formData.maximumCapacity}
+                      onChange={handleChange}
+                      required
+                    />
+                  </div>
+                  <div className="form-group mb-0">
+                    <label htmlFor="pf-e">Verification Scale Interval e (g) *</label>
+                    <input
+                      id="pf-e"
+                      type="number"
+                      step="any"
+                      name="verificationScaleInterval"
+                      className="input-field"
+                      placeholder="e.g. 5"
+                      value={formData.verificationScaleInterval}
+                      onChange={handleChange}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="product-scale-section product-scale-section--auto">
+                <h4 className="product-scale-section-title">Calculated for you</h4>
+                <p className="product-scale-section-hint text-muted text-sm">
+                  Hover <Info size={12} className="inline-icon-sm" /> for formulas.
+                </p>
+                <div className="product-form-grid product-form-grid--3">
+                  <div className="form-group mb-0 calc-field">
+                    <CalcLabel
+                      label="Minimum Capacity (Min) (g)"
+                      tooltip={PRODUCT_CALC_TOOLTIPS.minimumCapacity}
+                    />
+                    <input
+                      type="text"
+                      className="input-field input-readonly"
+                      value={derivedDisplay.minimumCapacity}
+                      readOnly
+                      tabIndex={-1}
+                      title={PRODUCT_CALC_TOOLTIPS.minimumCapacity}
+                    />
+                  </div>
+                  <div className="form-group mb-0 calc-field">
+                    <CalcLabel
+                      label="Actual Scale Interval (d)"
+                      tooltip={PRODUCT_CALC_TOOLTIPS.actualScaleInterval}
+                    />
+                    <input
+                      type="text"
+                      className="input-field input-readonly"
+                      value={derivedDisplay.actualScaleInterval}
+                      readOnly
+                      tabIndex={-1}
+                      title={PRODUCT_CALC_TOOLTIPS.actualScaleInterval}
+                    />
+                  </div>
+                  <div className="form-group mb-0 calc-field">
+                    <CalcLabel
+                      label="No. of Verification Intervals (n)"
+                      tooltip={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals}
+                    />
+                    <input
+                      type="text"
+                      className="input-field input-readonly"
+                      value={derivedDisplay.noOfVerificationIntervals}
+                      readOnly
+                      tabIndex={-1}
+                      title={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection
+            step={3}
+            title="Compliance & approval"
+            description="Regulatory reference numbers and maximum permissible error."
+          >
+            <div className="product-form-grid product-form-grid--2">
+              <div className="form-group mb-0">
+                <label htmlFor="pf-mpe">Maximum Permissible Error (MPE)</label>
+                <input
+                  id="pf-mpe"
+                  type="number"
+                  step="any"
+                  name="maximumPermissibleError"
+                  className="input-field"
+                  placeholder="Optional"
+                  value={formData.maximumPermissibleError}
+                  onChange={handleChange}
+                />
+              </div>
+              <div className="form-group mb-0">
+                <label htmlFor="pf-approval-no">Model Approval No</label>
+                <input
+                  id="pf-approval-no"
+                  type="text"
+                  name="modelApprovalNo"
+                  className="input-field"
+                  placeholder="Required for approval document upload"
+                  value={formData.modelApprovalNo}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection
+            step={4}
+            title="Attachments"
+            description="Optional product photo and model approval certificate."
+          >
+            <div className="product-form-upload-row">
+              <UploadField
+                label="Product image"
+                hint="Optional"
+                variant="image"
+                disabledReason={
+                  !canUploadFiles
+                    ? 'Enter Model ID above to enable upload.'
+                    : undefined
+                }
+                file={productImage}
+                uploading={uploadingImage}
+                progress={imageUploadProgress}
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                uploadLabel="Upload product photo"
+                formats="JPEG, PNG, WebP, GIF · max 15 MB"
+                inputRef={imageInputRef}
+                onSelect={handleProductImageSelect}
+                onRemove={handleRemoveProductImage}
+                submitting={submitting}
+              />
+              <UploadField
+                label="Approval document"
+                hint="PDF or image"
+                variant="document"
+                disabledReason={
+                  !canUploadApprovalDoc
+                    ? 'Enter Model ID and Model Approval No to enable upload.'
+                    : undefined
+                }
+                file={approvalDoc}
+                uploading={uploadingDoc}
+                progress={uploadProgress}
+                accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
+                uploadLabel="Upload approval document"
+                formats="PDF or image · max 15 MB"
+                inputRef={fileInputRef}
+                onSelect={handleApprovalFileSelect}
+                onRemove={handleRemoveApprovalDoc}
+                submitting={submitting}
+              />
+            </div>
+          </FormSection>
+
+          <div className="product-form-footer">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={handleCancelEdit}
+              disabled={submitting}
+            >
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={submitting}>
+              {submitting ? (
+                <span className="spinner-inline"></span>
+              ) : (
+                <>
+                  <Save size={18} />
+                  {editingId ? 'Update Product' : 'Save Product'}
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+      )}
     </div>
   );
 };
