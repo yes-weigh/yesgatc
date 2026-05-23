@@ -15,6 +15,7 @@ export type RcFormValues = {
   companyName: string;
   contactPerson: string;
   place: string;
+  address: string;
   aadhar: string;
   email: string;
   phone: string;
@@ -28,6 +29,7 @@ export const EMPTY_RC_FORM: RcFormValues = {
   companyName: '',
   contactPerson: '',
   place: '',
+  address: '',
   aadhar: '',
   email: '',
   phone: '',
@@ -41,7 +43,8 @@ export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
   return {
     companyName: doc.companyName || doc.username || '',
     contactPerson: doc.contactPerson || '',
-    place: doc.place || doc.address || '',
+    place: doc.place || '',
+    address: doc.address || '',
     aadhar: doc.aadhar || '',
     email: doc.email || '',
     phone: doc.phone || '',
@@ -63,7 +66,7 @@ export function buildRcFirestoreFields(
     username: values.companyName.trim(),
     contactPerson: values.contactPerson.trim(),
     place: values.place.trim(),
-    address: values.place.trim(),
+    address: values.address.trim(),
     gstNumber: values.gstNumber.trim(),
     email: values.email.trim(),
     phone: values.phone.replace(/\D/g, '').slice(0, 10),

@@ -142,6 +142,7 @@ export const RCList: React.FC = () => {
     if (!formValues.companyName.trim()) return 'Company / Center Name is required.';
     if (!formValues.contactPerson.trim()) return 'Contact Person is required.';
     if (!formValues.place.trim()) return 'Place is required.';
+    if (!formValues.address.trim()) return 'Address is required.';
     if (mode === 'create' && !isValidAadhar(normalizeAadhar(formValues.aadhar))) {
       return 'Aadhar number must be exactly 12 digits.';
     }
@@ -398,11 +399,20 @@ export const RCList: React.FC = () => {
           ) : (
             <div className="table-scroll-wrap">
             <table className="data-table data-table--rc">
+              <colgroup>
+                <col className="rc-col-serial" />
+                <col className="rc-col-company" />
+                <col className="rc-col-place" />
+                <col className="rc-col-vcts" />
+                <col className="rc-col-jobs" />
+                <col className="rc-col-status" />
+                <col className="rc-col-actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th className="rc-col-serial">#</th>
                   <th className="rc-col-company">Company</th>
-                  <th className="rc-col-phone">Phone</th>
+                  <th className="rc-col-place">Place</th>
                   <th className="rc-col-vcts">VCTs</th>
                   <th className="rc-col-jobs">Jobs</th>
                   <th className="rc-col-status">Status</th>
@@ -418,10 +428,16 @@ export const RCList: React.FC = () => {
                   return (
                     <tr key={rc.uid}>
                       <td className="rc-col-serial text-muted text-sm">{index + 1}</td>
-                      <td className="rc-col-company font-medium table-cell-truncate" title={company}>
-                        {company}
+                      <td className="rc-col-company font-medium">
+                        <span className="rc-cell-ellipsis" title={company}>
+                          {company}
+                        </span>
                       </td>
-                      <td className="rc-col-phone text-sm">{rc.phone || '—'}</td>
+                      <td className="rc-col-place text-sm">
+                        <span className="rc-cell-ellipsis" title={rc.place || undefined}>
+                          {rc.place || '—'}
+                        </span>
+                      </td>
                       <td className="rc-col-vcts">{rc.vctCount}</td>
                       <td className="rc-col-jobs">
                         <span

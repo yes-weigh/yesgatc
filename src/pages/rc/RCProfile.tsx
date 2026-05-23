@@ -102,12 +102,11 @@ export const RCProfile: React.FC = () => {
     }
 
     setSaving(true);
-    const place = (draft.place ?? draft.address ?? '').trim();
     const updates: Partial<FirestoreUserDoc> = {
       companyName: draft.companyName ?? '',
       contactPerson: (draft.contactPerson ?? '').trim(),
-      place,
-      address: place,
+      place: (draft.place ?? '').trim(),
+      address: (draft.address ?? '').trim(),
       gstNumber: draft.gstNumber ?? '',
       username: draft.companyName ?? profile.username ?? '',
       email: (draft.email ?? '').trim(),
@@ -223,10 +222,19 @@ export const RCProfile: React.FC = () => {
             <Field
               icon={<MapPin size={16} />}
               label="Place"
-              value={p.place ?? p.address ?? ''}
+              value={p.place ?? ''}
               editing={editing}
               onChange={set('place')}
-              placeholder="City / town / area with pin code"
+              placeholder="City / town / area"
+            />
+            <Field
+              icon={<MapPin size={16} />}
+              label="Full Address"
+              value={p.address ?? ''}
+              editing={editing}
+              onChange={set('address')}
+              placeholder="Street, city, state, PIN"
+              multiline
             />
           </div>
 

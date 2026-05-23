@@ -100,7 +100,7 @@ export interface FirestoreUserDoc {
   companyName?: string;
   contactPerson?: string;
   place?: string;
-  address?: string; // legacy; mirrored from place on save
+  address?: string;
   gstNumber?: string;
   standardWeightsCertUrl?: string;
   standardWeightsCertPath?: string;

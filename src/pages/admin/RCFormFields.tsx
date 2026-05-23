@@ -83,7 +83,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
               id="rc-place"
               type="text"
               className="input-field"
-              placeholder="City / area / PIN"
+              placeholder="City / town / area"
               value={values.place}
               onChange={e => onChange({ place: e.target.value })}
               required
@@ -177,6 +177,21 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="product-form-flat-row rc-form-row-address">
+        <div className="form-group mb-0 rc-form-address">
+          <label htmlFor="rc-address">Address with PIN *</label>
+          <textarea
+            id="rc-address"
+            className="input-field rc-form-address-input"
+            rows={2}
+            placeholder="Full postal address with pin code"
+            value={values.address}
+            onChange={e => onChange({ address: e.target.value })}
+            required
+          />
         </div>
       </div>
 

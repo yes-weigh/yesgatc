@@ -641,37 +641,60 @@ select.input-field option {
 .data-table--rc {
   table-layout: fixed;
   width: 100%;
+  min-width: 52rem;
 }
 
 .data-table--rc th,
 .data-table--rc td {
   padding: 0.75rem 1rem;
   vertical-align: middle;
+  overflow: hidden;
+}
+
+.data-table--rc col.rc-col-serial {
+  width: 2.75rem;
+}
+
+.data-table--rc col.rc-col-company {
+  width: 28%;
+}
+
+.data-table--rc col.rc-col-place {
+  width: 16%;
+}
+
+.data-table--rc col.rc-col-vcts {
+  width: 4.5rem;
+}
+
+.data-table--rc col.rc-col-jobs {
+  width: 8.5rem;
+}
+
+.data-table--rc col.rc-col-status {
+  width: 6.5rem;
+}
+
+.data-table--rc col.rc-col-actions {
+  width: 5.5rem;
 }
 
 .data-table--rc .rc-col-serial {
-  width: 3rem;
   text-align: center;
-}
-
-.data-table--rc .rc-col-company {
-  width: auto;
-}
-
-.data-table--rc .rc-col-phone {
-  width: 10rem;
-  white-space: nowrap;
 }
 
 .data-table--rc .rc-col-vcts,
 .data-table--rc .rc-col-jobs,
 .data-table--rc .rc-col-status {
-  width: 9rem;
   text-align: center;
 }
 
-.data-table--rc .rc-col-actions {
-  width: 6.5rem;
+.rc-cell-ellipsis {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .rc-status-badge {
@@ -693,13 +716,6 @@ select.input-field option {
   background: rgba(239, 68, 68, 0.1);
   color: #f87171;
   border: 1px solid rgba(239, 68, 68, 0.22);
-}
-
-.data-table--rc .table-cell-truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 0;
 }
 
 .data-table--rc .rc-jobs-summary {
@@ -1109,6 +1125,25 @@ select.input-field option {
 .rc-form-grid--cert {
   grid-template-columns: 0.9fr 0.8fr 0.7fr 1.4fr;
   align-items: stretch;
+}
+
+.rc-form-row-address {
+  padding: 0.35rem 0.5rem 0.25rem;
+}
+
+.rc-form-address {
+  width: 100%;
+}
+
+.rc-form-address-input {
+  min-height: 2.75rem;
+  resize: vertical;
+  line-height: 1.35;
+}
+
+.product-modal--wide.rc-modal .rc-form-address-input {
+  padding: 0.35rem 0.55rem;
+  font-size: 0.8125rem;
 }
 
 .rc-form-row-cert .product-form-flat-row-title {
