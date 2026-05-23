@@ -31,12 +31,12 @@ service firebase.storage {
 
     match /users/{userId}/standard-weights-cert/{fileName} {
       allow read: if isAuthenticated();
-      allow write: if isSuperAdmin() || isAuthenticated();
+      allow write: if isAuthenticated();
     }
 
     match /users/{userId}/seal/{fileName} {
       allow read: if isAuthenticated();
-      allow write: if isSuperAdmin() || isAuthenticated();
+      allow write: if isAuthenticated();
     }
   }
 }

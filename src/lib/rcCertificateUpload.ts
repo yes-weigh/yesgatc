@@ -13,10 +13,19 @@ function mapStorageError(err: unknown): Error {
       : '';
   if (code === 'storage/unauthorized' || code === 'storage/unauthenticated') {
     return new Error(
-      'Upload denied. Sign in again as Super Admin. If this persists, deploy Storage rules: firebase deploy --only storage',
+      'Upload denied. Sign out and sign in again as Super Admin, then retry.',
     );
   }
   return err instanceof Error ? err : new Error('Upload failed');
+}
+
+async function ensureUploadAuth(): Promise<void> {
+  await auth.authStateReady();
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('You must be signed in to upload files.');
+  }
+  await user.getIdToken(true);
 }
 
 export async function uploadRcStandardWeightsCert(
@@ -28,10 +37,7 @@ export async function uploadRcStandardWeightsCert(
   if (validation) throw new Error(validation);
   if (!rcUid.trim()) throw new Error('Save the regional center first to upload the certificate.');
 
-  await auth.authStateReady();
-  if (!auth.currentUser) {
-    throw new Error('You must be signed in to upload files.');
-  }
+  await ensureUploadAuth();
 
   const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
   const path = `users/${rcUid}/standard-weights-cert/${Date.now()}${ext}`;
@@ -77,10 +83,7 @@ export async function uploadRcSeal(
   if (validation) throw new Error(validation);
   if (!rcUid.trim()) throw new Error('Save the regional center first to upload the seal.');
 
-  await auth.authStateReady();
-  if (!auth.currentUser) {
-    throw new Error('You must be signed in to upload files.');
-  }
+  await ensureUploadAuth();
 
   const path = `users/${rcUid}/seal/${Date.now()}.png`;
   const storageRef = ref(storage, path);
