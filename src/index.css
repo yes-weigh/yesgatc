@@ -2344,52 +2344,40 @@ select.input-field option {
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   RC Admin — VCT Management
+   RC Admin — VCT Management (flat no-scroll modal, like Products / RC)
    ────────────────────────────────────────────────────────────────── */
 .modal-dialog.vct-modal {
-  max-width: min(92vw, 40rem);
+  max-width: min(96vw, 76rem);
 }
 
-.modal-dialog.vct-modal--wide {
-  max-width: min(96vw, 52rem);
-  max-height: calc(100vh - 1.5rem);
-}
-
-.product-modal.vct-modal .product-form-panel,
-.product-modal.vct-modal .product-form {
-  flex: 1;
+.product-modal--wide.vct-modal .product-form-panel,
+.product-modal--wide.vct-modal .product-form {
+  flex: none;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 
-.product-modal.vct-modal .product-form-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 0.65rem 1rem 0.5rem;
-  -webkit-overflow-scrolling: touch;
+.product-modal--wide.vct-modal .product-form-body {
+  overflow: visible;
+  flex: none;
+  padding: 0.45rem 0.85rem 0.35rem;
 }
 
-.product-modal.vct-modal .product-form-topbar {
-  padding: 0.55rem 1rem;
-  flex-shrink: 0;
+.product-modal--wide.vct-modal .product-form-topbar {
+  padding: 0.5rem 0.85rem;
+  align-items: center;
 }
 
-.product-modal.vct-modal .product-form-topbar h2 {
+.product-modal--wide.vct-modal .product-form-topbar h2 {
   font-size: 1rem;
   margin: 0;
 }
 
-.product-modal.vct-modal .product-form-footer {
-  padding: 0.5rem 1rem;
-  flex-shrink: 0;
+.product-modal--wide.vct-modal .product-form-footer {
+  padding: 0.45rem 0.85rem;
 }
 
 .vct-form-flat {
-  gap: 0.45rem;
-  padding-bottom: 0.25rem;
+  gap: 0.35rem;
 }
 
 .vct-form-flat .product-form-flat-row {
@@ -2403,12 +2391,29 @@ select.input-field option {
 }
 
 .vct-form-grid--main {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.vct-form-grid--secondary {
-  grid-template-columns: 1fr 1fr;
-  align-items: end;
+.vct-form-row-address {
+  padding: 0.35rem 0.5rem 0.25rem;
+}
+
+.vct-form-address {
+  width: 100%;
+}
+
+.vct-form-row-bottom {
+  display: grid;
+  grid-template-columns: 0.88fr 0.72fr 1fr 1fr 1fr;
+  gap: 0.45rem 0.55rem;
+  align-items: stretch;
+  padding: 0.35rem 0.5rem;
+}
+
+.vct-form-job-mode {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
 }
 
 .vct-form-aadhar-readonly label {
@@ -2426,55 +2431,78 @@ select.input-field option {
   border: 1px solid var(--border-glass);
 }
 
-.vct-form-mode-hint {
-  padding: 0 0.5rem;
+.product-modal--wide.vct-modal .product-form-flat .form-group label {
+  font-size: 0.72rem;
+  margin-bottom: 0.15rem;
 }
 
-.vct-form-approval-hint {
-  padding: 0 0.5rem 0.25rem;
-  color: var(--accent-orange);
+.product-modal--wide.vct-modal .product-form-flat .input-field {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8125rem;
 }
 
-.vct-form-address {
-  width: 100%;
-}
-
-.vct-textarea {
-  min-height: 3.25rem;
-  resize: vertical;
-}
-
-.vct-form-grid--emergency {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.vct-form-docs-row .product-form-flat-row-title {
-  margin-bottom: 0.35rem;
-}
-
-.vct-form-docs-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.vct-modal .product-upload-field--compact {
+.product-modal--wide.vct-modal .product-upload-field--compact {
   min-width: 0;
+  min-height: 3.65rem;
 }
 
-.vct-modal .product-upload-field--compact .product-upload-field-head {
-  margin-bottom: 0.25rem;
+.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-head {
+  width: 5.5rem;
+  padding: 0.4rem 0.5rem;
 }
 
-.vct-modal .product-upload-dropzone--compact {
-  min-height: 4.5rem;
+.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-label {
+  font-size: 0.72rem;
+  line-height: 1.2;
 }
 
-.vct-modal .product-upload-preview--compact .product-upload-preview-img,
-.vct-modal .product-upload-preview--compact .product-upload-preview-icon {
-  width: 2.75rem;
-  height: 2.75rem;
+.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-hint {
+  font-size: 0.62rem;
+}
+
+.product-modal--wide.vct-modal .product-upload-preview--compact .product-upload-preview-img,
+.product-modal--wide.vct-modal .product-upload-preview--compact .product-upload-preview-icon {
+  width: 34px;
+  height: 34px;
+}
+
+.product-modal--wide.vct-modal .product-upload-preview--compact .product-upload-preview-meta p {
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.product-modal--wide.vct-modal .product-upload-preview-actions {
+  gap: 0.25rem;
+}
+
+.product-modal--wide.vct-modal .product-upload-preview-actions .btn {
+  padding: 0.12rem 0.35rem;
+  font-size: 0.62rem;
+}
+
+.product-modal--wide.vct-modal .product-upload-preview-actions a.btn {
+  display: none;
+}
+
+.mode-toggle--compact {
+  width: 100%;
+}
+
+.mode-toggle--compact .mode-btn {
+  flex: 1;
+  justify-content: center;
+  padding: 0.38rem 0.3rem;
+  font-size: 0.72rem;
+}
+
+@media (max-width: 1100px) {
+  .vct-form-grid--main {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vct-form-row-bottom {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .status-badge.vct-status-pending {
@@ -2546,8 +2574,8 @@ select.input-field option {
 }
 
 @media (max-width: 768px) {
-  .vct-form-grid--emergency,
-  .vct-form-docs-grid {
+  .vct-form-grid--main,
+  .vct-form-row-bottom {
     grid-template-columns: 1fr;
   }
 
@@ -2558,16 +2586,6 @@ select.input-field option {
   .vct-review-span-2 {
     grid-column: span 1;
   }
-}
-
-.vct-modal .form-group label {
-  font-size: 0.72rem;
-  margin-bottom: 0.15rem;
-}
-
-.vct-modal .input-field {
-  padding: 0.4rem 0.55rem;
-  font-size: 0.8125rem;
 }
 
 .data-table--vct-rc .vct-rc-col-serial {

@@ -507,7 +507,7 @@ export const VCTManagement: React.FC = () => {
             onClick={handleCloseModal}
           >
             <div
-              className="modal-dialog product-modal product-modal--wide vct-modal vct-modal--wide glass"
+              className="modal-dialog product-modal product-modal--wide rc-modal vct-modal glass"
               onClick={e => e.stopPropagation()}
             >
               <div className="product-form-panel">
@@ -525,7 +525,7 @@ export const VCTManagement: React.FC = () => {
                       )}
                     </h2>
                     <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
-                      {error || '\u00a0'}
+                      {error || (showAddForm ? 'Super Admin approval required before sign-in.' : '\u00a0')}
                     </p>
                   </div>
                   <button
