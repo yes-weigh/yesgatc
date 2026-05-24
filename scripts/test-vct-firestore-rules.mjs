@@ -1,0 +1,142 @@
+/**
+ * Firestore rules smoke test — RC Admin Add Technician flow.
+ * Run: npm run test:rules
+ */
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import {
+  initializeTestEnvironment,
+  assertSucceeds,
+  assertFails,
+} from '@firebase/rules-unit-testing';
+import {
+  collection,
+  doc,
+  getDocs,
+  limit,
+  query,
+  setDoc,
+  where,
+} from 'firebase/firestore';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const rules = readFileSync(join(__dirname, '..', 'firestore.rules'), 'utf8');
+
+const RC_UID = 'rc-admin-test-001';
+const VCT_UID = 'vct-tech-test-001';
+const RC_AADHAR = '111111111111';
+const VCT_AADHAR = '222222222222';
+
+let passed = 0;
+let failed = 0;
+
+function ok(name) {
+  passed += 1;
+  console.log(`  ✓ ${name}`);
+}
+
+function fail(name, err) {
+  failed += 1;
+  console.error(`  ✗ ${name}`);
+  console.error(`    ${err instanceof Error ? err.message : err}`);
+}
+
+async function run() {
+  console.log('\nFirestore rules — RC Add Technician\n');
+
+  const testEnv = await initializeTestEnvironment({
+    projectId: 'yesgatc-rules-test',
+    firestore: { rules },
+  });
+
+  try {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', RC_UID), {
+        aadhar: RC_AADHAR,
+        role: 'rc_admin',
+        username: 'Test RC',
+        companyName: 'Test RC Center',
+      });
+    });
+
+    const rcDb = testEnv.authenticatedContext(RC_UID).firestore();
+
+    try {
+      await assertSucceeds(
+        getDocs(
+          query(collection(rcDb, 'users'), where('aadhar', '==', VCT_AADHAR), limit(1)),
+        ),
+      );
+      ok('RC admin can run Aadhar duplicate-check query');
+    } catch (err) {
+      fail('RC admin can run Aadhar duplicate-check query', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(doc(rcDb, 'users', VCT_UID), {
+          aadhar: VCT_AADHAR,
+          role: 'vct',
+          rcId: RC_UID,
+          approvalStatus: 'pending',
+          username: 'Test Technician',
+          phone: '9876543210',
+          address: 'Test address',
+          pincode: '560001',
+          policeStation: 'Test PS',
+          secondaryContactName: 'Contact',
+          secondaryContactRelationship: 'Spouse',
+          secondaryContactPhone: '9876543211',
+          workflowMode: 'auto',
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      ok('RC admin can create VCT profile at new uid');
+    } catch (err) {
+      fail('RC admin can create VCT profile at new uid', err);
+    }
+
+    try {
+      await assertSucceeds(
+        getDocs(
+          query(
+            collection(rcDb, 'users'),
+            where('role', '==', 'vct'),
+            where('rcId', '==', RC_UID),
+          ),
+        ),
+      );
+      ok('RC admin can list their VCT technicians');
+    } catch (err) {
+      fail('RC admin can list their VCT technicians', err);
+    }
+
+    const otherRcDb = testEnv.authenticatedContext('other-rc-999').firestore();
+    try {
+      await assertFails(
+        setDoc(doc(otherRcDb, 'users', 'vct-hijack'), {
+          aadhar: '333333333333',
+          role: 'vct',
+          rcId: RC_UID,
+          approvalStatus: 'pending',
+          username: 'Hijack',
+        }),
+      );
+      ok('Unauthenticated profile cannot create VCT under another RC');
+    } catch (err) {
+      fail('Unauthenticated profile cannot create VCT under another RC', err);
+    }
+  } finally {
+    await testEnv.cleanup();
+  }
+
+  console.log(`\n${passed} passed, ${failed} failed\n`);
+  process.exit(failed > 0 ? 1 : 0);
+}
+
+run().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

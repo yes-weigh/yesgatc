@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Job, Product, Certificate } from '../types';
-import { useAuth } from './AuthContext';
+import { useAuth } from './useAuth';
 import { filterAdminManagedProducts } from '../lib/productAccess';
 
 interface AppContextType {

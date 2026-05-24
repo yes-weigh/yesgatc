@@ -35,6 +35,13 @@ service cloud.firestore {
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid;
 
+      // Aadhar duplicate check (where('aadhar', '==', …)) — RC / Super Admin only
+      allow list: if (isSuperAdmin() || isRCAdmin())
+        && request.query.limit <= 1
+        && request.query.filters.size() == 1
+        && request.query.filters[0].field.path == ['aadhar']
+        && request.query.filters[0].op == '==';
+
       allow create: if isRCAdmin()
         && request.resource.data.role == 'vct'
         && request.resource.data.rcId == request.auth.uid
