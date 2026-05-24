@@ -2639,6 +2639,31 @@ select.input-field option {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.vct-form-row-profile {
+  max-width: 22rem;
+}
+
+.vct-form-row-profile .product-upload-field--compact {
+  min-height: 4.5rem;
+}
+
+.vct-table-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--border-glass);
+}
+
+.vct-table-avatar--placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+}
+
 .vct-form-row-address {
   padding: 0.75rem 1rem;
 }
@@ -2792,6 +2817,36 @@ select.input-field option {
 
 .vct-review-body {
   padding: 0.75rem 1rem 1rem;
+}
+
+.vct-review-profile {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.vct-review-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid var(--border-glass);
+}
+
+.vct-review-avatar--placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+}
+
+.vct-review-profile-name {
+  margin: 0 0 0.2rem;
+  font-size: 1.05rem;
+  font-weight: 600;
 }
 
 .vct-review-grid {

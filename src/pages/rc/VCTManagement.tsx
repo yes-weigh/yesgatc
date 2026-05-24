@@ -16,7 +16,7 @@ import {
   syncAuthPassword,
 } from '../../lib/aadharAuth';
 import { vctApprovalLabel } from '../../lib/vctApproval';
-import { uploadVctDocument, type VctDocKind } from '../../lib/vctDocumentUpload';
+import { uploadVctDocument, uploadVctProfilePhoto, type VctDocKind } from '../../lib/vctDocumentUpload';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
   buildVctProfileFields,
@@ -24,11 +24,13 @@ import {
   validateVctProfile,
   vctDocFieldsFromMeta,
   vctDocsFromUser,
+  vctProfilePhotoFieldsFromMeta,
+  vctProfilePhotoFromUser,
   VCT_DOC_KEYS,
   type VctDocKey,
 } from '../../lib/vctProfileFields';
 import {
-  UserPlus, Trash2, Eye, EyeOff, RefreshCw, Users, Pencil, X, Plus, Save, Zap, ClipboardList,
+  UserPlus, Trash2, Eye, EyeOff, RefreshCw, Users, Pencil, X, Plus, Save, Zap, ClipboardList, UserCircle,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
 import {
@@ -94,6 +96,9 @@ export const VCTManagement: React.FC = () => {
   const [formValues, setFormValues] = useState<VctFormValues>(EMPTY_VCT_FORM);
   const [docUploads, setDocUploads] = useState<Record<VctDocKey, VctDocUploadState>>(EMPTY_DOC_UPLOADS);
   const [pendingDocs, setPendingDocs] = useState<Partial<Record<VctDocKey, File>>>({});
+  const [profilePhoto, setProfilePhoto] = useState<VctDocUploadState>({ ...EMPTY_VCT_DOC_STATE });
+  const [pendingProfilePhoto, setPendingProfilePhoto] = useState<File | null>(null);
+  const [profilePhotoRemoved, setProfilePhotoRemoved] = useState(false);
 
   const [showPw, setShowPw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -124,6 +129,9 @@ export const VCTManagement: React.FC = () => {
   const resetDocs = () => {
     setDocUploads(EMPTY_DOC_UPLOADS());
     setPendingDocs({});
+    setProfilePhoto({ ...EMPTY_VCT_DOC_STATE });
+    setPendingProfilePhoto(null);
+    setProfilePhotoRemoved(false);
   };
 
   const resetForm = () => {
@@ -174,6 +182,23 @@ export const VCTManagement: React.FC = () => {
       return next;
     });
     setDocState(key, EMPTY_VCT_DOC_STATE);
+  };
+
+  const handleProfilePhotoSelect = (file: File) => {
+    setPendingProfilePhoto(file);
+    setProfilePhotoRemoved(false);
+    const previewUrl = URL.createObjectURL(file);
+    setProfilePhoto({
+      file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
+      uploading: false,
+      progress: 0,
+    });
+  };
+
+  const handleProfilePhotoRemove = () => {
+    setPendingProfilePhoto(null);
+    setProfilePhotoRemoved(true);
+    setProfilePhoto({ ...EMPTY_VCT_DOC_STATE });
   };
 
   const docForValidation = (key: VctDocKey): ProductFileMeta | null => {
@@ -230,6 +255,30 @@ export const VCTManagement: React.FC = () => {
     }
   };
 
+  const uploadProfilePhoto = async (vctUid: string): Promise<Partial<FirestoreUserDoc>> => {
+    if (profilePhotoRemoved && !pendingProfilePhoto) {
+      return vctProfilePhotoFieldsFromMeta(null);
+    }
+    if (!pendingProfilePhoto) {
+      const existing = profilePhoto.file;
+      if (existing?.url && !existing.url.startsWith('blob:')) {
+        return vctProfilePhotoFieldsFromMeta(existing);
+      }
+      return {};
+    }
+    setProfilePhoto(prev => ({ ...prev, uploading: true, progress: 0 }));
+    try {
+      const meta = await uploadVctProfilePhoto(vctUid, pendingProfilePhoto, pct => {
+        setProfilePhoto(prev => ({ ...prev, progress: pct }));
+      });
+      setProfilePhoto({ file: meta, uploading: false, progress: 100 });
+      return vctProfilePhotoFieldsFromMeta(meta);
+    } catch (err) {
+      setProfilePhoto(prev => ({ ...prev, uploading: false, progress: 0 }));
+      throw err;
+    }
+  };
+
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (showAddForm) await handleCreate();
@@ -260,6 +309,7 @@ export const VCTManagement: React.FC = () => {
       const cred = await createAuthUserForAadhar(cleanAadhar, formValues.password);
       const uid = cred.user.uid;
       const docFields = await uploadAllDocs(uid);
+      const photoFields = await uploadProfilePhoto(uid);
 
       const profile: FirestoreUserDoc = {
         aadhar: cleanAadhar,
@@ -272,6 +322,7 @@ export const VCTManagement: React.FC = () => {
         approvalStatus: 'pending',
         ...buildVctProfileFields(formValues),
         ...docFields,
+        ...photoFields,
       };
       await setDoc(doc(db, 'users', uid), profile);
 
@@ -298,11 +349,13 @@ export const VCTManagement: React.FC = () => {
     setError('');
     try {
       const docFields = await uploadAllDocs(uid);
+      const photoFields = await uploadProfilePhoto(uid);
 
       const updates: Partial<FirestoreUserDoc> = {
         ...buildVctProfileFields(formValues),
         workflowMode: formValues.workflowMode,
         ...docFields,
+        ...photoFields,
       };
 
       if (formValues.password.trim().length >= 6) {
@@ -337,6 +390,12 @@ export const VCTManagement: React.FC = () => {
     setFormValues(vctFormFromUser(v));
     setDocUploads(docUploadsFromUser(v));
     setPendingDocs({});
+    setProfilePhoto({
+      ...EMPTY_VCT_DOC_STATE,
+      file: vctProfilePhotoFromUser(v),
+    });
+    setPendingProfilePhoto(null);
+    setProfilePhotoRemoved(false);
     setShowPw(false);
     setError('');
   };
@@ -404,6 +463,9 @@ export const VCTManagement: React.FC = () => {
                   showPassword={showPw}
                   onTogglePassword={() => setShowPw(p => !p)}
                   loginAadhar={editingVct?.aadhar}
+                  profilePhoto={profilePhoto}
+                  onProfilePhotoSelect={handleProfilePhotoSelect}
+                  onProfilePhotoRemove={handleProfilePhotoRemove}
                   docStates={docUploads}
                   onDocSelect={handleDocSelect}
                   onDocRemove={handleDocRemove}
@@ -438,6 +500,7 @@ export const VCTManagement: React.FC = () => {
         </InlineFormPanel>
       )}
 
+      {!showForm && (
       <div className="panel glass panel--table mb-6">
         <div className="panel-header justify-between">
           <div>
@@ -486,7 +549,22 @@ export const VCTManagement: React.FC = () => {
                   {vcts.map((v, index) => (
                     <tr key={v.uid}>
                       <td className="vct-rc-col-serial text-muted text-sm">{index + 1}</td>
-                      <td className="font-medium">{v.username || '—'}</td>
+                      <td className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {v.profilePhotoUrl ? (
+                            <img
+                              src={v.profilePhotoUrl}
+                              alt=""
+                              className="vct-table-avatar"
+                            />
+                          ) : (
+                            <span className="vct-table-avatar vct-table-avatar--placeholder">
+                              <UserCircle size={18} />
+                            </span>
+                          )}
+                          <span>{v.username || '—'}</span>
+                        </div>
+                      </td>
                       <td className="text-sm">{v.phone || '—'}</td>
                       <td className="text-muted text-sm">{formatAadharDisplay(v.aadhar)}</td>
                       <td>
@@ -562,6 +640,7 @@ export const VCTManagement: React.FC = () => {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };

@@ -119,6 +119,10 @@ export interface FirestoreUserDoc {
   pccDocPath?: string;
   pccDocName?: string;
   pccDocContentType?: string;
+  profilePhotoUrl?: string;
+  profilePhotoPath?: string;
+  profilePhotoName?: string;
+  profilePhotoContentType?: string;
   /** RC-created VCTs start as pending until Super Admin approves. */
   approvalStatus?: VctApprovalStatus;
   approvedAt?: string;

@@ -687,6 +687,7 @@ export const Products: React.FC = () => {
         </InlineFormPanel>
       )}
 
+      {!showForm && (
       <div className="panel glass mb-6">
         <div className="panel-header justify-between">
           <h2>Configured Products</h2>
@@ -800,6 +801,7 @@ export const Products: React.FC = () => {
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 };

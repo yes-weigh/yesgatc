@@ -530,6 +530,7 @@ export const RCList: React.FC = () => {
         </InlineFormPanel>
       )}
 
+      {!showForm && (
       <div className="panel glass panel--table mb-6">
         <div className="panel-header justify-between">
           <div>
@@ -664,6 +665,7 @@ export const RCList: React.FC = () => {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };

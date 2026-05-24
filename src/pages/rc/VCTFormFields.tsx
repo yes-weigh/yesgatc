@@ -80,6 +80,9 @@ type VCTFormFieldsProps = {
   showPassword: boolean;
   onTogglePassword: () => void;
   loginAadhar?: string;
+  profilePhoto: VctDocUploadState;
+  onProfilePhotoSelect: (file: File) => void;
+  onProfilePhotoRemove: () => void;
   docStates: Record<VctDocKey, VctDocUploadState>;
   onDocSelect: (key: VctDocKey, file: File) => void;
   onDocRemove: (key: VctDocKey) => void;
@@ -93,6 +96,9 @@ export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
   showPassword,
   onTogglePassword,
   loginAadhar,
+  profilePhoto,
+  onProfilePhotoSelect,
+  onProfilePhotoRemove,
   docStates,
   onDocSelect,
   onDocRemove,
@@ -102,6 +108,7 @@ export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
   const biodataRef = useRef<HTMLInputElement>(null);
   const educationRef = useRef<HTMLInputElement>(null);
   const pccRef = useRef<HTMLInputElement>(null);
+  const profilePhotoRef = useRef<HTMLInputElement>(null);
 
   const docRefs: Record<VctDocKey, React.RefObject<HTMLInputElement | null>> = {
     aadharDoc: aadharDocRef,
@@ -116,8 +123,33 @@ export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
     if (file) onDocSelect(key, file);
   };
 
+  const handleProfilePhotoInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) onProfilePhotoSelect(file);
+  };
+
   return (
     <div className="product-form-flat vct-form-flat">
+      <div className="product-form-flat-row vct-form-row-profile">
+        <UploadField
+          label="Profile photo"
+          hint="Optional"
+          file={profilePhoto.file}
+          uploading={profilePhoto.uploading}
+          progress={profilePhoto.progress}
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          uploadLabel="Upload photo"
+          formats="JPEG, PNG, WebP, GIF · max 15 MB"
+          inputRef={profilePhotoRef}
+          onSelect={handleProfilePhotoInput}
+          onRemove={onProfilePhotoRemove}
+          submitting={submitting}
+          variant="image"
+          compact
+        />
+      </div>
+
       <div className="product-form-flat-row vct-form-row-main">
         <div className="vct-form-grid vct-form-grid--main">
           <div className="form-group mb-0">

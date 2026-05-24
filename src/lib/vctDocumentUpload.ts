@@ -3,6 +3,7 @@ import { auth, storage } from '../firebase';
 import {
   deleteProductStorageFile,
   validateApprovalFile,
+  validateProductImageFile,
   type ProductFileMeta,
 } from './productApprovalUpload';
 
@@ -52,6 +53,38 @@ export async function uploadVctDocument(
   const folder = FOLDER_BY_KIND[kind];
   const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
   const path = `users/${vctUid}/${folder}/${Date.now()}${ext}`;
+  const storageRef = ref(storage, path);
+  const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+
+  return new Promise((resolve, reject) => {
+    task.on(
+      'state_changed',
+      snapshot => {
+        const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+        onProgress?.(pct);
+      },
+      err => reject(mapStorageError(err)),
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref);
+        resolve({ url, path, name: file.name, contentType: file.type });
+      },
+    );
+  });
+}
+
+export async function uploadVctProfilePhoto(
+  vctUid: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ProductFileMeta> {
+  const validation = validateProductImageFile(file);
+  if (validation) throw new Error(validation);
+  if (!vctUid.trim()) throw new Error('Save the technician profile first to upload a photo.');
+
+  await ensureUploadAuth();
+
+  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
+  const path = `users/${vctUid}/profile-photo/${Date.now()}${ext}`;
   const storageRef = ref(storage, path);
   const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
 

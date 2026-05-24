@@ -137,3 +137,30 @@ export function vctDocsFromUser(doc: FirestoreUserDoc): Record<VctDocKey, Produc
     pcc: vctDocMetaFromUser(doc, 'pcc'),
   };
 }
+
+export function vctProfilePhotoFromUser(doc: FirestoreUserDoc): ProductFileMeta | null {
+  if (!doc.profilePhotoUrl) return null;
+  return {
+    url: doc.profilePhotoUrl,
+    path: doc.profilePhotoPath || '',
+    name: doc.profilePhotoName || 'Profile photo',
+    contentType: doc.profilePhotoContentType || 'image/jpeg',
+  };
+}
+
+export function vctProfilePhotoFieldsFromMeta(meta: ProductFileMeta | null): Partial<FirestoreUserDoc> {
+  if (!meta) {
+    return {
+      profilePhotoUrl: '',
+      profilePhotoPath: '',
+      profilePhotoName: '',
+      profilePhotoContentType: '',
+    };
+  }
+  return {
+    profilePhotoUrl: meta.url,
+    profilePhotoPath: meta.path,
+    profilePhotoName: meta.name,
+    profilePhotoContentType: meta.contentType,
+  };
+}

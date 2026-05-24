@@ -8,7 +8,7 @@ import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { vctApprovalLabel } from '../../lib/vctApproval';
 import { vctDocMetaFromUser, VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
 import {
-  Users, Building2, RefreshCw, Trash2, Zap, ClipboardList, CheckCircle2, Eye, X, ExternalLink,
+  Users, Building2, RefreshCw, Trash2, Zap, ClipboardList, CheckCircle2, Eye, X, ExternalLink, UserCircle,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
 
@@ -154,6 +154,24 @@ export const AdminVCTList: React.FC = () => {
             </div>
 
             <div className="product-form-body vct-review-body">
+              <div className="vct-review-profile">
+                {reviewing.profilePhotoUrl ? (
+                  <img
+                    src={reviewing.profilePhotoUrl}
+                    alt={reviewing.username || 'Technician'}
+                    className="vct-review-avatar"
+                  />
+                ) : (
+                  <span className="vct-review-avatar vct-review-avatar--placeholder">
+                    <UserCircle size={40} />
+                  </span>
+                )}
+                <div>
+                  <p className="vct-review-profile-name">{reviewing.username || '—'}</p>
+                  <p className="text-muted text-sm">{formatAadharDisplay(reviewing.aadhar)}</p>
+                </div>
+              </div>
+
               <div className="vct-review-grid">
                 <div><span className="vct-review-label">Regional Center</span><p>{reviewing.rcCenterName}</p></div>
                 <div><span className="vct-review-label">Status</span><p>{vctApprovalLabel(reviewing.approvalStatus)}</p></div>
@@ -203,6 +221,7 @@ export const AdminVCTList: React.FC = () => {
         </InlineFormPanel>
       )}
 
+      {!reviewing && (
       <div className="panel glass panel--table mb-6">
         <div className="panel-header justify-between">
           <div>
@@ -316,6 +335,7 @@ export const AdminVCTList: React.FC = () => {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };
