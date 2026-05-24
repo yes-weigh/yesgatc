@@ -217,7 +217,6 @@ export const Layout: React.FC = () => {
         <div className="content-area">
           <Outlet />
         </div>
-        <div id="app-modal-root" className="app-modal-root" />
       </main>
     </div>
   );

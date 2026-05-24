@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { vctApprovalLabel } from '../../lib/vctApproval';
 import { vctDocMetaFromUser, VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
 import {
   Users, Building2, RefreshCw, Trash2, Zap, ClipboardList, CheckCircle2, Eye, X, ExternalLink,
 } from 'lucide-react';
-import { getModalPortalRoot } from '../../lib/modalPortal';
 import type { FirestoreUserDoc } from '../../types';
 
 interface VCTRecord extends FirestoreUserDoc {
@@ -134,6 +133,76 @@ export const AdminVCTList: React.FC = () => {
         </div>
       </div>
 
+      {reviewing && (
+        <InlineFormPanel id="vct-review" className="mb-6 inline-form-panel--wide inline-form-panel--vct">
+          <div className="product-form-panel">
+            <div className="product-form-topbar">
+              <div className="product-form-topbar-text">
+                <h2 id="vct-review-title">
+                  <Eye className="inline-icon" /> Review Technician
+                </h2>
+                <p className="text-muted text-sm mb-0">{reviewing.username}</p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
+                onClick={() => setReviewing(null)}
+                disabled={approving}
+              >
+                <X size={15} /> Close
+              </button>
+            </div>
+
+            <div className="product-form-body vct-review-body">
+              <div className="vct-review-grid">
+                <div><span className="vct-review-label">Regional Center</span><p>{reviewing.rcCenterName}</p></div>
+                <div><span className="vct-review-label">Status</span><p>{vctApprovalLabel(reviewing.approvalStatus)}</p></div>
+                <div><span className="vct-review-label">Aadhar Number</span><p>{formatAadharDisplay(reviewing.aadhar)}</p></div>
+                <div><span className="vct-review-label">Mobile Number</span><p>{reviewing.phone || '—'}</p></div>
+                <div><span className="vct-review-label">PIN Code</span><p>{reviewing.pincode || '—'}</p></div>
+                <div><span className="vct-review-label">Police Station</span><p>{reviewing.policeStation || '—'}</p></div>
+                <div className="vct-review-span-2">
+                  <span className="vct-review-label">Residential Address</span>
+                  <p>{reviewing.address || '—'}</p>
+                </div>
+                <div><span className="vct-review-label">Emergency Contact</span><p>{reviewing.secondaryContactName || '—'}</p></div>
+                <div><span className="vct-review-label">Relationship</span><p>{reviewing.secondaryContactRelationship || '—'}</p></div>
+                <div><span className="vct-review-label">Emergency Phone</span><p>{reviewing.secondaryContactPhone || '—'}</p></div>
+                <div><span className="vct-review-label">Job Mode</span><p>{reviewing.workflowMode === 'manual' ? 'Manual' : 'Auto'}</p></div>
+              </div>
+
+              <div className="vct-review-docs">
+                <span className="vct-review-label">Documents</span>
+                <div className="vct-review-doc-links">
+                  {VCT_DOC_KEYS.map(key => (
+                    renderDocLink(VCT_DOC_LABELS[key].label, vctDocMetaFromUser(reviewing, key)?.url)
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {reviewing.approvalStatus === 'pending' && (
+              <div className="product-form-footer">
+                <button
+                  type="button"
+                  className="btn btn-primary flex items-center gap-2"
+                  onClick={() => handleApprove(reviewing)}
+                  disabled={approving}
+                >
+                  {approving ? (
+                    <span className="spinner-inline"></span>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={18} /> Approve Technician
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </InlineFormPanel>
+      )}
+
       <div className="panel glass panel--table mb-6">
         <div className="panel-header justify-between">
           <div>
@@ -247,89 +316,6 @@ export const AdminVCTList: React.FC = () => {
           )}
         </div>
       </div>
-
-      {reviewing &&
-        createPortal(
-          <div
-            className="modal-overlay rc-modal-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="vct-review-title"
-            onClick={() => !approving && setReviewing(null)}
-          >
-            <div
-              className="modal-dialog product-modal product-modal--wide vct-modal vct-modal--wide glass"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="product-form-panel">
-                <div className="product-form-topbar">
-                  <div className="product-form-topbar-text">
-                    <h2 id="vct-review-title">
-                      <Eye className="inline-icon" /> Review Technician
-                    </h2>
-                    <p className="text-muted text-sm mb-0">{reviewing.username}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                    onClick={() => setReviewing(null)}
-                    disabled={approving}
-                  >
-                    <X size={15} /> Close
-                  </button>
-                </div>
-
-                <div className="product-form-body vct-review-body">
-                  <div className="vct-review-grid">
-                    <div><span className="vct-review-label">Regional Center</span><p>{reviewing.rcCenterName}</p></div>
-                    <div><span className="vct-review-label">Status</span><p>{vctApprovalLabel(reviewing.approvalStatus)}</p></div>
-                    <div><span className="vct-review-label">Aadhar Number</span><p>{formatAadharDisplay(reviewing.aadhar)}</p></div>
-                    <div><span className="vct-review-label">Mobile Number</span><p>{reviewing.phone || '—'}</p></div>
-                    <div><span className="vct-review-label">PIN Code</span><p>{reviewing.pincode || '—'}</p></div>
-                    <div><span className="vct-review-label">Police Station</span><p>{reviewing.policeStation || '—'}</p></div>
-                    <div className="vct-review-span-2">
-                      <span className="vct-review-label">Residential Address</span>
-                      <p>{reviewing.address || '—'}</p>
-                    </div>
-                    <div><span className="vct-review-label">Emergency Contact</span><p>{reviewing.secondaryContactName || '—'}</p></div>
-                    <div><span className="vct-review-label">Relationship</span><p>{reviewing.secondaryContactRelationship || '—'}</p></div>
-                    <div><span className="vct-review-label">Emergency Phone</span><p>{reviewing.secondaryContactPhone || '—'}</p></div>
-                    <div><span className="vct-review-label">Job Mode</span><p>{reviewing.workflowMode === 'manual' ? 'Manual' : 'Auto'}</p></div>
-                  </div>
-
-                  <div className="vct-review-docs">
-                    <span className="vct-review-label">Documents</span>
-                    <div className="vct-review-doc-links">
-                      {VCT_DOC_KEYS.map(key => (
-                        renderDocLink(VCT_DOC_LABELS[key].label, vctDocMetaFromUser(reviewing, key)?.url)
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {reviewing.approvalStatus === 'pending' && (
-                  <div className="product-form-footer">
-                    <button
-                      type="button"
-                      className="btn btn-primary flex items-center gap-2"
-                      onClick={() => handleApprove(reviewing)}
-                      disabled={approving}
-                    >
-                      {approving ? (
-                        <span className="spinner-inline"></span>
-                      ) : (
-                        <>
-                          <CheckCircle2 size={18} /> Approve Technician
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>,
-          getModalPortalRoot(),
-        )}
     </div>
   );
 };

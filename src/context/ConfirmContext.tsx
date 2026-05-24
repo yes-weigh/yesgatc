@@ -6,8 +6,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
-import { getModalPortalRoot, lockModalHostScroll } from '../lib/modalPortal';
 
 export type ConfirmOptions = {
   title?: string;
@@ -48,8 +46,6 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (!pending) return;
 
-    const unlockScroll = lockModalHostScroll();
-
     const focusTimer = requestAnimationFrame(() => {
       cancelRef.current?.focus();
     });
@@ -60,56 +56,50 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
     window.addEventListener('keydown', onKey);
 
     return () => {
-      unlockScroll();
       cancelAnimationFrame(focusTimer);
       window.removeEventListener('keydown', onKey);
     };
   }, [pending, dismiss]);
 
-  const dialog =
-    pending &&
-    createPortal(
-      <div
-        className="modal-overlay confirm-overlay"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="confirm-dialog-title"
-        aria-describedby="confirm-dialog-message"
-        onClick={() => dismiss(false)}
-      >
-        <div className="confirm-dialog glass" onClick={e => e.stopPropagation()}>
-          <h3 id="confirm-dialog-title" className="confirm-dialog-title">
-            {pending.options.title ?? 'Confirm'}
-          </h3>
-          <p id="confirm-dialog-message" className="confirm-dialog-message">
-            {pending.options.message}
-          </p>
-          <div className="confirm-dialog-actions">
-            <button
-              ref={cancelRef}
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => dismiss(false)}
-            >
-              {pending.options.cancelLabel ?? 'Cancel'}
-            </button>
-            <button
-              type="button"
-              className={`btn ${pending.options.destructive ? 'btn-danger' : 'btn-primary'}`}
-              onClick={() => dismiss(true)}
-            >
-              {pending.options.confirmLabel ?? 'OK'}
-            </button>
-          </div>
-        </div>
-      </div>,
-      getModalPortalRoot(),
-    );
-
   return (
     <ConfirmContext.Provider value={{ confirm }}>
       {children}
-      {dialog}
+      {pending && (
+        <div
+          className="confirm-inline-bar glass fade-in"
+          role="alertdialog"
+          aria-labelledby="confirm-dialog-title"
+          aria-describedby="confirm-dialog-message"
+        >
+          <div className="confirm-inline-bar-content">
+            <div className="confirm-inline-bar-text">
+              <h3 id="confirm-dialog-title" className="confirm-dialog-title">
+                {pending.options.title ?? 'Confirm'}
+              </h3>
+              <p id="confirm-dialog-message" className="confirm-dialog-message">
+                {pending.options.message}
+              </p>
+            </div>
+            <div className="confirm-dialog-actions">
+              <button
+                ref={cancelRef}
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => dismiss(false)}
+              >
+                {pending.options.cancelLabel ?? 'Cancel'}
+              </button>
+              <button
+                type="button"
+                className={`btn ${pending.options.destructive ? 'btn-danger' : 'btn-primary'}`}
+                onClick={() => dismiss(true)}
+              >
+                {pending.options.confirmLabel ?? 'OK'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </ConfirmContext.Provider>
   );
 };

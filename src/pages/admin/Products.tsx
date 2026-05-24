@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { adminProductMeta } from '../../lib/productAccess';
 import { PackagePlus, Trash2, Pencil, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
-import { getModalPortalRoot, lockModalHostScroll } from '../../lib/modalPortal';
 import { CalcLabel, DefaultsStrip, UploadField } from './productFormUi';
 import type { Product } from '../../types';
 import {
@@ -54,7 +53,6 @@ export const Products: React.FC = () => {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const modalRef = useRef<HTMLDivElement>(null);
 
   const formBusy = submitting || uploadingDoc || uploadingImage;
 
@@ -163,20 +161,10 @@ export const Products: React.FC = () => {
     if (imageInputRef.current) imageInputRef.current.value = '';
   };
 
-  const handleOverlayClose = () => {
-    if (formBusy) return;
-    handleCancelEdit();
-  };
-
-  useEffect(() => {
-    if (!showForm) return;
-    return lockModalHostScroll();
-  }, [showForm]);
-
   useEffect(() => {
     if (!showForm) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleOverlayClose();
+      if (e.key === 'Escape' && !formBusy) handleCancelEdit();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -436,151 +424,36 @@ export const Products: React.FC = () => {
 
   return (
     <div className="fade-in max-w-6xl mx-auto">
-      <div className="panel glass mb-6">
-        <div className="panel-header justify-between">
-          <h2>Configured Products</h2>
-          <button
-            type="button"
-            className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
-            onClick={handleStartAdd}
-          >
-            <Plus size={16} /> Add Product
-          </button>
-        </div>
-        <div className="panel-body p-0 overflow-x-auto">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="product-table-image-col">Image</th>
-                <th>Model ID</th>
-                <th>Model No</th>
-                <th>Product Name</th>
-                <th>Model Approval No</th>
-                <th>Maximum Capacity</th>
-                <th>View Approval</th>
-                <th className="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map(p => (
-                <tr key={p.id}>
-                  <td className="product-table-image-col">
-                    {p.productImageUrl ? (
-                      <a
-                        href={p.productImageUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="View product image"
-                      >
-                        <img
-                          src={p.productImageUrl}
-                          alt={p.name}
-                          className="product-table-thumb"
-                        />
-                      </a>
-                    ) : (
-                      <span className="product-table-thumb-placeholder" title="No image">
-                        <ImageIcon size={18} />
-                      </span>
-                    )}
-                  </td>
-                  <td className="font-medium text-mono">{p.modelid}</td>
-                  <td className="text-mono">{p.modelNo || '—'}</td>
-                  <td className="font-medium">{p.name}</td>
-                  <td className="text-mono text-sm">{p.modelApprovalNo || '—'}</td>
-                  <td>
-                    {p.maximumCapacity
-                      ? `${p.maximumCapacity} ${p.unitOfMeasurement || 'kg'}`
-                      : '—'}
-                  </td>
-                  <td>
-                    {p.modelApprovalDocUrl ? (
-                      <a
-                        href={p.modelApprovalDocUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-blue flex items-center gap-1"
-                      >
-                        <ExternalLink size={14} /> View
-                      </a>
-                    ) : (
-                      <span className="text-muted text-sm">—</span>
-                    )}
-                  </td>
-                  <td className="text-right">
-                    <button
-                      type="button"
-                      className="btn-icon text-blue mr-2"
-                      onClick={() => handleEditClick(p)}
-                      title="Edit"
-                    >
-                      <Pencil size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-icon text-red"
-                      onClick={() => handleDeleteProduct(p)}
-                      title="Delete"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {products.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="text-center py-6 text-muted">
-                    No products configured yet. Click &quot;Add Product&quot; to create one.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {showForm &&
-        createPortal(
-        <div
-          className="modal-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="product-form-title"
-          onClick={handleOverlayClose}
-        >
-          <div
-            ref={modalRef}
-            className="modal-dialog product-modal product-modal--wide glass"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="product-form-panel">
-              <div className="product-form-topbar">
-                <div className="product-form-topbar-text">
-                  <h2 id="product-form-title">
-                    <PackagePlus className="inline-icon" />
-                    {editingId ? 'Edit Product' : 'Add New Product'}
-                  </h2>
-                  <p className="text-muted text-sm product-form-topbar-hint">
-                    {editingId
-                      ? 'Update model details, scale values, and attachments.'
-                      : 'Fields marked * are required.'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                  onClick={handleCancelEdit}
-                  disabled={formBusy}
-                  aria-label="Close"
-                >
-                  <X size={15} /> Close
-                </button>
+      {showForm && (
+        <InlineFormPanel id="product-form" className="mb-6 inline-form-panel--wide">
+          <div className="product-form-panel">
+            <div className="product-form-topbar">
+              <div className="product-form-topbar-text">
+                <h2 id="product-form-title">
+                  <PackagePlus className="inline-icon" />
+                  {editingId ? 'Edit Product' : 'Add New Product'}
+                </h2>
+                <p className="text-muted text-sm product-form-topbar-hint">
+                  {editingId
+                    ? 'Update model details, scale values, and attachments.'
+                    : 'Fields marked * are required.'}
+                </p>
+                {error && <p className="rc-form-topbar-error" role="alert">{error}</p>}
               </div>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
+                onClick={handleCancelEdit}
+                disabled={formBusy}
+                aria-label="Close"
+              >
+                <X size={15} /> Close
+              </button>
+            </div>
 
-              <form onSubmit={handleSubmit} className="product-form">
-                <div className="product-form-body">
-                  {error && <div className="login-error product-form-alert">{error}</div>}
-                  <div className="product-form-flat">
+            <form onSubmit={handleSubmit} className="product-form">
+              <div className="product-form-body">
+                <div className="product-form-flat">
                     <div className="product-form-flat-row">
                       <div className="product-form-grid product-form-grid--basic">
                         <div className="form-group mb-0">
@@ -783,38 +656,139 @@ export const Products: React.FC = () => {
                       />
                     </div>
                   </div>
-                </div>
+              </div>
 
-                <div className="product-form-footer">
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={handleCancelEdit}
-                    disabled={formBusy}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn btn-primary flex items-center gap-2"
-                    disabled={formBusy}
-                  >
-                    {submitting ? (
-                      <span className="spinner-inline"></span>
-                    ) : (
-                      <>
-                        <Save size={18} />
-                        {editingId ? 'Update Product' : 'Save Product'}
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+              <div className="product-form-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleCancelEdit}
+                  disabled={formBusy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary flex items-center gap-2"
+                  disabled={formBusy}
+                >
+                  {submitting ? (
+                    <span className="spinner-inline"></span>
+                  ) : (
+                    <>
+                      <Save size={18} />
+                      {editingId ? 'Update Product' : 'Save Product'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
-        </div>,
-        getModalPortalRoot(),
+        </InlineFormPanel>
       )}
+
+      <div className="panel glass mb-6">
+        <div className="panel-header justify-between">
+          <h2>Configured Products</h2>
+          <button
+            type="button"
+            className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
+            onClick={handleStartAdd}
+          >
+            <Plus size={16} /> Add Product
+          </button>
+        </div>
+        <div className="panel-body p-0 overflow-x-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="product-table-image-col">Image</th>
+                <th>Model ID</th>
+                <th>Model No</th>
+                <th>Product Name</th>
+                <th>Model Approval No</th>
+                <th>Maximum Capacity</th>
+                <th>View Approval</th>
+                <th className="text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {products.map(p => (
+                <tr key={p.id}>
+                  <td className="product-table-image-col">
+                    {p.productImageUrl ? (
+                      <a
+                        href={p.productImageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="View product image"
+                      >
+                        <img
+                          src={p.productImageUrl}
+                          alt={p.name}
+                          className="product-table-thumb"
+                        />
+                      </a>
+                    ) : (
+                      <span className="product-table-thumb-placeholder" title="No image">
+                        <ImageIcon size={18} />
+                      </span>
+                    )}
+                  </td>
+                  <td className="font-medium text-mono">{p.modelid}</td>
+                  <td className="text-mono">{p.modelNo || '—'}</td>
+                  <td className="font-medium">{p.name}</td>
+                  <td className="text-mono text-sm">{p.modelApprovalNo || '—'}</td>
+                  <td>
+                    {p.maximumCapacity
+                      ? `${p.maximumCapacity} ${p.unitOfMeasurement || 'kg'}`
+                      : '—'}
+                  </td>
+                  <td>
+                    {p.modelApprovalDocUrl ? (
+                      <a
+                        href={p.modelApprovalDocUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue flex items-center gap-1"
+                      >
+                        <ExternalLink size={14} /> View
+                      </a>
+                    ) : (
+                      <span className="text-muted text-sm">—</span>
+                    )}
+                  </td>
+                  <td className="text-right">
+                    <button
+                      type="button"
+                      className="btn-icon text-blue mr-2"
+                      onClick={() => handleEditClick(p)}
+                      title="Edit"
+                    >
+                      <Pencil size={18} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-icon text-red"
+                      onClick={() => handleDeleteProduct(p)}
+                      title="Delete"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {products.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="text-center py-6 text-muted">
+                    No products configured yet. Click &quot;Add Product&quot; to create one.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 };

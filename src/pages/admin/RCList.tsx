@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { InlineFormPanel } from '../../components/InlineFormPanel';
 import {
   assertAadharAvailable,
   authErrorMessage,
@@ -33,7 +33,6 @@ import {
   Plus, Pencil, Trash2, Save, X,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
-import { getModalPortalRoot, lockModalHostScroll } from '../../lib/modalPortal';
 import { RCFormFields } from './RCFormFields';
 
 interface RCRecord extends FirestoreUserDoc {
@@ -147,13 +146,8 @@ export const RCList: React.FC = () => {
 
   useEffect(() => {
     if (!showForm) return;
-    return lockModalHostScroll();
-  }, [showForm]);
-
-  useEffect(() => {
-    if (!showForm) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleCloseModal();
+      if (e.key === 'Escape' && !formBusy) handleCloseModal();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -455,6 +449,87 @@ export const RCList: React.FC = () => {
         </div>
       </div>
 
+      {showForm && (
+        <InlineFormPanel id="rc-form" className="mb-6 inline-form-panel--wide inline-form-panel--rc">
+          <div className="product-form-panel">
+            <div className="product-form-topbar">
+              <div className="product-form-topbar-text">
+                <h2 id="rc-form-title">
+                  {showAddForm ? (
+                    <>
+                      <Building2 className="inline-icon" /> Register Regional Center
+                    </>
+                  ) : (
+                    <>
+                      <Pencil className="inline-icon" /> Edit Regional Center
+                    </>
+                  )}
+                </h2>
+                <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
+                  {error || '\u00a0'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
+                onClick={handleCloseModal}
+                disabled={formBusy}
+                aria-label="Close"
+              >
+                <X size={15} /> Close
+              </button>
+            </div>
+
+            <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
+              <div className="product-form-body">
+                <RCFormFields
+                  mode={showAddForm ? 'create' : 'edit'}
+                  values={formValues}
+                  onChange={patchForm}
+                  cert={cert}
+                  certUploading={certUploading}
+                  certProgress={certProgress}
+                  onCertSelect={handleCertSelect}
+                  onCertRemove={handleCertRemove}
+                  seal={seal}
+                  sealUploading={sealUploading}
+                  sealProgress={sealProgress}
+                  onSealSelect={handleSealSelect}
+                  onSealRemove={handleSealRemove}
+                  submitting={submitting}
+                  showPassword={showPw}
+                  onTogglePassword={() => setShowPw(p => !p)}
+                  loginAadhar={editingRc?.aadhar}
+                />
+              </div>
+              <div className="product-form-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleCloseModal}
+                  disabled={formBusy}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={formBusy}>
+                  {formBusy ? (
+                    <span className="spinner-inline"></span>
+                  ) : showAddForm ? (
+                    <>
+                      <Plus size={16} /> Register Center
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} /> Save Changes
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </InlineFormPanel>
+      )}
+
       <div className="panel glass panel--table mb-6">
         <div className="panel-header justify-between">
           <div>
@@ -589,100 +664,6 @@ export const RCList: React.FC = () => {
           )}
         </div>
       </div>
-
-      {showForm &&
-        createPortal(
-          <div
-            className="modal-overlay rc-modal-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rc-form-title"
-            onClick={handleCloseModal}
-          >
-            <div
-              className="modal-dialog product-modal product-modal--wide rc-modal glass"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="product-form-panel">
-                <div className="product-form-topbar">
-                  <div className="product-form-topbar-text">
-                    <h2 id="rc-form-title">
-                      {showAddForm ? (
-                        <>
-                          <Building2 className="inline-icon" /> Register Regional Center
-                        </>
-                      ) : (
-                        <>
-                          <Pencil className="inline-icon" /> Edit Regional Center
-                        </>
-                      )}
-                    </h2>
-                    <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
-                      {error || '\u00a0'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                    onClick={handleCloseModal}
-                    disabled={formBusy}
-                    aria-label="Close"
-                  >
-                    <X size={15} /> Close
-                  </button>
-                </div>
-
-                <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
-                  <div className="product-form-body">
-                    <RCFormFields
-                      mode={showAddForm ? 'create' : 'edit'}
-                      values={formValues}
-                      onChange={patchForm}
-                      cert={cert}
-                      certUploading={certUploading}
-                      certProgress={certProgress}
-                      onCertSelect={handleCertSelect}
-                      onCertRemove={handleCertRemove}
-                      seal={seal}
-                      sealUploading={sealUploading}
-                      sealProgress={sealProgress}
-                      onSealSelect={handleSealSelect}
-                      onSealRemove={handleSealRemove}
-                      submitting={submitting}
-                      showPassword={showPw}
-                      onTogglePassword={() => setShowPw(p => !p)}
-                      loginAadhar={editingRc?.aadhar}
-                    />
-                  </div>
-                  <div className="product-form-footer">
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={handleCloseModal}
-                      disabled={formBusy}
-                    >
-                      Cancel
-                    </button>
-                    <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={formBusy}>
-                      {formBusy ? (
-                        <span className="spinner-inline"></span>
-                      ) : showAddForm ? (
-                        <>
-                          <Plus size={16} /> Register Center
-                        </>
-                      ) : (
-                        <>
-                          <Save size={18} /> Save Changes
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>,
-          getModalPortalRoot(),
-        )}
     </div>
   );
 };

@@ -541,7 +541,7 @@ body {
 .input-field {
   width: 100%;
   background: rgba(0, 0, 0, 0.2);
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border-glass);
   color: white;
   padding: 0.75rem 1rem;
   border-radius: 10px;
@@ -590,6 +590,23 @@ select.input-field option {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+  border: 1px solid var(--border-glass);
+  box-shadow: none;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .btn-icon {
@@ -1019,7 +1036,127 @@ select.input-field option {
   background: rgba(59, 130, 246, 0.05);
 }
 
-/* ── Modal (portaled to #app-modal-root in Layout — sidebar stays visible) ── */
+/* ── Inline form panels (above tables, glass UI — no modal overlay) ── */
+.inline-form-panel {
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.inline-form-panel--wide {
+  max-width: 100%;
+}
+
+.inline-form-panel .product-form-panel {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Single glass shell — no nested boxes or divider lines */
+.inline-form-panel .product-form-topbar {
+  border-bottom: none;
+  padding-bottom: 0.65rem;
+}
+
+.inline-form-panel .product-form-footer {
+  border-top: none;
+  background: transparent;
+}
+
+.inline-form-panel .product-form-flat-row {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.inline-form-panel .product-form-flat {
+  gap: 1rem;
+}
+
+.inline-form-panel .product-scale-block {
+  border: none;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.inline-form-panel .product-scale-block--calc {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.inline-form-panel .product-upload-field--compact {
+  border: none;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.inline-form-panel .product-upload-field--compact .product-upload-field-head {
+  border-right: none;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.inline-form-panel .vct-form-aadhar-value {
+  border: none;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.inline-form-panel--rc .product-form-body,
+.inline-form-panel--wide:not(.inline-form-panel--vct) .product-form-body {
+  overflow: visible;
+  padding: 0.45rem 0.85rem 0.35rem;
+}
+
+.inline-form-panel--rc .product-form-topbar,
+.inline-form-panel--wide:not(.inline-form-panel--vct) .product-form-topbar {
+  padding: 0.5rem 0.85rem;
+  align-items: center;
+}
+
+.inline-form-panel--rc .product-form-topbar h2,
+.inline-form-panel--wide:not(.inline-form-panel--vct) .product-form-topbar h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.confirm-inline-bar {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  width: min(96vw, 42rem);
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  animation: modalDialogIn 0.2s ease-out;
+}
+
+.confirm-inline-bar-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.confirm-inline-bar-text {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.confirm-inline-bar .confirm-dialog-title {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.confirm-inline-bar .confirm-dialog-message {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.confirm-inline-bar .confirm-dialog-actions {
+  flex-shrink: 0;
+}
+
+/* ── Modal (legacy — kept for reference; forms now inline) ── */
 .app-modal-root {
   position: absolute;
   inset: 0;
@@ -2389,43 +2526,49 @@ select.input-field option {
   overflow: hidden;
 }
 
-.product-modal--wide.vct-modal .product-form-panel {
+.product-modal--wide.vct-modal .product-form-panel,
+.inline-form-panel--vct .product-form-panel {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.product-modal--wide.vct-modal .product-form {
+.product-modal--wide.vct-modal .product-form,
+.inline-form-panel--vct .product-form {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.product-modal--wide.vct-modal .product-form-body {
+.product-modal--wide.vct-modal .product-form-body,
+.inline-form-panel--vct .product-form-body {
   overflow: visible;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 1.1rem 1.5rem 1rem;
+  padding: 0 1.5rem 1rem;
 }
 
-.product-modal--wide.vct-modal .product-form-topbar {
-  padding: 0.85rem 1.5rem;
+.product-modal--wide.vct-modal .product-form-topbar,
+.inline-form-panel--vct .product-form-topbar {
+  padding: 0.85rem 1.5rem 0.5rem;
   align-items: center;
   flex-shrink: 0;
 }
 
-.product-modal--wide.vct-modal .product-form-topbar h2 {
+.product-modal--wide.vct-modal .product-form-topbar h2,
+.inline-form-panel--vct .product-form-topbar h2 {
   font-size: 1.1rem;
   margin: 0;
 }
 
-.product-modal--wide.vct-modal .product-form-footer {
-  padding: 0.75rem 1.5rem;
+.product-modal--wide.vct-modal .product-form-footer,
+.inline-form-panel--vct .product-form-footer {
+  padding: 0.5rem 1.5rem 0.85rem;
   flex-shrink: 0;
 }
 
@@ -2493,63 +2636,76 @@ select.input-field option {
   border: 1px solid var(--border-glass);
 }
 
-.product-modal--wide.vct-modal .product-form-flat .form-group label {
+.product-modal--wide.vct-modal .product-form-flat .form-group label,
+.inline-form-panel--vct .product-form-flat .form-group label {
   font-size: 0.8rem;
   margin-bottom: 0.35rem;
   letter-spacing: 0.01em;
 }
 
-.product-modal--wide.vct-modal .product-form-flat .input-field {
+.product-modal--wide.vct-modal .product-form-flat .input-field,
+.inline-form-panel--vct .product-form-flat .input-field {
   padding: 0.55rem 0.75rem;
   font-size: 0.875rem;
   line-height: 1.35;
 }
 
-.product-modal--wide.vct-modal .product-upload-field--compact {
+.product-modal--wide.vct-modal .product-upload-field--compact,
+.inline-form-panel--vct .product-upload-field--compact {
   min-width: 0;
   min-height: 5rem;
 }
 
-.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-head {
+.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-head,
+.inline-form-panel--vct .product-upload-field--compact .product-upload-field-head {
   width: 7.25rem;
   padding: 0.65rem 0.85rem;
 }
 
-.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-label {
+.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-label,
+.inline-form-panel--vct .product-upload-field--compact .product-upload-field-label {
   font-size: 0.8rem;
   line-height: 1.3;
 }
 
-.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-hint {
+.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-hint,
+.inline-form-panel--vct .product-upload-field--compact .product-upload-field-hint {
   font-size: 0.72rem;
   margin-top: 0.2rem;
 }
 
-.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-body {
+.product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-body,
+.inline-form-panel--vct .product-upload-field--compact .product-upload-field-body {
   padding: 0.65rem 0.85rem;
 }
 
 .product-modal--wide.vct-modal .product-upload-preview--compact .product-upload-preview-img,
-.product-modal--wide.vct-modal .product-upload-preview--compact .product-upload-preview-icon {
+.product-modal--wide.vct-modal .product-upload-preview--compact .product-upload-preview-icon,
+.inline-form-panel--vct .product-upload-preview--compact .product-upload-preview-img,
+.inline-form-panel--vct .product-upload-preview--compact .product-upload-preview-icon {
   width: 42px;
   height: 42px;
 }
 
-.product-modal--wide.vct-modal .product-upload-preview--compact .product-upload-preview-meta p {
+.product-modal--wide.vct-modal .product-upload-preview--compact .product-upload-preview-meta p,
+.inline-form-panel--vct .product-upload-preview--compact .product-upload-preview-meta p {
   font-size: 0.78rem;
   line-height: 1.3;
 }
 
-.product-modal--wide.vct-modal .product-upload-preview-actions {
+.product-modal--wide.vct-modal .product-upload-preview-actions,
+.inline-form-panel--vct .product-upload-preview-actions {
   gap: 0.35rem;
 }
 
-.product-modal--wide.vct-modal .product-upload-preview-actions .btn {
+.product-modal--wide.vct-modal .product-upload-preview-actions .btn,
+.inline-form-panel--vct .product-upload-preview-actions .btn {
   padding: 0.2rem 0.45rem;
   font-size: 0.72rem;
 }
 
-.product-modal--wide.vct-modal .product-upload-preview-actions a.btn {
+.product-modal--wide.vct-modal .product-upload-preview-actions a.btn,
+.inline-form-panel--vct .product-upload-preview-actions a.btn {
   display: none;
 }
 
@@ -2617,8 +2773,13 @@ select.input-field option {
 }
 
 .vct-review-docs {
-  border-top: 1px solid var(--border-glass);
+  margin-top: 0.5rem;
   padding-top: 0.75rem;
+}
+
+.inline-form-panel .vct-review-docs {
+  border-top: none;
+  margin-top: 1rem;
 }
 
 .vct-review-doc-links {
@@ -2817,8 +2978,8 @@ select.input-field option {
   display: inline-flex;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border-glass);
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .mode-btn {
