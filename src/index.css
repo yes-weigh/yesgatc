@@ -2346,8 +2346,11 @@ select.input-field option {
 /* ──────────────────────────────────────────────────────────────────
    RC Admin — VCT Management (flat no-scroll modal, like Products / RC)
    ────────────────────────────────────────────────────────────────── */
-.modal-dialog.vct-modal {
-  max-width: min(96vw, 76rem);
+.modal-dialog.vct-modal,
+.modal-dialog.product-modal--wide.rc-modal.vct-modal {
+  width: 90vw;
+  max-width: 90vw;
+  max-height: 90vh;
 }
 
 .product-modal--wide.vct-modal .product-form-panel,

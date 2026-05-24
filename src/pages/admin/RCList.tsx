@@ -26,6 +26,7 @@ import {
   uploadRcSeal,
   uploadRcStandardWeightsCert,
 } from '../../lib/rcCertificateUpload';
+import { isRcActive, rcActivationLabel } from '../../lib/rcActivation';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
   Building2, Users, Briefcase, RefreshCw,
@@ -59,10 +60,6 @@ function sealMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
     name: rc.sealName || 'Seal',
     contentType: rc.sealContentType || 'image/png',
   };
-}
-
-function rcHasStandardWeightsCert(rc: FirestoreUserDoc): boolean {
-  return Boolean(rc.standardWeightsCertUrl?.trim() || rc.standardWeightsCertPath?.trim());
 }
 
 function formatRcCertDueDate(rc: FirestoreUserDoc): string {
@@ -519,7 +516,7 @@ export const RCList: React.FC = () => {
                   const completionRate =
                     rc.totalJobs > 0 ? Math.round((rc.completedJobs / rc.totalJobs) * 100) : 0;
                   const company = rc.companyName || rc.username || '—';
-                  const isActive = rcHasStandardWeightsCert(rc);
+                  const isActive = isRcActive(rc);
                   const certDue = formatRcCertDueDate(rc);
                   return (
                     <tr key={rc.uid}>
@@ -558,7 +555,7 @@ export const RCList: React.FC = () => {
                               : 'Standard weights certificate not uploaded'
                           }
                         >
-                          {isActive ? 'Active' : 'Inactive'}
+                          {rcActivationLabel(rc)}
                         </span>
                       </td>
                       <td className="rc-col-actions text-right">

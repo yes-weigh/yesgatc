@@ -14,6 +14,7 @@ import {
   isValidAadhar,
   normalizeAadhar,
 } from '../lib/aadharAuth';
+import { isRcActive, RC_INACTIVE_LOGIN_MESSAGE } from '../lib/rcActivation';
 import { isVctApproved, VCT_PENDING_LOGIN_MESSAGE } from '../lib/vctApproval';
 import type { User, Role, FirestoreUserDoc } from '../types';
 
@@ -40,6 +41,7 @@ const resolveUser = async (fbUser: FirebaseUser): Promise<User | null> => {
     if (!role || !isValidAadhar(aadhar)) return null;
 
     if (role === 'vct' && !isVctApproved(data)) return null;
+    if (role === 'rc_admin' && !isRcActive(data)) return null;
 
     return {
       uid: fbUser.uid,
@@ -92,6 +94,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (data.role === 'vct' && !isVctApproved(data)) {
           await signOut(auth);
           throw new Error(VCT_PENDING_LOGIN_MESSAGE);
+        }
+        if (data.role === 'rc_admin' && !isRcActive(data)) {
+          await signOut(auth);
+          throw new Error(RC_INACTIVE_LOGIN_MESSAGE);
         }
       }
       const resolved = await resolveUser(cred.user);
