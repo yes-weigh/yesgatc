@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
+import { releaseAadharIndex } from '../../lib/aadharIndex';
+import { buildRcVctMemberDoc, rcVctMemberRef } from '../../lib/rcVctMembers';
 import { vctApprovalLabel } from '../../lib/vctApproval';
 import { vctDocMetaFromUser, VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
 import {
@@ -50,6 +52,13 @@ export const AdminVCTList: React.FC = () => {
       if (aPending !== bPending) return aPending - bPending;
       return a.rcCenterName.localeCompare(b.rcCenterName) || (a.username || '').localeCompare(b.username || '');
     });
+
+    await Promise.all(
+      vcts
+        .filter(v => v.rcId)
+        .map(v => setDoc(rcVctMemberRef(v.rcId!, v.uid), buildRcVctMemberDoc(v, v.uid), { merge: true })),
+    );
+
     setVctList(vcts);
     setLoading(false);
   }, []);
@@ -70,7 +79,10 @@ export const AdminVCTList: React.FC = () => {
     if (!ok) return;
 
     try {
+      const record = vctList.find(v => v.uid === uid);
       await deleteDoc(doc(db, 'users', uid));
+      if (record?.rcId) await deleteDoc(rcVctMemberRef(record.rcId, uid));
+      if (record?.aadhar) await releaseAadharIndex(record.aadhar);
       if (reviewing?.uid === uid) setReviewing(null);
       await fetchVCTs();
     } catch (err: unknown) {
@@ -86,6 +98,13 @@ export const AdminVCTList: React.FC = () => {
         approvedAt: new Date().toISOString(),
         approvedByUid: user?.uid,
       });
+      if (vct.rcId) {
+        await setDoc(
+          rcVctMemberRef(vct.rcId, vct.uid),
+          { approvalStatus: 'approved' },
+          { merge: true },
+        );
+      }
       setReviewing(null);
       await fetchVCTs();
     } catch (err: unknown) {

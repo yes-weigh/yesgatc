@@ -107,7 +107,7 @@ export const VehicleFormFields: React.FC<VehicleFormFieldsProps> = ({
             submitting={submitting}
             variant="image"
             compact
-            avatar
+            iconActions
           />
         </div>
 

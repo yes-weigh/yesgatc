@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { deleteDoc, doc, collection, getDocs, query, where } from 'firebase/firestore';
+import { deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import { ClipboardList, Search, Filter, Trash2, CheckCircle2, Clock, PlayCircle, Plus, X, Zap, Users } from 'lucide-react';
 import { formatTechnicianLabel } from '../../lib/contactFields';
 import { isVctApproved } from '../../lib/vctApproval';
-import type { FirestoreUserDoc, WorkflowMode } from '../../types';
+import type { WorkflowMode } from '../../types';
 
 interface VCTOption {
   uid: string;
@@ -44,16 +45,11 @@ export const RCJobQueue: React.FC = () => {
     if (!user?.uid) return;
     const fetchVCTs = async () => {
       setLoadingVCTs(true);
-      const q = query(collection(db, 'users'), where('role', '==', 'vct'), where('rcId', '==', user.uid));
-      const snap = await getDocs(q);
-      const list = snap.docs
-        .map(d => {
-          const data = d.data() as FirestoreUserDoc;
-          return { uid: d.id, data };
-        })
-        .filter(({ data }) => isVctApproved(data))
-        .map(({ uid, data }) => ({
-          uid,
+      const records = await fetchRcVctUsers(user.uid);
+      const list = records
+        .filter(data => isVctApproved(data))
+        .map(data => ({
+          uid: data.uid,
           username: data.username || '',
           phone: data.phone,
           email: data.email,

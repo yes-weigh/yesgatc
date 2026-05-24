@@ -100,17 +100,33 @@ async function run() {
 
     try {
       await assertSucceeds(
-        getDocs(
-          query(
-            collection(rcDb, 'users'),
-            where('role', '==', 'vct'),
-            where('rcId', '==', RC_UID),
-          ),
-        ),
+        getDocs(collection(rcDb, 'rcVcts', RC_UID, 'members')),
       );
-      ok('RC admin can list their VCT technicians');
+      ok('RC admin can list their VCT roster');
     } catch (err) {
-      fail('RC admin can list their VCT technicians', err);
+      fail('RC admin can list their VCT roster', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(doc(rcDb, 'rcVcts', RC_UID, 'members', VCT_UID), {
+          uid: VCT_UID,
+          aadhar: VCT_AADHAR,
+          username: 'Test Technician',
+          approvalStatus: 'pending',
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      ok('RC admin can add VCT to roster index');
+    } catch (err) {
+      fail('RC admin can add VCT to roster index', err);
+    }
+
+    try {
+      await assertSucceeds(getDocs(collection(rcDb, 'rcVcts', RC_UID, 'members')));
+      ok('RC admin can read roster after index write');
+    } catch (err) {
+      fail('RC admin can read roster after index write', err);
     }
 
     const otherRcDb = testEnv.authenticatedContext('other-rc-999').firestore();

@@ -3,8 +3,8 @@ import {
   signInWithEmailAndPassword,
   updatePassword,
 } from 'firebase/auth';
-import { collection, getDocs, query, where, limit } from 'firebase/firestore';
-import { db, secondaryAuth } from '../firebase';
+import { secondaryAuth } from '../firebase';
+import { assertAadharIndexAvailable } from './aadharIndex';
 
 /**
  * Internal Firebase Auth identifier only (`{aadhar}@yesgatc.auth`).
@@ -33,26 +33,7 @@ export function formatAadharDisplay(aadhar: string): string {
 }
 
 export async function assertAadharAvailable(aadhar: string, excludeUid?: string): Promise<void> {
-  const normalized = normalizeAadhar(aadhar);
-  try {
-    const snap = await getDocs(
-      query(collection(db, 'users'), where('aadhar', '==', normalized), limit(1)),
-    );
-    if (snap.docs.some(d => d.id !== excludeUid)) {
-      throw new Error('This Aadhar number is already registered.');
-    }
-  } catch (err: unknown) {
-    const code =
-      typeof err === 'object' && err !== null && 'code' in err
-        ? String((err as { code: string }).code)
-        : '';
-    if (code === 'permission-denied') {
-      throw new Error(
-        'Could not verify Aadhar availability. Deploy Firestore rules: firebase deploy --only firestore:rules',
-      );
-    }
-    throw err;
-  }
+  await assertAadharIndexAvailable(aadhar, excludeUid);
 }
 
 export async function createAuthUserForAadhar(aadhar: string, password: string) {

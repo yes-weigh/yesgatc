@@ -21,6 +21,9 @@ import { RCProducts } from './pages/rc/RCProducts';
 import {
   RCSiteCalibration,
   RCUploadCertificate,
+  RCLaboratory,
+  RCQualityManagement,
+  RCNotifications,
 } from './pages/rc/RCMenuPages';
 import { VCTDashboard } from './pages/vct/VCTDashboard';
 import { Certificates } from './pages/vct/Certificates';
@@ -58,6 +61,9 @@ const App: React.FC = () => {
                 <Route path="products" element={<RCProducts />} />
                 <Route path="vct" element={<VCTManagement />} />
                 <Route path="vehicles" element={<RCVehicles />} />
+                <Route path="laboratory" element={<RCLaboratory />} />
+                <Route path="quality-management" element={<RCQualityManagement />} />
+                <Route path="notifications" element={<RCNotifications />} />
                 <Route path="queue" element={<RCJobQueue />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<RCProfile />} />

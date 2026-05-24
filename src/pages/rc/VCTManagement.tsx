@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where,
+  doc, deleteDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import {
+  buildRcVctMemberDoc,
+  fetchRcVctUsers,
+  rcVctMemberRef,
+} from '../../lib/rcVctMembers';
 import {
   assertAadharAvailable,
   authErrorMessage,
@@ -15,6 +20,7 @@ import {
   normalizeAadhar,
   syncAuthPassword,
 } from '../../lib/aadharAuth';
+import { releaseAadharIndex } from '../../lib/aadharIndex';
 import { vctApprovalLabel } from '../../lib/vctApproval';
 import { uploadVctDocument, uploadVctProfilePhoto, type VctDocKind } from '../../lib/vctDocumentUpload';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
@@ -108,14 +114,20 @@ export const VCTManagement: React.FC = () => {
   const fetchVCTs = useCallback(async () => {
     if (!user?.uid) return;
     setLoading(true);
-    const q = query(
-      collection(db, 'users'),
-      where('role', '==', 'vct'),
-      where('rcId', '==', user.uid),
-    );
-    const snap = await getDocs(q);
-    setVcts(snap.docs.map(d => ({ uid: d.id, ...(d.data() as FirestoreUserDoc) })));
-    setLoading(false);
+    try {
+      const records = await fetchRcVctUsers(user.uid);
+      setVcts(records);
+    } catch (err: unknown) {
+      console.error('Failed to load technicians', err);
+      setVcts([]);
+      setError(
+        err instanceof Error && err.message.includes('permission')
+          ? 'Could not load technicians. Deploy Firestore rules: firebase deploy --only firestore:rules'
+          : 'Could not load technicians.',
+      );
+    } finally {
+      setLoading(false);
+    }
   }, [user?.uid]);
 
   useEffect(() => {
@@ -324,7 +336,17 @@ export const VCTManagement: React.FC = () => {
         ...docFields,
         ...photoFields,
       };
-      await setDoc(doc(db, 'users', uid), profile);
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'users', uid), profile);
+      batch.set(doc(db, 'aadharIndex', cleanAadhar), {
+        uid,
+        role: 'vct',
+        createdAt: profile.createdAt,
+      });
+      if (user?.uid) {
+        batch.set(rcVctMemberRef(user.uid, uid), buildRcVctMemberDoc(profile, uid));
+      }
+      await batch.commit();
 
       handleCloseModal();
       await fetchVCTs();
@@ -369,6 +391,11 @@ export const VCTManagement: React.FC = () => {
       }
 
       await updateDoc(doc(db, 'users', uid), updates);
+      if (user?.uid) {
+        await updateDoc(rcVctMemberRef(user.uid, uid), {
+          username: formValues.username.trim(),
+        });
+      }
       handleCloseModal();
       await fetchVCTs();
     } catch (err: unknown) {
@@ -408,7 +435,10 @@ export const VCTManagement: React.FC = () => {
       destructive: true,
     });
     if (!ok) return;
+    const record = vcts.find(v => v.uid === uid);
     await deleteDoc(doc(db, 'users', uid));
+    if (user?.uid) await deleteDoc(rcVctMemberRef(user.uid, uid));
+    if (record?.aadhar) await releaseAadharIndex(record.aadhar);
     await fetchVCTs();
   };
 

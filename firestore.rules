@@ -10,6 +10,10 @@ service cloud.firestore {
       return data.aadhar is string && data.aadhar.size() == 12;
     }
 
+    function validAadharId(aadhar) {
+      return aadhar is string && aadhar.size() == 12;
+    }
+
     function isAuthenticated() { return request.auth != null; }
     function isSuperAdmin()    { return isAuthenticated() && role() == 'super_admin'; }
     function isRCAdmin()       { return isAuthenticated() && role() == 'rc_admin'; }
@@ -22,12 +26,7 @@ service cloud.firestore {
     // ── users ─────────────────────────────────────────────────────
     match /users/{uid} {
 
-      allow read: if isAuthenticated() && request.auth.uid == uid;
-
-      // Bootstrap / seed: signed-in user creates their own profile (uid must match)
-      allow create: if isAuthenticated()
-        && request.auth.uid == uid
-        && validAadhar(request.resource.data);
+      allow get: if isAuthenticated() && request.auth.uid == uid;
 
       allow read, write: if isSuperAdmin();
 
@@ -35,12 +34,9 @@ service cloud.firestore {
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid;
 
-      // Aadhar duplicate check (where('aadhar', '==', …)) — RC / Super Admin only
-      allow list: if (isSuperAdmin() || isRCAdmin())
-        && request.query.limit <= 1
-        && request.query.filters.size() == 1
-        && request.query.filters[0].field.path == ['aadhar']
-        && request.query.filters[0].op == '==';
+      allow create: if isAuthenticated()
+        && request.auth.uid == uid
+        && validAadhar(request.resource.data);
 
       allow create: if isRCAdmin()
         && request.resource.data.role == 'vct'
@@ -64,6 +60,28 @@ service cloud.firestore {
         && resource.data.rcId == request.auth.uid;
     }
 
+    // ── aadharIndex (global duplicate Aadhar lookup) ───────────────
+    match /aadharIndex/{aadhar} {
+      allow get: if isSuperAdmin() || isRCAdmin();
+
+      allow create: if validAadharId(aadhar)
+        && (isSuperAdmin() || isRCAdmin())
+        && request.resource.data.uid is string
+        && request.resource.data.role is string;
+
+      allow delete: if isSuperAdmin() || isRCAdmin();
+    }
+
+    // ── rcVcts (RC technician roster index) ───────────────────────
+    match /rcVcts/{rcId} {
+      allow read, write: if isSuperAdmin();
+
+      match /members/{vctUid} {
+        allow read, write: if isSuperAdmin();
+        allow read, write: if isRCAdmin() && request.auth.uid == rcId;
+      }
+    }
+
     function isAdminManagedProduct() {
       return !('managedByRole' in resource.data)
         || resource.data.managedByRole == 'super_admin';
@@ -71,9 +89,10 @@ service cloud.firestore {
 
     // ── products ──────────────────────────────────────────────────
     match /products/{productId} {
-      allow read: if isSuperAdmin()
+      allow list: if isAuthenticated();
+      allow get: if isSuperAdmin()
         || (isAuthenticated() && isAdminManagedProduct());
-      allow write: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
     }
 
     // ── jobs ───────────────────────────────────────────────────────────

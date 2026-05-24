@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, deleteDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -13,6 +13,7 @@ import {
   normalizeAadhar,
   syncAuthPassword,
 } from '../../lib/aadharAuth';
+import { releaseAadharIndex } from '../../lib/aadharIndex';
 import { isValidPhone, requireValidEmail } from '../../lib/contactFields';
 import {
   EMPTY_RC_FORM,
@@ -309,7 +310,14 @@ export const RCList: React.FC = () => {
         }),
       } as FirestoreUserDoc;
 
-      await setDoc(doc(db, 'users', uid), profile);
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'users', uid), profile);
+      batch.set(doc(db, 'aadharIndex', cleanAadhar), {
+        uid,
+        role: 'rc_admin',
+        createdAt: profile.createdAt,
+      });
+      await batch.commit();
 
       handleCloseModal();
       await fetchRCs();
@@ -408,6 +416,7 @@ export const RCList: React.FC = () => {
         await deleteRcStorageFile(rc.sealPath).catch(() => undefined);
       }
       await deleteDoc(doc(db, 'users', uid));
+      if (rc?.aadhar) await releaseAadharIndex(rc.aadhar);
       await fetchRCs();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete regional center.');

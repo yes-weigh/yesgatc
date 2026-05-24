@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { Clock, Check } from 'lucide-react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import type { FirestoreUserDoc, WorkflowMode } from '../../types';
 
 interface VCTOption {
@@ -25,22 +24,14 @@ export const RCDashboard: React.FC = () => {
   useEffect(() => {
     if (!user?.uid) return;
     const fetchVCTs = async () => {
-      const q = query(
-        collection(db, 'users'),
-        where('role', '==', 'vct'),
-        where('rcId', '==', user.uid),
-      );
-      const snap = await getDocs(q);
-      const list: VCTOption[] = snap.docs.map(d => {
-        const data = d.data() as FirestoreUserDoc;
-        return {
-          uid: d.id,
-          username: data.username || data.aadhar,
-          phone: data.phone,
-          email: data.email,
-          workflowMode: data.workflowMode ?? 'auto',
-        };
-      });
+      const records = await fetchRcVctUsers(user.uid);
+      const list: VCTOption[] = records.map(data => ({
+        uid: data.uid,
+        username: data.username || data.aadhar,
+        phone: data.phone,
+        email: data.email,
+        workflowMode: data.workflowMode ?? 'auto',
+      }));
       setVctOptions(list);
     };
     fetchVCTs();

@@ -21,6 +21,9 @@ import {
   Upload,
   UserRound,
   Wrench,
+  Scale,
+  ClipboardCheck,
+  Bell,
 } from 'lucide-react';
 
 type NavItem = {
@@ -80,6 +83,9 @@ export const Layout: React.FC = () => {
             pageTitle: 'Verification and Calibration Technician',
           },
           { path: '/rc/vehicles', icon: <Truck size={20} />, label: 'Vehicle' },
+          { path: '/rc/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
+          { path: '/rc/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
+          { path: '/rc/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Report' },
           { path: '/rc/profile', icon: <Settings size={20} />, label: 'My profile' },
         ];
