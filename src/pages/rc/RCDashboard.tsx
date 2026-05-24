@@ -3,7 +3,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { Clock, Check } from 'lucide-react';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
-import type { FirestoreUserDoc, WorkflowMode } from '../../types';
+import type { WorkflowMode } from '../../types';
 
 interface VCTOption {
   uid: string;
