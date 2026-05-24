@@ -57,7 +57,7 @@ export const Login: React.FC = () => {
     <div className="login-container">
       <div className="login-box glass">
         <div className="login-header">
-          <img src="/dark logo.png" alt="YES LAB" className="login-logo" />
+          <img src="/brand/logo-dark.png" alt="YES LAB" className="login-logo" />
           <p>Sign in with your Aadhar number</p>
         </div>
 

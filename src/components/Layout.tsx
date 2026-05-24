@@ -141,7 +141,7 @@ export const Layout: React.FC = () => {
           }}
         >
           <img
-            src="/dark logo.png"
+            src="/brand/logo-dark.png"
             alt="YES LAB"
             style={
               !mobile && collapsed
