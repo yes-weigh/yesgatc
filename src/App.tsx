@@ -15,6 +15,13 @@ import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
 import { RCJobQueue } from './pages/rc/RCJobQueue';
+import { RCVehicles } from './pages/rc/RCVehicles';
+import { RCProducts } from './pages/rc/RCProducts';
+import {
+  RCSiteCalibration,
+  RCUploadCertificate,
+  RCCustomers,
+} from './pages/rc/RCMenuPages';
 import { VCTDashboard } from './pages/vct/VCTDashboard';
 import { Certificates } from './pages/vct/Certificates';
 import { Reports } from './pages/shared/Reports';
@@ -45,7 +52,12 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute allowedRoles={['rc_admin']} />}>
               <Route path="/rc" element={<Layout />}>
                 <Route index element={<RCDashboard />} />
+                <Route path="site-calibration" element={<RCSiteCalibration />} />
+                <Route path="upload-certificate" element={<RCUploadCertificate />} />
+                <Route path="customers" element={<RCCustomers />} />
+                <Route path="products" element={<RCProducts />} />
                 <Route path="vct" element={<VCTManagement />} />
+                <Route path="vehicles" element={<RCVehicles />} />
                 <Route path="queue" element={<RCJobQueue />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<RCProfile />} />

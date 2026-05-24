@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import {
   collection,
   doc,
@@ -15,6 +15,7 @@ import {
 import { db } from '../firebase';
 import type { Job, Product, Certificate } from '../types';
 import { useAuth } from './AuthContext';
+import { filterAdminManagedProducts } from '../lib/productAccess';
 
 interface AppContextType {
   jobs: Job[];
@@ -34,15 +35,20 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [jobs,         setJobs]         = useState<Job[]>([]);
-  const [products,     setProducts]     = useState<Product[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [loadingData,  setLoadingData]  = useState(true);
+
+  const products = useMemo(() => {
+    if (user?.role === 'super_admin') return allProducts;
+    return filterAdminManagedProducts(allProducts);
+  }, [allProducts, user?.role]);
 
   useEffect(() => {
     if (!user) {
       Promise.resolve().then(() => {
         setJobs([]);
-        setProducts([]);
+        setAllProducts([]);
         setCertificates([]);
         setLoadingData(false);
       });
@@ -61,7 +67,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const unsubProducts = onSnapshot(
       collection(db, 'products'),
-      snap => { setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Product))); done(); },
+      snap => { setAllProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Product))); done(); },
       () => done()
     );
 

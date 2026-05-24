@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppContext } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { adminProductMeta } from '../../lib/productAccess';
 import { PackagePlus, Trash2, Pencil, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
 import { CalcLabel, DefaultsStrip, UploadField } from './productFormUi';
 import type { Product } from '../../types';
@@ -35,6 +37,7 @@ const INITIAL_STATE = {
 
 export const Products: React.FC = () => {
   const { products, addProduct, updateProduct, deleteProduct } = useAppContext();
+  const { user } = useAuth();
   const confirm = useConfirm();
   const [formData, setFormData] = useState(INITIAL_STATE);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -407,9 +410,16 @@ export const Products: React.FC = () => {
       };
 
       if (editingId) {
-        await updateProduct(editingId, productData);
+        const existing = products.find(p => p.id === editingId);
+        await updateProduct(editingId, {
+          ...productData,
+          ...(existing?.managedByRole ? {} : user?.uid ? adminProductMeta(user.uid) : {}),
+        });
       } else {
-        await addProduct(productData);
+        await addProduct({
+          ...productData,
+          ...(user?.uid ? adminProductMeta(user.uid) : {}),
+        });
       }
       setFormData(INITIAL_STATE);
       setEditingId(null);

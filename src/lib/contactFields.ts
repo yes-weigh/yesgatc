@@ -1,7 +1,16 @@
 /** Contact email & phone — stored on user profiles, not used for login. */
 
 export const PHONE_REGEX = /^\d{10}$/;
+export const PINCODE_REGEX = /^\d{6}$/;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function normalizePincode(input: string): string {
+  return input.replace(/\D/g, '').slice(0, 6);
+}
+
+export function isValidPincode(pincode: string): boolean {
+  return PINCODE_REGEX.test(normalizePincode(pincode));
+}
 
 export function normalizePhone(input: string): string {
   return input.replace(/\D/g, '').slice(0, 10);

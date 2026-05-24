@@ -2346,6 +2346,239 @@ select.input-field option {
 /* ──────────────────────────────────────────────────────────────────
    RC Admin — VCT Management
    ────────────────────────────────────────────────────────────────── */
+.modal-dialog.vct-modal {
+  max-width: min(92vw, 40rem);
+}
+
+.modal-dialog.vct-modal--wide {
+  max-width: min(96vw, 52rem);
+  max-height: calc(100vh - 1.5rem);
+}
+
+.product-modal.vct-modal .product-form-panel,
+.product-modal.vct-modal .product-form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.product-modal.vct-modal .product-form-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.65rem 1rem 0.5rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.product-modal.vct-modal .product-form-topbar {
+  padding: 0.55rem 1rem;
+  flex-shrink: 0;
+}
+
+.product-modal.vct-modal .product-form-topbar h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.product-modal.vct-modal .product-form-footer {
+  padding: 0.5rem 1rem;
+  flex-shrink: 0;
+}
+
+.vct-form-flat {
+  gap: 0.45rem;
+  padding-bottom: 0.25rem;
+}
+
+.vct-form-flat .product-form-flat-row {
+  padding: 0.35rem 0.5rem;
+}
+
+.vct-form-grid {
+  display: grid;
+  gap: 0.35rem 0.5rem;
+  width: 100%;
+}
+
+.vct-form-grid--main {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vct-form-grid--secondary {
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+}
+
+.vct-form-aadhar-readonly label {
+  font-size: 0.72rem;
+  margin-bottom: 0.15rem;
+}
+
+.vct-form-aadhar-value {
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border-glass);
+}
+
+.vct-form-mode-hint {
+  padding: 0 0.5rem;
+}
+
+.vct-form-approval-hint {
+  padding: 0 0.5rem 0.25rem;
+  color: var(--accent-orange);
+}
+
+.vct-form-address {
+  width: 100%;
+}
+
+.vct-textarea {
+  min-height: 3.25rem;
+  resize: vertical;
+}
+
+.vct-form-grid--emergency {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.vct-form-docs-row .product-form-flat-row-title {
+  margin-bottom: 0.35rem;
+}
+
+.vct-form-docs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.vct-modal .product-upload-field--compact {
+  min-width: 0;
+}
+
+.vct-modal .product-upload-field--compact .product-upload-field-head {
+  margin-bottom: 0.25rem;
+}
+
+.vct-modal .product-upload-dropzone--compact {
+  min-height: 4.5rem;
+}
+
+.vct-modal .product-upload-preview--compact .product-upload-preview-img,
+.vct-modal .product-upload-preview--compact .product-upload-preview-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.status-badge.vct-status-pending {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent-orange);
+}
+
+.status-badge.vct-status-approved {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--accent-green);
+}
+
+.data-table--vct .vct-col-status {
+  width: 8.5rem;
+}
+
+.vct-review-body {
+  padding: 0.75rem 1rem 1rem;
+}
+
+.vct-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.vct-review-span-2 {
+  grid-column: span 2;
+}
+
+.vct-review-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-bottom: 0.15rem;
+}
+
+.vct-review-grid p {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.vct-review-docs {
+  border-top: 1px solid var(--border-glass);
+  padding-top: 0.75rem;
+}
+
+.vct-review-doc-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.vct-review-doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+@media (max-width: 768px) {
+  .vct-form-grid--emergency,
+  .vct-form-docs-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vct-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vct-review-span-2 {
+    grid-column: span 1;
+  }
+}
+
+.vct-modal .form-group label {
+  font-size: 0.72rem;
+  margin-bottom: 0.15rem;
+}
+
+.vct-modal .input-field {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.8125rem;
+}
+
+.data-table--vct-rc .vct-rc-col-serial {
+  width: 2.75rem;
+  text-align: center;
+}
+
+.data-table--vct-rc .vct-rc-col-actions {
+  width: 6.5rem;
+}
+
 .vct-create-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

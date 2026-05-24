@@ -14,6 +14,7 @@ import {
   isValidAadhar,
   normalizeAadhar,
 } from '../lib/aadharAuth';
+import { isVctApproved, VCT_PENDING_LOGIN_MESSAGE } from '../lib/vctApproval';
 import type { User, Role, FirestoreUserDoc } from '../types';
 
 interface AuthContextType {
@@ -37,6 +38,8 @@ const resolveUser = async (fbUser: FirebaseUser): Promise<User | null> => {
     const role = VALID_ROLES.includes(data.role as Role) ? (data.role as Role) : null;
     const aadhar = normalizeAadhar(data.aadhar ?? '');
     if (!role || !isValidAadhar(aadhar)) return null;
+
+    if (role === 'vct' && !isVctApproved(data)) return null;
 
     return {
       uid: fbUser.uid,
@@ -83,6 +86,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       const cred = await signInWithEmailAndPassword(auth, authEmailForAadhar(aadhar), password);
+      const snap = await getDoc(doc(db, 'users', cred.user.uid));
+      if (snap.exists()) {
+        const data = snap.data() as FirestoreUserDoc;
+        if (data.role === 'vct' && !isVctApproved(data)) {
+          await signOut(auth);
+          throw new Error(VCT_PENDING_LOGIN_MESSAGE);
+        }
+      }
       const resolved = await resolveUser(cred.user);
       if (!resolved) {
         await signOut(auth);

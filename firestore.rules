@@ -15,6 +15,10 @@ service cloud.firestore {
     function isRCAdmin()       { return isAuthenticated() && role() == 'rc_admin'; }
     function isVCT()           { return isAuthenticated() && role() == 'vct'; }
 
+    function vctApprovalStatus(data) {
+      return data.get('approvalStatus', 'approved');
+    }
+
     // ── users ─────────────────────────────────────────────────────
     match /users/{uid} {
 
@@ -34,7 +38,8 @@ service cloud.firestore {
       allow create: if isRCAdmin()
         && request.resource.data.role == 'vct'
         && request.resource.data.rcId == request.auth.uid
-        && validAadhar(request.resource.data);
+        && validAadhar(request.resource.data)
+        && request.resource.data.approvalStatus == 'pending';
 
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'
@@ -42,16 +47,25 @@ service cloud.firestore {
         && request.resource.data.role == 'vct'
         && request.resource.data.rcId == request.auth.uid
         && request.resource.data.aadhar == resource.data.aadhar
-        && validAadhar(request.resource.data);
+        && validAadhar(request.resource.data)
+        && vctApprovalStatus(request.resource.data) == vctApprovalStatus(resource.data)
+        && request.resource.data.get('approvedAt', null) == resource.data.get('approvedAt', null)
+        && request.resource.data.get('approvedByUid', null) == resource.data.get('approvedByUid', null);
 
       allow delete: if isRCAdmin()
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid;
     }
 
+    function isAdminManagedProduct() {
+      return !('managedByRole' in resource.data)
+        || resource.data.managedByRole == 'super_admin';
+    }
+
     // ── products ──────────────────────────────────────────────────
     match /products/{productId} {
-      allow read:  if isAuthenticated();
+      allow read: if isSuperAdmin()
+        || (isAuthenticated() && isAdminManagedProduct());
       allow write: if isSuperAdmin();
     }
 

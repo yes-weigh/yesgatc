@@ -16,12 +16,18 @@ import {
   UserCircle,
   ShieldCheck,
   Settings,
+  Truck,
+  Gauge,
+  Upload,
+  UserRound,
+  Wrench,
 } from 'lucide-react';
 
 type NavItem = {
   path: string;
   icon: React.ReactNode;
   label: string;
+  pageTitle?: string;
 };
 
 export const Layout: React.FC = () => {
@@ -63,10 +69,19 @@ export const Layout: React.FC = () => {
       case 'rc_admin':
         return [
           { path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/rc/vct', icon: <Users size={20} />, label: 'My Technicians' },
-          { path: '/rc/queue', icon: <ClipboardList size={20} />, label: 'Job Queue' },
-          { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
-          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My Profile' },
+          { path: '/rc/site-calibration', icon: <Gauge size={20} />, label: 'Site Calibration' },
+          { path: '/rc/upload-certificate', icon: <Upload size={20} />, label: 'Upload Certificate' },
+          { path: '/rc/customers', icon: <UserRound size={20} />, label: 'Customer' },
+          { path: '/rc/products', icon: <Package size={20} />, label: 'Product' },
+          {
+            path: '/rc/vct',
+            icon: <Wrench size={20} />,
+            label: 'Technician',
+            pageTitle: 'Verification and Calibration Technician',
+          },
+          { path: '/rc/vehicles', icon: <Truck size={20} />, label: 'Vehicle' },
+          { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Report' },
+          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My profile' },
         ];
       case 'vct':
         return [
@@ -83,7 +98,7 @@ export const Layout: React.FC = () => {
 
   const getPageTitle = () => {
     const item = navItems.find(n => n.path === location.pathname);
-    return item ? item.label : 'Dashboard';
+    return item?.pageTitle ?? item?.label ?? 'Dashboard';
   };
 
   const roleLabel = {

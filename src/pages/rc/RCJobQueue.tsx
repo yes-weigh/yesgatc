@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { ClipboardList, Search, Filter, Trash2, CheckCircle2, Clock, PlayCircle, Plus, X, Zap, Users } from 'lucide-react';
 import { formatTechnicianLabel } from '../../lib/contactFields';
+import { isVctApproved } from '../../lib/vctApproval';
 import type { FirestoreUserDoc, WorkflowMode } from '../../types';
 
 interface VCTOption {
@@ -45,16 +46,19 @@ export const RCJobQueue: React.FC = () => {
       setLoadingVCTs(true);
       const q = query(collection(db, 'users'), where('role', '==', 'vct'), where('rcId', '==', user.uid));
       const snap = await getDocs(q);
-      const list = snap.docs.map(d => {
-        const data = d.data() as FirestoreUserDoc;
-        return {
-          uid: d.id,
+      const list = snap.docs
+        .map(d => {
+          const data = d.data() as FirestoreUserDoc;
+          return { uid: d.id, data };
+        })
+        .filter(({ data }) => isVctApproved(data))
+        .map(({ uid, data }) => ({
+          uid,
           username: data.username || '',
           phone: data.phone,
           email: data.email,
           workflowMode: data.workflowMode ?? 'auto',
-        };
-      });
+        }));
       setVctOptions(list);
       if (list.length > 0) setAssignedTo(list[0].uid);
       setLoadingVCTs(false);
@@ -175,7 +179,7 @@ export const RCJobQueue: React.FC = () => {
                   </div>
                 ) : vctOptions.length === 0 ? (
                   <div className="rc-empty-hint">
-                    No VCT Technicians yet — add them via "My Technicians".
+                    No VCT technicians yet — add them via VCT.
                   </div>
                 ) : (
                   <select

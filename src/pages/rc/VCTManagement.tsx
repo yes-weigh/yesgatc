@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where,
 } from 'firebase/firestore';
@@ -14,50 +15,62 @@ import {
   normalizeAadhar,
   syncAuthPassword,
 } from '../../lib/aadharAuth';
-import { isValidEmail, isValidPhone, normalizePhone } from '../../lib/contactFields';
+import { vctApprovalLabel } from '../../lib/vctApproval';
+import { uploadVctDocument, type VctDocKind } from '../../lib/vctDocumentUpload';
+import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
-  UserPlus, Trash2, Eye, EyeOff, RefreshCw, Users, Pencil, X, Check, Zap, ClipboardList,
+  buildVctProfileFields,
+  requireVctDocuments,
+  validateVctProfile,
+  vctDocFieldsFromMeta,
+  vctDocMetaFromUser,
+  type VctDocKey,
+} from '../../lib/vctProfileFields';
+import {
+  UserPlus, Trash2, Eye, EyeOff, RefreshCw, Users, Pencil, X, Plus, Save, Zap, ClipboardList,
 } from 'lucide-react';
-import type { FirestoreUserDoc, WorkflowMode } from '../../types';
+import type { FirestoreUserDoc } from '../../types';
+import {
+  EMPTY_VCT_DOC_STATE,
+  EMPTY_VCT_FORM,
+  VCTFormFields,
+  type VctDocUploadState,
+  type VctFormValues,
+} from './VCTFormFields';
 
 interface VCTRecord extends FirestoreUserDoc {
   uid: string;
 }
 
-interface EditState {
-  uid: string;
-  username: string;
-  phone: string;
-  email: string;
-  newPassword: string;
-  workflowMode: WorkflowMode;
-  clearTextPassword?: string;
+const DOC_KIND_MAP: Record<VctDocKey, VctDocKind> = {
+  biodata: 'biodata',
+  educationCert: 'education-cert',
+  pcc: 'pcc',
+};
+
+function vctFormFromUser(doc: FirestoreUserDoc): VctFormValues {
+  return {
+    username: doc.username || '',
+    aadhar: doc.aadhar || '',
+    phone: doc.phone || '',
+    address: doc.address || '',
+    pincode: doc.pincode || '',
+    policeStation: doc.policeStation || '',
+    secondaryContactName: doc.secondaryContactName || '',
+    secondaryContactRelationship: doc.secondaryContactRelationship || '',
+    secondaryContactPhone: doc.secondaryContactPhone || '',
+    password: '',
+    workflowMode: doc.workflowMode ?? 'auto',
+  };
 }
 
-const ModeToggle = ({
-  value,
-  onChange,
-}: {
-  value: WorkflowMode;
-  onChange: (m: WorkflowMode) => void;
-}) => (
-  <div className="mode-toggle">
-    <button
-      type="button"
-      className={`mode-btn ${value === 'auto' ? 'active-auto' : ''}`}
-      onClick={() => onChange('auto')}
-    >
-      <Zap size={13} /> Auto
-    </button>
-    <button
-      type="button"
-      className={`mode-btn ${value === 'manual' ? 'active-manual' : ''}`}
-      onClick={() => onChange('manual')}
-    >
-      <ClipboardList size={13} /> Manual
-    </button>
-  </div>
-);
+function docsFromUser(doc: FirestoreUserDoc): Record<VctDocKey, ProductFileMeta | null> {
+  return {
+    biodata: vctDocMetaFromUser(doc, 'biodata'),
+    educationCert: vctDocMetaFromUser(doc, 'educationCert'),
+    pcc: vctDocMetaFromUser(doc, 'pcc'),
+  };
+}
 
 export const VCTManagement: React.FC = () => {
   const { user } = useAuth();
@@ -65,20 +78,17 @@ export const VCTManagement: React.FC = () => {
   const [vcts, setVcts] = useState<VCTRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [newName, setNewName] = useState('');
-  const [newAadhar, setNewAadhar] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [newMode, setNewMode] = useState<WorkflowMode>('auto');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingUid, setEditingUid] = useState<string | null>(null);
+  const [formValues, setFormValues] = useState<VctFormValues>(EMPTY_VCT_FORM);
+  const [biodata, setBiodata] = useState<VctDocUploadState>(EMPTY_VCT_DOC_STATE);
+  const [educationCert, setEducationCert] = useState<VctDocUploadState>(EMPTY_VCT_DOC_STATE);
+  const [pcc, setPcc] = useState<VctDocUploadState>(EMPTY_VCT_DOC_STATE);
+  const [pendingDocs, setPendingDocs] = useState<Partial<Record<VctDocKey, File>>>({});
+
   const [showPw, setShowPw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
-  const [editing, setEditing] = useState<EditState | null>(null);
-  const [editShowPw, setEditShowPw] = useState(false);
-  const [savingEdit, setSavingEdit] = useState(false);
   const [revealedUids, setRevealedUids] = useState<Set<string>>(new Set());
 
   const fetchVCTs = useCallback(async () => {
@@ -92,66 +102,181 @@ export const VCTManagement: React.FC = () => {
     const snap = await getDocs(q);
     setVcts(snap.docs.map(d => ({ uid: d.id, ...(d.data() as FirestoreUserDoc) })));
     setLoading(false);
-  }, [user]);
+  }, [user?.uid]);
 
   useEffect(() => {
     Promise.resolve().then(() => fetchVCTs());
   }, [fetchVCTs]);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const showForm = showAddForm || editingUid !== null;
+  const formBusy = submitting;
+  const editingVct = editingUid ? vcts.find(v => v.uid === editingUid) : null;
+
+  const resetDocs = () => {
+    setBiodata(EMPTY_VCT_DOC_STATE);
+    setEducationCert(EMPTY_VCT_DOC_STATE);
+    setPcc(EMPTY_VCT_DOC_STATE);
+    setPendingDocs({});
+  };
+
+  const resetForm = () => {
+    setFormValues(EMPTY_VCT_FORM);
+    resetDocs();
+    setShowPw(false);
     setError('');
-    setSuccess('');
+  };
 
-    const cleanAadhar = normalizeAadhar(newAadhar);
+  const handleCloseModal = () => {
+    if (formBusy) return;
+    setShowAddForm(false);
+    setEditingUid(null);
+    resetForm();
+  };
 
-    if (!newName.trim()) {
-      setError('Please enter a technician name.');
-      return;
+  useEffect(() => {
+    if (!showForm) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showForm]);
+
+  useEffect(() => {
+    if (!showForm) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleCloseModal();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showForm, formBusy]);
+
+  const patchForm = (patch: Partial<VctFormValues>) => {
+    setFormValues(prev => ({ ...prev, ...patch }));
+  };
+
+  const setDocState = (key: VctDocKey, patch: Partial<VctDocUploadState>) => {
+    if (key === 'biodata') setBiodata(prev => ({ ...prev, ...patch }));
+    else if (key === 'educationCert') setEducationCert(prev => ({ ...prev, ...patch }));
+    else setPcc(prev => ({ ...prev, ...patch }));
+  };
+
+  const handleDocSelect = (key: VctDocKey, file: File) => {
+    setPendingDocs(prev => ({ ...prev, [key]: file }));
+    const previewUrl = URL.createObjectURL(file);
+    setDocState(key, {
+      file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
+      uploading: false,
+      progress: 0,
+    });
+  };
+
+  const handleDocRemove = (key: VctDocKey) => {
+    setPendingDocs(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setDocState(key, EMPTY_VCT_DOC_STATE);
+  };
+
+  const docForValidation = (key: VctDocKey): ProductFileMeta | null => {
+    if (pendingDocs[key]) {
+      const file = pendingDocs[key]!;
+      return { url: 'pending', path: '', name: file.name, contentType: file.type };
     }
-    if (!isValidAadhar(cleanAadhar)) {
-      setError('Aadhar number must be exactly 12 digits.');
-      return;
+    const state = key === 'biodata' ? biodata : key === 'educationCert' ? educationCert : pcc;
+    if (!state.file?.url) return null;
+    return state.file;
+  };
+
+  const currentDocs = (): Record<VctDocKey, ProductFileMeta | null> => ({
+    biodata: docForValidation('biodata'),
+    educationCert: docForValidation('educationCert'),
+    pcc: docForValidation('pcc'),
+  });
+
+  const validateForm = (mode: 'create' | 'edit'): string | null => {
+    const profileError = validateVctProfile(formValues);
+    if (profileError) return profileError;
+    if (mode === 'create' && !isValidAadhar(normalizeAadhar(formValues.aadhar))) {
+      return 'Aadhar number must be exactly 12 digits.';
     }
-    if (!isValidPhone(newPhone)) {
-      setError('Phone number must be exactly 10 digits.');
-      return;
+    const docs = currentDocs();
+    const docError = requireVctDocuments(docs.biodata, docs.educationCert, docs.pcc);
+    if (docError) return docError;
+    if (mode === 'create' && formValues.password.length < 6) {
+      return 'Password must be at least 6 characters.';
     }
-    if (!isValidEmail(newEmail)) {
-      setError('Enter a valid contact email or leave it blank.');
-      return;
+    if (mode === 'edit' && formValues.password.trim().length > 0 && formValues.password.trim().length < 6) {
+      return 'New password must be at least 6 characters.';
     }
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters.');
+    return null;
+  };
+
+  const uploadPendingDoc = async (vctUid: string, key: VctDocKey): Promise<ProductFileMeta | null> => {
+    const pending = pendingDocs[key];
+    if (!pending) {
+      const state = key === 'biodata' ? biodata : key === 'educationCert' ? educationCert : pcc;
+      const existing = state.file;
+      if (existing?.url && !existing.url.startsWith('blob:')) return existing;
+      return null;
+    }
+    setDocState(key, { uploading: true, progress: 0 });
+    try {
+      const meta = await uploadVctDocument(vctUid, DOC_KIND_MAP[key], pending, pct => {
+        setDocState(key, { progress: pct });
+      });
+      setDocState(key, { file: meta, uploading: false, progress: 100 });
+      return meta;
+    } catch (err) {
+      setDocState(key, { uploading: false, progress: 0 });
+      throw err;
+    }
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (showAddForm) await handleCreate();
+    else if (editingUid) await handleSaveEdit(editingUid);
+  };
+
+  const handleCreate = async () => {
+    setError('');
+    const validationError = validateForm('create');
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
+    const cleanAadhar = normalizeAadhar(formValues.aadhar);
     setSubmitting(true);
     try {
       await assertAadharAvailable(cleanAadhar);
-      const cred = await createAuthUserForAadhar(cleanAadhar, newPassword);
+      const cred = await createAuthUserForAadhar(cleanAadhar, formValues.password);
+      const uid = cred.user.uid;
+
+      const biodataMeta = await uploadPendingDoc(uid, 'biodata');
+      const educationMeta = await uploadPendingDoc(uid, 'educationCert');
+      const pccMeta = await uploadPendingDoc(uid, 'pcc');
 
       const profile: FirestoreUserDoc = {
         aadhar: cleanAadhar,
         role: 'vct',
-        username: newName.trim(),
-        phone: normalizePhone(newPhone),
-        email: newEmail.trim() || undefined,
-        clearTextPassword: newPassword,
-        workflowMode: newMode,
+        clearTextPassword: formValues.password,
+        workflowMode: formValues.workflowMode,
         createdAt: new Date().toISOString(),
         createdByUid: user?.uid,
         rcId: user?.uid,
+        approvalStatus: 'pending',
+        ...buildVctProfileFields(formValues),
+        ...vctDocFieldsFromMeta('biodata', biodataMeta),
+        ...vctDocFieldsFromMeta('educationCert', educationMeta),
+        ...vctDocFieldsFromMeta('pcc', pccMeta),
       };
-      await setDoc(doc(db, 'users', cred.user.uid), profile);
+      await setDoc(doc(db, 'users', uid), profile);
 
-      setSuccess(`✅ Technician "${newName.trim()}" added successfully.`);
-      setNewName('');
-      setNewAadhar('');
-      setNewPhone('');
-      setNewEmail('');
-      setNewPassword('');
-      setNewMode('auto');
+      handleCloseModal();
       await fetchVCTs();
     } catch (err: unknown) {
       setError(authErrorMessage(err, 'Failed to add technician.'));
@@ -160,64 +285,68 @@ export const VCTManagement: React.FC = () => {
     }
   };
 
-  const startEdit = (v: VCTRecord) => {
-    setEditing({
-      uid: v.uid,
-      username: v.username,
-      phone: v.phone || '',
-      email: v.email || '',
-      newPassword: '',
-      workflowMode: v.workflowMode ?? 'auto',
-      clearTextPassword: v.clearTextPassword,
-    });
-    setEditShowPw(false);
-  };
-
-  const cancelEdit = () => setEditing(null);
-
-  const handleSaveEdit = async () => {
-    if (!editing) return;
-
-    if (!isValidPhone(editing.phone)) {
-      alert('Phone number must be exactly 10 digits.');
-      return;
-    }
-    if (!isValidEmail(editing.email)) {
-      alert('Enter a valid contact email or leave it blank.');
+  const handleSaveEdit = async (uid: string) => {
+    const validationError = validateForm('edit');
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
-    setSavingEdit(true);
+    const record = vcts.find(v => v.uid === uid);
+    if (!record) return;
+
+    setSubmitting(true);
+    setError('');
     try {
-      const record = vcts.find(v => v.uid === editing.uid);
-      if (!record) return;
+      const biodataMeta = await uploadPendingDoc(uid, 'biodata');
+      const educationMeta = await uploadPendingDoc(uid, 'educationCert');
+      const pccMeta = await uploadPendingDoc(uid, 'pcc');
 
       const updates: Partial<FirestoreUserDoc> = {
-        username: editing.username.trim(),
-        phone: normalizePhone(editing.phone),
-        email: editing.email.trim() || undefined,
-        workflowMode: editing.workflowMode,
+        ...buildVctProfileFields(formValues),
+        workflowMode: formValues.workflowMode,
+        ...vctDocFieldsFromMeta('biodata', biodataMeta),
+        ...vctDocFieldsFromMeta('educationCert', educationMeta),
+        ...vctDocFieldsFromMeta('pcc', pccMeta),
       };
 
-      if (editing.newPassword.length >= 6) {
+      if (formValues.password.trim().length >= 6) {
         const current = record.clearTextPassword;
         if (!current) {
-          alert('Cannot reset password: stored credential missing. Contact Super Admin.');
+          setError('Cannot reset password: stored credential missing. Contact Super Admin.');
           return;
         }
-        await syncAuthPassword(record.aadhar, current, editing.newPassword);
-        updates.clearTextPassword = editing.newPassword;
+        await syncAuthPassword(record.aadhar, current, formValues.password.trim());
+        updates.clearTextPassword = formValues.password.trim();
       }
 
-      await updateDoc(doc(db, 'users', editing.uid), updates);
-      setSuccess(`✅ Technician "${editing.username}" updated successfully.`);
-      setEditing(null);
+      await updateDoc(doc(db, 'users', uid), updates);
+      handleCloseModal();
       await fetchVCTs();
     } catch (err: unknown) {
-      alert(authErrorMessage(err, 'Failed to update technician'));
+      setError(authErrorMessage(err, 'Failed to update technician.'));
     } finally {
-      setSavingEdit(false);
+      setSubmitting(false);
     }
+  };
+
+  const handleStartAdd = () => {
+    setEditingUid(null);
+    resetForm();
+    setShowAddForm(true);
+  };
+
+  const startEdit = (v: VCTRecord) => {
+    setShowAddForm(false);
+    setEditingUid(v.uid);
+    setFormValues(vctFormFromUser(v));
+    const docs = docsFromUser(v);
+    setBiodata({ ...EMPTY_VCT_DOC_STATE, file: docs.biodata });
+    setEducationCert({ ...EMPTY_VCT_DOC_STATE, file: docs.educationCert });
+    setPcc({ ...EMPTY_VCT_DOC_STATE, file: docs.pcc });
+    setPendingDocs({});
+    setShowPw(false);
+    setError('');
   };
 
   const handleDelete = async (uid: string, identifier: string) => {
@@ -242,238 +371,122 @@ export const VCTManagement: React.FC = () => {
   };
 
   return (
-    <div className="fade-in max-w-5xl mx-auto">
-      <div className="panel glass mb-6">
-        <div className="panel-header">
-          <h2><UserPlus className="inline-icon" /> Add VCT Technician</h2>
-        </div>
-        <div className="panel-body">
-          {error && <div className="login-error mb-4">{error}</div>}
-          {success && <div className="login-success mb-4">{success}</div>}
-          <form className="vct-create-grid" onSubmit={handleCreate} autoComplete="off">
-            <div className="form-group">
-              <label htmlFor="vct-fullname">Full Name</label>
-              <input
-                id="vct-fullname"
-                type="text"
-                className="input-field"
-                placeholder="e.g. Amit Sharma"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="vct-aadhar">Aadhar Number (login ID)</label>
-              <input
-                id="vct-aadhar"
-                type="text"
-                inputMode="numeric"
-                className="input-field"
-                placeholder="12-digit Aadhar"
-                value={newAadhar}
-                onChange={e => setNewAadhar(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                required
-                maxLength={12}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="vct-phone">Phone Number</label>
-              <input
-                id="vct-phone"
-                type="text"
-                inputMode="numeric"
-                className="input-field"
-                placeholder="10-digit mobile"
-                value={newPhone}
-                onChange={e => setNewPhone(normalizePhone(e.target.value))}
-                required
-                maxLength={10}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="vct-email">Contact Email (optional)</label>
-              <input
-                id="vct-email"
-                type="email"
-                className="input-field"
-                placeholder="tech@example.com"
-                value={newEmail}
-                onChange={e => setNewEmail(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="vct-password">Password</label>
-              <div className="input-icon-wrap">
-                <input
-                  id="vct-password"
-                  type={showPw ? 'text' : 'password'}
-                  className="input-field"
-                  placeholder="min. 6 chars"
-                  autoComplete="new-password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  required
-                  minLength={6}
-                />
-                <button type="button" className="input-icon-right" onClick={() => setShowPw(p => !p)}>
-                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="vct-jobmode">Job Mode</label>
-              <ModeToggle value={newMode} onChange={setNewMode} />
-            </div>
-            <div className="form-actions">
-              <button type="submit" className="btn btn-primary animate-pulse-subtle" disabled={submitting}>
-                {submitting ? <span className="spinner-inline"></span> : <><UserPlus size={16} /> Add</>}
-              </button>
-            </div>
-          </form>
-          <p className="text-muted mt-3 text-xs-soft-muted">
-            <strong>Auto</strong> — jobs auto-complete after VCT submission. &nbsp;
-            <strong>Manual</strong> — jobs go to RC Admin for review.
-          </p>
-        </div>
-      </div>
-
-      <div className="panel glass">
+    <div className="fade-in page-content">
+      <div className="panel glass panel--table mb-6">
         <div className="panel-header justify-between">
-          <h2>
-            <Users className="inline-icon" /> My Technicians
-            {vcts.length > 0 && <span className="badge-count">{vcts.length}</span>}
-          </h2>
-          <button className="btn-icon" onClick={fetchVCTs} title="Refresh"><RefreshCw size={18} /></button>
+          <div>
+            <h2>
+              <Users className="inline-icon" /> Technicians
+            </h2>
+            <p className="text-muted text-sm mt-1">
+              {vcts.length} verification and calibration technician{vcts.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
+              onClick={handleStartAdd}
+            >
+              <Plus size={16} /> Add Technician
+            </button>
+            <button className="btn-icon" onClick={fetchVCTs} title="Refresh" type="button">
+              <RefreshCw size={18} />
+            </button>
+          </div>
         </div>
         <div className="panel-body p-0">
           {loading ? (
-            <div className="py-10 text-center"><span className="spinner-inline large"></span></div>
+            <div className="flex justify-center py-16">
+              <span className="spinner-inline large"></span>
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="data-table">
+            <div className="table-scroll-wrap">
+              <table className="data-table data-table--vct-rc">
                 <thead>
                   <tr>
+                    <th className="vct-rc-col-serial">#</th>
                     <th>Name</th>
                     <th>Phone</th>
                     <th>Aadhar</th>
+                    <th>Status</th>
                     <th>Job Mode</th>
                     <th>Password</th>
                     <th>Created</th>
-                    <th className="text-right">Actions</th>
+                    <th className="text-right vct-rc-col-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {vcts.map(v => (
-                    <React.Fragment key={v.uid}>
-                      {editing?.uid !== v.uid && (
-                        <tr>
-                          <td className="font-medium">{v.username || '—'}</td>
-                          <td className="text-muted text-sm">{v.phone || '—'}</td>
-                          <td className="text-muted text-sm">{formatAadharDisplay(v.aadhar)}</td>
-                          <td>
-                            <span className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
-                              {v.workflowMode === 'auto'
-                                ? <><Zap size={12} /> Auto</>
-                                : <><ClipboardList size={12} /> Manual</>}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="flex items-center gap-2">
-                              <span className="text-mono text-sm">
-                                {revealedUids.has(v.uid) ? (v.clearTextPassword ?? '—') : '••••••••'}
-                              </span>
-                              <button className="btn-icon" onClick={() => toggleReveal(v.uid)}>
-                                {revealedUids.has(v.uid) ? <EyeOff size={14} /> : <Eye size={14} />}
-                              </button>
-                            </div>
-                          </td>
-                          <td className="text-muted text-xs-soft">
-                            {v.createdAt ? new Date(v.createdAt).toLocaleDateString('en-IN') : '—'}
-                          </td>
-                          <td className="text-right flex gap-2 justify-end">
-                            <button className="btn-icon text-blue" onClick={() => startEdit(v)} title="Edit">
-                              <Pencil size={16} />
-                            </button>
-                            <button
-                              className="btn-icon text-red"
-                              onClick={() => handleDelete(v.uid, v.username || v.aadhar)}
-                              title="Remove"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      )}
-
-                      {editing?.uid === v.uid && (
-                        <tr className="edit-row">
-                          <td>
-                            <input
-                              type="text"
-                              className="input-field input-sm"
-                              placeholder="Name"
-                              title="Edit Username"
-                              value={editing.username}
-                              onChange={e => setEditing(p => (p ? { ...p, username: e.target.value } : null))}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              className="input-field input-sm mb-1"
-                              placeholder="Phone"
-                              maxLength={10}
-                              value={editing.phone}
-                              onChange={e => setEditing(p => (p ? { ...p, phone: normalizePhone(e.target.value) } : null))}
-                            />
-                            <input
-                              type="email"
-                              className="input-field input-sm"
-                              placeholder="Email (optional)"
-                              value={editing.email}
-                              onChange={e => setEditing(p => (p ? { ...p, email: e.target.value } : null))}
-                            />
-                          </td>
-                          <td className="text-muted text-sm">{formatAadharDisplay(v.aadhar)}</td>
-                          <td>
-                            <ModeToggle
-                              value={editing.workflowMode}
-                              onChange={m => setEditing(p => (p ? { ...p, workflowMode: m } : null))}
-                            />
-                          </td>
-                          <td>
-                            <div className="input-icon-wrap">
-                              <input
-                                type={editShowPw ? 'text' : 'password'}
-                                className="input-field input-sm"
-                                placeholder="New password (optional)"
-                                value={editing.newPassword}
-                                onChange={e => setEditing(p => (p ? { ...p, newPassword: e.target.value } : null))}
-                              />
-                              <button type="button" className="input-icon-right" onClick={() => setEditShowPw(p => !p)}>
-                                {editShowPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                              </button>
-                            </div>
-                          </td>
-                          <td></td>
-                          <td className="text-right flex gap-2 justify-end">
-                            <button className="btn-approve" onClick={handleSaveEdit} disabled={savingEdit} title="Save">
-                              {savingEdit ? <span className="spinner-inline"></span> : <Check size={16} />}
-                            </button>
-                            <button className="btn-icon text-muted" onClick={cancelEdit} title="Cancel">
-                              <X size={16} />
-                            </button>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
+                  {vcts.map((v, index) => (
+                    <tr key={v.uid}>
+                      <td className="vct-rc-col-serial text-muted text-sm">{index + 1}</td>
+                      <td className="font-medium">{v.username || '—'}</td>
+                      <td className="text-sm">{v.phone || '—'}</td>
+                      <td className="text-muted text-sm">{formatAadharDisplay(v.aadhar)}</td>
+                      <td>
+                        <span
+                          className={`status-badge ${
+                            v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
+                          }`}
+                        >
+                          {vctApprovalLabel(v.approvalStatus)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
+                          {v.workflowMode === 'auto' ? (
+                            <>
+                              <Zap size={12} /> Auto
+                            </>
+                          ) : (
+                            <>
+                              <ClipboardList size={12} /> Manual
+                            </>
+                          )}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <span className="text-mono text-sm">
+                            {revealedUids.has(v.uid) ? (v.clearTextPassword ?? '—') : '••••••••'}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            onClick={() => toggleReveal(v.uid)}
+                            title={revealedUids.has(v.uid) ? 'Hide password' : 'Show password'}
+                          >
+                            {revealedUids.has(v.uid) ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="text-muted text-xs-soft">
+                        {v.createdAt ? new Date(v.createdAt).toLocaleDateString('en-IN') : '—'}
+                      </td>
+                      <td className="text-right vct-rc-col-actions">
+                        <button
+                          type="button"
+                          className="btn-icon text-blue mr-2"
+                          onClick={() => startEdit(v)}
+                          title="Edit"
+                        >
+                          <Pencil size={18} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-icon text-red"
+                          onClick={() => handleDelete(v.uid, v.username || v.aadhar)}
+                          title="Remove"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    </tr>
                   ))}
                   {vcts.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="text-center py-10 text-muted">
-                        No technicians yet. Add one above.
+                      <td colSpan={9} className="text-center py-10 text-muted">
+                        No technicians yet. Click &quot;Add Technician&quot; to create one.
                       </td>
                     </tr>
                   )}
@@ -483,6 +496,95 @@ export const VCTManagement: React.FC = () => {
           )}
         </div>
       </div>
+
+      {showForm &&
+        createPortal(
+          <div
+            className="modal-overlay rc-modal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="vct-form-title"
+            onClick={handleCloseModal}
+          >
+            <div
+              className="modal-dialog product-modal product-modal--wide vct-modal vct-modal--wide glass"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="product-form-panel">
+                <div className="product-form-topbar">
+                  <div className="product-form-topbar-text">
+                    <h2 id="vct-form-title">
+                      {showAddForm ? (
+                        <>
+                          <UserPlus className="inline-icon" /> Add Technician
+                        </>
+                      ) : (
+                        <>
+                          <Pencil className="inline-icon" /> Edit Technician
+                        </>
+                      )}
+                    </h2>
+                    <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
+                      {error || '\u00a0'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
+                    onClick={handleCloseModal}
+                    disabled={formBusy}
+                    aria-label="Close"
+                  >
+                    <X size={15} /> Close
+                  </button>
+                </div>
+
+                <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
+                  <div className="product-form-body">
+                    <VCTFormFields
+                      mode={showAddForm ? 'create' : 'edit'}
+                      values={formValues}
+                      onChange={patchForm}
+                      showPassword={showPw}
+                      onTogglePassword={() => setShowPw(p => !p)}
+                      loginAadhar={editingVct?.aadhar}
+                      biodata={biodata}
+                      educationCert={educationCert}
+                      pcc={pcc}
+                      onDocSelect={handleDocSelect}
+                      onDocRemove={handleDocRemove}
+                      submitting={formBusy}
+                    />
+                  </div>
+                  <div className="product-form-footer">
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleCloseModal}
+                      disabled={formBusy}
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={formBusy}>
+                      {formBusy ? (
+                        <span className="spinner-inline"></span>
+                      ) : showAddForm ? (
+                        <>
+                          <Plus size={16} /> Add Technician
+                        </>
+                      ) : (
+                        <>
+                          <Save size={18} /> Save Changes
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

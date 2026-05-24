@@ -42,12 +42,17 @@ export interface Product {
   productImagePath?: string;
   productImageName?: string;
   productImageContentType?: string;
+  /** Set when Super Admin creates the product; RC users only see admin-managed products. */
+  managedByRole?: Role;
+  managedByUid?: string;
+  managedAt?: string;
 }
 
 export type JobType = 'OV' | 'RV';
 export type JobStatus = 'assigned' | 'pending_review' | 'completed';
 export type PaymentStatus = 'not_required' | 'pending' | 'paid';
 export type WorkflowMode = 'auto' | 'manual';
+export type VctApprovalStatus = 'pending' | 'approved';
 
 export interface TechnicalData {
   mfgYear: string;
@@ -92,15 +97,38 @@ export interface FirestoreUserDoc {
   rcId?: string;        // VCT → UID of their RC Admin; RC Admin → their own UID
   workflowMode?: WorkflowMode; // VCT only — set by RC Admin (auto | manual)
 
+  // VCT profile — managed by RC Admin (address & phone shared with RC contact fields above)
+  pincode?: string;
+  policeStation?: string;
+  secondaryContactName?: string;
+  secondaryContactRelationship?: string;
+  secondaryContactPhone?: string;
+  biodataDocUrl?: string;
+  biodataDocPath?: string;
+  biodataDocName?: string;
+  biodataDocContentType?: string;
+  educationCertDocUrl?: string;
+  educationCertDocPath?: string;
+  educationCertDocName?: string;
+  educationCertDocContentType?: string;
+  pccDocUrl?: string;
+  pccDocPath?: string;
+  pccDocName?: string;
+  pccDocContentType?: string;
+  /** RC-created VCTs start as pending until Super Admin approves. */
+  approvalStatus?: VctApprovalStatus;
+  approvedAt?: string;
+  approvedByUid?: string;
+
   // Contact (not used for login)
   email?: string;
   phone?: string;
+  address?: string;
 
   // RC Admin business profile fields
   companyName?: string;
   contactPerson?: string;
   place?: string;
-  address?: string;
   gstNumber?: string;
   standardWeightsCertUrl?: string;
   standardWeightsCertPath?: string;
