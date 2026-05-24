@@ -32,9 +32,9 @@ export const RCProducts: React.FC = () => {
                     <th>Model ID</th>
                     <th>Model No</th>
                     <th>Product Name</th>
-                    <th>Model Approval No</th>
                     <th>Maximum Capacity</th>
-                    <th>View Approval</th>
+                    <th>Actual Scale Interval (d)</th>
+                    <th>Model Approval</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -59,24 +59,35 @@ export const RCProducts: React.FC = () => {
                       <td className="font-medium text-mono">{p.modelid}</td>
                       <td className="text-mono">{p.modelNo || '—'}</td>
                       <td className="font-medium">{p.name}</td>
-                      <td className="text-mono text-sm">{p.modelApprovalNo || '—'}</td>
                       <td>
                         {p.maximumCapacity
                           ? `${p.maximumCapacity} ${p.unitOfMeasurement || 'kg'}`
                           : '—'}
                       </td>
                       <td>
-                        {p.modelApprovalDocUrl ? (
-                          <a
-                            href={p.modelApprovalDocUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-blue flex items-center gap-1"
-                          >
-                            <ExternalLink size={14} /> View
-                          </a>
+                        {p.actualScaleInterval != null && Number.isFinite(p.actualScaleInterval)
+                          ? `${p.actualScaleInterval} g`
+                          : p.verificationScaleInterval
+                            ? `${p.verificationScaleInterval} g`
+                            : '—'}
+                      </td>
+                      <td>
+                        {!p.modelApprovalNo && !p.modelApprovalDocUrl ? (
+                          <span className="text-muted">—</span>
                         ) : (
-                          <span className="text-muted text-sm">—</span>
+                          <div className="flex flex-col gap-2">
+                            <span className="text-mono">{p.modelApprovalNo || '—'}</span>
+                            {p.modelApprovalDocUrl && (
+                              <a
+                                href={p.modelApprovalDocUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-blue flex items-center gap-1"
+                              >
+                                <ExternalLink size={14} /> View doc
+                              </a>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
