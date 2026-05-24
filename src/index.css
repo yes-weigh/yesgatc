@@ -4210,20 +4210,8 @@ select.input-field option {
   overflow: hidden;
 }
 
-.customer-device-thumb-box--empty {
-  cursor: pointer;
-  border-style: dashed;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.customer-device-thumb-box--empty:hover:not(:disabled) {
-  border-color: rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.08);
-}
-
-.customer-device-thumb-box--empty:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.customer-device-thumb-box--placeholder {
+  color: var(--text-muted);
 }
 
 .customer-device-thumb-box--loading {
@@ -4299,6 +4287,33 @@ select.input-field option {
   gap: 0.55rem 0.75rem;
   align-items: center;
   min-width: 0;
+}
+
+.customer-device-product-specs {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  font-size: 0.8125rem;
+}
+
+.customer-device-spec-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.customer-device-spec-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
 }
 
 .customer-table-shop-thumb {

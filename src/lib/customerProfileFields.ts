@@ -134,16 +134,6 @@ export const customerPhotoFromRecord = shopPhotoFromRecord;
 /** @deprecated use shopPhotoFieldsFromMeta */
 export const customerPhotoFieldsFromMeta = shopPhotoFieldsFromMeta;
 
-export function deviceImageFromDevice(device: CustomerDevice): ProductFileMeta | null {
-  if (!device.imageUrl) return null;
-  return {
-    url: device.imageUrl,
-    path: device.imagePath || '',
-    name: device.imageName || 'Device photo',
-    contentType: device.imageContentType || 'image/jpeg',
-  };
-}
-
 export function deviceToFormRow(device: CustomerDevice): CustomerDeviceFormValues {
   return {
     localId: device.id,
@@ -157,23 +147,13 @@ export function devicesFromRecord(record: Customer): CustomerDeviceFormValues[] 
   return (record.devices || []).map(deviceToFormRow);
 }
 
-export function buildCustomerDevice(
-  row: CustomerDeviceFormValues,
-  image: ProductFileMeta | null,
-): CustomerDevice {
-  const device: CustomerDevice = {
+export function buildCustomerDevice(row: CustomerDeviceFormValues): CustomerDevice {
+  return {
     id: row.localId,
     serialNumber: row.serialNumber.trim(),
     productId: row.productId.trim() || undefined,
     productName: row.productName.trim(),
   };
-  if (image) {
-    device.imageUrl = image.url;
-    device.imagePath = image.path;
-    device.imageName = image.name;
-    device.imageContentType = image.contentType;
-  }
-  return device;
 }
 
 export function customerFormFromRecord(record: Customer): CustomerFormValues {

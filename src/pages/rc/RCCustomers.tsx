@@ -6,8 +6,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import { uploadCustomerDeviceImage, uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
-import type { ProductFileMeta } from '../../lib/productApprovalUpload';
+import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import {
   buildCustomerDevice,
   buildCustomerProfileFields,
@@ -15,7 +14,7 @@ import {
   customerDeviceCount,
   customerFormFromRecord,
   customerMapsUrl,
-  deviceImageFromDevice,
+  deviceToFormRow,
   formatCustomerLocation,
   parseCustomerLocation,
   shopPhotoFieldsFromMeta,
@@ -33,23 +32,12 @@ import {
   EMPTY_CUSTOMER_FORM,
   EMPTY_IMAGE_UPLOAD_STATE,
   CustomerFormFields,
-  type CustomerDeviceUploadState,
+  type CustomerDeviceRowState,
   type ImageUploadState,
 } from './CustomerFormFields';
 
-function devicesStateFromRecord(record: Customer): CustomerDeviceUploadState[] {
-  return (record.devices || []).map(device => ({
-    row: {
-      localId: device.id,
-      serialNumber: device.serialNumber,
-      productId: device.productId || '',
-      productName: device.productName,
-    },
-    image: {
-      ...EMPTY_IMAGE_UPLOAD_STATE,
-      file: deviceImageFromDevice(device),
-    },
-  }));
+function devicesStateFromRecord(record: Customer): CustomerDeviceRowState[] {
+  return (record.devices || []).map(device => ({ row: deviceToFormRow(device) }));
 }
 
 export const RCCustomers: React.FC = () => {
@@ -65,9 +53,7 @@ export const RCCustomers: React.FC = () => {
   const [pendingShopPhoto, setPendingShopPhoto] = useState<File | null>(null);
   const [shopPhotoRemoved, setShopPhotoRemoved] = useState(false);
 
-  const [devices, setDevices] = useState<CustomerDeviceUploadState[]>([]);
-  const [pendingDeviceImages, setPendingDeviceImages] = useState<Record<string, File>>({});
-  const [removedDeviceImages, setRemovedDeviceImages] = useState<Set<string>>(new Set());
+  const [devices, setDevices] = useState<CustomerDeviceRowState[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -111,8 +97,6 @@ export const RCCustomers: React.FC = () => {
 
   const resetDevices = () => {
     setDevices([]);
-    setPendingDeviceImages({});
-    setRemovedDeviceImages(new Set());
   };
 
   const resetShopPhoto = () => {
@@ -166,68 +150,16 @@ export const RCCustomers: React.FC = () => {
   };
 
   const handleDeviceAdd = () => {
-    setDevices(prev => [...prev, { row: createEmptyDeviceRow(), image: { ...EMPTY_IMAGE_UPLOAD_STATE } }]);
+    setDevices(prev => [...prev, { row: createEmptyDeviceRow() }]);
   };
 
   const handleDeviceRemove = (localId: string) => {
     setDevices(prev => prev.filter(d => d.row.localId !== localId));
-    setPendingDeviceImages(prev => {
-      const next = { ...prev };
-      delete next[localId];
-      return next;
-    });
-    setRemovedDeviceImages(prev => {
-      const next = new Set(prev);
-      next.delete(localId);
-      return next;
-    });
   };
 
   const handleDeviceChange = (localId: string, patch: Partial<CustomerDeviceFormValues>) => {
     setDevices(prev =>
       prev.map(d => (d.row.localId === localId ? { ...d, row: { ...d.row, ...patch } } : d)),
-    );
-  };
-
-  const handleDeviceImageSelect = (localId: string, file: File) => {
-    setPendingDeviceImages(prev => ({ ...prev, [localId]: file }));
-    setRemovedDeviceImages(prev => {
-      const next = new Set(prev);
-      next.delete(localId);
-      return next;
-    });
-    const previewUrl = URL.createObjectURL(file);
-    setDevices(prev =>
-      prev.map(d =>
-        d.row.localId === localId
-          ? {
-              ...d,
-              image: {
-                file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
-                uploading: false,
-                progress: 0,
-              },
-            }
-          : d,
-      ),
-    );
-  };
-
-  const handleDeviceImageRemove = (localId: string) => {
-    setPendingDeviceImages(prev => {
-      const next = { ...prev };
-      delete next[localId];
-      return next;
-    });
-    setRemovedDeviceImages(prev => new Set(prev).add(localId));
-    setDevices(prev =>
-      prev.map(d => (d.row.localId === localId ? { ...d, image: { ...EMPTY_IMAGE_UPLOAD_STATE } } : d)),
-    );
-  };
-
-  const setDeviceImageState = (localId: string, patch: Partial<ImageUploadState>) => {
-    setDevices(prev =>
-      prev.map(d => (d.row.localId === localId ? { ...d, image: { ...d.image, ...patch } } : d)),
     );
   };
 
@@ -253,41 +185,8 @@ export const RCCustomers: React.FC = () => {
     }
   };
 
-  const resolveDeviceImage = async (
-    customerId: string,
-    localId: string,
-    current: ImageUploadState,
-  ): Promise<ProductFileMeta | null> => {
-    const pending = pendingDeviceImages[localId];
-    if (removedDeviceImages.has(localId) && !pending) return null;
-
-    if (!pending) {
-      const existing = current.file;
-      if (existing?.url && !existing.url.startsWith('blob:')) return existing;
-      return null;
-    }
-
-    setDeviceImageState(localId, { uploading: true, progress: 0 });
-    try {
-      const meta = await uploadCustomerDeviceImage(customerId, localId, pending, pct => {
-        setDeviceImageState(localId, { progress: pct });
-      });
-      setDeviceImageState(localId, { file: meta, uploading: false, progress: 100 });
-      return meta;
-    } catch (err) {
-      setDeviceImageState(localId, { uploading: false, progress: 0 });
-      throw err;
-    }
-  };
-
-  const uploadAllDevices = async (customerId: string): Promise<CustomerDevice[]> => {
-    const saved: CustomerDevice[] = [];
-    for (const device of devices) {
-      const image = await resolveDeviceImage(customerId, device.row.localId, device.image);
-      saved.push(buildCustomerDevice(device.row, image));
-    }
-    return saved;
-  };
+  const uploadAllDevices = (): CustomerDevice[] =>
+    devices.map(device => buildCustomerDevice(device.row));
 
   const validateForm = (): string | null => {
     const profileError = validateCustomerProfile(formValues);
@@ -314,7 +213,7 @@ export const RCCustomers: React.FC = () => {
       const ref = doc(collection(db, 'customers'));
       const customerId = ref.id;
       const photoFields = await uploadShopPhoto(customerId);
-      const deviceRecords = await uploadAllDevices(customerId);
+      const deviceRecords = uploadAllDevices();
 
       const record: Omit<Customer, 'id'> = {
         rcId: user!.uid,
@@ -346,7 +245,7 @@ export const RCCustomers: React.FC = () => {
     setError('');
     try {
       const photoFields = await uploadShopPhoto(customerId);
-      const deviceRecords = await uploadAllDevices(customerId);
+      const deviceRecords = uploadAllDevices();
 
       const profile = buildCustomerProfileFields(formValues);
       const updates: Record<string, unknown> = {
@@ -386,8 +285,6 @@ export const RCCustomers: React.FC = () => {
     setPendingShopPhoto(null);
     setShopPhotoRemoved(false);
     setDevices(devicesStateFromRecord(c));
-    setPendingDeviceImages({});
-    setRemovedDeviceImages(new Set());
     setError('');
   };
 
@@ -451,8 +348,6 @@ export const RCCustomers: React.FC = () => {
                   onDeviceChange={handleDeviceChange}
                   onDeviceAdd={handleDeviceAdd}
                   onDeviceRemove={handleDeviceRemove}
-                  onDeviceImageSelect={handleDeviceImageSelect}
-                  onDeviceImageRemove={handleDeviceImageRemove}
                   submitting={formBusy}
                 />
               </div>

@@ -113,14 +113,7 @@ service cloud.firestore {
     match /vehicles/{vehicleId} {
       allow read, write: if isSuperAdmin();
 
-      allow get: if isRCAdmin() && resource.data.rcId == request.auth.uid;
-
-      // RC list query: where('rcId', '==', request.auth.uid)
-      allow list: if isRCAdmin()
-        && request.query.filters.size() == 1
-        && request.query.filters[0].field.path == ['rcId']
-        && request.query.filters[0].op == '=='
-        && request.query.filters[0].value == request.auth.uid;
+      allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
 
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid;
@@ -137,13 +130,7 @@ service cloud.firestore {
     match /customers/{customerId} {
       allow read, write: if isSuperAdmin();
 
-      allow get: if isRCAdmin() && resource.data.rcId == request.auth.uid;
-
-      allow list: if isRCAdmin()
-        && request.query.filters.size() == 1
-        && request.query.filters[0].field.path == ['rcId']
-        && request.query.filters[0].op == '=='
-        && request.query.filters[0].value == request.auth.uid;
+      allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
 
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid;

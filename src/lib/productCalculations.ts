@@ -1,5 +1,7 @@
 /** Derived scale fields from manual Maximum Capacity (kg) and Verification Scale Interval e (g). */
 
+import type { Product } from '../types';
+
 export const PRODUCT_CALC_TOOLTIPS = {
   minimumCapacity: 'Minimum Capacity (Min) = Verification Scale Interval (e) × 20',
   actualScaleInterval: 'Actual Scale Interval (d) = Verification Scale Interval (e)',
@@ -41,4 +43,21 @@ export function formatDerivedDisplay(
   if (!Number.isFinite(value)) return '';
   const rounded = Math.round(value * 1e6) / 1e6;
   return String(rounded);
+}
+
+export function formatProductMaximumCapacity(
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'>,
+): string {
+  if (!product.maximumCapacity) return '—';
+  return `${product.maximumCapacity} ${product.unitOfMeasurement || 'kg'}`;
+}
+
+export function formatProductScaleInterval(
+  product: Pick<Product, 'actualScaleInterval' | 'verificationScaleInterval'>,
+): string {
+  if (product.actualScaleInterval != null && Number.isFinite(product.actualScaleInterval)) {
+    return `${product.actualScaleInterval} g`;
+  }
+  if (product.verificationScaleInterval) return `${product.verificationScaleInterval} g`;
+  return '—';
 }

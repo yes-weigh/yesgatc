@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Crosshair, MapPin, Plus, RefreshCw, Trash2, Upload, X } from 'lucide-react';
+import { Crosshair, MapPin, Package, Plus, Trash2, X } from 'lucide-react';
 import { ProductPicker } from '../../components/ProductPicker';
 import { useAppContext } from '../../context/AppContext';
 import { UploadField } from '../admin/productFormUi';
@@ -7,6 +7,10 @@ import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import { isValidPincode, normalizePhone, normalizePincode } from '../../lib/contactFields';
 import type { CustomerDeviceFormValues, CustomerFormValues } from '../../lib/customerProfileFields';
 import { lookupPincode } from '../../lib/pincodeLookup';
+import {
+  formatProductMaximumCapacity,
+  formatProductScaleInterval,
+} from '../../lib/productCalculations';
 import type { Product } from '../../types';
 
 export type ImageUploadState = {
@@ -33,105 +37,39 @@ export const EMPTY_IMAGE_UPLOAD_STATE: ImageUploadState = {
   progress: 0,
 };
 
-export type CustomerDeviceUploadState = {
+export type CustomerDeviceRowState = {
   row: CustomerDeviceFormValues;
-  image: ImageUploadState;
 };
 
-const DevicePhotoThumb: React.FC<{
-  file: ProductFileMeta | null;
-  uploading: boolean;
-  progress: number;
-  submitting: boolean;
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemove: () => void;
-}> = ({ file, uploading, progress, submitting, inputRef, onSelect, onRemove }) => (
+const ProductImageThumb: React.FC<{ product: Product | null }> = ({ product }) => (
   <div className="customer-device-thumb">
-    <input
-      ref={inputRef}
-      type="file"
-      accept="image/jpeg,image/png,image/webp,image/gif"
-      className="sr-only"
-      onChange={onSelect}
-      disabled={uploading || submitting}
-    />
-    {uploading ? (
-      <div className="customer-device-thumb-box customer-device-thumb-box--loading" aria-busy="true">
-        <span className="spinner-inline"></span>
-        <span className="customer-device-thumb-progress">{progress}%</span>
-      </div>
-    ) : file ? (
-      <div className="customer-device-thumb-box">
-        <img src={file.url} alt="" className="customer-device-thumb-img" />
-        <div className="customer-device-thumb-actions">
-          <button
-            type="button"
-            className="customer-device-thumb-btn"
-            onClick={() => inputRef.current?.click()}
-            disabled={submitting}
-            aria-label="Replace photo"
-            title="Replace"
-          >
-            <RefreshCw size={13} />
-          </button>
-          <button
-            type="button"
-            className="customer-device-thumb-btn customer-device-thumb-btn--danger"
-            onClick={onRemove}
-            disabled={submitting}
-            aria-label="Remove photo"
-            title="Remove"
-          >
-            <X size={13} />
-          </button>
-        </div>
-      </div>
-    ) : (
-      <button
-        type="button"
-        className="customer-device-thumb-box customer-device-thumb-box--empty"
-        onClick={() => inputRef.current?.click()}
-        disabled={submitting}
-        aria-label="Upload device photo"
-        title="Upload photo"
-      >
-        <Upload size={20} className="text-muted" />
-      </button>
-    )}
+    <div
+      className={`customer-device-thumb-box${product?.productImageUrl ? '' : ' customer-device-thumb-box--placeholder'}`}
+      title={product?.name || 'Select a product'}
+    >
+      {product?.productImageUrl ? (
+        <img src={product.productImageUrl} alt="" className="customer-device-thumb-img" />
+      ) : (
+        <Package size={22} className="text-muted" aria-hidden />
+      )}
+    </div>
   </div>
 );
 
 const DeviceRow: React.FC<{
   index: number;
-  device: CustomerDeviceUploadState;
+  device: CustomerDeviceRowState;
   products: Product[];
   submitting: boolean;
   onChange: (localId: string, patch: Partial<CustomerDeviceFormValues>) => void;
   onRemove: (localId: string) => void;
-  onImageSelect: (localId: string, file: File) => void;
-  onImageRemove: (localId: string) => void;
-}> = ({ index, device, products, submitting, onChange, onRemove, onImageSelect, onImageRemove }) => {
-  const photoRef = useRef<HTMLInputElement>(null);
-
-  const handlePhotoInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (file) onImageSelect(device.row.localId, file);
-  };
+}> = ({ index, device, products, submitting, onChange, onRemove }) => {
+  const selectedProduct = products.find(p => p.id === device.row.productId) ?? null;
 
   return (
     <div className="customer-device-row">
       <div className="customer-device-row-body">
-        <DevicePhotoThumb
-          file={device.image.file}
-          uploading={device.image.uploading}
-          progress={device.image.progress}
-          submitting={submitting}
-          inputRef={photoRef}
-          onSelect={handlePhotoInput}
-          onRemove={() => onImageRemove(device.row.localId)}
-        />
+        <ProductImageThumb product={selectedProduct} />
         <div className="customer-device-fields">
           <div className="form-group mb-0">
             <label htmlFor={`device-serial-${device.row.localId}`}>
@@ -167,6 +105,24 @@ const DeviceRow: React.FC<{
               required
             />
           </div>
+          {selectedProduct && (
+            <div className="customer-device-product-specs">
+              <div className="customer-device-spec-item">
+                <span className="customer-device-spec-label">Maximum capacity</span>
+                <span>{formatProductMaximumCapacity(selectedProduct)}</span>
+              </div>
+              <div className="customer-device-spec-item">
+                <span className="customer-device-spec-label">Scale interval (d)</span>
+                <span>{formatProductScaleInterval(selectedProduct)}</span>
+              </div>
+              {selectedProduct.modelNo && (
+                <div className="customer-device-spec-item">
+                  <span className="customer-device-spec-label">Model no.</span>
+                  <span className="text-mono">{selectedProduct.modelNo}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -190,12 +146,10 @@ type CustomerFormFieldsProps = {
   shopPhoto: ImageUploadState;
   onShopPhotoSelect: (file: File) => void;
   onShopPhotoRemove: () => void;
-  devices: CustomerDeviceUploadState[];
+  devices: CustomerDeviceRowState[];
   onDeviceChange: (localId: string, patch: Partial<CustomerDeviceFormValues>) => void;
   onDeviceAdd: () => void;
   onDeviceRemove: (localId: string) => void;
-  onDeviceImageSelect: (localId: string, file: File) => void;
-  onDeviceImageRemove: (localId: string) => void;
   submitting: boolean;
 };
 
@@ -210,8 +164,6 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
   onDeviceChange,
   onDeviceAdd,
   onDeviceRemove,
-  onDeviceImageSelect,
-  onDeviceImageRemove,
   submitting,
 }) => {
   const { products } = useAppContext();
@@ -541,8 +493,6 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
                 submitting={submitting}
                 onChange={onDeviceChange}
                 onRemove={onDeviceRemove}
-                onImageSelect={onDeviceImageSelect}
-                onImageRemove={onDeviceImageRemove}
               />
             ))}
           </div>
