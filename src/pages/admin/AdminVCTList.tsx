@@ -177,7 +177,7 @@ export const AdminVCTList: React.FC = () => {
                 <div><span className="vct-review-label">Status</span><p>{vctApprovalLabel(reviewing.approvalStatus)}</p></div>
                 <div><span className="vct-review-label">Aadhar Number</span><p>{formatAadharDisplay(reviewing.aadhar)}</p></div>
                 <div><span className="vct-review-label">Mobile Number</span><p>{reviewing.phone || '—'}</p></div>
-                <div><span className="vct-review-label">PIN Code</span><p>{reviewing.pincode || '—'}</p></div>
+                <div><span className="vct-review-label">Postal code</span><p>{reviewing.pincode || '—'}</p></div>
                 <div><span className="vct-review-label">Police Station</span><p>{reviewing.policeStation || '—'}</p></div>
                 <div className="vct-review-span-2">
                   <span className="vct-review-label">Residential Address</span>

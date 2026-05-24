@@ -16,11 +16,11 @@ import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
 import { RCJobQueue } from './pages/rc/RCJobQueue';
 import { RCVehicles } from './pages/rc/RCVehicles';
+import { RCCustomers } from './pages/rc/RCCustomers';
 import { RCProducts } from './pages/rc/RCProducts';
 import {
   RCSiteCalibration,
   RCUploadCertificate,
-  RCCustomers,
 } from './pages/rc/RCMenuPages';
 import { VCTDashboard } from './pages/vct/VCTDashboard';
 import { Certificates } from './pages/vct/Certificates';

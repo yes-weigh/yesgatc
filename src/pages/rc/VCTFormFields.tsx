@@ -131,197 +131,189 @@ export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
 
   return (
     <div className="product-form-flat vct-form-flat">
-      <div className="product-form-flat-row vct-form-row-profile">
-        <UploadField
-          label="Profile photo"
-          hint="Optional"
-          file={profilePhoto.file}
-          uploading={profilePhoto.uploading}
-          progress={profilePhoto.progress}
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          uploadLabel="Upload photo"
-          formats="JPEG, PNG, WebP, GIF · max 15 MB"
-          inputRef={profilePhotoRef}
-          onSelect={handleProfilePhotoInput}
-          onRemove={onProfilePhotoRemove}
-          submitting={submitting}
-          variant="image"
-          compact
-        />
-      </div>
+      <div className="product-form-flat-row vct-form-hero">
+        <div className="vct-form-hero-photo">
+          <UploadField
+            label="Profile photo"
+            hint="Optional"
+            file={profilePhoto.file}
+            uploading={profilePhoto.uploading}
+            progress={profilePhoto.progress}
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            uploadLabel="Upload"
+            formats="Max 15 MB"
+            inputRef={profilePhotoRef}
+            onSelect={handleProfilePhotoInput}
+            onRemove={onProfilePhotoRemove}
+            submitting={submitting}
+            variant="image"
+            compact
+            avatar
+          />
+        </div>
 
-      <div className="product-form-flat-row vct-form-row-main">
-        <div className="vct-form-grid vct-form-grid--main">
-          <div className="form-group mb-0">
-            <label htmlFor="vct-name">Full Name *</label>
-            <input
-              id="vct-name"
-              type="text"
-              className="input-field"
-              placeholder="e.g. Amit Sharma"
-              value={values.username}
-              onChange={e => onChange({ username: e.target.value })}
-              required
-              autoFocus={mode === 'create'}
-            />
-          </div>
-          {mode === 'create' ? (
+        <div className="vct-form-hero-fields">
+          <div className="vct-form-grid vct-form-grid--identity">
             <div className="form-group mb-0">
-              <label htmlFor="vct-aadhar">Aadhar *</label>
+              <label htmlFor="vct-name">Full Name *</label>
               <input
-                id="vct-aadhar"
+                id="vct-name"
+                type="text"
+                className="input-field"
+                placeholder="e.g. Amit Sharma"
+                value={values.username}
+                onChange={e => onChange({ username: e.target.value })}
+                required
+                autoFocus={mode === 'create'}
+              />
+            </div>
+            {mode === 'create' ? (
+              <div className="form-group mb-0">
+                <label htmlFor="vct-aadhar">Aadhar *</label>
+                <input
+                  id="vct-aadhar"
+                  type="text"
+                  inputMode="numeric"
+                  className="input-field"
+                  placeholder="12 digits"
+                  value={values.aadhar}
+                  onChange={e => onChange({ aadhar: e.target.value.replace(/\D/g, '').slice(0, 12) })}
+                  required
+                  maxLength={12}
+                />
+              </div>
+            ) : (
+              <div className="form-group mb-0 vct-form-aadhar-readonly">
+                <label>Aadhar</label>
+                <p className="vct-form-aadhar-value">{formatAadharDisplay(loginAadhar ?? '')}</p>
+              </div>
+            )}
+            <div className="form-group mb-0">
+              <label htmlFor="vct-phone">Mobile *</label>
+              <input
+                id="vct-phone"
                 type="text"
                 inputMode="numeric"
                 className="input-field"
-                placeholder="12 digits"
-                value={values.aadhar}
-                onChange={e => onChange({ aadhar: e.target.value.replace(/\D/g, '').slice(0, 12) })}
+                placeholder="10-digit"
+                value={values.phone}
+                onChange={e => onChange({ phone: normalizePhone(e.target.value) })}
                 required
-                maxLength={12}
+                maxLength={10}
               />
             </div>
-          ) : (
-            <div className="form-group mb-0 vct-form-aadhar-readonly">
-              <label>Aadhar</label>
-              <p className="vct-form-aadhar-value">{formatAadharDisplay(loginAadhar ?? '')}</p>
+            <div className="form-group mb-0">
+              <label htmlFor="vct-pincode">Postal code *</label>
+              <input
+                id="vct-pincode"
+                type="text"
+                inputMode="numeric"
+                className="input-field"
+                placeholder="6-digit"
+                value={values.pincode}
+                onChange={e => onChange({ pincode: normalizePincode(e.target.value) })}
+                required
+                maxLength={6}
+              />
             </div>
-          )}
-          <div className="form-group mb-0">
-            <label htmlFor="vct-phone">Mobile *</label>
-            <input
-              id="vct-phone"
-              type="text"
-              inputMode="numeric"
-              className="input-field"
-              placeholder="10-digit"
-              value={values.phone}
-              onChange={e => onChange({ phone: normalizePhone(e.target.value) })}
-              required
-              maxLength={10}
-            />
+            <div className="form-group mb-0 vct-form-span-full vct-form-address">
+              <label htmlFor="vct-address">Residential Address *</label>
+              <input
+                id="vct-address"
+                type="text"
+                className="input-field"
+                placeholder="House no., street, locality, city, state"
+                value={values.address}
+                onChange={e => onChange({ address: e.target.value })}
+                required
+              />
+            </div>
+            <div className="form-group mb-0">
+              <label htmlFor="vct-police-station">Police Station *</label>
+              <input
+                id="vct-police-station"
+                type="text"
+                className="input-field"
+                placeholder="PCC issuing station"
+                value={values.policeStation}
+                onChange={e => onChange({ policeStation: e.target.value })}
+                required
+              />
+            </div>
+            <div className="form-group mb-0">
+              <label htmlFor="vct-secondary-name">Emergency Contact *</label>
+              <input
+                id="vct-secondary-name"
+                type="text"
+                className="input-field"
+                placeholder="Full name"
+                value={values.secondaryContactName}
+                onChange={e => onChange({ secondaryContactName: e.target.value })}
+                required
+              />
+            </div>
+            <div className="form-group mb-0">
+              <label htmlFor="vct-secondary-rel">Relationship *</label>
+              <input
+                id="vct-secondary-rel"
+                type="text"
+                className="input-field"
+                placeholder="e.g. Spouse"
+                value={values.secondaryContactRelationship}
+                onChange={e => onChange({ secondaryContactRelationship: e.target.value })}
+                required
+              />
+            </div>
+            <div className="form-group mb-0">
+              <label htmlFor="vct-secondary-phone">Emergency Phone *</label>
+              <input
+                id="vct-secondary-phone"
+                type="text"
+                inputMode="numeric"
+                className="input-field"
+                placeholder="10-digit"
+                value={values.secondaryContactPhone}
+                onChange={e => onChange({ secondaryContactPhone: normalizePhone(e.target.value) })}
+                required
+                maxLength={10}
+              />
+            </div>
+            <div className="form-group mb-0 vct-form-span-2">
+              <label htmlFor="vct-password">
+                {mode === 'create' ? 'Password *' : 'Reset password'}
+              </label>
+              <div className="input-icon-wrap">
+                <input
+                  id="vct-password"
+                  type={showPassword ? 'text' : 'password'}
+                  className="input-field"
+                  placeholder={mode === 'create' ? 'min. 6 chars' : 'Optional'}
+                  autoComplete="new-password"
+                  value={values.password}
+                  onChange={e => onChange({ password: e.target.value })}
+                  required={mode === 'create'}
+                  minLength={mode === 'create' ? 6 : undefined}
+                />
+                <button
+                  type="button"
+                  className="input-icon-right"
+                  tabIndex={-1}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={onTogglePassword}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            <div className="form-group mb-0 vct-form-span-2 vct-form-job-mode">
+              <label>Job Mode *</label>
+              <ModeToggle
+                value={values.workflowMode}
+                onChange={m => onChange({ workflowMode: m })}
+              />
+            </div>
           </div>
-          <div className="form-group mb-0">
-            <label htmlFor="vct-pincode">PIN *</label>
-            <input
-              id="vct-pincode"
-              type="text"
-              inputMode="numeric"
-              className="input-field"
-              placeholder="6-digit"
-              value={values.pincode}
-              onChange={e => onChange({ pincode: normalizePincode(e.target.value) })}
-              required
-              maxLength={6}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="product-form-flat-row vct-form-row-address">
-        <div className="form-group mb-0 vct-form-address">
-          <label htmlFor="vct-address">Residential Address *</label>
-          <input
-            id="vct-address"
-            type="text"
-            className="input-field"
-            placeholder="House no., street, locality, city, state"
-            value={values.address}
-            onChange={e => onChange({ address: e.target.value })}
-            required
-          />
-        </div>
-      </div>
-
-      <div className="product-form-flat-row vct-form-row-main">
-        <div className="vct-form-grid vct-form-grid--main">
-          <div className="form-group mb-0">
-            <label htmlFor="vct-police-station">Police Station *</label>
-            <input
-              id="vct-police-station"
-              type="text"
-              className="input-field"
-              placeholder="PCC issuing station"
-              value={values.policeStation}
-              onChange={e => onChange({ policeStation: e.target.value })}
-              required
-            />
-          </div>
-          <div className="form-group mb-0">
-            <label htmlFor="vct-secondary-name">Emergency Contact *</label>
-            <input
-              id="vct-secondary-name"
-              type="text"
-              className="input-field"
-              placeholder="Full name"
-              value={values.secondaryContactName}
-              onChange={e => onChange({ secondaryContactName: e.target.value })}
-              required
-            />
-          </div>
-          <div className="form-group mb-0">
-            <label htmlFor="vct-secondary-rel">Relationship *</label>
-            <input
-              id="vct-secondary-rel"
-              type="text"
-              className="input-field"
-              placeholder="e.g. Spouse"
-              value={values.secondaryContactRelationship}
-              onChange={e => onChange({ secondaryContactRelationship: e.target.value })}
-              required
-            />
-          </div>
-          <div className="form-group mb-0">
-            <label htmlFor="vct-secondary-phone">Emergency Phone *</label>
-            <input
-              id="vct-secondary-phone"
-              type="text"
-              inputMode="numeric"
-              className="input-field"
-              placeholder="10-digit"
-              value={values.secondaryContactPhone}
-              onChange={e => onChange({ secondaryContactPhone: normalizePhone(e.target.value) })}
-              required
-              maxLength={10}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="product-form-flat-row vct-form-row-credentials">
-        <div className="form-group mb-0">
-          <label htmlFor="vct-password">
-            {mode === 'create' ? 'Password *' : 'Reset password'}
-          </label>
-          <div className="input-icon-wrap">
-            <input
-              id="vct-password"
-              type={showPassword ? 'text' : 'password'}
-              className="input-field"
-              placeholder={mode === 'create' ? 'min. 6 chars' : 'Optional'}
-              autoComplete="new-password"
-              value={values.password}
-              onChange={e => onChange({ password: e.target.value })}
-              required={mode === 'create'}
-              minLength={mode === 'create' ? 6 : undefined}
-            />
-            <button
-              type="button"
-              className="input-icon-right"
-              tabIndex={-1}
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-              onMouseDown={e => e.preventDefault()}
-              onClick={onTogglePassword}
-            >
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-            </button>
-          </div>
-        </div>
-        <div className="form-group mb-0 vct-form-job-mode">
-          <label>Job Mode *</label>
-          <ModeToggle
-            value={values.workflowMode}
-            onChange={m => onChange({ workflowMode: m })}
-          />
         </div>
       </div>
 

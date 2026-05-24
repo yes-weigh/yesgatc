@@ -150,3 +150,63 @@ export interface FirestoreUserDoc {
   sealName?: string;
   sealContentType?: string;
 }
+
+/** RC-managed vehicle record (Firestore `vehicles` collection). */
+export interface Vehicle {
+  id: string;
+  rcId: string;
+  brand: string;
+  model: string;
+  year: string;
+  regNumber: string;
+  rcValidity: string;
+  insuranceValidity: string;
+  pollutionValidity: string;
+  f2WeightValidity: string;
+  rcDocUrl?: string;
+  rcDocPath?: string;
+  rcDocName?: string;
+  rcDocContentType?: string;
+  insuranceDocUrl?: string;
+  insuranceDocPath?: string;
+  insuranceDocName?: string;
+  insuranceDocContentType?: string;
+  pollutionDocUrl?: string;
+  pollutionDocPath?: string;
+  pollutionDocName?: string;
+  pollutionDocContentType?: string;
+  f2WeightDocUrl?: string;
+  f2WeightDocPath?: string;
+  f2WeightDocName?: string;
+  f2WeightDocContentType?: string;
+  vehiclePhotoUrl?: string;
+  vehiclePhotoPath?: string;
+  vehiclePhotoName?: string;
+  vehiclePhotoContentType?: string;
+  createdAt: string;
+  createdByUid?: string;
+}
+
+export interface CustomerLocation {
+  lat: number;
+  lng: number;
+}
+
+/** RC-managed customer (Firestore `customers` collection). */
+export interface Customer {
+  id: string;
+  rcId: string;
+  name: string;
+  phone: string;
+  email?: string;
+  address: string;
+  pincode?: string;
+  location?: CustomerLocation;
+  customerPhotoUrl?: string;
+  customerPhotoPath?: string;
+  customerPhotoName?: string;
+  customerPhotoContentType?: string;
+  createdAt: string;
+  createdByUid?: string;
+  updatedAt?: string;
+}

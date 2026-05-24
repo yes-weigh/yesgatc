@@ -80,7 +80,7 @@ export function validateVctProfile(input: VctProfileInput): string | null {
   if (!input.username.trim()) return 'Full name is required.';
   if (!isValidPhone(input.phone)) return 'Mobile number must be exactly 10 digits.';
   if (!input.address.trim()) return 'Residential address is required.';
-  if (!isValidPincode(input.pincode)) return 'PIN code must be exactly 6 digits.';
+  if (!isValidPincode(input.pincode)) return 'Postal code must be exactly 6 digits.';
   if (!input.policeStation.trim()) return 'Police station is required.';
   if (!input.secondaryContactName.trim()) return 'Emergency contact name is required.';
   if (!input.secondaryContactRelationship.trim()) return 'Relationship to emergency contact is required.';

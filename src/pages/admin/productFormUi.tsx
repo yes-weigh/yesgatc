@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink, FileText, Info, Upload, X } from 'lucide-react';
+import { ExternalLink, FileText, Info, RefreshCw, Upload, X } from 'lucide-react';
 import { isPdfContentType, type ProductFileMeta } from '../../lib/productApprovalUpload';
 
 export const FormSection: React.FC<{
@@ -56,6 +56,8 @@ export const UploadField: React.FC<{
   submitting: boolean;
   variant?: 'image' | 'document';
   compact?: boolean;
+  /** Large circular photo — hides filename, icon-only replace/remove */
+  avatar?: boolean;
   /** Keep dropzone visible (disabled) instead of swapping to the info panel */
   uploadDisabled?: boolean;
 }> = ({
@@ -74,10 +76,11 @@ export const UploadField: React.FC<{
   submitting,
   variant = 'document',
   compact = false,
+  avatar = false,
   uploadDisabled = false,
 }) => (
   <div
-    className={`product-upload-field product-upload-field--${variant}${compact ? ' product-upload-field--compact' : ''}`}
+    className={`product-upload-field product-upload-field--${variant}${compact ? ' product-upload-field--compact' : ''}${avatar ? ' product-upload-field--avatar' : ''}`}
   >
     <div className="product-upload-field-head">
       <span className="product-upload-field-label">{label}</span>
@@ -104,17 +107,20 @@ export const UploadField: React.FC<{
           {!file && !uploading && (
             <button
               type="button"
-              className={`product-upload-dropzone${compact ? ' product-upload-dropzone--compact' : ''}`}
+              className={`product-upload-dropzone${compact ? ' product-upload-dropzone--compact' : ''}${avatar ? ' product-upload-dropzone--avatar' : ''}`}
               onMouseDown={e => uploadDisabled && e.preventDefault()}
               onClick={() => !uploadDisabled && inputRef.current?.click()}
               disabled={submitting || uploadDisabled}
-              title={uploadDisabled ? disabledReason : undefined}
+              title={uploadDisabled ? disabledReason : avatar ? `${uploadLabel} · ${formats}` : undefined}
+              aria-label={avatar ? `${uploadLabel}. ${formats}` : undefined}
             >
-              <Upload size={compact ? 18 : 22} className="text-muted shrink-0" />
-              <span className="product-upload-dropzone-text">
-                <span className="product-upload-dropzone-title">{uploadLabel}</span>
-                <span className="product-upload-dropzone-meta">{formats}</span>
-              </span>
+              <Upload size={avatar ? 28 : compact ? 18 : 22} className="text-muted shrink-0" />
+              {!avatar && (
+                <span className="product-upload-dropzone-text">
+                  <span className="product-upload-dropzone-title">{uploadLabel}</span>
+                  <span className="product-upload-dropzone-meta">{formats}</span>
+                </span>
+              )}
             </button>
           )}
 
@@ -129,45 +135,83 @@ export const UploadField: React.FC<{
           )}
 
           {file && !uploading && (
-            <div className={`product-upload-preview${compact ? ' product-upload-preview--compact' : ''}`}>
-              {variant === 'image' || !isPdfContentType(file.contentType) ? (
-                <img src={file.url} alt="" className="product-upload-preview-img" />
+            <div
+              className={`product-upload-preview${compact ? ' product-upload-preview--compact' : ''}${avatar ? ' product-upload-preview--avatar' : ''}`}
+            >
+              {avatar ? (
+                <div className="product-upload-avatar-wrap">
+                  {variant === 'image' || !isPdfContentType(file.contentType) ? (
+                    <img src={file.url} alt="" className="product-upload-preview-img" />
+                  ) : (
+                    <div className="product-upload-preview-icon">
+                      <FileText size={28} className="text-red" />
+                    </div>
+                  )}
+                  <div className="product-upload-avatar-actions">
+                    <button
+                      type="button"
+                      className="product-upload-icon-btn"
+                      onClick={() => inputRef.current?.click()}
+                      disabled={submitting}
+                      aria-label="Replace photo"
+                      title="Replace"
+                    >
+                      <RefreshCw size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className="product-upload-icon-btn product-upload-icon-btn--danger"
+                      onClick={onRemove}
+                      disabled={submitting}
+                      aria-label="Remove photo"
+                      title="Remove"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <div className="product-upload-preview-icon">
-                  <FileText size={compact ? 22 : 28} className="text-red" />
-                </div>
+                <>
+                  {variant === 'image' || !isPdfContentType(file.contentType) ? (
+                    <img src={file.url} alt="" className="product-upload-preview-img" />
+                  ) : (
+                    <div className="product-upload-preview-icon">
+                      <FileText size={compact ? 22 : 28} className="text-red" />
+                    </div>
+                  )}
+                  <div className="product-upload-preview-meta">
+                    <p className="truncate font-medium text-sm" title={file.name}>
+                      {file.name}
+                    </p>
+                    <div className="product-upload-preview-actions">
+                      <a
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-secondary text-xs py-1 px-2"
+                      >
+                        <ExternalLink size={12} /> View
+                      </a>
+                      <button
+                        type="button"
+                        className="btn btn-secondary text-xs py-1 px-2"
+                        onClick={() => inputRef.current?.click()}
+                        disabled={submitting}
+                      >
+                        Replace
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary text-xs py-1 px-2 text-red"
+                        onClick={onRemove}
+                        disabled={submitting}
+                      >
+                        <X size={12} /> Remove
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
-              <div className="product-upload-preview-meta">
-                <p className="truncate font-medium text-sm" title={file.name}>
-                  {file.name}
-                </p>
-                <div className="product-upload-preview-actions">
-                  <a
-                    href={file.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-secondary text-xs py-1 px-2"
-                  >
-                    <ExternalLink size={12} /> View
-                  </a>
-                  <button
-                    type="button"
-                    className="btn btn-secondary text-xs py-1 px-2"
-                    onClick={() => inputRef.current?.click()}
-                    disabled={submitting}
-                  >
-                    Replace
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary text-xs py-1 px-2 text-red"
-                    onClick={onRemove}
-                    disabled={submitting}
-                  >
-                    <X size={12} /> Remove
-                  </button>
-                </div>
-              </div>
             </div>
           )}
         </>

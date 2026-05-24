@@ -1791,6 +1791,98 @@ select.input-field option {
   margin-top: 0.35rem;
 }
 
+/* Avatar upload — large centered circle, icon-only actions */
+.product-upload-field--avatar.product-upload-field--compact {
+  flex-direction: column;
+  align-items: stretch;
+  overflow: visible;
+}
+
+.product-upload-field--avatar .product-upload-field-head {
+  width: 100%;
+  border-right: none;
+  text-align: center;
+}
+
+.product-upload-field--avatar .product-upload-field-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.product-upload-preview--avatar {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  gap: 0;
+}
+
+.product-upload-avatar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.product-upload-avatar-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.product-upload-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border-glass);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.product-upload-icon-btn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: var(--accent-primary);
+}
+
+.product-upload-icon-btn--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+}
+
+.product-upload-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.product-upload-dropzone--avatar {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  border-radius: 50%;
+  border: 2px dashed rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.product-upload-dropzone--avatar:hover {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.08);
+}
+
 .product-upload-field--compact .product-upload-disabled {
   padding: 0.5rem 0;
   border: none;
@@ -2639,12 +2731,156 @@ select.input-field option {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.vct-form-row-profile {
-  max-width: 22rem;
+.vct-form-hero {
+  display: grid;
+  grid-template-columns: 14.5rem minmax(0, 1fr);
+  gap: 1.25rem 1.5rem;
+  align-items: stretch;
+  padding: 1rem 1.15rem;
 }
 
-.vct-form-row-profile .product-upload-field--compact {
-  min-height: 4.5rem;
+.vct-form-hero-photo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vct-form-hero-photo .product-upload-field--compact {
+  flex-direction: column;
+  flex: 1;
+  min-height: 100%;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.vct-form-hero-photo .product-upload-field-head {
+  width: 100%;
+  border-right: none;
+  padding: 0.75rem 0.65rem 0.35rem;
+  background: transparent;
+  text-align: center;
+}
+
+.vct-form-hero-photo .product-upload-field-label {
+  display: block;
+  font-size: 0.8rem;
+}
+
+.vct-form-hero-photo .product-upload-field-hint {
+  display: block;
+  font-size: 0.72rem;
+  margin-top: 0.15rem;
+  opacity: 0.75;
+}
+
+.vct-form-hero-photo .product-upload-field-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.65rem 0.85rem;
+}
+
+.vct-form-hero-photo .product-upload-dropzone--compact,
+.vct-form-hero-photo .product-upload-dropzone--avatar {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  width: 11.5rem;
+  height: 11.5rem;
+  margin: 0 auto;
+  padding: 0.65rem;
+  border-radius: 50%;
+  border: 2px dashed rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.vct-form-hero-photo .product-upload-dropzone--compact:hover,
+.vct-form-hero-photo .product-upload-dropzone--avatar:hover {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.vct-form-hero-photo .product-upload-dropzone-text {
+  align-items: center;
+  text-align: center;
+}
+
+.vct-form-hero-photo .product-upload-dropzone-title {
+  font-size: 0.72rem;
+}
+
+.vct-form-hero-photo .product-upload-dropzone-meta {
+  display: block;
+  font-size: 0.65rem;
+  margin-top: 0.1rem;
+}
+
+.vct-form-hero-photo .product-upload-preview--compact,
+.vct-form-hero-photo .product-upload-preview--avatar {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: 100%;
+}
+
+.vct-form-hero-photo .product-upload-preview-img,
+.vct-form-hero-photo .product-upload-preview-icon,
+.vct-form-hero-photo .product-upload-avatar-wrap .product-upload-preview-img,
+.vct-form-hero-photo .product-upload-avatar-wrap .product-upload-preview-icon {
+  width: min(11.5rem, 100%);
+  height: min(11.5rem, 100%);
+  max-width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--border-glass);
+  flex-shrink: 0;
+}
+
+.vct-form-hero-photo .product-upload-avatar-wrap {
+  width: 100%;
+}
+
+.vct-form-hero-photo .product-upload-progress--compact {
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem 0;
+}
+
+.vct-form-hero-fields {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.vct-form-grid--identity {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vct-form-span-full {
+  grid-column: 1 / -1;
+}
+
+.vct-form-span-2 {
+  grid-column: span 2;
+}
+
+@media (min-width: 1100px) {
+  .vct-form-grid--identity {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .vct-form-span-full {
+    grid-column: 1 / -1;
+  }
+
+  .vct-form-span-2 {
+    grid-column: span 2;
+  }
 }
 
 .vct-table-avatar {
@@ -2735,6 +2971,19 @@ select.input-field option {
   padding: 0.65rem 0.85rem;
 }
 
+.product-modal--wide.vct-modal .vct-form-hero-photo .product-upload-field--compact .product-upload-field-head,
+.inline-form-panel--vct .vct-form-hero-photo .product-upload-field--compact .product-upload-field-head {
+  width: 100%;
+  border-right: none;
+  padding: 0.75rem 0.65rem 0.35rem;
+  text-align: center;
+}
+
+.product-modal--wide.vct-modal .vct-form-hero-photo .product-upload-field--compact .product-upload-field-body,
+.inline-form-panel--vct .vct-form-hero-photo .product-upload-field--compact .product-upload-field-body {
+  padding: 0 0.65rem 0.85rem;
+}
+
 .product-modal--wide.vct-modal .product-upload-field--compact .product-upload-field-label,
 .inline-form-panel--vct .product-upload-field--compact .product-upload-field-label {
   font-size: 0.8rem;
@@ -2758,6 +3007,18 @@ select.input-field option {
 .inline-form-panel--vct .product-upload-preview--compact .product-upload-preview-icon {
   width: 42px;
   height: 42px;
+}
+
+.product-modal--wide.vct-modal .vct-form-hero-photo .product-upload-preview-img,
+.product-modal--wide.vct-modal .vct-form-hero-photo .product-upload-preview-icon,
+.product-modal--wide.vct-modal .vct-form-hero-photo .product-upload-dropzone--avatar,
+.product-modal--wide.vct-modal .vct-form-hero-photo .product-upload-dropzone--compact,
+.inline-form-panel--vct .vct-form-hero-photo .product-upload-preview-img,
+.inline-form-panel--vct .vct-form-hero-photo .product-upload-preview-icon,
+.inline-form-panel--vct .vct-form-hero-photo .product-upload-dropzone--avatar,
+.inline-form-panel--vct .vct-form-hero-photo .product-upload-dropzone--compact {
+  width: 11.5rem;
+  height: 11.5rem;
 }
 
 .product-modal--wide.vct-modal .product-upload-preview--compact .product-upload-preview-meta p,
@@ -2905,8 +3166,26 @@ select.input-field option {
 }
 
 @media (max-width: 768px) {
+  .vct-form-hero {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .vct-form-hero-photo {
+    max-width: 14.5rem;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .vct-form-grid--identity {
+    grid-template-columns: 1fr;
+  }
+
+  .vct-form-span-2 {
+    grid-column: span 1;
+  }
+
   .vct-form-grid--main,
-  .vct-form-row-credentials,
   .vct-form-row-docs {
     grid-template-columns: 1fr;
   }
@@ -3415,5 +3694,435 @@ select.input-field option {
 
   .content-area {
     padding: 1rem;
+  }
+}
+
+/* ── RC Vehicle form & table ───────────────────────────────────── */
+.inline-form-panel--vehicle .product-form-panel,
+.inline-form-panel--vehicle .product-form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.inline-form-panel--vehicle .product-form-body {
+  overflow: visible;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 1.5rem 1rem;
+}
+
+.inline-form-panel--vehicle .product-form-topbar {
+  padding: 0.85rem 1.5rem 0.5rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.inline-form-panel--vehicle .product-form-topbar h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.inline-form-panel--vehicle .product-form-footer {
+  padding: 0.5rem 1.5rem 0.85rem;
+  flex-shrink: 0;
+}
+
+.vehicle-form-flat {
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.vehicle-form-flat .product-form-flat-row {
+  padding: 0.75rem 1rem;
+}
+
+.vehicle-form-grid {
+  display: grid;
+  gap: 0.75rem 1rem;
+  width: 100%;
+}
+
+.vehicle-form-grid--identity {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vehicle-form-grid--validity {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vehicle-form-hero {
+  display: grid;
+  grid-template-columns: 14.5rem minmax(0, 1fr);
+  gap: 1.25rem 1.5rem;
+  align-items: stretch;
+  padding: 1rem 1.15rem;
+}
+
+.vehicle-form-hero-photo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vehicle-form-hero-photo .product-upload-field--compact {
+  flex-direction: column;
+  flex: 1;
+  min-height: 100%;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.vehicle-form-hero-photo .product-upload-field-head {
+  width: 100%;
+  border-right: none;
+  padding: 0.75rem 0.65rem 0.35rem;
+  background: transparent;
+  text-align: center;
+}
+
+.vehicle-form-hero-photo .product-upload-field-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.65rem 0.85rem;
+}
+
+.vehicle-form-hero-photo .product-upload-dropzone--avatar,
+.vehicle-form-hero-photo .product-upload-dropzone--compact {
+  width: 11.5rem;
+  height: 11.5rem;
+  margin: 0 auto;
+  border-radius: 50%;
+}
+
+.vehicle-form-hero-photo .product-upload-preview-img,
+.vehicle-form-hero-photo .product-upload-preview-icon,
+.vehicle-form-hero-photo .product-upload-avatar-wrap .product-upload-preview-img {
+  width: min(11.5rem, 100%);
+  height: min(11.5rem, 100%);
+  max-width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.vehicle-form-hero-fields {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.vehicle-form-row-docs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+  align-items: stretch;
+  padding: 0.75rem 1rem;
+}
+
+.inline-form-panel--vehicle .product-upload-field--compact .product-upload-field-head {
+  width: 7.25rem;
+}
+
+.inline-form-panel--vehicle .vehicle-form-hero-photo .product-upload-field--compact .product-upload-field-head {
+  width: 100%;
+  border-right: none;
+}
+
+.inline-form-panel--vehicle .vehicle-form-hero-photo .product-upload-field--compact .product-upload-field-body {
+  padding: 0 0.65rem 0.85rem;
+}
+
+.inline-form-panel--vehicle .vehicle-form-hero-photo .product-upload-preview-img,
+.inline-form-panel--vehicle .vehicle-form-hero-photo .product-upload-dropzone--avatar {
+  width: 11.5rem;
+  height: 11.5rem;
+}
+
+.vehicle-validity-ok {
+  background: rgba(34, 197, 94, 0.12);
+  color: #86efac;
+}
+
+.vehicle-validity-due {
+  background: rgba(234, 179, 8, 0.12);
+  color: #fde047;
+}
+
+.vehicle-validity-expired {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.vehicle-validity-missing {
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+}
+
+.data-table--vehicles-rc .vehicle-rc-col-serial {
+  width: 2.75rem;
+  text-align: center;
+}
+
+.data-table--vehicles-rc .vehicle-rc-col-actions {
+  width: 6.5rem;
+}
+
+@media (min-width: 1100px) {
+  .vehicle-form-grid--identity,
+  .vehicle-form-grid--validity {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .vehicle-form-row-docs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .vehicle-form-hero {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .vehicle-form-hero-photo {
+    max-width: 14.5rem;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .vehicle-form-grid--identity,
+  .vehicle-form-grid--validity {
+    grid-template-columns: 1fr;
+  }
+
+  .vehicle-form-row-docs {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── RC Customer form & table ──────────────────────────────────── */
+.inline-form-panel--customer .product-form-panel,
+.inline-form-panel--customer .product-form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.inline-form-panel--customer .product-form-body {
+  overflow: visible;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 1.5rem 1rem;
+}
+
+.inline-form-panel--customer .product-form-topbar {
+  padding: 0.85rem 1.5rem 0.5rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.inline-form-panel--customer .product-form-topbar h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.inline-form-panel--customer .product-form-footer {
+  padding: 0.5rem 1.5rem 0.85rem;
+  flex-shrink: 0;
+}
+
+.customer-form-flat {
+  gap: 0.85rem;
+  width: 100%;
+}
+
+.customer-form-flat .product-form-flat-row {
+  padding: 0.75rem 1rem;
+}
+
+.customer-form-grid {
+  display: grid;
+  gap: 0.75rem 1rem;
+  width: 100%;
+}
+
+.customer-form-grid--identity {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.customer-form-grid--location {
+  grid-template-columns: 1fr 1fr;
+}
+
+.customer-form-span-full {
+  grid-column: 1 / -1;
+}
+
+.customer-form-hero {
+  display: grid;
+  grid-template-columns: 14.5rem minmax(0, 1fr);
+  gap: 1.25rem 1.5rem;
+  align-items: stretch;
+  padding: 1rem 1.15rem;
+}
+
+.customer-form-hero-photo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.customer-form-hero-photo .product-upload-field--compact {
+  flex-direction: column;
+  flex: 1;
+  min-height: 100%;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.customer-form-hero-photo .product-upload-field-head {
+  width: 100%;
+  border-right: none;
+  padding: 0.75rem 0.65rem 0.35rem;
+  background: transparent;
+  text-align: center;
+}
+
+.customer-form-hero-photo .product-upload-field-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.65rem 0.85rem;
+}
+
+.customer-form-hero-photo .product-upload-dropzone--avatar,
+.customer-form-hero-photo .product-upload-dropzone--compact {
+  width: 11.5rem;
+  height: 11.5rem;
+  margin: 0 auto;
+  border-radius: 50%;
+}
+
+.customer-form-hero-photo .product-upload-preview-img,
+.customer-form-hero-photo .product-upload-avatar-wrap .product-upload-preview-img {
+  width: min(11.5rem, 100%);
+  height: min(11.5rem, 100%);
+  max-width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.customer-form-hero-fields {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.customer-form-row-location {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+
+.customer-form-location-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.customer-form-location-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.customer-form-location-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.customer-form-location-error {
+  margin: 0;
+  color: #fca5a5;
+}
+
+.inline-form-panel--customer .customer-form-hero-photo .product-upload-field--compact .product-upload-field-head {
+  width: 100%;
+  border-right: none;
+}
+
+.inline-form-panel--customer .customer-form-hero-photo .product-upload-preview-img,
+.inline-form-panel--customer .customer-form-hero-photo .product-upload-dropzone--avatar {
+  width: 11.5rem;
+  height: 11.5rem;
+}
+
+.customer-map-link {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.customer-map-link:hover {
+  text-decoration: underline;
+}
+
+.data-table--customers-rc .customer-rc-col-serial {
+  width: 2.75rem;
+  text-align: center;
+}
+
+.data-table--customers-rc .customer-rc-col-actions {
+  width: 6.5rem;
+}
+
+@media (min-width: 1100px) {
+  .customer-form-grid--identity {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .customer-form-hero {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .customer-form-hero-photo {
+    max-width: 14.5rem;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .customer-form-grid--identity,
+  .customer-form-grid--location {
+    grid-template-columns: 1fr;
   }
 }
