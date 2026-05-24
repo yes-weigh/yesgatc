@@ -1,11 +1,15 @@
-import React, { useRef, useState } from 'react';
-import { Crosshair, MapPin, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Crosshair, MapPin, Plus, RefreshCw, Trash2, Upload, X } from 'lucide-react';
+import { ProductPicker } from '../../components/ProductPicker';
+import { useAppContext } from '../../context/AppContext';
 import { UploadField } from '../admin/productFormUi';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
-import { normalizePhone, normalizePincode } from '../../lib/contactFields';
-import type { CustomerFormValues } from '../../lib/customerProfileFields';
+import { isValidPincode, normalizePhone, normalizePincode } from '../../lib/contactFields';
+import type { CustomerDeviceFormValues, CustomerFormValues } from '../../lib/customerProfileFields';
+import { lookupPincode } from '../../lib/pincodeLookup';
+import type { Product } from '../../types';
 
-export type CustomerPhotoUploadState = {
+export type ImageUploadState = {
   file: ProductFileMeta | null;
   uploading: boolean;
   progress: number;
@@ -17,23 +21,181 @@ export const EMPTY_CUSTOMER_FORM: CustomerFormValues = {
   email: '',
   address: '',
   pincode: '',
+  state: '',
+  district: '',
   latitude: '',
   longitude: '',
 };
 
-export const EMPTY_CUSTOMER_PHOTO_STATE: CustomerPhotoUploadState = {
+export const EMPTY_IMAGE_UPLOAD_STATE: ImageUploadState = {
   file: null,
   uploading: false,
   progress: 0,
+};
+
+export type CustomerDeviceUploadState = {
+  row: CustomerDeviceFormValues;
+  image: ImageUploadState;
+};
+
+const DevicePhotoThumb: React.FC<{
+  file: ProductFileMeta | null;
+  uploading: boolean;
+  progress: number;
+  submitting: boolean;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: () => void;
+}> = ({ file, uploading, progress, submitting, inputRef, onSelect, onRemove }) => (
+  <div className="customer-device-thumb">
+    <input
+      ref={inputRef}
+      type="file"
+      accept="image/jpeg,image/png,image/webp,image/gif"
+      className="sr-only"
+      onChange={onSelect}
+      disabled={uploading || submitting}
+    />
+    {uploading ? (
+      <div className="customer-device-thumb-box customer-device-thumb-box--loading" aria-busy="true">
+        <span className="spinner-inline"></span>
+        <span className="customer-device-thumb-progress">{progress}%</span>
+      </div>
+    ) : file ? (
+      <div className="customer-device-thumb-box">
+        <img src={file.url} alt="" className="customer-device-thumb-img" />
+        <div className="customer-device-thumb-actions">
+          <button
+            type="button"
+            className="customer-device-thumb-btn"
+            onClick={() => inputRef.current?.click()}
+            disabled={submitting}
+            aria-label="Replace photo"
+            title="Replace"
+          >
+            <RefreshCw size={13} />
+          </button>
+          <button
+            type="button"
+            className="customer-device-thumb-btn customer-device-thumb-btn--danger"
+            onClick={onRemove}
+            disabled={submitting}
+            aria-label="Remove photo"
+            title="Remove"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </div>
+    ) : (
+      <button
+        type="button"
+        className="customer-device-thumb-box customer-device-thumb-box--empty"
+        onClick={() => inputRef.current?.click()}
+        disabled={submitting}
+        aria-label="Upload device photo"
+        title="Upload photo"
+      >
+        <Upload size={20} className="text-muted" />
+      </button>
+    )}
+  </div>
+);
+
+const DeviceRow: React.FC<{
+  index: number;
+  device: CustomerDeviceUploadState;
+  products: Product[];
+  submitting: boolean;
+  onChange: (localId: string, patch: Partial<CustomerDeviceFormValues>) => void;
+  onRemove: (localId: string) => void;
+  onImageSelect: (localId: string, file: File) => void;
+  onImageRemove: (localId: string) => void;
+}> = ({ index, device, products, submitting, onChange, onRemove, onImageSelect, onImageRemove }) => {
+  const photoRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) onImageSelect(device.row.localId, file);
+  };
+
+  return (
+    <div className="customer-device-row">
+      <div className="customer-device-row-body">
+        <DevicePhotoThumb
+          file={device.image.file}
+          uploading={device.image.uploading}
+          progress={device.image.progress}
+          submitting={submitting}
+          inputRef={photoRef}
+          onSelect={handlePhotoInput}
+          onRemove={() => onImageRemove(device.row.localId)}
+        />
+        <div className="customer-device-fields">
+          <div className="form-group mb-0">
+            <label htmlFor={`device-serial-${device.row.localId}`}>
+              <span className="customer-device-index">Device {index + 1}</span>
+              Serial number *
+            </label>
+            <input
+              id={`device-serial-${device.row.localId}`}
+              type="text"
+              className="input-field"
+              placeholder="e.g. SN-12345"
+              value={device.row.serialNumber}
+              onChange={e => onChange(device.row.localId, { serialNumber: e.target.value })}
+              required
+            />
+          </div>
+          <div className="form-group mb-0">
+            <label htmlFor={`device-product-${device.row.localId}`}>Product *</label>
+            <ProductPicker
+              products={products}
+              inputId={`device-product-${device.row.localId}`}
+              value={{
+                productId: device.row.productId,
+                productName: device.row.productName,
+              }}
+              onChange={next =>
+                onChange(device.row.localId, {
+                  productId: next.productId,
+                  productName: next.productName,
+                })
+              }
+              disabled={submitting}
+              required
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn-icon text-red customer-device-remove"
+          onClick={() => onRemove(device.row.localId)}
+          disabled={submitting}
+          title="Remove device"
+          aria-label={`Remove device ${index + 1}`}
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
+    </div>
+  );
 };
 
 type CustomerFormFieldsProps = {
   mode: 'create' | 'edit';
   values: CustomerFormValues;
   onChange: (patch: Partial<CustomerFormValues>) => void;
-  customerPhoto: CustomerPhotoUploadState;
-  onPhotoSelect: (file: File) => void;
-  onPhotoRemove: () => void;
+  shopPhoto: ImageUploadState;
+  onShopPhotoSelect: (file: File) => void;
+  onShopPhotoRemove: () => void;
+  devices: CustomerDeviceUploadState[];
+  onDeviceChange: (localId: string, patch: Partial<CustomerDeviceFormValues>) => void;
+  onDeviceAdd: () => void;
+  onDeviceRemove: (localId: string) => void;
+  onDeviceImageSelect: (localId: string, file: File) => void;
+  onDeviceImageRemove: (localId: string) => void;
   submitting: boolean;
 };
 
@@ -41,19 +203,92 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
   mode,
   values,
   onChange,
-  customerPhoto,
-  onPhotoSelect,
-  onPhotoRemove,
+  shopPhoto,
+  onShopPhotoSelect,
+  onShopPhotoRemove,
+  devices,
+  onDeviceChange,
+  onDeviceAdd,
+  onDeviceRemove,
+  onDeviceImageSelect,
+  onDeviceImageRemove,
   submitting,
 }) => {
-  const photoRef = useRef<HTMLInputElement>(null);
+  const { products } = useAppContext();
+  const shopPhotoRef = useRef<HTMLInputElement>(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
+  const [pincodeLookupLoading, setPincodeLookupLoading] = useState(false);
+  const [pincodeLookupError, setPincodeLookupError] = useState('');
+  const lastPincodeLookupRef = useRef('');
 
-  const handlePhotoInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+  useEffect(() => {
+    const pin = normalizePincode(values.pincode);
+
+    if (!isValidPincode(pin)) {
+      lastPincodeLookupRef.current = '';
+      setPincodeLookupLoading(false);
+      setPincodeLookupError('');
+      if (values.state || values.district) {
+        onChange({ state: '', district: '' });
+      }
+      return;
+    }
+
+    if (lastPincodeLookupRef.current === pin) return;
+
+    if (values.state.trim() && values.district.trim()) {
+      lastPincodeLookupRef.current = pin;
+      return;
+    }
+
+    let cancelled = false;
+    lastPincodeLookupRef.current = pin;
+    setPincodeLookupLoading(true);
+    setPincodeLookupError('');
+
+    lookupPincode(pin)
+      .then(result => {
+        if (cancelled) return;
+        if (result) {
+          onChange({ state: result.state, district: result.district });
+          setPincodeLookupError('');
+        } else {
+          onChange({ state: '', district: '' });
+          setPincodeLookupError('No location found for this postal code.');
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        onChange({ state: '', district: '' });
+        setPincodeLookupError('Could not look up postal code.');
+      })
+      .finally(() => {
+        if (!cancelled) setPincodeLookupLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [values.pincode, onChange]);
+
+  const handlePincodeChange = (raw: string) => {
+    const next = normalizePincode(raw);
+    const prev = normalizePincode(values.pincode);
+    const patch: Partial<CustomerFormValues> = { pincode: next };
+    if (next !== prev) {
+      patch.state = '';
+      patch.district = '';
+      lastPincodeLookupRef.current = '';
+      setPincodeLookupError('');
+    }
+    onChange(patch);
+  };
+
+  const handleShopPhotoInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (file) onPhotoSelect(file);
+    if (file) onShopPhotoSelect(file);
   };
 
   const handleDetectLocation = () => {
@@ -89,23 +324,22 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
   return (
     <div className="product-form-flat customer-form-flat">
       <div className="product-form-flat-row customer-form-hero">
-        <div className="customer-form-hero-photo">
+        <div className="customer-form-hero-shop">
           <UploadField
-            label="Customer photo"
+            label="Shop photo"
             hint="Optional"
-            file={customerPhoto.file}
-            uploading={customerPhoto.uploading}
-            progress={customerPhoto.progress}
+            file={shopPhoto.file}
+            uploading={shopPhoto.uploading}
+            progress={shopPhoto.progress}
             accept="image/jpeg,image/png,image/webp,image/gif"
             uploadLabel="Upload"
             formats="Max 15 MB"
-            inputRef={photoRef}
-            onSelect={handlePhotoInput}
-            onRemove={onPhotoRemove}
+            inputRef={shopPhotoRef}
+            onSelect={handleShopPhotoInput}
+            onRemove={onShopPhotoRemove}
             submitting={submitting}
             variant="image"
             compact
-            avatar
           />
         </div>
 
@@ -149,104 +383,170 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
                 onChange={e => onChange({ email: e.target.value })}
               />
             </div>
-            <div className="form-group mb-0">
+            <div className="form-group mb-0 customer-form-pincode-field">
               <label htmlFor="customer-pincode">Postal code</label>
               <input
                 id="customer-pincode"
                 type="text"
                 inputMode="numeric"
                 className="input-field"
-                placeholder="Optional"
+                placeholder="6 digits"
                 value={values.pincode}
-                onChange={e => onChange({ pincode: normalizePincode(e.target.value) })}
+                onChange={e => handlePincodeChange(e.target.value)}
                 maxLength={6}
               />
+              {pincodeLookupLoading && (
+                <p className="customer-pincode-meta text-muted text-sm m-0 mt-1 flex items-center gap-1.5">
+                  <span className="spinner-inline"></span> Looking up location…
+                </p>
+              )}
+              {!pincodeLookupLoading && pincodeLookupError && (
+                <p className="customer-pincode-meta customer-pincode-meta--error text-sm m-0 mt-1" role="alert">
+                  {pincodeLookupError}
+                </p>
+              )}
             </div>
-            <div className="form-group mb-0 customer-form-span-full">
-              <label htmlFor="customer-address">Address *</label>
+            <div className="form-group mb-0">
+              <label htmlFor="customer-district">District</label>
               <input
-                id="customer-address"
+                id="customer-district"
                 type="text"
-                className="input-field"
-                placeholder="Street, locality, city, state"
+                className="input-field input-readonly customer-form-derived-field"
+                value={values.district}
+                readOnly
+                tabIndex={-1}
+                placeholder="Auto from postal code"
+                aria-label="District from postal code"
+              />
+            </div>
+            <div className="form-group mb-0">
+              <label htmlFor="customer-state">State</label>
+              <input
+                id="customer-state"
+                type="text"
+                className="input-field input-readonly customer-form-derived-field"
+                value={values.state}
+                readOnly
+                tabIndex={-1}
+                placeholder="Auto from postal code"
+                aria-label="State from postal code"
+              />
+            </div>
+          </div>
+
+          <div className="customer-form-address-row">
+            <div className="form-group mb-0 customer-form-address-field">
+              <label htmlFor="customer-address">Address *</label>
+              <textarea
+                id="customer-address"
+                className="input-field customer-form-address-input"
+                rows={3}
+                placeholder="Street, locality, city"
                 value={values.address}
                 onChange={e => onChange({ address: e.target.value })}
                 required
               />
             </div>
+
+            <div className="customer-form-location-side">
+              <label className="customer-form-location-side-label">
+                <MapPin size={14} className="inline-icon-sm" /> GPS
+                <span className="text-muted text-sm font-normal">Optional</span>
+              </label>
+              <div className="customer-form-location-controls">
+                <button
+                  type="button"
+                  className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
+                  onClick={handleDetectLocation}
+                  disabled={submitting || locating}
+                >
+                  {locating ? <span className="spinner-inline"></span> : <Crosshair size={14} />}
+                  Use my location
+                </button>
+                {hasLocation && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
+                    onClick={handleClearLocation}
+                    disabled={submitting || locating}
+                    title="Clear location"
+                    aria-label="Clear location"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+                <div className="customer-form-location-coords">
+                  <input
+                    id="customer-latitude"
+                    type="text"
+                    className="input-field input-field--coords"
+                    placeholder="Lat"
+                    value={values.latitude}
+                    readOnly
+                    tabIndex={-1}
+                    aria-label="Latitude"
+                  />
+                  <input
+                    id="customer-longitude"
+                    type="text"
+                    className="input-field input-field--coords"
+                    placeholder="Lng"
+                    value={values.longitude}
+                    readOnly
+                    tabIndex={-1}
+                    aria-label="Longitude"
+                  />
+                </div>
+              </div>
+              {locationError && (
+                <p className="customer-form-location-error text-sm" role="alert">
+                  {locationError}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="product-form-flat-row customer-form-row-location">
-        <div className="customer-form-location-head">
+      <div className="product-form-flat-row customer-form-row-devices">
+        <div className="customer-form-devices-head">
           <div>
-            <h3 className="customer-form-location-title">
-              <MapPin size={15} className="inline-icon-sm" /> GPS location
-            </h3>
-            <p className="customer-form-location-hint text-muted text-sm m-0">
-              Optional — pin the customer site for calibration visits
+            <h3 className="customer-form-devices-title">Devices</h3>
+            <p className="customer-form-devices-hint text-muted text-sm m-0">
+              Optional — add weighing instruments at this customer site
             </p>
           </div>
-          <div className="customer-form-location-actions">
-            <button
-              type="button"
-              className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
-              onClick={handleDetectLocation}
-              disabled={submitting || locating}
-            >
-              {locating ? (
-                <span className="spinner-inline"></span>
-              ) : (
-                <Crosshair size={14} />
-              )}
-              Use my location
-            </button>
-            {hasLocation && (
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
-                onClick={handleClearLocation}
-                disabled={submitting || locating}
-              >
-                <X size={14} /> Clear
-              </button>
-            )}
-          </div>
+          <button
+            type="button"
+            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
+            onClick={onDeviceAdd}
+            disabled={submitting}
+          >
+            <Plus size={14} /> Add device
+          </button>
         </div>
 
-        {locationError && (
-          <p className="customer-form-location-error text-sm" role="alert">
-            {locationError}
+        {devices.length === 0 ? (
+          <p className="customer-form-devices-empty text-muted text-sm m-0">
+            No devices added yet.
           </p>
+        ) : (
+          <div className="customer-form-devices-list">
+            {devices.map((device, index) => (
+              <DeviceRow
+                key={device.row.localId}
+                index={index}
+                device={device}
+                products={products}
+                submitting={submitting}
+                onChange={onDeviceChange}
+                onRemove={onDeviceRemove}
+                onImageSelect={onDeviceImageSelect}
+                onImageRemove={onDeviceImageRemove}
+              />
+            ))}
+          </div>
         )}
-
-        <div className="customer-form-grid customer-form-grid--location">
-          <div className="form-group mb-0">
-            <label htmlFor="customer-latitude">Latitude</label>
-            <input
-              id="customer-latitude"
-              type="text"
-              inputMode="decimal"
-              className="input-field"
-              placeholder="e.g. 18.520430"
-              value={values.latitude}
-              onChange={e => onChange({ latitude: e.target.value })}
-            />
-          </div>
-          <div className="form-group mb-0">
-            <label htmlFor="customer-longitude">Longitude</label>
-            <input
-              id="customer-longitude"
-              type="text"
-              inputMode="decimal"
-              className="input-field"
-              placeholder="e.g. 73.856744"
-              value={values.longitude}
-              onChange={e => onChange({ longitude: e.target.value })}
-            />
-          </div>
-        </div>
       </div>
     </div>
   );

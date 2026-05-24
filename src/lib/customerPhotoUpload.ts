@@ -24,19 +24,16 @@ async function ensureUploadAuth(): Promise<void> {
   await user.getIdToken(true);
 }
 
-export async function uploadCustomerPhoto(
-  customerId: string,
+async function uploadCustomerImage(
+  path: string,
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<ProductFileMeta> {
   const validation = validateProductImageFile(file);
   if (validation) throw new Error(validation);
-  if (!customerId.trim()) throw new Error('Save the customer first to upload a photo.');
 
   await ensureUploadAuth();
 
-  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
-  const path = `customers/${customerId}/photo/${Date.now()}${ext}`;
   const storageRef = ref(storage, path);
   const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
 
@@ -55,5 +52,34 @@ export async function uploadCustomerPhoto(
     );
   });
 }
+
+export async function uploadCustomerShopPhoto(
+  customerId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ProductFileMeta> {
+  if (!customerId.trim()) throw new Error('Save the customer first to upload a photo.');
+  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
+  return uploadCustomerImage(`customers/${customerId}/shop-photo/${Date.now()}${ext}`, file, onProgress);
+}
+
+export async function uploadCustomerDeviceImage(
+  customerId: string,
+  deviceId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ProductFileMeta> {
+  if (!customerId.trim()) throw new Error('Save the customer first to upload device photos.');
+  if (!deviceId.trim()) throw new Error('Device id is required to upload a photo.');
+  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
+  return uploadCustomerImage(
+    `customers/${customerId}/devices/${deviceId}/${Date.now()}${ext}`,
+    file,
+    onProgress,
+  );
+}
+
+/** @deprecated use uploadCustomerShopPhoto */
+export const uploadCustomerPhoto = uploadCustomerShopPhoto;
 
 export { deleteProductStorageFile as deleteCustomerStorageFile };

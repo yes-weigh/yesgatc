@@ -73,5 +73,15 @@ service firebase.storage {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
     }
+
+    match /customers/{customerId}/shop-photo/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /customers/{customerId}/devices/{deviceId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
   }
 }

@@ -6,28 +6,51 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import { uploadCustomerPhoto } from '../../lib/customerPhotoUpload';
+import { uploadCustomerDeviceImage, uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
+import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
+  buildCustomerDevice,
   buildCustomerProfileFields,
+  createEmptyDeviceRow,
+  customerDeviceCount,
   customerFormFromRecord,
   customerMapsUrl,
-  customerPhotoFieldsFromMeta,
-  customerPhotoFromRecord,
+  deviceImageFromDevice,
   formatCustomerLocation,
   parseCustomerLocation,
+  shopPhotoFieldsFromMeta,
+  shopPhotoFromRecord,
+  validateCustomerDevices,
   validateCustomerProfile,
+  type CustomerDeviceFormValues,
   type CustomerFormValues,
 } from '../../lib/customerProfileFields';
 import {
   UserRound, Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon, MapPin, ExternalLink,
 } from 'lucide-react';
-import type { Customer } from '../../types';
+import type { Customer, CustomerDevice } from '../../types';
 import {
   EMPTY_CUSTOMER_FORM,
-  EMPTY_CUSTOMER_PHOTO_STATE,
+  EMPTY_IMAGE_UPLOAD_STATE,
   CustomerFormFields,
-  type CustomerPhotoUploadState,
+  type CustomerDeviceUploadState,
+  type ImageUploadState,
 } from './CustomerFormFields';
+
+function devicesStateFromRecord(record: Customer): CustomerDeviceUploadState[] {
+  return (record.devices || []).map(device => ({
+    row: {
+      localId: device.id,
+      serialNumber: device.serialNumber,
+      productId: device.productId || '',
+      productName: device.productName,
+    },
+    image: {
+      ...EMPTY_IMAGE_UPLOAD_STATE,
+      file: deviceImageFromDevice(device),
+    },
+  }));
+}
 
 export const RCCustomers: React.FC = () => {
   const { user } = useAuth();
@@ -38,9 +61,13 @@ export const RCCustomers: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
-  const [customerPhoto, setCustomerPhoto] = useState<CustomerPhotoUploadState>({ ...EMPTY_CUSTOMER_PHOTO_STATE });
-  const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
-  const [photoRemoved, setPhotoRemoved] = useState(false);
+  const [shopPhoto, setShopPhoto] = useState<ImageUploadState>({ ...EMPTY_IMAGE_UPLOAD_STATE });
+  const [pendingShopPhoto, setPendingShopPhoto] = useState<File | null>(null);
+  const [shopPhotoRemoved, setShopPhotoRemoved] = useState(false);
+
+  const [devices, setDevices] = useState<CustomerDeviceUploadState[]>([]);
+  const [pendingDeviceImages, setPendingDeviceImages] = useState<Record<string, File>>({});
+  const [removedDeviceImages, setRemovedDeviceImages] = useState<Set<string>>(new Set());
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -82,15 +109,22 @@ export const RCCustomers: React.FC = () => {
   const showForm = showAddForm || editingId !== null;
   const formBusy = submitting;
 
-  const resetPhoto = () => {
-    setCustomerPhoto({ ...EMPTY_CUSTOMER_PHOTO_STATE });
-    setPendingPhoto(null);
-    setPhotoRemoved(false);
+  const resetDevices = () => {
+    setDevices([]);
+    setPendingDeviceImages({});
+    setRemovedDeviceImages(new Set());
+  };
+
+  const resetShopPhoto = () => {
+    setShopPhoto({ ...EMPTY_IMAGE_UPLOAD_STATE });
+    setPendingShopPhoto(null);
+    setShopPhotoRemoved(false);
   };
 
   const resetForm = () => {
     setFormValues(EMPTY_CUSTOMER_FORM);
-    resetPhoto();
+    resetShopPhoto();
+    resetDevices();
     setError('');
   };
 
@@ -114,43 +148,151 @@ export const RCCustomers: React.FC = () => {
     setFormValues(prev => ({ ...prev, ...patch }));
   };
 
-  const handlePhotoSelect = (file: File) => {
-    setPendingPhoto(file);
-    setPhotoRemoved(false);
+  const handleShopPhotoSelect = (file: File) => {
+    setPendingShopPhoto(file);
+    setShopPhotoRemoved(false);
     const previewUrl = URL.createObjectURL(file);
-    setCustomerPhoto({
+    setShopPhoto({
       file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
       uploading: false,
       progress: 0,
     });
   };
 
-  const handlePhotoRemove = () => {
-    setPendingPhoto(null);
-    setPhotoRemoved(true);
-    setCustomerPhoto({ ...EMPTY_CUSTOMER_PHOTO_STATE });
+  const handleShopPhotoRemove = () => {
+    setPendingShopPhoto(null);
+    setShopPhotoRemoved(true);
+    setShopPhoto({ ...EMPTY_IMAGE_UPLOAD_STATE });
   };
 
-  const uploadPhoto = async (customerId: string): Promise<Partial<Customer>> => {
-    if (photoRemoved && !pendingPhoto) return customerPhotoFieldsFromMeta(null);
-    if (!pendingPhoto) {
-      const existing = customerPhoto.file;
+  const handleDeviceAdd = () => {
+    setDevices(prev => [...prev, { row: createEmptyDeviceRow(), image: { ...EMPTY_IMAGE_UPLOAD_STATE } }]);
+  };
+
+  const handleDeviceRemove = (localId: string) => {
+    setDevices(prev => prev.filter(d => d.row.localId !== localId));
+    setPendingDeviceImages(prev => {
+      const next = { ...prev };
+      delete next[localId];
+      return next;
+    });
+    setRemovedDeviceImages(prev => {
+      const next = new Set(prev);
+      next.delete(localId);
+      return next;
+    });
+  };
+
+  const handleDeviceChange = (localId: string, patch: Partial<CustomerDeviceFormValues>) => {
+    setDevices(prev =>
+      prev.map(d => (d.row.localId === localId ? { ...d, row: { ...d.row, ...patch } } : d)),
+    );
+  };
+
+  const handleDeviceImageSelect = (localId: string, file: File) => {
+    setPendingDeviceImages(prev => ({ ...prev, [localId]: file }));
+    setRemovedDeviceImages(prev => {
+      const next = new Set(prev);
+      next.delete(localId);
+      return next;
+    });
+    const previewUrl = URL.createObjectURL(file);
+    setDevices(prev =>
+      prev.map(d =>
+        d.row.localId === localId
+          ? {
+              ...d,
+              image: {
+                file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
+                uploading: false,
+                progress: 0,
+              },
+            }
+          : d,
+      ),
+    );
+  };
+
+  const handleDeviceImageRemove = (localId: string) => {
+    setPendingDeviceImages(prev => {
+      const next = { ...prev };
+      delete next[localId];
+      return next;
+    });
+    setRemovedDeviceImages(prev => new Set(prev).add(localId));
+    setDevices(prev =>
+      prev.map(d => (d.row.localId === localId ? { ...d, image: { ...EMPTY_IMAGE_UPLOAD_STATE } } : d)),
+    );
+  };
+
+  const setDeviceImageState = (localId: string, patch: Partial<ImageUploadState>) => {
+    setDevices(prev =>
+      prev.map(d => (d.row.localId === localId ? { ...d, image: { ...d.image, ...patch } } : d)),
+    );
+  };
+
+  const uploadShopPhoto = async (customerId: string): Promise<Partial<Customer>> => {
+    if (shopPhotoRemoved && !pendingShopPhoto) return shopPhotoFieldsFromMeta(null);
+    if (!pendingShopPhoto) {
+      const existing = shopPhoto.file;
       if (existing?.url && !existing.url.startsWith('blob:')) {
-        return customerPhotoFieldsFromMeta(existing);
+        return shopPhotoFieldsFromMeta(existing);
       }
       return {};
     }
-    setCustomerPhoto(prev => ({ ...prev, uploading: true, progress: 0 }));
+    setShopPhoto(prev => ({ ...prev, uploading: true, progress: 0 }));
     try {
-      const meta = await uploadCustomerPhoto(customerId, pendingPhoto, pct => {
-        setCustomerPhoto(prev => ({ ...prev, progress: pct }));
+      const meta = await uploadCustomerShopPhoto(customerId, pendingShopPhoto, pct => {
+        setShopPhoto(prev => ({ ...prev, progress: pct }));
       });
-      setCustomerPhoto({ file: meta, uploading: false, progress: 100 });
-      return customerPhotoFieldsFromMeta(meta);
+      setShopPhoto({ file: meta, uploading: false, progress: 100 });
+      return shopPhotoFieldsFromMeta(meta);
     } catch (err) {
-      setCustomerPhoto(prev => ({ ...prev, uploading: false, progress: 0 }));
+      setShopPhoto(prev => ({ ...prev, uploading: false, progress: 0 }));
       throw err;
     }
+  };
+
+  const resolveDeviceImage = async (
+    customerId: string,
+    localId: string,
+    current: ImageUploadState,
+  ): Promise<ProductFileMeta | null> => {
+    const pending = pendingDeviceImages[localId];
+    if (removedDeviceImages.has(localId) && !pending) return null;
+
+    if (!pending) {
+      const existing = current.file;
+      if (existing?.url && !existing.url.startsWith('blob:')) return existing;
+      return null;
+    }
+
+    setDeviceImageState(localId, { uploading: true, progress: 0 });
+    try {
+      const meta = await uploadCustomerDeviceImage(customerId, localId, pending, pct => {
+        setDeviceImageState(localId, { progress: pct });
+      });
+      setDeviceImageState(localId, { file: meta, uploading: false, progress: 100 });
+      return meta;
+    } catch (err) {
+      setDeviceImageState(localId, { uploading: false, progress: 0 });
+      throw err;
+    }
+  };
+
+  const uploadAllDevices = async (customerId: string): Promise<CustomerDevice[]> => {
+    const saved: CustomerDevice[] = [];
+    for (const device of devices) {
+      const image = await resolveDeviceImage(customerId, device.row.localId, device.image);
+      saved.push(buildCustomerDevice(device.row, image));
+    }
+    return saved;
+  };
+
+  const validateForm = (): string | null => {
+    const profileError = validateCustomerProfile(formValues);
+    if (profileError) return profileError;
+    return validateCustomerDevices(devices.map(d => d.row));
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -161,7 +303,7 @@ export const RCCustomers: React.FC = () => {
 
   const handleCreate = async () => {
     setError('');
-    const validationError = validateCustomerProfile(formValues);
+    const validationError = validateForm();
     if (validationError) {
       setError(validationError);
       return;
@@ -171,7 +313,8 @@ export const RCCustomers: React.FC = () => {
     try {
       const ref = doc(collection(db, 'customers'));
       const customerId = ref.id;
-      const photoFields = await uploadPhoto(customerId);
+      const photoFields = await uploadShopPhoto(customerId);
+      const deviceRecords = await uploadAllDevices(customerId);
 
       const record: Omit<Customer, 'id'> = {
         rcId: user!.uid,
@@ -179,6 +322,7 @@ export const RCCustomers: React.FC = () => {
         createdByUid: user?.uid,
         ...buildCustomerProfileFields(formValues),
         ...photoFields,
+        devices: deviceRecords,
       };
       await setDoc(ref, record);
 
@@ -192,7 +336,7 @@ export const RCCustomers: React.FC = () => {
   };
 
   const handleSaveEdit = async (customerId: string) => {
-    const validationError = validateCustomerProfile(formValues);
+    const validationError = validateForm();
     if (validationError) {
       setError(validationError);
       return;
@@ -201,12 +345,14 @@ export const RCCustomers: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
-      const photoFields = await uploadPhoto(customerId);
+      const photoFields = await uploadShopPhoto(customerId);
+      const deviceRecords = await uploadAllDevices(customerId);
 
       const profile = buildCustomerProfileFields(formValues);
       const updates: Record<string, unknown> = {
         ...profile,
         ...photoFields,
+        devices: deviceRecords,
         updatedAt: new Date().toISOString(),
       };
       if (!parseCustomerLocation(formValues)) {
@@ -233,12 +379,15 @@ export const RCCustomers: React.FC = () => {
     setShowAddForm(false);
     setEditingId(c.id);
     setFormValues(customerFormFromRecord(c));
-    setCustomerPhoto({
-      ...EMPTY_CUSTOMER_PHOTO_STATE,
-      file: customerPhotoFromRecord(c),
+    setShopPhoto({
+      ...EMPTY_IMAGE_UPLOAD_STATE,
+      file: shopPhotoFromRecord(c),
     });
-    setPendingPhoto(null);
-    setPhotoRemoved(false);
+    setPendingShopPhoto(null);
+    setShopPhotoRemoved(false);
+    setDevices(devicesStateFromRecord(c));
+    setPendingDeviceImages({});
+    setRemovedDeviceImages(new Set());
     setError('');
   };
 
@@ -253,6 +402,8 @@ export const RCCustomers: React.FC = () => {
     await deleteDoc(doc(db, 'customers', id));
     await fetchCustomers();
   };
+
+  const shopPhotoUrl = (c: Customer) => c.shopPhotoUrl || c.customerPhotoUrl;
 
   return (
     <div className="fade-in page-content">
@@ -293,9 +444,15 @@ export const RCCustomers: React.FC = () => {
                   mode={showAddForm ? 'create' : 'edit'}
                   values={formValues}
                   onChange={patchForm}
-                  customerPhoto={customerPhoto}
-                  onPhotoSelect={handlePhotoSelect}
-                  onPhotoRemove={handlePhotoRemove}
+                  shopPhoto={shopPhoto}
+                  onShopPhotoSelect={handleShopPhotoSelect}
+                  onShopPhotoRemove={handleShopPhotoRemove}
+                  devices={devices}
+                  onDeviceChange={handleDeviceChange}
+                  onDeviceAdd={handleDeviceAdd}
+                  onDeviceRemove={handleDeviceRemove}
+                  onDeviceImageSelect={handleDeviceImageSelect}
+                  onDeviceImageRemove={handleDeviceImageRemove}
                   submitting={formBusy}
                 />
               </div>
@@ -369,6 +526,7 @@ export const RCCustomers: React.FC = () => {
                       <th className="customer-rc-col-serial">#</th>
                       <th>Customer</th>
                       <th>Phone</th>
+                      <th>Devices</th>
                       <th>Address</th>
                       <th>Location</th>
                       <th className="text-right customer-rc-col-actions">Actions</th>
@@ -377,15 +535,16 @@ export const RCCustomers: React.FC = () => {
                   <tbody>
                     {customers.map((c, index) => {
                       const mapsUrl = customerMapsUrl(c);
+                      const photo = shopPhotoUrl(c);
                       return (
                         <tr key={c.id}>
                           <td className="customer-rc-col-serial text-muted text-sm">{index + 1}</td>
                           <td className="font-medium">
                             <div className="flex items-center gap-2">
-                              {c.customerPhotoUrl ? (
-                                <img src={c.customerPhotoUrl} alt="" className="vct-table-avatar" />
+                              {photo ? (
+                                <img src={photo} alt="" className="customer-table-shop-thumb" />
                               ) : (
-                                <span className="vct-table-avatar vct-table-avatar--placeholder">
+                                <span className="customer-table-shop-thumb customer-table-shop-thumb--placeholder">
                                   <ImageIcon size={18} />
                                 </span>
                               )}
@@ -393,6 +552,7 @@ export const RCCustomers: React.FC = () => {
                             </div>
                           </td>
                           <td className="text-sm">{c.phone || '—'}</td>
+                          <td className="text-sm">{customerDeviceCount(c)}</td>
                           <td className="text-sm text-muted max-w-[14rem] truncate" title={c.address}>
                             {c.address || '—'}
                           </td>
@@ -436,7 +596,7 @@ export const RCCustomers: React.FC = () => {
                     })}
                     {customers.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="text-center py-10 text-muted">
+                        <td colSpan={7} className="text-center py-10 text-muted">
                           No customers yet. Click &quot;Add Customer&quot; to register one.
                         </td>
                       </tr>

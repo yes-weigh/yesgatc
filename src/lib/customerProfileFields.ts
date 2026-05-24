@@ -1,6 +1,6 @@
 import type { ProductFileMeta } from './productApprovalUpload';
 import { isValidEmail, isValidPhone, isValidPincode, normalizePhone, normalizePincode } from './contactFields';
-import type { Customer, CustomerLocation } from '../types';
+import type { Customer, CustomerDevice, CustomerLocation } from '../types';
 
 export type CustomerFormValues = {
   name: string;
@@ -8,9 +8,27 @@ export type CustomerFormValues = {
   email: string;
   address: string;
   pincode: string;
+  state: string;
+  district: string;
   latitude: string;
   longitude: string;
 };
+
+export type CustomerDeviceFormValues = {
+  localId: string;
+  serialNumber: string;
+  productId: string;
+  productName: string;
+};
+
+export function createEmptyDeviceRow(): CustomerDeviceFormValues {
+  return {
+    localId: crypto.randomUUID(),
+    serialNumber: '',
+    productId: '',
+    productName: '',
+  };
+}
 
 export function validateCustomerProfile(input: CustomerFormValues): string | null {
   if (!input.name.trim()) return 'Customer name is required.';
@@ -37,6 +55,15 @@ export function validateCustomerProfile(input: CustomerFormValues): string | nul
   return null;
 }
 
+export function validateCustomerDevices(devices: CustomerDeviceFormValues[]): string | null {
+  for (let i = 0; i < devices.length; i++) {
+    const d = devices[i];
+    if (!d.serialNumber.trim()) return `Device ${i + 1}: serial number is required.`;
+    if (!d.productId.trim()) return `Device ${i + 1}: select a product from the catalogue.`;
+  }
+  return null;
+}
+
 export function parseCustomerLocation(input: CustomerFormValues): CustomerLocation | undefined {
   const latStr = input.latitude.trim();
   const lngStr = input.longitude.trim();
@@ -49,7 +76,9 @@ export function parseCustomerLocation(input: CustomerFormValues): CustomerLocati
 
 export function buildCustomerProfileFields(
   input: CustomerFormValues,
-): Pick<Customer, 'name' | 'phone' | 'email' | 'address' | 'pincode'> & { location?: CustomerLocation } {
+): Pick<Customer, 'name' | 'phone' | 'email' | 'address' | 'pincode' | 'state' | 'district'> & {
+  location?: CustomerLocation;
+} {
   const location = parseCustomerLocation(input);
   const base = {
     name: input.name.trim(),
@@ -57,23 +86,30 @@ export function buildCustomerProfileFields(
     email: input.email.trim() || undefined,
     address: input.address.trim(),
     pincode: input.pincode.trim() ? normalizePincode(input.pincode) : undefined,
+    state: input.state.trim() || undefined,
+    district: input.district.trim() || undefined,
   };
   return location ? { ...base, location } : base;
 }
 
-export function customerPhotoFromRecord(record: Customer): ProductFileMeta | null {
-  if (!record.customerPhotoUrl) return null;
+export function shopPhotoFromRecord(record: Customer): ProductFileMeta | null {
+  const url = record.shopPhotoUrl || record.customerPhotoUrl;
+  if (!url) return null;
   return {
-    url: record.customerPhotoUrl,
-    path: record.customerPhotoPath || '',
-    name: record.customerPhotoName || 'Customer photo',
-    contentType: record.customerPhotoContentType || 'image/jpeg',
+    url,
+    path: record.shopPhotoPath || record.customerPhotoPath || '',
+    name: record.shopPhotoName || record.customerPhotoName || 'Shop photo',
+    contentType: record.shopPhotoContentType || record.customerPhotoContentType || 'image/jpeg',
   };
 }
 
-export function customerPhotoFieldsFromMeta(meta: ProductFileMeta | null): Partial<Customer> {
+export function shopPhotoFieldsFromMeta(meta: ProductFileMeta | null): Partial<Customer> {
   if (!meta) {
     return {
+      shopPhotoUrl: '',
+      shopPhotoPath: '',
+      shopPhotoName: '',
+      shopPhotoContentType: '',
       customerPhotoUrl: '',
       customerPhotoPath: '',
       customerPhotoName: '',
@@ -81,11 +117,63 @@ export function customerPhotoFieldsFromMeta(meta: ProductFileMeta | null): Parti
     };
   }
   return {
-    customerPhotoUrl: meta.url,
-    customerPhotoPath: meta.path,
-    customerPhotoName: meta.name,
-    customerPhotoContentType: meta.contentType,
+    shopPhotoUrl: meta.url,
+    shopPhotoPath: meta.path,
+    shopPhotoName: meta.name,
+    shopPhotoContentType: meta.contentType,
+    customerPhotoUrl: '',
+    customerPhotoPath: '',
+    customerPhotoName: '',
+    customerPhotoContentType: '',
   };
+}
+
+/** @deprecated use shopPhotoFromRecord */
+export const customerPhotoFromRecord = shopPhotoFromRecord;
+
+/** @deprecated use shopPhotoFieldsFromMeta */
+export const customerPhotoFieldsFromMeta = shopPhotoFieldsFromMeta;
+
+export function deviceImageFromDevice(device: CustomerDevice): ProductFileMeta | null {
+  if (!device.imageUrl) return null;
+  return {
+    url: device.imageUrl,
+    path: device.imagePath || '',
+    name: device.imageName || 'Device photo',
+    contentType: device.imageContentType || 'image/jpeg',
+  };
+}
+
+export function deviceToFormRow(device: CustomerDevice): CustomerDeviceFormValues {
+  return {
+    localId: device.id,
+    serialNumber: device.serialNumber,
+    productId: device.productId || '',
+    productName: device.productName,
+  };
+}
+
+export function devicesFromRecord(record: Customer): CustomerDeviceFormValues[] {
+  return (record.devices || []).map(deviceToFormRow);
+}
+
+export function buildCustomerDevice(
+  row: CustomerDeviceFormValues,
+  image: ProductFileMeta | null,
+): CustomerDevice {
+  const device: CustomerDevice = {
+    id: row.localId,
+    serialNumber: row.serialNumber.trim(),
+    productId: row.productId.trim() || undefined,
+    productName: row.productName.trim(),
+  };
+  if (image) {
+    device.imageUrl = image.url;
+    device.imagePath = image.path;
+    device.imageName = image.name;
+    device.imageContentType = image.contentType;
+  }
+  return device;
 }
 
 export function customerFormFromRecord(record: Customer): CustomerFormValues {
@@ -95,6 +183,8 @@ export function customerFormFromRecord(record: Customer): CustomerFormValues {
     email: record.email || '',
     address: record.address || '',
     pincode: record.pincode || '',
+    state: record.state || '',
+    district: record.district || '',
     latitude: record.location?.lat != null ? String(record.location.lat) : '',
     longitude: record.location?.lng != null ? String(record.location.lng) : '',
   };
@@ -108,4 +198,8 @@ export function formatCustomerLocation(record: Customer): string {
 export function customerMapsUrl(record: Customer): string | null {
   if (!record.location) return null;
   return `https://www.google.com/maps?q=${record.location.lat},${record.location.lng}`;
+}
+
+export function customerDeviceCount(record: Customer): number {
+  return record.devices?.length ?? 0;
 }

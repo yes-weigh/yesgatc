@@ -58,6 +58,8 @@ export const UploadField: React.FC<{
   compact?: boolean;
   /** Large circular photo — hides filename, icon-only replace/remove */
   avatar?: boolean;
+  /** Thumbnail with icon-only replace/remove — no filename or text buttons */
+  iconActions?: boolean;
   /** Keep dropzone visible (disabled) instead of swapping to the info panel */
   uploadDisabled?: boolean;
 }> = ({
@@ -77,10 +79,14 @@ export const UploadField: React.FC<{
   variant = 'document',
   compact = false,
   avatar = false,
+  iconActions = false,
   uploadDisabled = false,
-}) => (
+}) => {
+  const useIconActions = avatar || iconActions;
+
+  return (
   <div
-    className={`product-upload-field product-upload-field--${variant}${compact ? ' product-upload-field--compact' : ''}${avatar ? ' product-upload-field--avatar' : ''}`}
+    className={`product-upload-field product-upload-field--${variant}${compact ? ' product-upload-field--compact' : ''}${avatar ? ' product-upload-field--avatar' : ''}${iconActions ? ' product-upload-field--icon-actions' : ''}`}
   >
     <div className="product-upload-field-head">
       <span className="product-upload-field-label">{label}</span>
@@ -111,11 +117,11 @@ export const UploadField: React.FC<{
               onMouseDown={e => uploadDisabled && e.preventDefault()}
               onClick={() => !uploadDisabled && inputRef.current?.click()}
               disabled={submitting || uploadDisabled}
-              title={uploadDisabled ? disabledReason : avatar ? `${uploadLabel} · ${formats}` : undefined}
-              aria-label={avatar ? `${uploadLabel}. ${formats}` : undefined}
+              title={uploadDisabled ? disabledReason : useIconActions ? `${uploadLabel} · ${formats}` : undefined}
+              aria-label={useIconActions ? `${uploadLabel}. ${formats}` : undefined}
             >
               <Upload size={avatar ? 28 : compact ? 18 : 22} className="text-muted shrink-0" />
-              {!avatar && (
+              {!useIconActions && (
                 <span className="product-upload-dropzone-text">
                   <span className="product-upload-dropzone-title">{uploadLabel}</span>
                   <span className="product-upload-dropzone-meta">{formats}</span>
@@ -138,7 +144,7 @@ export const UploadField: React.FC<{
             <div
               className={`product-upload-preview${compact ? ' product-upload-preview--compact' : ''}${avatar ? ' product-upload-preview--avatar' : ''}`}
             >
-              {avatar ? (
+              {useIconActions ? (
                 <div className="product-upload-avatar-wrap">
                   {variant === 'image' || !isPdfContentType(file.contentType) ? (
                     <img src={file.url} alt="" className="product-upload-preview-img" />
@@ -218,7 +224,8 @@ export const UploadField: React.FC<{
       )}
     </div>
   </div>
-);
+  );
+};
 
 export const CalcLabel: React.FC<{ label: string; tooltip: string }> = ({ label, tooltip }) => (
   <label className="calc-field-label">

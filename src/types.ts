@@ -192,6 +192,17 @@ export interface CustomerLocation {
   lng: number;
 }
 
+export interface CustomerDevice {
+  id: string;
+  serialNumber: string;
+  productId?: string;
+  productName: string;
+  imageUrl?: string;
+  imagePath?: string;
+  imageName?: string;
+  imageContentType?: string;
+}
+
 /** RC-managed customer (Firestore `customers` collection). */
 export interface Customer {
   id: string;
@@ -201,11 +212,19 @@ export interface Customer {
   email?: string;
   address: string;
   pincode?: string;
+  state?: string;
+  district?: string;
   location?: CustomerLocation;
+  shopPhotoUrl?: string;
+  shopPhotoPath?: string;
+  shopPhotoName?: string;
+  shopPhotoContentType?: string;
+  /** @deprecated use shopPhotoUrl — kept for older records */
   customerPhotoUrl?: string;
   customerPhotoPath?: string;
   customerPhotoName?: string;
   customerPhotoContentType?: string;
+  devices?: CustomerDevice[];
   createdAt: string;
   createdByUid?: string;
   updatedAt?: string;
