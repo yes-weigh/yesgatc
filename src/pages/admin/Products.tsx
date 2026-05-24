@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { adminProductMeta } from '../../lib/productAccess';
 import { PackagePlus, Trash2, Pencil, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
+import { getModalPortalRoot, lockModalHostScroll } from '../../lib/modalPortal';
 import { CalcLabel, DefaultsStrip, UploadField } from './productFormUi';
 import type { Product } from '../../types';
 import {
@@ -169,11 +170,7 @@ export const Products: React.FC = () => {
 
   useEffect(() => {
     if (!showForm) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return lockModalHostScroll();
   }, [showForm]);
 
   useEffect(() => {
@@ -816,7 +813,7 @@ export const Products: React.FC = () => {
             </div>
           </div>
         </div>,
-        document.body,
+        getModalPortalRoot(),
       )}
     </div>
   );

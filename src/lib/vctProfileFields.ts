@@ -2,9 +2,34 @@ import type { ProductFileMeta } from './productApprovalUpload';
 import { isValidPhone, isValidPincode, normalizePhone, normalizePincode } from './contactFields';
 import type { FirestoreUserDoc } from '../types';
 
-export type VctDocKey = 'biodata' | 'educationCert' | 'pcc';
+export const VCT_DOC_KEYS = ['aadharDoc', 'biodata', 'educationCert', 'pcc'] as const;
+export type VctDocKey = (typeof VCT_DOC_KEYS)[number];
+
+export const VCT_DOC_LABELS: Record<VctDocKey, { label: string; hint: string; requiredMessage: string }> = {
+  aadharDoc: {
+    label: 'Aadhar',
+    hint: 'PDF / image',
+    requiredMessage: 'Aadhar document is required.',
+  },
+  biodata: {
+    label: 'Biodata',
+    hint: 'PDF / image',
+    requiredMessage: 'Biodata document is required.',
+  },
+  educationCert: {
+    label: 'Education',
+    hint: 'PDF / image',
+    requiredMessage: 'Education certificate is required.',
+  },
+  pcc: {
+    label: 'PCC',
+    hint: 'PDF / image',
+    requiredMessage: 'Police clearance certificate (PCC) is required.',
+  },
+};
 
 const DOC_FIELD_PREFIX: Record<VctDocKey, string> = {
+  aadharDoc: 'aadharDoc',
   biodata: 'biodataDoc',
   educationCert: 'educationCertDoc',
   pcc: 'pccDoc',
@@ -88,13 +113,27 @@ export function buildVctProfileFields(input: VctProfileInput): Pick<
   };
 }
 
-export function requireVctDocuments(
-  biodata: ProductFileMeta | null,
-  educationCert: ProductFileMeta | null,
-  pcc: ProductFileMeta | null,
-): string | null {
-  if (!biodata) return 'Biodata document is required.';
-  if (!educationCert) return 'Education certificate is required.';
-  if (!pcc) return 'Police clearance certificate (PCC) is required.';
+export function requireVctDocuments(docs: Record<VctDocKey, ProductFileMeta | null>): string | null {
+  for (const key of VCT_DOC_KEYS) {
+    if (!docs[key]) return VCT_DOC_LABELS[key].requiredMessage;
+  }
   return null;
+}
+
+export function emptyVctDocStates(): Record<VctDocKey, ProductFileMeta | null> {
+  return {
+    aadharDoc: null,
+    biodata: null,
+    educationCert: null,
+    pcc: null,
+  };
+}
+
+export function vctDocsFromUser(doc: FirestoreUserDoc): Record<VctDocKey, ProductFileMeta | null> {
+  return {
+    aadharDoc: vctDocMetaFromUser(doc, 'aadharDoc'),
+    biodata: vctDocMetaFromUser(doc, 'biodata'),
+    educationCert: vctDocMetaFromUser(doc, 'educationCert'),
+    pcc: vctDocMetaFromUser(doc, 'pcc'),
+  };
 }

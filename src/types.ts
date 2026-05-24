@@ -107,6 +107,10 @@ export interface FirestoreUserDoc {
   biodataDocPath?: string;
   biodataDocName?: string;
   biodataDocContentType?: string;
+  aadharDocUrl?: string;
+  aadharDocPath?: string;
+  aadharDocName?: string;
+  aadharDocContentType?: string;
   educationCertDocUrl?: string;
   educationCertDocPath?: string;
   educationCertDocName?: string;

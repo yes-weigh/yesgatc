@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { getModalPortalRoot, lockModalHostScroll } from '../lib/modalPortal';
 
 export type ConfirmOptions = {
   title?: string;
@@ -47,8 +48,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     if (!pending) return;
 
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockModalHostScroll();
 
     const focusTimer = requestAnimationFrame(() => {
       cancelRef.current?.focus();
@@ -60,7 +60,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
     window.addEventListener('keydown', onKey);
 
     return () => {
-      document.body.style.overflow = prevOverflow;
+      unlockScroll();
       cancelAnimationFrame(focusTimer);
       window.removeEventListener('keydown', onKey);
     };
@@ -103,7 +103,7 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
           </div>
         </div>
       </div>,
-      document.body,
+      getModalPortalRoot(),
     );
 
   return (

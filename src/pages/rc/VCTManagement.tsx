@@ -23,13 +23,15 @@ import {
   requireVctDocuments,
   validateVctProfile,
   vctDocFieldsFromMeta,
-  vctDocMetaFromUser,
+  vctDocsFromUser,
+  VCT_DOC_KEYS,
   type VctDocKey,
 } from '../../lib/vctProfileFields';
 import {
   UserPlus, Trash2, Eye, EyeOff, RefreshCw, Users, Pencil, X, Plus, Save, Zap, ClipboardList,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
+import { getModalPortalRoot, lockModalHostScroll } from '../../lib/modalPortal';
 import {
   EMPTY_VCT_DOC_STATE,
   EMPTY_VCT_FORM,
@@ -43,10 +45,28 @@ interface VCTRecord extends FirestoreUserDoc {
 }
 
 const DOC_KIND_MAP: Record<VctDocKey, VctDocKind> = {
+  aadharDoc: 'aadhar',
   biodata: 'biodata',
   educationCert: 'education-cert',
   pcc: 'pcc',
 };
+
+const EMPTY_DOC_UPLOADS = (): Record<VctDocKey, VctDocUploadState> => ({
+  aadharDoc: { ...EMPTY_VCT_DOC_STATE },
+  biodata: { ...EMPTY_VCT_DOC_STATE },
+  educationCert: { ...EMPTY_VCT_DOC_STATE },
+  pcc: { ...EMPTY_VCT_DOC_STATE },
+});
+
+function docUploadsFromUser(doc: FirestoreUserDoc): Record<VctDocKey, VctDocUploadState> {
+  const docs = vctDocsFromUser(doc);
+  return {
+    aadharDoc: { ...EMPTY_VCT_DOC_STATE, file: docs.aadharDoc },
+    biodata: { ...EMPTY_VCT_DOC_STATE, file: docs.biodata },
+    educationCert: { ...EMPTY_VCT_DOC_STATE, file: docs.educationCert },
+    pcc: { ...EMPTY_VCT_DOC_STATE, file: docs.pcc },
+  };
+}
 
 function vctFormFromUser(doc: FirestoreUserDoc): VctFormValues {
   return {
@@ -64,14 +84,6 @@ function vctFormFromUser(doc: FirestoreUserDoc): VctFormValues {
   };
 }
 
-function docsFromUser(doc: FirestoreUserDoc): Record<VctDocKey, ProductFileMeta | null> {
-  return {
-    biodata: vctDocMetaFromUser(doc, 'biodata'),
-    educationCert: vctDocMetaFromUser(doc, 'educationCert'),
-    pcc: vctDocMetaFromUser(doc, 'pcc'),
-  };
-}
-
 export const VCTManagement: React.FC = () => {
   const { user } = useAuth();
   const confirm = useConfirm();
@@ -81,9 +93,7 @@ export const VCTManagement: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingUid, setEditingUid] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<VctFormValues>(EMPTY_VCT_FORM);
-  const [biodata, setBiodata] = useState<VctDocUploadState>(EMPTY_VCT_DOC_STATE);
-  const [educationCert, setEducationCert] = useState<VctDocUploadState>(EMPTY_VCT_DOC_STATE);
-  const [pcc, setPcc] = useState<VctDocUploadState>(EMPTY_VCT_DOC_STATE);
+  const [docUploads, setDocUploads] = useState<Record<VctDocKey, VctDocUploadState>>(EMPTY_DOC_UPLOADS);
   const [pendingDocs, setPendingDocs] = useState<Partial<Record<VctDocKey, File>>>({});
 
   const [showPw, setShowPw] = useState(false);
@@ -113,9 +123,7 @@ export const VCTManagement: React.FC = () => {
   const editingVct = editingUid ? vcts.find(v => v.uid === editingUid) : null;
 
   const resetDocs = () => {
-    setBiodata(EMPTY_VCT_DOC_STATE);
-    setEducationCert(EMPTY_VCT_DOC_STATE);
-    setPcc(EMPTY_VCT_DOC_STATE);
+    setDocUploads(EMPTY_DOC_UPLOADS());
     setPendingDocs({});
   };
 
@@ -135,11 +143,7 @@ export const VCTManagement: React.FC = () => {
 
   useEffect(() => {
     if (!showForm) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return lockModalHostScroll();
   }, [showForm]);
 
   useEffect(() => {
@@ -156,9 +160,7 @@ export const VCTManagement: React.FC = () => {
   };
 
   const setDocState = (key: VctDocKey, patch: Partial<VctDocUploadState>) => {
-    if (key === 'biodata') setBiodata(prev => ({ ...prev, ...patch }));
-    else if (key === 'educationCert') setEducationCert(prev => ({ ...prev, ...patch }));
-    else setPcc(prev => ({ ...prev, ...patch }));
+    setDocUploads(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }));
   };
 
   const handleDocSelect = (key: VctDocKey, file: File) => {
@@ -185,16 +187,16 @@ export const VCTManagement: React.FC = () => {
       const file = pendingDocs[key]!;
       return { url: 'pending', path: '', name: file.name, contentType: file.type };
     }
-    const state = key === 'biodata' ? biodata : key === 'educationCert' ? educationCert : pcc;
+    const state = docUploads[key];
     if (!state.file?.url) return null;
     return state.file;
   };
 
-  const currentDocs = (): Record<VctDocKey, ProductFileMeta | null> => ({
-    biodata: docForValidation('biodata'),
-    educationCert: docForValidation('educationCert'),
-    pcc: docForValidation('pcc'),
-  });
+  const currentDocs = (): Record<VctDocKey, ProductFileMeta | null> =>
+    Object.fromEntries(VCT_DOC_KEYS.map(key => [key, docForValidation(key)])) as Record<
+      VctDocKey,
+      ProductFileMeta | null
+    >;
 
   const validateForm = (mode: 'create' | 'edit'): string | null => {
     const profileError = validateVctProfile(formValues);
@@ -202,8 +204,7 @@ export const VCTManagement: React.FC = () => {
     if (mode === 'create' && !isValidAadhar(normalizeAadhar(formValues.aadhar))) {
       return 'Aadhar number must be exactly 12 digits.';
     }
-    const docs = currentDocs();
-    const docError = requireVctDocuments(docs.biodata, docs.educationCert, docs.pcc);
+    const docError = requireVctDocuments(currentDocs());
     if (docError) return docError;
     if (mode === 'create' && formValues.password.length < 6) {
       return 'Password must be at least 6 characters.';
@@ -217,7 +218,7 @@ export const VCTManagement: React.FC = () => {
   const uploadPendingDoc = async (vctUid: string, key: VctDocKey): Promise<ProductFileMeta | null> => {
     const pending = pendingDocs[key];
     if (!pending) {
-      const state = key === 'biodata' ? biodata : key === 'educationCert' ? educationCert : pcc;
+      const state = docUploads[key];
       const existing = state.file;
       if (existing?.url && !existing.url.startsWith('blob:')) return existing;
       return null;
@@ -241,6 +242,15 @@ export const VCTManagement: React.FC = () => {
     else if (editingUid) await handleSaveEdit(editingUid);
   };
 
+  const uploadAllDocs = async (vctUid: string): Promise<Partial<FirestoreUserDoc>> => {
+    let fields: Partial<FirestoreUserDoc> = {};
+    for (const key of VCT_DOC_KEYS) {
+      const meta = await uploadPendingDoc(vctUid, key);
+      fields = { ...fields, ...vctDocFieldsFromMeta(key, meta) };
+    }
+    return fields;
+  };
+
   const handleCreate = async () => {
     setError('');
     const validationError = validateForm('create');
@@ -255,10 +265,7 @@ export const VCTManagement: React.FC = () => {
       await assertAadharAvailable(cleanAadhar);
       const cred = await createAuthUserForAadhar(cleanAadhar, formValues.password);
       const uid = cred.user.uid;
-
-      const biodataMeta = await uploadPendingDoc(uid, 'biodata');
-      const educationMeta = await uploadPendingDoc(uid, 'educationCert');
-      const pccMeta = await uploadPendingDoc(uid, 'pcc');
+      const docFields = await uploadAllDocs(uid);
 
       const profile: FirestoreUserDoc = {
         aadhar: cleanAadhar,
@@ -270,9 +277,7 @@ export const VCTManagement: React.FC = () => {
         rcId: user?.uid,
         approvalStatus: 'pending',
         ...buildVctProfileFields(formValues),
-        ...vctDocFieldsFromMeta('biodata', biodataMeta),
-        ...vctDocFieldsFromMeta('educationCert', educationMeta),
-        ...vctDocFieldsFromMeta('pcc', pccMeta),
+        ...docFields,
       };
       await setDoc(doc(db, 'users', uid), profile);
 
@@ -298,16 +303,12 @@ export const VCTManagement: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
-      const biodataMeta = await uploadPendingDoc(uid, 'biodata');
-      const educationMeta = await uploadPendingDoc(uid, 'educationCert');
-      const pccMeta = await uploadPendingDoc(uid, 'pcc');
+      const docFields = await uploadAllDocs(uid);
 
       const updates: Partial<FirestoreUserDoc> = {
         ...buildVctProfileFields(formValues),
         workflowMode: formValues.workflowMode,
-        ...vctDocFieldsFromMeta('biodata', biodataMeta),
-        ...vctDocFieldsFromMeta('educationCert', educationMeta),
-        ...vctDocFieldsFromMeta('pcc', pccMeta),
+        ...docFields,
       };
 
       if (formValues.password.trim().length >= 6) {
@@ -340,10 +341,7 @@ export const VCTManagement: React.FC = () => {
     setShowAddForm(false);
     setEditingUid(v.uid);
     setFormValues(vctFormFromUser(v));
-    const docs = docsFromUser(v);
-    setBiodata({ ...EMPTY_VCT_DOC_STATE, file: docs.biodata });
-    setEducationCert({ ...EMPTY_VCT_DOC_STATE, file: docs.educationCert });
-    setPcc({ ...EMPTY_VCT_DOC_STATE, file: docs.pcc });
+    setDocUploads(docUploadsFromUser(v));
     setPendingDocs({});
     setShowPw(false);
     setError('');
@@ -548,9 +546,7 @@ export const VCTManagement: React.FC = () => {
                       showPassword={showPw}
                       onTogglePassword={() => setShowPw(p => !p)}
                       loginAadhar={editingVct?.aadhar}
-                      biodata={biodata}
-                      educationCert={educationCert}
-                      pcc={pcc}
+                      docStates={docUploads}
                       onDocSelect={handleDocSelect}
                       onDocRemove={handleDocRemove}
                       submitting={formBusy}
@@ -583,7 +579,7 @@ export const VCTManagement: React.FC = () => {
               </div>
             </div>
           </div>,
-          document.body,
+          getModalPortalRoot(),
         )}
     </div>
   );

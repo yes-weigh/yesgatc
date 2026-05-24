@@ -44,6 +44,11 @@ service firebase.storage {
       allow write: if isAuthenticated();
     }
 
+    match /users/{userId}/aadhar/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
     match /users/{userId}/education-cert/{fileName} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();

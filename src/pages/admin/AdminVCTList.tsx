@@ -6,10 +6,11 @@ import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { vctApprovalLabel } from '../../lib/vctApproval';
-import { vctDocMetaFromUser } from '../../lib/vctProfileFields';
+import { vctDocMetaFromUser, VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
 import {
   Users, Building2, RefreshCw, Trash2, Zap, ClipboardList, CheckCircle2, Eye, X, ExternalLink,
 } from 'lucide-react';
+import { getModalPortalRoot } from '../../lib/modalPortal';
 import type { FirestoreUserDoc } from '../../types';
 
 interface VCTRecord extends FirestoreUserDoc {
@@ -299,9 +300,9 @@ export const AdminVCTList: React.FC = () => {
                   <div className="vct-review-docs">
                     <span className="vct-review-label">Documents</span>
                     <div className="vct-review-doc-links">
-                      {renderDocLink('Biodata', vctDocMetaFromUser(reviewing, 'biodata')?.url)}
-                      {renderDocLink('Education Certificate', vctDocMetaFromUser(reviewing, 'educationCert')?.url)}
-                      {renderDocLink('PCC', vctDocMetaFromUser(reviewing, 'pcc')?.url)}
+                      {VCT_DOC_KEYS.map(key => (
+                        renderDocLink(VCT_DOC_LABELS[key].label, vctDocMetaFromUser(reviewing, key)?.url)
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -327,7 +328,7 @@ export const AdminVCTList: React.FC = () => {
               </div>
             </div>
           </div>,
-          document.body,
+          getModalPortalRoot(),
         )}
     </div>
   );

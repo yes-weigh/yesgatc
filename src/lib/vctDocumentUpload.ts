@@ -6,9 +6,10 @@ import {
   type ProductFileMeta,
 } from './productApprovalUpload';
 
-export type VctDocKind = 'biodata' | 'education-cert' | 'pcc';
+export type VctDocKind = 'aadhar' | 'biodata' | 'education-cert' | 'pcc';
 
 const FOLDER_BY_KIND: Record<VctDocKind, string> = {
+  aadhar: 'aadhar',
   biodata: 'biodata',
   'education-cert': 'education-cert',
   pcc: 'pcc',

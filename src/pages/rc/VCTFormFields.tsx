@@ -4,6 +4,7 @@ import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { normalizePhone, normalizePincode } from '../../lib/contactFields';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import type { VctDocKey } from '../../lib/vctProfileFields';
+import { VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
 import { UploadField } from '../admin/productFormUi';
 import type { WorkflowMode } from '../../types';
 
@@ -54,20 +55,20 @@ export const ModeToggle = ({
   value: WorkflowMode;
   onChange: (m: WorkflowMode) => void;
 }) => (
-  <div className="mode-toggle mode-toggle--compact">
+  <div className="mode-toggle mode-toggle--vct">
     <button
       type="button"
       className={`mode-btn ${value === 'auto' ? 'active-auto' : ''}`}
       onClick={() => onChange('auto')}
     >
-      <Zap size={12} /> Auto
+      <Zap size={13} /> Auto
     </button>
     <button
       type="button"
       className={`mode-btn ${value === 'manual' ? 'active-manual' : ''}`}
       onClick={() => onChange('manual')}
     >
-      <ClipboardList size={12} /> Manual
+      <ClipboardList size={13} /> Manual
     </button>
   </div>
 );
@@ -79,18 +80,10 @@ type VCTFormFieldsProps = {
   showPassword: boolean;
   onTogglePassword: () => void;
   loginAadhar?: string;
-  biodata: VctDocUploadState;
-  educationCert: VctDocUploadState;
-  pcc: VctDocUploadState;
+  docStates: Record<VctDocKey, VctDocUploadState>;
   onDocSelect: (key: VctDocKey, file: File) => void;
   onDocRemove: (key: VctDocKey) => void;
   submitting: boolean;
-};
-
-const DOC_LABELS: Record<VctDocKey, { label: string; hint: string }> = {
-  biodata: { label: 'Biodata', hint: 'PDF / image' },
-  educationCert: { label: 'Education', hint: 'PDF / image' },
-  pcc: { label: 'PCC', hint: 'PDF / image' },
 };
 
 export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
@@ -100,24 +93,18 @@ export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
   showPassword,
   onTogglePassword,
   loginAadhar,
-  biodata,
-  educationCert,
-  pcc,
+  docStates,
   onDocSelect,
   onDocRemove,
   submitting,
 }) => {
+  const aadharDocRef = useRef<HTMLInputElement>(null);
   const biodataRef = useRef<HTMLInputElement>(null);
   const educationRef = useRef<HTMLInputElement>(null);
   const pccRef = useRef<HTMLInputElement>(null);
 
-  const docStates: Record<VctDocKey, VctDocUploadState> = {
-    biodata,
-    educationCert,
-    pcc,
-  };
-
   const docRefs: Record<VctDocKey, React.RefObject<HTMLInputElement | null>> = {
+    aadharDoc: aadharDocRef,
     biodata: biodataRef,
     educationCert: educationRef,
     pcc: pccRef,
@@ -268,7 +255,7 @@ export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
         </div>
       </div>
 
-      <div className="product-form-flat-row vct-form-row-bottom">
+      <div className="product-form-flat-row vct-form-row-credentials">
         <div className="form-group mb-0">
           <label htmlFor="vct-password">
             {mode === 'create' ? 'Password *' : 'Reset password'}
@@ -304,8 +291,11 @@ export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
             onChange={m => onChange({ workflowMode: m })}
           />
         </div>
-        {(Object.keys(DOC_LABELS) as VctDocKey[]).map(key => {
-          const meta = DOC_LABELS[key];
+      </div>
+
+      <div className="product-form-flat-row vct-form-row-docs">
+        {VCT_DOC_KEYS.map(key => {
+          const meta = VCT_DOC_LABELS[key];
           const state = docStates[key];
           return (
             <UploadField
@@ -316,8 +306,8 @@ export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
               uploading={state.uploading}
               progress={state.progress}
               accept=".pdf,image/jpeg,image/png,image/webp,image/gif"
-              uploadLabel="Upload"
-              formats="Max 15 MB"
+              uploadLabel="Choose file"
+              formats="PDF or image · max 15 MB"
               inputRef={docRefs[key]}
               onSelect={handleDocInput(key)}
               onRemove={() => onDocRemove(key)}

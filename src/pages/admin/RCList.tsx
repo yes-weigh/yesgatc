@@ -33,6 +33,7 @@ import {
   Plus, Pencil, Trash2, Save, X,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
+import { getModalPortalRoot, lockModalHostScroll } from '../../lib/modalPortal';
 import { RCFormFields } from './RCFormFields';
 
 interface RCRecord extends FirestoreUserDoc {
@@ -146,11 +147,7 @@ export const RCList: React.FC = () => {
 
   useEffect(() => {
     if (!showForm) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    return lockModalHostScroll();
   }, [showForm]);
 
   useEffect(() => {
@@ -684,7 +681,7 @@ export const RCList: React.FC = () => {
               </div>
             </div>
           </div>,
-          document.body,
+          getModalPortalRoot(),
         )}
     </div>
   );
