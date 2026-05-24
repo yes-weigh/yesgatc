@@ -3,7 +3,7 @@
  * Run: npm run icons
  */
 import sharp from 'sharp';
-import { mkdir, copyFile } from 'node:fs/promises';
+import { mkdir, copyFile, unlink, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,15 +15,29 @@ const iconsDir = join(root, 'public', 'icons');
 
 const TRANSPARENT = { r: 0, g: 0, b: 0, alpha: 0 };
 
-async function renderSquareIcon(size, paddingRatio = 0.08) {
+/** Globe + checkmark only — square crop from the top of the trimmed logo. */
+async function prepareIconSource() {
+  const trimmedBuf = await sharp(source).ensureAlpha().trim({ threshold: 12 }).png().toBuffer();
+  const meta = await sharp(trimmedBuf).metadata();
+  const side = Math.round(meta.height * 0.68);
+  const left = Math.max(0, Math.round((meta.width - side) / 2));
+
+  return sharp(trimmedBuf)
+    .extract({ left, top: 0, width: side, height: side })
+    .png()
+    .toBuffer();
+}
+
+async function renderIcon(iconSource, size, { paddingRatio = 0, fit = 'cover' }) {
   const padding = Math.round(size * paddingRatio);
   const inner = size - padding * 2;
 
-  const resized = await sharp(source)
-    .ensureAlpha()
-    .resize(inner, inner, { fit: 'contain', background: TRANSPARENT })
+  const resized = await sharp(iconSource)
+    .resize(inner, inner, { fit, position: 'centre', background: TRANSPARENT })
     .png()
     .toBuffer();
+
+  if (padding === 0) return resized;
 
   return sharp({
     create: {
@@ -43,20 +57,27 @@ async function run() {
   await mkdir(iconsDir, { recursive: true });
 
   await copyFile(source, join(brandDir, 'logo-dark.png'));
+  const iconSource = await prepareIconSource();
 
   const outputs = [
-    { file: 'favicon-16.png', size: 16, padding: 0.06 },
-    { file: 'favicon-32.png', size: 32, padding: 0.08 },
-    { file: 'apple-touch-icon.png', size: 180, padding: 0.1 },
-    { file: 'icon-192.png', size: 192, padding: 0.1 },
-    { file: 'icon-512.png', size: 512, padding: 0.1 },
-    { file: 'icon-512-maskable.png', size: 512, padding: 0.18 },
+    { file: 'favicon-16.png', size: 16, padding: 0.06, fit: 'contain' },
+    { file: 'favicon-32.png', size: 32, padding: 0.06, fit: 'contain' },
+    { file: 'apple-touch-icon.png', size: 180, padding: 0.04, fit: 'cover' },
+    { file: 'icon-192.png', size: 192, padding: 0.04, fit: 'cover' },
+    { file: 'icon-512.png', size: 512, padding: 0.04, fit: 'cover' },
+    { file: 'icon-512-maskable.png', size: 512, padding: 0.1, fit: 'contain' },
   ];
 
-  for (const { file, size, padding } of outputs) {
-    const buffer = await renderSquareIcon(size, padding);
+  for (const { file, size, padding, fit } of outputs) {
+    const buffer = await renderIcon(iconSource, size, { paddingRatio: padding, fit });
     await sharp(buffer).png().toFile(join(iconsDir, file));
     console.log(`  wrote public/icons/${file}`);
+  }
+
+  for (const name of await readdir(iconsDir)) {
+    if (name.startsWith('_test-')) {
+      await unlink(join(iconsDir, name));
+    }
   }
 
   console.log('  wrote public/brand/logo-dark.png');

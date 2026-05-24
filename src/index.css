@@ -2571,10 +2571,13 @@ select.input-field option {
 
 /* ---- Responsive ---- */
 @media (max-width: 768px) {
-  .sidebar { width: var(--sidebar-collapsed); }
-  .sidebar .nav-label { display: none; }
-  .sidebar .logo-text { display: none; }
-  .main-content { margin-left: var(--sidebar-collapsed); }
+  .main-content { margin-left: 0; }
+  .sidebar-mobile .nav-label {
+    display: inline;
+  }
+  .sidebar-mobile .nav-item {
+    justify-content: flex-start;
+  }
   .grid-2 { grid-template-columns: 1fr; }
   .stats-grid { grid-template-columns: 1fr; }
   .role-grid { grid-template-columns: 1fr; }
