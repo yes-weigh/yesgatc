@@ -7,7 +7,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import { ClipboardList, Search, Filter, Trash2, CheckCircle2, Clock, PlayCircle, Plus, X, Zap, Users } from 'lucide-react';
 import { formatTechnicianLabel } from '../../lib/contactFields';
-import { isVctApproved } from '../../lib/vctApproval';
+import { isVctOperational } from '../../lib/vctApproval';
 import type { WorkflowMode } from '../../types';
 
 interface VCTOption {
@@ -47,7 +47,7 @@ export const RCJobQueue: React.FC = () => {
       setLoadingVCTs(true);
       const records = await fetchRcVctUsers(user.uid);
       const list = records
-        .filter(data => isVctApproved(data))
+        .filter(data => isVctOperational(data))
         .map(data => ({
           uid: data.uid,
           username: data.username || '',

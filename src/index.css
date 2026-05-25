@@ -3097,6 +3097,16 @@ select.input-field option {
   color: var(--accent-green);
 }
 
+.status-badge.vct-status-active {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--accent-green);
+}
+
+.status-badge.vct-status-inactive {
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+}
+
 .data-table--vct .vct-col-status {
   width: 8.5rem;
 }

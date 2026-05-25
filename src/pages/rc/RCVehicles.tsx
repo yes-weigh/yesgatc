@@ -25,7 +25,7 @@ import {
 import {
   Truck, Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon,
 } from 'lucide-react';
-import { vehicleApprovalLabel } from '../../lib/vehicleApproval';
+import { vehicleApprovalLabel, isVehicleApproved } from '../../lib/vehicleApproval';
 import type { Vehicle } from '../../types';
 import {
   EMPTY_VEHICLE_DOC_STATE,
@@ -373,6 +373,9 @@ export const RCVehicles: React.FC = () => {
   };
 
   const handleDelete = async (id: string, label: string) => {
+    const record = vehicles.find(v => v.id === id);
+    if (record && isVehicleApproved(record)) return;
+
     const ok = await confirm({
       title: 'Remove vehicle?',
       message: `Remove vehicle "${label}" from your centre?`,
@@ -526,6 +529,7 @@ export const RCVehicles: React.FC = () => {
                       const status = earliestValidity(v);
                       const openEdit = () => startEdit(v);
                       const editCell = tableEditCellProps(openEdit, 'Edit vehicle');
+                      const approved = isVehicleApproved(v);
 
                       return (
                         <tr key={v.id}>
@@ -578,15 +582,17 @@ export const RCVehicles: React.FC = () => {
                             </span>
                           </td>
                           <td className="text-right vehicle-rc-col-actions">
-                            <button
-                              type="button"
-                              className="btn-icon text-red"
-                              onClick={() => handleDelete(v.id, v.regNumber || `${v.brand} ${v.model}`)}
-                              title="Remove"
-                              aria-label={`Remove ${v.regNumber || `${v.brand} ${v.model}`.trim()}`}
-                            >
-                              <Trash2 size={18} />
-                            </button>
+                            {!approved && (
+                              <button
+                                type="button"
+                                className="btn-icon text-red"
+                                onClick={() => handleDelete(v.id, v.regNumber || `${v.brand} ${v.model}`)}
+                                title="Remove"
+                                aria-label={`Remove ${v.regNumber || `${v.brand} ${v.model}`.trim()}`}
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );

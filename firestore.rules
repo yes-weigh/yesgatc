@@ -23,6 +23,10 @@ service cloud.firestore {
       return data.get('approvalStatus', 'approved');
     }
 
+    function vehicleApprovalStatus(data) {
+      return data.get('approvalStatus', 'approved');
+    }
+
     // ── users ─────────────────────────────────────────────────────
     match /users/{uid} {
 
@@ -57,7 +61,8 @@ service cloud.firestore {
 
       allow delete: if isRCAdmin()
         && resource.data.role == 'vct'
-        && resource.data.rcId == request.auth.uid;
+        && resource.data.rcId == request.auth.uid
+        && vctApprovalStatus(resource.data) == 'pending';
     }
 
     // ── aadharIndex (global duplicate Aadhar lookup) ───────────────
@@ -78,7 +83,12 @@ service cloud.firestore {
 
       match /members/{vctUid} {
         allow read, write: if isSuperAdmin();
-        allow read, write: if isRCAdmin() && request.auth.uid == rcId;
+        allow read: if isRCAdmin() && request.auth.uid == rcId;
+        allow create: if isRCAdmin() && request.auth.uid == rcId;
+        allow update: if isRCAdmin() && request.auth.uid == rcId;
+        allow delete: if isRCAdmin()
+          && request.auth.uid == rcId
+          && vctApprovalStatus(resource.data) == 'pending';
       }
     }
 
@@ -123,7 +133,8 @@ service cloud.firestore {
         && request.resource.data.rcId == request.auth.uid;
 
       allow delete: if isRCAdmin()
-        && resource.data.rcId == request.auth.uid;
+        && resource.data.rcId == request.auth.uid
+        && vehicleApprovalStatus(resource.data) == 'pending';
     }
 
     // ── customers (RC-managed) ────────────────────────────────────

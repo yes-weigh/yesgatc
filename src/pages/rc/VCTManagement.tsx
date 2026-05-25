@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  doc, deleteDoc, updateDoc, writeBatch,
+  doc, deleteDoc, updateDoc, writeBatch, deleteField,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -22,7 +22,7 @@ import {
   syncAuthPassword,
 } from '../../lib/aadharAuth';
 import { releaseAadharIndex } from '../../lib/aadharIndex';
-import { vctApprovalLabel } from '../../lib/vctApproval';
+import { isVctApproved, isVctActive, vctActiveLabel, vctApprovalLabel } from '../../lib/vctApproval';
 import { uploadVctDocument, uploadVctProfilePhoto, type VctDocKind } from '../../lib/vctDocumentUpload';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
@@ -37,7 +37,7 @@ import {
   type VctDocKey,
 } from '../../lib/vctProfileFields';
 import {
-  UserPlus, Trash2, Eye, EyeOff, RefreshCw, Users, Pencil, X, Plus, Save, Zap, ClipboardList, UserCircle,
+  UserPlus, Trash2, Eye, EyeOff, RefreshCw, Users, Pencil, X, Plus, Save, Zap, ClipboardList, UserCircle, UserX, UserCheck,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
 import {
@@ -333,6 +333,7 @@ export const VCTManagement: React.FC = () => {
         createdByUid: user?.uid,
         rcId: user?.uid,
         approvalStatus: 'pending',
+        active: true,
         ...buildVctProfileFields(formValues),
         ...docFields,
         ...photoFields,
@@ -429,6 +430,9 @@ export const VCTManagement: React.FC = () => {
   };
 
   const handleDelete = async (uid: string, identifier: string) => {
+    const record = vcts.find(v => v.uid === uid);
+    if (record && isVctApproved(record)) return;
+
     const ok = await confirm({
       title: 'Remove technician?',
       message: `Remove technician "${identifier}" from your centre?`,
@@ -436,10 +440,37 @@ export const VCTManagement: React.FC = () => {
       destructive: true,
     });
     if (!ok) return;
-    const record = vcts.find(v => v.uid === uid);
     await deleteDoc(doc(db, 'users', uid));
     if (user?.uid) await deleteDoc(rcVctMemberRef(user.uid, uid));
     if (record?.aadhar) await releaseAadharIndex(record.aadhar);
+    await fetchVCTs();
+  };
+
+  const handleToggleActive = async (v: VCTRecord) => {
+    if (!isVctApproved(v)) return;
+
+    const activating = !isVctActive(v);
+    const label = v.username || v.aadhar || 'technician';
+    const ok = await confirm({
+      title: activating ? 'Activate technician?' : 'Deactivate technician?',
+      message: activating
+        ? `Allow "${label}" to sign in and receive jobs again?`
+        : `Deactivate "${label}"? They will not be able to sign in or be assigned new jobs.`,
+      confirmLabel: activating ? 'Activate' : 'Deactivate',
+      destructive: !activating,
+    });
+    if (!ok || !user?.uid) return;
+
+    const updates: Record<string, unknown> = activating
+      ? { active: true, deactivatedAt: deleteField(), deactivatedByUid: deleteField() }
+      : {
+          active: false,
+          deactivatedAt: new Date().toISOString(),
+          deactivatedByUid: user.uid,
+        };
+
+    await updateDoc(doc(db, 'users', v.uid), updates);
+    await updateDoc(rcVctMemberRef(user.uid, v.uid), { active: activating });
     await fetchVCTs();
   };
 
@@ -570,6 +601,7 @@ export const VCTManagement: React.FC = () => {
                     <th>Phone</th>
                     <th>Aadhar</th>
                     <th>Status</th>
+                    <th>Active</th>
                     <th>Job Mode</th>
                     <th>Password</th>
                     <th>Created</th>
@@ -580,6 +612,8 @@ export const VCTManagement: React.FC = () => {
                   {vcts.map((v, index) => {
                     const openEdit = () => startEdit(v);
                     const editCell = tableEditCellProps(openEdit, 'Edit technician');
+                    const approved = isVctApproved(v);
+                    const active = isVctActive(v);
 
                     return (
                     <tr key={v.uid}>
@@ -612,6 +646,17 @@ export const VCTManagement: React.FC = () => {
                         >
                           {vctApprovalLabel(v.approvalStatus)}
                         </span>
+                      </td>
+                      <td {...editCell} className="table-col-editable">
+                        {approved ? (
+                          <span
+                            className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
+                          >
+                            {vctActiveLabel(v.active)}
+                          </span>
+                        ) : (
+                          <span className="text-muted text-sm">—</span>
+                        )}
                       </td>
                       <td {...editCell} className="table-col-editable">
                         <span className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
@@ -649,22 +694,34 @@ export const VCTManagement: React.FC = () => {
                         {v.createdAt ? new Date(v.createdAt).toLocaleDateString('en-IN') : '—'}
                       </td>
                       <td className="text-right vct-rc-col-actions">
-                        <button
-                          type="button"
-                          className="btn-icon text-red"
-                          onClick={() => handleDelete(v.uid, v.username || v.aadhar)}
-                          title="Remove"
-                          aria-label={`Remove ${v.username || v.aadhar || 'technician'}`}
-                        >
-                          <Trash2 size={18} />
-                        </button>
+                        {approved ? (
+                          <button
+                            type="button"
+                            className={`btn-icon ${active ? 'text-amber' : 'text-green'}`}
+                            onClick={() => handleToggleActive(v)}
+                            title={active ? 'Deactivate technician' : 'Activate technician'}
+                            aria-label={active ? `Deactivate ${v.username || v.aadhar}` : `Activate ${v.username || v.aadhar}`}
+                          >
+                            {active ? <UserX size={18} /> : <UserCheck size={18} />}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-icon text-red"
+                            onClick={() => handleDelete(v.uid, v.username || v.aadhar)}
+                            title="Remove"
+                            aria-label={`Remove ${v.username || v.aadhar || 'technician'}`}
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
                   })}
                   {vcts.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="text-center py-10 text-muted">
+                      <td colSpan={10} className="text-center py-10 text-muted">
                         No technicians yet. Click &quot;Add Technician&quot; to create one.
                       </td>
                     </tr>

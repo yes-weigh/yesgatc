@@ -129,6 +129,10 @@ export interface FirestoreUserDoc {
   approvalStatus?: VctApprovalStatus;
   approvedAt?: string;
   approvedByUid?: string;
+  /** RC can deactivate approved VCTs; omitted or true means active. */
+  active?: boolean;
+  deactivatedAt?: string;
+  deactivatedByUid?: string;
 
   // Contact (not used for login)
   email?: string;

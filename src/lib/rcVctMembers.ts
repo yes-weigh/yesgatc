@@ -14,6 +14,7 @@ export type RcVctMemberDoc = {
   aadhar: string;
   username: string;
   approvalStatus?: string;
+  active?: boolean;
   createdAt: string;
 };
 
@@ -31,6 +32,7 @@ export function buildRcVctMemberDoc(profile: FirestoreUserDoc, uid: string): RcV
     aadhar: profile.aadhar,
     username: profile.username || '',
     approvalStatus: profile.approvalStatus ?? 'pending',
+    active: profile.active !== false,
     createdAt: profile.createdAt,
   };
 }
