@@ -7,7 +7,6 @@ import {
   Building2,
   Package,
   BarChart3,
-  Users,
   ClipboardList,
   Award,
   LogOut,
@@ -65,7 +64,13 @@ export const Layout: React.FC = () => {
         return [
           { path: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
           { path: '/admin/rc', icon: <Building2 size={20} />, label: 'Regional Centers' },
-          { path: '/admin/vct', icon: <Users size={20} />, label: 'VCT' },
+          {
+            path: '/admin/technicians',
+            icon: <Wrench size={20} />,
+            label: 'Technician',
+            pageTitle: 'Verification and Calibration Technician',
+          },
+          { path: '/admin/vehicles', icon: <Truck size={20} />, label: 'Vehicle' },
           { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
         ];

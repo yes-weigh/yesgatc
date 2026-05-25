@@ -83,6 +83,7 @@ export const UploadField: React.FC<{
   uploadDisabled = false,
 }) => {
   const useIconActions = avatar || iconActions;
+  const showImagePreview = variant === 'image' || (file != null && !isPdfContentType(file.contentType));
 
   return (
   <div
@@ -147,7 +148,12 @@ export const UploadField: React.FC<{
               {useIconActions ? (
                 <div className="product-upload-avatar-wrap">
                   {variant === 'image' || !isPdfContentType(file.contentType) ? (
-                    <img src={file.url} alt="" className="product-upload-preview-img" />
+                    <img
+                      src={file.url}
+                      alt=""
+                      className="product-upload-preview-img"
+                      title={file.name}
+                    />
                   ) : (
                     <div className="product-upload-preview-icon">
                       <FileText size={28} className="text-red" />
@@ -179,16 +185,25 @@ export const UploadField: React.FC<{
               ) : (
                 <>
                   {variant === 'image' || !isPdfContentType(file.contentType) ? (
-                    <img src={file.url} alt="" className="product-upload-preview-img" />
+                    <img
+                      src={file.url}
+                      alt=""
+                      className="product-upload-preview-img"
+                      title={file.name}
+                    />
                   ) : (
                     <div className="product-upload-preview-icon">
                       <FileText size={compact ? 22 : 28} className="text-red" />
                     </div>
                   )}
-                  <div className="product-upload-preview-meta">
-                    <p className="truncate font-medium text-sm" title={file.name}>
-                      {file.name}
-                    </p>
+                  <div
+                    className={`product-upload-preview-meta${showImagePreview ? ' product-upload-preview-meta--image-only' : ''}`}
+                  >
+                    {!showImagePreview && (
+                      <p className="truncate font-medium text-sm" title={file.name}>
+                        {file.name}
+                      </p>
+                    )}
                     <div className="product-upload-preview-actions">
                       <a
                         href={file.url}

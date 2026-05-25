@@ -2280,6 +2280,10 @@ select.input-field option {
   flex: 1;
 }
 
+.product-upload-preview-meta--image-only .product-upload-preview-actions {
+  margin-top: 0;
+}
+
 .product-form-footer {
   display: flex;
   justify-content: flex-end;
@@ -3202,6 +3206,16 @@ select.input-field option {
   }
 }
 
+.data-table--vct-admin .vct-admin-col-rc {
+  min-width: 8rem;
+  max-width: 12rem;
+}
+
+.data-table--vehicles-admin .vehicle-admin-col-rc {
+  min-width: 8rem;
+  max-width: 12rem;
+}
+
 .data-table--vct-rc .vct-rc-col-serial {
   width: 2.75rem;
   text-align: center;
@@ -3992,9 +4006,9 @@ select.input-field option {
 
 .customer-form-hero {
   display: grid;
-  grid-template-columns: 13rem minmax(0, 1fr);
-  gap: 1.25rem 1.5rem;
-  align-items: stretch;
+  grid-template-columns: 11.5rem minmax(0, 1fr);
+  gap: 1rem 1.25rem;
+  align-items: start;
   padding: 1rem 1.15rem;
 }
 
@@ -4006,8 +4020,8 @@ select.input-field option {
 
 .customer-form-hero-shop .product-upload-field--compact {
   flex-direction: column;
-  flex: 1;
-  min-height: 100%;
+  flex: none;
+  min-height: auto;
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.14);
 }
@@ -4015,34 +4029,40 @@ select.input-field option {
 .customer-form-hero-shop .product-upload-field-head {
   width: 100%;
   border-right: none;
-  padding: 0.75rem 0.65rem 0.35rem;
+  padding: 0.65rem 0.65rem 0.25rem;
   background: transparent;
   text-align: center;
 }
 
 .customer-form-hero-shop .product-upload-field-body {
-  flex: 1;
+  flex: none;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: center;
-  padding: 0 0.65rem 0.85rem;
+  justify-content: flex-start;
+  padding: 0 0.65rem 0.75rem;
 }
 
 .customer-form-hero-shop .product-upload-dropzone--compact {
   width: 100%;
-  min-height: 7.5rem;
+  min-height: 6.5rem;
   border-radius: 10px;
   border: 2px dashed rgba(255, 255, 255, 0.14);
   background: rgba(0, 0, 0, 0.12);
+}
+
+.customer-form-hero-shop .product-upload-preview--compact {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
 }
 
 .customer-form-hero-shop .product-upload-preview--compact .product-upload-preview-img {
   width: 100%;
   max-width: 100%;
   height: auto;
-  min-height: 7.5rem;
-  max-height: 10rem;
+  min-height: 0;
+  max-height: 8.5rem;
   border-radius: 10px;
   object-fit: cover;
 }
@@ -4145,8 +4165,8 @@ select.input-field option {
 .inline-form-panel--customer .customer-form-hero-shop .product-upload-preview--compact .product-upload-preview-img {
   width: 100%;
   height: auto;
-  min-height: 7.5rem;
-  max-height: 10rem;
+  min-height: 0;
+  max-height: 8.5rem;
   border-radius: 10px;
 }
 
@@ -4159,8 +4179,8 @@ select.input-field option {
 
 .customer-form-devices-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-start;
   gap: 1rem;
   flex-wrap: wrap;
 }
@@ -4357,14 +4377,55 @@ select.input-field option {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .customer-form-hero {
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: 0.85rem;
+    padding: 0.85rem 0.9rem;
+  }
+
+  .customer-form-hero-shop .product-upload-field--compact {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .customer-form-hero-shop .product-upload-field-head {
+    width: 6.75rem;
+    flex-shrink: 0;
+    text-align: left;
+    padding: 0.65rem 0.75rem;
+    border-right: 1px solid var(--border-glass);
+    background: rgba(0, 0, 0, 0.15);
+    justify-content: center;
+  }
+
+  .customer-form-hero-shop .product-upload-field-body {
+    flex: 1;
+    min-width: 0;
+    padding: 0.5rem 0.65rem;
+    justify-content: center;
+  }
+
+  .customer-form-hero-shop .product-upload-preview--compact {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .customer-form-hero-shop .product-upload-preview--compact .product-upload-preview-img {
+    width: 5.75rem;
+    height: 4.5rem;
+    max-height: none;
+    flex-shrink: 0;
+  }
+
+  .customer-form-hero-shop .product-upload-dropzone--compact {
+    min-height: 4.5rem;
+    height: 4.5rem;
   }
 
   .customer-form-grid--identity {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .customer-form-address-row {
@@ -4374,6 +4435,23 @@ select.input-field option {
   .customer-form-location-side {
     min-width: 0;
     max-width: none;
+  }
+
+  .inline-form-panel--customer .customer-form-hero-shop .product-upload-field--compact .product-upload-field-head {
+    width: 6.75rem;
+    border-right: 1px solid var(--border-glass);
+  }
+
+  .inline-form-panel--customer .customer-form-hero-shop .product-upload-preview--compact .product-upload-preview-img {
+    width: 5.75rem;
+    height: 4.5rem;
+    max-height: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .customer-form-grid--identity {
+    grid-template-columns: 1fr;
   }
 
   .customer-device-row-body {

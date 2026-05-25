@@ -72,22 +72,10 @@ const DeviceRow: React.FC<{
         <ProductImageThumb product={selectedProduct} />
         <div className="customer-device-fields">
           <div className="form-group mb-0">
-            <label htmlFor={`device-serial-${device.row.localId}`}>
+            <label htmlFor={`device-product-${device.row.localId}`}>
               <span className="customer-device-index">Device {index + 1}</span>
-              Serial number *
+              Product *
             </label>
-            <input
-              id={`device-serial-${device.row.localId}`}
-              type="text"
-              className="input-field"
-              placeholder="e.g. SN-12345"
-              value={device.row.serialNumber}
-              onChange={e => onChange(device.row.localId, { serialNumber: e.target.value })}
-              required
-            />
-          </div>
-          <div className="form-group mb-0">
-            <label htmlFor={`device-product-${device.row.localId}`}>Product *</label>
             <ProductPicker
               products={products}
               inputId={`device-product-${device.row.localId}`}
@@ -102,6 +90,18 @@ const DeviceRow: React.FC<{
                 })
               }
               disabled={submitting}
+              required
+            />
+          </div>
+          <div className="form-group mb-0">
+            <label htmlFor={`device-serial-${device.row.localId}`}>Serial number *</label>
+            <input
+              id={`device-serial-${device.row.localId}`}
+              type="text"
+              className="input-field"
+              placeholder="e.g. SN-12345"
+              value={device.row.serialNumber}
+              onChange={e => onChange(device.row.localId, { serialNumber: e.target.value })}
               required
             />
           </div>
@@ -462,20 +462,20 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
 
       <div className="product-form-flat-row customer-form-row-devices">
         <div className="customer-form-devices-head">
+          <button
+            type="button"
+            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
+            onClick={onDeviceAdd}
+            disabled={submitting}
+          >
+            <Plus size={14} /> Add device
+          </button>
           <div>
             <h3 className="customer-form-devices-title">Devices</h3>
             <p className="customer-form-devices-hint text-muted text-sm m-0">
               Optional — add weighing instruments at this customer site
             </p>
           </div>
-          <button
-            type="button"
-            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
-            onClick={onDeviceAdd}
-            disabled={submitting}
-          >
-            <Plus size={14} /> Add device
-          </button>
         </div>
 
         {devices.length === 0 ? (

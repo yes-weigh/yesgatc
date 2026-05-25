@@ -54,6 +54,8 @@ export type PaymentStatus = 'not_required' | 'pending' | 'paid';
 export type WorkflowMode = 'auto' | 'manual';
 export type VctApprovalStatus = 'pending' | 'approved';
 
+export type VehicleApprovalStatus = VctApprovalStatus;
+
 export interface TechnicalData {
   mfgYear: string;
   maxError: string;
@@ -183,6 +185,10 @@ export interface Vehicle {
   vehiclePhotoPath?: string;
   vehiclePhotoName?: string;
   vehiclePhotoContentType?: string;
+  /** RC-created vehicles start as pending until Super Admin approves. */
+  approvalStatus?: VehicleApprovalStatus;
+  approvedAt?: string;
+  approvedByUid?: string;
   createdAt: string;
   createdByUid?: string;
 }

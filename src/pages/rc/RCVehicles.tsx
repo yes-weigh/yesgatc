@@ -24,6 +24,7 @@ import {
 import {
   Truck, Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon,
 } from 'lucide-react';
+import { vehicleApprovalLabel } from '../../lib/vehicleApproval';
 import type { Vehicle } from '../../types';
 import {
   EMPTY_VEHICLE_DOC_STATE,
@@ -304,6 +305,7 @@ export const RCVehicles: React.FC = () => {
         rcId: user!.uid,
         createdAt: new Date().toISOString(),
         createdByUid: user?.uid,
+        approvalStatus: 'pending',
         ...buildVehicleProfileFields(formValues),
         ...docFields,
         ...photoFields,
@@ -409,7 +411,7 @@ export const RCVehicles: React.FC = () => {
                   )}
                 </h2>
                 <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
-                  {error || '\u00a0'}
+                  {error || (showAddForm ? 'Super Admin approval required before this vehicle is active.' : '\u00a0')}
                 </p>
               </div>
               <button
@@ -513,7 +515,8 @@ export const RCVehicles: React.FC = () => {
                       <th>Insurance</th>
                       <th>Pollution</th>
                       <th>F2 weight</th>
-                      <th>Status</th>
+                      <th>Approval</th>
+                      <th>Docs</th>
                       <th className="text-right vehicle-rc-col-actions">Actions</th>
                     </tr>
                   </thead>
@@ -543,6 +546,15 @@ export const RCVehicles: React.FC = () => {
                           <td className="text-sm">{formatValidityDate(v.insuranceValidity)}</td>
                           <td className="text-sm">{formatValidityDate(v.pollutionValidity)}</td>
                           <td className="text-sm">{formatValidityDate(v.f2WeightValidity)}</td>
+                          <td>
+                            <span
+                              className={`status-badge ${
+                                v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
+                              }`}
+                            >
+                              {vehicleApprovalLabel(v.approvalStatus)}
+                            </span>
+                          </td>
                           <td>
                             <span className={`status-badge ${VALIDITY_BADGE[status]}`}>
                               {status === 'ok' && 'Valid'}
@@ -574,7 +586,7 @@ export const RCVehicles: React.FC = () => {
                     })}
                     {vehicles.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="text-center py-10 text-muted">
+                        <td colSpan={11} className="text-center py-10 text-muted">
                           No vehicles yet. Click &quot;Add Vehicle&quot; to register one.
                         </td>
                       </tr>

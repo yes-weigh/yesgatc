@@ -245,7 +245,7 @@ export const AdminVCTList: React.FC = () => {
         <div className="panel-header justify-between">
           <div>
             <h2>
-              <Users className="inline-icon" /> VCT Technicians
+              <Users className="inline-icon" /> Technicians
             </h2>
             <p className="text-muted text-sm mt-1">
               Review profiles and approve technicians before they can sign in.
@@ -262,28 +262,43 @@ export const AdminVCTList: React.FC = () => {
             </div>
           ) : (
             <div className="table-scroll-wrap">
-              <table className="data-table data-table--vct">
+              <table className="data-table data-table--vct-rc data-table--vct-admin">
                 <thead>
                   <tr>
-                    <th className="vct-col-name">Name</th>
-                    <th className="vct-col-rc">Regional Center</th>
-                    <th className="vct-col-phone">Phone</th>
-                    <th className="vct-col-status">Status</th>
-                    <th className="vct-col-mode">Job Mode</th>
-                    <th className="vct-col-created">Created</th>
-                    <th className="text-right vct-col-actions">Actions</th>
+                    <th className="vct-rc-col-serial">#</th>
+                    <th>Name</th>
+                    <th className="vct-admin-col-rc">Regional Center</th>
+                    <th>Phone</th>
+                    <th>Aadhar</th>
+                    <th>Status</th>
+                    <th>Job Mode</th>
+                    <th>Created</th>
+                    <th className="text-right vct-rc-col-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {vctList.map(v => (
+                  {vctList.map((v, index) => (
                     <tr key={v.uid}>
-                      <td className="vct-col-name font-medium table-cell-truncate" title={v.username}>
-                        {v.username || '—'}
+                      <td className="vct-rc-col-serial text-muted text-sm">{index + 1}</td>
+                      <td className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {v.profilePhotoUrl ? (
+                            <img src={v.profilePhotoUrl} alt="" className="vct-table-avatar" />
+                          ) : (
+                            <span className="vct-table-avatar vct-table-avatar--placeholder">
+                              <UserCircle size={18} />
+                            </span>
+                          )}
+                          <span className="table-cell-truncate" title={v.username}>
+                            {v.username || '—'}
+                          </span>
+                        </div>
                       </td>
-                      <td className="vct-col-rc table-cell-truncate" title={v.rcCenterName}>
+                      <td className="vct-admin-col-rc table-cell-truncate" title={v.rcCenterName}>
                         {v.rcCenterName}
                       </td>
-                      <td className="vct-col-phone text-sm">{v.phone || '—'}</td>
+                      <td className="text-sm">{v.phone || '—'}</td>
+                      <td className="text-muted text-sm">{formatAadharDisplay(v.aadhar)}</td>
                       <td className="vct-col-status">
                         <span
                           className={`status-badge ${
@@ -308,10 +323,10 @@ export const AdminVCTList: React.FC = () => {
                           )}
                         </span>
                       </td>
-                      <td className="vct-col-created text-muted text-sm">
+                      <td className="text-muted text-xs-soft">
                         {v.createdAt ? new Date(v.createdAt).toLocaleDateString('en-IN') : '—'}
                       </td>
-                      <td className="vct-col-actions text-right">
+                      <td className="text-right vct-rc-col-actions">
                         <button
                           type="button"
                           className="btn-icon text-blue mr-2"
@@ -343,8 +358,8 @@ export const AdminVCTList: React.FC = () => {
                   ))}
                   {vctList.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="text-center py-10 text-muted">
-                        No VCT technicians registered yet.
+                      <td colSpan={9} className="text-center py-10 text-muted">
+                        No technicians registered yet.
                       </td>
                     </tr>
                   )}
