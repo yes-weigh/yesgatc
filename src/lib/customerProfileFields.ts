@@ -83,11 +83,11 @@ export function buildCustomerProfileFields(
   const base = {
     name: input.name.trim(),
     phone: normalizePhone(input.phone),
-    email: input.email.trim() || undefined,
+    email: input.email.trim(),
     address: input.address.trim(),
-    pincode: input.pincode.trim() ? normalizePincode(input.pincode) : undefined,
-    state: input.state.trim() || undefined,
-    district: input.district.trim() || undefined,
+    pincode: input.pincode.trim() ? normalizePincode(input.pincode) : '',
+    state: input.state.trim(),
+    district: input.district.trim(),
   };
   return location ? { ...base, location } : base;
 }
@@ -148,12 +148,14 @@ export function devicesFromRecord(record: Customer): CustomerDeviceFormValues[] 
 }
 
 export function buildCustomerDevice(row: CustomerDeviceFormValues): CustomerDevice {
-  return {
+  const device: CustomerDevice = {
     id: row.localId,
     serialNumber: row.serialNumber.trim(),
-    productId: row.productId.trim() || undefined,
     productName: row.productName.trim(),
   };
+  const productId = row.productId.trim();
+  if (productId) device.productId = productId;
+  return device;
 }
 
 export function customerFormFromRecord(record: Customer): CustomerFormValues {

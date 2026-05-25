@@ -147,5 +147,22 @@ service cloud.firestore {
       allow delete: if isRCAdmin()
         && resource.data.rcId == request.auth.uid;
     }
+
+    // ── site calibrations (RC-managed) ────────────────────────────
+    match /siteCalibrations/{recordId} {
+      allow read, write: if isSuperAdmin();
+
+      allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
+
+      allow create: if isRCAdmin()
+        && request.resource.data.rcId == request.auth.uid;
+
+      allow update: if isRCAdmin()
+        && resource.data.rcId == request.auth.uid
+        && request.resource.data.rcId == request.auth.uid;
+
+      allow delete: if isRCAdmin()
+        && resource.data.rcId == request.auth.uid;
+    }
   }
 }

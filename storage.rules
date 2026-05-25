@@ -83,5 +83,10 @@ service firebase.storage {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
     }
+
+    match /siteCalibrations/{recordId}/scale-image/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
   }
 }

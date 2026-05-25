@@ -1,13 +1,6 @@
 import React from 'react';
-import { Bell, ClipboardCheck, Gauge, Scale, Upload } from 'lucide-react';
+import { Bell, ClipboardCheck, Scale, Upload } from 'lucide-react';
 import { RCModulePage } from './RCModulePage';
-
-export const RCSiteCalibration: React.FC = () => (
-  <RCModulePage
-    title="Site Calibration"
-    icon={<Gauge className="inline-icon" />}
-  />
-);
 
 export const RCUploadCertificate: React.FC = () => (
   <RCModulePage

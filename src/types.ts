@@ -243,3 +243,27 @@ export interface Customer {
   createdByUid?: string;
   updatedAt?: string;
 }
+
+/** RC site calibration intake record (Firestore `siteCalibrations` collection). */
+export interface SiteCalibration {
+  id: string;
+  rcId: string;
+  verificationType: JobType;
+  customerId: string;
+  customerName: string;
+  productId: string;
+  productName: string;
+  serialNumber: string;
+  /** MPE for this calibration; may differ from the product default. */
+  maximumPermissibleError?: number;
+  ambientTemperature: string;
+  relativeHumidity: string;
+  sealIdentificationNumber: string;
+  scaleImageUrl?: string;
+  scaleImagePath?: string;
+  scaleImageName?: string;
+  scaleImageContentType?: string;
+  createdAt: string;
+  createdByUid?: string;
+  updatedAt?: string;
+}
