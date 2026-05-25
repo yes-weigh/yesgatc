@@ -50,44 +50,8 @@ const DeviceRow: React.FC<{
 
   return (
     <div className="customer-device-row">
-      <div className="customer-device-row-body">
-        <div className="customer-device-fields">
-          <div className="form-group mb-0 customer-device-product-field">
-            <label htmlFor={`device-product-${device.row.localId}`}>
-              <span className="customer-device-index">Device {index + 1}</span>
-              Product *
-            </label>
-            <ProductSelect
-              products={products}
-              inputId={`device-product-${device.row.localId}`}
-              value={{
-                productId: device.row.productId,
-                productName: device.row.productName,
-              }}
-              onChange={next =>
-                onChange(device.row.localId, {
-                  productId: next.productId,
-                  productName: next.productName,
-                })
-              }
-              disabled={submitting}
-              required
-            />
-          </div>
-          {selectedProduct && <ProductDetailsSpecs product={selectedProduct} />}
-          <div className="form-group mb-0 customer-device-serial-field">
-            <label htmlFor={`device-serial-${device.row.localId}`}>Serial number *</label>
-            <input
-              id={`device-serial-${device.row.localId}`}
-              type="text"
-              className="input-field"
-              placeholder="e.g. SN-12345"
-              value={device.row.serialNumber}
-              onChange={e => onChange(device.row.localId, { serialNumber: e.target.value })}
-              required
-            />
-          </div>
-        </div>
+      <div className="customer-device-row-head">
+        <span className="customer-device-index">Device {index + 1}</span>
         <button
           type="button"
           className="btn-icon text-red customer-device-remove"
@@ -98,6 +62,40 @@ const DeviceRow: React.FC<{
         >
           <Trash2 size={16} />
         </button>
+      </div>
+      <div className="customer-device-fields">
+        <div className="form-group mb-0 customer-device-product-field">
+          <label htmlFor={`device-product-${device.row.localId}`}>Product *</label>
+          <ProductSelect
+            products={products}
+            inputId={`device-product-${device.row.localId}`}
+            value={{
+              productId: device.row.productId,
+              productName: device.row.productName,
+            }}
+            onChange={next =>
+              onChange(device.row.localId, {
+                productId: next.productId,
+                productName: next.productName,
+              })
+            }
+            disabled={submitting}
+            required
+          />
+        </div>
+        {selectedProduct && <ProductDetailsSpecs product={selectedProduct} />}
+        <div className="form-group mb-0 customer-device-serial-field">
+          <label htmlFor={`device-serial-${device.row.localId}`}>Serial number *</label>
+          <input
+            id={`device-serial-${device.row.localId}`}
+            type="text"
+            className="input-field"
+            placeholder="e.g. SN-12345"
+            value={device.row.serialNumber}
+            onChange={e => onChange(device.row.localId, { serialNumber: e.target.value })}
+            required
+          />
+        </div>
       </div>
     </div>
   );
