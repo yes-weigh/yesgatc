@@ -7,7 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
-import { normalizePhone } from '../../lib/contactFields';
+import { normalizePhone, isValidPhone } from '../../lib/contactFields';
 import {
   buildCustomerDevice,
   buildCustomerProfileFields,
@@ -71,6 +71,18 @@ export const RCCustomers: React.FC = () => {
 
   const showCreateWithPhone =
     phoneSearchComplete && !loading && displayedCustomers.length === 0;
+
+  const duplicateCustomer = useMemo(() => {
+    if (!isValidPhone(formValues.phone)) return null;
+    const phone = normalizePhone(formValues.phone);
+    return (
+      customers.find(
+        c => normalizePhone(c.phone) === phone && c.id !== editingId,
+      ) ?? null
+    );
+  }, [formValues.phone, customers, editingId]);
+
+  const phoneDuplicateBlocksSave = showAddForm && duplicateCustomer !== null;
 
   const fetchCustomers = useCallback(async () => {
     if (!user?.uid) return;
@@ -346,12 +358,12 @@ export const RCCustomers: React.FC = () => {
               </div>
               <button
                 type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
+                className="btn btn-secondary customer-form-close-btn text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
                 onClick={handleCloseForm}
                 disabled={formBusy}
                 aria-label="Close"
               >
-                <X size={15} /> Close
+                <X size={16} /> Close
               </button>
             </div>
 
@@ -369,6 +381,11 @@ export const RCCustomers: React.FC = () => {
                   onDeviceAdd={handleDeviceAdd}
                   onDeviceRemove={handleDeviceRemove}
                   submitting={formBusy}
+                  existingCustomerWithPhone={
+                    showAddForm && duplicateCustomer
+                      ? { name: duplicateCustomer.name }
+                      : null
+                  }
                 />
               </div>
               <div className="product-form-footer">
@@ -380,7 +397,21 @@ export const RCCustomers: React.FC = () => {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={formBusy}>
+                {phoneDuplicateBlocksSave && duplicateCustomer && (
+                  <button
+                    type="button"
+                    className="btn btn-primary flex items-center gap-2"
+                    onClick={() => startEdit(duplicateCustomer)}
+                    disabled={formBusy}
+                  >
+                    <Pencil size={16} /> Load customer and edit
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="btn btn-primary flex items-center gap-2"
+                  disabled={formBusy || phoneDuplicateBlocksSave}
+                >
                   {formBusy ? (
                     <span className="spinner-inline"></span>
                   ) : showAddForm ? (
@@ -486,10 +517,25 @@ export const RCCustomers: React.FC = () => {
                     {displayedCustomers.map((c, index) => {
                       const mapsUrl = customerMapsUrl(c);
                       const photo = shopPhotoUrl(c);
+                      const openEdit = () => startEdit(c);
+                      const editCellProps = {
+                        className: 'customer-rc-col-editable',
+                        onClick: openEdit,
+                        onKeyDown: (e: React.KeyboardEvent) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            openEdit();
+                          }
+                        },
+                        tabIndex: 0,
+                        role: 'button' as const,
+                        title: 'Edit customer',
+                      };
+
                       return (
                         <tr key={c.id}>
                           <td className="customer-rc-col-serial text-muted text-sm">{index + 1}</td>
-                          <td className="customer-rc-col-customer font-medium">
+                          <td {...editCellProps} className="customer-rc-col-customer font-medium customer-rc-col-editable">
                             <div className="flex items-center gap-2">
                               {photo ? (
                                 <img src={photo} alt="" className="customer-table-shop-thumb" />
@@ -501,24 +547,36 @@ export const RCCustomers: React.FC = () => {
                               <span>{c.name || '—'}</span>
                             </div>
                           </td>
-                          <td className="text-sm">{c.phone || '—'}</td>
-                          <td className="text-sm">{customerDeviceCount(c)}</td>
-                          <td className="text-sm text-muted max-w-[14rem] truncate" title={c.address}>
+                          <td {...editCellProps} className="text-sm customer-rc-col-editable">
+                            {c.phone || '—'}
+                          </td>
+                          <td {...editCellProps} className="text-sm customer-rc-col-editable">
+                            {customerDeviceCount(c)}
+                          </td>
+                          <td
+                            {...editCellProps}
+                            className="text-sm text-muted max-w-[14rem] truncate customer-rc-col-editable"
+                            title={c.address || 'Edit customer'}
+                          >
                             {c.address || '—'}
                           </td>
-                          <td className="text-sm">
+                          <td {...editCellProps} className="text-sm customer-rc-col-editable">
                             {mapsUrl ? (
-                              <a
-                                href={mapsUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="customer-map-link flex items-center gap-1"
-                                title={formatCustomerLocation(c)}
-                              >
-                                <MapPin size={13} />
+                              <span className="customer-map-link flex items-center gap-1">
+                                <MapPin size={13} aria-hidden />
                                 <span className="truncate max-w-[8rem]">{formatCustomerLocation(c)}</span>
-                                <ExternalLink size={11} />
-                              </a>
+                                <a
+                                  href={mapsUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="customer-map-link-icon"
+                                  title="Open in maps"
+                                  aria-label="Open location in maps"
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <ExternalLink size={11} />
+                                </a>
+                              </span>
                             ) : (
                               <span className="text-muted">—</span>
                             )}
@@ -526,17 +584,10 @@ export const RCCustomers: React.FC = () => {
                           <td className="text-right customer-rc-col-actions">
                             <button
                               type="button"
-                              className="btn-icon text-blue mr-2"
-                              onClick={() => startEdit(c)}
-                              title="Edit"
-                            >
-                              <Pencil size={18} />
-                            </button>
-                            <button
-                              type="button"
                               className="btn-icon text-red"
                               onClick={() => handleDelete(c.id, c.name || c.phone)}
                               title="Remove"
+                              aria-label={`Remove ${c.name || c.phone || 'customer'}`}
                             >
                               <Trash2 size={18} />
                             </button>

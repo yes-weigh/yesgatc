@@ -3976,6 +3976,26 @@ select.input-field option {
   margin: 0;
 }
 
+.inline-form-panel--customer .customer-form-close-btn {
+  color: #fecaca;
+  font-weight: 600;
+  background: rgba(248, 113, 113, 0.18);
+  border: 1px solid rgba(248, 113, 113, 0.62);
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.12);
+}
+
+.inline-form-panel--customer .customer-form-close-btn:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(248, 113, 113, 0.28);
+  border-color: rgba(252, 165, 165, 0.75);
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.25);
+}
+
+.inline-form-panel--customer .customer-form-close-btn:focus-visible {
+  outline: 2px solid rgba(248, 113, 113, 0.65);
+  outline-offset: 2px;
+}
+
 .inline-form-panel--customer .product-form-footer {
   padding: 0.5rem 1.5rem 0.85rem;
   flex-shrink: 0;
@@ -4153,6 +4173,10 @@ select.input-field option {
   opacity: 0.92;
 }
 
+.customer-phone-duplicate-notice {
+  color: #fbbf24;
+}
+
 .inline-form-panel--customer .product-upload-field--compact .product-upload-field-head {
   width: 7.25rem;
 }
@@ -4315,8 +4339,12 @@ select.input-field option {
   min-width: 0;
 }
 
-.customer-device-product-specs {
+.customer-device-product-field,
+.customer-device-serial-field {
   grid-column: 1 / -1;
+}
+
+.customer-device-product-specs {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.75rem;
@@ -4339,65 +4367,8 @@ select.input-field option {
   align-self: start;
 }
 
-.customer-device-details {
+.customer-device-product-details {
   grid-column: 1 / -1;
-}
-
-.customer-device-details-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  gap: 0.5rem;
-  padding: 0.45rem 0.65rem;
-  border-radius: 8px;
-  border: 1px solid var(--border-glass);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s;
-}
-
-.customer-device-details-toggle:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.customer-device-details-toggle:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.customer-device-details-toggle-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.customer-device-details-toggle-summary {
-  font-size: 0.75rem;
-  font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.customer-device-details-chevron {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  transition: transform 0.2s;
-}
-
-.customer-device-details-chevron--open {
-  transform: rotate(180deg);
-}
-
-.customer-device-details-panel {
-  margin-top: 0.5rem;
 }
 
 .customer-device-spec-item {
@@ -4485,6 +4456,30 @@ select.input-field option {
 .data-table--customers-rc .customer-rc-col-serial {
   width: 2.75rem;
   text-align: center;
+}
+
+.data-table--customers-rc .customer-rc-col-editable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.data-table--customers-rc tr:hover .customer-rc-col-editable {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.data-table--customers-rc .customer-rc-col-editable:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.55);
+  outline-offset: -2px;
+}
+
+.customer-map-link-icon {
+  display: inline-flex;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.customer-map-link-icon:hover {
+  opacity: 0.85;
 }
 
 .data-table--customers-rc .customer-rc-col-actions {
@@ -4800,4 +4795,31 @@ select.input-field option {
   border: 1px solid var(--border-glass);
   background: rgba(18, 22, 32, 0.98);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.product-select-trigger {
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.product-select-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.product-select-label {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.35rem;
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-select-label--placeholder {
+  color: var(--text-muted);
 }

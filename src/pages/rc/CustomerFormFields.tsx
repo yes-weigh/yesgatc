@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Crosshair, MapPin, Plus, Trash2, X } from 'lucide-react';
 import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
-import { ProductPicker } from '../../components/ProductPicker';
+import { ProductSelect } from '../../components/ProductSelect';
 import { useAppContext } from '../../context/AppContext';
 import { UploadField } from '../admin/productFormUi';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
-import { isValidPincode, normalizePhone, normalizePincode } from '../../lib/contactFields';
+import { isValidPincode, isValidPhone, normalizePhone, normalizePincode } from '../../lib/contactFields';
 import type { CustomerDeviceFormValues, CustomerFormValues } from '../../lib/customerProfileFields';
 import { lookupPincode } from '../../lib/pincodeLookup';
 import type { Product } from '../../types';
@@ -52,12 +52,12 @@ const DeviceRow: React.FC<{
     <div className="customer-device-row">
       <div className="customer-device-row-body">
         <div className="customer-device-fields">
-          <div className="form-group mb-0">
+          <div className="form-group mb-0 customer-device-product-field">
             <label htmlFor={`device-product-${device.row.localId}`}>
               <span className="customer-device-index">Device {index + 1}</span>
               Product *
             </label>
-            <ProductPicker
+            <ProductSelect
               products={products}
               inputId={`device-product-${device.row.localId}`}
               value={{
@@ -74,7 +74,8 @@ const DeviceRow: React.FC<{
               required
             />
           </div>
-          <div className="form-group mb-0">
+          {selectedProduct && <ProductDetailsSpecs product={selectedProduct} />}
+          <div className="form-group mb-0 customer-device-serial-field">
             <label htmlFor={`device-serial-${device.row.localId}`}>Serial number *</label>
             <input
               id={`device-serial-${device.row.localId}`}
@@ -86,13 +87,6 @@ const DeviceRow: React.FC<{
               required
             />
           </div>
-          {selectedProduct && (
-            <ProductDetailsSpecs
-              product={selectedProduct}
-              collapsible
-              panelId={`device-details-${device.row.localId}`}
-            />
-          )}
         </div>
         <button
           type="button"
@@ -121,6 +115,7 @@ type CustomerFormFieldsProps = {
   onDeviceAdd: () => void;
   onDeviceRemove: (localId: string) => void;
   submitting: boolean;
+  existingCustomerWithPhone?: { name: string } | null;
 };
 
 export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
@@ -135,6 +130,7 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
   onDeviceAdd,
   onDeviceRemove,
   submitting,
+  existingCustomerWithPhone = null,
 }) => {
   const { products } = useAppContext();
   const shopPhotoRef = useRef<HTMLInputElement>(null);
@@ -268,19 +264,6 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
         <div className="customer-form-hero-fields">
           <div className="customer-form-grid customer-form-grid--identity">
             <div className="form-group mb-0">
-              <label htmlFor="customer-name">Name *</label>
-              <input
-                id="customer-name"
-                type="text"
-                className="input-field"
-                placeholder="Customer or business name"
-                value={values.name}
-                onChange={e => onChange({ name: e.target.value })}
-                required
-                autoFocus={mode === 'create'}
-              />
-            </div>
-            <div className="form-group mb-0">
               <label htmlFor="customer-phone">Mobile *</label>
               <input
                 id="customer-phone"
@@ -292,6 +275,27 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
                 onChange={e => onChange({ phone: normalizePhone(e.target.value) })}
                 required
                 maxLength={10}
+                autoFocus={mode === 'create'}
+              />
+              {mode === 'create' && isValidPhone(values.phone) && existingCustomerWithPhone && (
+                <p className="customer-phone-duplicate-notice text-sm m-0 mt-1" role="alert">
+                  A customer with this phone number already exists
+                  {existingCustomerWithPhone.name.trim()
+                    ? ` (${existingCustomerWithPhone.name.trim()}).`
+                    : '.'}
+                </p>
+              )}
+            </div>
+            <div className="form-group mb-0">
+              <label htmlFor="customer-name">Name *</label>
+              <input
+                id="customer-name"
+                type="text"
+                className="input-field"
+                placeholder="Customer or business name"
+                value={values.name}
+                onChange={e => onChange({ name: e.target.value })}
+                required
               />
             </div>
             <div className="form-group mb-0">
