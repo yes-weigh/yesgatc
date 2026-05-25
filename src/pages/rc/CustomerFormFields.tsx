@@ -258,6 +258,7 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
             submitting={submitting}
             variant="image"
             compact
+            iconActions
           />
         </div>
 

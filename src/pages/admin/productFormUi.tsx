@@ -160,6 +160,18 @@ export const UploadField: React.FC<{
                     </div>
                   )}
                   <div className="product-upload-avatar-actions">
+                    {file.url && !file.url.startsWith('blob:') && (
+                      <a
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="product-upload-icon-btn"
+                        aria-label="View photo"
+                        title="View"
+                      >
+                        <ExternalLink size={16} />
+                      </a>
+                    )}
                     <button
                       type="button"
                       className="product-upload-icon-btn"

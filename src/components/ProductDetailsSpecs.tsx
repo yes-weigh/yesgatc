@@ -70,7 +70,7 @@ export const ProductDetailsSpecs: React.FC<{
                 href={product.modelApprovalDocUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sm text-blue flex items-center gap-1"
+                className="customer-device-spec-doc-link text-sm text-blue"
               >
                 <ExternalLink size={14} aria-hidden />
                 View document

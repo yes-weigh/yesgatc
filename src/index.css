@@ -1849,6 +1849,7 @@ select.input-field option {
   color: var(--text-primary);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
+  text-decoration: none;
 }
 
 .product-upload-icon-btn:hover:not(:disabled) {
@@ -4087,6 +4088,7 @@ select.input-field option {
   min-height: auto;
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.14);
+  overflow: visible;
 }
 
 .customer-form-hero-shop .product-upload-field-head {
@@ -4120,14 +4122,29 @@ select.input-field option {
   width: 100%;
 }
 
-.customer-form-hero-shop .product-upload-preview--compact .product-upload-preview-img {
+.customer-form-hero-shop .product-upload-avatar-wrap {
+  width: 100%;
+}
+
+.customer-form-hero-shop .product-upload-preview--compact .product-upload-preview-img,
+.customer-form-hero-shop .product-upload-avatar-wrap .product-upload-preview-img,
+.customer-form-hero-shop .product-upload-preview--compact .product-upload-preview-icon,
+.customer-form-hero-shop .product-upload-avatar-wrap .product-upload-preview-icon {
   width: 100%;
   max-width: 100%;
   height: auto;
-  min-height: 0;
-  max-height: 8.5rem;
+  min-height: 7.5rem;
+  max-height: 10rem;
+  aspect-ratio: auto;
   border-radius: 10px;
   object-fit: cover;
+  flex-shrink: 0;
+}
+
+.customer-form-hero-shop .product-upload-avatar-actions {
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 0 0.15rem;
 }
 
 .customer-form-hero-fields {
@@ -4274,7 +4291,9 @@ select.input-field option {
   border: 1px solid var(--border-glass);
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.1);
-  overflow: visible;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .customer-device-row-body {
@@ -4380,6 +4399,8 @@ select.input-field option {
   gap: 0.55rem 0.75rem;
   align-items: center;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .customer-device-product-field,
@@ -4396,22 +4417,33 @@ select.input-field option {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-glass);
   font-size: 0.8125rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .customer-device-product-specs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 10rem), 1fr));
   gap: 0.65rem 1rem;
   align-content: start;
   min-width: 0;
+  max-width: 100%;
 }
 
 .customer-device-product-specs .customer-device-thumb {
   align-self: start;
+  min-width: 0;
+}
+
+.customer-device-product-specs > .customer-device-product-specs-grid {
+  min-width: 0;
 }
 
 .customer-device-product-details {
   grid-column: 1 / -1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .customer-device-spec-item {
@@ -4419,6 +4451,8 @@ select.input-field option {
   flex-direction: column;
   gap: 0.2rem;
   min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   padding: 0.3rem 0.35rem;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.03);
@@ -4440,14 +4474,29 @@ select.input-field option {
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.3;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 .customer-device-spec-value--mono {
+  word-break: break-all;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.8125rem;
   font-weight: 500;
   letter-spacing: 0.02em;
+}
+
+.customer-device-spec-doc-link {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .customer-table-shop-thumb {
@@ -4627,46 +4676,6 @@ select.input-field option {
     padding: 0.85rem 0.9rem;
   }
 
-  .customer-form-hero-shop .product-upload-field--compact {
-    flex-direction: row;
-    align-items: stretch;
-  }
-
-  .customer-form-hero-shop .product-upload-field-head {
-    width: 6.75rem;
-    flex-shrink: 0;
-    text-align: left;
-    padding: 0.65rem 0.75rem;
-    border-right: 1px solid var(--border-glass);
-    background: rgba(0, 0, 0, 0.15);
-    justify-content: center;
-  }
-
-  .customer-form-hero-shop .product-upload-field-body {
-    flex: 1;
-    min-width: 0;
-    padding: 0.5rem 0.65rem;
-    justify-content: center;
-  }
-
-  .customer-form-hero-shop .product-upload-preview--compact {
-    flex-direction: row;
-    align-items: center;
-    gap: 0.65rem;
-  }
-
-  .customer-form-hero-shop .product-upload-preview--compact .product-upload-preview-img {
-    width: 5.75rem;
-    height: 4.5rem;
-    max-height: none;
-    flex-shrink: 0;
-  }
-
-  .customer-form-hero-shop .product-upload-dropzone--compact {
-    min-height: 4.5rem;
-    height: 4.5rem;
-  }
-
   .customer-form-grid--identity {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4680,19 +4689,34 @@ select.input-field option {
     max-width: none;
   }
 
-  .inline-form-panel--customer .customer-form-hero-shop .product-upload-field--compact .product-upload-field-head {
-    width: 6.75rem;
-    border-right: 1px solid var(--border-glass);
+  .customer-device-product-specs {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
   }
 
-  .inline-form-panel--customer .customer-form-hero-shop .product-upload-preview--compact .product-upload-preview-img {
-    width: 5.75rem;
-    height: 4.5rem;
-    max-height: none;
+  .customer-device-product-specs .customer-device-thumb {
+    justify-self: center;
+  }
+
+  .customer-device-product-specs .customer-device-thumb-box {
+    width: 5.5rem;
+    height: 5.5rem;
+    max-width: 100%;
+  }
+
+  .customer-device-product-specs-grid {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+    width: 100%;
   }
 }
 
 @media (max-width: 768px) {
+  .customer-form-hero-shop {
+    width: 100%;
+    max-width: 100%;
+  }
+
   .customer-device-row-body {
     grid-template-columns: 1fr;
     position: relative;
@@ -4703,27 +4727,6 @@ select.input-field option {
     position: absolute;
     top: 0.55rem;
     right: 0.5rem;
-  }
-
-  .customer-device-product-specs {
-    grid-template-columns: 4.25rem minmax(0, 1fr);
-    gap: 0.5rem;
-    padding: 0.4rem 0.5rem;
-  }
-
-  .customer-device-product-specs .customer-device-thumb {
-    justify-self: stretch;
-  }
-
-  .customer-device-product-specs .customer-device-thumb-box {
-    width: 4.25rem;
-    height: 4.25rem;
-    max-width: none;
-  }
-
-  .customer-device-product-specs-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.4rem 0.55rem;
   }
 
   .customer-device-spec-label {
