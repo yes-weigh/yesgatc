@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { adminProductMeta } from '../../lib/productAccess';
-import { PackagePlus, Trash2, Pencil, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
+import { tableEditCellProps } from '../../lib/tableEditCell';
+import { PackagePlus, Trash2, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
 import { CalcLabel, DefaultsStrip, UploadField } from './productFormUi';
 import type { Product } from '../../types';
 import {
@@ -714,15 +715,20 @@ export const Products: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {products.map(p => (
+              {products.map(p => {
+                const openEdit = () => handleEditClick(p);
+                const editCell = tableEditCellProps(openEdit, 'Edit product');
+
+                return (
                 <tr key={p.id}>
-                  <td className="product-table-image-col">
+                  <td {...editCell} className="product-table-image-col table-col-editable">
                     {p.productImageUrl ? (
                       <a
                         href={p.productImageUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         title="View product image"
+                        onClick={e => e.stopPropagation()}
                       >
                         <img
                           src={p.productImageUrl}
@@ -736,22 +742,22 @@ export const Products: React.FC = () => {
                       </span>
                     )}
                   </td>
-                  <td className="font-medium text-mono">{p.modelid}</td>
-                  <td className="text-mono">{p.modelNo || '—'}</td>
-                  <td className="font-medium">{p.name}</td>
-                  <td>
+                  <td {...editCell} className="font-medium text-mono table-col-editable">{p.modelid}</td>
+                  <td {...editCell} className="text-mono table-col-editable">{p.modelNo || '—'}</td>
+                  <td {...editCell} className="font-medium table-col-editable">{p.name}</td>
+                  <td {...editCell} className="table-col-editable">
                     {p.maximumCapacity
                       ? `${p.maximumCapacity} ${p.unitOfMeasurement || 'kg'}`
                       : '—'}
                   </td>
-                  <td>
+                  <td {...editCell} className="table-col-editable">
                     {p.actualScaleInterval != null && Number.isFinite(p.actualScaleInterval)
                       ? `${p.actualScaleInterval} g`
                       : p.verificationScaleInterval
                         ? `${p.verificationScaleInterval} g`
                         : '—'}
                   </td>
-                  <td>
+                  <td {...editCell} className="table-col-editable">
                     {!p.modelApprovalNo && !p.modelApprovalDocUrl ? (
                       <span className="text-muted">—</span>
                     ) : (
@@ -763,6 +769,7 @@ export const Products: React.FC = () => {
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-sm text-blue flex items-center gap-1"
+                            onClick={e => e.stopPropagation()}
                           >
                             <ExternalLink size={14} /> View doc
                           </a>
@@ -773,23 +780,17 @@ export const Products: React.FC = () => {
                   <td className="text-right">
                     <button
                       type="button"
-                      className="btn-icon text-blue mr-2"
-                      onClick={() => handleEditClick(p)}
-                      title="Edit"
-                    >
-                      <Pencil size={18} />
-                    </button>
-                    <button
-                      type="button"
                       className="btn-icon text-red"
                       onClick={() => handleDeleteProduct(p)}
                       title="Delete"
+                      aria-label={`Delete ${p.name || p.modelid}`}
                     >
                       <Trash2 size={18} />
                     </button>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
               {products.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center py-6 text-muted">

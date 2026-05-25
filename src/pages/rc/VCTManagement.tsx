@@ -6,6 +6,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { tableEditCellProps } from '../../lib/tableEditCell';
 import {
   buildRcVctMemberDoc,
   fetchRcVctUsers,
@@ -576,10 +577,14 @@ export const VCTManagement: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {vcts.map((v, index) => (
+                  {vcts.map((v, index) => {
+                    const openEdit = () => startEdit(v);
+                    const editCell = tableEditCellProps(openEdit, 'Edit technician');
+
+                    return (
                     <tr key={v.uid}>
                       <td className="vct-rc-col-serial text-muted text-sm">{index + 1}</td>
-                      <td className="font-medium">
+                      <td {...editCell} className="font-medium table-col-editable">
                         <div className="flex items-center gap-2">
                           {v.profilePhotoUrl ? (
                             <img
@@ -595,9 +600,11 @@ export const VCTManagement: React.FC = () => {
                           <span>{v.username || '—'}</span>
                         </div>
                       </td>
-                      <td className="text-sm">{v.phone || '—'}</td>
-                      <td className="text-muted text-sm">{formatAadharDisplay(v.aadhar)}</td>
-                      <td>
+                      <td {...editCell} className="text-sm table-col-editable">{v.phone || '—'}</td>
+                      <td {...editCell} className="text-muted text-sm table-col-editable">
+                        {formatAadharDisplay(v.aadhar)}
+                      </td>
+                      <td {...editCell} className="table-col-editable">
                         <span
                           className={`status-badge ${
                             v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
@@ -606,7 +613,7 @@ export const VCTManagement: React.FC = () => {
                           {vctApprovalLabel(v.approvalStatus)}
                         </span>
                       </td>
-                      <td>
+                      <td {...editCell} className="table-col-editable">
                         <span className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
                           {v.workflowMode === 'auto' ? (
                             <>
@@ -619,7 +626,7 @@ export const VCTManagement: React.FC = () => {
                           )}
                         </span>
                       </td>
-                      <td>
+                      <td {...editCell}>
                         <div className="flex items-center gap-2">
                           <span className="text-mono text-sm">
                             {revealedUids.has(v.uid) ? (v.clearTextPassword ?? '—') : '••••••••'}
@@ -627,36 +634,34 @@ export const VCTManagement: React.FC = () => {
                           <button
                             type="button"
                             className="btn-icon"
-                            onClick={() => toggleReveal(v.uid)}
+                            onClick={e => {
+                              e.stopPropagation();
+                              toggleReveal(v.uid);
+                            }}
                             title={revealedUids.has(v.uid) ? 'Hide password' : 'Show password'}
+                            aria-label={revealedUids.has(v.uid) ? 'Hide password' : 'Show password'}
                           >
                             {revealedUids.has(v.uid) ? <EyeOff size={14} /> : <Eye size={14} />}
                           </button>
                         </div>
                       </td>
-                      <td className="text-muted text-xs-soft">
+                      <td {...editCell} className="text-muted text-xs-soft table-col-editable">
                         {v.createdAt ? new Date(v.createdAt).toLocaleDateString('en-IN') : '—'}
                       </td>
                       <td className="text-right vct-rc-col-actions">
                         <button
                           type="button"
-                          className="btn-icon text-blue mr-2"
-                          onClick={() => startEdit(v)}
-                          title="Edit"
-                        >
-                          <Pencil size={18} />
-                        </button>
-                        <button
-                          type="button"
                           className="btn-icon text-red"
                           onClick={() => handleDelete(v.uid, v.username || v.aadhar)}
                           title="Remove"
+                          aria-label={`Remove ${v.username || v.aadhar || 'technician'}`}
                         >
                           <Trash2 size={18} />
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  );
+                  })}
                   {vcts.length === 0 && (
                     <tr>
                       <td colSpan={9} className="text-center py-10 text-muted">

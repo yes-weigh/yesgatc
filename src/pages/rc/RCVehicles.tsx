@@ -6,6 +6,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { tableEditCellProps } from '../../lib/tableEditCell';
 import { uploadVehicleDocument, type VehicleDocKind } from '../../lib/vehicleDocumentUpload';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
@@ -523,10 +524,13 @@ export const RCVehicles: React.FC = () => {
                   <tbody>
                     {vehicles.map((v, index) => {
                       const status = earliestValidity(v);
+                      const openEdit = () => startEdit(v);
+                      const editCell = tableEditCellProps(openEdit, 'Edit vehicle');
+
                       return (
                         <tr key={v.id}>
                           <td className="vehicle-rc-col-serial text-muted text-sm">{index + 1}</td>
-                          <td className="font-medium">
+                          <td {...editCell} className="font-medium table-col-editable">
                             <div className="flex items-center gap-2">
                               {v.vehiclePhotoUrl ? (
                                 <img src={v.vehiclePhotoUrl} alt="" className="vct-table-avatar" />
@@ -540,13 +544,23 @@ export const RCVehicles: React.FC = () => {
                               </span>
                             </div>
                           </td>
-                          <td className="text-sm text-mono">{v.regNumber || '—'}</td>
-                          <td className="text-sm">{v.year || '—'}</td>
-                          <td className="text-sm">{formatValidityDate(v.rcValidity)}</td>
-                          <td className="text-sm">{formatValidityDate(v.insuranceValidity)}</td>
-                          <td className="text-sm">{formatValidityDate(v.pollutionValidity)}</td>
-                          <td className="text-sm">{formatValidityDate(v.f2WeightValidity)}</td>
-                          <td>
+                          <td {...editCell} className="text-sm text-mono table-col-editable">
+                            {v.regNumber || '—'}
+                          </td>
+                          <td {...editCell} className="text-sm table-col-editable">{v.year || '—'}</td>
+                          <td {...editCell} className="text-sm table-col-editable">
+                            {formatValidityDate(v.rcValidity)}
+                          </td>
+                          <td {...editCell} className="text-sm table-col-editable">
+                            {formatValidityDate(v.insuranceValidity)}
+                          </td>
+                          <td {...editCell} className="text-sm table-col-editable">
+                            {formatValidityDate(v.pollutionValidity)}
+                          </td>
+                          <td {...editCell} className="text-sm table-col-editable">
+                            {formatValidityDate(v.f2WeightValidity)}
+                          </td>
+                          <td {...editCell} className="table-col-editable">
                             <span
                               className={`status-badge ${
                                 v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
@@ -555,7 +569,7 @@ export const RCVehicles: React.FC = () => {
                               {vehicleApprovalLabel(v.approvalStatus)}
                             </span>
                           </td>
-                          <td>
+                          <td {...editCell} className="table-col-editable">
                             <span className={`status-badge ${VALIDITY_BADGE[status]}`}>
                               {status === 'ok' && 'Valid'}
                               {status === 'due' && 'Due soon'}
@@ -566,17 +580,10 @@ export const RCVehicles: React.FC = () => {
                           <td className="text-right vehicle-rc-col-actions">
                             <button
                               type="button"
-                              className="btn-icon text-blue mr-2"
-                              onClick={() => startEdit(v)}
-                              title="Edit"
-                            >
-                              <Pencil size={18} />
-                            </button>
-                            <button
-                              type="button"
                               className="btn-icon text-red"
                               onClick={() => handleDelete(v.id, v.regNumber || `${v.brand} ${v.model}`)}
                               title="Remove"
+                              aria-label={`Remove ${v.regNumber || `${v.brand} ${v.model}`.trim()}`}
                             >
                               <Trash2 size={18} />
                             </button>

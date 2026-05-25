@@ -18,7 +18,9 @@ const SpecItem: React.FC<{
 }> = ({ label, value, mono }) => (
   <div className="customer-device-spec-item">
     <span className="customer-device-spec-label">{label}</span>
-    <span className={mono ? 'text-mono' : undefined}>{value}</span>
+    <span className={`customer-device-spec-value${mono ? ' customer-device-spec-value--mono' : ''}`}>
+      {value}
+    </span>
   </div>
 );
 

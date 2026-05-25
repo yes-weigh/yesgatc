@@ -5,6 +5,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { tableEditCellProps } from '../../lib/tableEditCell';
 import {
   assertAadharAvailable,
   authErrorMessage,
@@ -600,21 +601,24 @@ export const RCList: React.FC = () => {
                   const company = rc.companyName || rc.username || '—';
                   const isActive = isRcActive(rc);
                   const certDue = formatRcCertDueDate(rc);
+                  const openEdit = () => startEdit(rc);
+                  const editCell = tableEditCellProps(openEdit, 'Edit regional center');
+
                   return (
                     <tr key={rc.uid}>
                       <td className="rc-col-serial text-muted text-sm">{index + 1}</td>
-                      <td className="rc-col-company font-medium">
+                      <td {...editCell} className="rc-col-company font-medium table-col-editable">
                         <span className="rc-cell-ellipsis" title={company}>
                           {company}
                         </span>
                       </td>
-                      <td className="rc-col-place text-sm">
+                      <td {...editCell} className="rc-col-place text-sm table-col-editable">
                         <span className="rc-cell-ellipsis" title={rc.place || undefined}>
                           {rc.place || '—'}
                         </span>
                       </td>
-                      <td className="rc-col-vcts">{rc.vctCount}</td>
-                      <td className="rc-col-jobs">
+                      <td {...editCell} className="rc-col-vcts table-col-editable">{rc.vctCount}</td>
+                      <td {...editCell} className="rc-col-jobs table-col-editable">
                         <span
                           className="rc-jobs-summary"
                           title={`${rc.completedJobs} completed of ${rc.totalJobs} jobs`}
@@ -625,10 +629,14 @@ export const RCList: React.FC = () => {
                           )}
                         </span>
                       </td>
-                      <td className="rc-col-due text-sm" title={certDue !== '—' ? certDue : undefined}>
+                      <td
+                        {...editCell}
+                        className="rc-col-due text-sm table-col-editable"
+                        title={certDue !== '—' ? certDue : undefined}
+                      >
                         {certDue}
                       </td>
-                      <td className="rc-col-status">
+                      <td {...editCell} className="rc-col-status table-col-editable">
                         <span
                           className={`rc-status-badge ${isActive ? 'rc-status-badge--active' : 'rc-status-badge--inactive'}`}
                           title={
@@ -643,17 +651,10 @@ export const RCList: React.FC = () => {
                       <td className="rc-col-actions text-right">
                         <button
                           type="button"
-                          className="btn-icon text-blue mr-2"
-                          onClick={() => startEdit(rc)}
-                          title="Edit"
-                        >
-                          <Pencil size={18} />
-                        </button>
-                        <button
-                          type="button"
                           className="btn-icon text-red"
                           onClick={() => handleDelete(rc.uid, rc.companyName || rc.username || '')}
                           title="Delete"
+                          aria-label={`Delete ${company}`}
                         >
                           <Trash2 size={18} />
                         </button>

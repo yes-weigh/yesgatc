@@ -8,6 +8,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import { normalizePhone, isValidPhone } from '../../lib/contactFields';
+import { tableEditCellProps } from '../../lib/tableEditCell';
 import {
   buildCustomerDevice,
   buildCustomerProfileFields,
@@ -518,24 +519,12 @@ export const RCCustomers: React.FC = () => {
                       const mapsUrl = customerMapsUrl(c);
                       const photo = shopPhotoUrl(c);
                       const openEdit = () => startEdit(c);
-                      const editCellProps = {
-                        className: 'customer-rc-col-editable',
-                        onClick: openEdit,
-                        onKeyDown: (e: React.KeyboardEvent) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            openEdit();
-                          }
-                        },
-                        tabIndex: 0,
-                        role: 'button' as const,
-                        title: 'Edit customer',
-                      };
+                      const editCell = tableEditCellProps(openEdit, 'Edit customer');
 
                       return (
                         <tr key={c.id}>
                           <td className="customer-rc-col-serial text-muted text-sm">{index + 1}</td>
-                          <td {...editCellProps} className="customer-rc-col-customer font-medium customer-rc-col-editable">
+                          <td {...editCell} className="customer-rc-col-customer font-medium table-col-editable">
                             <div className="flex items-center gap-2">
                               {photo ? (
                                 <img src={photo} alt="" className="customer-table-shop-thumb" />
@@ -547,20 +536,20 @@ export const RCCustomers: React.FC = () => {
                               <span>{c.name || '—'}</span>
                             </div>
                           </td>
-                          <td {...editCellProps} className="text-sm customer-rc-col-editable">
+                          <td {...editCell} className="text-sm table-col-editable">
                             {c.phone || '—'}
                           </td>
-                          <td {...editCellProps} className="text-sm customer-rc-col-editable">
+                          <td {...editCell} className="text-sm table-col-editable">
                             {customerDeviceCount(c)}
                           </td>
                           <td
-                            {...editCellProps}
-                            className="text-sm text-muted max-w-[14rem] truncate customer-rc-col-editable"
+                            {...editCell}
+                            className="text-sm text-muted max-w-[14rem] truncate table-col-editable"
                             title={c.address || 'Edit customer'}
                           >
                             {c.address || '—'}
                           </td>
-                          <td {...editCellProps} className="text-sm customer-rc-col-editable">
+                          <td {...editCell} className="text-sm table-col-editable">
                             {mapsUrl ? (
                               <span className="customer-map-link flex items-center gap-1">
                                 <MapPin size={13} aria-hidden />
