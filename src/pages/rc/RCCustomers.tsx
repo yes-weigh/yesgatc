@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, deleteField,
 } from 'firebase/firestore';
@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
+import { normalizePhone } from '../../lib/contactFields';
 import {
   buildCustomerDevice,
   buildCustomerProfileFields,
@@ -25,7 +26,7 @@ import {
   type CustomerFormValues,
 } from '../../lib/customerProfileFields';
 import {
-  UserRound, Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon, MapPin, ExternalLink,
+  UserRound, Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon, MapPin, ExternalLink, Search,
 } from 'lucide-react';
 import type { Customer, CustomerDevice } from '../../types';
 import {
@@ -58,6 +59,18 @@ export const RCCustomers: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
+  const [phoneSearch, setPhoneSearch] = useState('');
+
+  const normalizedPhoneSearch = normalizePhone(phoneSearch);
+  const phoneSearchComplete = normalizedPhoneSearch.length === 10;
+
+  const displayedCustomers = useMemo(() => {
+    if (!phoneSearchComplete) return customers;
+    return customers.filter(c => normalizePhone(c.phone) === normalizedPhoneSearch);
+  }, [customers, normalizedPhoneSearch, phoneSearchComplete]);
+
+  const showCreateWithPhone =
+    phoneSearchComplete && !loading && displayedCustomers.length === 0;
 
   const fetchCustomers = useCallback(async () => {
     if (!user?.uid) return;
@@ -274,6 +287,13 @@ export const RCCustomers: React.FC = () => {
     setShowAddForm(true);
   };
 
+  const handleStartAddWithPhone = (phone: string) => {
+    setEditingId(null);
+    resetForm();
+    setFormValues({ ...EMPTY_CUSTOMER_FORM, phone: normalizePhone(phone) });
+    setShowAddForm(true);
+  };
+
   const startEdit = (c: Customer) => {
     setShowAddForm(false);
     setEditingId(c.id);
@@ -381,8 +401,8 @@ export const RCCustomers: React.FC = () => {
 
       {!showForm && (
         <div className="panel glass panel--table mb-6">
-          <div className="panel-header justify-between">
-            <div>
+          <div className="panel-header customer-panel-header justify-between">
+            <div className="customer-panel-head-meta">
               <h2>
                 <UserRound className="inline-icon" /> Customers
               </h2>
@@ -395,19 +415,54 @@ export const RCCustomers: React.FC = () => {
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="customer-list-toolbar flex items-center gap-2">
+              <div className="search-wrap customer-phone-search">
+                <Search size={16} className="search-icon" aria-hidden />
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  className="search-input"
+                  placeholder="Search by phone"
+                  value={phoneSearch}
+                  onChange={e => setPhoneSearch(normalizePhone(e.target.value))}
+                  maxLength={10}
+                  aria-label="Search customers by phone number"
+                />
+              </div>
               <button
                 type="button"
-                className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
+                className="btn-icon customer-list-toolbar-btn customer-list-toolbar-btn--add"
                 onClick={handleStartAdd}
+                title="Add customer"
+                aria-label="Add customer"
               >
-                <Plus size={16} /> Add Customer
+                <Plus size={18} />
               </button>
-              <button className="btn-icon" onClick={fetchCustomers} title="Refresh" type="button">
+              <button
+                className="btn-icon customer-list-toolbar-btn"
+                onClick={fetchCustomers}
+                title="Refresh"
+                type="button"
+                aria-label="Refresh customers"
+              >
                 <RefreshCw size={18} />
               </button>
             </div>
           </div>
+          {showCreateWithPhone && (
+            <div className="customer-phone-search-actions">
+              <p className="text-muted text-sm m-0">
+                No customer found with phone {normalizedPhoneSearch}.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3"
+                onClick={() => handleStartAddWithPhone(normalizedPhoneSearch)}
+              >
+                Create customer with this phone number
+              </button>
+            </div>
+          )}
           <div className="panel-body p-0">
             {loading ? (
               <div className="flex justify-center py-16">
@@ -419,7 +474,7 @@ export const RCCustomers: React.FC = () => {
                   <thead>
                     <tr>
                       <th className="customer-rc-col-serial">#</th>
-                      <th>Customer</th>
+                      <th className="customer-rc-col-customer">Customer</th>
                       <th>Phone</th>
                       <th>Devices</th>
                       <th>Address</th>
@@ -428,13 +483,13 @@ export const RCCustomers: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {customers.map((c, index) => {
+                    {displayedCustomers.map((c, index) => {
                       const mapsUrl = customerMapsUrl(c);
                       const photo = shopPhotoUrl(c);
                       return (
                         <tr key={c.id}>
                           <td className="customer-rc-col-serial text-muted text-sm">{index + 1}</td>
-                          <td className="font-medium">
+                          <td className="customer-rc-col-customer font-medium">
                             <div className="flex items-center gap-2">
                               {photo ? (
                                 <img src={photo} alt="" className="customer-table-shop-thumb" />
@@ -489,10 +544,12 @@ export const RCCustomers: React.FC = () => {
                         </tr>
                       );
                     })}
-                    {customers.length === 0 && (
+                    {displayedCustomers.length === 0 && (
                       <tr>
                         <td colSpan={7} className="text-center py-10 text-muted">
-                          No customers yet. Click &quot;Add Customer&quot; to register one.
+                          {phoneSearchComplete
+                            ? `No customer found with phone ${normalizedPhoneSearch}.`
+                            : 'No customers yet. Use + to register one.'}
                         </td>
                       </tr>
                     )}
