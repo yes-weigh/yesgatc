@@ -129,7 +129,7 @@ export interface FirestoreUserDoc {
   approvalStatus?: VctApprovalStatus;
   approvedAt?: string;
   approvedByUid?: string;
-  /** RC can deactivate approved VCTs; omitted or true means active. */
+  /** RC can disable approved VCTs; omitted or true means enabled. */
   active?: boolean;
   deactivatedAt?: string;
   deactivatedByUid?: string;
@@ -189,10 +189,14 @@ export interface Vehicle {
   vehiclePhotoPath?: string;
   vehiclePhotoName?: string;
   vehiclePhotoContentType?: string;
-  /** RC-created vehicles start as pending until Super Admin approves. */
+  /** Legacy approval fields; new RC vehicles are active immediately without admin approval. */
   approvalStatus?: VehicleApprovalStatus;
   approvedAt?: string;
   approvedByUid?: string;
+  /** RC or Super Admin can deactivate; omitted or true means active. */
+  active?: boolean;
+  deactivatedAt?: string;
+  deactivatedByUid?: string;
   createdAt: string;
   createdByUid?: string;
 }

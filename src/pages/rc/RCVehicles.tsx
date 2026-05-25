@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where,
+  collection, getDocs, doc, setDoc, updateDoc, query, where, deleteField,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -23,9 +23,9 @@ import {
   type VehicleDocKey,
 } from '../../lib/vehicleProfileFields';
 import {
-  Truck, Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon,
+  Truck, RefreshCw, Pencil, X, Plus, Save, ImageIcon, UserX, UserCheck,
 } from 'lucide-react';
-import { vehicleApprovalLabel, isVehicleApproved } from '../../lib/vehicleApproval';
+import { isVehicleActive, vehicleActiveLabel } from '../../lib/vehicleApproval';
 import type { Vehicle } from '../../types';
 import {
   EMPTY_VEHICLE_DOC_STATE,
@@ -306,7 +306,7 @@ export const RCVehicles: React.FC = () => {
         rcId: user!.uid,
         createdAt: new Date().toISOString(),
         createdByUid: user?.uid,
-        approvalStatus: 'pending',
+        active: true,
         ...buildVehicleProfileFields(formValues),
         ...docFields,
         ...photoFields,
@@ -372,18 +372,28 @@ export const RCVehicles: React.FC = () => {
     setError('');
   };
 
-  const handleDelete = async (id: string, label: string) => {
-    const record = vehicles.find(v => v.id === id);
-    if (record && isVehicleApproved(record)) return;
-
+  const handleToggleActive = async (v: Vehicle) => {
+    const activating = !isVehicleActive(v);
+    const label = v.regNumber || `${v.brand} ${v.model}`.trim() || 'vehicle';
     const ok = await confirm({
-      title: 'Remove vehicle?',
-      message: `Remove vehicle "${label}" from your centre?`,
-      confirmLabel: 'Remove',
-      destructive: true,
+      title: activating ? 'Enable vehicle?' : 'Disable vehicle?',
+      message: activating
+        ? `Enable "${label}" for use again?`
+        : `Disable "${label}"? It will not be available for assignment while inactive.`,
+      confirmLabel: activating ? 'Enable' : 'Disable',
+      destructive: !activating,
     });
-    if (!ok) return;
-    await deleteDoc(doc(db, 'vehicles', id));
+    if (!ok || !user?.uid) return;
+
+    const updates: Record<string, unknown> = activating
+      ? { active: true, deactivatedAt: deleteField(), deactivatedByUid: deleteField() }
+      : {
+          active: false,
+          deactivatedAt: new Date().toISOString(),
+          deactivatedByUid: user.uid,
+        };
+
+    await updateDoc(doc(db, 'vehicles', v.id), updates);
     await fetchVehicles();
   };
 
@@ -415,7 +425,7 @@ export const RCVehicles: React.FC = () => {
                   )}
                 </h2>
                 <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
-                  {error || (showAddForm ? 'Super Admin approval required before this vehicle is active.' : '\u00a0')}
+                  {error || (showAddForm ? 'Vehicle is active immediately after registration.' : '\u00a0')}
                 </p>
               </div>
               <button
@@ -519,7 +529,7 @@ export const RCVehicles: React.FC = () => {
                       <th>Insurance</th>
                       <th>Pollution</th>
                       <th>F2 weight</th>
-                      <th>Approval</th>
+                      <th>Active</th>
                       <th>Docs</th>
                       <th className="text-right vehicle-rc-col-actions">Actions</th>
                     </tr>
@@ -529,7 +539,7 @@ export const RCVehicles: React.FC = () => {
                       const status = earliestValidity(v);
                       const openEdit = () => startEdit(v);
                       const editCell = tableEditCellProps(openEdit, 'Edit vehicle');
-                      const approved = isVehicleApproved(v);
+                      const active = isVehicleActive(v);
 
                       return (
                         <tr key={v.id}>
@@ -566,11 +576,9 @@ export const RCVehicles: React.FC = () => {
                           </td>
                           <td {...editCell} className="table-col-editable">
                             <span
-                              className={`status-badge ${
-                                v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
-                              }`}
+                              className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
                             >
-                              {vehicleApprovalLabel(v.approvalStatus)}
+                              {vehicleActiveLabel(v.active)}
                             </span>
                           </td>
                           <td {...editCell} className="table-col-editable">
@@ -582,17 +590,15 @@ export const RCVehicles: React.FC = () => {
                             </span>
                           </td>
                           <td className="text-right vehicle-rc-col-actions">
-                            {!approved && (
-                              <button
-                                type="button"
-                                className="btn-icon text-red"
-                                onClick={() => handleDelete(v.id, v.regNumber || `${v.brand} ${v.model}`)}
-                                title="Remove"
-                                aria-label={`Remove ${v.regNumber || `${v.brand} ${v.model}`.trim()}`}
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              className={`btn-icon ${active ? 'text-amber' : 'text-green'}`}
+                              onClick={() => handleToggleActive(v)}
+                              title={active ? 'Disable vehicle' : 'Enable vehicle'}
+                              aria-label={active ? `Disable ${v.regNumber || `${v.brand} ${v.model}`.trim()}` : `Enable ${v.regNumber || `${v.brand} ${v.model}`.trim()}`}
+                            >
+                              {active ? <UserX size={18} /> : <UserCheck size={18} />}
+                            </button>
                           </td>
                         </tr>
                       );

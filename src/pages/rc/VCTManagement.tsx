@@ -449,19 +449,19 @@ export const VCTManagement: React.FC = () => {
   const handleToggleActive = async (v: VCTRecord) => {
     if (!isVctApproved(v)) return;
 
-    const activating = !isVctActive(v);
+    const enabling = !isVctActive(v);
     const label = v.username || v.aadhar || 'technician';
     const ok = await confirm({
-      title: activating ? 'Activate technician?' : 'Deactivate technician?',
-      message: activating
-        ? `Allow "${label}" to sign in and receive jobs again?`
-        : `Deactivate "${label}"? They will not be able to sign in or be assigned new jobs.`,
-      confirmLabel: activating ? 'Activate' : 'Deactivate',
-      destructive: !activating,
+      title: enabling ? 'Enable technician?' : 'Disable technician?',
+      message: enabling
+        ? `Enable "${label}"? They will be able to sign in and receive jobs again.`
+        : `Disable "${label}"? They will not be able to sign in or be assigned new jobs.`,
+      confirmLabel: enabling ? 'Enable' : 'Disable',
+      destructive: !enabling,
     });
     if (!ok || !user?.uid) return;
 
-    const updates: Record<string, unknown> = activating
+    const updates: Record<string, unknown> = enabling
       ? { active: true, deactivatedAt: deleteField(), deactivatedByUid: deleteField() }
       : {
           active: false,
@@ -470,7 +470,7 @@ export const VCTManagement: React.FC = () => {
         };
 
     await updateDoc(doc(db, 'users', v.uid), updates);
-    await updateDoc(rcVctMemberRef(user.uid, v.uid), { active: activating });
+    await updateDoc(rcVctMemberRef(user.uid, v.uid), { active: enabling });
     await fetchVCTs();
   };
 
@@ -601,7 +601,7 @@ export const VCTManagement: React.FC = () => {
                     <th>Phone</th>
                     <th>Aadhar</th>
                     <th>Status</th>
-                    <th>Active</th>
+                    <th>Enabled</th>
                     <th>Job Mode</th>
                     <th>Password</th>
                     <th>Created</th>
@@ -699,8 +699,8 @@ export const VCTManagement: React.FC = () => {
                             type="button"
                             className={`btn-icon ${active ? 'text-amber' : 'text-green'}`}
                             onClick={() => handleToggleActive(v)}
-                            title={active ? 'Deactivate technician' : 'Activate technician'}
-                            aria-label={active ? `Deactivate ${v.username || v.aadhar}` : `Activate ${v.username || v.aadhar}`}
+                            title={active ? 'Disable technician' : 'Enable technician'}
+                            aria-label={active ? `Disable ${v.username || v.aadhar}` : `Enable ${v.username || v.aadhar}`}
                           >
                             {active ? <UserX size={18} /> : <UserCheck size={18} />}
                           </button>

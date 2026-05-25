@@ -1,15 +1,14 @@
 import type { Vehicle } from '../types';
 
-export const VEHICLE_PENDING_MESSAGE =
-  'This vehicle has been registered but is not yet approved. Please contact Super Admin.';
-
-/** Legacy vehicles without approvalStatus are treated as approved. */
-export function isVehicleApproved(vehicle: Pick<Vehicle, 'approvalStatus'>): boolean {
-  if (!vehicle.approvalStatus) return true;
-  return vehicle.approvalStatus === 'approved';
+/** Deactivated vehicles are hidden from operational use. */
+export function isVehicleActive(vehicle: Pick<Vehicle, 'active'>): boolean {
+  return vehicle.active !== false;
 }
 
-export function vehicleApprovalLabel(status: Vehicle['approvalStatus']): string {
-  if (!status || status === 'approved') return 'Approved';
-  return 'Pending approval';
+export function isVehicleOperational(vehicle: Pick<Vehicle, 'active'>): boolean {
+  return isVehicleActive(vehicle);
+}
+
+export function vehicleActiveLabel(active?: boolean): string {
+  return isVehicleActive({ active }) ? 'Active' : 'Inactive';
 }

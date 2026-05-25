@@ -4,7 +4,7 @@ export const VCT_PENDING_LOGIN_MESSAGE =
   'Your profile has been created but is not yet approved. Please contact your Regional Center or Super Admin.';
 
 export const VCT_INACTIVE_LOGIN_MESSAGE =
-  'Your technician account has been deactivated. Please contact your Regional Center.';
+  'Your technician account has been disabled. Please contact your Regional Center.';
 
 /** Legacy VCT profiles without approvalStatus are treated as approved. */
 export function isVctApproved(doc: Pick<FirestoreUserDoc, 'approvalStatus'>): boolean {
@@ -12,7 +12,7 @@ export function isVctApproved(doc: Pick<FirestoreUserDoc, 'approvalStatus'>): bo
   return doc.approvalStatus === 'approved';
 }
 
-/** Deactivated VCTs cannot sign in or receive new job assignments. */
+/** Disabled VCTs cannot sign in or receive new job assignments. */
 export function isVctActive(doc: Pick<FirestoreUserDoc, 'active'>): boolean {
   return doc.active !== false;
 }
@@ -29,5 +29,5 @@ export function vctApprovalLabel(status: FirestoreUserDoc['approvalStatus']): st
 }
 
 export function vctActiveLabel(active?: boolean): string {
-  return isVctActive({ active }) ? 'Active' : 'Inactive';
+  return isVctActive({ active }) ? 'Enabled' : 'Disabled';
 }

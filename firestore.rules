@@ -23,10 +23,6 @@ service cloud.firestore {
       return data.get('approvalStatus', 'approved');
     }
 
-    function vehicleApprovalStatus(data) {
-      return data.get('approvalStatus', 'approved');
-    }
-
     // ── users ─────────────────────────────────────────────────────
     match /users/{uid} {
 
@@ -132,9 +128,7 @@ service cloud.firestore {
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == request.auth.uid;
 
-      allow delete: if isRCAdmin()
-        && resource.data.rcId == request.auth.uid
-        && vehicleApprovalStatus(resource.data) == 'pending';
+      // RC cannot delete vehicles once registered; Super Admin may remove records.
     }
 
     // ── customers (RC-managed) ────────────────────────────────────

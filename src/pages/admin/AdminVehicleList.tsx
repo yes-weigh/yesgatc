@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import { vehicleApprovalLabel } from '../../lib/vehicleApproval';
+import { isVehicleActive, vehicleActiveLabel } from '../../lib/vehicleApproval';
 import {
   formatValidityDate,
   validityStatus,
@@ -13,7 +13,7 @@ import {
   VEHICLE_DOC_LABELS,
 } from '../../lib/vehicleProfileFields';
 import {
-  Truck, Building2, RefreshCw, Trash2, CheckCircle2, Eye, X, ExternalLink, ImageIcon,
+  Truck, Building2, RefreshCw, Trash2, Eye, X, ExternalLink, ImageIcon, UserX, UserCheck,
 } from 'lucide-react';
 import type { FirestoreUserDoc, Vehicle } from '../../types';
 
@@ -42,7 +42,7 @@ export const AdminVehicleList: React.FC = () => {
   const [vehicles, setVehicles] = useState<VehicleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState<VehicleRecord | null>(null);
-  const [approving, setApproving] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   const fetchVehicles = useCallback(async () => {
     setLoading(true);
@@ -68,13 +68,10 @@ export const AdminVehicleList: React.FC = () => {
       };
     });
 
-    rows.sort((a, b) => {
-      const aPending = a.approvalStatus === 'pending' ? 0 : 1;
-      const bPending = b.approvalStatus === 'pending' ? 0 : 1;
-      if (aPending !== bPending) return aPending - bPending;
-      return a.rcCenterName.localeCompare(b.rcCenterName)
-        || (b.createdAt || '').localeCompare(a.createdAt || '');
-    });
+    rows.sort((a, b) =>
+      a.rcCenterName.localeCompare(b.rcCenterName)
+        || (b.createdAt || '').localeCompare(a.createdAt || ''),
+    );
 
     setVehicles(rows);
     setLoading(false);
@@ -84,7 +81,7 @@ export const AdminVehicleList: React.FC = () => {
     Promise.resolve().then(() => fetchVehicles());
   }, [fetchVehicles]);
 
-  const pendingCount = vehicles.filter(v => v.approvalStatus === 'pending').length;
+  const inactiveCount = vehicles.filter(v => !isVehicleActive(v)).length;
 
   const handleDelete = async (id: string, label: string) => {
     const ok = await confirm({
@@ -104,20 +101,38 @@ export const AdminVehicleList: React.FC = () => {
     }
   };
 
-  const handleApprove = async (vehicle: VehicleRecord) => {
-    setApproving(true);
+  const handleToggleActive = async (vehicle: VehicleRecord) => {
+    const activating = !isVehicleActive(vehicle);
+    const label = vehicle.regNumber || `${vehicle.brand} ${vehicle.model}`.trim() || 'vehicle';
+    const ok = await confirm({
+      title: activating ? 'Enable vehicle?' : 'Disable vehicle?',
+      message: activating
+        ? `Enable "${label}" for use again?`
+        : `Disable "${label}"? It will not be available for assignment while inactive.`,
+      confirmLabel: activating ? 'Enable' : 'Disable',
+      destructive: !activating,
+    });
+    if (!ok || !user?.uid) return;
+
+    setToggling(true);
     try {
-      await updateDoc(doc(db, 'vehicles', vehicle.id), {
-        approvalStatus: 'approved',
-        approvedAt: new Date().toISOString(),
-        approvedByUid: user?.uid,
-      });
-      setReviewing(null);
+      const updates: Record<string, unknown> = activating
+        ? { active: true, deactivatedAt: deleteField(), deactivatedByUid: deleteField() }
+        : {
+            active: false,
+            deactivatedAt: new Date().toISOString(),
+            deactivatedByUid: user.uid,
+          };
+
+      await updateDoc(doc(db, 'vehicles', vehicle.id), updates);
+      if (reviewing?.id === vehicle.id) {
+        setReviewing(prev => (prev ? { ...prev, active: activating } : null));
+      }
       await fetchVehicles();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to approve vehicle.');
+      alert(err instanceof Error ? err.message : 'Failed to update vehicle status.');
     } finally {
-      setApproving(false);
+      setToggling(false);
     }
   };
 
@@ -151,10 +166,10 @@ export const AdminVehicleList: React.FC = () => {
           </div>
         </div>
         <div className="stat-card glass">
-          <div className="stat-icon text-orange"><CheckCircle2 /></div>
+          <div className="stat-icon text-orange"><UserX /></div>
           <div className="stat-content">
-            <h3>Pending approval</h3>
-            <p className="stat-value">{pendingCount}</p>
+            <h3>Inactive</h3>
+            <p className="stat-value">{inactiveCount}</p>
           </div>
         </div>
       </div>
@@ -165,7 +180,7 @@ export const AdminVehicleList: React.FC = () => {
             <div className="product-form-topbar">
               <div className="product-form-topbar-text">
                 <h2 id="vehicle-review-title">
-                  <Eye className="inline-icon" /> Review Vehicle
+                  <Eye className="inline-icon" /> Vehicle Details
                 </h2>
                 <p className="text-muted text-sm mb-0">
                   {reviewing.brand} {reviewing.model} · {reviewing.regNumber || '—'}
@@ -175,7 +190,7 @@ export const AdminVehicleList: React.FC = () => {
                 type="button"
                 className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
                 onClick={() => setReviewing(null)}
-                disabled={approving}
+                disabled={toggling}
               >
                 <X size={15} /> Close
               </button>
@@ -204,7 +219,7 @@ export const AdminVehicleList: React.FC = () => {
 
               <div className="vct-review-grid">
                 <div><span className="vct-review-label">Regional Center</span><p>{reviewing.rcCenterName}</p></div>
-                <div><span className="vct-review-label">Approval</span><p>{vehicleApprovalLabel(reviewing.approvalStatus)}</p></div>
+                <div><span className="vct-review-label">Status</span><p>{vehicleActiveLabel(reviewing.active)}</p></div>
                 <div><span className="vct-review-label">Year</span><p>{reviewing.year || '—'}</p></div>
                 <div><span className="vct-review-label">RC validity</span><p>{formatValidityDate(reviewing.rcValidity)}</p></div>
                 <div><span className="vct-review-label">Insurance</span><p>{formatValidityDate(reviewing.insuranceValidity)}</p></div>
@@ -222,24 +237,26 @@ export const AdminVehicleList: React.FC = () => {
               </div>
             </div>
 
-            {reviewing.approvalStatus === 'pending' && (
-              <div className="product-form-footer">
-                <button
-                  type="button"
-                  className="btn btn-primary flex items-center gap-2"
-                  onClick={() => handleApprove(reviewing)}
-                  disabled={approving}
-                >
-                  {approving ? (
-                    <span className="spinner-inline"></span>
-                  ) : (
-                    <>
-                      <CheckCircle2 size={18} /> Approve Vehicle
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
+            <div className="product-form-footer">
+              <button
+                type="button"
+                className={`btn flex items-center gap-2 ${isVehicleActive(reviewing) ? 'btn-secondary' : 'btn-primary'}`}
+                onClick={() => handleToggleActive(reviewing)}
+                disabled={toggling}
+              >
+                {toggling ? (
+                  <span className="spinner-inline"></span>
+                ) : isVehicleActive(reviewing) ? (
+                  <>
+                    <UserX size={18} /> Disable Vehicle
+                  </>
+                ) : (
+                  <>
+                    <UserCheck size={18} /> Enable Vehicle
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </InlineFormPanel>
       )}
@@ -252,7 +269,7 @@ export const AdminVehicleList: React.FC = () => {
                 <Truck className="inline-icon" /> Vehicles
               </h2>
               <p className="text-muted text-sm mt-1">
-                Review vehicles registered by regional centers and approve before use.
+                Vehicles registered by regional centers. Enable or disable as needed.
               </p>
             </div>
             <button className="btn-icon" onClick={fetchVehicles} title="Refresh" type="button">
@@ -278,7 +295,7 @@ export const AdminVehicleList: React.FC = () => {
                       <th>Insurance</th>
                       <th>Pollution</th>
                       <th>F2 weight</th>
-                      <th>Approval</th>
+                      <th>Active</th>
                       <th>Docs</th>
                       <th className="text-right vehicle-rc-col-actions">Actions</th>
                     </tr>
@@ -286,6 +303,8 @@ export const AdminVehicleList: React.FC = () => {
                   <tbody>
                     {vehicles.map((v, index) => {
                       const docStatus = earliestValidity(v);
+                      const active = isVehicleActive(v);
+
                       return (
                         <tr key={v.id}>
                           <td className="vehicle-rc-col-serial text-muted text-sm">{index + 1}</td>
@@ -314,11 +333,9 @@ export const AdminVehicleList: React.FC = () => {
                           <td className="text-sm">{formatValidityDate(v.f2WeightValidity)}</td>
                           <td>
                             <span
-                              className={`status-badge ${
-                                v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
-                              }`}
+                              className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
                             >
-                              {vehicleApprovalLabel(v.approvalStatus)}
+                              {vehicleActiveLabel(v.active)}
                             </span>
                           </td>
                           <td>
@@ -334,20 +351,18 @@ export const AdminVehicleList: React.FC = () => {
                               type="button"
                               className="btn-icon text-blue mr-2"
                               onClick={() => setReviewing(v)}
-                              title="Review vehicle"
+                              title="View vehicle"
                             >
                               <Eye size={18} />
                             </button>
-                            {v.approvalStatus === 'pending' && (
-                              <button
-                                type="button"
-                                className="btn-icon text-green mr-2"
-                                onClick={() => handleApprove(v)}
-                                title="Approve"
-                              >
-                                <CheckCircle2 size={18} />
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              className={`btn-icon mr-2 ${active ? 'text-amber' : 'text-green'}`}
+                              onClick={() => handleToggleActive(v)}
+                              title={active ? 'Disable vehicle' : 'Enable vehicle'}
+                            >
+                              {active ? <UserX size={18} /> : <UserCheck size={18} />}
+                            </button>
                             <button
                               type="button"
                               className="btn-icon text-red"
