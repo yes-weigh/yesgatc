@@ -61,3 +61,58 @@ export function formatProductScaleInterval(
   if (product.verificationScaleInterval) return `${product.verificationScaleInterval} g`;
   return '—';
 }
+
+function formatRoundedNumber(value: number): string {
+  const rounded = Math.round(value * 1e6) / 1e6;
+  return String(rounded);
+}
+
+export function formatProductGramValue(value: number | undefined | null): string {
+  if (value == null || !Number.isFinite(value) || value === 0) return '—';
+  return `${formatRoundedNumber(value)} g`;
+}
+
+export function formatProductVerificationInterval(
+  product: Pick<Product, 'verificationScaleInterval'>,
+): string {
+  return formatProductGramValue(product.verificationScaleInterval);
+}
+
+export function formatProductMinimumCapacity(product: Product): string {
+  if (product.minimumCapacity != null && Number.isFinite(product.minimumCapacity) && product.minimumCapacity > 0) {
+    return formatProductGramValue(product.minimumCapacity);
+  }
+  if (product.maximumCapacity && product.verificationScaleInterval) {
+    return formatProductGramValue(
+      computeProductDerived(product.maximumCapacity, product.verificationScaleInterval).minimumCapacity,
+    );
+  }
+  return '—';
+}
+
+export function formatProductVerificationIntervals(product: Product): string {
+  if (
+    product.noOfVerificationIntervals != null &&
+    Number.isFinite(product.noOfVerificationIntervals) &&
+    product.noOfVerificationIntervals > 0
+  ) {
+    return formatRoundedNumber(product.noOfVerificationIntervals);
+  }
+  if (product.maximumCapacity && product.verificationScaleInterval) {
+    return formatRoundedNumber(
+      computeProductDerived(product.maximumCapacity, product.verificationScaleInterval)
+        .noOfVerificationIntervals,
+    );
+  }
+  return '—';
+}
+
+export function formatProductMpe(value: number | undefined | null): string {
+  if (value == null || !Number.isFinite(value) || value === 0) return '—';
+  return formatRoundedNumber(value);
+}
+
+export function formatProductText(value: string | undefined | null): string {
+  const trimmed = value?.trim();
+  return trimmed || '—';
+}

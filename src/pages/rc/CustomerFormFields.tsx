@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Crosshair, MapPin, Package, Plus, Trash2, X } from 'lucide-react';
+import { Crosshair, MapPin, Plus, Trash2, X } from 'lucide-react';
+import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
 import { ProductPicker } from '../../components/ProductPicker';
 import { useAppContext } from '../../context/AppContext';
 import { UploadField } from '../admin/productFormUi';
@@ -7,10 +8,6 @@ import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import { isValidPincode, normalizePhone, normalizePincode } from '../../lib/contactFields';
 import type { CustomerDeviceFormValues, CustomerFormValues } from '../../lib/customerProfileFields';
 import { lookupPincode } from '../../lib/pincodeLookup';
-import {
-  formatProductMaximumCapacity,
-  formatProductScaleInterval,
-} from '../../lib/productCalculations';
 import type { Product } from '../../types';
 
 export type ImageUploadState = {
@@ -41,21 +38,6 @@ export type CustomerDeviceRowState = {
   row: CustomerDeviceFormValues;
 };
 
-const ProductImageThumb: React.FC<{ product: Product | null }> = ({ product }) => (
-  <div className="customer-device-thumb">
-    <div
-      className={`customer-device-thumb-box${product?.productImageUrl ? '' : ' customer-device-thumb-box--placeholder'}`}
-      title={product?.name || 'Select a product'}
-    >
-      {product?.productImageUrl ? (
-        <img src={product.productImageUrl} alt="" className="customer-device-thumb-img" />
-      ) : (
-        <Package size={22} className="text-muted" aria-hidden />
-      )}
-    </div>
-  </div>
-);
-
 const DeviceRow: React.FC<{
   index: number;
   device: CustomerDeviceRowState;
@@ -69,7 +51,6 @@ const DeviceRow: React.FC<{
   return (
     <div className="customer-device-row">
       <div className="customer-device-row-body">
-        <ProductImageThumb product={selectedProduct} />
         <div className="customer-device-fields">
           <div className="form-group mb-0">
             <label htmlFor={`device-product-${device.row.localId}`}>
@@ -106,22 +87,11 @@ const DeviceRow: React.FC<{
             />
           </div>
           {selectedProduct && (
-            <div className="customer-device-product-specs">
-              <div className="customer-device-spec-item">
-                <span className="customer-device-spec-label">Maximum capacity</span>
-                <span>{formatProductMaximumCapacity(selectedProduct)}</span>
-              </div>
-              <div className="customer-device-spec-item">
-                <span className="customer-device-spec-label">Scale interval (d)</span>
-                <span>{formatProductScaleInterval(selectedProduct)}</span>
-              </div>
-              {selectedProduct.modelNo && (
-                <div className="customer-device-spec-item">
-                  <span className="customer-device-spec-label">Model no.</span>
-                  <span className="text-mono">{selectedProduct.modelNo}</span>
-                </div>
-              )}
-            </div>
+            <ProductDetailsSpecs
+              product={selectedProduct}
+              collapsible
+              panelId={`device-details-${device.row.localId}`}
+            />
           )}
         </div>
         <button
@@ -462,14 +432,6 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
 
       <div className="product-form-flat-row customer-form-row-devices">
         <div className="customer-form-devices-head">
-          <button
-            type="button"
-            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
-            onClick={onDeviceAdd}
-            disabled={submitting}
-          >
-            <Plus size={14} /> Add device
-          </button>
           <div>
             <h3 className="customer-form-devices-title">Devices</h3>
             <p className="customer-form-devices-hint text-muted text-sm m-0">
@@ -497,6 +459,17 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
             ))}
           </div>
         )}
+
+        <div className="customer-form-devices-footer">
+          <button
+            type="button"
+            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
+            onClick={onDeviceAdd}
+            disabled={submitting}
+          >
+            <Plus size={14} /> Add device
+          </button>
+        </div>
       </div>
     </div>
   );

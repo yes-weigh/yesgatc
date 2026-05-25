@@ -4197,6 +4197,12 @@ select.input-field option {
   gap: 0.85rem;
 }
 
+.customer-form-devices-footer {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 0.15rem;
+}
+
 .customer-device-row {
   border: 1px solid var(--border-glass);
   border-radius: 10px;
@@ -4206,10 +4212,10 @@ select.input-field option {
 
 .customer-device-row-body {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.65rem 0.75rem;
   padding: 0.6rem 0.65rem;
-  align-items: center;
+  align-items: start;
 }
 
 .customer-device-thumb {
@@ -4297,7 +4303,7 @@ select.input-field option {
 }
 
 .customer-device-remove {
-  align-self: center;
+  align-self: start;
   flex-shrink: 0;
 }
 
@@ -4311,14 +4317,87 @@ select.input-field option {
 
 .customer-device-product-specs {
   grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem 1.5rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
   padding: 0.45rem 0.65rem;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-glass);
   font-size: 0.8125rem;
+}
+
+.customer-device-product-specs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.65rem 1rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.customer-device-product-specs .customer-device-thumb {
+  align-self: start;
+}
+
+.customer-device-details {
+  grid-column: 1 / -1;
+}
+
+.customer-device-details-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-glass);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.customer-device-details-toggle:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.customer-device-details-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.customer-device-details-toggle-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.customer-device-details-toggle-summary {
+  font-size: 0.75rem;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-device-details-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+}
+
+.customer-device-details-chevron--open {
+  transform: rotate(180deg);
+}
+
+.customer-device-details-panel {
+  margin-top: 0.5rem;
 }
 
 .customer-device-spec-item {
@@ -4334,6 +4413,7 @@ select.input-field option {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
+  word-break: break-word;
 }
 
 .customer-table-shop-thumb {
@@ -4449,17 +4529,44 @@ select.input-field option {
   }
 }
 
+@media (max-width: 768px) {
+  .customer-device-product-specs {
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
+  }
+
+  .customer-device-product-specs .customer-device-thumb {
+    justify-self: center;
+  }
+
+  .customer-device-product-specs-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 520px) {
   .customer-form-grid--identity {
     grid-template-columns: 1fr;
   }
 
   .customer-device-row-body {
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
   }
 
   .customer-device-fields {
     grid-template-columns: 1fr;
+  }
+
+  .customer-device-product-specs-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-device-thumb-box {
+    width: 100%;
+    max-width: 7.5rem;
+    height: auto;
+    aspect-ratio: 1;
   }
 }
 

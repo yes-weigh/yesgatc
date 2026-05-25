@@ -365,7 +365,7 @@ export const RCCustomers: React.FC = () => {
                     <span className="spinner-inline"></span>
                   ) : showAddForm ? (
                     <>
-                      <Plus size={16} /> Add Customer
+                      <Save size={18} /> Save
                     </>
                   ) : (
                     <>
