@@ -142,6 +142,22 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
     return prefillWeather(rc.pincode ?? '', rc.location);
   };
 
+  const applyCustomerSubject = () => {
+    if (lockCustomer) return;
+    lastSelfWeatherKeyRef.current = '';
+    onCustomerChange('', '', []);
+    onChange({
+      verificationSubject: 'customer',
+      customerId: '',
+      customerName: '',
+      devices: [],
+      ambientTemperature: '',
+      relativeHumidity: '',
+    });
+    setEditingCustomer(false);
+    setWeatherError('');
+  };
+
   const applySelfSubject = () => {
     if (!rcProfile || !rcUid || lockCustomer) return;
     const devices = withLaboratorySeal(buildInitialSelfDeviceRows(laboratorySealIdentification));
@@ -163,6 +179,7 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
       lastSelfWeatherKeyRef.current = '';
       return;
     }
+    if (values.verificationType === 'RV') return;
 
     const pincode = normalizePincode(rcProfile?.pincode ?? '');
     const hasPincode = isValidPincode(pincode);
@@ -193,36 +210,57 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
     rcProfile?.location?.lat,
     rcProfile?.location?.lng,
     rcUid,
+    values.verificationType,
   ]);
 
   const handleSubjectChange = (subject: VerificationSubject) => {
     if (lockCustomer || subject === values.verificationSubject) return;
     if (subject === 'self') {
+      if (values.verificationType === 'RV') return;
       lastSelfWeatherKeyRef.current = '';
       applySelfSubject();
       return;
     }
     lastSelfWeatherKeyRef.current = '';
-    onCustomerChange('', '', []);
-    onChange({
-      verificationSubject: 'customer',
-      customerId: '',
-      customerName: '',
-      devices: [],
-      ambientTemperature: '',
-      relativeHumidity: '',
-    });
-    setEditingCustomer(false);
-    setWeatherError('');
+    applyCustomerSubject();
   };
 
   useEffect(() => {
     if (readOnly || lockCustomer || values.verificationSubject !== 'self') return;
+    if (values.verificationType === 'RV') return;
     if (!rcProfile || !rcUid) return;
     if (values.customerId === rcUid && values.customerName.trim()) return;
     applySelfSubject();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sync self subject when RC profile loads
-  }, [readOnly, lockCustomer, values.verificationSubject, rcProfile, rcUid]);
+  }, [readOnly, lockCustomer, values.verificationSubject, values.verificationType, rcProfile, rcUid]);
+
+  const handleVerificationTypeChange = (verificationType: JobType) => {
+    if (locked || verificationType === values.verificationType) return;
+    if (verificationType === 'RV' && values.verificationSubject === 'self') {
+      lastSelfWeatherKeyRef.current = '';
+      onCustomerChange('', '', []);
+      onChange({
+        verificationType: 'RV',
+        verificationSubject: 'customer',
+        customerId: '',
+        customerName: '',
+        devices: [],
+        ambientTemperature: '',
+        relativeHumidity: '',
+      });
+      setEditingCustomer(false);
+      setWeatherError('');
+      return;
+    }
+    onChange({ verificationType });
+  };
+
+  useEffect(() => {
+    if (readOnly || lockCustomer || values.verificationType !== 'RV') return;
+    if (values.verificationSubject !== 'self') return;
+    applyCustomerSubject();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-verification is always customer-owned
+  }, [readOnly, lockCustomer, values.verificationType, values.verificationSubject]);
 
   const handleCustomerSelect = (next: { customerId: string; customerName: string }) => {
     if (lockCustomer) return;
@@ -275,7 +313,7 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
                   name="verificationType"
                   value={opt.value}
                   checked={values.verificationType === opt.value}
-                  onChange={() => onChange({ verificationType: opt.value })}
+                  onChange={() => handleVerificationTypeChange(opt.value)}
                   disabled={locked}
                   required
                 />
@@ -297,7 +335,7 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
                     value={opt.value}
                     checked={values.verificationSubject === opt.value}
                     onChange={() => handleSubjectChange(opt.value)}
-                    disabled={locked || lockCustomer}
+                    disabled={locked || lockCustomer || (opt.value === 'self' && values.verificationType === 'RV')}
                   />
                   <span>{opt.label}</span>
                 </label>
