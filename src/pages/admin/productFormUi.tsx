@@ -69,6 +69,8 @@ export const UploadField: React.FC<{
   uploadDisabled?: boolean;
   /** Thumbnail shown in empty dropzone (e.g. verification image guide). */
   placeholderSrc?: string;
+  /** Hide label row — use column headers or aria-label instead. */
+  hideLabel?: boolean;
 }> = ({
   label,
   hint,
@@ -89,6 +91,7 @@ export const UploadField: React.FC<{
   iconActions = false,
   uploadDisabled = false,
   placeholderSrc,
+  hideLabel = false,
 }) => {
   const useIconActions = avatar || iconActions;
   const showImagePreview = variant === 'image' || (file != null && !isPdfContentType(file.contentType));
@@ -99,12 +102,14 @@ export const UploadField: React.FC<{
 
   return (
   <div
-    className={`product-upload-field product-upload-field--${variant}${compact ? ' product-upload-field--compact' : ''}${avatar ? ' product-upload-field--avatar' : ''}${iconActions ? ' product-upload-field--icon-actions' : ''}`}
+    className={`product-upload-field product-upload-field--${variant}${compact ? ' product-upload-field--compact' : ''}${avatar ? ' product-upload-field--avatar' : ''}${iconActions ? ' product-upload-field--icon-actions' : ''}${hideLabel ? ' product-upload-field--no-label' : ''}`}
   >
-    <div className="product-upload-field-head">
-      <span className="product-upload-field-label">{label}</span>
-      <span className="product-upload-field-hint">{hint}</span>
-    </div>
+    {!hideLabel && (
+      <div className="product-upload-field-head">
+        <span className="product-upload-field-label">{label}</span>
+        <span className="product-upload-field-hint">{hint}</span>
+      </div>
+    )}
 
     <div className="product-upload-field-body">
       {disabledReason && !uploadDisabled ? (
@@ -132,7 +137,7 @@ export const UploadField: React.FC<{
               onClick={() => !uploadDisabled && inputRef.current?.click()}
               disabled={submitting || uploadDisabled}
               title={uploadDisabled ? disabledReason : useIconActions ? `${dropzoneUploadLabel} · ${dropzoneFormats}` : undefined}
-              aria-label={useIconActions ? `${dropzoneUploadLabel}. ${dropzoneFormats}` : undefined}
+              aria-label={useIconActions ? `${label}. ${dropzoneUploadLabel}. ${dropzoneFormats}` : undefined}
             >
               {placeholderSrc ? (
                 <img src={placeholderSrc} alt="" className="product-upload-placeholder-img" />

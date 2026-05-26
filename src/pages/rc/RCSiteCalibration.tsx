@@ -527,9 +527,9 @@ export const RCSiteCalibration: React.FC = () => {
     }
 
     const ok = await confirm({
-      title: 'Submit for certificate?',
+      title: 'Submit for certification?',
       message:
-        `Submit verification for ${record.customerName} · ${record.serialNumber || 'device'}?\n\nAfter submission you cannot edit this record. It will be queued for certificate generation on the server.`,
+        `Submit verification for ${record.customerName} · ${record.serialNumber || 'device'}?\n\nAfter submission you cannot edit this record. It will be queued for certification on the server.`,
       confirmLabel: 'Submit',
     });
     if (!ok) return;
@@ -556,11 +556,11 @@ export const RCSiteCalibration: React.FC = () => {
 
     if (showAddForm) {
       const ok = await confirm({
-        title: 'Save and submit for certificate?',
+        title: 'Save and submit for certification?',
         message:
           includedDeviceCount > 1
-            ? `Save and submit ${includedDeviceCount} verifications? They will be locked and queued for certificate generation.`
-            : 'Save and submit this verification? It will be locked and queued for certificate generation.',
+            ? `Save and submit ${includedDeviceCount} verifications? They will be locked and queued for certification.`
+            : 'Save and submit this verification? It will be locked and queued for certification.',
         confirmLabel: 'Save & submit',
       });
       if (!ok) return;
@@ -579,9 +579,9 @@ export const RCSiteCalibration: React.FC = () => {
     }
 
     const ok = await confirm({
-      title: 'Save and submit for certificate?',
+      title: 'Save and submit for certification?',
       message:
-        'Your latest changes will be saved, then this verification will be locked and queued for certificate generation.',
+        'Your latest changes will be saved, then this verification will be locked and queued for certification.',
       confirmLabel: 'Save & submit',
     });
     if (!ok) return;
@@ -812,7 +812,7 @@ export const RCSiteCalibration: React.FC = () => {
                   <>
                     <button
                       type="submit"
-                      className="btn btn-secondary flex items-center gap-2"
+                      className="btn verification-save-draft-btn flex items-center gap-2"
                       disabled={formBusy || Boolean(draftBlockReason)}
                       title={draftBlockReason ?? undefined}
                     >
@@ -846,8 +846,8 @@ export const RCSiteCalibration: React.FC = () => {
                             <>
                               <Send size={16} />{' '}
                               {showAddForm && includedDeviceCount > 1
-                                ? `Submit ${includedDeviceCount} for certificate`
-                                : 'Submit for certificate'}
+                                ? `Submit ${includedDeviceCount} for certification`
+                                : 'Submit for certification'}
                             </>
                           )}
                         </button>
@@ -1009,7 +1009,7 @@ export const RCSiteCalibration: React.FC = () => {
                                   className="btn-icon text-blue"
                                   onClick={() => void handleSubmitRecord(r)}
                                   disabled={submitting}
-                                  title="Submit for certificate"
+                                  title="Submit for certification"
                                   aria-label={`Submit verification for ${r.customerName}`}
                                 >
                                   <Send size={18} />

@@ -27,6 +27,7 @@ export const VERIFICATION_IMAGE_CONFIG: Record<
   VerificationImageKind,
   {
     label: string;
+    shortLabel: string;
     hint: string;
     placeholderSrc: string;
     storageFolder: string;
@@ -35,20 +36,23 @@ export const VERIFICATION_IMAGE_CONFIG: Record<
 > = {
   scale: {
     label: 'Scale image',
+    shortLabel: 'Scale',
     hint: 'Required for submit',
     placeholderSrc: '/verification/scaleimagelogo.png',
     storageFolder: 'scale-image',
     defaultName: 'Scale image',
   },
   stamping: {
-    label: 'Stamping image',
+    label: 'Stamping plate image',
+    shortLabel: 'Stamping plate',
     hint: 'Required for submit',
     placeholderSrc: '/verification/sealimagelogo.png',
     storageFolder: 'stamping-image',
-    defaultName: 'Stamping image',
+    defaultName: 'Stamping plate image',
   },
   standardWeight: {
     label: 'With standard weight image',
+    shortLabel: 'Std. weight',
     hint: 'Required for submit',
     placeholderSrc: '/verification/withweightlogo.png',
     storageFolder: 'standard-weight-image',

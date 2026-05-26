@@ -19,13 +19,24 @@ import {
 } from '../../lib/verificationDeviceImages';
 import type { Product } from '../../types';
 
+const VerificationImageColumnHead: React.FC<{ kind: VerificationImageKind }> = ({ kind }) => {
+  const config = VERIFICATION_IMAGE_CONFIG[kind];
+  return (
+    <div className="verification-image-col-head" title={config.label}>
+      <img src={config.placeholderSrc} alt="" className="verification-image-col-head-icon" />
+      <span className="verification-image-col-head-label">{config.shortLabel}</span>
+    </div>
+  );
+};
+
 const DeviceVerificationUpload: React.FC<{
   kind: VerificationImageKind;
   image: DeviceImageSlotState;
   disabled: boolean;
+  hideLabel?: boolean;
   onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemove: () => void;
-}> = ({ kind, image, disabled, onSelect, onRemove }) => {
+}> = ({ kind, image, disabled, hideLabel = false, onSelect, onRemove }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const config = VERIFICATION_IMAGE_CONFIG[kind];
   const slot = image ?? emptyDeviceImageSlot();
@@ -47,6 +58,7 @@ const DeviceVerificationUpload: React.FC<{
       variant="image"
       compact
       iconActions
+      hideLabel={hideLabel}
       placeholderSrc={config.placeholderSrc}
     />
   );
@@ -72,27 +84,6 @@ type VerificationDeviceFieldsProps = {
 function selectedProduct(products: Product[], row: VerificationDeviceRowValues): Product | null {
   return products.find(p => p.id === row.productId) ?? null;
 }
-
-const DeviceVerificationImages: React.FC<{
-  images: DeviceVerificationImagesState;
-  disabled: boolean;
-  onSelect: (kind: VerificationImageKind, e: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemove: (kind: VerificationImageKind) => void;
-  variant?: 'table' | 'card';
-}> = ({ images, disabled, onSelect, onRemove, variant = 'table' }) => (
-  <div className={`verification-device-images${variant === 'card' ? ' verification-device-images--card' : ''}`}>
-    {VERIFICATION_IMAGE_KINDS.map(kind => (
-      <DeviceVerificationUpload
-        key={kind}
-        kind={kind}
-        image={images[kind]}
-        disabled={disabled}
-        onSelect={e => onSelect(kind, e)}
-        onRemove={() => onRemove(kind)}
-      />
-    ))}
-  </div>
-);
 
 export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> = ({
   devices,
@@ -254,7 +245,11 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               <th>Serial</th>
               <th>MPE</th>
               <th>Seal ID</th>
-              <th>Images</th>
+              {VERIFICATION_IMAGE_KINDS.map(kind => (
+                <th key={kind} className="verification-devices-col-image">
+                  <VerificationImageColumnHead kind={kind} />
+                </th>
+              ))}
               <th className="verification-devices-col-actions" />
             </tr>
           </thead>
@@ -325,14 +320,18 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       title={readOnly ? 'Seal identification at submission' : 'Managed on Laboratory page'}
                     />
                   </td>
-                  <td className="verification-devices-col-images">
-                    <DeviceVerificationImages
-                      images={images}
-                      disabled={locked || !row.included}
-                      onSelect={(kind, e) => handleFileInput(row.localId, kind, e)}
-                      onRemove={kind => onDeviceImageRemove(row.localId, kind)}
-                    />
-                  </td>
+                  {VERIFICATION_IMAGE_KINDS.map(kind => (
+                    <td key={kind} className="verification-devices-col-image">
+                      <DeviceVerificationUpload
+                        kind={kind}
+                        image={images[kind]}
+                        disabled={locked || !row.included}
+                        hideLabel
+                        onSelect={e => handleFileInput(row.localId, kind, e)}
+                        onRemove={() => onDeviceImageRemove(row.localId, kind)}
+                      />
+                    </td>
+                  ))}
                   <td className="verification-devices-col-actions text-right">
                     {row.isNewDevice && !readOnly && (
                       <button
@@ -449,13 +448,22 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                 </div>
 
                 <div className="form-group mb-0 verification-device-card-upload">
-                  <DeviceVerificationImages
-                    images={images}
-                    disabled={locked || !row.included}
-                    onSelect={(kind, e) => handleFileInput(row.localId, kind, e)}
-                    onRemove={kind => onDeviceImageRemove(row.localId, kind)}
-                    variant="card"
-                  />
+                  <p className="form-group-label mb-2">Verification photos</p>
+                  <div className="verification-mobile-photo-list">
+                    {VERIFICATION_IMAGE_KINDS.map(kind => (
+                      <div key={kind} className="verification-mobile-photo-item">
+                        <VerificationImageColumnHead kind={kind} />
+                        <DeviceVerificationUpload
+                          kind={kind}
+                          image={images[kind]}
+                          disabled={locked || !row.included}
+                          hideLabel
+                          onSelect={e => handleFileInput(row.localId, kind, e)}
+                          onRemove={() => onDeviceImageRemove(row.localId, kind)}
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
