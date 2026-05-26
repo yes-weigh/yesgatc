@@ -38,6 +38,28 @@ function parseNumber(value: string | number | undefined): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+type VercelPincodeGeoResponse = {
+  data?: Array<{
+    latitude?: number;
+    longitude?: number;
+  }>;
+};
+
+async function fetchPincodeCoordinates(pincode: string): Promise<GeoCoords | null> {
+  try {
+    const res = await fetch(`https://postal-pincode-api.vercel.app/api/v1/pincode/${pincode}`);
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as VercelPincodeGeoResponse;
+    const row = data.data?.[0];
+    if (typeof row?.latitude !== 'number' || typeof row?.longitude !== 'number') return null;
+
+    return { lat: row.latitude, lng: row.longitude };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchWeatherWttrIn(pincode: string): Promise<WeatherLookupResult | null> {
   const res = await fetch(`https://wttr.in/${encodeURIComponent(pincode)}?format=j1`, {
     headers: { 'User-Agent': 'yesgatcin/1.0' },
@@ -85,12 +107,16 @@ export async function lookupWeatherByPincode(options: {
   location?: GeoCoords;
 }): Promise<WeatherLookupResult | null> {
   const pincode = normalizePincode(options.pincode);
-  if (!isValidPincode(pincode)) return null;
+  const hasPincode = isValidPincode(pincode);
 
-  if (options.location) {
-    const fromCoords = await fetchWeatherOpenMeteo(options.location);
+  const coords =
+    options.location ??
+    (hasPincode ? await fetchPincodeCoordinates(pincode) : null);
+  if (coords) {
+    const fromCoords = await fetchWeatherOpenMeteo(coords);
     if (fromCoords) return fromCoords;
   }
 
+  if (!hasPincode) return null;
   return fetchWeatherWttrIn(pincode);
 }

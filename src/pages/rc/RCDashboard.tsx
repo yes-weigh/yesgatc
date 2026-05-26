@@ -4,7 +4,6 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import {
-  Sparkles,
   UserPlus,
   ClipboardPlus,
   Users,
@@ -142,46 +141,10 @@ export const RCDashboard: React.FC = () => {
     await addCertificate({ jobId, issuedAt: new Date().toISOString() });
   };
 
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  }, []);
-
   const kpiLoading = loadingData || loadingVerifications;
 
   return (
     <div className="fade-in rc-dashboard">
-      <header className="rc-dashboard-hero glass">
-        <div className="rc-dashboard-hero__copy">
-          <p className="rc-dashboard-hero__eyebrow">
-            <Sparkles size={14} aria-hidden="true" />
-            RC Operations
-          </p>
-          <h1 className="rc-dashboard-hero__title">
-            {greeting}, {user?.username || 'Admin'}
-          </h1>
-          <p className="rc-dashboard-hero__subtitle">
-            Track leads, jobs, and verification progress from one place.
-          </p>
-        </div>
-        <div className="rc-dashboard-hero__stats">
-          <div className="rc-dashboard-hero__stat">
-            <span className="rc-dashboard-hero__stat-val">{metrics.assignedJobs}</span>
-            <span className="rc-dashboard-hero__stat-label">Active jobs</span>
-          </div>
-          <div className="rc-dashboard-hero__stat">
-            <span className="rc-dashboard-hero__stat-val">{metrics.draftVerifications}</span>
-            <span className="rc-dashboard-hero__stat-label">Draft verifications</span>
-          </div>
-          <div className="rc-dashboard-hero__stat">
-            <span className="rc-dashboard-hero__stat-val">{metrics.pendingReview.length}</span>
-            <span className="rc-dashboard-hero__stat-label">Awaiting approval</span>
-          </div>
-        </div>
-      </header>
-
       <section className="rc-kpi-grid" aria-label="Dashboard overview">
         <KpiCard
           to="/rc/customers"

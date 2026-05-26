@@ -1,11 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import React, { useState, useEffect, useRef } from 'react';
+import { doc, getDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
-import { isValidPhone, normalizePhone, requireValidEmail } from '../../lib/contactFields';
-import { Building2, CreditCard, MapPin, FileText, Save, Pencil, X, Mail, Phone, User, ExternalLink } from 'lucide-react';
-import { standardWeightsCertExpiryFromDate } from '../../lib/rcProfileFields';
+import { isValidPhone, isValidPincode, normalizePhone, normalizePincode, requireValidEmail } from '../../lib/contactFields';
+import { Building2, CreditCard, Crosshair, MapPin, FileText, Save, Pencil, X, Mail, Phone, User, ExternalLink } from 'lucide-react';
+import {
+  parseRcLocation,
+  rcMapsUrl,
+  rcProfileCoordsFromUser,
+  rcProfilePhotoFieldsFromMeta,
+  rcProfilePhotoFromUser,
+  formatRcLocation,
+  standardWeightsCertExpiryFromDate,
+} from '../../lib/rcProfileFields';
+import { uploadVctProfilePhoto } from '../../lib/vctDocumentUpload';
+import { UploadField } from '../admin/productFormUi';
+import {
+  EMPTY_IMAGE_UPLOAD_STATE,
+  type ImageUploadState,
+} from './CustomerFormFields';
 import type { FirestoreUserDoc } from '../../types';
 
 interface RCProfile extends FirestoreUserDoc {
@@ -16,6 +30,7 @@ interface RCProfile extends FirestoreUserDoc {
   gstNumber: string;
   email: string;
   phone: string;
+  pincode: string;
 }
 
 const Field: React.FC<{
@@ -66,13 +81,25 @@ export const RCProfile: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<Partial<RCProfile>>({});
   const [saved, setSaved] = useState(false);
+  const [profilePhoto, setProfilePhoto] = useState<ImageUploadState>({ ...EMPTY_IMAGE_UPLOAD_STATE });
+  const [pendingProfilePhoto, setPendingProfilePhoto] = useState<File | null>(null);
+  const [profilePhotoRemoved, setProfilePhotoRemoved] = useState(false);
+  const profilePhotoRef = useRef<HTMLInputElement>(null);
+  const [draftCoords, setDraftCoords] = useState({ latitude: '', longitude: '' });
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState('');
 
   useEffect(() => {
     if (!user?.uid) return;
     const load = async () => {
       const snap = await getDoc(doc(db, 'users', user.uid));
       if (snap.exists()) {
-        setProfile(snap.data() as FirestoreUserDoc);
+        const data = snap.data() as FirestoreUserDoc;
+        setProfile(data);
+        setProfilePhoto({
+          ...EMPTY_IMAGE_UPLOAD_STATE,
+          file: rcProfilePhotoFromUser(data),
+        });
       }
       setLoading(false);
     };
@@ -81,13 +108,102 @@ export const RCProfile: React.FC = () => {
 
   const startEdit = () => {
     setDraft({ ...profile });
+    setDraftCoords(rcProfileCoordsFromUser(profile as FirestoreUserDoc));
+    setLocationError('');
+    setPendingProfilePhoto(null);
+    setProfilePhotoRemoved(false);
+    setProfilePhoto({
+      ...EMPTY_IMAGE_UPLOAD_STATE,
+      file: rcProfilePhotoFromUser(profile as FirestoreUserDoc),
+    });
     setEditing(true);
     setSaved(false);
   };
 
   const cancelEdit = () => {
     setDraft({});
+    setDraftCoords(rcProfileCoordsFromUser(profile as FirestoreUserDoc));
+    setLocationError('');
+    setPendingProfilePhoto(null);
+    setProfilePhotoRemoved(false);
+    setProfilePhoto({
+      ...EMPTY_IMAGE_UPLOAD_STATE,
+      file: rcProfilePhotoFromUser(profile as FirestoreUserDoc),
+    });
     setEditing(false);
+  };
+
+  const handleProfilePhotoSelect = (file: File) => {
+    setPendingProfilePhoto(file);
+    setProfilePhotoRemoved(false);
+    setProfilePhoto({
+      file: {
+        url: URL.createObjectURL(file),
+        path: '',
+        name: file.name,
+        contentType: file.type,
+      },
+      uploading: false,
+      progress: 0,
+    });
+  };
+
+  const handleProfilePhotoRemove = () => {
+    setPendingProfilePhoto(null);
+    setProfilePhotoRemoved(true);
+    setProfilePhoto({ ...EMPTY_IMAGE_UPLOAD_STATE });
+  };
+
+  const uploadProfilePhoto = async (uid: string): Promise<Partial<FirestoreUserDoc>> => {
+    if (profilePhotoRemoved && !pendingProfilePhoto) {
+      return rcProfilePhotoFieldsFromMeta(null);
+    }
+    if (!pendingProfilePhoto) {
+      const existing = profilePhoto.file;
+      if (existing?.url && !existing.url.startsWith('blob:')) {
+        return rcProfilePhotoFieldsFromMeta(existing);
+      }
+      return {};
+    }
+    setProfilePhoto(prev => ({ ...prev, uploading: true, progress: 0 }));
+    try {
+      const meta = await uploadVctProfilePhoto(uid, pendingProfilePhoto, pct => {
+        setProfilePhoto(prev => ({ ...prev, progress: pct }));
+      });
+      setProfilePhoto({ file: meta, uploading: false, progress: 100 });
+      return rcProfilePhotoFieldsFromMeta(meta);
+    } catch (err) {
+      setProfilePhoto(prev => ({ ...prev, uploading: false, progress: 0 }));
+      throw err;
+    }
+  };
+
+  const handleDetectLocation = () => {
+    setLocationError('');
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported in this browser.');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setDraftCoords({
+          latitude: pos.coords.latitude.toFixed(6),
+          longitude: pos.coords.longitude.toFixed(6),
+        });
+        setLocating(false);
+      },
+      err => {
+        setLocating(false);
+        setLocationError(err.message || 'Could not detect location.');
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  };
+
+  const handleClearLocation = () => {
+    setLocationError('');
+    setDraftCoords({ latitude: '', longitude: '' });
   };
 
   const handleSave = async () => {
@@ -100,29 +216,57 @@ export const RCProfile: React.FC = () => {
       alert('Phone number must be exactly 10 digits.');
       return;
     }
+    const pincode = normalizePincode(draft.pincode ?? '');
+    if (pincode && !isValidPincode(pincode)) {
+      alert('Postal code must be exactly 6 digits.');
+      return;
+    }
 
     setSaving(true);
-    const updates: Partial<FirestoreUserDoc> = {
-      companyName: draft.companyName ?? '',
-      contactPerson: (draft.contactPerson ?? '').trim(),
-      place: (draft.place ?? '').trim(),
-      address: (draft.address ?? '').trim(),
-      gstNumber: draft.gstNumber ?? '',
-      username: draft.companyName ?? profile.username ?? '',
-      email: (draft.email ?? '').trim(),
-      phone: normalizePhone(draft.phone ?? ''),
-    };
-    await updateDoc(doc(db, 'users', user.uid), updates);
-    setProfile(prev => ({ ...prev, ...updates }));
-    setSaving(false);
-    setEditing(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    try {
+      const photoFields = await uploadProfilePhoto(user.uid);
+      const location = parseRcLocation(draftCoords);
+      const updates: Record<string, unknown> = {
+        companyName: draft.companyName ?? '',
+        contactPerson: (draft.contactPerson ?? '').trim(),
+        place: (draft.place ?? '').trim(),
+        address: (draft.address ?? '').trim(),
+        gstNumber: draft.gstNumber ?? '',
+        username: draft.companyName ?? profile.username ?? '',
+        email: (draft.email ?? '').trim(),
+        phone: normalizePhone(draft.phone ?? ''),
+        pincode,
+        ...photoFields,
+      };
+      if (location) {
+        updates.location = location;
+      } else {
+        updates.location = deleteField();
+      }
+      await updateDoc(doc(db, 'users', user.uid), updates);
+      setProfile(prev => ({
+        ...prev,
+        ...updates,
+        location: location ?? undefined,
+      } as Partial<RCProfile>));
+      setPendingProfilePhoto(null);
+      setProfilePhotoRemoved(false);
+      setEditing(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to save profile.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const p = editing ? draft : profile;
   const set = (key: keyof RCProfile) => (v: string) =>
     setDraft(prev => ({ ...prev, [key]: v }));
+  const displayPhoto = rcProfilePhotoFromUser(profile as FirestoreUserDoc);
+  const mapsUrl = rcMapsUrl(profile as FirestoreUserDoc);
+  const hasDraftLocation = Boolean(draftCoords.latitude.trim() && draftCoords.longitude.trim());
 
   if (loading) {
     return (
@@ -138,7 +282,11 @@ export const RCProfile: React.FC = () => {
         <div className="panel-header justify-between">
           <div className="flex items-center gap-3">
             <div className="rc-avatar">
-              <Building2 size={22} />
+              {displayPhoto?.url ? (
+                <img src={displayPhoto.url} alt="" className="rc-avatar-img" />
+              ) : (
+                <Building2 size={22} />
+              )}
             </div>
             <div>
               <h2 className="mb-xs">
@@ -167,6 +315,32 @@ export const RCProfile: React.FC = () => {
 
         <div className="panel-body">
           {saved && <div className="login-success mb-6">✅ Profile updated successfully.</div>}
+
+          {editing && (
+            <div className="rc-profile-photo-row mb-6">
+              <UploadField
+                label="Profile photo"
+                hint="Optional — shown on self verifications"
+                file={profilePhoto.file}
+                uploading={profilePhoto.uploading}
+                progress={profilePhoto.progress}
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                uploadLabel="Upload"
+                formats="Max 15 MB"
+                inputRef={profilePhotoRef}
+                onSelect={e => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (file) handleProfilePhotoSelect(file);
+                }}
+                onRemove={handleProfilePhotoRemove}
+                submitting={saving}
+                variant="image"
+                compact
+                avatar
+              />
+            </div>
+          )}
 
           <div className="profile-grid">
             <Field
@@ -229,6 +403,15 @@ export const RCProfile: React.FC = () => {
             />
             <Field
               icon={<MapPin size={16} />}
+              label="Postal code"
+              value={p.pincode ?? ''}
+              editing={editing}
+              inputType="text"
+              onChange={v => set('pincode')(normalizePincode(v))}
+              placeholder="6-digit PIN"
+            />
+            <Field
+              icon={<MapPin size={16} />}
               label="Full Address"
               value={p.address ?? ''}
               editing={editing}
@@ -236,6 +419,85 @@ export const RCProfile: React.FC = () => {
               placeholder="Street, city, state, PIN"
               multiline
             />
+          </div>
+
+          <div className="profile-grid mt-4">
+            <div className="profile-field col-span-all">
+              <div className="profile-field-label">
+                <span className="profile-icon"><MapPin size={16} /></span>
+                <span>GPS coordinates</span>
+                <span className="text-muted text-sm font-normal ml-1">Optional — used for weather on self verifications</span>
+              </div>
+              {editing ? (
+                <div className="customer-form-location-side mt-1">
+                  <div className="customer-form-location-controls">
+                    <button
+                      type="button"
+                      className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
+                      onClick={handleDetectLocation}
+                      disabled={saving || locating}
+                    >
+                      {locating ? <span className="spinner-inline"></span> : <Crosshair size={14} />}
+                      Use my location
+                    </button>
+                    {hasDraftLocation && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
+                        onClick={handleClearLocation}
+                        disabled={saving || locating}
+                        title="Clear location"
+                        aria-label="Clear location"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                    <div className="customer-form-location-coords">
+                      <input
+                        type="text"
+                        className="input-field input-field--coords"
+                        placeholder="Lat"
+                        value={draftCoords.latitude}
+                        readOnly
+                        tabIndex={-1}
+                        aria-label="Latitude"
+                      />
+                      <input
+                        type="text"
+                        className="input-field input-field--coords"
+                        placeholder="Lng"
+                        value={draftCoords.longitude}
+                        readOnly
+                        tabIndex={-1}
+                        aria-label="Longitude"
+                      />
+                    </div>
+                  </div>
+                  {locationError && (
+                    <p className="customer-form-location-error text-sm mt-2 mb-0" role="alert">
+                      {locationError}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-1">
+                  <p className="profile-value mb-0">
+                    {formatRcLocation(profile as FirestoreUserDoc)}
+                  </p>
+                  {mapsUrl && (
+                    <a
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary text-sm inline-flex items-center gap-1.5 mt-2"
+                    >
+                      <ExternalLink size={14} />
+                      Open in Maps
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="profile-grid mt-6 pt-6 border-t border-subtle">

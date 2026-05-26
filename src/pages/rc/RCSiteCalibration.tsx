@@ -10,6 +10,7 @@ import { tableEditCellProps } from '../../lib/tableEditCell';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
 import {
   buildNewSiteCalibrationRecord,
+  buildSelfVerificationSession,
   buildSiteCalibrationFromRow,
   createEmptyVerificationDeviceRow,
   EMPTY_VERIFICATION_SESSION,
@@ -73,17 +74,17 @@ export const RCSiteCalibration: React.FC = () => {
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
   const [laboratorySealId, setLaboratorySealId] = useState('');
+  const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
 
   const fetchLaboratorySeal = useCallback(async () => {
     if (!user?.uid) return;
     try {
       const snap = await getDoc(doc(db, 'users', user.uid));
-      setLaboratorySealId(
-        resolveLaboratorySealIdentification(
-          snap.exists() ? (snap.data() as FirestoreUserDoc) : null,
-        ),
-      );
+      const docData = snap.exists() ? (snap.data() as FirestoreUserDoc) : null;
+      setRcProfile(docData);
+      setLaboratorySealId(resolveLaboratorySealIdentification(docData));
     } catch {
+      setRcProfile(null);
       setLaboratorySealId(resolveLaboratorySealIdentification(null));
     }
   }, [user?.uid]);
@@ -344,6 +345,7 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const syncCustomerDevices = async (rows: VerificationDeviceRowValues[]) => {
+    if (sessionValues.verificationSubject === 'self') return;
     const customer = customers.find(c => c.id === sessionValues.customerId);
     if (!customer) return;
 
@@ -608,7 +610,16 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleStartAdd = () => {
     setEditingId(null);
-    resetForm();
+    setError('');
+    if (user?.uid && rcProfile) {
+      const session = buildSelfVerificationSession(rcProfile, user.uid, laboratorySealId);
+      setSessionValues(session);
+      setDeviceImages({
+        [session.devices[0]?.localId]: emptyDeviceVerificationImagesState(),
+      });
+    } else {
+      resetForm();
+    }
     setShowAddForm(true);
   };
 
@@ -779,6 +790,8 @@ export const RCSiteCalibration: React.FC = () => {
                   onDeviceImageSelect={handleDeviceImageSelect}
                   onDeviceImageRemove={handleDeviceImageRemove}
                   customers={customers}
+                  rcProfile={rcProfile}
+                  rcUid={user?.uid}
                   submitting={formBusy}
                   lockCustomer={isEditMode}
                   readOnly={isViewMode}
@@ -897,7 +910,7 @@ export const RCSiteCalibration: React.FC = () => {
                       <th>VCT</th>
                       <th>Type</th>
                       <th>Belongs to</th>
-                      <th>Cap/Acc</th>
+                      <th className="site-calibration-col-cap-acc">Cap/Acc</th>
                       <th>Serial number</th>
                       <th>Certificate no.</th>
                       <th>Status</th>
@@ -944,7 +957,9 @@ export const RCSiteCalibration: React.FC = () => {
                                   {r.verificationType}
                                 </span>
                               </span>
-                              <span>{formatVerificationCapAcc(r)} · {r.serialNumber || '—'}</span>
+                              <span className="site-calibration-cap-acc-inline">
+                                {formatVerificationCapAcc(r)} · {r.serialNumber || '—'}
+                              </span>
                               <span className="table-mobile-summary-meta">
                                 VCT {verificationVctLabel(r)} · {formatDate(r.createdAt)}
                               </span>
@@ -953,7 +968,7 @@ export const RCSiteCalibration: React.FC = () => {
                               </span>
                             </div>
                           </td>
-                          <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
+                          <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable site-calibration-col-cap-acc">
                             {formatVerificationCapAcc(r)}
                           </td>
                           <td {...detailCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">

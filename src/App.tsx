@@ -12,6 +12,7 @@ import { Products } from './pages/admin/Products';
 import { RCList } from './pages/admin/RCList';
 import { AdminVCTList } from './pages/admin/AdminVCTList';
 import { AdminVehicleList } from './pages/admin/AdminVehicleList';
+import { AdminVerificationList } from './pages/admin/AdminVerificationList';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
@@ -49,6 +50,7 @@ const App: React.FC = () => {
                 <Route path="technicians" element={<AdminVCTList />} />
                 <Route path="vct" element={<Navigate to="/admin/technicians" replace />} />
                 <Route path="vehicles" element={<AdminVehicleList />} />
+                <Route path="verifications" element={<AdminVerificationList />} />
                 <Route path="products" element={<Products />} />
                 <Route path="reports" element={<Reports />} />
               </Route>

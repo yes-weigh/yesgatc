@@ -27,6 +27,8 @@ export type SiteCalibrationFormValues = {
   sealIdentificationNumber: string;
 };
 
+export type VerificationSubject = 'self' | 'customer';
+
 export type VerificationDeviceRowValues = {
   localId: string;
   deviceId: string;
@@ -37,15 +39,18 @@ export type VerificationDeviceRowValues = {
   serialNumber: string;
   maximumPermissibleError: string;
   sealIdentificationNumber: string;
+  /** @deprecated session-level verificationLocation is used instead */
   verificationLocation: VerificationLocation | '';
 };
 
 export type VerificationSessionValues = {
   verificationType: JobType | '';
+  verificationSubject: VerificationSubject;
   customerId: string;
   customerName: string;
   ambientTemperature: string;
   relativeHumidity: string;
+  verificationLocation: VerificationLocation | '';
   devices: VerificationDeviceRowValues[];
 };
 
@@ -66,12 +71,48 @@ export const EMPTY_SITE_CALIBRATION_FORM: SiteCalibrationFormValues = {
 
 export const EMPTY_VERIFICATION_SESSION: VerificationSessionValues = {
   verificationType: 'OV',
+  verificationSubject: 'self',
   customerId: '',
   customerName: '',
   ambientTemperature: '',
   relativeHumidity: '',
+  verificationLocation: 'in_situ',
   devices: [],
 };
+
+export function inferVerificationSubject(
+  record: Pick<SiteCalibration, 'verificationSubject' | 'customerId' | 'rcId'>,
+): VerificationSubject {
+  if (record.verificationSubject === 'self' || record.verificationSubject === 'customer') {
+    return record.verificationSubject;
+  }
+  if (record.customerId && record.rcId && record.customerId === record.rcId) return 'self';
+  return 'customer';
+}
+
+export function buildInitialSelfDeviceRows(sealIdentification = ''): VerificationDeviceRowValues[] {
+  return [{
+    ...createEmptyVerificationDeviceRow(),
+    sealIdentificationNumber: sealIdentification,
+  }];
+}
+
+export function buildSelfVerificationSession(
+  rc: Pick<import('../types').FirestoreUserDoc, 'companyName' | 'username'>,
+  rcUid: string,
+  sealIdentification = '',
+): VerificationSessionValues {
+  return {
+    verificationType: 'OV',
+    verificationSubject: 'self',
+    customerId: rcUid,
+    customerName: rc.companyName?.trim() || rc.username?.trim() || '',
+    ambientTemperature: '',
+    relativeHumidity: '',
+    verificationLocation: 'in_situ',
+    devices: buildInitialSelfDeviceRows(sealIdentification),
+  };
+}
 
 export function emptyDeviceScaleImageState(): DeviceScaleImageState {
   return emptyDeviceVerificationImagesState().scale;
@@ -105,7 +146,7 @@ export function createEmptyVerificationDeviceRow(): VerificationDeviceRowValues 
     serialNumber: '',
     maximumPermissibleError: '',
     sealIdentificationNumber: '',
-    verificationLocation: 'in_situ',
+    verificationLocation: '',
   };
 }
 
@@ -136,7 +177,7 @@ export function deviceRowFromCustomerDevice(
     serialNumber: device.serialNumber,
     maximumPermissibleError: mpeStringFromProduct(product),
     sealIdentificationNumber: '',
-    verificationLocation: 'in_situ',
+    verificationLocation: '',
   };
 }
 
@@ -165,7 +206,6 @@ export function syncVerificationDevicesAfterCustomerUpdate(
       localId: existing.localId,
       included: existing.included,
       sealIdentificationNumber: existing.sealIdentificationNumber,
-      verificationLocation: existing.verificationLocation,
     };
   });
 
@@ -175,12 +215,15 @@ export function syncVerificationDevicesAfterCustomerUpdate(
 export function verificationSessionFromRecord(
   record: SiteCalibration,
 ): VerificationSessionValues {
+  const subject = inferVerificationSubject(record);
   return {
     verificationType: record.verificationType,
+    verificationSubject: subject,
     customerId: record.customerId || '',
     customerName: record.customerName || '',
     ambientTemperature: record.ambientTemperature || '',
     relativeHumidity: record.relativeHumidity || '',
+    verificationLocation: record.verificationLocation || 'in_situ',
     devices: [
       {
         localId: record.deviceId || record.id,
@@ -195,7 +238,7 @@ export function verificationSessionFromRecord(
             ? String(record.maximumPermissibleError)
             : '',
         sealIdentificationNumber: record.sealIdentificationNumber || '',
-        verificationLocation: record.verificationLocation || '',
+        verificationLocation: '',
       },
     ],
   };
@@ -240,7 +283,8 @@ export function buildSiteCalibrationFromRow(
     ambientTemperature: session.ambientTemperature.trim(),
     relativeHumidity: session.relativeHumidity.trim(),
     sealIdentificationNumber: row.sealIdentificationNumber.trim(),
-    verificationLocation: row.verificationLocation as VerificationLocation,
+    verificationLocation: session.verificationLocation as VerificationLocation,
+    verificationSubject: session.verificationSubject,
     ...productSnapshotFromProduct(options?.product),
   };
   if (row.deviceId.trim()) fields.deviceId = row.deviceId.trim();
@@ -269,8 +313,10 @@ export function buildSiteCalibrationFields(
       verificationType: values.verificationType,
       customerId: values.customerId,
       customerName: values.customerName,
+      verificationSubject: 'customer',
       ambientTemperature: values.ambientTemperature,
       relativeHumidity: values.relativeHumidity,
+      verificationLocation: 'in_situ',
       devices: [],
     },
     {
@@ -283,7 +329,7 @@ export function buildSiteCalibrationFields(
       serialNumber: values.serialNumber,
       maximumPermissibleError: values.maximumPermissibleError,
       sealIdentificationNumber: values.sealIdentificationNumber,
-      verificationLocation: 'in_situ',
+      verificationLocation: '',
     },
   );
 }
@@ -292,7 +338,16 @@ function validateSessionHeader(session: VerificationSessionValues): string | nul
   if (session.verificationType !== 'OV' && session.verificationType !== 'RV') {
     return 'Select Original Verification or Re-verification.';
   }
-  if (!session.customerId.trim()) return 'Select a customer.';
+  if (session.verificationSubject === 'customer' && !session.customerId.trim()) {
+    return 'Select a customer.';
+  }
+  if (session.verificationSubject === 'self' && !session.customerName.trim()) {
+    return 'RC centre details are required for self verification.';
+  }
+
+  if (session.verificationLocation !== 'in_situ' && session.verificationLocation !== 'in_premises') {
+    return 'Select In situ or In the premises.';
+  }
 
   if (!session.ambientTemperature.trim()) return 'Ambient temperature is required.';
   if (!session.relativeHumidity.trim()) return 'Relative humidity is required.';
@@ -332,7 +387,12 @@ export function validateVerificationDraft(
   if (session.verificationType !== 'OV' && session.verificationType !== 'RV') {
     return 'Select Original Verification or Re-verification.';
   }
-  if (!session.customerId.trim()) return 'Select a customer.';
+  if (session.verificationSubject === 'customer' && !session.customerId.trim()) {
+    return 'Select a customer.';
+  }
+  if (session.verificationSubject === 'self' && !session.customerName.trim()) {
+    return 'RC centre details are required for self verification.';
+  }
 
   const included = session.devices.filter(row => row.included);
   if (included.length === 0) return 'Select at least one device.';
@@ -367,10 +427,6 @@ export function validateVerificationDeviceRow(
   }
 
   if (!row.sealIdentificationNumber.trim()) return `${label}: seal identification number is required.`;
-
-  if (row.verificationLocation !== 'in_situ' && row.verificationLocation !== 'in_premises') {
-    return `${label}: select In situ or In the premises.`;
-  }
 
   return validateDeviceVerificationImages(images, label);
 }

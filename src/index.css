@@ -3709,6 +3709,17 @@ select.input-field option {
   justify-content: center;
   color: #93c5fd;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.rc-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rc-profile-photo-row {
+  max-width: 12rem;
 }
 
 .profile-grid {
@@ -5236,6 +5247,23 @@ select.input-field option {
   max-width: 100%;
 }
 
+.verification-env-section {
+  padding-top: 0.25rem;
+}
+
+.verification-env-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .verification-env-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .status-badge.site-calibration-type-ov {
   background: rgba(59, 130, 246, 0.12);
   color: #93c5fd;
@@ -5311,6 +5339,20 @@ select.input-field option {
 
 .data-table--site-calibration .site-calibration-col-actions {
   width: 7.5rem;
+}
+
+.data-table--site-calibration .site-calibration-col-cap-acc {
+  white-space: nowrap;
+  min-width: 7.25rem;
+  width: 1%;
+}
+
+.data-table--site-calibration th.site-calibration-col-cap-acc {
+  white-space: nowrap;
+}
+
+.site-calibration-cap-acc-inline {
+  white-space: nowrap;
 }
 
 .site-calibration-scale-image-field .product-upload-field--compact {
@@ -6391,28 +6433,130 @@ select.input-field option {
 
 /* ── RC Laboratory ────────────────────────────────────────────── */
 .rc-laboratory-panel {
-  max-width: 42rem;
+  max-width: 52rem;
 }
 
 .rc-laboratory-form {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
 }
 
-.rc-laboratory-intro {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem 1.1rem;
-  border-radius: 14px;
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  background: rgba(59, 130, 246, 0.08);
+.rc-laboratory-sheet {
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.12);
 }
 
-.rc-laboratory-actions {
+.rc-laboratory-sheet-head,
+.rc-laboratory-field-row {
+  display: grid;
+  grid-template-columns: 6.5rem 11rem minmax(0, 1fr);
+  gap: 0.5rem 0.85rem;
+  align-items: center;
+  padding: 0.35rem 0.65rem;
+}
+
+.rc-laboratory-sheet-head {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.22);
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.rc-laboratory-field-row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  min-height: 2rem;
+}
+
+.rc-laboratory-field-row:last-child {
+  border-bottom: none;
+}
+
+.rc-laboratory-field-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.rc-laboratory-field-input {
+  width: 100%;
+  max-width: 11rem;
+  min-height: 1.75rem;
+  padding: 0.22rem 0.45rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  border-radius: 6px;
+}
+
+.rc-laboratory-field-hint {
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.rc-laboratory-sheet-head-note {
+  opacity: 0.85;
+}
+
+@media (max-width: 640px) {
+  .rc-laboratory-sheet-head {
+    display: none;
+  }
+
+  .rc-laboratory-field-row {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .rc-laboratory-field-input {
+    max-width: 100%;
+  }
+}
+
+.admin-verification-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.65rem;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.admin-verification-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.admin-verification-filter:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.admin-verification-filter--active {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+}
+
+.admin-verification-filter .badge-count {
+  min-width: 1.25rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.68rem;
 }
 

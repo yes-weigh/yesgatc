@@ -1,6 +1,40 @@
-import type { FirestoreUserDoc } from '../types';
+import type { CustomerLocation, FirestoreUserDoc } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
 import { resolveLaboratorySealIdentification } from './rcLaboratoryFields';
+export {
+  vctProfilePhotoFromUser as rcProfilePhotoFromUser,
+  vctProfilePhotoFieldsFromMeta as rcProfilePhotoFieldsFromMeta,
+} from './vctProfileFields';
+
+export function parseRcLocation(input: {
+  latitude?: string;
+  longitude?: string;
+}): CustomerLocation | undefined {
+  const latStr = input.latitude?.trim() ?? '';
+  const lngStr = input.longitude?.trim() ?? '';
+  if (!latStr || !lngStr) return undefined;
+  const lat = Number(latStr);
+  const lng = Number(lngStr);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+  return { lat, lng };
+}
+
+export function rcProfileCoordsFromUser(doc: FirestoreUserDoc): { latitude: string; longitude: string } {
+  return {
+    latitude: doc.location?.lat != null ? String(doc.location.lat) : '',
+    longitude: doc.location?.lng != null ? String(doc.location.lng) : '',
+  };
+}
+
+export function formatRcLocation(doc: FirestoreUserDoc): string {
+  if (!doc.location) return '—';
+  return `${doc.location.lat.toFixed(5)}, ${doc.location.lng.toFixed(5)}`;
+}
+
+export function rcMapsUrl(doc: FirestoreUserDoc): string | null {
+  if (!doc.location) return null;
+  return `https://www.google.com/maps?q=${doc.location.lat},${doc.location.lng}`;
+}
 
 /** Certificate date + 1 year (YYYY-MM-DD). */
 export function standardWeightsCertExpiryFromDate(certDate: string): string {

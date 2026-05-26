@@ -65,6 +65,12 @@ export function canDeleteVerification(record: Pick<SiteCalibration, 'status'>): 
   return normalizeVerificationStatus(record) === 'draft';
 }
 
+/** Super Admin — interim until certificate server owns the submitted queue. */
+export function canAdminDeleteVerification(record: Pick<SiteCalibration, 'status'>): boolean {
+  const status = normalizeVerificationStatus(record);
+  return status === 'submitted' || status === 'approved';
+}
+
 export function verificationStatusLabel(status: VerificationRequestStatus): string {
   if (status === 'draft') return 'Draft';
   if (status === 'submitted') return 'Submitted';

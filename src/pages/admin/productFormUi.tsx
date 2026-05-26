@@ -1,6 +1,11 @@
 import React from 'react';
 import { ExternalLink, FileText, Info, RefreshCw, Upload, X } from 'lucide-react';
 import { isPdfContentType, type ProductFileMeta } from '../../lib/productApprovalUpload';
+import {
+  fileInputAcceptForCapture,
+  getImageCaptureAttribute,
+  mobileCameraUploadLabel,
+} from '../../lib/imageCapture';
 
 export const FormSection: React.FC<{
   step: number;
@@ -87,6 +92,10 @@ export const UploadField: React.FC<{
 }) => {
   const useIconActions = avatar || iconActions;
   const showImagePreview = variant === 'image' || (file != null && !isPdfContentType(file.contentType));
+  const capture = getImageCaptureAttribute(accept, { avatar });
+  const fileAccept = fileInputAcceptForCapture(accept, capture);
+  const dropzoneUploadLabel = mobileCameraUploadLabel(uploadLabel, capture);
+  const dropzoneFormats = capture ? 'Camera or gallery' : formats;
 
   return (
   <div
@@ -108,7 +117,8 @@ export const UploadField: React.FC<{
           <input
             ref={inputRef}
             type="file"
-            accept={accept}
+            accept={fileAccept}
+            capture={capture}
             className="sr-only"
             onChange={onSelect}
             disabled={uploading || submitting}
@@ -121,8 +131,8 @@ export const UploadField: React.FC<{
               onMouseDown={e => uploadDisabled && e.preventDefault()}
               onClick={() => !uploadDisabled && inputRef.current?.click()}
               disabled={submitting || uploadDisabled}
-              title={uploadDisabled ? disabledReason : useIconActions ? `${uploadLabel} · ${formats}` : undefined}
-              aria-label={useIconActions ? `${uploadLabel}. ${formats}` : undefined}
+              title={uploadDisabled ? disabledReason : useIconActions ? `${dropzoneUploadLabel} · ${dropzoneFormats}` : undefined}
+              aria-label={useIconActions ? `${dropzoneUploadLabel}. ${dropzoneFormats}` : undefined}
             >
               {placeholderSrc ? (
                 <img src={placeholderSrc} alt="" className="product-upload-placeholder-img" />
@@ -131,8 +141,8 @@ export const UploadField: React.FC<{
               )}
               {!useIconActions && (
                 <span className="product-upload-dropzone-text">
-                  <span className="product-upload-dropzone-title">{uploadLabel}</span>
-                  <span className="product-upload-dropzone-meta">{formats}</span>
+                  <span className="product-upload-dropzone-title">{dropzoneUploadLabel}</span>
+                  <span className="product-upload-dropzone-meta">{dropzoneFormats}</span>
                 </span>
               )}
             </button>

@@ -120,6 +120,7 @@ export interface FirestoreUserDoc {
   workflowMode?: WorkflowMode; // VCT only — set by RC Admin (auto | manual)
 
   // VCT profile — managed by RC Admin (address & phone shared with RC contact fields above)
+  /** Postal code — VCT address; RC centre PIN for self-verification weather prefill. */
   pincode?: string;
   policeStation?: string;
   secondaryContactName?: string;
@@ -163,6 +164,8 @@ export interface FirestoreUserDoc {
   companyName?: string;
   contactPerson?: string;
   place?: string;
+  /** RC centre GPS — used for weather prefill on self verifications. */
+  location?: CustomerLocation;
   gstNumber?: string;
   standardWeightsCertUrl?: string;
   standardWeightsCertPath?: string;
@@ -287,8 +290,10 @@ export interface SiteCalibration {
   ambientTemperature: string;
   relativeHumidity: string;
   sealIdentificationNumber: string;
-  /** In situ vs in the premises — per device. */
+  /** In situ vs in the premises — once per verification session. */
   verificationLocation?: VerificationLocation;
+  /** Self (RC centre) vs customer verification. */
+  verificationSubject?: 'self' | 'customer';
   /** Request workflow — omitted on legacy records (treated as draft). */
   status?: VerificationRequestStatus;
   submittedAt?: string;

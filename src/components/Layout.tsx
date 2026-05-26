@@ -70,6 +70,7 @@ export const Layout: React.FC = () => {
             pageTitle: 'Verification and Calibration Technician',
           },
           { path: '/admin/vehicles', icon: <Truck size={20} />, label: 'Vehicle' },
+          { path: '/admin/verifications', icon: <ShieldCheck size={20} />, label: 'Verification' },
           { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
         ];

@@ -1,12 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { Scale, Save, ShieldCheck } from 'lucide-react';
+import { Scale, Save } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import {
-  DEFAULT_LABORATORY_SEAL_IDENTIFICATION,
-  resolveLaboratorySealIdentification,
+  buildLaboratorySettingsPatch,
+  EMPTY_LABORATORY_SETTINGS,
+  LABORATORY_FIELDS,
+  laboratorySettingsFromUser,
+  validateLaboratorySettings,
+  type LaboratoryFieldKey,
+  type LaboratorySettings,
 } from '../../lib/rcLaboratoryFields';
 
 export const RCLaboratory: React.FC = () => {
@@ -15,7 +19,7 @@ export const RCLaboratory: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
-  const [sealIdentification, setSealIdentification] = useState(DEFAULT_LABORATORY_SEAL_IDENTIFICATION);
+  const [values, setValues] = useState<LaboratorySettings>(EMPTY_LABORATORY_SETTINGS);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -24,11 +28,7 @@ export const RCLaboratory: React.FC = () => {
       setError('');
       try {
         const snap = await getDoc(doc(db, 'users', user.uid));
-        setSealIdentification(
-          resolveLaboratorySealIdentification(
-            snap.exists() ? snap.data() : null,
-          ),
-        );
+        setValues(laboratorySettingsFromUser(snap.exists() ? snap.data() : null));
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Failed to load laboratory settings.');
       } finally {
@@ -38,13 +38,18 @@ export const RCLaboratory: React.FC = () => {
     void load();
   }, [user?.uid]);
 
+  const patchField = (key: LaboratoryFieldKey, value: string) => {
+    setValues(prev => ({ ...prev, [key]: value }));
+    setSaved(false);
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.uid) return;
 
-    const trimmed = sealIdentification.trim();
-    if (!trimmed) {
-      setError('Seal identification is required.');
+    const validationError = validateLaboratorySettings(values);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
@@ -52,10 +57,9 @@ export const RCLaboratory: React.FC = () => {
     setError('');
     setSaved(false);
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
-        laboratorySealIdentification: trimmed,
-      });
-      setSealIdentification(trimmed);
+      const patch = buildLaboratorySettingsPatch(values);
+      await updateDoc(doc(db, 'users', user.uid), patch);
+      setValues(laboratorySettingsFromUser(patch));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err: unknown) {
@@ -76,70 +80,71 @@ export const RCLaboratory: React.FC = () => {
   return (
     <div className="fade-in page-content">
       <div className="panel glass rc-laboratory-panel">
-        <div className="panel-header">
+        <div className="panel-header justify-between">
           <div>
             <h2>
               <Scale className="inline-icon text-blue" /> Laboratory
             </h2>
             <p className="text-muted text-sm mt-1 mb-0">
-              Central settings applied across verification workflows for your centre.
+              Centre defaults — saved here and reused across verification and certificates.
             </p>
           </div>
+          {!loading && (
+            <button
+              type="submit"
+              form="rc-laboratory-form"
+              className="btn btn-primary flex items-center gap-2 text-sm py-1.5 px-3 shrink-0"
+              disabled={saving}
+            >
+              {saving ? <span className="spinner-inline" /> : <Save size={15} />}
+              Save
+            </button>
+          )}
         </div>
 
-        <div className="panel-body">
+        <div className="panel-body pt-2">
           {loading ? (
-            <div className="text-center py-8">
+            <div className="text-center py-6">
               <span className="spinner-inline" />
             </div>
           ) : (
-            <form onSubmit={handleSave} className="rc-laboratory-form">
-              <div className="rc-laboratory-intro glass">
-                <ShieldCheck size={20} className="text-blue shrink-0" />
-                <p className="mb-0 text-sm">
-                  The seal identification below is prefilled on every device during verification.
-                  Update it here when your laboratory seal changes — individual device Seal ID fields
-                  on the verification form are read-only.
-                </p>
-              </div>
-
-              <div className="form-group mb-0">
-                <label htmlFor="laboratory-seal-id">Seal identification</label>
-                <input
-                  id="laboratory-seal-id"
-                  type="text"
-                  className="input-field font-mono"
-                  value={sealIdentification}
-                  onChange={e => setSealIdentification(e.target.value)}
-                  placeholder={DEFAULT_LABORATORY_SEAL_IDENTIFICATION}
-                  disabled={saving}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <p className="text-muted text-xs mt-1 mb-0">
-                  Default for new centres: {DEFAULT_LABORATORY_SEAL_IDENTIFICATION}
-                </p>
+            <form id="rc-laboratory-form" onSubmit={handleSave} className="rc-laboratory-form">
+              <div className="rc-laboratory-sheet" role="group" aria-label="Laboratory data fields">
+                <div className="rc-laboratory-sheet-head">
+                  <span>Field</span>
+                  <span>Value</span>
+                  <span className="rc-laboratory-sheet-head-note">Used for</span>
+                </div>
+                {LABORATORY_FIELDS.map(field => (
+                  <div key={field.key} className="rc-laboratory-field-row">
+                    <label htmlFor={`laboratory-${field.key}`} className="rc-laboratory-field-label">
+                      {field.label}
+                    </label>
+                    <input
+                      id={`laboratory-${field.key}`}
+                      type="text"
+                      className={`input-field rc-laboratory-field-input${field.mono ? ' font-mono' : ''}`}
+                      value={values[field.key]}
+                      onChange={e => patchField(field.key, e.target.value)}
+                      placeholder={field.placeholder}
+                      disabled={saving}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <span className="rc-laboratory-field-hint">{field.hint}</span>
+                  </div>
+                ))}
               </div>
 
               {error && (
-                <p className="rc-form-topbar-error text-sm mb-0" role="alert">
+                <p className="rc-form-topbar-error text-sm mb-0 mt-2" role="alert">
                   {error}
                 </p>
               )}
 
               {saved && (
-                <p className="text-green text-sm mb-0">Laboratory settings saved.</p>
+                <p className="text-green text-xs mb-0 mt-2">Laboratory settings saved.</p>
               )}
-
-              <div className="rc-laboratory-actions">
-                <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={saving}>
-                  {saving ? <span className="spinner-inline" /> : <Save size={16} />}
-                  Save seal identification
-                </button>
-                <Link to="/rc/verification" className="btn btn-secondary">
-                  Go to Verification
-                </Link>
-              </div>
             </form>
           )}
         </div>

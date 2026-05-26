@@ -6,7 +6,6 @@ import { UploadField } from '../admin/productFormUi';
 import { useAppContext } from '../../context/AppContext';
 import {
   mpeStringFromProduct,
-  VERIFICATION_LOCATION_OPTIONS,
   type DeviceVerificationImagesState,
   type VerificationDeviceRowValues,
 } from '../../lib/siteCalibrationProfileFields';
@@ -18,7 +17,7 @@ import {
   type DeviceImageSlotState,
   type VerificationImageKind,
 } from '../../lib/verificationDeviceImages';
-import type { Product, VerificationLocation } from '../../types';
+import type { Product } from '../../types';
 
 const DeviceVerificationUpload: React.FC<{
   kind: VerificationImageKind;
@@ -64,6 +63,8 @@ type VerificationDeviceFieldsProps = {
   submitting: boolean;
   /** New verification — multiple devices can be saved as separate table rows. */
   createMode?: boolean;
+  /** Self verification — manual device entry only, no registered customer devices. */
+  manualEntryOnly?: boolean;
   readOnly?: boolean;
   laboratorySealIdentification?: string;
 };
@@ -71,39 +72,6 @@ type VerificationDeviceFieldsProps = {
 function selectedProduct(products: Product[], row: VerificationDeviceRowValues): Product | null {
   return products.find(p => p.id === row.productId) ?? null;
 }
-
-const DeviceLocationField: React.FC<{
-  id: string;
-  value: VerificationLocation | '';
-  disabled: boolean;
-  required?: boolean;
-  onChange: (value: VerificationLocation) => void;
-  variant?: 'table' | 'default';
-}> = ({ id, value, disabled, required = false, onChange, variant = 'default' }) => (
-  <fieldset
-    id={id}
-    className={`verification-device-location-field mb-0${variant === 'table' ? ' verification-device-location-field--table' : ''}`}
-    disabled={disabled}
-  >
-    <legend className="sr-only">Verification location</legend>
-    <div className="verification-device-location-options">
-      {VERIFICATION_LOCATION_OPTIONS.map((opt, index) => (
-        <label key={opt.value} className="verification-device-location-option site-calibration-type-option">
-          <input
-            type="radio"
-            name={id}
-            value={opt.value}
-            checked={value === opt.value}
-            onChange={() => onChange(opt.value)}
-            disabled={disabled}
-            required={required && index === 0}
-          />
-          <span>{opt.label}</span>
-        </label>
-      ))}
-    </div>
-  </fieldset>
-);
 
 const DeviceVerificationImages: React.FC<{
   images: DeviceVerificationImagesState;
@@ -136,6 +104,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   onDeviceImageRemove,
   submitting,
   createMode = false,
+  manualEntryOnly = false,
   readOnly = false,
   laboratorySealIdentification = '',
 }) => {
@@ -186,7 +155,11 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   if (devices.length === 0) {
     return (
       <div className="verification-devices-empty">
-        <p className="text-muted text-sm mb-3">This customer has no registered devices yet.</p>
+        <p className="text-muted text-sm mb-3">
+          {manualEntryOnly
+            ? 'Add a device to verify.'
+            : 'This customer has no registered devices yet.'}
+        </p>
         {!readOnly && (
           <button
             type="button"
@@ -279,7 +252,6 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               </th>
               <th>Product</th>
               <th>Serial</th>
-              <th>Location</th>
               <th>MPE</th>
               <th>Seal ID</th>
               <th>Images</th>
@@ -329,18 +301,6 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       value={row.serialNumber}
                       onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
                       disabled={locked || !row.included}
-                    />
-                  </td>
-                  <td className="verification-devices-col-location">
-                    <DeviceLocationField
-                      id={`verification-location-${row.localId}`}
-                      value={row.verificationLocation}
-                      onChange={verificationLocation =>
-                        onDeviceChange(row.localId, { verificationLocation })
-                      }
-                      disabled={locked || !row.included}
-                      required={false}
-                      variant="table"
                     />
                   </td>
                   <td>
@@ -455,18 +415,6 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     className="input-field"
                     value={row.serialNumber}
                     onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-                    disabled={locked || !row.included}
-                  />
-                </div>
-
-                <div className="form-group mb-0">
-                  <label htmlFor={`verification-mobile-location-${row.localId}`}>Location</label>
-                  <DeviceLocationField
-                    id={`verification-mobile-location-${row.localId}`}
-                    value={row.verificationLocation}
-                    onChange={verificationLocation =>
-                      onDeviceChange(row.localId, { verificationLocation })
-                    }
                     disabled={locked || !row.included}
                   />
                 </div>
