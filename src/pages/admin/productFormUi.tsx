@@ -62,6 +62,8 @@ export const UploadField: React.FC<{
   iconActions?: boolean;
   /** Keep dropzone visible (disabled) instead of swapping to the info panel */
   uploadDisabled?: boolean;
+  /** Thumbnail shown in empty dropzone (e.g. verification image guide). */
+  placeholderSrc?: string;
 }> = ({
   label,
   hint,
@@ -81,6 +83,7 @@ export const UploadField: React.FC<{
   avatar = false,
   iconActions = false,
   uploadDisabled = false,
+  placeholderSrc,
 }) => {
   const useIconActions = avatar || iconActions;
   const showImagePreview = variant === 'image' || (file != null && !isPdfContentType(file.contentType));
@@ -121,7 +124,11 @@ export const UploadField: React.FC<{
               title={uploadDisabled ? disabledReason : useIconActions ? `${uploadLabel} · ${formats}` : undefined}
               aria-label={useIconActions ? `${uploadLabel}. ${formats}` : undefined}
             >
-              <Upload size={avatar ? 28 : compact ? 18 : 22} className="text-muted shrink-0" />
+              {placeholderSrc ? (
+                <img src={placeholderSrc} alt="" className="product-upload-placeholder-img" />
+              ) : (
+                <Upload size={avatar ? 28 : compact ? 18 : 22} className="text-muted shrink-0" />
+              )}
               {!useIconActions && (
                 <span className="product-upload-dropzone-text">
                   <span className="product-upload-dropzone-title">{uploadLabel}</span>

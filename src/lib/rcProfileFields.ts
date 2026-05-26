@@ -1,5 +1,6 @@
 import type { FirestoreUserDoc } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
+import { resolveLaboratorySealIdentification } from './rcLaboratoryFields';
 
 /** Certificate date + 1 year (YYYY-MM-DD). */
 export function standardWeightsCertExpiryFromDate(certDate: string): string {
@@ -102,6 +103,10 @@ export function buildRcFirestoreFields(
     standardWeightsCertDate: values.standardWeightsCertDate,
     standardWeightsCertExpiry: expiry,
   };
+
+  if (options.isCreate) {
+    base.laboratorySealIdentification = resolveLaboratorySealIdentification(null);
+  }
 
   applyFileMeta(base, 'standardWeightsCert', uploads.cert, Boolean(options.isCreate));
   applyFileMeta(base, 'seal', uploads.seal, Boolean(options.isCreate));

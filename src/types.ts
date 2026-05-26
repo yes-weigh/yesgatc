@@ -49,6 +49,26 @@ export interface Product {
 }
 
 export type JobType = 'OV' | 'RV';
+/** Where verification was performed for a device. */
+export type VerificationLocation = 'in_situ' | 'in_premises';
+
+/**
+ * Verification request lifecycle — client may create/edit draft and submit.
+ * Only the certificate server (Admin SDK) should set `approved` and certificate fields.
+ */
+export type VerificationRequestStatus = 'draft' | 'submitted' | 'approved';
+
+/** Who performed the verification in the field. */
+export type VerificationPerformedBy = 'rc' | 'vct';
+
+/**
+ * How the request entered the pipeline (for the certificate server).
+ * - rc_direct: RC entered verification directly
+ * - vct_manual: VCT job approved by RC before certificate generation
+ * - vct_auto: VCT with auto-approval workflow
+ */
+export type VerificationRequestSource = 'rc_direct' | 'vct_manual' | 'vct_auto';
+
 export type JobStatus = 'assigned' | 'pending_review' | 'completed';
 export type PaymentStatus = 'not_required' | 'pending' | 'paid';
 export type WorkflowMode = 'auto' | 'manual';
@@ -155,6 +175,8 @@ export interface FirestoreUserDoc {
   sealPath?: string;
   sealName?: string;
   sealContentType?: string;
+  /** RC laboratory seal ID — prefilled on verification devices (default IND/KL/26/04/B26). */
+  laboratorySealIdentification?: string;
 }
 
 /** RC-managed vehicle record (Firestore `vehicles` collection). */
@@ -256,15 +278,46 @@ export interface SiteCalibration {
   productId: string;
   productName: string;
   serialNumber: string;
+  /** Product snapshot for table display and certificate server. */
+  maximumCapacity?: number;
+  verificationScaleInterval?: number;
+  unitOfMeasurement?: 'kg' | 'g';
   /** MPE for this calibration; may differ from the product default. */
   maximumPermissibleError?: number;
   ambientTemperature: string;
   relativeHumidity: string;
   sealIdentificationNumber: string;
+  /** In situ vs in the premises — per device. */
+  verificationLocation?: VerificationLocation;
+  /** Request workflow — omitted on legacy records (treated as draft). */
+  status?: VerificationRequestStatus;
+  submittedAt?: string;
+  approvedAt?: string;
+  /** Filled by certificate server when approved. */
+  certificateNumber?: string;
+  certificatePdfUrl?: string;
+  certificatePdfPath?: string;
+  certificatePdfName?: string;
+  certificatePdfContentType?: string;
+  /** VCT display — RC direct verifications use performedBy `rc` (shown as Self). */
+  performedBy?: VerificationPerformedBy;
+  vctId?: string;
+  vctName?: string;
+  requestSource?: VerificationRequestSource;
+  /** Optional link to a VCT job when request originates from the job queue. */
+  jobId?: string;
   scaleImageUrl?: string;
   scaleImagePath?: string;
   scaleImageName?: string;
   scaleImageContentType?: string;
+  stampingImageUrl?: string;
+  stampingImagePath?: string;
+  stampingImageName?: string;
+  stampingImageContentType?: string;
+  standardWeightImageUrl?: string;
+  standardWeightImagePath?: string;
+  standardWeightImageName?: string;
+  standardWeightImageContentType?: string;
   createdAt: string;
   createdByUid?: string;
   updatedAt?: string;

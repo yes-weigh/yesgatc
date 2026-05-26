@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where,
+  collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, getDoc,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -9,30 +9,56 @@ import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { tableEditCellProps } from '../../lib/tableEditCell';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
 import {
+  buildNewSiteCalibrationRecord,
   buildSiteCalibrationFromRow,
   createEmptyVerificationDeviceRow,
-  deviceImageStatesFromRows,
-  emptyDeviceScaleImageState,
   EMPTY_VERIFICATION_SESSION,
-  scaleImageFieldsFromMeta,
-  scaleImageFromRecord,
   verificationSessionFromRecord,
-  validateVerificationSession,
+  validateVerificationDraft,
+  validateVerificationForSubmit,
+  validateSiteCalibrationRecord,
   verificationTypeLabel,
-  type DeviceScaleImageState,
   type VerificationDeviceRowValues,
   type VerificationSessionValues,
 } from '../../lib/siteCalibrationProfileFields';
-import { uploadSiteCalibrationScaleImage } from '../../lib/siteCalibrationPhotoUpload';
-import { formatProductMpe } from '../../lib/productCalculations';
 import {
-  Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon, ShieldCheck,
+  buildVerificationSubmitPatch,
+  canDeleteVerification,
+  canDownloadVerificationCertificate,
+  canSubmitVerification,
+  formatVerificationCapAcc,
+  isVerificationEditable,
+  isVerificationViewable,
+  normalizeVerificationStatus,
+  verificationStatusDescription,
+  verificationStatusLabel,
+  verificationVctLabel,
+} from '../../lib/verificationRequest';
+import { uploadSiteCalibrationDeviceImage } from '../../lib/siteCalibrationPhotoUpload';
+import {
+  emptyDeviceImageSlot,
+  emptyDeviceVerificationImagesState,
+  imageFieldsFromMeta,
+  VERIFICATION_IMAGE_KINDS,
+  verificationImagesFromRecord,
+  type DeviceVerificationImagesState,
+  type VerificationImageKind,
+} from '../../lib/verificationDeviceImages';
+import {
+  Trash2, RefreshCw, Pencil, X, Plus, Save, ShieldCheck, Send, Download, Eye,
 } from 'lucide-react';
 import type { Customer, SiteCalibration } from '../../types';
 import { VerificationSessionFields } from './VerificationSessionFields';
+import { useAppContext } from '../../context/AppContext';
+import {
+  applyLaboratorySealToDeviceRows,
+  resolveLaboratorySealIdentification,
+} from '../../lib/rcLaboratoryFields';
+import type { FirestoreUserDoc } from '../../types';
 
 export const RCSiteCalibration: React.FC = () => {
   const { user } = useAuth();
+  const { products } = useAppContext();
   const confirm = useConfirm();
   const [records, setRecords] = useState<SiteCalibration[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -41,11 +67,26 @@ export const RCSiteCalibration: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [sessionValues, setSessionValues] = useState<VerificationSessionValues>(EMPTY_VERIFICATION_SESSION);
-  const [deviceImages, setDeviceImages] = useState<Record<string, DeviceScaleImageState>>({});
+  const [deviceImages, setDeviceImages] = useState<Record<string, DeviceVerificationImagesState>>({});
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
+  const [laboratorySealId, setLaboratorySealId] = useState('');
+
+  const fetchLaboratorySeal = useCallback(async () => {
+    if (!user?.uid) return;
+    try {
+      const snap = await getDoc(doc(db, 'users', user.uid));
+      setLaboratorySealId(
+        resolveLaboratorySealIdentification(
+          snap.exists() ? (snap.data() as FirestoreUserDoc) : null,
+        ),
+      );
+    } catch {
+      setLaboratorySealId(resolveLaboratorySealIdentification(null));
+    }
+  }, [user?.uid]);
 
   const fetchRecords = useCallback(async () => {
     if (!user?.uid) return;
@@ -94,12 +135,28 @@ export const RCSiteCalibration: React.FC = () => {
     Promise.resolve().then(() => {
       fetchRecords();
       fetchCustomers();
+      fetchLaboratorySeal();
     });
-  }, [fetchRecords, fetchCustomers]);
+  }, [fetchRecords, fetchCustomers, fetchLaboratorySeal]);
 
   const showForm = showAddForm || editingId !== null;
   const formBusy = submitting;
   const isEditMode = editingId !== null;
+
+  useEffect(() => {
+    if (!showForm || !user?.uid) return;
+    void fetchLaboratorySeal();
+  }, [showForm, user?.uid, fetchLaboratorySeal]);
+
+  useEffect(() => {
+    if (!showForm || !laboratorySealId) return;
+    const editingRecord = editingId ? records.find(r => r.id === editingId) : null;
+    if (editingRecord && !isVerificationEditable(editingRecord)) return;
+    setSessionValues(prev => ({
+      ...prev,
+      devices: applyLaboratorySealToDeviceRows(prev.devices, laboratorySealId),
+    }));
+  }, [laboratorySealId, showForm, editingId, records]);
 
   const resetForm = () => {
     setSessionValues(EMPTY_VERIFICATION_SESSION);
@@ -131,21 +188,45 @@ export const RCSiteCalibration: React.FC = () => {
     _customerId: string,
     _customerName: string,
     devices: VerificationDeviceRowValues[],
+    options?: { preserveDeviceImages?: boolean },
   ) => {
-    setDeviceImages(deviceImageStatesFromRows(devices));
+    setDeviceImages(prev => {
+      const next: Record<string, DeviceVerificationImagesState> = {};
+      for (const row of devices) {
+        next[row.localId] =
+          options?.preserveDeviceImages && prev[row.localId]
+            ? prev[row.localId]
+            : emptyDeviceVerificationImagesState();
+      }
+      return next;
+    });
+  };
+
+  const handleCustomerUpdated = (updated: Customer) => {
+    setCustomers(prev =>
+      prev
+        .map(c => (c.id === updated.id ? updated : c))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    );
   };
 
   const handleDeviceChange = (localId: string, patch: Partial<VerificationDeviceRowValues>) => {
+    const { sealIdentificationNumber: _seal, ...rest } = patch;
     setSessionValues(prev => ({
       ...prev,
-      devices: prev.devices.map(row => (row.localId === localId ? { ...row, ...patch } : row)),
+      devices: prev.devices.map(row =>
+        row.localId === localId ? { ...row, ...rest, sealIdentificationNumber: laboratorySealId || row.sealIdentificationNumber } : row,
+      ),
     }));
   };
 
   const handleDeviceAdd = () => {
-    const row = createEmptyVerificationDeviceRow();
+    const row = {
+      ...createEmptyVerificationDeviceRow(),
+      sealIdentificationNumber: laboratorySealId,
+    };
     setSessionValues(prev => ({ ...prev, devices: [...prev.devices, row] }));
-    setDeviceImages(prev => ({ ...prev, [row.localId]: emptyDeviceScaleImageState() }));
+    setDeviceImages(prev => ({ ...prev, [row.localId]: emptyDeviceVerificationImagesState() }));
   };
 
   const handleDeviceRemove = (localId: string) => {
@@ -160,153 +241,248 @@ export const RCSiteCalibration: React.FC = () => {
     });
   };
 
-  const handleScaleImageSelect = (localId: string, file: File) => {
+  const handleDeviceImageSelect = (localId: string, kind: VerificationImageKind, file: File) => {
     const previewUrl = URL.createObjectURL(file);
     setDeviceImages(prev => ({
       ...prev,
       [localId]: {
-        ...(prev[localId] ?? emptyDeviceScaleImageState()),
-        pendingFile: file,
-        removed: false,
-        file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
-        uploading: false,
-        progress: 0,
+        ...(prev[localId] ?? emptyDeviceVerificationImagesState()),
+        [kind]: {
+          ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()),
+          pendingFile: file,
+          removed: false,
+          file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
+          uploading: false,
+          progress: 0,
+        },
       },
     }));
   };
 
-  const handleScaleImageRemove = (localId: string) => {
+  const handleDeviceImageRemove = (localId: string, kind: VerificationImageKind) => {
     setDeviceImages(prev => ({
       ...prev,
-      [localId]: emptyDeviceScaleImageState(),
+      [localId]: {
+        ...(prev[localId] ?? emptyDeviceVerificationImagesState()),
+        [kind]: emptyDeviceImageSlot(),
+      },
     }));
   };
 
-  const uploadRowScaleImage = async (
+  const uploadDeviceImageSlot = async (
     recordId: string,
     localId: string,
+    kind: VerificationImageKind,
   ): Promise<Partial<SiteCalibration>> => {
-    const image = deviceImages[localId] ?? emptyDeviceScaleImageState();
-    if (image.removed && !image.pendingFile) return scaleImageFieldsFromMeta(null);
-    if (!image.pendingFile) {
-      if (image.file?.url && !image.file.url.startsWith('blob:')) {
-        return scaleImageFieldsFromMeta(image.file);
+    const slot = deviceImages[localId]?.[kind] ?? emptyDeviceImageSlot();
+    if (slot.removed && !slot.pendingFile) return imageFieldsFromMeta(kind, null);
+    if (!slot.pendingFile) {
+      if (slot.file?.url && !slot.file.url.startsWith('blob:')) {
+        return imageFieldsFromMeta(kind, slot.file);
       }
       return {};
     }
 
     setDeviceImages(prev => ({
       ...prev,
-      [localId]: { ...(prev[localId] ?? emptyDeviceScaleImageState()), uploading: true, progress: 0 },
+      [localId]: {
+        ...(prev[localId] ?? emptyDeviceVerificationImagesState()),
+        [kind]: { ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()), uploading: true, progress: 0 },
+      },
     }));
 
     try {
-      const meta = await uploadSiteCalibrationScaleImage(recordId, image.pendingFile, pct => {
+      const meta = await uploadSiteCalibrationDeviceImage(recordId, kind, slot.pendingFile, pct => {
         setDeviceImages(prev => ({
           ...prev,
-          [localId]: { ...(prev[localId] ?? emptyDeviceScaleImageState()), progress: pct },
+          [localId]: {
+            ...(prev[localId] ?? emptyDeviceVerificationImagesState()),
+            [kind]: { ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()), progress: pct },
+          },
         }));
       });
       setDeviceImages(prev => ({
         ...prev,
         [localId]: {
-          ...(prev[localId] ?? emptyDeviceScaleImageState()),
-          file: meta,
-          uploading: false,
-          progress: 100,
-          pendingFile: null,
-          removed: false,
+          ...(prev[localId] ?? emptyDeviceVerificationImagesState()),
+          [kind]: {
+            ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()),
+            file: meta,
+            uploading: false,
+            progress: 100,
+            pendingFile: null,
+            removed: false,
+          },
         },
       }));
-      return scaleImageFieldsFromMeta(meta);
+      return imageFieldsFromMeta(kind, meta);
     } catch (err) {
       setDeviceImages(prev => ({
         ...prev,
         [localId]: {
-          ...(prev[localId] ?? emptyDeviceScaleImageState()),
-          uploading: false,
-          progress: 0,
+          ...(prev[localId] ?? emptyDeviceVerificationImagesState()),
+          [kind]: {
+            ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()),
+            uploading: false,
+            progress: 0,
+          },
         },
       }));
       throw err;
     }
   };
 
-  const syncNewCustomerDevices = async (rows: VerificationDeviceRowValues[]) => {
-    const newRows = rows.filter(row => row.isNewDevice);
-    if (newRows.length === 0) return;
+  const uploadRowImages = async (
+    recordId: string,
+    localId: string,
+  ): Promise<Partial<SiteCalibration>> => {
+    let fields: Partial<SiteCalibration> = {};
+    for (const kind of VERIFICATION_IMAGE_KINDS) {
+      fields = { ...fields, ...(await uploadDeviceImageSlot(recordId, localId, kind)) };
+    }
+    return fields;
+  };
 
+  const syncCustomerDevices = async (rows: VerificationDeviceRowValues[]) => {
     const customer = customers.find(c => c.id === sessionValues.customerId);
-    const existing = customer?.devices || [];
-    const added = newRows.map(row =>
-      buildCustomerDevice({
-        localId: row.localId,
-        productId: row.productId,
-        productName: row.productName,
-        serialNumber: row.serialNumber,
-      }),
-    );
+    if (!customer) return;
 
+    let devices = [...(customer.devices || [])];
+    let changed = false;
+
+    for (const row of rows) {
+      if (row.isNewDevice) {
+        if (devices.some(d => d.id === row.localId)) continue;
+        devices.push(
+          buildCustomerDevice({
+            localId: row.localId,
+            productId: row.productId,
+            productName: row.productName,
+            serialNumber: row.serialNumber,
+          }),
+        );
+        changed = true;
+        continue;
+      }
+
+      if (!row.deviceId) continue;
+      const index = devices.findIndex(d => d.id === row.deviceId);
+      if (index < 0) continue;
+
+      const current = devices[index];
+      const productId = row.productId.trim();
+      const productName = row.productName.trim();
+      const serialNumber = row.serialNumber.trim();
+
+      if (
+        (current.productId || '') !== productId ||
+        current.productName !== productName ||
+        current.serialNumber !== serialNumber
+      ) {
+        devices[index] = {
+          ...current,
+          productName,
+          serialNumber,
+          ...(productId ? { productId } : {}),
+        };
+        changed = true;
+      }
+    }
+
+    if (!changed) return;
+
+    const updatedAt = new Date().toISOString();
     await updateDoc(doc(db, 'customers', sessionValues.customerId), {
-      devices: [...existing, ...added],
-      updatedAt: new Date().toISOString(),
+      devices,
+      updatedAt,
     });
 
     setCustomers(prev =>
       prev.map(c =>
-        c.id === sessionValues.customerId
-          ? { ...c, devices: [...existing, ...added], updatedAt: new Date().toISOString() }
-          : c,
+        c.id === sessionValues.customerId ? { ...c, devices, updatedAt } : c,
       ),
     );
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isViewMode) return;
     if (showAddForm) await handleCreate();
     else if (editingId) await handleSaveEdit(editingId);
   };
 
-  const handleCreate = async () => {
+  const formatSaveError = (err: unknown, fallback: string): string => {
+    const code =
+      typeof err === 'object' && err !== null && 'code' in err
+        ? String((err as { code: string }).code)
+        : '';
+    if (code === 'permission-denied') {
+      return 'Missing or insufficient permissions. Deploy Firestore rules: firebase deploy --only firestore:rules';
+    }
+    return err instanceof Error ? err.message : fallback;
+  };
+
+  const handleCreate = async (submitAfterSave = false) => {
     setError('');
-    const validationError = validateVerificationSession(sessionValues, deviceImages);
+    const validationError = validateVerificationDraft(sessionValues, deviceImages);
     if (validationError) {
       setError(validationError);
       return;
     }
 
+    if (submitAfterSave) {
+      const submitError = validateVerificationForSubmit(sessionValues, deviceImages);
+      if (submitError) {
+        setError(submitError);
+        return;
+      }
+    }
+
     const includedRows = sessionValues.devices.filter(row => row.included);
     setSubmitting(true);
     try {
-      await syncNewCustomerDevices(includedRows);
+      const rowsToSync = includedRows.filter(
+        row => row.productId.trim() && row.serialNumber.trim(),
+      );
+      await syncCustomerDevices(rowsToSync);
 
       for (const row of includedRows) {
         const ref = doc(collection(db, 'siteCalibrations'));
         const recordId = ref.id;
-        const imageFields = await uploadRowScaleImage(recordId, row.localId);
+        const imageFields = await uploadRowImages(recordId, row.localId);
         const deviceId = row.isNewDevice ? row.localId : row.deviceId;
+        const product = products.find(p => p.id === row.productId) ?? null;
 
         const record: Omit<SiteCalibration, 'id'> = {
           rcId: user!.uid,
           createdAt: new Date().toISOString(),
           createdByUid: user?.uid,
-          ...buildSiteCalibrationFromRow(sessionValues, { ...row, deviceId }),
+          ...buildNewSiteCalibrationRecord(sessionValues, { ...row, deviceId }, product),
           ...imageFields,
         };
         await setDoc(ref, record);
+        if (submitAfterSave) {
+          await updateDoc(ref, buildVerificationSubmitPatch());
+        }
       }
 
       handleCloseForm();
       await fetchRecords();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save verification records.');
+      setError(formatSaveError(err, 'Failed to save verification records.'));
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleSaveEdit = async (recordId: string) => {
-    const validationError = validateVerificationSession(sessionValues, deviceImages);
+    const existing = records.find(r => r.id === recordId);
+    if (!existing || !isVerificationEditable(existing)) {
+      setError('Only draft verifications can be edited.');
+      return;
+    }
+
+    const validationError = validateVerificationDraft(sessionValues, deviceImages);
     if (validationError) {
       setError(validationError);
       return;
@@ -320,16 +496,111 @@ export const RCSiteCalibration: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const imageFields = await uploadRowScaleImage(recordId, row.localId);
+      if (row.productId.trim() && row.serialNumber.trim()) {
+        await syncCustomerDevices([row]);
+      }
+      const product = products.find(p => p.id === row.productId) ?? null;
+      const imageFields = await uploadRowImages(recordId, row.localId);
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
-        ...buildSiteCalibrationFromRow(sessionValues, row),
+        ...buildSiteCalibrationFromRow(sessionValues, row, { product }),
         ...imageFields,
         updatedAt: new Date().toISOString(),
       });
       handleCloseForm();
       await fetchRecords();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to update verification record.');
+      setError(formatSaveError(err, 'Failed to update verification record.'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitRecord = async (record: SiteCalibration) => {
+    if (!canSubmitVerification(record)) return;
+
+    const validationError = validateSiteCalibrationRecord(record);
+    if (validationError) {
+      setListError(validationError);
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Submit for certificate?',
+      message:
+        `Submit verification for ${record.customerName} · ${record.serialNumber || 'device'}?\n\nAfter submission you cannot edit this record. It will be queued for certificate generation on the server.`,
+      confirmLabel: 'Submit',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await updateDoc(doc(db, 'siteCalibrations', record.id), buildVerificationSubmitPatch());
+      if (editingId === record.id) handleCloseForm();
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(err instanceof Error ? err.message : 'Failed to submit verification.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitFromForm = async () => {
+    const validationError = validateVerificationForSubmit(sessionValues, deviceImages);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    if (showAddForm) {
+      const ok = await confirm({
+        title: 'Save and submit for certificate?',
+        message:
+          includedDeviceCount > 1
+            ? `Save and submit ${includedDeviceCount} verifications? They will be locked and queued for certificate generation.`
+            : 'Save and submit this verification? It will be locked and queued for certificate generation.',
+        confirmLabel: 'Save & submit',
+      });
+      if (!ok) return;
+      await handleCreate(true);
+      return;
+    }
+
+    if (!editingId) return;
+    const existing = records.find(r => r.id === editingId);
+    if (!existing) return;
+
+    const row = sessionValues.devices[0];
+    if (!row) {
+      setError('Device data is missing.');
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Save and submit for certificate?',
+      message:
+        'Your latest changes will be saved, then this verification will be locked and queued for certificate generation.',
+      confirmLabel: 'Save & submit',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setError('');
+    try {
+      if (row.productId.trim() && row.serialNumber.trim()) {
+        await syncCustomerDevices([row]);
+      }
+      const product = products.find(p => p.id === row.productId) ?? null;
+      const imageFields = await uploadRowImages(editingId, row.localId);
+      await updateDoc(doc(db, 'siteCalibrations', editingId), {
+        ...buildSiteCalibrationFromRow(sessionValues, row, { product }),
+        ...imageFields,
+        ...buildVerificationSubmitPatch(),
+      });
+      handleCloseForm();
+      await fetchRecords();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to submit verification.');
     } finally {
       setSubmitting(false);
     }
@@ -341,25 +612,27 @@ export const RCSiteCalibration: React.FC = () => {
     setShowAddForm(true);
   };
 
-  const startEdit = (record: SiteCalibration) => {
+  const openRecord = (record: SiteCalibration) => {
+    if (!isVerificationViewable(record)) return;
     setShowAddForm(false);
     setEditingId(record.id);
     const session = verificationSessionFromRecord(record);
-    setSessionValues(session);
-    const image = scaleImageFromRecord(record);
+    const devices = isVerificationEditable(record)
+      ? applyLaboratorySealToDeviceRows(session.devices, laboratorySealId)
+      : session.devices;
+    setSessionValues({ ...session, devices });
     setDeviceImages({
-      [session.devices[0]?.localId || record.id]: {
-        file: image,
-        uploading: false,
-        progress: 0,
-        pendingFile: null,
-        removed: false,
-      },
+      [session.devices[0]?.localId || record.id]: verificationImagesFromRecord(record),
     });
     setError('');
   };
 
+  const startEdit = (record: SiteCalibration) => {
+    openRecord(record);
+  };
+
   const handleDelete = async (record: SiteCalibration) => {
+    if (!canDeleteVerification(record)) return;
     const label = `${verificationTypeLabel(record.verificationType)} · ${record.customerName}`;
     const ok = await confirm({
       title: 'Remove verification record?',
@@ -386,6 +659,34 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const includedDeviceCount = sessionValues.devices.filter(d => d.included).length;
+  const editingRecord = editingId ? records.find(r => r.id === editingId) ?? null : null;
+  const editingDraft = editingRecord ? isVerificationEditable(editingRecord) : showAddForm;
+  const isViewMode = Boolean(editingRecord && !editingDraft);
+  const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
+
+  const draftBlockReason = useMemo(
+    () => (showForm ? validateVerificationDraft(sessionValues, deviceImages) : null),
+    [showForm, sessionValues, deviceImages],
+  );
+
+  const submitBlockReason = useMemo(
+    () => (showForm ? validateVerificationForSubmit(sessionValues, deviceImages) : null),
+    [showForm, sessionValues, deviceImages],
+  );
+
+  const canSubmitFromForm = !submitBlockReason;
+
+  const renderStatusBadge = (record: SiteCalibration) => {
+    const status = normalizeVerificationStatus(record);
+    return (
+      <span
+        className={`status-badge verification-status verification-status--${status}`}
+        title={verificationStatusLabel(status)}
+      >
+        {verificationStatusLabel(status)}
+      </span>
+    );
+  };
 
   return (
     <div className="fade-in page-content">
@@ -402,6 +703,10 @@ export const RCSiteCalibration: React.FC = () => {
                     <>
                       <Plus className="inline-icon" /> New Verification
                     </>
+                  ) : isViewMode ? (
+                    <>
+                      <Eye className="inline-icon" /> View Verification
+                    </>
                   ) : (
                     <>
                       <Pencil className="inline-icon" /> Edit Verification
@@ -411,10 +716,41 @@ export const RCSiteCalibration: React.FC = () => {
                 <p className="text-muted text-sm mt-1 mb-0">
                   {showAddForm
                     ? sessionValues.customerId
-                      ? `${includedDeviceCount} device${includedDeviceCount !== 1 ? 's' : ''} selected`
+                      ? includedDeviceCount === 0
+                        ? 'Select at least one device to verify'
+                        : includedDeviceCount === 1
+                          ? '1 device selected — creates 1 draft row'
+                          : `${includedDeviceCount} devices selected — creates ${includedDeviceCount} draft rows (one per device)`
                       : 'Select a customer to load registered devices'
-                    : 'Update verification data for this device'}
+                    : isViewMode && viewingStatus
+                      ? verificationStatusDescription(viewingStatus)
+                      : 'Update draft verification for this device'}
                 </p>
+                {isViewMode && editingRecord && (
+                  <div className="verification-view-banner mt-2">
+                    {renderStatusBadge(editingRecord)}
+                    {editingRecord.submittedAt && (
+                      <span className="text-muted text-xs">
+                        Submitted {formatDate(editingRecord.submittedAt)}
+                      </span>
+                    )}
+                    {editingRecord.certificateNumber?.trim() && (
+                      <span className="text-mono text-xs">
+                        Cert {editingRecord.certificateNumber.trim()}
+                      </span>
+                    )}
+                    {canDownloadVerificationCertificate(editingRecord) && (
+                      <a
+                        href={editingRecord.certificatePdfUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-secondary btn-sm flex items-center gap-1"
+                      >
+                        <Download size={14} /> Download certificate
+                      </a>
+                    )}
+                  </div>
+                )}
                 <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
                   {error || '\u00a0'}
                 </p>
@@ -440,36 +776,77 @@ export const RCSiteCalibration: React.FC = () => {
                   onDeviceChange={handleDeviceChange}
                   onDeviceAdd={handleDeviceAdd}
                   onDeviceRemove={handleDeviceRemove}
-                  onScaleImageSelect={handleScaleImageSelect}
-                  onScaleImageRemove={handleScaleImageRemove}
+                  onDeviceImageSelect={handleDeviceImageSelect}
+                  onDeviceImageRemove={handleDeviceImageRemove}
                   customers={customers}
                   submitting={formBusy}
                   lockCustomer={isEditMode}
-                  lockExistingDevices={isEditMode}
+                  readOnly={isViewMode}
+                  laboratorySealIdentification={laboratorySealId}
+                  onCustomerUpdated={handleCustomerUpdated}
                 />
               </div>
-              <div className="product-form-footer">
+              <div className="product-form-footer verification-form-footer">
                 <button
                   type="button"
                   className="btn btn-secondary"
                   onClick={handleCloseForm}
                   disabled={formBusy}
                 >
-                  Cancel
+                  {isViewMode ? 'Close' : 'Cancel'}
                 </button>
-                <button type="submit" className="btn btn-primary flex items-center gap-2" disabled={formBusy}>
-                  {formBusy ? (
-                    <span className="spinner-inline"></span>
-                  ) : showAddForm ? (
-                    <>
-                      <Plus size={16} /> Save{includedDeviceCount > 1 ? ` (${includedDeviceCount})` : ''}
-                    </>
-                  ) : (
-                    <>
-                      <Save size={18} /> Save Changes
-                    </>
-                  )}
-                </button>
+                {!isViewMode && (
+                  <>
+                    <button
+                      type="submit"
+                      className="btn btn-secondary flex items-center gap-2"
+                      disabled={formBusy || Boolean(draftBlockReason)}
+                      title={draftBlockReason ?? undefined}
+                    >
+                      {formBusy ? (
+                        <span className="spinner-inline"></span>
+                      ) : showAddForm ? (
+                        <>
+                          <Save size={16} />{' '}
+                          {includedDeviceCount > 1
+                            ? `Save ${includedDeviceCount} drafts`
+                            : 'Save draft'}
+                        </>
+                      ) : (
+                        <>
+                          <Save size={18} /> Save draft
+                        </>
+                      )}
+                    </button>
+                    {editingDraft && (
+                      <div className="verification-form-submit-group">
+                        <button
+                          type="button"
+                          className="btn btn-primary flex items-center gap-2"
+                          onClick={() => void handleSubmitFromForm()}
+                          disabled={formBusy || !canSubmitFromForm}
+                          title={submitBlockReason ?? undefined}
+                        >
+                          {formBusy ? (
+                            <span className="spinner-inline"></span>
+                          ) : (
+                            <>
+                              <Send size={16} />{' '}
+                              {showAddForm && includedDeviceCount > 1
+                                ? `Submit ${includedDeviceCount} for certificate`
+                                : 'Submit for certificate'}
+                            </>
+                          )}
+                        </button>
+                        {submitBlockReason && (
+                          <p className="verification-form-submit-reason text-muted text-xs mb-0">
+                            {submitBlockReason}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </form>
           </div>
@@ -484,7 +861,7 @@ export const RCSiteCalibration: React.FC = () => {
                 <ShieldCheck className="inline-icon" /> Verification
               </h2>
               <p className="text-muted text-sm mt-1">
-                {records.length} record{records.length !== 1 ? 's' : ''}
+                {records.length} verification{records.length !== 1 ? 's' : ''} · one row per device · draft → submit → approved
               </p>
               {listError && (
                 <p className="rc-form-topbar-error text-sm mt-1" role="alert">
@@ -516,28 +893,36 @@ export const RCSiteCalibration: React.FC = () => {
                   <thead>
                     <tr>
                       <th className="site-calibration-col-serial">#</th>
-                      <th>Type</th>
-                      <th>Customer</th>
-                      <th>Product</th>
-                      <th>Serial</th>
-                      <th>MPE</th>
-                      <th className="site-calibration-col-image">Scale</th>
-                      <th>Temp (°C)</th>
-                      <th>Humidity (%)</th>
-                      <th>Seal ID</th>
                       <th>Date</th>
+                      <th>VCT</th>
+                      <th>Type</th>
+                      <th>Belongs to</th>
+                      <th>Cap/Acc</th>
+                      <th>Serial number</th>
+                      <th>Certificate no.</th>
+                      <th>Status</th>
                       <th className="text-right site-calibration-col-actions">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {records.map((r, index) => {
-                      const openEdit = () => startEdit(r);
-                      const editCell = tableEditCellProps(openEdit, 'Edit verification record');
+                      const editable = isVerificationEditable(r);
+                      const openDetails = () => openRecord(r);
+                      const detailCell = tableEditCellProps(
+                        openDetails,
+                        editable ? 'Edit draft verification' : 'View verification details',
+                      );
 
                       return (
                         <tr key={r.id} className="table-mobile-row table-mobile-row--actions">
                           <td className="site-calibration-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
-                          <td {...editCell} className="table-mobile-col-hide table-col-editable">
+                          <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
+                            {formatDate(r.createdAt)}
+                          </td>
+                          <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
+                            {verificationVctLabel(r)}
+                          </td>
+                          <td {...detailCell} className="table-mobile-col-hide table-col-editable">
                             <span
                               className={`status-badge ${
                                 r.verificationType === 'OV' ? 'site-calibration-type-ov' : 'site-calibration-type-rv'
@@ -546,10 +931,11 @@ export const RCSiteCalibration: React.FC = () => {
                               {r.verificationType}
                             </span>
                           </td>
-                          <td {...editCell} className="font-medium table-mobile-col-primary table-col-editable">
+                          <td {...detailCell} className="font-medium table-mobile-col-primary table-col-editable">
                             <span className="table-mobile-primary-text">{r.customerName || '—'}</span>
                             <div className="table-mobile-summary">
                               <span className="table-mobile-summary-badges">
+                                {renderStatusBadge(r)}
                                 <span
                                   className={`status-badge ${
                                     r.verificationType === 'OV' ? 'site-calibration-type-ov' : 'site-calibration-type-rv'
@@ -558,68 +944,94 @@ export const RCSiteCalibration: React.FC = () => {
                                   {r.verificationType}
                                 </span>
                               </span>
-                              <span>{r.productName || '—'}</span>
-                              <span className="text-mono table-mobile-summary-meta">
-                                {r.serialNumber || '—'} · MPE {formatProductMpe(r.maximumPermissibleError)}
+                              <span>{formatVerificationCapAcc(r)} · {r.serialNumber || '—'}</span>
+                              <span className="table-mobile-summary-meta">
+                                VCT {verificationVctLabel(r)} · {formatDate(r.createdAt)}
                               </span>
                               <span className="table-mobile-summary-meta">
-                                {r.ambientTemperature || '—'}°C · {r.relativeHumidity || '—'}% · Seal {r.sealIdentificationNumber || '—'}
+                                Cert {r.certificateNumber?.trim() || '—'}
                               </span>
-                              <span className="table-mobile-summary-meta">{formatDate(r.createdAt)}</span>
                             </div>
                           </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {r.productName || '—'}
+                          <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
+                            {formatVerificationCapAcc(r)}
                           </td>
-                          <td {...editCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
+                          <td {...detailCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
                             {r.serialNumber || '—'}
                           </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {formatProductMpe(r.maximumPermissibleError)}
+                          <td {...detailCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
+                            {r.certificateNumber?.trim() || '—'}
                           </td>
-                          <td {...editCell} className="site-calibration-col-image table-mobile-col-hide table-col-editable">
-                            {r.scaleImageUrl ? (
-                              <img
-                                src={r.scaleImageUrl}
-                                alt=""
-                                className="site-calibration-table-thumb"
-                              />
-                            ) : (
-                              <span className="site-calibration-table-thumb site-calibration-table-thumb--placeholder">
-                                <ImageIcon size={16} />
-                              </span>
-                            )}
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {r.ambientTemperature || '—'}
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {r.relativeHumidity || '—'}
-                          </td>
-                          <td {...editCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
-                            {r.sealIdentificationNumber || '—'}
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {formatDate(r.createdAt)}
+                          <td {...detailCell} className="table-mobile-col-hide table-col-editable">
+                            {renderStatusBadge(r)}
                           </td>
                           <td className="text-right site-calibration-col-actions table-mobile-col-actions">
-                            <button
-                              type="button"
-                              className="btn-icon text-red"
-                              onClick={() => handleDelete(r)}
-                              title="Remove"
-                              aria-label={`Remove verification record for ${r.customerName}`}
-                            >
-                              <Trash2 size={18} />
-                            </button>
+                            <div className="verification-row-actions">
+                              {editable ? (
+                                <button
+                                  type="button"
+                                  className="btn-icon"
+                                  onClick={() => startEdit(r)}
+                                  title="Edit draft"
+                                  aria-label={`Edit draft verification for ${r.customerName}`}
+                                >
+                                  <Pencil size={18} />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn-icon"
+                                  onClick={() => openRecord(r)}
+                                  title="View details"
+                                  aria-label={`View verification for ${r.customerName}`}
+                                >
+                                  <Eye size={18} />
+                                </button>
+                              )}
+                              {canSubmitVerification(r) && (
+                                <button
+                                  type="button"
+                                  className="btn-icon text-blue"
+                                  onClick={() => void handleSubmitRecord(r)}
+                                  disabled={submitting}
+                                  title="Submit for certificate"
+                                  aria-label={`Submit verification for ${r.customerName}`}
+                                >
+                                  <Send size={18} />
+                                </button>
+                              )}
+                              {canDownloadVerificationCertificate(r) && (
+                                <a
+                                  href={r.certificatePdfUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn-icon text-green"
+                                  title="Download certificate PDF"
+                                  aria-label={`Download certificate for ${r.customerName}`}
+                                >
+                                  <Download size={18} />
+                                </a>
+                              )}
+                              {canDeleteVerification(r) && (
+                                <button
+                                  type="button"
+                                  className="btn-icon text-red"
+                                  onClick={() => void handleDelete(r)}
+                                  title="Remove draft"
+                                  aria-label={`Remove draft verification for ${r.customerName}`}
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
                     })}
                     {records.length === 0 && (
                       <tr>
-                        <td colSpan={12} className="text-center py-10 text-muted">
-                          No verification records yet. Click &quot;New&quot; to add one.
+                        <td colSpan={10} className="text-center py-10 text-muted">
+                          No verification records yet. Click &quot;New&quot; to add a draft.
                         </td>
                       </tr>
                     )}

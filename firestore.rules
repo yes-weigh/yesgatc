@@ -45,6 +45,13 @@ service cloud.firestore {
         && request.resource.data.approvalStatus == 'pending';
 
       allow update: if isRCAdmin()
+        && request.auth.uid == uid
+        && resource.data.role == 'rc_admin'
+        && request.resource.data.role == 'rc_admin'
+        && request.resource.data.aadhar == resource.data.aadhar
+        && validAadhar(request.resource.data);
+
+      allow update: if isRCAdmin()
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid
         && request.resource.data.role == 'vct'
@@ -148,21 +155,31 @@ service cloud.firestore {
         && resource.data.rcId == request.auth.uid;
     }
 
-    // ── site calibrations (RC-managed) ────────────────────────────
+    // ── site calibrations (RC-managed verification requests) ───────
     match /siteCalibrations/{recordId} {
+      function verificationRecordStatus(data) {
+        return data.get('status', 'draft');
+      }
+
       allow read, write: if isSuperAdmin();
 
       allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
 
+      // RC creates draft records only; submit is a separate update.
       allow create: if isRCAdmin()
-        && request.resource.data.rcId == request.auth.uid;
+        && request.resource.data.rcId == request.auth.uid
+        && verificationRecordStatus(request.resource.data) == 'draft';
 
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
-        && request.resource.data.rcId == request.auth.uid;
+        && request.resource.data.rcId == resource.data.rcId
+        && verificationRecordStatus(request.resource.data) != 'approved'
+        && verificationRecordStatus(resource.data) == 'draft'
+        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted'];
 
       allow delete: if isRCAdmin()
-        && resource.data.rcId == request.auth.uid;
+        && resource.data.rcId == request.auth.uid
+        && verificationRecordStatus(resource.data) == 'draft';
     }
   }
 }

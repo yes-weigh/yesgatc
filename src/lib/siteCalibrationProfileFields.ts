@@ -1,5 +1,18 @@
-import type { Customer, CustomerDevice, JobType, Product, SiteCalibration } from '../types';
+import type { Customer, CustomerDevice, JobType, Product, SiteCalibration, VerificationLocation } from '../types';
+import {
+  buildRcDirectVerificationMeta,
+  productSnapshotFromProduct,
+} from './verificationRequest';
 import type { ProductFileMeta } from './productApprovalUpload';
+import {
+  deviceVerificationImagesFromRows,
+  emptyDeviceVerificationImagesState,
+  validateDeviceVerificationImages,
+  verificationImagesFromRecord,
+  type DeviceVerificationImagesState,
+} from './verificationDeviceImages';
+
+export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind } from './verificationDeviceImages';
 
 export type SiteCalibrationFormValues = {
   verificationType: JobType | '';
@@ -24,6 +37,7 @@ export type VerificationDeviceRowValues = {
   serialNumber: string;
   maximumPermissibleError: string;
   sealIdentificationNumber: string;
+  verificationLocation: VerificationLocation | '';
 };
 
 export type VerificationSessionValues = {
@@ -35,16 +49,10 @@ export type VerificationSessionValues = {
   devices: VerificationDeviceRowValues[];
 };
 
-export type DeviceScaleImageState = {
-  file: ProductFileMeta | null;
-  uploading: boolean;
-  progress: number;
-  pendingFile: File | null;
-  removed: boolean;
-};
+export type DeviceScaleImageState = import('./verificationDeviceImages').DeviceImageSlotState;
 
 export const EMPTY_SITE_CALIBRATION_FORM: SiteCalibrationFormValues = {
-  verificationType: '',
+  verificationType: 'OV',
   customerId: '',
   customerName: '',
   productId: '',
@@ -57,7 +65,7 @@ export const EMPTY_SITE_CALIBRATION_FORM: SiteCalibrationFormValues = {
 };
 
 export const EMPTY_VERIFICATION_SESSION: VerificationSessionValues = {
-  verificationType: '',
+  verificationType: 'OV',
   customerId: '',
   customerName: '',
   ambientTemperature: '',
@@ -66,13 +74,24 @@ export const EMPTY_VERIFICATION_SESSION: VerificationSessionValues = {
 };
 
 export function emptyDeviceScaleImageState(): DeviceScaleImageState {
-  return {
-    file: null,
-    uploading: false,
-    progress: 0,
-    pendingFile: null,
-    removed: false,
-  };
+  return emptyDeviceVerificationImagesState().scale;
+}
+
+export function deviceImageStatesFromRows(
+  rows: VerificationDeviceRowValues[],
+): Record<string, DeviceVerificationImagesState> {
+  return deviceVerificationImagesFromRows(rows);
+}
+
+export const VERIFICATION_LOCATION_OPTIONS: { value: VerificationLocation; label: string }[] = [
+  { value: 'in_situ', label: 'In situ' },
+  { value: 'in_premises', label: 'In the premises' },
+];
+
+export function verificationLocationLabel(location: VerificationLocation | '' | undefined): string {
+  if (location === 'in_situ') return 'In situ';
+  if (location === 'in_premises') return 'In the premises';
+  return '—';
 }
 
 export function createEmptyVerificationDeviceRow(): VerificationDeviceRowValues {
@@ -86,6 +105,7 @@ export function createEmptyVerificationDeviceRow(): VerificationDeviceRowValues 
     serialNumber: '',
     maximumPermissibleError: '',
     sealIdentificationNumber: '',
+    verificationLocation: 'in_situ',
   };
 }
 
@@ -116,6 +136,7 @@ export function deviceRowFromCustomerDevice(
     serialNumber: device.serialNumber,
     maximumPermissibleError: mpeStringFromProduct(product),
     sealIdentificationNumber: '',
+    verificationLocation: 'in_situ',
   };
 }
 
@@ -127,10 +148,28 @@ export function deviceRowsFromCustomer(
   return customer.devices.map(device => deviceRowFromCustomerDevice(device, products));
 }
 
-export function deviceImageStatesFromRows(
-  rows: VerificationDeviceRowValues[],
-): Record<string, DeviceScaleImageState> {
-  return Object.fromEntries(rows.map(row => [row.localId, emptyDeviceScaleImageState()]));
+/** Keep verification row state when customer devices are updated inline. */
+export function syncVerificationDevicesAfterCustomerUpdate(
+  current: VerificationDeviceRowValues[],
+  customer: Customer,
+  products: Product[],
+): VerificationDeviceRowValues[] {
+  const registered = deviceRowsFromCustomer(customer, products);
+  const newDeviceRows = current.filter(row => row.isNewDevice);
+
+  const merged = registered.map(reg => {
+    const existing = current.find(row => !row.isNewDevice && row.deviceId === reg.deviceId);
+    if (!existing) return reg;
+    return {
+      ...reg,
+      localId: existing.localId,
+      included: existing.included,
+      sealIdentificationNumber: existing.sealIdentificationNumber,
+      verificationLocation: existing.verificationLocation,
+    };
+  });
+
+  return [...merged, ...newDeviceRows];
 }
 
 export function verificationSessionFromRecord(
@@ -156,6 +195,7 @@ export function verificationSessionFromRecord(
             ? String(record.maximumPermissibleError)
             : '',
         sealIdentificationNumber: record.sealIdentificationNumber || '',
+        verificationLocation: record.verificationLocation || '',
       },
     ],
   };
@@ -181,8 +221,15 @@ export function siteCalibrationFormFromRecord(record: SiteCalibration): SiteCali
 export function buildSiteCalibrationFromRow(
   session: VerificationSessionValues,
   row: VerificationDeviceRowValues,
-): Omit<SiteCalibration, 'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt'> {
-  const fields: Omit<SiteCalibration, 'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt'> = {
+  options?: { product?: Product | null },
+): Omit<
+  SiteCalibration,
+  'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt' | 'status' | 'submittedAt' | 'approvedAt'
+> {
+  const fields: Omit<
+    SiteCalibration,
+    'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt' | 'status' | 'submittedAt' | 'approvedAt'
+  > = {
     verificationType: session.verificationType as JobType,
     customerId: session.customerId.trim(),
     customerName: session.customerName.trim(),
@@ -193,9 +240,22 @@ export function buildSiteCalibrationFromRow(
     ambientTemperature: session.ambientTemperature.trim(),
     relativeHumidity: session.relativeHumidity.trim(),
     sealIdentificationNumber: row.sealIdentificationNumber.trim(),
+    verificationLocation: row.verificationLocation as VerificationLocation,
+    ...productSnapshotFromProduct(options?.product),
   };
   if (row.deviceId.trim()) fields.deviceId = row.deviceId.trim();
   return fields;
+}
+
+export function buildNewSiteCalibrationRecord(
+  session: VerificationSessionValues,
+  row: VerificationDeviceRowValues,
+  product?: Product | null,
+): Omit<SiteCalibration, 'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt'> {
+  return {
+    ...buildSiteCalibrationFromRow(session, row, { product }),
+    ...buildRcDirectVerificationMeta(),
+  };
 }
 
 export function buildSiteCalibrationFields(
@@ -223,6 +283,7 @@ export function buildSiteCalibrationFields(
       serialNumber: values.serialNumber,
       maximumPermissibleError: values.maximumPermissibleError,
       sealIdentificationNumber: values.sealIdentificationNumber,
+      verificationLocation: 'in_situ',
     },
   );
 }
@@ -247,10 +308,54 @@ function validateSessionHeader(session: VerificationSessionValues): string | nul
   return null;
 }
 
+function validateOptionalSessionFormats(session: VerificationSessionValues): string | null {
+  if (session.ambientTemperature.trim()) {
+    const temp = Number(session.ambientTemperature.trim());
+    if (Number.isNaN(temp)) return 'Ambient temperature must be a number.';
+  }
+
+  if (session.relativeHumidity.trim()) {
+    const humidity = Number(session.relativeHumidity.trim());
+    if (Number.isNaN(humidity) || humidity < 0 || humidity > 100) {
+      return 'Relative humidity must be a number between 0 and 100.';
+    }
+  }
+
+  return null;
+}
+
+/** Minimal checks to save a draft — mandatory fields may be left empty. */
+export function validateVerificationDraft(
+  session: VerificationSessionValues,
+  _deviceImages: Record<string, DeviceVerificationImagesState>,
+): string | null {
+  if (session.verificationType !== 'OV' && session.verificationType !== 'RV') {
+    return 'Select Original Verification or Re-verification.';
+  }
+  if (!session.customerId.trim()) return 'Select a customer.';
+
+  const included = session.devices.filter(row => row.included);
+  if (included.length === 0) return 'Select at least one device.';
+
+  const formatError = validateOptionalSessionFormats(session);
+  if (formatError) return formatError;
+
+  for (let i = 0; i < session.devices.length; i++) {
+    const row = session.devices[i];
+    if (!row.included) continue;
+    if (row.maximumPermissibleError.trim()) {
+      const mpe = Number(row.maximumPermissibleError.trim());
+      if (Number.isNaN(mpe)) return `Device ${i + 1}: MPE must be a number.`;
+    }
+  }
+
+  return null;
+}
+
 export function validateVerificationDeviceRow(
   row: VerificationDeviceRowValues,
   index: number,
-  image: DeviceScaleImageState,
+  images: DeviceVerificationImagesState,
 ): string | null {
   const label = `Device ${index + 1}`;
   if (!row.productId.trim()) return `${label}: select a product.`;
@@ -263,15 +368,31 @@ export function validateVerificationDeviceRow(
 
   if (!row.sealIdentificationNumber.trim()) return `${label}: seal identification number is required.`;
 
-  const imageError = validateScaleImage(image.file, image.pendingFile, image.removed);
-  if (imageError) return `${label}: ${imageError}`;
+  if (row.verificationLocation !== 'in_situ' && row.verificationLocation !== 'in_premises') {
+    return `${label}: select In situ or In the premises.`;
+  }
 
-  return null;
+  return validateDeviceVerificationImages(images, label);
+}
+
+/** Full validation required before submit for certificate. */
+export function validateVerificationForSubmit(
+  session: VerificationSessionValues,
+  deviceImages: Record<string, DeviceVerificationImagesState>,
+): string | null {
+  return validateVerificationSession(session, deviceImages);
+}
+
+export function validateSiteCalibrationRecord(record: SiteCalibration): string | null {
+  const session = verificationSessionFromRecord(record);
+  const localId = session.devices[0]?.localId || record.id;
+  const images = verificationImagesFromRecord(record);
+  return validateVerificationSession(session, { [localId]: images });
 }
 
 export function validateVerificationSession(
   session: VerificationSessionValues,
-  deviceImages: Record<string, DeviceScaleImageState>,
+  deviceImages: Record<string, DeviceVerificationImagesState>,
 ): string | null {
   const headerError = validateSessionHeader(session);
   if (headerError) return headerError;
@@ -282,7 +403,11 @@ export function validateVerificationSession(
   for (let i = 0; i < session.devices.length; i++) {
     const row = session.devices[i];
     if (!row.included) continue;
-    const rowError = validateVerificationDeviceRow(row, i, deviceImages[row.localId] ?? emptyDeviceScaleImageState());
+    const rowError = validateVerificationDeviceRow(
+      row,
+      i,
+      deviceImages[row.localId] ?? emptyDeviceVerificationImagesState(),
+    );
     if (rowError) return rowError;
   }
 
@@ -315,33 +440,6 @@ export function validateSiteCalibrationForm(values: SiteCalibrationFormValues): 
   }
 
   return null;
-}
-
-export function scaleImageFromRecord(record: SiteCalibration): ProductFileMeta | null {
-  if (!record.scaleImageUrl) return null;
-  return {
-    url: record.scaleImageUrl,
-    path: record.scaleImagePath || '',
-    name: record.scaleImageName || 'Scale image',
-    contentType: record.scaleImageContentType || 'image/jpeg',
-  };
-}
-
-export function scaleImageFieldsFromMeta(meta: ProductFileMeta | null): Partial<SiteCalibration> {
-  if (!meta) {
-    return {
-      scaleImageUrl: '',
-      scaleImagePath: '',
-      scaleImageName: '',
-      scaleImageContentType: '',
-    };
-  }
-  return {
-    scaleImageUrl: meta.url,
-    scaleImagePath: meta.path,
-    scaleImageName: meta.name,
-    scaleImageContentType: meta.contentType,
-  };
 }
 
 export function validateScaleImage(

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink, ImageIcon, MapPin, UserRound } from 'lucide-react';
+import { ExternalLink, ImageIcon, MapPin, Pencil, UserRound } from 'lucide-react';
 import {
   DetailsCompactThumb,
   DetailsSpecsCompactShell,
@@ -22,7 +22,11 @@ export const CustomerDetailsSpecs: React.FC<{
   className?: string;
   /** Show registered device list below specs. Default true. */
   showDevices?: boolean;
-}> = ({ customer, className, showDevices = true }) => {
+  /** When set, shows an edit control on the card. */
+  onEdit?: () => void;
+  editDisabled?: boolean;
+  editLabel?: string;
+}> = ({ customer, className, showDevices = true, onEdit, editDisabled = false, editLabel = 'Edit customer' }) => {
   const photo = shopPhotoFromRecord(customer);
   const mapsUrl = customerMapsUrl(customer);
   const region = [customer.district, customer.state, customer.pincode].filter(part => part?.trim()).join(' · ');
@@ -30,47 +34,61 @@ export const CustomerDetailsSpecs: React.FC<{
 
   return (
     <div className={className ? `${className} site-calibration-form-span-full` : 'site-calibration-form-span-full'}>
-      <DetailsSpecsCompactShell
-        ariaLabel="Customer details"
-        thumb={
-          <DetailsCompactThumb placeholder={!photo?.url} title={customer.name || 'Customer photo'}>
-            {photo?.url ? (
-              <img src={photo.url} alt="" />
-            ) : (
-              <UserRound size={18} className="text-muted" aria-hidden />
+      <div className="customer-details-specs-wrap">
+        <DetailsSpecsCompactShell
+          ariaLabel="Customer details"
+          thumb={
+            <DetailsCompactThumb placeholder={!photo?.url} title={customer.name || 'Customer photo'}>
+              {photo?.url ? (
+                <img src={photo.url} alt="" />
+              ) : (
+                <UserRound size={18} className="text-muted" aria-hidden />
+              )}
+            </DetailsCompactThumb>
+          }
+        >
+          <div className="details-specs-compact-primary">
+            <span className="details-specs-compact-title">{displayText(customer.name)}</span>
+            <span className="details-specs-compact-line text-mono">{displayText(customer.phone)}</span>
+            {customer.email?.trim() && (
+              <span className="details-specs-compact-line">{customer.email.trim()}</span>
             )}
-          </DetailsCompactThumb>
-        }
-      >
-        <div className="details-specs-compact-primary">
-          <span className="details-specs-compact-title">{displayText(customer.name)}</span>
-          <span className="details-specs-compact-line text-mono">{displayText(customer.phone)}</span>
-          {customer.email?.trim() && (
-            <span className="details-specs-compact-line">{customer.email.trim()}</span>
+            <span className="details-specs-compact-badge">
+              {deviceCount} device{deviceCount !== 1 ? 's' : ''}
+            </span>
+          </div>
+          {customer.address?.trim() && (
+            <p className="details-specs-compact-text">{customer.address.trim()}</p>
           )}
-          <span className="details-specs-compact-badge">
-            {deviceCount} device{deviceCount !== 1 ? 's' : ''}
-          </span>
-        </div>
-        {customer.address?.trim() && (
-          <p className="details-specs-compact-text">{customer.address.trim()}</p>
+          <div className="details-specs-compact-foot">
+            {region && <span>{region}</span>}
+            {mapsUrl && (
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="details-specs-doc-link text-sm text-blue"
+              >
+                <MapPin size={13} aria-hidden />
+                {formatCustomerLocation(customer)}
+                <ExternalLink size={12} aria-hidden />
+              </a>
+            )}
+          </div>
+        </DetailsSpecsCompactShell>
+        {onEdit && (
+          <button
+            type="button"
+            className="customer-details-specs-edit-btn"
+            onClick={onEdit}
+            disabled={editDisabled}
+            aria-label={editLabel}
+            title={editLabel}
+          >
+            <Pencil size={16} aria-hidden />
+          </button>
         )}
-        <div className="details-specs-compact-foot">
-          {region && <span>{region}</span>}
-          {mapsUrl && (
-            <a
-              href={mapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="details-specs-doc-link text-sm text-blue"
-            >
-              <MapPin size={13} aria-hidden />
-              {formatCustomerLocation(customer)}
-              <ExternalLink size={12} aria-hidden />
-            </a>
-          )}
-        </div>
-      </DetailsSpecsCompactShell>
+      </div>
 
       {(customer.devices?.length ?? 0) > 0 && showDevices && (
         <div className="site-calibration-customer-devices">

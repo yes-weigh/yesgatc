@@ -4,6 +4,10 @@ import {
   validateProductImageFile,
   type ProductFileMeta,
 } from './productApprovalUpload';
+import {
+  VERIFICATION_IMAGE_CONFIG,
+  type VerificationImageKind,
+} from './verificationDeviceImages';
 
 function mapStorageError(err: unknown): Error {
   const code =
@@ -11,7 +15,9 @@ function mapStorageError(err: unknown): Error {
       ? String((err as { code: string }).code)
       : '';
   if (code === 'storage/unauthorized' || code === 'storage/unauthenticated') {
-    return new Error('Upload denied. Sign out and sign in again, then retry.');
+    return new Error(
+      'Upload denied. Deploy storage rules (firebase deploy --only storage) and sign in again, then retry.',
+    );
   }
   return err instanceof Error ? err : new Error('Upload failed');
 }
@@ -23,19 +29,21 @@ async function ensureUploadAuth(): Promise<void> {
   await user.getIdToken(true);
 }
 
-export async function uploadSiteCalibrationScaleImage(
+export async function uploadSiteCalibrationDeviceImage(
   recordId: string,
+  kind: VerificationImageKind,
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<ProductFileMeta> {
   const validation = validateProductImageFile(file);
   if (validation) throw new Error(validation);
-  if (!recordId.trim()) throw new Error('Record id is required to upload scale image.');
+  if (!recordId.trim()) throw new Error('Record id is required to upload verification image.');
 
   await ensureUploadAuth();
 
+  const folder = VERIFICATION_IMAGE_CONFIG[kind].storageFolder;
   const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
-  const path = `siteCalibrations/${recordId}/scale-image/${Date.now()}${ext}`;
+  const path = `siteCalibrations/${recordId}/${folder}/${Date.now()}${ext}`;
   const storageRef = ref(storage, path);
   const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
 
@@ -53,4 +61,13 @@ export async function uploadSiteCalibrationScaleImage(
       },
     );
   });
+}
+
+/** @deprecated Use uploadSiteCalibrationDeviceImage(recordId, 'scale', file) */
+export async function uploadSiteCalibrationScaleImage(
+  recordId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ProductFileMeta> {
+  return uploadSiteCalibrationDeviceImage(recordId, 'scale', file, onProgress);
 }

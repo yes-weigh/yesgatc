@@ -1,35 +1,46 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { ProductSelect } from '../../components/ProductSelect';
+import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
 import { UploadField } from '../admin/productFormUi';
 import { useAppContext } from '../../context/AppContext';
 import {
   mpeStringFromProduct,
-  type DeviceScaleImageState,
+  VERIFICATION_LOCATION_OPTIONS,
+  type DeviceVerificationImagesState,
   type VerificationDeviceRowValues,
 } from '../../lib/siteCalibrationProfileFields';
-import type { Product } from '../../types';
+import {
+  emptyDeviceImageSlot,
+  emptyDeviceVerificationImagesState,
+  VERIFICATION_IMAGE_CONFIG,
+  VERIFICATION_IMAGE_KINDS,
+  type DeviceImageSlotState,
+  type VerificationImageKind,
+} from '../../lib/verificationDeviceImages';
+import type { Product, VerificationLocation } from '../../types';
 
-const DeviceScaleUpload: React.FC<{
-  image: DeviceScaleImageState;
+const DeviceVerificationUpload: React.FC<{
+  kind: VerificationImageKind;
+  image: DeviceImageSlotState;
   disabled: boolean;
   onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemove: () => void;
-  label?: string;
-  hint?: string;
-  formats?: string;
-}> = ({ image, disabled, onSelect, onRemove, label = '', hint = '', formats = '' }) => {
+}> = ({ kind, image, disabled, onSelect, onRemove }) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const config = VERIFICATION_IMAGE_CONFIG[kind];
+  const slot = image ?? emptyDeviceImageSlot();
+
   return (
     <UploadField
-      label={label}
-      hint={hint}
-      file={image.file}
-      uploading={image.uploading}
-      progress={image.progress}
+      label={config.label}
+      hint={config.hint}
+      file={slot.file}
+      uploading={slot.uploading}
+      progress={slot.progress}
       accept="image/jpeg,image/png,image/webp,image/gif"
       uploadLabel="Upload"
-      formats={formats}
+      formats="Max 15 MB"
       inputRef={inputRef}
       onSelect={onSelect}
       onRemove={onRemove}
@@ -37,27 +48,83 @@ const DeviceScaleUpload: React.FC<{
       variant="image"
       compact
       iconActions
+      placeholderSrc={config.placeholderSrc}
     />
   );
 };
 
 type VerificationDeviceFieldsProps = {
   devices: VerificationDeviceRowValues[];
-  deviceImages: Record<string, DeviceScaleImageState>;
+  deviceImages: Record<string, DeviceVerificationImagesState>;
   onDeviceChange: (localId: string, patch: Partial<VerificationDeviceRowValues>) => void;
   onDeviceAdd: () => void;
   onDeviceRemove: (localId: string) => void;
-  onScaleImageSelect: (localId: string, file: File) => void;
-  onScaleImageRemove: (localId: string) => void;
+  onDeviceImageSelect: (localId: string, kind: VerificationImageKind, file: File) => void;
+  onDeviceImageRemove: (localId: string, kind: VerificationImageKind) => void;
   submitting: boolean;
-  lockExistingDevices?: boolean;
+  /** New verification — multiple devices can be saved as separate table rows. */
+  createMode?: boolean;
+  readOnly?: boolean;
+  laboratorySealIdentification?: string;
 };
 
-function productLabel(products: Product[], row: VerificationDeviceRowValues): string {
-  if (row.productName.trim()) return row.productName;
-  const product = products.find(p => p.id === row.productId);
-  return product?.name || '—';
+function selectedProduct(products: Product[], row: VerificationDeviceRowValues): Product | null {
+  return products.find(p => p.id === row.productId) ?? null;
 }
+
+const DeviceLocationField: React.FC<{
+  id: string;
+  value: VerificationLocation | '';
+  disabled: boolean;
+  required?: boolean;
+  onChange: (value: VerificationLocation) => void;
+  variant?: 'table' | 'default';
+}> = ({ id, value, disabled, required = false, onChange, variant = 'default' }) => (
+  <fieldset
+    id={id}
+    className={`verification-device-location-field mb-0${variant === 'table' ? ' verification-device-location-field--table' : ''}`}
+    disabled={disabled}
+  >
+    <legend className="sr-only">Verification location</legend>
+    <div className="verification-device-location-options">
+      {VERIFICATION_LOCATION_OPTIONS.map((opt, index) => (
+        <label key={opt.value} className="verification-device-location-option site-calibration-type-option">
+          <input
+            type="radio"
+            name={id}
+            value={opt.value}
+            checked={value === opt.value}
+            onChange={() => onChange(opt.value)}
+            disabled={disabled}
+            required={required && index === 0}
+          />
+          <span>{opt.label}</span>
+        </label>
+      ))}
+    </div>
+  </fieldset>
+);
+
+const DeviceVerificationImages: React.FC<{
+  images: DeviceVerificationImagesState;
+  disabled: boolean;
+  onSelect: (kind: VerificationImageKind, e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (kind: VerificationImageKind) => void;
+  variant?: 'table' | 'card';
+}> = ({ images, disabled, onSelect, onRemove, variant = 'table' }) => (
+  <div className={`verification-device-images${variant === 'card' ? ' verification-device-images--card' : ''}`}>
+    {VERIFICATION_IMAGE_KINDS.map(kind => (
+      <DeviceVerificationUpload
+        key={kind}
+        kind={kind}
+        image={images[kind]}
+        disabled={disabled}
+        onSelect={e => onSelect(kind, e)}
+        onRemove={() => onRemove(kind)}
+      />
+    ))}
+  </div>
+);
 
 export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> = ({
   devices,
@@ -65,31 +132,71 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   onDeviceChange,
   onDeviceAdd,
   onDeviceRemove,
-  onScaleImageSelect,
-  onScaleImageRemove,
+  onDeviceImageSelect,
+  onDeviceImageRemove,
   submitting,
-  lockExistingDevices = false,
+  createMode = false,
+  readOnly = false,
+  laboratorySealIdentification = '',
 }) => {
   const { products } = useAppContext();
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  const locked = submitting || readOnly;
 
-  const handleFileInput = (localId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const sealLabelForRow = (row: VerificationDeviceRowValues) =>
+    readOnly
+      ? row.sealIdentificationNumber
+      : laboratorySealIdentification || row.sealIdentificationNumber;
+
+  const includedCount = devices.filter(d => d.included).length;
+  const allIncluded = devices.length > 0 && includedCount === devices.length;
+  const someIncluded = includedCount > 0 && !allIncluded;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someIncluded;
+    }
+  }, [someIncluded, allIncluded, devices.length]);
+
+  const setAllIncluded = (included: boolean) => {
+    for (const device of devices) {
+      onDeviceChange(device.localId, { included });
+    }
+  };
+
+  const handleFileInput = (
+    localId: string,
+    kind: VerificationImageKind,
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = e.target.files?.[0];
     e.target.value = '';
-    if (file) onScaleImageSelect(localId, file);
+    if (file) onDeviceImageSelect(localId, kind, file);
+  };
+
+  const handleProductChange = (localId: string, next: { productId: string; productName: string }) => {
+    const product = products.find(p => p.id === next.productId) ?? null;
+    onDeviceChange(localId, {
+      productId: next.productId,
+      productName: next.productName,
+      maximumPermissibleError: mpeStringFromProduct(product),
+    });
   };
 
   if (devices.length === 0) {
     return (
       <div className="verification-devices-empty">
         <p className="text-muted text-sm mb-3">This customer has no registered devices yet.</p>
-        <button
-          type="button"
-          className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
-          onClick={onDeviceAdd}
-          disabled={submitting}
-        >
-          <Plus size={15} /> Add device
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
+            onClick={onDeviceAdd}
+            disabled={locked}
+          >
+            <Plus size={15} /> Add device
+          </button>
+        )}
       </div>
     );
   }
@@ -97,40 +204,92 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   return (
     <div className="verification-devices-panel">
       <div className="verification-devices-head">
-        <p className="site-calibration-details-heading mb-0">Devices to verify</p>
-        <button
-          type="button"
-          className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
-          onClick={onDeviceAdd}
-          disabled={submitting}
-        >
-          <Plus size={15} /> Add device
-        </button>
+        <div>
+          <p className="site-calibration-details-heading mb-0">Devices to verify</p>
+          {createMode && (
+            <p className="verification-devices-batch-hint text-muted text-xs mt-1 mb-0">
+              Tick the devices to include. Each selected device is saved as a draft row in the verification table.
+              {includedCount > 0 && (
+                <span className="verification-devices-batch-count">
+                  {' '}
+                  {includedCount} selected → {includedCount} table row{includedCount !== 1 ? 's' : ''}.
+                </span>
+              )}
+            </p>
+          )}
+          {!readOnly && laboratorySealIdentification && (
+            <p className="text-muted text-xs mt-1 mb-0">
+              Seal ID is prefilled from Laboratory ({laboratorySealIdentification}).
+            </p>
+          )}
+        </div>
+        {!readOnly && (
+          <button
+            type="button"
+            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
+            onClick={onDeviceAdd}
+            disabled={locked}
+          >
+            <Plus size={15} /> Add device
+          </button>
+        )}
       </div>
+
+      {createMode && devices.length > 1 && (
+        <div className="verification-devices-bulk-actions">
+          <button
+            type="button"
+            className="btn btn-secondary text-xs py-1 px-2.5"
+            onClick={() => setAllIncluded(true)}
+            disabled={locked || allIncluded}
+          >
+            Select all
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary text-xs py-1 px-2.5"
+            onClick={() => setAllIncluded(false)}
+            disabled={locked || includedCount === 0}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
 
       <div className="verification-devices-desktop table-scroll-wrap">
         <table className="data-table data-table--verification-devices">
           <thead>
             <tr>
-              <th className="verification-devices-col-check">Verify</th>
+              <th className="verification-devices-col-check">
+                {createMode && devices.length > 1 ? (
+                  <label className="verification-device-check verification-device-check--header" title="Select all devices">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allIncluded}
+                      onChange={e => setAllIncluded(e.target.checked)}
+                      disabled={locked}
+                      aria-label="Select all devices"
+                    />
+                    <span className="sr-only">Select all</span>
+                  </label>
+                ) : (
+                  'Verify'
+                )}
+              </th>
               <th>Product</th>
               <th>Serial</th>
+              <th>Location</th>
               <th>MPE</th>
               <th>Seal ID</th>
-              <th>Scale image</th>
+              <th>Images</th>
               <th className="verification-devices-col-actions" />
             </tr>
           </thead>
           <tbody>
             {devices.map((row, index) => {
-              const image = deviceImages[row.localId] ?? {
-                file: null,
-                uploading: false,
-                progress: 0,
-                pendingFile: null,
-                removed: false,
-              };
-              const editableDevice = row.isNewDevice || !lockExistingDevices;
+              const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
+              const product = selectedProduct(products, row);
 
               return (
                 <tr key={row.localId} className={row.included ? '' : 'verification-device-row--skipped'}>
@@ -140,45 +299,49 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         type="checkbox"
                         checked={row.included}
                         onChange={e => onDeviceChange(row.localId, { included: e.target.checked })}
-                        disabled={submitting}
+                        disabled={locked}
                       />
                     </label>
                   </td>
                   <td className="verification-devices-col-product">
-                    {row.isNewDevice ? (
+                    <div className="verification-device-product-cell">
                       <ProductSelect
                         products={products}
                         inputId={`verification-product-${row.localId}`}
                         value={{ productId: row.productId, productName: row.productName }}
-                        onChange={next => {
-                          const product = products.find(p => p.id === next.productId) ?? null;
-                          onDeviceChange(row.localId, {
-                            productId: next.productId,
-                            productName: next.productName,
-                            maximumPermissibleError: mpeStringFromProduct(product),
-                          });
-                        }}
-                        disabled={submitting || !row.included}
-                        required={row.included}
+                        onChange={next => handleProductChange(row.localId, next)}
+                        disabled={locked || !row.included}
                       />
-                    ) : (
-                      <span className="verification-device-readonly">{productLabel(products, row)}</span>
-                    )}
+                      {product && (
+                        <ProductDetailsSpecs
+                          product={product}
+                          embedded
+                          className="verification-device-product-details"
+                        />
+                      )}
+                    </div>
                   </td>
                   <td>
-                    {editableDevice && row.isNewDevice ? (
-                      <input
-                        type="text"
-                        className="input-field input-field--table"
-                        placeholder="Serial number"
-                        value={row.serialNumber}
-                        onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-                        disabled={submitting || !row.included}
-                        required={row.included}
-                      />
-                    ) : (
-                      <span className="verification-device-readonly text-mono">{row.serialNumber || '—'}</span>
-                    )}
+                    <input
+                      type="text"
+                      className="input-field input-field--table"
+                      placeholder="Serial number"
+                      value={row.serialNumber}
+                      onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
+                      disabled={locked || !row.included}
+                    />
+                  </td>
+                  <td className="verification-devices-col-location">
+                    <DeviceLocationField
+                      id={`verification-location-${row.localId}`}
+                      value={row.verificationLocation}
+                      onChange={verificationLocation =>
+                        onDeviceChange(row.localId, { verificationLocation })
+                      }
+                      disabled={locked || !row.included}
+                      required={false}
+                      variant="table"
+                    />
                   </td>
                   <td>
                     <input
@@ -188,35 +351,35 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       placeholder="MPE"
                       value={row.maximumPermissibleError}
                       onChange={e => onDeviceChange(row.localId, { maximumPermissibleError: e.target.value })}
-                      disabled={submitting || !row.included}
+                      disabled={locked || !row.included}
                     />
                   </td>
                   <td>
                     <input
                       type="text"
-                      className="input-field input-field--table"
-                      placeholder="Seal ID"
-                      value={row.sealIdentificationNumber}
-                      onChange={e => onDeviceChange(row.localId, { sealIdentificationNumber: e.target.value })}
-                      disabled={submitting || !row.included}
-                      required={row.included}
+                      className="input-field input-field--table input-readonly"
+                      value={sealLabelForRow(row)}
+                      readOnly
+                      tabIndex={-1}
+                      aria-label="Seal identification"
+                      title={readOnly ? 'Seal identification at submission' : 'Managed on Laboratory page'}
                     />
                   </td>
-                  <td className="verification-devices-col-image">
-                    <DeviceScaleUpload
-                      image={image}
-                      disabled={submitting || !row.included}
-                      onSelect={e => handleFileInput(row.localId, e)}
-                      onRemove={() => onScaleImageRemove(row.localId)}
+                  <td className="verification-devices-col-images">
+                    <DeviceVerificationImages
+                      images={images}
+                      disabled={locked || !row.included}
+                      onSelect={(kind, e) => handleFileInput(row.localId, kind, e)}
+                      onRemove={kind => onDeviceImageRemove(row.localId, kind)}
                     />
                   </td>
                   <td className="verification-devices-col-actions text-right">
-                    {row.isNewDevice && (
+                    {row.isNewDevice && !readOnly && (
                       <button
                         type="button"
                         className="btn-icon text-red"
                         onClick={() => onDeviceRemove(row.localId)}
-                        disabled={submitting}
+                        disabled={locked}
                         title="Remove device"
                         aria-label={`Remove device ${index + 1}`}
                       >
@@ -233,13 +396,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
 
       <div className="verification-devices-mobile">
         {devices.map((row, index) => {
-          const image = deviceImages[row.localId] ?? {
-            file: null,
-            uploading: false,
-            progress: 0,
-            pendingFile: null,
-            removed: false,
-          };
+          const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
+          const product = selectedProduct(products, row);
 
           return (
             <div
@@ -252,16 +410,16 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     type="checkbox"
                     checked={row.included}
                     onChange={e => onDeviceChange(row.localId, { included: e.target.checked })}
-                    disabled={submitting}
+                    disabled={locked}
                   />
                   <span>Device {index + 1}</span>
                 </label>
-                {row.isNewDevice && (
+                {row.isNewDevice && !readOnly && (
                   <button
                     type="button"
                     className="btn-icon text-red"
                     onClick={() => onDeviceRemove(row.localId)}
-                    disabled={submitting}
+                    disabled={locked}
                     title="Remove device"
                     aria-label={`Remove device ${index + 1}`}
                   >
@@ -272,43 +430,45 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
 
               <div className="verification-device-card-body">
                 <div className="form-group mb-0">
-                  <label htmlFor={`verification-mobile-product-${row.localId}`}>Product *</label>
-                  {row.isNewDevice ? (
-                    <ProductSelect
-                      products={products}
-                      inputId={`verification-mobile-product-${row.localId}`}
-                      value={{ productId: row.productId, productName: row.productName }}
-                      onChange={next => {
-                        const product = products.find(p => p.id === next.productId) ?? null;
-                        onDeviceChange(row.localId, {
-                          productId: next.productId,
-                          productName: next.productName,
-                          maximumPermissibleError: mpeStringFromProduct(product),
-                        });
-                      }}
-                      disabled={submitting || !row.included}
-                      required={row.included}
+                  <label htmlFor={`verification-mobile-product-${row.localId}`}>Product</label>
+                  <ProductSelect
+                    products={products}
+                    inputId={`verification-mobile-product-${row.localId}`}
+                    value={{ productId: row.productId, productName: row.productName }}
+                    onChange={next => handleProductChange(row.localId, next)}
+                    disabled={locked || !row.included}
+                  />
+                  {product && (
+                    <ProductDetailsSpecs
+                      product={product}
+                      embedded
+                      className="verification-device-product-details"
                     />
-                  ) : (
-                    <p className="verification-device-readonly mb-0">{productLabel(products, row)}</p>
                   )}
                 </div>
 
                 <div className="form-group mb-0">
-                  <label htmlFor={`verification-mobile-serial-${row.localId}`}>Serial number *</label>
-                  {row.isNewDevice ? (
-                    <input
-                      id={`verification-mobile-serial-${row.localId}`}
-                      type="text"
-                      className="input-field"
-                      value={row.serialNumber}
-                      onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-                      disabled={submitting || !row.included}
-                      required={row.included}
-                    />
-                  ) : (
-                    <p className="verification-device-readonly text-mono mb-0">{row.serialNumber || '—'}</p>
-                  )}
+                  <label htmlFor={`verification-mobile-serial-${row.localId}`}>Serial number</label>
+                  <input
+                    id={`verification-mobile-serial-${row.localId}`}
+                    type="text"
+                    className="input-field"
+                    value={row.serialNumber}
+                    onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
+                    disabled={locked || !row.included}
+                  />
+                </div>
+
+                <div className="form-group mb-0">
+                  <label htmlFor={`verification-mobile-location-${row.localId}`}>Location</label>
+                  <DeviceLocationField
+                    id={`verification-mobile-location-${row.localId}`}
+                    value={row.verificationLocation}
+                    onChange={verificationLocation =>
+                      onDeviceChange(row.localId, { verificationLocation })
+                    }
+                    disabled={locked || !row.included}
+                  />
                 </div>
 
                 <div className="form-group mb-0">
@@ -320,32 +480,33 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     className="input-field"
                     value={row.maximumPermissibleError}
                     onChange={e => onDeviceChange(row.localId, { maximumPermissibleError: e.target.value })}
-                    disabled={submitting || !row.included}
+                    disabled={locked || !row.included}
                   />
                 </div>
 
                 <div className="form-group mb-0">
-                  <label htmlFor={`verification-mobile-seal-${row.localId}`}>Seal identification number *</label>
+                  <label htmlFor={`verification-mobile-seal-${row.localId}`}>Seal identification number</label>
                   <input
                     id={`verification-mobile-seal-${row.localId}`}
                     type="text"
-                    className="input-field"
-                    value={row.sealIdentificationNumber}
-                    onChange={e => onDeviceChange(row.localId, { sealIdentificationNumber: e.target.value })}
-                    disabled={submitting || !row.included}
-                    required={row.included}
+                    className="input-field input-readonly"
+                    value={sealLabelForRow(row)}
+                    readOnly
+                    tabIndex={-1}
+                    title={readOnly ? 'Seal identification at submission' : 'Managed on Laboratory page'}
                   />
+                  {!readOnly && (
+                    <p className="text-muted text-xs mt-1 mb-0">Update on the Laboratory page.</p>
+                  )}
                 </div>
 
                 <div className="form-group mb-0 verification-device-card-upload">
-                  <DeviceScaleUpload
-                    image={image}
-                    disabled={submitting || !row.included}
-                    onSelect={e => handleFileInput(row.localId, e)}
-                    onRemove={() => onScaleImageRemove(row.localId)}
-                    label="Scale image"
-                    hint="Required"
-                    formats="Max 15 MB"
+                  <DeviceVerificationImages
+                    images={images}
+                    disabled={locked || !row.included}
+                    onSelect={(kind, e) => handleFileInput(row.localId, kind, e)}
+                    onRemove={kind => onDeviceImageRemove(row.localId, kind)}
+                    variant="card"
                   />
                 </div>
               </div>

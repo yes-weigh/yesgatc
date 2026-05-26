@@ -116,3 +116,18 @@ export function formatProductText(value: string | undefined | null): string {
   const trimmed = value?.trim();
   return trimmed || '—';
 }
+
+/** Short product summary for inline tables and pickers. */
+export function formatProductBriefSummary(product: Product | null | undefined): string {
+  if (!product) return '';
+  const parts: string[] = [];
+  if (product.modelid?.trim()) parts.push(product.modelid.trim());
+  if (product.typeOfInstrument?.trim()) parts.push(product.typeOfInstrument.trim());
+  const capacity = formatProductMaximumCapacity(product);
+  if (capacity !== '—') parts.push(capacity);
+  const interval = formatProductScaleInterval(product);
+  if (interval !== '—') parts.push(`d ${interval}`);
+  const mpe = formatProductMpe(product.maximumPermissibleError);
+  if (mpe !== '—') parts.push(`MPE ${mpe}`);
+  return parts.join(' · ');
+}

@@ -78,7 +78,7 @@ export const Layout: React.FC = () => {
           { path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
           { path: '/rc/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
           { path: '/rc/verification', icon: <ShieldCheck size={20} />, label: 'Verification' },
-          { path: '/rc/upload-certificate', icon: <Upload size={20} />, label: 'Upload Certificate' },
+          { path: '/rc/upload-certificate', icon: <Upload size={20} />, label: 'Manual Upload' },
           { path: '/rc/customers', icon: <UserRound size={20} />, label: 'Customer' },
           { path: '/rc/products', icon: <Package size={20} />, label: 'Product' },
           {
