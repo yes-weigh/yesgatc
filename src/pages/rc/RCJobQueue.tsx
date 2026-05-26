@@ -276,7 +276,8 @@ export const RCJobQueue: React.FC = () => {
 
       <div className="panel glass">
         <div className="panel-body p-0">
-          <table className="data-table">
+          <div className="table-scroll-wrap">
+          <table className="data-table data-table--job-queue data-table--mobile-cards">
             <thead>
               <tr>
                 <th>Job ID</th>
@@ -291,31 +292,49 @@ export const RCJobQueue: React.FC = () => {
             </thead>
             <tbody>
               {filteredJobs.map(job => (
-                <tr key={job.id}>
-                  <td className="text-mono-muted">
+                <tr key={job.id} className="table-mobile-row table-mobile-row--actions">
+                  <td className="text-mono-muted table-mobile-col-hide">
                     {job.id.slice(0, 16)}...
                   </td>
-                  <td>
-                    <div className="font-medium">{job.customer}</div>
-                    <div className="text-xs text-muted">{job.product}</div>
+                  <td className="table-mobile-col-primary">
+                    <span className="table-mobile-primary-text">{job.customer}</span>
+                    <div className="table-mobile-summary">
+                      <span className="table-mobile-summary-meta">{job.product}</span>
+                      <span className="text-mono">
+                        {job.serial} · <span className="text-blue-soft font-bold">{job.jobType}</span>
+                      </span>
+                      <span className="table-mobile-summary-meta text-mono">{job.id.slice(0, 16)}…</span>
+                      <span>{getTechName(job.assignedTo)}</span>
+                      <span className="table-mobile-summary-badges">
+                        {getStatusBadge(job.status)}
+                        <span className={`workflow-pill ${job.rcWorkflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
+                          {job.rcWorkflowMode.toUpperCase()}
+                        </span>
+                      </span>
+                      <span className="table-mobile-summary-meta">
+                        {new Date(job.createdAt).toLocaleDateString('en-IN', {
+                          day: '2-digit', month: 'short', year: 'numeric',
+                        })}
+                      </span>
+                    </div>
                   </td>
-                  <td>
+                  <td className="table-mobile-col-hide">
                     <div className="font-medium">{job.serial}</div>
                     <div className="text-xs font-bold text-blue-soft">{job.jobType}</div>
                   </td>
-                  <td className="text-sm">{getTechName(job.assignedTo)}</td>
-                  <td>{getStatusBadge(job.status)}</td>
-                  <td>
+                  <td className="text-sm table-mobile-col-hide">{getTechName(job.assignedTo)}</td>
+                  <td className="table-mobile-col-hide">{getStatusBadge(job.status)}</td>
+                  <td className="table-mobile-col-hide">
                     <span className={`workflow-pill ${job.rcWorkflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
                       {job.rcWorkflowMode.toUpperCase()}
                     </span>
                   </td>
-                  <td className="text-muted text-sm">
+                  <td className="text-muted text-sm table-mobile-col-hide">
                     {new Date(job.createdAt).toLocaleDateString('en-IN', {
                       day: '2-digit', month: 'short', year: 'numeric'
                     })}
                   </td>
-                  <td className="text-right">
+                  <td className="text-right table-mobile-col-actions">
                     {job.status === 'assigned' ? (
                       <button 
                         className="btn-icon text-red" 
@@ -339,6 +358,7 @@ export const RCJobQueue: React.FC = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>

@@ -262,7 +262,7 @@ export const AdminVCTList: React.FC = () => {
             </div>
           ) : (
             <div className="table-scroll-wrap">
-              <table className="data-table data-table--vct-rc data-table--vct-admin">
+              <table className="data-table data-table--vct-rc data-table--vct-admin data-table--mobile-cards">
                 <thead>
                   <tr>
                     <th className="vct-rc-col-serial">#</th>
@@ -278,28 +278,61 @@ export const AdminVCTList: React.FC = () => {
                 </thead>
                 <tbody>
                   {vctList.map((v, index) => (
-                    <tr key={v.uid}>
-                      <td className="vct-rc-col-serial text-muted text-sm">{index + 1}</td>
-                      <td className="font-medium">
-                        <div className="flex items-center gap-2">
+                    <tr key={v.uid} className="table-mobile-row table-mobile-row--actions">
+                      <td className="vct-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
+                      <td className="font-medium table-mobile-col-primary">
+                        <div className="flex items-center gap-2 min-w-0">
                           {v.profilePhotoUrl ? (
-                            <img src={v.profilePhotoUrl} alt="" className="vct-table-avatar" />
+                            <img src={v.profilePhotoUrl} alt="" className="vct-table-avatar shrink-0" />
                           ) : (
-                            <span className="vct-table-avatar vct-table-avatar--placeholder">
+                            <span className="vct-table-avatar vct-table-avatar--placeholder shrink-0">
                               <UserCircle size={18} />
                             </span>
                           )}
-                          <span className="table-cell-truncate" title={v.username}>
-                            {v.username || '—'}
-                          </span>
+                          <div className="min-w-0">
+                            <span className="table-mobile-primary-text table-cell-truncate" title={v.username}>
+                              {v.username || '—'}
+                            </span>
+                            <div className="table-mobile-summary">
+                              <span className="table-mobile-summary-meta">{v.rcCenterName}</span>
+                              <span>{v.phone || '—'} · {formatAadharDisplay(v.aadhar)}</span>
+                              <span className="table-mobile-summary-badges">
+                                <span
+                                  className={`status-badge ${
+                                    v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
+                                  }`}
+                                >
+                                  {vctApprovalLabel(v.approvalStatus)}
+                                </span>
+                                <span
+                                  className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}
+                                >
+                                  {v.workflowMode === 'auto' ? (
+                                    <>
+                                      <Zap size={12} /> Auto
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ClipboardList size={12} /> Manual
+                                    </>
+                                  )}
+                                </span>
+                              </span>
+                              {v.createdAt && (
+                                <span className="table-mobile-summary-meta">
+                                  {new Date(v.createdAt).toLocaleDateString('en-IN')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </td>
-                      <td className="vct-admin-col-rc table-cell-truncate" title={v.rcCenterName}>
+                      <td className="vct-admin-col-rc table-cell-truncate table-mobile-col-hide" title={v.rcCenterName}>
                         {v.rcCenterName}
                       </td>
-                      <td className="text-sm">{v.phone || '—'}</td>
-                      <td className="text-muted text-sm">{formatAadharDisplay(v.aadhar)}</td>
-                      <td className="vct-col-status">
+                      <td className="text-sm table-mobile-col-hide">{v.phone || '—'}</td>
+                      <td className="text-muted text-sm table-mobile-col-hide">{formatAadharDisplay(v.aadhar)}</td>
+                      <td className="vct-col-status table-mobile-col-hide">
                         <span
                           className={`status-badge ${
                             v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
@@ -308,7 +341,7 @@ export const AdminVCTList: React.FC = () => {
                           {vctApprovalLabel(v.approvalStatus)}
                         </span>
                       </td>
-                      <td className="vct-col-mode">
+                      <td className="vct-col-mode table-mobile-col-hide">
                         <span
                           className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}
                         >
@@ -323,10 +356,10 @@ export const AdminVCTList: React.FC = () => {
                           )}
                         </span>
                       </td>
-                      <td className="text-muted text-xs-soft">
+                      <td className="text-muted text-xs-soft table-mobile-col-hide">
                         {v.createdAt ? new Date(v.createdAt).toLocaleDateString('en-IN') : '—'}
                       </td>
-                      <td className="text-right vct-rc-col-actions">
+                      <td className="text-right vct-rc-col-actions table-mobile-col-actions">
                         <button
                           type="button"
                           className="btn-icon text-blue mr-2"

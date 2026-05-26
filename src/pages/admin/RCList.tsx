@@ -571,7 +571,7 @@ export const RCList: React.FC = () => {
             </div>
           ) : (
             <div className="table-scroll-wrap">
-            <table className="data-table data-table--rc">
+            <table className="data-table data-table--rc data-table--mobile-cards">
               <colgroup>
                 <col className="rc-col-serial" />
                 <col className="rc-col-company" />
@@ -605,20 +605,37 @@ export const RCList: React.FC = () => {
                   const editCell = tableEditCellProps(openEdit, 'Edit regional center');
 
                   return (
-                    <tr key={rc.uid}>
-                      <td className="rc-col-serial text-muted text-sm">{index + 1}</td>
-                      <td {...editCell} className="rc-col-company font-medium table-col-editable">
-                        <span className="rc-cell-ellipsis" title={company}>
+                    <tr key={rc.uid} className="table-mobile-row table-mobile-row--actions">
+                      <td className="rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
+                      <td {...editCell} className="rc-col-company font-medium table-mobile-col-primary table-col-editable">
+                        <span className="table-mobile-primary-text rc-cell-ellipsis" title={company}>
                           {company}
                         </span>
+                        <div className="table-mobile-summary">
+                          <span className="table-mobile-summary-meta">{rc.place || '—'}</span>
+                          <span>
+                            {rc.vctCount} VCT{rc.vctCount !== 1 ? 's' : ''} · {rc.totalJobs} job{rc.totalJobs !== 1 ? 's' : ''}
+                            {rc.totalJobs > 0 && (
+                              <span className="text-muted"> ({completionRate}% done)</span>
+                            )}
+                          </span>
+                          <span className="table-mobile-summary-meta">Cert. due {certDue}</span>
+                          <span className="table-mobile-summary-badges">
+                            <span
+                              className={`rc-status-badge ${isActive ? 'rc-status-badge--active' : 'rc-status-badge--inactive'}`}
+                            >
+                              {rcActivationLabel(rc)}
+                            </span>
+                          </span>
+                        </div>
                       </td>
-                      <td {...editCell} className="rc-col-place text-sm table-col-editable">
+                      <td {...editCell} className="rc-col-place text-sm table-mobile-col-hide table-col-editable">
                         <span className="rc-cell-ellipsis" title={rc.place || undefined}>
                           {rc.place || '—'}
                         </span>
                       </td>
-                      <td {...editCell} className="rc-col-vcts table-col-editable">{rc.vctCount}</td>
-                      <td {...editCell} className="rc-col-jobs table-col-editable">
+                      <td {...editCell} className="rc-col-vcts table-mobile-col-hide table-col-editable">{rc.vctCount}</td>
+                      <td {...editCell} className="rc-col-jobs table-mobile-col-hide table-col-editable">
                         <span
                           className="rc-jobs-summary"
                           title={`${rc.completedJobs} completed of ${rc.totalJobs} jobs`}
@@ -631,12 +648,12 @@ export const RCList: React.FC = () => {
                       </td>
                       <td
                         {...editCell}
-                        className="rc-col-due text-sm table-col-editable"
+                        className="rc-col-due text-sm table-mobile-col-hide table-col-editable"
                         title={certDue !== '—' ? certDue : undefined}
                       >
                         {certDue}
                       </td>
-                      <td {...editCell} className="rc-col-status table-col-editable">
+                      <td {...editCell} className="rc-col-status table-mobile-col-hide table-col-editable">
                         <span
                           className={`rc-status-badge ${isActive ? 'rc-status-badge--active' : 'rc-status-badge--inactive'}`}
                           title={
@@ -648,7 +665,7 @@ export const RCList: React.FC = () => {
                           {rcActivationLabel(rc)}
                         </span>
                       </td>
-                      <td className="rc-col-actions text-right">
+                      <td className="rc-col-actions text-right table-mobile-col-actions">
                         <button
                           type="button"
                           className="btn-icon text-red"

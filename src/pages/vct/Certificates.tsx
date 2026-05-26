@@ -20,7 +20,8 @@ export const Certificates: React.FC = () => {
           {myCerts.length > 0 && <span className="badge-count">{myCerts.length}</span>}
         </div>
         <div className="panel-body p-0">
-          <table className="data-table">
+          <div className="table-scroll-wrap">
+          <table className="data-table data-table--certificates data-table--mobile-cards">
             <thead>
               <tr>
                 <th>Certificate ID</th>
@@ -35,27 +36,45 @@ export const Certificates: React.FC = () => {
               {myCerts.map(cert => {
                 const job = jobs.find(j => j.id === cert.jobId);
                 return (
-                  <tr key={cert.id}>
-                    <td className="font-bold text-blue text-mono-xs">
+                  <tr key={cert.id} className="table-mobile-row table-mobile-row--actions">
+                    <td className="font-bold text-blue text-mono-xs table-mobile-col-hide">
                       {cert.id.slice(0, 16)}…
                     </td>
-                    <td className="text-mono-muted">
+                    <td className="text-mono-muted table-mobile-col-hide">
                       {cert.jobId.slice(0, 16)}…
                     </td>
-                    <td className="font-medium">{job?.customer ?? '—'}</td>
-                    <td>
+                    <td className="font-medium table-mobile-col-primary">
+                      <span className="table-mobile-primary-text">{job?.customer ?? '—'}</span>
+                      <div className="table-mobile-summary">
+                        <span className="text-mono table-mobile-summary-meta">{cert.id.slice(0, 16)}…</span>
+                        <span className="table-mobile-summary-meta">Job {cert.jobId.slice(0, 16)}…</span>
+                        {job && (
+                          <span className="table-mobile-summary-badges">
+                            <span className={`role-badge ${job.jobType === 'OV' ? 'badge-rc' : 'badge-vct'}`}>
+                              {job.jobType}
+                            </span>
+                          </span>
+                        )}
+                        <span className="table-mobile-summary-meta">
+                          {new Date(cert.issuedAt).toLocaleDateString('en-IN', {
+                            day: '2-digit', month: 'short', year: 'numeric',
+                          })}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="table-mobile-col-hide">
                       {job && (
                         <span className={`role-badge ${job.jobType === 'OV' ? 'badge-rc' : 'badge-vct'}`}>
                           {job.jobType}
                         </span>
                       )}
                     </td>
-                    <td className="text-muted text-sm">
+                    <td className="text-muted text-sm table-mobile-col-hide">
                       {new Date(cert.issuedAt).toLocaleDateString('en-IN', {
                         day: '2-digit', month: 'short', year: 'numeric',
                       })}
                     </td>
-                    <td className="text-right">
+                    <td className="text-right table-mobile-col-actions">
                       <button
                         className="btn-icon"
                         title="Download PDF (coming soon)"
@@ -76,6 +95,7 @@ export const Certificates: React.FC = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>

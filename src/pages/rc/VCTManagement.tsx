@@ -593,7 +593,7 @@ export const VCTManagement: React.FC = () => {
             </div>
           ) : (
             <div className="table-scroll-wrap">
-              <table className="data-table data-table--vct-rc">
+              <table className="data-table data-table--vct-rc data-table--mobile-cards">
                 <thead>
                   <tr>
                     <th className="vct-rc-col-serial">#</th>
@@ -616,29 +616,66 @@ export const VCTManagement: React.FC = () => {
                     const active = isVctActive(v);
 
                     return (
-                    <tr key={v.uid}>
-                      <td className="vct-rc-col-serial text-muted text-sm">{index + 1}</td>
-                      <td {...editCell} className="font-medium table-col-editable">
-                        <div className="flex items-center gap-2">
+                    <tr key={v.uid} className="table-mobile-row table-mobile-row--actions">
+                      <td className="vct-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
+                      <td {...editCell} className="font-medium table-mobile-col-primary table-col-editable">
+                        <div className="flex items-center gap-2 min-w-0">
                           {v.profilePhotoUrl ? (
                             <img
                               src={v.profilePhotoUrl}
                               alt=""
-                              className="vct-table-avatar"
+                              className="vct-table-avatar shrink-0"
                             />
                           ) : (
-                            <span className="vct-table-avatar vct-table-avatar--placeholder">
+                            <span className="vct-table-avatar vct-table-avatar--placeholder shrink-0">
                               <UserCircle size={18} />
                             </span>
                           )}
-                          <span>{v.username || '—'}</span>
+                          <div className="min-w-0">
+                            <span className="table-mobile-primary-text">{v.username || '—'}</span>
+                            <div className="table-mobile-summary">
+                              <span>{v.phone || '—'} · {formatAadharDisplay(v.aadhar)}</span>
+                              <span className="table-mobile-summary-badges">
+                                <span
+                                  className={`status-badge ${
+                                    v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
+                                  }`}
+                                >
+                                  {vctApprovalLabel(v.approvalStatus)}
+                                </span>
+                                {approved && (
+                                  <span
+                                    className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
+                                  >
+                                    {vctActiveLabel(v.active)}
+                                  </span>
+                                )}
+                                <span className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
+                                  {v.workflowMode === 'auto' ? (
+                                    <>
+                                      <Zap size={12} /> Auto
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ClipboardList size={12} /> Manual
+                                    </>
+                                  )}
+                                </span>
+                              </span>
+                              {v.createdAt && (
+                                <span className="table-mobile-summary-meta">
+                                  Added {new Date(v.createdAt).toLocaleDateString('en-IN')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </td>
-                      <td {...editCell} className="text-sm table-col-editable">{v.phone || '—'}</td>
-                      <td {...editCell} className="text-muted text-sm table-col-editable">
+                      <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">{v.phone || '—'}</td>
+                      <td {...editCell} className="text-muted text-sm table-mobile-col-hide table-col-editable">
                         {formatAadharDisplay(v.aadhar)}
                       </td>
-                      <td {...editCell} className="table-col-editable">
+                      <td {...editCell} className="table-mobile-col-hide table-col-editable">
                         <span
                           className={`status-badge ${
                             v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
@@ -647,7 +684,7 @@ export const VCTManagement: React.FC = () => {
                           {vctApprovalLabel(v.approvalStatus)}
                         </span>
                       </td>
-                      <td {...editCell} className="table-col-editable">
+                      <td {...editCell} className="table-mobile-col-hide table-col-editable">
                         {approved ? (
                           <span
                             className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
@@ -658,7 +695,7 @@ export const VCTManagement: React.FC = () => {
                           <span className="text-muted text-sm">—</span>
                         )}
                       </td>
-                      <td {...editCell} className="table-col-editable">
+                      <td {...editCell} className="table-mobile-col-hide table-col-editable">
                         <span className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
                           {v.workflowMode === 'auto' ? (
                             <>
@@ -671,7 +708,7 @@ export const VCTManagement: React.FC = () => {
                           )}
                         </span>
                       </td>
-                      <td {...editCell}>
+                      <td {...editCell} className="table-mobile-col-hide">
                         <div className="flex items-center gap-2">
                           <span className="text-mono text-sm">
                             {revealedUids.has(v.uid) ? (v.clearTextPassword ?? '—') : '••••••••'}
@@ -690,10 +727,10 @@ export const VCTManagement: React.FC = () => {
                           </button>
                         </div>
                       </td>
-                      <td {...editCell} className="text-muted text-xs-soft table-col-editable">
+                      <td {...editCell} className="text-muted text-xs-soft table-mobile-col-hide table-col-editable">
                         {v.createdAt ? new Date(v.createdAt).toLocaleDateString('en-IN') : '—'}
                       </td>
-                      <td className="text-right vct-rc-col-actions">
+                      <td className="text-right vct-rc-col-actions table-mobile-col-actions">
                         {approved ? (
                           <button
                             type="button"

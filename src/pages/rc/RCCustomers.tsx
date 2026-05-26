@@ -502,7 +502,7 @@ export const RCCustomers: React.FC = () => {
               </div>
             ) : (
               <div className="table-scroll-wrap">
-                <table className="data-table data-table--customers-rc">
+                <table className="data-table data-table--customers-rc data-table--mobile-cards">
                   <thead>
                     <tr>
                       <th className="customer-rc-col-serial">#</th>
@@ -522,34 +522,62 @@ export const RCCustomers: React.FC = () => {
                       const editCell = tableEditCellProps(openEdit, 'Edit customer');
 
                       return (
-                        <tr key={c.id}>
-                          <td className="customer-rc-col-serial text-muted text-sm">{index + 1}</td>
-                          <td {...editCell} className="customer-rc-col-customer font-medium table-col-editable">
-                            <div className="flex items-center gap-2">
+                        <tr key={c.id} className="table-mobile-row table-mobile-row--actions">
+                          <td className="customer-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
+                          <td {...editCell} className="customer-rc-col-customer font-medium table-mobile-col-primary table-col-editable">
+                            <div className="flex items-center gap-2 min-w-0">
                               {photo ? (
-                                <img src={photo} alt="" className="customer-table-shop-thumb" />
+                                <img src={photo} alt="" className="customer-table-shop-thumb shrink-0" />
                               ) : (
-                                <span className="customer-table-shop-thumb customer-table-shop-thumb--placeholder">
+                                <span className="customer-table-shop-thumb customer-table-shop-thumb--placeholder shrink-0">
                                   <ImageIcon size={18} />
                                 </span>
                               )}
-                              <span>{c.name || '—'}</span>
+                              <div className="min-w-0">
+                                <span className="table-mobile-primary-text">{c.name || '—'}</span>
+                                <div className="table-mobile-summary">
+                                  <span>{c.phone || '—'}</span>
+                                  <span className="table-mobile-summary-meta">
+                                    {customerDeviceCount(c)} device{customerDeviceCount(c) !== 1 ? 's' : ''}
+                                  </span>
+                                  {c.address && (
+                                    <span className="table-mobile-summary-meta">{c.address}</span>
+                                  )}
+                                  {mapsUrl && (
+                                    <span className="customer-map-link flex items-center gap-1">
+                                      <MapPin size={13} aria-hidden />
+                                      <span>{formatCustomerLocation(c)}</span>
+                                      <a
+                                        href={mapsUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="customer-map-link-icon"
+                                        title="Open in maps"
+                                        aria-label="Open location in maps"
+                                        onClick={e => e.stopPropagation()}
+                                      >
+                                        <ExternalLink size={11} />
+                                      </a>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {c.phone || '—'}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {customerDeviceCount(c)}
                           </td>
                           <td
                             {...editCell}
-                            className="text-sm text-muted max-w-[14rem] truncate table-col-editable"
+                            className="text-sm text-muted max-w-[14rem] truncate table-mobile-col-hide table-col-editable"
                             title={c.address || 'Edit customer'}
                           >
                             {c.address || '—'}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {mapsUrl ? (
                               <span className="customer-map-link flex items-center gap-1">
                                 <MapPin size={13} aria-hidden />
@@ -570,7 +598,7 @@ export const RCCustomers: React.FC = () => {
                               <span className="text-muted">—</span>
                             )}
                           </td>
-                          <td className="text-right customer-rc-col-actions">
+                          <td className="text-right customer-rc-col-actions table-mobile-col-actions">
                             <button
                               type="button"
                               className="btn-icon text-red"

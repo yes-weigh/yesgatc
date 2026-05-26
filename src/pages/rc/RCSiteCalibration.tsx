@@ -396,7 +396,7 @@ export const RCSiteCalibration: React.FC = () => {
               </div>
             ) : (
               <div className="table-scroll-wrap">
-                <table className="data-table data-table--site-calibration">
+                <table className="data-table data-table--site-calibration data-table--mobile-cards">
                   <thead>
                     <tr>
                       <th className="site-calibration-col-serial">#</th>
@@ -419,9 +419,9 @@ export const RCSiteCalibration: React.FC = () => {
                       const editCell = tableEditCellProps(openEdit, 'Edit site calibration');
 
                       return (
-                        <tr key={r.id}>
-                          <td className="site-calibration-col-serial text-muted text-sm">{index + 1}</td>
-                          <td {...editCell} className="table-col-editable">
+                        <tr key={r.id} className="table-mobile-row table-mobile-row--actions">
+                          <td className="site-calibration-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
+                          <td {...editCell} className="table-mobile-col-hide table-col-editable">
                             <span
                               className={`status-badge ${
                                 r.verificationType === 'OV' ? 'site-calibration-type-ov' : 'site-calibration-type-rv'
@@ -430,19 +430,38 @@ export const RCSiteCalibration: React.FC = () => {
                               {r.verificationType}
                             </span>
                           </td>
-                          <td {...editCell} className="font-medium table-col-editable">
-                            {r.customerName || '—'}
+                          <td {...editCell} className="font-medium table-mobile-col-primary table-col-editable">
+                            <span className="table-mobile-primary-text">{r.customerName || '—'}</span>
+                            <div className="table-mobile-summary">
+                              <span className="table-mobile-summary-badges">
+                                <span
+                                  className={`status-badge ${
+                                    r.verificationType === 'OV' ? 'site-calibration-type-ov' : 'site-calibration-type-rv'
+                                  }`}
+                                >
+                                  {r.verificationType}
+                                </span>
+                              </span>
+                              <span>{r.productName || '—'}</span>
+                              <span className="text-mono table-mobile-summary-meta">
+                                {r.serialNumber || '—'} · MPE {formatProductMpe(r.maximumPermissibleError)}
+                              </span>
+                              <span className="table-mobile-summary-meta">
+                                {r.ambientTemperature || '—'}°C · {r.relativeHumidity || '—'}% · Seal {r.sealIdentificationNumber || '—'}
+                              </span>
+                              <span className="table-mobile-summary-meta">{formatDate(r.createdAt)}</span>
+                            </div>
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {r.productName || '—'}
                           </td>
-                          <td {...editCell} className="text-sm text-mono table-col-editable">
+                          <td {...editCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
                             {r.serialNumber || '—'}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {formatProductMpe(r.maximumPermissibleError)}
                           </td>
-                          <td {...editCell} className="table-col-editable">
+                          <td {...editCell} className="site-calibration-col-image table-mobile-col-hide table-col-editable">
                             {r.scaleImageUrl ? (
                               <img
                                 src={r.scaleImageUrl}
@@ -455,19 +474,19 @@ export const RCSiteCalibration: React.FC = () => {
                               </span>
                             )}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {r.ambientTemperature || '—'}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {r.relativeHumidity || '—'}
                           </td>
-                          <td {...editCell} className="text-sm text-mono table-col-editable">
+                          <td {...editCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
                             {r.sealIdentificationNumber || '—'}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {formatDate(r.createdAt)}
                           </td>
-                          <td className="text-right site-calibration-col-actions">
+                          <td className="text-right site-calibration-col-actions table-mobile-col-actions">
                             <button
                               type="button"
                               className="btn-icon text-red"

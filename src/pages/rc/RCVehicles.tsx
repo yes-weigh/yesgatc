@@ -518,7 +518,7 @@ export const RCVehicles: React.FC = () => {
               </div>
             ) : (
               <div className="table-scroll-wrap">
-                <table className="data-table data-table--vehicles-rc">
+                <table className="data-table data-table--vehicles-rc data-table--mobile-cards">
                   <thead>
                     <tr>
                       <th className="vehicle-rc-col-serial">#</th>
@@ -542,46 +542,65 @@ export const RCVehicles: React.FC = () => {
                       const active = isVehicleActive(v);
 
                       return (
-                        <tr key={v.id}>
-                          <td className="vehicle-rc-col-serial text-muted text-sm">{index + 1}</td>
-                          <td {...editCell} className="font-medium table-col-editable">
-                            <div className="flex items-center gap-2">
+                        <tr key={v.id} className="table-mobile-row table-mobile-row--actions">
+                          <td className="vehicle-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
+                          <td {...editCell} className="font-medium table-mobile-col-primary table-col-editable">
+                            <div className="flex items-center gap-2 min-w-0">
                               {v.vehiclePhotoUrl ? (
-                                <img src={v.vehiclePhotoUrl} alt="" className="vct-table-avatar" />
+                                <img src={v.vehiclePhotoUrl} alt="" className="vct-table-avatar shrink-0" />
                               ) : (
-                                <span className="vct-table-avatar vct-table-avatar--placeholder">
+                                <span className="vct-table-avatar vct-table-avatar--placeholder shrink-0">
                                   <ImageIcon size={18} />
                                 </span>
                               )}
-                              <span>
-                                {v.brand} {v.model}
-                              </span>
+                              <div className="min-w-0">
+                                <span className="table-mobile-primary-text">
+                                  {v.brand} {v.model}
+                                </span>
+                                <div className="table-mobile-summary">
+                                  <span className="text-mono">{v.regNumber || '—'} · {v.year || '—'}</span>
+                                  <span className="table-mobile-summary-badges">
+                                    <span className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}>
+                                      {vehicleActiveLabel(v.active)}
+                                    </span>
+                                    <span className={`status-badge ${VALIDITY_BADGE[status]}`}>
+                                      {status === 'ok' && 'Valid'}
+                                      {status === 'due' && 'Due soon'}
+                                      {status === 'expired' && 'Expired'}
+                                      {status === 'missing' && 'Incomplete'}
+                                    </span>
+                                  </span>
+                                  <span className="table-mobile-summary-meta text-sm">
+                                    RC {formatValidityDate(v.rcValidity)} · Ins {formatValidityDate(v.insuranceValidity)}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
                           </td>
-                          <td {...editCell} className="text-sm text-mono table-col-editable">
+                          <td {...editCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
                             {v.regNumber || '—'}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">{v.year || '—'}</td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">{v.year || '—'}</td>
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {formatValidityDate(v.rcValidity)}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {formatValidityDate(v.insuranceValidity)}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {formatValidityDate(v.pollutionValidity)}
                           </td>
-                          <td {...editCell} className="text-sm table-col-editable">
+                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {formatValidityDate(v.f2WeightValidity)}
                           </td>
-                          <td {...editCell} className="table-col-editable">
+                          <td {...editCell} className="table-mobile-col-hide table-col-editable">
                             <span
                               className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
                             >
                               {vehicleActiveLabel(v.active)}
                             </span>
                           </td>
-                          <td {...editCell} className="table-col-editable">
+                          <td {...editCell} className="table-mobile-col-hide table-col-editable">
                             <span className={`status-badge ${VALIDITY_BADGE[status]}`}>
                               {status === 'ok' && 'Valid'}
                               {status === 'due' && 'Due soon'}
@@ -589,7 +608,7 @@ export const RCVehicles: React.FC = () => {
                               {status === 'missing' && 'Incomplete'}
                             </span>
                           </td>
-                          <td className="text-right vehicle-rc-col-actions">
+                          <td className="text-right vehicle-rc-col-actions table-mobile-col-actions">
                             <button
                               type="button"
                               className={`btn-icon ${active ? 'text-amber' : 'text-green'}`}

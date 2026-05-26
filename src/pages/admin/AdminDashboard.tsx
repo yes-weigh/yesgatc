@@ -109,7 +109,8 @@ export const AdminDashboard: React.FC = () => {
           {jobs.length === 0 ? (
             <p className="text-muted text-center py-8">No jobs in the system yet.</p>
           ) : (
-            <table className="data-table">
+            <div className="table-scroll-wrap">
+            <table className="data-table data-table--dashboard-jobs data-table--mobile-cards">
               <thead>
                 <tr>
                   <th>Job ID</th>
@@ -122,25 +123,41 @@ export const AdminDashboard: React.FC = () => {
               </thead>
               <tbody>
                 {jobs.slice(0, 8).map(job => (
-                  <tr key={job.id}>
-                    <td className="text-mono-muted">
+                  <tr key={job.id} className="table-mobile-row table-mobile-row--simple">
+                    <td className="text-mono-muted table-mobile-col-hide">
                       {job.id.slice(0, 16)}…
                     </td>
-                    <td className="font-medium">{job.customer}</td>
-                    <td className="text-muted text-sm">{job.product}</td>
-                    <td>
+                    <td className="font-medium table-mobile-col-primary">
+                      <span className="table-mobile-primary-text">{job.customer}</span>
+                      <div className="table-mobile-summary">
+                        <span className="table-mobile-summary-meta">{job.product}</span>
+                        <span className="text-mono table-mobile-summary-meta">{job.id.slice(0, 16)}…</span>
+                        <span className="table-mobile-summary-badges">
+                          <span className={`role-badge ${job.jobType === 'OV' ? 'badge-rc' : 'badge-vct'}`}>
+                            {job.jobType}
+                          </span>
+                          <span className={`status-badge ${job.status}`}>{job.status.replace('_', ' ')}</span>
+                        </span>
+                        <span className="table-mobile-summary-meta">
+                          {new Date(job.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="text-muted text-sm table-mobile-col-hide">{job.product}</td>
+                    <td className="table-mobile-col-hide">
                       <span className={`role-badge ${job.jobType === 'OV' ? 'badge-rc' : 'badge-vct'}`}>
                         {job.jobType}
                       </span>
                     </td>
-                    <td><span className={`status-badge ${job.status}`}>{job.status.replace('_', ' ')}</span></td>
-                    <td className="text-muted text-xs">
+                    <td className="table-mobile-col-hide"><span className={`status-badge ${job.status}`}>{job.status.replace('_', ' ')}</span></td>
+                    <td className="text-muted text-xs table-mobile-col-hide">
                       {new Date(job.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>

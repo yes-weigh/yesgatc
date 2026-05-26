@@ -701,7 +701,8 @@ export const Products: React.FC = () => {
           </button>
         </div>
         <div className="panel-body p-0 overflow-x-auto">
-          <table className="data-table">
+          <div className="table-scroll-wrap">
+          <table className="data-table data-table--admin-products data-table--mobile-cards">
             <thead>
               <tr>
                 <th className="product-table-image-col">Image</th>
@@ -718,10 +719,21 @@ export const Products: React.FC = () => {
               {products.map(p => {
                 const openEdit = () => handleEditClick(p);
                 const editCell = tableEditCellProps(openEdit, 'Edit product');
+                const capacity = p.maximumCapacity
+                  ? `${p.maximumCapacity} ${p.unitOfMeasurement || 'kg'}`
+                  : '—';
+                const interval =
+                  p.actualScaleInterval != null && Number.isFinite(p.actualScaleInterval)
+                    ? `${p.actualScaleInterval} g`
+                    : p.verificationScaleInterval
+                      ? `${p.verificationScaleInterval} g`
+                      : '—';
+                const modelLine = [p.modelid, p.modelNo].filter(Boolean).join(' · ') || '—';
+                const hasApproval = Boolean(p.modelApprovalNo || p.modelApprovalDocUrl);
 
                 return (
-                <tr key={p.id}>
-                  <td {...editCell} className="product-table-image-col table-col-editable">
+                <tr key={p.id} className="table-mobile-row table-mobile-row--media-actions">
+                  <td {...editCell} className="product-table-image-col table-mobile-col-media table-col-editable">
                     {p.productImageUrl ? (
                       <a
                         href={p.productImageUrl}
@@ -742,22 +754,38 @@ export const Products: React.FC = () => {
                       </span>
                     )}
                   </td>
-                  <td {...editCell} className="font-medium text-mono table-col-editable">{p.modelid}</td>
-                  <td {...editCell} className="text-mono table-col-editable">{p.modelNo || '—'}</td>
-                  <td {...editCell} className="font-medium table-col-editable">{p.name}</td>
-                  <td {...editCell} className="table-col-editable">
-                    {p.maximumCapacity
-                      ? `${p.maximumCapacity} ${p.unitOfMeasurement || 'kg'}`
-                      : '—'}
+                  <td {...editCell} className="font-medium text-mono table-mobile-col-hide table-col-editable">{p.modelid}</td>
+                  <td {...editCell} className="text-mono table-mobile-col-hide table-col-editable">{p.modelNo || '—'}</td>
+                  <td {...editCell} className="font-medium table-mobile-col-primary table-col-editable">
+                    <span className="table-mobile-primary-text">{p.name}</span>
+                    <div className="table-mobile-summary">
+                      <span className="table-mobile-summary-meta text-mono">{modelLine}</span>
+                      <span className="table-mobile-summary-meta">{capacity} · d {interval}</span>
+                      {hasApproval && (
+                        <span className="table-mobile-summary-meta text-mono">
+                          {p.modelApprovalNo || 'Approval doc'}
+                          {p.modelApprovalDocUrl && (
+                            <a
+                              href={p.modelApprovalDocUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-blue"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <ExternalLink size={12} /> Doc
+                            </a>
+                          )}
+                        </span>
+                      )}
+                    </div>
                   </td>
-                  <td {...editCell} className="table-col-editable">
-                    {p.actualScaleInterval != null && Number.isFinite(p.actualScaleInterval)
-                      ? `${p.actualScaleInterval} g`
-                      : p.verificationScaleInterval
-                        ? `${p.verificationScaleInterval} g`
-                        : '—'}
+                  <td {...editCell} className="table-mobile-col-hide table-col-editable">
+                    {capacity}
                   </td>
-                  <td {...editCell} className="table-col-editable">
+                  <td {...editCell} className="table-mobile-col-hide table-col-editable">
+                    {interval}
+                  </td>
+                  <td {...editCell} className="table-mobile-col-hide table-col-editable">
                     {!p.modelApprovalNo && !p.modelApprovalDocUrl ? (
                       <span className="text-muted">—</span>
                     ) : (
@@ -777,7 +805,7 @@ export const Products: React.FC = () => {
                       </div>
                     )}
                   </td>
-                  <td className="text-right">
+                  <td className="text-right table-mobile-col-actions">
                     <button
                       type="button"
                       className="btn-icon text-red"
@@ -800,6 +828,7 @@ export const Products: React.FC = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
       )}

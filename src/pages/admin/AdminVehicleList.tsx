@@ -283,7 +283,7 @@ export const AdminVehicleList: React.FC = () => {
               </div>
             ) : (
               <div className="table-scroll-wrap">
-                <table className="data-table data-table--vehicles-rc data-table--vehicles-admin">
+                <table className="data-table data-table--vehicles-rc data-table--vehicles-admin data-table--mobile-cards">
                   <thead>
                     <tr>
                       <th className="vehicle-rc-col-serial">#</th>
@@ -306,39 +306,61 @@ export const AdminVehicleList: React.FC = () => {
                       const active = isVehicleActive(v);
 
                       return (
-                        <tr key={v.id}>
-                          <td className="vehicle-rc-col-serial text-muted text-sm">{index + 1}</td>
-                          <td className="font-medium">
-                            <div className="flex items-center gap-2">
+                        <tr key={v.id} className="table-mobile-row table-mobile-row--actions">
+                          <td className="vehicle-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
+                          <td className="font-medium table-mobile-col-primary">
+                            <div className="flex items-center gap-2 min-w-0">
                               {v.vehiclePhotoUrl ? (
-                                <img src={v.vehiclePhotoUrl} alt="" className="vct-table-avatar" />
+                                <img src={v.vehiclePhotoUrl} alt="" className="vct-table-avatar shrink-0" />
                               ) : (
-                                <span className="vct-table-avatar vct-table-avatar--placeholder">
+                                <span className="vct-table-avatar vct-table-avatar--placeholder shrink-0">
                                   <ImageIcon size={18} />
                                 </span>
                               )}
-                              <span>
-                                {v.brand} {v.model}
-                              </span>
+                              <div className="min-w-0">
+                                <span className="table-mobile-primary-text">
+                                  {v.brand} {v.model}
+                                </span>
+                                <div className="table-mobile-summary">
+                                  <span className="table-mobile-summary-meta">{v.rcCenterName}</span>
+                                  <span className="text-mono">{v.regNumber || '—'} · {v.year || '—'}</span>
+                                  <span className="table-mobile-summary-badges">
+                                    <span
+                                      className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
+                                    >
+                                      {vehicleActiveLabel(v.active)}
+                                    </span>
+                                    <span className={`status-badge ${VALIDITY_BADGE[docStatus]}`}>
+                                      {docStatus === 'ok' && 'Valid'}
+                                      {docStatus === 'due' && 'Due soon'}
+                                      {docStatus === 'expired' && 'Expired'}
+                                      {docStatus === 'missing' && 'Incomplete'}
+                                    </span>
+                                  </span>
+                                  <span className="table-mobile-summary-meta text-sm">
+                                    RC {formatValidityDate(v.rcValidity)} · Ins {formatValidityDate(v.insuranceValidity)}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
                           </td>
-                          <td className="vehicle-admin-col-rc table-cell-truncate" title={v.rcCenterName}>
+                          <td className="vehicle-admin-col-rc table-cell-truncate table-mobile-col-hide" title={v.rcCenterName}>
                             {v.rcCenterName}
                           </td>
-                          <td className="text-sm text-mono">{v.regNumber || '—'}</td>
-                          <td className="text-sm">{v.year || '—'}</td>
-                          <td className="text-sm">{formatValidityDate(v.rcValidity)}</td>
-                          <td className="text-sm">{formatValidityDate(v.insuranceValidity)}</td>
-                          <td className="text-sm">{formatValidityDate(v.pollutionValidity)}</td>
-                          <td className="text-sm">{formatValidityDate(v.f2WeightValidity)}</td>
-                          <td>
+                          <td className="text-sm text-mono table-mobile-col-hide">{v.regNumber || '—'}</td>
+                          <td className="text-sm table-mobile-col-hide">{v.year || '—'}</td>
+                          <td className="text-sm table-mobile-col-hide">{formatValidityDate(v.rcValidity)}</td>
+                          <td className="text-sm table-mobile-col-hide">{formatValidityDate(v.insuranceValidity)}</td>
+                          <td className="text-sm table-mobile-col-hide">{formatValidityDate(v.pollutionValidity)}</td>
+                          <td className="text-sm table-mobile-col-hide">{formatValidityDate(v.f2WeightValidity)}</td>
+                          <td className="table-mobile-col-hide">
                             <span
                               className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
                             >
                               {vehicleActiveLabel(v.active)}
                             </span>
                           </td>
-                          <td>
+                          <td className="table-mobile-col-hide">
                             <span className={`status-badge ${VALIDITY_BADGE[docStatus]}`}>
                               {docStatus === 'ok' && 'Valid'}
                               {docStatus === 'due' && 'Due soon'}
@@ -346,7 +368,7 @@ export const AdminVehicleList: React.FC = () => {
                               {docStatus === 'missing' && 'Incomplete'}
                             </span>
                           </td>
-                          <td className="text-right vehicle-rc-col-actions">
+                          <td className="text-right vehicle-rc-col-actions table-mobile-col-actions">
                             <button
                               type="button"
                               className="btn-icon text-blue mr-2"
