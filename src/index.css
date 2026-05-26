@@ -5450,6 +5450,14 @@ select.input-field option {
   margin-bottom: 0.55rem;
 }
 
+.verification-devices-footer {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 0.85rem;
+  margin-top: 0.35rem;
+  border-top: 1px solid var(--border-glass);
+}
+
 .verification-device-check--header {
   justify-content: center;
 }

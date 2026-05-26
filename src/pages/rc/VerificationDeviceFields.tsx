@@ -187,16 +187,6 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
             </p>
           )}
         </div>
-        {!readOnly && (
-          <button
-            type="button"
-            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
-            onClick={onDeviceAdd}
-            disabled={locked}
-          >
-            <Plus size={15} /> Add device
-          </button>
-        )}
       </div>
 
       {createMode && devices.length > 1 && (
@@ -470,6 +460,19 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           );
         })}
       </div>
+
+      {!readOnly && (
+        <div className="verification-devices-footer">
+          <button
+            type="button"
+            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
+            onClick={onDeviceAdd}
+            disabled={locked}
+          >
+            <Plus size={15} /> Add device
+          </button>
+        </div>
+      )}
     </div>
   );
 };

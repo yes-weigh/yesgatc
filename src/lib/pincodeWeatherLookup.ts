@@ -10,19 +10,22 @@ type GeoCoords = {
   lng: number;
 };
 
-type WttrInResponse = {
-  current_condition?: Array<{
-    temp_C?: string | number;
-    humidity?: string | number;
-  }>;
-};
-
-type OpenMeteoForecastResult = {
+type WeatherApiCurrentResponse = {
   current?: {
-    temperature_2m?: number;
-    relative_humidity_2m?: number;
+    temp_c?: number;
+    humidity?: number;
+  };
+  error?: {
+    code?: number;
+    message?: string;
   };
 };
+
+const WEATHERAPI_CURRENT_URL = 'https://api.weatherapi.com/v1/current.json';
+
+function weatherApiKey(): string {
+  return (import.meta.env.VITE_WEATHERAPI_KEY as string | undefined)?.trim() ?? '';
+}
 
 function formatTemperature(value: number): string {
   return Number(value.toFixed(1)).toString();
@@ -32,67 +35,11 @@ function formatHumidity(value: number): string {
   return Math.round(value).toString();
 }
 
-function parseNumber(value: string | number | undefined): number | null {
-  if (value === undefined || value === null || value === '') return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-}
+function parseWeatherApiResponse(data: WeatherApiCurrentResponse): WeatherLookupResult | null {
+  if (data.error) return null;
 
-type VercelPincodeGeoResponse = {
-  data?: Array<{
-    latitude?: number;
-    longitude?: number;
-  }>;
-};
-
-async function fetchPincodeCoordinates(pincode: string): Promise<GeoCoords | null> {
-  try {
-    const res = await fetch(`https://postal-pincode-api.vercel.app/api/v1/pincode/${pincode}`);
-    if (!res.ok) return null;
-
-    const data = (await res.json()) as VercelPincodeGeoResponse;
-    const row = data.data?.[0];
-    if (typeof row?.latitude !== 'number' || typeof row?.longitude !== 'number') return null;
-
-    return { lat: row.latitude, lng: row.longitude };
-  } catch {
-    return null;
-  }
-}
-
-async function fetchWeatherWttrIn(pincode: string): Promise<WeatherLookupResult | null> {
-  const res = await fetch(`https://wttr.in/${encodeURIComponent(pincode)}?format=j1`, {
-    headers: { 'User-Agent': 'yesgatcin/1.0' },
-  });
-  if (!res.ok) return null;
-
-  const data = (await res.json()) as WttrInResponse;
-  const current = data.current_condition?.[0];
-  const temp = parseNumber(current?.temp_C);
-  const humidity = parseNumber(current?.humidity);
-
-  if (temp === null || humidity === null) return null;
-
-  return {
-    ambientTemperature: formatTemperature(temp),
-    relativeHumidity: formatHumidity(humidity),
-  };
-}
-
-async function fetchWeatherOpenMeteo(coords: GeoCoords): Promise<WeatherLookupResult | null> {
-  const params = new URLSearchParams({
-    latitude: coords.lat.toString(),
-    longitude: coords.lng.toString(),
-    current: 'temperature_2m,relative_humidity_2m',
-    timezone: 'auto',
-  });
-
-  const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
-  if (!res.ok) return null;
-
-  const data = (await res.json()) as OpenMeteoForecastResult;
-  const temp = data.current?.temperature_2m;
-  const humidity = data.current?.relative_humidity_2m;
+  const temp = data.current?.temp_c;
+  const humidity = data.current?.humidity;
 
   if (typeof temp !== 'number' || typeof humidity !== 'number') return null;
 
@@ -102,6 +49,35 @@ async function fetchWeatherOpenMeteo(coords: GeoCoords): Promise<WeatherLookupRe
   };
 }
 
+async function fetchWeatherApiCom(query: string): Promise<WeatherLookupResult | null> {
+  const key = weatherApiKey();
+  if (!key) return null;
+
+  const params = new URLSearchParams({
+    key,
+    q: query,
+  });
+
+  try {
+    const res = await fetch(`${WEATHERAPI_CURRENT_URL}?${params}`);
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as WeatherApiCurrentResponse;
+    return parseWeatherApiResponse(data);
+  } catch {
+    return null;
+  }
+}
+
+function coordsQuery(coords: GeoCoords): string {
+  return `${coords.lat},${coords.lng}`;
+}
+
+function pincodeQuery(pincode: string): string {
+  return `${pincode},India`;
+}
+
+/** Uses WeatherAPI.com — requires `VITE_WEATHERAPI_KEY` in env. */
 export async function lookupWeatherByPincode(options: {
   pincode: string;
   location?: GeoCoords;
@@ -109,14 +85,18 @@ export async function lookupWeatherByPincode(options: {
   const pincode = normalizePincode(options.pincode);
   const hasPincode = isValidPincode(pincode);
 
-  const coords =
-    options.location ??
-    (hasPincode ? await fetchPincodeCoordinates(pincode) : null);
-  if (coords) {
-    const fromCoords = await fetchWeatherOpenMeteo(coords);
+  if (options.location) {
+    const fromCoords = await fetchWeatherApiCom(coordsQuery(options.location));
     if (fromCoords) return fromCoords;
   }
 
-  if (!hasPincode) return null;
-  return fetchWeatherWttrIn(pincode);
+  if (hasPincode) {
+    return fetchWeatherApiCom(pincodeQuery(pincode));
+  }
+
+  return null;
+}
+
+export function isWeatherApiConfigured(): boolean {
+  return Boolean(weatherApiKey());
 }
