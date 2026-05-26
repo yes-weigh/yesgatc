@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   Settings,
   Truck,
-  Gauge,
   Upload,
   UserRound,
   Wrench,
@@ -77,7 +76,8 @@ export const Layout: React.FC = () => {
       case 'rc_admin':
         return [
           { path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/rc/site-calibration', icon: <Gauge size={20} />, label: 'Site Calibration' },
+          { path: '/rc/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
+          { path: '/rc/verification', icon: <ShieldCheck size={20} />, label: 'Verification' },
           { path: '/rc/upload-certificate', icon: <Upload size={20} />, label: 'Upload Certificate' },
           { path: '/rc/customers', icon: <UserRound size={20} />, label: 'Customer' },
           { path: '/rc/products', icon: <Package size={20} />, label: 'Product' },

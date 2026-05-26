@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { deleteDoc, doc } from 'firebase/firestore';
+import { useLocation } from 'react-router-dom';
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -22,6 +23,7 @@ export const RCJobQueue: React.FC = () => {
   const { user } = useAuth();
   const { jobs, createJob, products } = useAppContext();
   const confirm = useConfirm();
+  const location = useLocation();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -29,7 +31,7 @@ export const RCJobQueue: React.FC = () => {
   const [loadingVCTs, setLoadingVCTs] = useState(true);
 
   // Form states
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(location.pathname.endsWith('/new-job'));
   const [submitting, setSubmitting] = useState(false);
   const [customer, setCustomer] = useState('');
   const [product, setProduct] = useState('');
@@ -146,9 +148,9 @@ export const RCJobQueue: React.FC = () => {
       <div className="flex justify-between items-end mb-6 flex-wrap gap-4">
         <div>
           <h1 className="text-2xl font-bold mb-1 flex items-center gap-2">
-            <ClipboardList className="text-blue" /> Master Job Queue
+            <ClipboardList className="text-blue" /> New Job
           </h1>
-          <p className="text-muted">Manage and track all jobs created by your Regional Center.</p>
+          <p className="text-muted">Create jobs and track assignments for your technicians.</p>
         </div>
         
         <div className="flex items-center gap-2">

@@ -1,6 +1,11 @@
 import React from 'react';
 import { ExternalLink, Package } from 'lucide-react';
 import {
+  DetailsCompactField,
+  DetailsCompactThumb,
+  DetailsSpecsCompactShell,
+} from './DetailsSpecsCompact';
+import {
   formatProductMaximumCapacity,
   formatProductMinimumCapacity,
   formatProductMpe,
@@ -11,66 +16,69 @@ import {
 } from '../lib/productCalculations';
 import type { Product } from '../types';
 
-const SpecItem: React.FC<{
-  label: string;
-  value: React.ReactNode;
-  mono?: boolean;
-}> = ({ label, value, mono }) => (
-  <div className="customer-device-spec-item">
-    <span className="customer-device-spec-label">{label}</span>
-    <span className={`customer-device-spec-value${mono ? ' customer-device-spec-value--mono' : ''}`}>
-      {value}
-    </span>
-  </div>
-);
-
 export const ProductDetailsSpecs: React.FC<{
   product: Product;
   className?: string;
-}> = ({ product, className }) => (
-  <div className={`customer-device-product-details${className ? ` ${className}` : ''}`}>
-    <div className="customer-device-product-specs" aria-label="Product details">
-      <div className="customer-device-thumb">
-        <div
-          className={`customer-device-thumb-box${product.productImageUrl ? '' : ' customer-device-thumb-box--placeholder'}`}
-          title={product.name || 'Product photo'}
-        >
+}> = ({ product, className }) => {
+  const modelLine = [formatProductText(product.modelid), formatProductText(product.modelNo)]
+    .filter(v => v !== '—')
+    .join(' · ');
+
+  return (
+    <DetailsSpecsCompactShell
+      className={className}
+      ariaLabel="Product details"
+      thumb={
+        <DetailsCompactThumb placeholder={!product.productImageUrl} title={product.name || 'Product photo'}>
           {product.productImageUrl ? (
-            <img src={product.productImageUrl} alt="" className="customer-device-thumb-img" />
+            <img src={product.productImageUrl} alt="" />
           ) : (
-            <Package size={22} className="text-muted" aria-hidden />
+            <Package size={18} className="text-muted" aria-hidden />
           )}
-        </div>
+        </DetailsCompactThumb>
+      }
+    >
+      <div className="details-specs-compact-primary">
+        <span className="details-specs-compact-title">{formatProductText(product.name)}</span>
+        {modelLine && <span className="details-specs-compact-line text-mono">{modelLine}</span>}
       </div>
-      <div className="customer-device-product-specs-grid">
-        <SpecItem label="Model ID" value={formatProductText(product.modelid)} mono />
-        <SpecItem label="Model no." value={formatProductText(product.modelNo)} mono />
-        <SpecItem label="Product name" value={formatProductText(product.name)} />
-        <SpecItem label="Unit" value={formatProductText(product.unitOfMeasurement)} />
-        <SpecItem label="Type" value={formatProductText(product.typeOfInstrument)} />
-        <SpecItem label="Manufacturer" value={formatProductText(product.manufacturerBrandSeries)} />
-        <SpecItem label="Accuracy class" value={formatProductText(product.accuracyClass)} />
-        <SpecItem label="Supply voltage" value={formatProductText(product.supplyVoltage)} />
-        <SpecItem label="Maximum capacity" value={formatProductMaximumCapacity(product)} />
-        <SpecItem label="Interval e" value={formatProductVerificationInterval(product)} />
-        <SpecItem label="Minimum capacity (Min)" value={formatProductMinimumCapacity(product)} />
-        <SpecItem label="Scale interval (d)" value={formatProductScaleInterval(product)} />
-        <SpecItem label="Verification intervals (n)" value={formatProductVerificationIntervals(product)} />
-        <SpecItem label="MPE" value={formatProductMpe(product.maximumPermissibleError)} />
-        <SpecItem
+
+      <div className="details-specs-compact-fields">
+        <DetailsCompactField label="Unit" value={formatProductText(product.unitOfMeasurement)} />
+        <DetailsCompactField label="Type" value={formatProductText(product.typeOfInstrument)} />
+        <DetailsCompactField
+          label="Manufacturer"
+          value={formatProductText(product.manufacturerBrandSeries)}
+        />
+        <DetailsCompactField label="Accuracy class" value={formatProductText(product.accuracyClass)} />
+        <DetailsCompactField label="Supply voltage" value={formatProductText(product.supplyVoltage)} />
+        <DetailsCompactField label="Maximum capacity" value={formatProductMaximumCapacity(product)} />
+        <DetailsCompactField label="Interval e" value={formatProductVerificationInterval(product)} />
+        <DetailsCompactField
+          label="Minimum capacity (Min)"
+          value={formatProductMinimumCapacity(product)}
+        />
+        <DetailsCompactField label="Scale interval (d)" value={formatProductScaleInterval(product)} />
+        <DetailsCompactField
+          label="Verification intervals (n)"
+          value={formatProductVerificationIntervals(product)}
+        />
+        <DetailsCompactField label="MPE" value={formatProductMpe(product.maximumPermissibleError)} />
+        <DetailsCompactField
           label="Model approval no."
           value={formatProductText(product.modelApprovalNo)}
           mono
         />
-        <SpecItem
+        <DetailsCompactField
           label="Model approval doc"
+          spanFull
           value={
             product.modelApprovalDocUrl ? (
               <a
                 href={product.modelApprovalDocUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="customer-device-spec-doc-link text-sm text-blue"
+                className="details-specs-doc-link text-sm text-blue"
               >
                 <ExternalLink size={14} aria-hidden />
                 View document
@@ -81,6 +89,6 @@ export const ProductDetailsSpecs: React.FC<{
           }
         />
       </div>
-    </div>
-  </div>
-);
+    </DetailsSpecsCompactShell>
+  );
+};

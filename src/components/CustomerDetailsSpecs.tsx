@@ -1,23 +1,16 @@
 import React from 'react';
 import { ExternalLink, ImageIcon, MapPin, UserRound } from 'lucide-react';
 import {
+  DetailsCompactThumb,
+  DetailsSpecsCompactShell,
+} from './DetailsSpecsCompact';
+import {
   customerDeviceCount,
   customerMapsUrl,
   formatCustomerLocation,
   shopPhotoFromRecord,
 } from '../lib/customerProfileFields';
 import type { Customer } from '../types';
-
-const SpecItem: React.FC<{
-  label: string;
-  value: React.ReactNode;
-  spanFull?: boolean;
-}> = ({ label, value, spanFull }) => (
-  <div className={`customer-device-spec-item${spanFull ? ' site-calibration-spec-span-full' : ''}`}>
-    <span className="customer-device-spec-label">{label}</span>
-    <span className="customer-device-spec-value">{value}</span>
-  </div>
-);
 
 function displayText(value?: string): string {
   const trimmed = value?.trim();
@@ -27,68 +20,59 @@ function displayText(value?: string): string {
 export const CustomerDetailsSpecs: React.FC<{
   customer: Customer;
   className?: string;
-}> = ({ customer, className }) => {
+  /** Show registered device list below specs. Default true. */
+  showDevices?: boolean;
+}> = ({ customer, className, showDevices = true }) => {
   const photo = shopPhotoFromRecord(customer);
   const mapsUrl = customerMapsUrl(customer);
+  const region = [customer.district, customer.state, customer.pincode].filter(part => part?.trim()).join(' · ');
+  const deviceCount = customerDeviceCount(customer);
 
   return (
-    <div className={`site-calibration-details-panel${className ? ` ${className}` : ''}`}>
-      <p className="site-calibration-details-heading">Customer details</p>
-      <div className="customer-device-product-specs" aria-label="Customer details">
-        <div className="customer-device-thumb">
-          <div
-            className={`customer-device-thumb-box${
-              photo?.url ? '' : ' customer-device-thumb-box--placeholder'
-            }`}
-            title={customer.name || 'Customer photo'}
-          >
+    <div className={className ? `${className} site-calibration-form-span-full` : 'site-calibration-form-span-full'}>
+      <DetailsSpecsCompactShell
+        ariaLabel="Customer details"
+        thumb={
+          <DetailsCompactThumb placeholder={!photo?.url} title={customer.name || 'Customer photo'}>
             {photo?.url ? (
-              <img src={photo.url} alt="" className="customer-device-thumb-img" />
+              <img src={photo.url} alt="" />
             ) : (
-              <UserRound size={22} className="text-muted" aria-hidden />
+              <UserRound size={18} className="text-muted" aria-hidden />
             )}
-          </div>
+          </DetailsCompactThumb>
+        }
+      >
+        <div className="details-specs-compact-primary">
+          <span className="details-specs-compact-title">{displayText(customer.name)}</span>
+          <span className="details-specs-compact-line text-mono">{displayText(customer.phone)}</span>
+          {customer.email?.trim() && (
+            <span className="details-specs-compact-line">{customer.email.trim()}</span>
+          )}
+          <span className="details-specs-compact-badge">
+            {deviceCount} device{deviceCount !== 1 ? 's' : ''}
+          </span>
         </div>
-        <div className="customer-device-product-specs-grid">
-          <SpecItem label="Name" value={displayText(customer.name)} />
-          <SpecItem label="Mobile" value={displayText(customer.phone)} />
-          <SpecItem label="Email" value={displayText(customer.email)} />
-          <SpecItem label="Postal code" value={displayText(customer.pincode)} />
-          <SpecItem label="District" value={displayText(customer.district)} />
-          <SpecItem label="State" value={displayText(customer.state)} />
-          <SpecItem
-            label="Address"
-            value={displayText(customer.address)}
-            spanFull
-          />
-          <SpecItem
-            label="GPS location"
-            value={
-              mapsUrl ? (
-                <a
-                  href={mapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="customer-device-spec-doc-link text-sm text-blue"
-                >
-                  <MapPin size={14} aria-hidden />
-                  {formatCustomerLocation(customer)}
-                  <ExternalLink size={14} aria-hidden />
-                </a>
-              ) : (
-                '—'
-              )
-            }
-            spanFull
-          />
-          <SpecItem
-            label="Registered devices"
-            value={String(customerDeviceCount(customer))}
-          />
+        {customer.address?.trim() && (
+          <p className="details-specs-compact-text">{customer.address.trim()}</p>
+        )}
+        <div className="details-specs-compact-foot">
+          {region && <span>{region}</span>}
+          {mapsUrl && (
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="details-specs-doc-link text-sm text-blue"
+            >
+              <MapPin size={13} aria-hidden />
+              {formatCustomerLocation(customer)}
+              <ExternalLink size={12} aria-hidden />
+            </a>
+          )}
         </div>
-      </div>
+      </DetailsSpecsCompactShell>
 
-      {(customer.devices?.length ?? 0) > 0 && (
+      {(customer.devices?.length ?? 0) > 0 && showDevices && (
         <div className="site-calibration-customer-devices">
           <p className="site-calibration-details-subheading">Customer devices</p>
           <ul className="site-calibration-device-list">

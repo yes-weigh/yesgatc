@@ -251,6 +251,8 @@ export interface SiteCalibration {
   verificationType: JobType;
   customerId: string;
   customerName: string;
+  /** Links to customer device when verified from registered devices. */
+  deviceId?: string;
   productId: string;
   productName: string;
   serialNumber: string;

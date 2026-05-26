@@ -203,6 +203,7 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
         <ProductThumb product={selected} />
         <span
           className={`product-select-label${selected ? '' : ' product-select-label--placeholder'}`}
+          title={selected ? formatProductLabel(selected) : undefined}
         >
           {selected ? formatProductLabel(selected) : placeholder}
         </span>

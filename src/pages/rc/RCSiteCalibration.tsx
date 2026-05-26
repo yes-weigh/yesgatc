@@ -7,28 +7,29 @@ import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { tableEditCellProps } from '../../lib/tableEditCell';
+import { buildCustomerDevice } from '../../lib/customerProfileFields';
 import {
-  buildSiteCalibrationFields,
-  EMPTY_SITE_CALIBRATION_FORM,
+  buildSiteCalibrationFromRow,
+  createEmptyVerificationDeviceRow,
+  deviceImageStatesFromRows,
+  emptyDeviceScaleImageState,
+  EMPTY_VERIFICATION_SESSION,
   scaleImageFieldsFromMeta,
   scaleImageFromRecord,
-  siteCalibrationFormFromRecord,
-  validateScaleImage,
-  validateSiteCalibrationForm,
+  verificationSessionFromRecord,
+  validateVerificationSession,
   verificationTypeLabel,
-  type SiteCalibrationFormValues,
+  type DeviceScaleImageState,
+  type VerificationDeviceRowValues,
+  type VerificationSessionValues,
 } from '../../lib/siteCalibrationProfileFields';
 import { uploadSiteCalibrationScaleImage } from '../../lib/siteCalibrationPhotoUpload';
 import { formatProductMpe } from '../../lib/productCalculations';
 import {
-  Gauge, Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon,
+  Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon, ShieldCheck,
 } from 'lucide-react';
 import type { Customer, SiteCalibration } from '../../types';
-import { SiteCalibrationFormFields } from './SiteCalibrationFormFields';
-import {
-  EMPTY_IMAGE_UPLOAD_STATE,
-  type ImageUploadState,
-} from './CustomerFormFields';
+import { VerificationSessionFields } from './VerificationSessionFields';
 
 export const RCSiteCalibration: React.FC = () => {
   const { user } = useAuth();
@@ -39,10 +40,8 @@ export const RCSiteCalibration: React.FC = () => {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [formValues, setFormValues] = useState<SiteCalibrationFormValues>(EMPTY_SITE_CALIBRATION_FORM);
-  const [scaleImage, setScaleImage] = useState<ImageUploadState>({ ...EMPTY_IMAGE_UPLOAD_STATE });
-  const [pendingScaleImage, setPendingScaleImage] = useState<File | null>(null);
-  const [scaleImageRemoved, setScaleImageRemoved] = useState(false);
+  const [sessionValues, setSessionValues] = useState<VerificationSessionValues>(EMPTY_VERIFICATION_SESSION);
+  const [deviceImages, setDeviceImages] = useState<Record<string, DeviceScaleImageState>>({});
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -66,10 +65,10 @@ export const RCSiteCalibration: React.FC = () => {
           : '';
       if (code === 'permission-denied') {
         setListError(
-          'Could not load site calibrations. Deploy Firestore rules: firebase deploy --only firestore:rules',
+          'Could not load verification records. Deploy Firestore rules: firebase deploy --only firestore:rules',
         );
       } else {
-        setListError(err instanceof Error ? err.message : 'Failed to load site calibrations.');
+        setListError(err instanceof Error ? err.message : 'Failed to load verification records.');
       }
       setRecords([]);
     } finally {
@@ -100,16 +99,11 @@ export const RCSiteCalibration: React.FC = () => {
 
   const showForm = showAddForm || editingId !== null;
   const formBusy = submitting;
-
-  const resetScaleImage = () => {
-    setScaleImage({ ...EMPTY_IMAGE_UPLOAD_STATE });
-    setPendingScaleImage(null);
-    setScaleImageRemoved(false);
-  };
+  const isEditMode = editingId !== null;
 
   const resetForm = () => {
-    setFormValues(EMPTY_SITE_CALIBRATION_FORM);
-    resetScaleImage();
+    setSessionValues(EMPTY_VERIFICATION_SESSION);
+    setDeviceImages({});
     setError('');
   };
 
@@ -129,53 +123,142 @@ export const RCSiteCalibration: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [showForm, formBusy]);
 
-  const patchForm = (patch: Partial<SiteCalibrationFormValues>) => {
-    setFormValues(prev => ({ ...prev, ...patch }));
+  const patchSession = (patch: Partial<VerificationSessionValues>) => {
+    setSessionValues(prev => ({ ...prev, ...patch }));
   };
 
-  const handleScaleImageSelect = (file: File) => {
-    setPendingScaleImage(file);
-    setScaleImageRemoved(false);
-    const previewUrl = URL.createObjectURL(file);
-    setScaleImage({
-      file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
-      uploading: false,
-      progress: 0,
+  const handleCustomerChange = (
+    _customerId: string,
+    _customerName: string,
+    devices: VerificationDeviceRowValues[],
+  ) => {
+    setDeviceImages(deviceImageStatesFromRows(devices));
+  };
+
+  const handleDeviceChange = (localId: string, patch: Partial<VerificationDeviceRowValues>) => {
+    setSessionValues(prev => ({
+      ...prev,
+      devices: prev.devices.map(row => (row.localId === localId ? { ...row, ...patch } : row)),
+    }));
+  };
+
+  const handleDeviceAdd = () => {
+    const row = createEmptyVerificationDeviceRow();
+    setSessionValues(prev => ({ ...prev, devices: [...prev.devices, row] }));
+    setDeviceImages(prev => ({ ...prev, [row.localId]: emptyDeviceScaleImageState() }));
+  };
+
+  const handleDeviceRemove = (localId: string) => {
+    setSessionValues(prev => ({
+      ...prev,
+      devices: prev.devices.filter(row => row.localId !== localId),
+    }));
+    setDeviceImages(prev => {
+      const next = { ...prev };
+      delete next[localId];
+      return next;
     });
   };
 
-  const handleScaleImageRemove = () => {
-    setPendingScaleImage(null);
-    setScaleImageRemoved(true);
-    setScaleImage({ ...EMPTY_IMAGE_UPLOAD_STATE });
+  const handleScaleImageSelect = (localId: string, file: File) => {
+    const previewUrl = URL.createObjectURL(file);
+    setDeviceImages(prev => ({
+      ...prev,
+      [localId]: {
+        ...(prev[localId] ?? emptyDeviceScaleImageState()),
+        pendingFile: file,
+        removed: false,
+        file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
+        uploading: false,
+        progress: 0,
+      },
+    }));
   };
 
-  const uploadScaleImage = async (recordId: string): Promise<Partial<SiteCalibration>> => {
-    if (scaleImageRemoved && !pendingScaleImage) return scaleImageFieldsFromMeta(null);
-    if (!pendingScaleImage) {
-      const existing = scaleImage.file;
-      if (existing?.url && !existing.url.startsWith('blob:')) {
-        return scaleImageFieldsFromMeta(existing);
+  const handleScaleImageRemove = (localId: string) => {
+    setDeviceImages(prev => ({
+      ...prev,
+      [localId]: emptyDeviceScaleImageState(),
+    }));
+  };
+
+  const uploadRowScaleImage = async (
+    recordId: string,
+    localId: string,
+  ): Promise<Partial<SiteCalibration>> => {
+    const image = deviceImages[localId] ?? emptyDeviceScaleImageState();
+    if (image.removed && !image.pendingFile) return scaleImageFieldsFromMeta(null);
+    if (!image.pendingFile) {
+      if (image.file?.url && !image.file.url.startsWith('blob:')) {
+        return scaleImageFieldsFromMeta(image.file);
       }
       return {};
     }
-    setScaleImage(prev => ({ ...prev, uploading: true, progress: 0 }));
+
+    setDeviceImages(prev => ({
+      ...prev,
+      [localId]: { ...(prev[localId] ?? emptyDeviceScaleImageState()), uploading: true, progress: 0 },
+    }));
+
     try {
-      const meta = await uploadSiteCalibrationScaleImage(recordId, pendingScaleImage, pct => {
-        setScaleImage(prev => ({ ...prev, progress: pct }));
+      const meta = await uploadSiteCalibrationScaleImage(recordId, image.pendingFile, pct => {
+        setDeviceImages(prev => ({
+          ...prev,
+          [localId]: { ...(prev[localId] ?? emptyDeviceScaleImageState()), progress: pct },
+        }));
       });
-      setScaleImage({ file: meta, uploading: false, progress: 100 });
+      setDeviceImages(prev => ({
+        ...prev,
+        [localId]: {
+          ...(prev[localId] ?? emptyDeviceScaleImageState()),
+          file: meta,
+          uploading: false,
+          progress: 100,
+          pendingFile: null,
+          removed: false,
+        },
+      }));
       return scaleImageFieldsFromMeta(meta);
     } catch (err) {
-      setScaleImage(prev => ({ ...prev, uploading: false, progress: 0 }));
+      setDeviceImages(prev => ({
+        ...prev,
+        [localId]: {
+          ...(prev[localId] ?? emptyDeviceScaleImageState()),
+          uploading: false,
+          progress: 0,
+        },
+      }));
       throw err;
     }
   };
 
-  const validateForm = (): string | null => {
-    const profileError = validateSiteCalibrationForm(formValues);
-    if (profileError) return profileError;
-    return validateScaleImage(scaleImage.file, pendingScaleImage, scaleImageRemoved);
+  const syncNewCustomerDevices = async (rows: VerificationDeviceRowValues[]) => {
+    const newRows = rows.filter(row => row.isNewDevice);
+    if (newRows.length === 0) return;
+
+    const customer = customers.find(c => c.id === sessionValues.customerId);
+    const existing = customer?.devices || [];
+    const added = newRows.map(row =>
+      buildCustomerDevice({
+        localId: row.localId,
+        productId: row.productId,
+        productName: row.productName,
+        serialNumber: row.serialNumber,
+      }),
+    );
+
+    await updateDoc(doc(db, 'customers', sessionValues.customerId), {
+      devices: [...existing, ...added],
+      updatedAt: new Date().toISOString(),
+    });
+
+    setCustomers(prev =>
+      prev.map(c =>
+        c.id === sessionValues.customerId
+          ? { ...c, devices: [...existing, ...added], updatedAt: new Date().toISOString() }
+          : c,
+      ),
+    );
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -186,54 +269,67 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleCreate = async () => {
     setError('');
-    const validationError = validateForm();
+    const validationError = validateVerificationSession(sessionValues, deviceImages);
     if (validationError) {
       setError(validationError);
       return;
     }
 
+    const includedRows = sessionValues.devices.filter(row => row.included);
     setSubmitting(true);
     try {
-      const ref = doc(collection(db, 'siteCalibrations'));
-      const recordId = ref.id;
-      const imageFields = await uploadScaleImage(recordId);
+      await syncNewCustomerDevices(includedRows);
 
-      const record: Omit<SiteCalibration, 'id'> = {
-        rcId: user!.uid,
-        createdAt: new Date().toISOString(),
-        createdByUid: user?.uid,
-        ...buildSiteCalibrationFields(formValues),
-        ...imageFields,
-      };
-      await setDoc(ref, record);
+      for (const row of includedRows) {
+        const ref = doc(collection(db, 'siteCalibrations'));
+        const recordId = ref.id;
+        const imageFields = await uploadRowScaleImage(recordId, row.localId);
+        const deviceId = row.isNewDevice ? row.localId : row.deviceId;
+
+        const record: Omit<SiteCalibration, 'id'> = {
+          rcId: user!.uid,
+          createdAt: new Date().toISOString(),
+          createdByUid: user?.uid,
+          ...buildSiteCalibrationFromRow(sessionValues, { ...row, deviceId }),
+          ...imageFields,
+        };
+        await setDoc(ref, record);
+      }
+
       handleCloseForm();
       await fetchRecords();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save site calibration.');
+      setError(err instanceof Error ? err.message : 'Failed to save verification records.');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleSaveEdit = async (recordId: string) => {
-    const validationError = validateForm();
+    const validationError = validateVerificationSession(sessionValues, deviceImages);
     if (validationError) {
       setError(validationError);
       return;
     }
 
+    const row = sessionValues.devices[0];
+    if (!row) {
+      setError('Device data is missing.');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const imageFields = await uploadScaleImage(recordId);
+      const imageFields = await uploadRowScaleImage(recordId, row.localId);
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
-        ...buildSiteCalibrationFields(formValues),
+        ...buildSiteCalibrationFromRow(sessionValues, row),
         ...imageFields,
         updatedAt: new Date().toISOString(),
       });
       handleCloseForm();
       await fetchRecords();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to update site calibration.');
+      setError(err instanceof Error ? err.message : 'Failed to update verification record.');
     } finally {
       setSubmitting(false);
     }
@@ -248,20 +344,25 @@ export const RCSiteCalibration: React.FC = () => {
   const startEdit = (record: SiteCalibration) => {
     setShowAddForm(false);
     setEditingId(record.id);
-    setFormValues(siteCalibrationFormFromRecord(record));
-    setScaleImage({
-      ...EMPTY_IMAGE_UPLOAD_STATE,
-      file: scaleImageFromRecord(record),
+    const session = verificationSessionFromRecord(record);
+    setSessionValues(session);
+    const image = scaleImageFromRecord(record);
+    setDeviceImages({
+      [session.devices[0]?.localId || record.id]: {
+        file: image,
+        uploading: false,
+        progress: 0,
+        pendingFile: null,
+        removed: false,
+      },
     });
-    setPendingScaleImage(null);
-    setScaleImageRemoved(false);
     setError('');
   };
 
   const handleDelete = async (record: SiteCalibration) => {
     const label = `${verificationTypeLabel(record.verificationType)} · ${record.customerName}`;
     const ok = await confirm({
-      title: 'Remove site calibration?',
+      title: 'Remove verification record?',
       message: `Remove "${label}"?\nThis cannot be undone.`,
       confirmLabel: 'Remove',
       destructive: true,
@@ -284,6 +385,8 @@ export const RCSiteCalibration: React.FC = () => {
     }
   };
 
+  const includedDeviceCount = sessionValues.devices.filter(d => d.included).length;
+
   return (
     <div className="fade-in page-content">
       {showForm && (
@@ -297,14 +400,21 @@ export const RCSiteCalibration: React.FC = () => {
                 <h2 id="site-calibration-form-title">
                   {showAddForm ? (
                     <>
-                      <Plus className="inline-icon" /> New Site Calibration
+                      <Plus className="inline-icon" /> New Verification
                     </>
                   ) : (
                     <>
-                      <Pencil className="inline-icon" /> Edit Site Calibration
+                      <Pencil className="inline-icon" /> Edit Verification
                     </>
                   )}
                 </h2>
+                <p className="text-muted text-sm mt-1 mb-0">
+                  {showAddForm
+                    ? sessionValues.customerId
+                      ? `${includedDeviceCount} device${includedDeviceCount !== 1 ? 's' : ''} selected`
+                      : 'Select a customer to load registered devices'
+                    : 'Update verification data for this device'}
+                </p>
                 <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
                   {error || '\u00a0'}
                 </p>
@@ -322,14 +432,20 @@ export const RCSiteCalibration: React.FC = () => {
 
             <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
               <div className="product-form-body">
-                <SiteCalibrationFormFields
-                  values={formValues}
-                  onChange={patchForm}
-                  customers={customers}
-                  scaleImage={scaleImage}
+                <VerificationSessionFields
+                  values={sessionValues}
+                  onChange={patchSession}
+                  onCustomerChange={handleCustomerChange}
+                  deviceImages={deviceImages}
+                  onDeviceChange={handleDeviceChange}
+                  onDeviceAdd={handleDeviceAdd}
+                  onDeviceRemove={handleDeviceRemove}
                   onScaleImageSelect={handleScaleImageSelect}
                   onScaleImageRemove={handleScaleImageRemove}
+                  customers={customers}
                   submitting={formBusy}
+                  lockCustomer={isEditMode}
+                  lockExistingDevices={isEditMode}
                 />
               </div>
               <div className="product-form-footer">
@@ -346,7 +462,7 @@ export const RCSiteCalibration: React.FC = () => {
                     <span className="spinner-inline"></span>
                   ) : showAddForm ? (
                     <>
-                      <Plus size={16} /> Save
+                      <Plus size={16} /> Save{includedDeviceCount > 1 ? ` (${includedDeviceCount})` : ''}
                     </>
                   ) : (
                     <>
@@ -365,7 +481,7 @@ export const RCSiteCalibration: React.FC = () => {
           <div className="panel-header justify-between">
             <div>
               <h2>
-                <Gauge className="inline-icon" /> Site Calibration
+                <ShieldCheck className="inline-icon" /> Verification
               </h2>
               <p className="text-muted text-sm mt-1">
                 {records.length} record{records.length !== 1 ? 's' : ''}
@@ -416,7 +532,7 @@ export const RCSiteCalibration: React.FC = () => {
                   <tbody>
                     {records.map((r, index) => {
                       const openEdit = () => startEdit(r);
-                      const editCell = tableEditCellProps(openEdit, 'Edit site calibration');
+                      const editCell = tableEditCellProps(openEdit, 'Edit verification record');
 
                       return (
                         <tr key={r.id} className="table-mobile-row table-mobile-row--actions">
@@ -492,7 +608,7 @@ export const RCSiteCalibration: React.FC = () => {
                               className="btn-icon text-red"
                               onClick={() => handleDelete(r)}
                               title="Remove"
-                              aria-label={`Remove site calibration for ${r.customerName}`}
+                              aria-label={`Remove verification record for ${r.customerName}`}
                             >
                               <Trash2 size={18} />
                             </button>
@@ -503,7 +619,7 @@ export const RCSiteCalibration: React.FC = () => {
                     {records.length === 0 && (
                       <tr>
                         <td colSpan={12} className="text-center py-10 text-muted">
-                          No site calibrations yet. Click &quot;New&quot; to add one.
+                          No verification records yet. Click &quot;New&quot; to add one.
                         </td>
                       </tr>
                     )}

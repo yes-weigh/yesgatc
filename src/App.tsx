@@ -58,7 +58,10 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute allowedRoles={['rc_admin']} />}>
               <Route path="/rc" element={<Layout />}>
                 <Route index element={<RCDashboard />} />
-                <Route path="site-calibration" element={<RCSiteCalibration />} />
+                <Route path="new-job" element={<RCJobQueue />} />
+                <Route path="verification" element={<RCSiteCalibration />} />
+                <Route path="site-calibration" element={<Navigate to="/rc/verification" replace />} />
+                <Route path="queue" element={<Navigate to="/rc/new-job" replace />} />
                 <Route path="upload-certificate" element={<RCUploadCertificate />} />
                 <Route path="customers" element={<RCCustomers />} />
                 <Route path="products" element={<RCProducts />} />
@@ -67,7 +70,6 @@ const App: React.FC = () => {
                 <Route path="laboratory" element={<RCLaboratory />} />
                 <Route path="quality-management" element={<RCQualityManagement />} />
                 <Route path="notifications" element={<RCNotifications />} />
-                <Route path="queue" element={<RCJobQueue />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<RCProfile />} />
               </Route>

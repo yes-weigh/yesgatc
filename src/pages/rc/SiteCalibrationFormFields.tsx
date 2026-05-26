@@ -119,10 +119,7 @@ export const SiteCalibrationFormFields: React.FC<SiteCalibrationFormFieldsProps>
           </div>
 
           {selectedProduct && (
-            <div className="site-calibration-details-panel site-calibration-form-span-full">
-              <p className="site-calibration-details-heading">Product details</p>
-              <ProductDetailsSpecs product={selectedProduct} />
-            </div>
+            <ProductDetailsSpecs product={selectedProduct} className="site-calibration-form-span-full" />
           )}
 
           <div className="form-group mb-0">
