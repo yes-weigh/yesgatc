@@ -648,6 +648,23 @@ select.input-field option {
   transform: none;
 }
 
+.btn-success {
+  background: linear-gradient(135deg, var(--accent-green), #34d399);
+  color: white;
+  box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.35);
+}
+
+.btn-success:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+.btn-success:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .btn-secondary {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-main);
@@ -5316,24 +5333,6 @@ select.input-field option {
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.65rem;
-}
-
-.verification-save-draft-btn {
-  background: rgba(59, 130, 246, 0.18);
-  border: 1px solid rgba(59, 130, 246, 0.55);
-  color: #bfdbfe;
-  font-weight: 600;
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.08);
-}
-
-.verification-save-draft-btn:hover:not(:disabled) {
-  background: rgba(59, 130, 246, 0.28);
-  border-color: rgba(96, 165, 250, 0.75);
-  color: #dbeafe;
-}
-
-.verification-save-draft-btn:disabled {
-  opacity: 0.55;
 }
 
 .verification-form-submit-group {

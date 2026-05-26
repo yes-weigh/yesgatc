@@ -812,7 +812,7 @@ export const RCSiteCalibration: React.FC = () => {
                   <>
                     <button
                       type="submit"
-                      className="btn verification-save-draft-btn flex items-center gap-2"
+                      className="btn btn-primary flex items-center gap-2"
                       disabled={formBusy || Boolean(draftBlockReason)}
                       title={draftBlockReason ?? undefined}
                     >
@@ -835,7 +835,7 @@ export const RCSiteCalibration: React.FC = () => {
                       <div className="verification-form-submit-group">
                         <button
                           type="button"
-                          className="btn btn-primary flex items-center gap-2"
+                          className="btn btn-success flex items-center gap-2"
                           onClick={() => void handleSubmitFromForm()}
                           disabled={formBusy || !canSubmitFromForm}
                           title={submitBlockReason ?? undefined}
