@@ -56,14 +56,15 @@ import {
 import {
   Trash2, RefreshCw, Pencil, X, Plus, Save, ShieldCheck, Send, Download, Eye,
 } from 'lucide-react';
-import type { Customer, SiteCalibration } from '../../types';
+import type { Customer, FirestoreUserDoc, SiteCalibration, VerificationRequestStatus } from '../../types';
 import { VerificationSessionFields } from './VerificationSessionFields';
 import { useAppContext } from '../../context/AppContext';
 import {
   applyLaboratorySealToDeviceRows,
   resolveLaboratorySealIdentification,
 } from '../../lib/rcLaboratoryFields';
-import type { FirestoreUserDoc } from '../../types';
+
+type StatusFilter = VerificationRequestStatus | 'all';
 
 export const RCSiteCalibration: React.FC = () => {
   const { user } = useAuth();
@@ -82,6 +83,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [laboratorySealId, setLaboratorySealId] = useState('');
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
 
@@ -847,6 +849,26 @@ export const RCSiteCalibration: React.FC = () => {
     );
   };
 
+  const filteredRecords = useMemo(() => {
+    if (statusFilter === 'all') return records;
+    return records.filter(r => normalizeVerificationStatus(r) === statusFilter);
+  }, [records, statusFilter]);
+
+  const statusCounts = useMemo(() => {
+    const tally = { all: records.length, draft: 0, submitted: 0, approved: 0 };
+    for (const record of records) {
+      tally[normalizeVerificationStatus(record)] += 1;
+    }
+    return tally;
+  }, [records]);
+
+  const statusFilterOptions: { value: StatusFilter; label: string; count: number }[] = [
+    { value: 'draft', label: 'Draft', count: statusCounts.draft },
+    { value: 'submitted', label: 'Submitted', count: statusCounts.submitted },
+    { value: 'approved', label: 'Approved', count: statusCounts.approved },
+    { value: 'all', label: 'All', count: statusCounts.all },
+  ];
+
   return (
     <div className="fade-in page-content">
       {showForm && (
@@ -1047,6 +1069,19 @@ export const RCSiteCalibration: React.FC = () => {
             </div>
           </div>
           <div className="panel-body p-0">
+            <div className="admin-verification-filters">
+              {statusFilterOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`admin-verification-filter${statusFilter === opt.value ? ' admin-verification-filter--active' : ''}`}
+                  onClick={() => setStatusFilter(opt.value)}
+                >
+                  {opt.label}
+                  <span className="badge-count">{opt.count}</span>
+                </button>
+              ))}
+            </div>
             {loading ? (
               <div className="flex justify-center py-16">
                 <span className="spinner-inline large"></span>
@@ -1069,7 +1104,7 @@ export const RCSiteCalibration: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {records.map((r, index) => {
+                    {filteredRecords.map((r, index) => {
                       const editable = isVerificationEditable(r);
                       const openDetails = () => openRecord(r);
                       const detailCell = tableEditCellProps(
@@ -1194,10 +1229,12 @@ export const RCSiteCalibration: React.FC = () => {
                         </tr>
                       );
                     })}
-                    {records.length === 0 && (
+                    {filteredRecords.length === 0 && (
                       <tr>
                         <td colSpan={10} className="text-center py-10 text-muted">
-                          No verification records yet. Click &quot;New&quot; to add a draft.
+                          {records.length === 0
+                            ? 'No verification records yet. Click "New" to add a draft.'
+                            : `No ${statusFilter === 'all' ? '' : `${verificationStatusLabel(statusFilter).toLowerCase()} `}verifications.`}
                         </td>
                       </tr>
                     )}

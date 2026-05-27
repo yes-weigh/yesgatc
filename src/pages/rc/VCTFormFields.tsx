@@ -4,7 +4,7 @@ import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { normalizePhone, normalizePincode } from '../../lib/contactFields';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import type { VctDocKey } from '../../lib/vctProfileFields';
-import { VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
+import { VCT_DOC_KEYS, VCT_DOC_LABELS, VCT_BLOOD_GROUPS } from '../../lib/vctProfileFields';
 import { UploadField } from '../admin/productFormUi';
 import type { WorkflowMode } from '../../types';
 
@@ -14,6 +14,7 @@ export type VctFormValues = {
   phone: string;
   address: string;
   pincode: string;
+  bloodGroup: string;
   policeStation: string;
   secondaryContactName: string;
   secondaryContactRelationship: string;
@@ -28,6 +29,7 @@ export const EMPTY_VCT_FORM: VctFormValues = {
   phone: '',
   address: '',
   pincode: '',
+  bloodGroup: '',
   policeStation: '',
   secondaryContactName: '',
   secondaryContactRelationship: '',
@@ -201,6 +203,25 @@ export const VCTFormFields: React.FC<VCTFormFieldsProps> = ({
                 required
                 maxLength={10}
               />
+            </div>
+            <div className="form-group mb-0">
+              <label htmlFor="vct-blood-group">Blood Group *</label>
+              <select
+                id="vct-blood-group"
+                className="input-field"
+                value={values.bloodGroup}
+                onChange={e => onChange({ bloodGroup: e.target.value })}
+                required
+              >
+                <option value="" disabled>
+                  Select…
+                </option>
+                {VCT_BLOOD_GROUPS.map(group => (
+                  <option key={group} value={group}>
+                    {group}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="form-group mb-0">
               <label htmlFor="vct-pincode">Postal code *</label>

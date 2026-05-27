@@ -14,7 +14,6 @@ import {
   X,
   UserCircle,
   ShieldCheck,
-  Settings,
   Truck,
   Upload,
   UserRound,
@@ -22,6 +21,7 @@ import {
   Scale,
   ClipboardCheck,
   Bell,
+  UserPlus,
 } from 'lucide-react';
 
 type NavItem = {
@@ -77,6 +77,7 @@ export const Layout: React.FC = () => {
       case 'rc_admin':
         return [
           { path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { path: '/rc/leads', icon: <UserPlus size={20} />, label: 'Leads' },
           { path: '/rc/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
           { path: '/rc/verification', icon: <ShieldCheck size={20} />, label: 'Verification' },
           { path: '/rc/upload-certificate', icon: <Upload size={20} />, label: 'Manual Upload' },
@@ -93,7 +94,6 @@ export const Layout: React.FC = () => {
           { path: '/rc/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
           { path: '/rc/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Report' },
-          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My profile' },
         ];
       case 'vct':
         return [
@@ -172,7 +172,7 @@ export const Layout: React.FC = () => {
         ))}
       </nav>
 
-      {(mobile || !collapsed) && (
+      {user.role !== 'rc_admin' && (mobile || !collapsed) && (
         <div className="sidebar-footer">
           <ShieldCheck size={14} />
           <span>{roleLabel}</span>

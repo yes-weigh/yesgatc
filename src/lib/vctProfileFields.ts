@@ -65,11 +65,15 @@ export function vctDocFieldsFromMeta(key: VctDocKey, meta: ProductFileMeta | nul
   } as Partial<FirestoreUserDoc>;
 }
 
+export const VCT_BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+export type VctBloodGroup = (typeof VCT_BLOOD_GROUPS)[number];
+
 export type VctProfileInput = {
   username: string;
   phone: string;
   address: string;
   pincode: string;
+  bloodGroup: string;
   policeStation: string;
   secondaryContactName: string;
   secondaryContactRelationship: string;
@@ -81,6 +85,10 @@ export function validateVctProfile(input: VctProfileInput): string | null {
   if (!isValidPhone(input.phone)) return 'Mobile number must be exactly 10 digits.';
   if (!input.address.trim()) return 'Residential address is required.';
   if (!isValidPincode(input.pincode)) return 'Postal code must be exactly 6 digits.';
+  if (!input.bloodGroup.trim()) return 'Blood group is required.';
+  if (!VCT_BLOOD_GROUPS.includes(input.bloodGroup.trim() as VctBloodGroup)) {
+    return 'Select a valid blood group.';
+  }
   if (!input.policeStation.trim()) return 'Police station is required.';
   if (!input.secondaryContactName.trim()) return 'Emergency contact name is required.';
   if (!input.secondaryContactRelationship.trim()) return 'Relationship to emergency contact is required.';
@@ -96,6 +104,7 @@ export function buildVctProfileFields(input: VctProfileInput): Pick<
   | 'phone'
   | 'address'
   | 'pincode'
+  | 'bloodGroup'
   | 'policeStation'
   | 'secondaryContactName'
   | 'secondaryContactRelationship'
@@ -106,6 +115,7 @@ export function buildVctProfileFields(input: VctProfileInput): Pick<
     phone: normalizePhone(input.phone),
     address: input.address.trim(),
     pincode: normalizePincode(input.pincode),
+    bloodGroup: input.bloodGroup.trim() as VctBloodGroup,
     policeStation: input.policeStation.trim(),
     secondaryContactName: input.secondaryContactName.trim(),
     secondaryContactRelationship: input.secondaryContactRelationship.trim(),

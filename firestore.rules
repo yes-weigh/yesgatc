@@ -151,8 +151,7 @@ service cloud.firestore {
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == request.auth.uid;
 
-      allow delete: if isRCAdmin()
-        && resource.data.rcId == request.auth.uid;
+      // RC cannot delete customers once registered; Super Admin may remove records.
     }
 
     // ── site calibrations (RC-managed verification requests) ───────

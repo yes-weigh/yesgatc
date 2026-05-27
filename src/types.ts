@@ -122,6 +122,8 @@ export interface FirestoreUserDoc {
   // VCT profile — managed by RC Admin (address & phone shared with RC contact fields above)
   /** Postal code — VCT address; RC centre PIN for self-verification weather prefill. */
   pincode?: string;
+  /** VCT biodata — standard ABO/Rh grouping. */
+  bloodGroup?: string;
   policeStation?: string;
   secondaryContactName?: string;
   secondaryContactRelationship?: string;

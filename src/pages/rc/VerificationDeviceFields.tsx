@@ -21,8 +21,10 @@ import {
 import {
   emptyDeviceImageSlot,
   emptyDeviceVerificationImagesState,
+  isVerificationImageRequired,
   VERIFICATION_IMAGE_CONFIG,
   VERIFICATION_IMAGE_KINDS,
+  verificationImageHint,
   type DeviceImageSlotState,
   type VerificationImageKind,
 } from '../../lib/verificationDeviceImages';
@@ -34,24 +36,35 @@ import {
 } from '../../lib/verificationRvDeviceImages';
 import type { JobType, Product, RcFeesStructure, VerificationLocation } from '../../types';
 
-const VerificationImageColumnHead: React.FC<{ kind: VerificationImageKind }> = ({ kind }) => {
+const VerificationImageColumnHead: React.FC<{
+  kind: VerificationImageKind;
+  verificationType?: JobType | '';
+}> = ({ kind, verificationType = 'OV' }) => {
   const config = VERIFICATION_IMAGE_CONFIG[kind];
+  const required = isVerificationImageRequired(kind, verificationType);
   return (
-    <div className="verification-image-col-head" title={config.label}>
+    <div
+      className="verification-image-col-head"
+      title={`${config.label}${required ? ' (required for submit)' : ' (optional)'}`}
+    >
       <img src={config.placeholderSrc} alt="" className="verification-image-col-head-icon" />
-      <span className="verification-image-col-head-label">{config.shortLabel}</span>
+      <span className="verification-image-col-head-label">
+        {config.shortLabel}
+        {required ? ' *' : ''}
+      </span>
     </div>
   );
 };
 
 const DeviceVerificationUpload: React.FC<{
   kind: VerificationImageKind;
+  verificationType?: JobType | '';
   image: DeviceImageSlotState;
   disabled: boolean;
   hideLabel?: boolean;
   onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemove: () => void;
-}> = ({ kind, image, disabled, hideLabel = false, onSelect, onRemove }) => {
+}> = ({ kind, verificationType = 'OV', image, disabled, hideLabel = false, onSelect, onRemove }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const config = VERIFICATION_IMAGE_CONFIG[kind];
   const slot = image ?? emptyDeviceImageSlot();
@@ -59,7 +72,7 @@ const DeviceVerificationUpload: React.FC<{
   return (
     <UploadField
       label={config.label}
-      hint={config.hint}
+      hint={verificationImageHint(kind, verificationType)}
       file={slot.file}
       uploading={slot.uploading}
       progress={slot.progress}
@@ -354,7 +367,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               {isRv && <th className="verification-devices-col-mfg-year">Mfg year</th>}
               {VERIFICATION_IMAGE_KINDS.map(kind => (
                 <th key={kind} className="verification-devices-col-image">
-                  <VerificationImageColumnHead kind={kind} />
+                  <VerificationImageColumnHead kind={kind} verificationType={verificationType} />
                 </th>
               ))}
               {isRv && RV_DOCUMENT_KINDS.map(kind => (
@@ -458,6 +471,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     <td key={kind} className="verification-devices-col-image">
                       <DeviceVerificationUpload
                         kind={kind}
+                        verificationType={verificationType}
                         image={images[kind]}
                         disabled={locked || !row.included}
                         hideLabel
@@ -662,9 +676,10 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   <div className="verification-mobile-photo-list">
                     {VERIFICATION_IMAGE_KINDS.map(kind => (
                       <div key={kind} className="verification-mobile-photo-item">
-                        <VerificationImageColumnHead kind={kind} />
+                        <VerificationImageColumnHead kind={kind} verificationType={verificationType} />
                         <DeviceVerificationUpload
                           kind={kind}
+                          verificationType={verificationType}
                           image={images[kind]}
                           disabled={locked || !row.included}
                           hideLabel

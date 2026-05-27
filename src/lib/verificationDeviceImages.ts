@@ -1,4 +1,4 @@
-import type { SiteCalibration } from '../types';
+import type { JobType, SiteCalibration } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
 
 export type VerificationImageKind = 'scale' | 'stamping' | 'standardWeight';
@@ -37,7 +37,7 @@ export const VERIFICATION_IMAGE_CONFIG: Record<
   scale: {
     label: 'Scale image',
     shortLabel: 'Scale',
-    hint: 'Required for submit',
+    hint: 'Optional for OV · required for RV submit',
     placeholderSrc: '/verification/scaleimagelogo.png',
     storageFolder: 'scale-image',
     defaultName: 'Scale image',
@@ -53,7 +53,7 @@ export const VERIFICATION_IMAGE_CONFIG: Record<
   standardWeight: {
     label: 'With standard weight image',
     shortLabel: 'Std. weight',
-    hint: 'Required for submit',
+    hint: 'Optional for OV · required for RV submit',
     placeholderSrc: '/verification/withweightlogo.png',
     storageFolder: 'standard-weight-image',
     defaultName: 'With standard weight image',
@@ -157,6 +157,29 @@ export function imageFieldsFromMeta(
   };
 }
 
+export function requiredVerificationImageKinds(
+  verificationType: JobType | '' | undefined,
+): VerificationImageKind[] {
+  if (verificationType === 'RV') return [...VERIFICATION_IMAGE_KINDS];
+  return ['stamping'];
+}
+
+export function isVerificationImageRequired(
+  kind: VerificationImageKind,
+  verificationType: JobType | '' | undefined,
+): boolean {
+  return requiredVerificationImageKinds(verificationType).includes(kind);
+}
+
+export function verificationImageHint(
+  kind: VerificationImageKind,
+  verificationType: JobType | '' | undefined,
+): string {
+  return isVerificationImageRequired(kind, verificationType)
+    ? 'Required for submit'
+    : 'Optional';
+}
+
 export function validateDeviceImageSlot(
   slot: DeviceImageSlotState,
   imageLabel: string,
@@ -169,8 +192,9 @@ export function validateDeviceImageSlot(
 export function validateDeviceVerificationImages(
   images: DeviceVerificationImagesState,
   deviceLabel: string,
+  verificationType?: JobType | '',
 ): string | null {
-  for (const kind of VERIFICATION_IMAGE_KINDS) {
+  for (const kind of requiredVerificationImageKinds(verificationType)) {
     const error = validateDeviceImageSlot(
       images[kind],
       `${deviceLabel}: ${VERIFICATION_IMAGE_CONFIG[kind].label}`,

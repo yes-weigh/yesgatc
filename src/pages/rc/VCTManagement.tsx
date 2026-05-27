@@ -83,6 +83,7 @@ function vctFormFromUser(doc: FirestoreUserDoc): VctFormValues {
     phone: doc.phone || '',
     address: doc.address || '',
     pincode: doc.pincode || '',
+    bloodGroup: doc.bloodGroup || '',
     policeStation: doc.policeStation || '',
     secondaryContactName: doc.secondaryContactName || '',
     secondaryContactRelationship: doc.secondaryContactRelationship || '',

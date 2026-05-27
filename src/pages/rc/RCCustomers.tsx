@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, deleteField,
+  collection, getDocs, doc, setDoc, updateDoc, query, where, deleteField,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
-import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import { normalizePhone, isValidPhone } from '../../lib/contactFields';
@@ -27,7 +26,7 @@ import {
   type CustomerFormValues,
 } from '../../lib/customerProfileFields';
 import {
-  UserRound, Trash2, RefreshCw, Pencil, X, Plus, Save, ImageIcon, MapPin, ExternalLink, Search,
+  UserRound, RefreshCw, Pencil, X, Plus, Save, ImageIcon, MapPin, ExternalLink, Search,
 } from 'lucide-react';
 import type { Customer, CustomerDevice } from '../../types';
 import {
@@ -44,7 +43,6 @@ function devicesStateFromRecord(record: Customer): CustomerDeviceRowState[] {
 
 export const RCCustomers: React.FC = () => {
   const { user } = useAuth();
-  const confirm = useConfirm();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -321,18 +319,6 @@ export const RCCustomers: React.FC = () => {
     setError('');
   };
 
-  const handleDelete = async (id: string, label: string) => {
-    const ok = await confirm({
-      title: 'Remove customer?',
-      message: `Remove customer "${label}" from your centre?`,
-      confirmLabel: 'Remove',
-      destructive: true,
-    });
-    if (!ok) return;
-    await deleteDoc(doc(db, 'customers', id));
-    await fetchCustomers();
-  };
-
   const shopPhotoUrl = (c: Customer) => c.shopPhotoUrl || c.customerPhotoUrl;
 
   return (
@@ -511,7 +497,6 @@ export const RCCustomers: React.FC = () => {
                       <th>Devices</th>
                       <th>Address</th>
                       <th>Location</th>
-                      <th className="text-right customer-rc-col-actions">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -522,7 +507,7 @@ export const RCCustomers: React.FC = () => {
                       const editCell = tableEditCellProps(openEdit, 'Edit customer');
 
                       return (
-                        <tr key={c.id} className="table-mobile-row table-mobile-row--actions">
+                        <tr key={c.id} className="table-mobile-row">
                           <td className="customer-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
                           <td {...editCell} className="customer-rc-col-customer font-medium table-mobile-col-primary table-col-editable">
                             <div className="flex items-center gap-2 min-w-0">
@@ -598,23 +583,12 @@ export const RCCustomers: React.FC = () => {
                               <span className="text-muted">—</span>
                             )}
                           </td>
-                          <td className="text-right customer-rc-col-actions table-mobile-col-actions">
-                            <button
-                              type="button"
-                              className="btn-icon text-red"
-                              onClick={() => handleDelete(c.id, c.name || c.phone)}
-                              title="Remove"
-                              aria-label={`Remove ${c.name || c.phone || 'customer'}`}
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </td>
                         </tr>
                       );
                     })}
                     {displayedCustomers.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="text-center py-10 text-muted">
+                        <td colSpan={6} className="text-center py-10 text-muted">
                           {phoneSearchComplete
                             ? `No customer found with phone ${normalizedPhoneSearch}.`
                             : 'No customers yet. Use + to register one.'}

@@ -478,7 +478,7 @@ export function validateVerificationDeviceRow(
     if (rvError) return rvError;
   }
 
-  return validateDeviceVerificationImages(images, label);
+  return validateDeviceVerificationImages(images, label, options?.verificationType);
 }
 
 /** Full validation required before submit for certificate. */

@@ -26,6 +26,7 @@ import {
   RCLaboratory,
   RCQualityManagement,
   RCNotifications,
+  RCLeads,
 } from './pages/rc/RCMenuPages';
 import { VCTDashboard } from './pages/vct/VCTDashboard';
 import { Certificates } from './pages/vct/Certificates';
@@ -66,6 +67,7 @@ const App: React.FC = () => {
                 <Route path="queue" element={<Navigate to="/rc/new-job" replace />} />
                 <Route path="upload-certificate" element={<RCUploadCertificate />} />
                 <Route path="customers" element={<RCCustomers />} />
+                <Route path="leads" element={<RCLeads />} />
                 <Route path="products" element={<RCProducts />} />
                 <Route path="vct" element={<VCTManagement />} />
                 <Route path="vehicles" element={<RCVehicles />} />
