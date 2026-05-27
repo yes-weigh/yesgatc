@@ -14,6 +14,7 @@ import {
   X,
   UserCircle,
   ShieldCheck,
+  Settings,
   Truck,
   Upload,
   UserRound,
@@ -94,6 +95,7 @@ export const Layout: React.FC = () => {
           { path: '/rc/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
           { path: '/rc/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Report' },
+          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My profile' },
         ];
       case 'vct':
         return [
