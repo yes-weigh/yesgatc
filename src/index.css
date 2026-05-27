@@ -3748,6 +3748,19 @@ select.input-field option {
   max-width: 12rem;
 }
 
+.rc-fees-table {
+  min-width: 20rem;
+}
+
+.rc-fees-table th,
+.rc-fees-table td {
+  vertical-align: middle;
+}
+
+.rc-fees-table .input-field--table {
+  max-width: 8rem;
+}
+
 .profile-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -5418,7 +5431,7 @@ select.input-field option {
   grid-column: 1 / -1;
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
   margin-top: 0.35rem;
   padding-top: 0.65rem;
   border-top: 1px solid var(--border-glass);
@@ -5479,6 +5492,310 @@ select.input-field option {
 
 .data-table--verification-devices {
   min-width: 58rem;
+}
+
+.data-table--verification-devices-rv {
+  min-width: 82rem;
+}
+
+.verification-devices-col-fee {
+  min-width: 5.5rem;
+  white-space: nowrap;
+}
+
+.verification-device-fee {
+  font-weight: 700;
+  color: #bbf7d0;
+  font-variant-numeric: tabular-nums;
+}
+
+.verification-device-fee-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(34, 197, 94, 0.22);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.verification-fees-summary {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border-glass);
+}
+
+.verification-fees-summary-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.verification-fees-summary-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.verification-fees-summary-location {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.1);
+  color: #bfdbfe;
+}
+
+.verification-fees-table {
+  min-width: 100%;
+}
+
+.verification-fees-table th,
+.verification-fees-table td {
+  font-size: 0.8125rem;
+}
+
+.verification-fees-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.1);
+  font-size: 0.95rem;
+}
+
+.verification-fees-total strong {
+  font-size: 1.15rem;
+  color: #bbf7d0;
+  font-variant-numeric: tabular-nums;
+}
+
+.verification-devices-col-mfg-year {
+  min-width: 10.5rem;
+  width: 10.5rem;
+  vertical-align: middle;
+}
+
+.mfg-year-picker {
+  position: relative;
+  width: 100%;
+}
+
+.mfg-year-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 100%;
+  min-height: 2.35rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-glass);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.mfg-year-picker-trigger:hover:not(:disabled) {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.mfg-year-picker-trigger--selected {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.mfg-year-picker--open .mfg-year-picker-trigger {
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.mfg-year-picker-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.mfg-year-picker-trigger-icon {
+  display: inline-flex;
+  color: rgba(147, 197, 253, 0.95);
+  flex-shrink: 0;
+}
+
+.mfg-year-picker-trigger-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mfg-year-picker-trigger:not(.mfg-year-picker-trigger--selected) .mfg-year-picker-trigger-text {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.mfg-year-picker-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin-left: auto;
+  margin-right: 0.1rem;
+  border-radius: 999px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.mfg-year-picker-clear:hover {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.mfg-year-picker-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.mfg-year-picker-chevron--open {
+  transform: rotate(180deg);
+}
+
+.mfg-year-picker-panel {
+  padding: 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: #111827;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  max-height: min(20rem, calc(100vh - 2rem));
+  overflow: auto;
+}
+
+.mfg-year-picker-panel-head {
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.mfg-year-picker-panel-title {
+  margin: 0 0 0.2rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.mfg-year-picker-panel-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.mfg-year-picker-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.mfg-year-picker-decade {
+  margin: 0 0 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.mfg-year-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.mfg-year-picker-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-glass);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+
+.mfg-year-picker-option:hover {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.mfg-year-picker-option--selected {
+  border-color: rgba(59, 130, 246, 0.7);
+  background: rgba(59, 130, 246, 0.18);
+  color: #dbeafe;
+}
+
+.mfg-year-picker-option-check {
+  position: absolute;
+  top: 0.2rem;
+  right: 0.2rem;
+  opacity: 0.9;
+}
+
+.mfg-year-readonly-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-glass);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.verification-rv-device-section .mfg-year-picker {
+  max-width: 18rem;
+}
+
+@media (max-width: 768px) {
+  .verification-rv-device-section .mfg-year-picker {
+    max-width: 100%;
+  }
+
+  .mfg-year-picker-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.verification-rv-hint {
+  max-width: 42rem;
+}
+
+.verification-rv-device-section {
+  margin-top: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border-glass);
+}
+
+.verification-rv-doc-head-icon {
+  opacity: 0.85;
 }
 
 .data-table--verification-devices .verification-devices-col-location {

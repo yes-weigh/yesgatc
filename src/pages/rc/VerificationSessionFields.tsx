@@ -9,6 +9,7 @@ import {
   syncVerificationDevicesAfterCustomerUpdate,
   VERIFICATION_LOCATION_OPTIONS,
   type DeviceVerificationImagesState,
+  type DeviceRvDocumentsState,
   type VerificationDeviceRowValues,
   type VerificationSessionValues,
   type VerificationSubject,
@@ -17,6 +18,8 @@ import { applyLaboratorySealToDeviceRows } from '../../lib/rcLaboratoryFields';
 import {
   type VerificationImageKind,
 } from '../../lib/verificationDeviceImages';
+import type { RvDocumentKind } from '../../lib/verificationRvDeviceImages';
+import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import { lookupWeatherByPincode } from '../../lib/pincodeWeatherLookup';
 import { isValidPincode, normalizePincode } from '../../lib/contactFields';
 import { useAppContext } from '../../context/AppContext';
@@ -33,11 +36,14 @@ type VerificationSessionFieldsProps = {
     options?: { preserveDeviceImages?: boolean },
   ) => void;
   deviceImages: Record<string, DeviceVerificationImagesState>;
+  deviceRvImages?: Record<string, DeviceRvDocumentsState>;
   onDeviceChange: (localId: string, patch: Partial<VerificationDeviceRowValues>) => void;
   onDeviceAdd: () => void;
   onDeviceRemove: (localId: string) => void;
   onDeviceImageSelect: (localId: string, kind: VerificationImageKind, file: File) => void;
   onDeviceImageRemove: (localId: string, kind: VerificationImageKind) => void;
+  onDeviceRvDocumentSelect?: (localId: string, kind: RvDocumentKind, file: File) => void;
+  onDeviceRvDocumentRemove?: (localId: string, kind: RvDocumentKind) => void;
   customers: Customer[];
   rcProfile: FirestoreUserDoc | null;
   rcUid?: string;
@@ -63,11 +69,14 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
   onChange,
   onCustomerChange,
   deviceImages,
+  deviceRvImages = {},
   onDeviceChange,
   onDeviceAdd,
   onDeviceRemove,
   onDeviceImageSelect,
   onDeviceImageRemove,
+  onDeviceRvDocumentSelect,
+  onDeviceRvDocumentRemove,
   customers,
   rcProfile,
   rcUid,
@@ -97,10 +106,17 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
   const isSelf = values.verificationSubject === 'self';
   const showDevices = isSelf || Boolean(values.customerId);
 
-  const prefillWeather = async (pincode: string, location?: { lat: number; lng: number }): Promise<boolean> => {
+  const prefillWeather = async (
+    pincode: string,
+    options?: {
+      location?: { lat: number; lng: number };
+      district?: string;
+      state?: string;
+    },
+  ): Promise<boolean> => {
     const normalized = normalizePincode(pincode);
     const hasPincode = isValidPincode(normalized);
-    const hasLocation = location?.lat != null && location?.lng != null;
+    const hasLocation = options?.location?.lat != null && options?.location?.lng != null;
     if (!hasPincode && !hasLocation) {
       setWeatherError('');
       return false;
@@ -112,7 +128,9 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
     try {
       const weather = await lookupWeatherByPincode({
         pincode: normalized,
-        location: hasLocation ? location : undefined,
+        district: options?.district,
+        state: options?.state,
+        location: hasLocation ? options.location : undefined,
       });
 
       if (weather) {
@@ -134,12 +152,16 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
   };
 
   const prefillWeatherForCustomer = async (customer: Customer | null) => {
-    await prefillWeather(customer?.pincode ?? '', customer?.location);
+    await prefillWeather(customer?.pincode ?? '', {
+      location: customer?.location,
+      district: customer?.district,
+      state: customer?.state,
+    });
   };
 
   const prefillWeatherForRc = async (rc: FirestoreUserDoc | null): Promise<boolean> => {
     if (!rc) return false;
-    return prefillWeather(rc.pincode ?? '', rc.location);
+    return prefillWeather(rc.pincode ?? '', { location: rc.location });
   };
 
   const applyCustomerSubject = () => {
@@ -252,7 +274,10 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
       setWeatherError('');
       return;
     }
-    onChange({ verificationType });
+    onChange({
+      verificationType,
+      devices: values.devices.map(device => ({ ...device, manufacturingYear: '' })),
+    });
   };
 
   useEffect(() => {
@@ -459,11 +484,17 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
               <VerificationDeviceFields
                 devices={values.devices}
                 deviceImages={deviceImages}
+                deviceRvImages={deviceRvImages}
+                verificationType={values.verificationType}
                 onDeviceChange={onDeviceChange}
                 onDeviceAdd={onDeviceAdd}
                 onDeviceRemove={onDeviceRemove}
                 onDeviceImageSelect={onDeviceImageSelect}
                 onDeviceImageRemove={onDeviceImageRemove}
+                onDeviceRvDocumentSelect={onDeviceRvDocumentSelect}
+                onDeviceRvDocumentRemove={onDeviceRvDocumentRemove}
+                verificationLocation={values.verificationLocation}
+                feesStructure={resolveRcFeesStructure(rcProfile)}
                 submitting={submitting}
                 readOnly={readOnly}
                 laboratorySealIdentification={laboratorySealIdentification}

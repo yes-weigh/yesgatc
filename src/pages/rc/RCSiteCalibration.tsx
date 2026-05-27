@@ -46,6 +46,14 @@ import {
   type VerificationImageKind,
 } from '../../lib/verificationDeviceImages';
 import {
+  emptyDeviceRvDocumentsState,
+  RV_DOCUMENT_KINDS,
+  rvDocumentFieldsFromMeta,
+  rvDocumentsFromRecord,
+  type DeviceRvDocumentsState,
+  type RvDocumentKind,
+} from '../../lib/verificationRvDeviceImages';
+import {
   Trash2, RefreshCw, Pencil, X, Plus, Save, ShieldCheck, Send, Download, Eye,
 } from 'lucide-react';
 import type { Customer, SiteCalibration } from '../../types';
@@ -69,6 +77,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [sessionValues, setSessionValues] = useState<VerificationSessionValues>(EMPTY_VERIFICATION_SESSION);
   const [deviceImages, setDeviceImages] = useState<Record<string, DeviceVerificationImagesState>>({});
+  const [deviceRvImages, setDeviceRvImages] = useState<Record<string, DeviceRvDocumentsState>>({});
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -159,9 +168,28 @@ export const RCSiteCalibration: React.FC = () => {
     }));
   }, [laboratorySealId, showForm, editingId, records]);
 
+  useEffect(() => {
+    if (sessionValues.verificationType !== 'RV') {
+      setDeviceRvImages({});
+      return;
+    }
+    setDeviceRvImages(prev => {
+      const next = { ...prev };
+      let changed = false;
+      for (const row of sessionValues.devices) {
+        if (!next[row.localId]) {
+          next[row.localId] = emptyDeviceRvDocumentsState();
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [sessionValues.verificationType, sessionValues.devices]);
+
   const resetForm = () => {
     setSessionValues(EMPTY_VERIFICATION_SESSION);
     setDeviceImages({});
+    setDeviceRvImages({});
     setError('');
   };
 
@@ -201,6 +229,16 @@ export const RCSiteCalibration: React.FC = () => {
       }
       return next;
     });
+    setDeviceRvImages(prev => {
+      const next: Record<string, DeviceRvDocumentsState> = {};
+      for (const row of devices) {
+        next[row.localId] =
+          options?.preserveDeviceImages && prev[row.localId]
+            ? prev[row.localId]
+            : emptyDeviceRvDocumentsState();
+      }
+      return next;
+    });
   };
 
   const handleCustomerUpdated = (updated: Customer) => {
@@ -228,6 +266,7 @@ export const RCSiteCalibration: React.FC = () => {
     };
     setSessionValues(prev => ({ ...prev, devices: [...prev.devices, row] }));
     setDeviceImages(prev => ({ ...prev, [row.localId]: emptyDeviceVerificationImagesState() }));
+    setDeviceRvImages(prev => ({ ...prev, [row.localId]: emptyDeviceRvDocumentsState() }));
   };
 
   const handleDeviceRemove = (localId: string) => {
@@ -236,6 +275,11 @@ export const RCSiteCalibration: React.FC = () => {
       devices: prev.devices.filter(row => row.localId !== localId),
     }));
     setDeviceImages(prev => {
+      const next = { ...prev };
+      delete next[localId];
+      return next;
+    });
+    setDeviceRvImages(prev => {
       const next = { ...prev };
       delete next[localId];
       return next;
@@ -265,6 +309,34 @@ export const RCSiteCalibration: React.FC = () => {
       ...prev,
       [localId]: {
         ...(prev[localId] ?? emptyDeviceVerificationImagesState()),
+        [kind]: emptyDeviceImageSlot(),
+      },
+    }));
+  };
+
+  const handleDeviceRvDocumentSelect = (localId: string, kind: RvDocumentKind, file: File) => {
+    const previewUrl = URL.createObjectURL(file);
+    setDeviceRvImages(prev => ({
+      ...prev,
+      [localId]: {
+        ...(prev[localId] ?? emptyDeviceRvDocumentsState()),
+        [kind]: {
+          ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()),
+          pendingFile: file,
+          removed: false,
+          file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
+          uploading: false,
+          progress: 0,
+        },
+      },
+    }));
+  };
+
+  const handleDeviceRvDocumentRemove = (localId: string, kind: RvDocumentKind) => {
+    setDeviceRvImages(prev => ({
+      ...prev,
+      [localId]: {
+        ...(prev[localId] ?? emptyDeviceRvDocumentsState()),
         [kind]: emptyDeviceImageSlot(),
       },
     }));
@@ -333,13 +405,82 @@ export const RCSiteCalibration: React.FC = () => {
     }
   };
 
+  const uploadDeviceRvDocumentSlot = async (
+    recordId: string,
+    localId: string,
+    kind: RvDocumentKind,
+  ): Promise<Partial<SiteCalibration>> => {
+    const slot = deviceRvImages[localId]?.[kind] ?? emptyDeviceImageSlot();
+    if (slot.removed && !slot.pendingFile) return rvDocumentFieldsFromMeta(kind, null);
+    if (!slot.pendingFile) {
+      if (slot.file?.url && !slot.file.url.startsWith('blob:')) {
+        return rvDocumentFieldsFromMeta(kind, slot.file);
+      }
+      return {};
+    }
+
+    setDeviceRvImages(prev => ({
+      ...prev,
+      [localId]: {
+        ...(prev[localId] ?? emptyDeviceRvDocumentsState()),
+        [kind]: { ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()), uploading: true, progress: 0 },
+      },
+    }));
+
+    try {
+      const meta = await uploadSiteCalibrationDeviceImage(recordId, kind, slot.pendingFile, pct => {
+        setDeviceRvImages(prev => ({
+          ...prev,
+          [localId]: {
+            ...(prev[localId] ?? emptyDeviceRvDocumentsState()),
+            [kind]: { ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()), progress: pct },
+          },
+        }));
+      });
+      setDeviceRvImages(prev => ({
+        ...prev,
+        [localId]: {
+          ...(prev[localId] ?? emptyDeviceRvDocumentsState()),
+          [kind]: {
+            ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()),
+            file: meta,
+            uploading: false,
+            progress: 100,
+            pendingFile: null,
+            removed: false,
+          },
+        },
+      }));
+      return rvDocumentFieldsFromMeta(kind, meta);
+    } catch (err) {
+      setDeviceRvImages(prev => ({
+        ...prev,
+        [localId]: {
+          ...(prev[localId] ?? emptyDeviceRvDocumentsState()),
+          [kind]: {
+            ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()),
+            uploading: false,
+            progress: 0,
+          },
+        },
+      }));
+      throw err;
+    }
+  };
+
   const uploadRowImages = async (
     recordId: string,
     localId: string,
+    includeRvDocuments: boolean,
   ): Promise<Partial<SiteCalibration>> => {
     let fields: Partial<SiteCalibration> = {};
     for (const kind of VERIFICATION_IMAGE_KINDS) {
       fields = { ...fields, ...(await uploadDeviceImageSlot(recordId, localId, kind)) };
+    }
+    if (includeRvDocuments) {
+      for (const kind of RV_DOCUMENT_KINDS) {
+        fields = { ...fields, ...(await uploadDeviceRvDocumentSlot(recordId, localId, kind)) };
+      }
     }
     return fields;
   };
@@ -426,14 +567,14 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleCreate = async (submitAfterSave = false) => {
     setError('');
-    const validationError = validateVerificationDraft(sessionValues, deviceImages);
+    const validationError = validateVerificationDraft(sessionValues, deviceImages, deviceRvImages);
     if (validationError) {
       setError(validationError);
       return;
     }
 
     if (submitAfterSave) {
-      const submitError = validateVerificationForSubmit(sessionValues, deviceImages);
+      const submitError = validateVerificationForSubmit(sessionValues, deviceImages, deviceRvImages);
       if (submitError) {
         setError(submitError);
         return;
@@ -451,7 +592,7 @@ export const RCSiteCalibration: React.FC = () => {
       for (const row of includedRows) {
         const ref = doc(collection(db, 'siteCalibrations'));
         const recordId = ref.id;
-        const imageFields = await uploadRowImages(recordId, row.localId);
+        const imageFields = await uploadRowImages(recordId, row.localId, sessionValues.verificationType === 'RV');
         const deviceId = row.isNewDevice ? row.localId : row.deviceId;
         const product = products.find(p => p.id === row.productId) ?? null;
 
@@ -484,7 +625,7 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
-    const validationError = validateVerificationDraft(sessionValues, deviceImages);
+    const validationError = validateVerificationDraft(sessionValues, deviceImages, deviceRvImages);
     if (validationError) {
       setError(validationError);
       return;
@@ -502,7 +643,7 @@ export const RCSiteCalibration: React.FC = () => {
         await syncCustomerDevices([row]);
       }
       const product = products.find(p => p.id === row.productId) ?? null;
-      const imageFields = await uploadRowImages(recordId, row.localId);
+      const imageFields = await uploadRowImages(recordId, row.localId, sessionValues.verificationType === 'RV');
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
         ...buildSiteCalibrationFromRow(sessionValues, row, { product }),
         ...imageFields,
@@ -548,7 +689,7 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const handleSubmitFromForm = async () => {
-    const validationError = validateVerificationForSubmit(sessionValues, deviceImages);
+    const validationError = validateVerificationForSubmit(sessionValues, deviceImages, deviceRvImages);
     if (validationError) {
       setError(validationError);
       return;
@@ -593,7 +734,7 @@ export const RCSiteCalibration: React.FC = () => {
         await syncCustomerDevices([row]);
       }
       const product = products.find(p => p.id === row.productId) ?? null;
-      const imageFields = await uploadRowImages(editingId, row.localId);
+      const imageFields = await uploadRowImages(editingId, row.localId, sessionValues.verificationType === 'RV');
       await updateDoc(doc(db, 'siteCalibrations', editingId), {
         ...buildSiteCalibrationFromRow(sessionValues, row, { product }),
         ...imageFields,
@@ -617,6 +758,9 @@ export const RCSiteCalibration: React.FC = () => {
       setDeviceImages({
         [session.devices[0]?.localId]: emptyDeviceVerificationImagesState(),
       });
+      setDeviceRvImages({
+        [session.devices[0]?.localId]: emptyDeviceRvDocumentsState(),
+      });
     } else {
       resetForm();
     }
@@ -634,6 +778,10 @@ export const RCSiteCalibration: React.FC = () => {
     setSessionValues({ ...session, devices });
     setDeviceImages({
       [session.devices[0]?.localId || record.id]: verificationImagesFromRecord(record),
+    });
+    setDeviceRvImages({
+      [session.devices[0]?.localId || record.id]:
+        record.verificationType === 'RV' ? rvDocumentsFromRecord(record) : emptyDeviceRvDocumentsState(),
     });
     setError('');
   };
@@ -676,13 +824,13 @@ export const RCSiteCalibration: React.FC = () => {
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
 
   const draftBlockReason = useMemo(
-    () => (showForm ? validateVerificationDraft(sessionValues, deviceImages) : null),
-    [showForm, sessionValues, deviceImages],
+    () => (showForm ? validateVerificationDraft(sessionValues, deviceImages, deviceRvImages) : null),
+    [showForm, sessionValues, deviceImages, deviceRvImages],
   );
 
   const submitBlockReason = useMemo(
-    () => (showForm ? validateVerificationForSubmit(sessionValues, deviceImages) : null),
-    [showForm, sessionValues, deviceImages],
+    () => (showForm ? validateVerificationForSubmit(sessionValues, deviceImages, deviceRvImages) : null),
+    [showForm, sessionValues, deviceImages, deviceRvImages],
   );
 
   const canSubmitFromForm = !submitBlockReason;
@@ -784,11 +932,14 @@ export const RCSiteCalibration: React.FC = () => {
                   onChange={patchSession}
                   onCustomerChange={handleCustomerChange}
                   deviceImages={deviceImages}
+                  deviceRvImages={deviceRvImages}
                   onDeviceChange={handleDeviceChange}
                   onDeviceAdd={handleDeviceAdd}
                   onDeviceRemove={handleDeviceRemove}
                   onDeviceImageSelect={handleDeviceImageSelect}
                   onDeviceImageRemove={handleDeviceImageRemove}
+                  onDeviceRvDocumentSelect={handleDeviceRvDocumentSelect}
+                  onDeviceRvDocumentRemove={handleDeviceRvDocumentRemove}
                   customers={customers}
                   rcProfile={rcProfile}
                   rcUid={user?.uid}

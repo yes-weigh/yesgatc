@@ -1,4 +1,5 @@
-import type { CustomerLocation, FirestoreUserDoc } from '../types';
+import type { CustomerLocation, FirestoreUserDoc, RcFeesStructure, VerificationLocation } from '../types';
+import type { Product } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
 import { resolveLaboratorySealIdentification } from './rcLaboratoryFields';
 export {
@@ -37,6 +38,117 @@ export function rcMapsUrl(doc: FirestoreUserDoc): string | null {
 }
 
 /** Certificate date + 1 year (YYYY-MM-DD). */
+export const DEFAULT_RC_FEES_STRUCTURE: RcFeesStructure = {
+  tierUpto20Kg: { inPremise: 750, inSitu: 850 },
+  tierUpto150Kg: { inPremise: 900, inSitu: 1000 },
+};
+
+export function resolveRcFeesStructure(
+  doc: Pick<FirestoreUserDoc, 'feesStructure'> | null | undefined,
+): RcFeesStructure {
+  return doc?.feesStructure ?? DEFAULT_RC_FEES_STRUCTURE;
+}
+
+export function rcFeesDraftFromUser(doc: Pick<FirestoreUserDoc, 'feesStructure'> | null | undefined): RcFeesStructure {
+  const fees = resolveRcFeesStructure(doc);
+  return {
+    tierUpto20Kg: { ...fees.tierUpto20Kg },
+    tierUpto150Kg: { ...fees.tierUpto150Kg },
+  };
+}
+
+export function formatRcFeeAmount(amount: number): string {
+  return `₹${amount.toLocaleString('en-IN')}`;
+}
+
+export function parseRcFeeAmountInput(value: string): number {
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return 0;
+  return Math.min(Number.parseInt(digits, 10), 999_999);
+}
+
+export function validateRcFeesStructure(fees: RcFeesStructure): string | null {
+  const tiers = [fees.tierUpto20Kg, fees.tierUpto150Kg];
+  for (const tier of tiers) {
+    for (const amount of [tier.inPremise, tier.inSitu]) {
+      if (!Number.isFinite(amount) || amount < 0 || !Number.isInteger(amount)) {
+        return 'Fee amounts must be whole numbers (0 or more).';
+      }
+    }
+  }
+  return null;
+}
+
+/** Maximum capacity normalized to kg for fee tier lookup. */
+export function productMaximumCapacityKg(
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+): number | null {
+  if (!product || product.maximumCapacity == null || !Number.isFinite(product.maximumCapacity)) {
+    return null;
+  }
+  if (product.unitOfMeasurement === 'g') {
+    return product.maximumCapacity / 1000;
+  }
+  return product.maximumCapacity;
+}
+
+export function formatProductMaximumCapacity(
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+): string {
+  if (!product?.maximumCapacity || !Number.isFinite(product.maximumCapacity)) return '—';
+  return `${product.maximumCapacity} ${product.unitOfMeasurement || 'kg'}`;
+}
+
+export type RcVerificationFeeQuote = {
+  amount: number | null;
+  tierLabel: string;
+  capacityDisplay: string;
+  incompleteReason?: string;
+};
+
+export function rcVerificationFeeQuote(
+  fees: RcFeesStructure,
+  location: VerificationLocation | '',
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+): RcVerificationFeeQuote {
+  const capacityKg = productMaximumCapacityKg(product);
+  const capacityDisplay = formatProductMaximumCapacity(product);
+
+  if (!location) {
+    return {
+      amount: null,
+      tierLabel: '—',
+      capacityDisplay,
+      incompleteReason: 'Select location',
+    };
+  }
+
+  if (capacityKg == null) {
+    return {
+      amount: null,
+      tierLabel: '—',
+      capacityDisplay,
+      incompleteReason: 'Select product',
+    };
+  }
+
+  const tierKey = capacityKg <= 20 ? 'tierUpto20Kg' : 'tierUpto150Kg';
+  const tier = fees[tierKey];
+  const amount = location === 'in_situ' ? tier.inSitu : tier.inPremise;
+  const tierLabel =
+    tierKey === 'tierUpto20Kg' ? 'Up to 20 kg' : 'Above 20 kg up to 150 kg';
+
+  return {
+    amount,
+    tierLabel,
+    capacityDisplay,
+  };
+}
+
+export function sumRcVerificationFees(quotes: Array<{ amount: number | null }>): number {
+  return quotes.reduce((sum, quote) => sum + (quote.amount ?? 0), 0);
+}
+
 export function standardWeightsCertExpiryFromDate(certDate: string): string {
   if (!certDate.trim()) return '';
   const d = new Date(`${certDate.trim()}T12:00:00`);
@@ -140,6 +252,7 @@ export function buildRcFirestoreFields(
 
   if (options.isCreate) {
     base.laboratorySealIdentification = resolveLaboratorySealIdentification(null);
+    base.feesStructure = rcFeesDraftFromUser(null);
   }
 
   applyFileMeta(base, 'standardWeightsCert', uploads.cert, Boolean(options.isCreate));

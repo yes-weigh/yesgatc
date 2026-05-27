@@ -98,5 +98,15 @@ service firebase.storage {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
     }
+
+    match /siteCalibrations/{recordId}/old-verification-certificate/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /siteCalibrations/{recordId}/old-invoice/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
   }
 }

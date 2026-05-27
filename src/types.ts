@@ -180,6 +180,20 @@ export interface FirestoreUserDoc {
   sealContentType?: string;
   /** RC laboratory seal ID — prefilled on verification devices (default IND/KL/26/04/B26). */
   laboratorySealIdentification?: string;
+  /** RC verification fee amounts by weight tier and location (in premise / in situ). */
+  feesStructure?: RcFeesStructure;
+}
+
+/** Verification fees for a weight tier (amounts in INR). */
+export interface RcFeeTierAmounts {
+  inPremise: number;
+  inSitu: number;
+}
+
+/** Default fee tiers: up to 20 kg and above 20 kg up to 150 kg. */
+export interface RcFeesStructure {
+  tierUpto20Kg: RcFeeTierAmounts;
+  tierUpto150Kg: RcFeeTierAmounts;
 }
 
 /** RC-managed vehicle record (Firestore `vehicles` collection). */
@@ -323,6 +337,16 @@ export interface SiteCalibration {
   standardWeightImagePath?: string;
   standardWeightImageName?: string;
   standardWeightImageContentType?: string;
+  /** Re-verification only — year the device was manufactured. */
+  manufacturingYear?: number;
+  oldVerificationCertificateUrl?: string;
+  oldVerificationCertificatePath?: string;
+  oldVerificationCertificateName?: string;
+  oldVerificationCertificateContentType?: string;
+  oldInvoiceUrl?: string;
+  oldInvoicePath?: string;
+  oldInvoiceName?: string;
+  oldInvoiceContentType?: string;
   createdAt: string;
   createdByUid?: string;
   updatedAt?: string;

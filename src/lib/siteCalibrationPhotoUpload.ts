@@ -8,6 +8,19 @@ import {
   VERIFICATION_IMAGE_CONFIG,
   type VerificationImageKind,
 } from './verificationDeviceImages';
+import {
+  RV_DOCUMENT_CONFIG,
+  type RvDocumentKind,
+} from './verificationRvDeviceImages';
+
+export type SiteCalibrationUploadKind = VerificationImageKind | RvDocumentKind;
+
+function uploadConfigForKind(kind: SiteCalibrationUploadKind) {
+  if (kind in VERIFICATION_IMAGE_CONFIG) {
+    return VERIFICATION_IMAGE_CONFIG[kind as VerificationImageKind];
+  }
+  return RV_DOCUMENT_CONFIG[kind as RvDocumentKind];
+}
 
 function mapStorageError(err: unknown): Error {
   const code =
@@ -31,7 +44,7 @@ async function ensureUploadAuth(): Promise<void> {
 
 export async function uploadSiteCalibrationDeviceImage(
   recordId: string,
-  kind: VerificationImageKind,
+  kind: SiteCalibrationUploadKind,
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<ProductFileMeta> {
@@ -41,7 +54,7 @@ export async function uploadSiteCalibrationDeviceImage(
 
   await ensureUploadAuth();
 
-  const folder = VERIFICATION_IMAGE_CONFIG[kind].storageFolder;
+  const folder = uploadConfigForKind(kind).storageFolder;
   const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
   const path = `siteCalibrations/${recordId}/${folder}/${Date.now()}${ext}`;
   const storageRef = ref(storage, path);

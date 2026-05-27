@@ -11,8 +11,17 @@ import {
   verificationImagesFromRecord,
   type DeviceVerificationImagesState,
 } from './verificationDeviceImages';
+import {
+  deviceRvDocumentsFromRows,
+  emptyDeviceRvDocumentsState,
+  isValidManufacturingYear,
+  rvDocumentsFromRecord,
+  validateDeviceRvDocuments,
+  type DeviceRvDocumentsState,
+} from './verificationRvDeviceImages';
 
 export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind } from './verificationDeviceImages';
+export type { DeviceRvDocumentsState, RvDocumentKind } from './verificationRvDeviceImages';
 
 export type SiteCalibrationFormValues = {
   verificationType: JobType | '';
@@ -39,6 +48,8 @@ export type VerificationDeviceRowValues = {
   serialNumber: string;
   maximumPermissibleError: string;
   sealIdentificationNumber: string;
+  /** Re-verification only — year of manufacturing (YYYY). */
+  manufacturingYear: string;
   /** @deprecated session-level verificationLocation is used instead */
   verificationLocation: VerificationLocation | '';
 };
@@ -135,6 +146,12 @@ export function verificationLocationLabel(location: VerificationLocation | '' | 
   return '—';
 }
 
+export function deviceRvImageStatesFromRows(
+  rows: VerificationDeviceRowValues[],
+): Record<string, DeviceRvDocumentsState> {
+  return deviceRvDocumentsFromRows(rows);
+}
+
 export function createEmptyVerificationDeviceRow(): VerificationDeviceRowValues {
   return {
     localId: crypto.randomUUID(),
@@ -146,6 +163,7 @@ export function createEmptyVerificationDeviceRow(): VerificationDeviceRowValues 
     serialNumber: '',
     maximumPermissibleError: '',
     sealIdentificationNumber: '',
+    manufacturingYear: '',
     verificationLocation: '',
   };
 }
@@ -177,6 +195,7 @@ export function deviceRowFromCustomerDevice(
     serialNumber: device.serialNumber,
     maximumPermissibleError: mpeStringFromProduct(product),
     sealIdentificationNumber: '',
+    manufacturingYear: '',
     verificationLocation: '',
   };
 }
@@ -206,6 +225,7 @@ export function syncVerificationDevicesAfterCustomerUpdate(
       localId: existing.localId,
       included: existing.included,
       sealIdentificationNumber: existing.sealIdentificationNumber,
+      manufacturingYear: existing.manufacturingYear,
     };
   });
 
@@ -238,6 +258,10 @@ export function verificationSessionFromRecord(
             ? String(record.maximumPermissibleError)
             : '',
         sealIdentificationNumber: record.sealIdentificationNumber || '',
+        manufacturingYear:
+          record.manufacturingYear !== undefined && record.manufacturingYear !== null
+            ? String(record.manufacturingYear)
+            : '',
         verificationLocation: '',
       },
     ],
@@ -288,6 +312,10 @@ export function buildSiteCalibrationFromRow(
     ...productSnapshotFromProduct(options?.product),
   };
   if (row.deviceId.trim()) fields.deviceId = row.deviceId.trim();
+  if (session.verificationType === 'RV') {
+    const year = row.manufacturingYear.trim();
+    if (year) fields.manufacturingYear = Number(year);
+  }
   return fields;
 }
 
@@ -329,6 +357,7 @@ export function buildSiteCalibrationFields(
       serialNumber: values.serialNumber,
       maximumPermissibleError: values.maximumPermissibleError,
       sealIdentificationNumber: values.sealIdentificationNumber,
+      manufacturingYear: '',
       verificationLocation: '',
     },
   );
@@ -383,6 +412,7 @@ function validateOptionalSessionFormats(session: VerificationSessionValues): str
 export function validateVerificationDraft(
   session: VerificationSessionValues,
   _deviceImages: Record<string, DeviceVerificationImagesState>,
+  _deviceRvImages: Record<string, DeviceRvDocumentsState> = {},
 ): string | null {
   if (session.verificationType !== 'OV' && session.verificationType !== 'RV') {
     return 'Select Original Verification or Re-verification.';
@@ -407,6 +437,11 @@ export function validateVerificationDraft(
       const mpe = Number(row.maximumPermissibleError.trim());
       if (Number.isNaN(mpe)) return `Device ${i + 1}: MPE must be a number.`;
     }
+    if (session.verificationType === 'RV' && row.manufacturingYear.trim()) {
+      if (!isValidManufacturingYear(row.manufacturingYear)) {
+        return `Device ${i + 1}: select a valid year of manufacturing.`;
+      }
+    }
   }
 
   return null;
@@ -416,6 +451,10 @@ export function validateVerificationDeviceRow(
   row: VerificationDeviceRowValues,
   index: number,
   images: DeviceVerificationImagesState,
+  options?: {
+    verificationType?: JobType | '';
+    rvDocuments?: DeviceRvDocumentsState;
+  },
 ): string | null {
   const label = `Device ${index + 1}`;
   if (!row.productId.trim()) return `${label}: select a product.`;
@@ -428,6 +467,17 @@ export function validateVerificationDeviceRow(
 
   if (!row.sealIdentificationNumber.trim()) return `${label}: seal identification number is required.`;
 
+  if (options?.verificationType === 'RV') {
+    if (!isValidManufacturingYear(row.manufacturingYear)) {
+      return `${label}: select year of manufacturing.`;
+    }
+    const rvError = validateDeviceRvDocuments(
+      options.rvDocuments ?? emptyDeviceRvDocumentsState(),
+      label,
+    );
+    if (rvError) return rvError;
+  }
+
   return validateDeviceVerificationImages(images, label);
 }
 
@@ -435,20 +485,23 @@ export function validateVerificationDeviceRow(
 export function validateVerificationForSubmit(
   session: VerificationSessionValues,
   deviceImages: Record<string, DeviceVerificationImagesState>,
+  deviceRvImages: Record<string, DeviceRvDocumentsState> = {},
 ): string | null {
-  return validateVerificationSession(session, deviceImages);
+  return validateVerificationSession(session, deviceImages, deviceRvImages);
 }
 
 export function validateSiteCalibrationRecord(record: SiteCalibration): string | null {
   const session = verificationSessionFromRecord(record);
   const localId = session.devices[0]?.localId || record.id;
   const images = verificationImagesFromRecord(record);
-  return validateVerificationSession(session, { [localId]: images });
+  const rvDocuments = session.verificationType === 'RV' ? rvDocumentsFromRecord(record) : undefined;
+  return validateVerificationSession(session, { [localId]: images }, rvDocuments ? { [localId]: rvDocuments } : {});
 }
 
 export function validateVerificationSession(
   session: VerificationSessionValues,
   deviceImages: Record<string, DeviceVerificationImagesState>,
+  deviceRvImages: Record<string, DeviceRvDocumentsState> = {},
 ): string | null {
   const headerError = validateSessionHeader(session);
   if (headerError) return headerError;
@@ -463,6 +516,10 @@ export function validateVerificationSession(
       row,
       i,
       deviceImages[row.localId] ?? emptyDeviceVerificationImagesState(),
+      {
+        verificationType: session.verificationType,
+        rvDocuments: deviceRvImages[row.localId],
+      },
     );
     if (rowError) return rowError;
   }
