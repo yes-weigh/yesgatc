@@ -3,6 +3,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { StorageImage } from '../../components/StorageImage';
 import { adminProductMeta } from '../../lib/productAccess';
 import { tableEditCellProps } from '../../lib/tableEditCell';
 import { PackagePlus, Trash2, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
@@ -734,16 +735,17 @@ export const Products: React.FC = () => {
                 return (
                 <tr key={p.id} className="table-mobile-row table-mobile-row--media-actions">
                   <td {...editCell} className="product-table-image-col table-mobile-col-media table-col-editable">
-                    {p.productImageUrl ? (
+                    {p.productImageUrl || p.productImagePath ? (
                       <a
-                        href={p.productImageUrl}
+                        href={p.productImageUrl || '#'}
                         target="_blank"
                         rel="noopener noreferrer"
                         title="View product image"
                         onClick={e => e.stopPropagation()}
                       >
-                        <img
-                          src={p.productImageUrl}
+                        <StorageImage
+                          url={p.productImageUrl}
+                          path={p.productImagePath}
                           alt={p.name}
                           className="product-table-thumb"
                         />

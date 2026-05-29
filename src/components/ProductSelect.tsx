@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Image as ImageIcon } from 'lucide-react';
+import { StorageImage } from './StorageImage';
 import type { Product } from '../types';
 
 export type ProductSelectValue = {
@@ -35,8 +36,13 @@ const ProductThumb: React.FC<{ product: Product | null; className?: string }> = 
   product,
   className = 'product-picker-selected-thumb',
 }) =>
-  product?.productImageUrl ? (
-    <img src={product.productImageUrl} alt="" className={className} />
+  product?.productImageUrl || product?.productImagePath ? (
+    <StorageImage
+      url={product?.productImageUrl}
+      path={product?.productImagePath}
+      alt=""
+      className={className}
+    />
   ) : (
     <span className={`${className} product-picker-selected-thumb--placeholder`}>
       <ImageIcon size={16} />

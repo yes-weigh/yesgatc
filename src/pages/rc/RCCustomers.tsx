@@ -5,6 +5,7 @@ import {
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { StorageImage } from '../../components/StorageImage';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import { normalizePhone, isValidPhone } from '../../lib/contactFields';
 import { tableEditCellProps } from '../../lib/tableEditCell';
@@ -320,6 +321,7 @@ export const RCCustomers: React.FC = () => {
   };
 
   const shopPhotoUrl = (c: Customer) => c.shopPhotoUrl || c.customerPhotoUrl;
+  const shopPhotoPath = (c: Customer) => c.shopPhotoPath || c.customerPhotoPath;
 
   return (
     <div className="fade-in page-content">
@@ -503,6 +505,7 @@ export const RCCustomers: React.FC = () => {
                     {displayedCustomers.map((c, index) => {
                       const mapsUrl = customerMapsUrl(c);
                       const photo = shopPhotoUrl(c);
+                      const photoPath = shopPhotoPath(c);
                       const openEdit = () => startEdit(c);
                       const editCell = tableEditCellProps(openEdit, 'Edit customer');
 
@@ -511,8 +514,13 @@ export const RCCustomers: React.FC = () => {
                           <td className="customer-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
                           <td {...editCell} className="customer-rc-col-customer font-medium table-mobile-col-primary table-col-editable">
                             <div className="flex items-center gap-2 min-w-0">
-                              {photo ? (
-                                <img src={photo} alt="" className="customer-table-shop-thumb shrink-0" />
+                              {photo || photoPath ? (
+                                <StorageImage
+                                  url={photo}
+                                  path={photoPath}
+                                  alt=""
+                                  className="customer-table-shop-thumb shrink-0"
+                                />
                               ) : (
                                 <span className="customer-table-shop-thumb customer-table-shop-thumb--placeholder shrink-0">
                                   <ImageIcon size={18} />

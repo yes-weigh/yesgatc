@@ -1,5 +1,6 @@
 import React from 'react';
 import { ExternalLink, FileText, Info, RefreshCw, Upload, X } from 'lucide-react';
+import { StorageImage } from '../../components/StorageImage';
 import { isPdfContentType, type ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
   fileInputAcceptForCapture,
@@ -170,8 +171,9 @@ export const UploadField: React.FC<{
               {useIconActions ? (
                 <div className="product-upload-avatar-wrap">
                   {variant === 'image' || !isPdfContentType(file.contentType) ? (
-                    <img
-                      src={file.url}
+                    <StorageImage
+                      url={file.url}
+                      path={file.path}
                       alt=""
                       className="product-upload-preview-img"
                       title={file.name}
@@ -219,8 +221,9 @@ export const UploadField: React.FC<{
               ) : (
                 <>
                   {variant === 'image' || !isPdfContentType(file.contentType) ? (
-                    <img
-                      src={file.url}
+                    <StorageImage
+                      url={file.url}
+                      path={file.path}
                       alt=""
                       className="product-upload-preview-img"
                       title={file.name}

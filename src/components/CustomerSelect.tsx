@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, UserRound } from 'lucide-react';
+import { StorageImage } from './StorageImage';
 import type { Customer } from '../types';
 
 export type CustomerSelectValue = {
@@ -35,8 +36,11 @@ const CustomerThumb: React.FC<{ customer: Customer | null; className?: string }>
   className = 'product-picker-selected-thumb',
 }) => {
   const photoUrl = customer?.shopPhotoUrl || customer?.customerPhotoUrl;
-  if (photoUrl) {
-    return <img src={photoUrl} alt="" className={className} />;
+  const photoPath = customer?.shopPhotoPath || customer?.customerPhotoPath;
+  if (photoUrl || photoPath) {
+    return (
+      <StorageImage url={photoUrl} path={photoPath} alt="" className={className} />
+    );
   }
   return (
     <span className={`${className} product-picker-selected-thumb--placeholder`}>

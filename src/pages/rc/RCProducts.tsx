@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Image as ImageIcon, Package, X } from 'lucide-react';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { StorageImage } from '../../components/StorageImage';
 import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
 import { tableEditCellProps } from '../../lib/tableEditCell';
 import { useAppContext } from '../../context/AppContext';
@@ -121,15 +122,20 @@ export const RCProducts: React.FC = () => {
                       return (
                         <tr key={p.id} className="table-mobile-row table-mobile-row--media">
                           <td {...viewCell} className="product-table-image-col table-mobile-col-media table-col-editable">
-                            {p.productImageUrl ? (
+                            {p.productImageUrl || p.productImagePath ? (
                               <a
-                                href={p.productImageUrl}
+                                href={p.productImageUrl || '#'}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 title="View product image"
                                 onClick={e => e.stopPropagation()}
                               >
-                                <img src={p.productImageUrl} alt={p.name} className="product-table-thumb" />
+                                <StorageImage
+                                  url={p.productImageUrl}
+                                  path={p.productImagePath}
+                                  alt={p.name}
+                                  className="product-table-thumb"
+                                />
                               </a>
                             ) : (
                               <span className="product-table-thumb-placeholder" title="No image">

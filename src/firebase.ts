@@ -16,7 +16,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+/** Primary bucket (Firebase SDK default for this project). */
 export const storage = getStorage(app);
+
+/** Legacy default bucket — older uploads/URLs may still reference this. */
+export const legacyStorage = getStorage(app, 'gs://yesgatc.appspot.com');
 
 // Secondary app for admin creating new users without losing their own session
 const secondaryApp = initializeApp(firebaseConfig, "Secondary");

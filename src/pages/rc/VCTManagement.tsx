@@ -6,6 +6,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { StorageImage } from '../../components/StorageImage';
 import { tableEditCellProps } from '../../lib/tableEditCell';
 import {
   buildRcVctMemberDoc,
@@ -621,9 +622,10 @@ export const VCTManagement: React.FC = () => {
                       <td className="vct-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
                       <td {...editCell} className="font-medium table-mobile-col-primary table-col-editable">
                         <div className="flex items-center gap-2 min-w-0">
-                          {v.profilePhotoUrl ? (
-                            <img
-                              src={v.profilePhotoUrl}
+                          {v.profilePhotoUrl || v.profilePhotoPath ? (
+                            <StorageImage
+                              url={v.profilePhotoUrl}
+                              path={v.profilePhotoPath}
                               alt=""
                               className="vct-table-avatar shrink-0"
                             />

@@ -20,92 +20,92 @@ service firebase.storage {
     // Primary: super_admin via Firestore profile.
     // Fallback: any signed-in user (Products page is super-admin-only in the app).
     match /products/{modelId}/model-approval/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isSuperAdmin() || isAuthenticated();
     }
 
     match /products/{modelId}/product-image/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isSuperAdmin() || isAuthenticated();
     }
 
     match /users/{userId}/standard-weights-cert/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /users/{userId}/seal/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /users/{userId}/biodata/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /users/{userId}/aadhar/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /users/{userId}/education-cert/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /users/{userId}/pcc/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /users/{userId}/profile-photo/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /vehicles/{vehicleId}/{kind}/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /customers/{customerId}/photo/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /customers/{customerId}/shop-photo/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /customers/{customerId}/devices/{deviceId}/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /siteCalibrations/{recordId}/scale-image/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /siteCalibrations/{recordId}/stamping-image/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /siteCalibrations/{recordId}/standard-weight-image/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /siteCalibrations/{recordId}/old-verification-certificate/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
 
     match /siteCalibrations/{recordId}/old-invoice/{fileName} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAuthenticated();
     }
   }

@@ -1,5 +1,6 @@
 import React from 'react';
 import { ExternalLink, Package } from 'lucide-react';
+import { StorageImage } from './StorageImage';
 import {
   DetailsCompactField,
   DetailsCompactThumb,
@@ -91,9 +92,16 @@ export const ProductDetailsSpecs: React.FC<{
       className={className}
       ariaLabel="Product details"
       thumb={
-        <DetailsCompactThumb placeholder={!product.productImageUrl} title={product.name || 'Product photo'}>
-          {product.productImageUrl ? (
-            <img src={product.productImageUrl} alt="" />
+        <DetailsCompactThumb
+          placeholder={!product.productImageUrl && !product.productImagePath}
+          title={product.name || 'Product photo'}
+        >
+          {product.productImageUrl || product.productImagePath ? (
+            <StorageImage
+              url={product.productImageUrl}
+              path={product.productImagePath}
+              alt=""
+            />
           ) : (
             <Package size={18} className="text-muted" aria-hidden />
           )}

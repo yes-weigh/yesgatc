@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, Image as ImageIcon } from 'lucide-react';
+import { StorageImage } from './StorageImage';
 import type { Product } from '../types';
 
 export type ProductPickerValue = {
@@ -183,8 +184,13 @@ export const ProductPicker: React.FC<ProductPickerProps> = ({
                     onMouseDown={e => e.preventDefault()}
                     onClick={() => pickProduct(product)}
                   >
-                    {product.productImageUrl ? (
-                      <img src={product.productImageUrl} alt="" className="product-picker-option-thumb" />
+                    {product.productImageUrl || product.productImagePath ? (
+                      <StorageImage
+                        url={product.productImageUrl}
+                        path={product.productImagePath}
+                        alt=""
+                        className="product-picker-option-thumb"
+                      />
                     ) : (
                       <span className="product-picker-option-thumb product-picker-option-thumb--placeholder">
                         <ImageIcon size={16} />
@@ -220,8 +226,13 @@ export const ProductPicker: React.FC<ProductPickerProps> = ({
   return (
     <div className="product-picker" ref={rootRef}>
       <div className={`product-picker-control${open ? ' product-picker-control--open' : ''}`}>
-        {selected?.productImageUrl ? (
-          <img src={selected.productImageUrl} alt="" className="product-picker-selected-thumb" />
+        {selected?.productImageUrl || selected?.productImagePath ? (
+          <StorageImage
+            url={selected?.productImageUrl}
+            path={selected?.productImagePath}
+            alt=""
+            className="product-picker-selected-thumb"
+          />
         ) : (
           <span className="product-picker-selected-thumb product-picker-selected-thumb--placeholder">
             <ImageIcon size={16} />

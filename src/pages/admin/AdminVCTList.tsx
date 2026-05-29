@@ -4,6 +4,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { StorageImage } from '../../components/StorageImage';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { releaseAadharIndex } from '../../lib/aadharIndex';
 import { buildRcVctMemberDoc, rcVctMemberRef } from '../../lib/rcVctMembers';
@@ -174,9 +175,10 @@ export const AdminVCTList: React.FC = () => {
 
             <div className="product-form-body vct-review-body">
               <div className="vct-review-profile">
-                {reviewing.profilePhotoUrl ? (
-                  <img
-                    src={reviewing.profilePhotoUrl}
+                {reviewing.profilePhotoUrl || reviewing.profilePhotoPath ? (
+                  <StorageImage
+                    url={reviewing.profilePhotoUrl}
+                    path={reviewing.profilePhotoPath}
                     alt={reviewing.username || 'Technician'}
                     className="vct-review-avatar"
                   />
@@ -283,8 +285,13 @@ export const AdminVCTList: React.FC = () => {
                       <td className="vct-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
                       <td className="font-medium table-mobile-col-primary">
                         <div className="flex items-center gap-2 min-w-0">
-                          {v.profilePhotoUrl ? (
-                            <img src={v.profilePhotoUrl} alt="" className="vct-table-avatar shrink-0" />
+                          {v.profilePhotoUrl || v.profilePhotoPath ? (
+                            <StorageImage
+                              url={v.profilePhotoUrl}
+                              path={v.profilePhotoPath}
+                              alt=""
+                              className="vct-table-avatar shrink-0"
+                            />
                           ) : (
                             <span className="vct-table-avatar vct-table-avatar--placeholder shrink-0">
                               <UserCircle size={18} />

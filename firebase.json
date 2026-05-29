@@ -23,6 +23,10 @@
     {
       "bucket": "yesgatc.firebasestorage.app",
       "rules": "storage.rules"
+    },
+    {
+      "bucket": "yesgatc.appspot.com",
+      "rules": "storage.rules"
     }
   ]
 }
