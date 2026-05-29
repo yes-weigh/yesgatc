@@ -1,6 +1,7 @@
 import type { Customer, CustomerDevice, JobType, Product, SiteCalibration, VerificationLocation } from '../types';
 import {
   buildRcDirectVerificationMeta,
+  normalizeVerificationStatus,
   productSnapshotFromProduct,
 } from './verificationRequest';
 import type { ProductFileMeta } from './productApprovalUpload';
@@ -496,6 +497,15 @@ export function validateSiteCalibrationRecord(record: SiteCalibration): string |
   const images = verificationImagesFromRecord(record);
   const rvDocuments = session.verificationType === 'RV' ? rvDocumentsFromRecord(record) : undefined;
   return validateVerificationSession(session, { [localId]: images }, rvDocuments ? { [localId]: rvDocuments } : {});
+}
+
+export function siteCalibrationSubmitBlockReason(record: SiteCalibration): string | null {
+  return validateSiteCalibrationRecord(record);
+}
+
+export function isSiteCalibrationSubmittable(record: SiteCalibration): boolean {
+  if (normalizeVerificationStatus(record) !== 'draft') return false;
+  return validateSiteCalibrationRecord(record) === null;
 }
 
 export function validateVerificationSession(

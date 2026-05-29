@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, getDoc,
 } from 'firebase/firestore';
@@ -17,7 +17,8 @@ import {
   verificationSessionFromRecord,
   validateVerificationDraft,
   validateVerificationForSubmit,
-  validateSiteCalibrationRecord,
+  isSiteCalibrationSubmittable,
+  siteCalibrationSubmitBlockReason,
   verificationTypeLabel,
   type VerificationDeviceRowValues,
   type VerificationSessionValues,
@@ -84,6 +85,8 @@ export const RCSiteCalibration: React.FC = () => {
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
+  const selectAllDraftsRef = useRef<HTMLInputElement>(null);
   const [laboratorySealId, setLaboratorySealId] = useState('');
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
 
@@ -663,7 +666,7 @@ export const RCSiteCalibration: React.FC = () => {
   const handleSubmitRecord = async (record: SiteCalibration) => {
     if (!canSubmitVerification(record)) return;
 
-    const validationError = validateSiteCalibrationRecord(record);
+    const validationError = siteCalibrationSubmitBlockReason(record);
     if (validationError) {
       setListError(validationError);
       return;
@@ -672,7 +675,7 @@ export const RCSiteCalibration: React.FC = () => {
     const ok = await confirm({
       title: 'Submit for certification?',
       message:
-        `Submit verification for ${record.customerName} · ${record.serialNumber || 'device'}?\n\nAfter submission you cannot edit this record. It will be queued for certification on the server.`,
+        `Submit verification for ${record.customerName} · ${record.serialNumber || 'device'}?\n\nAfter submission you cannot edit this record. Approved status is set only by the certificate server.`,
       confirmLabel: 'Submit',
     });
     if (!ok) return;
@@ -685,6 +688,47 @@ export const RCSiteCalibration: React.FC = () => {
       await fetchRecords();
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to submit verification.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkSubmitRecords = async () => {
+    const selectedRecords = filteredRecords.filter(
+      r => selectedDraftIds.has(r.id) && isSiteCalibrationSubmittable(r),
+    );
+
+    if (selectedRecords.length === 0) {
+      setListError('None of the selected drafts are ready to submit. Complete required fields and images first.');
+      return;
+    }
+
+    const skippedCount = selectedDraftIds.size - selectedRecords.length;
+    const ok = await confirm({
+      title: 'Submit selected verifications?',
+      message:
+        `Submit ${selectedRecords.length} verification${selectedRecords.length !== 1 ? 's' : ''} for certification?\n\n` +
+        'After submission they cannot be edited. Approved status is set only by the certificate server.' +
+        (skippedCount > 0
+          ? `\n\n${skippedCount} incomplete draft${skippedCount !== 1 ? 's were' : ' was'} not included.`
+          : ''),
+      confirmLabel: 'Submit',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await Promise.all(
+        selectedRecords.map(record =>
+          updateDoc(doc(db, 'siteCalibrations', record.id), buildVerificationSubmitPatch()),
+        ),
+      );
+      setSelectedDraftIds(new Set());
+      if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(formatSaveError(err, 'Failed to submit selected verifications.'));
     } finally {
       setSubmitting(false);
     }
@@ -868,6 +912,58 @@ export const RCSiteCalibration: React.FC = () => {
     { value: 'approved', label: 'Approved', count: statusCounts.approved },
     { value: 'all', label: 'All', count: statusCounts.all },
   ];
+
+  const draftSubmitMeta = useMemo(() => {
+    const meta = new Map<string, { submittable: boolean; blockReason: string | null }>();
+    for (const record of filteredRecords) {
+      if (normalizeVerificationStatus(record) !== 'draft') continue;
+      const blockReason = siteCalibrationSubmitBlockReason(record);
+      meta.set(record.id, { submittable: !blockReason, blockReason });
+    }
+    return meta;
+  }, [filteredRecords]);
+
+  const selectableDraftIds = useMemo(
+    () => [...draftSubmitMeta.entries()].filter(([, value]) => value.submittable).map(([id]) => id),
+    [draftSubmitMeta],
+  );
+
+  const allSelectableDraftsSelected =
+    selectableDraftIds.length > 0 && selectableDraftIds.every(id => selectedDraftIds.has(id));
+
+  const someSelectableDraftsSelected =
+    selectableDraftIds.some(id => selectedDraftIds.has(id)) && !allSelectableDraftsSelected;
+
+  useEffect(() => {
+    setSelectedDraftIds(new Set());
+  }, [statusFilter]);
+
+  useEffect(() => {
+    if (selectAllDraftsRef.current) {
+      selectAllDraftsRef.current.indeterminate = someSelectableDraftsSelected;
+    }
+  }, [someSelectableDraftsSelected, selectableDraftIds.length]);
+
+  const toggleDraftSelection = (id: string, submittable: boolean) => {
+    if (!submittable) return;
+    setSelectedDraftIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllDrafts = () => {
+    setSelectedDraftIds(prev => {
+      if (allSelectableDraftsSelected) {
+        const next = new Set(prev);
+        selectableDraftIds.forEach(id => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...selectableDraftIds]);
+    });
+  };
 
   return (
     <div className="fade-in page-content">
@@ -1082,6 +1178,35 @@ export const RCSiteCalibration: React.FC = () => {
                 </button>
               ))}
             </div>
+            {selectedDraftIds.size > 0 && (
+              <div className="verification-bulk-bar">
+                <span className="verification-bulk-bar-count">
+                  {selectedDraftIds.size} draft{selectedDraftIds.size !== 1 ? 's' : ''} selected
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                  onClick={() => void handleBulkSubmitRecords()}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <span className="spinner-inline"></span>
+                  ) : (
+                    <>
+                      <Send size={16} /> Submit for certification
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary text-sm py-1.5 px-3"
+                  onClick={() => setSelectedDraftIds(new Set())}
+                  disabled={submitting}
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
             {loading ? (
               <div className="flex justify-center py-16">
                 <span className="spinner-inline large"></span>
@@ -1091,6 +1216,21 @@ export const RCSiteCalibration: React.FC = () => {
                 <table className="data-table data-table--site-calibration data-table--mobile-cards">
                   <thead>
                     <tr>
+                      <th className="verification-table-col-select">
+                        {selectableDraftIds.length > 0 ? (
+                          <label className="verification-device-check verification-device-check--header" title="Select all submittable drafts">
+                            <input
+                              ref={selectAllDraftsRef}
+                              type="checkbox"
+                              checked={allSelectableDraftsSelected}
+                              onChange={toggleSelectAllDrafts}
+                              disabled={submitting}
+                              aria-label="Select all submittable drafts"
+                            />
+                            <span className="sr-only">Select all</span>
+                          </label>
+                        ) : null}
+                      </th>
                       <th className="site-calibration-col-serial">#</th>
                       <th>Date</th>
                       <th>VCT</th>
@@ -1106,6 +1246,9 @@ export const RCSiteCalibration: React.FC = () => {
                   <tbody>
                     {filteredRecords.map((r, index) => {
                       const editable = isVerificationEditable(r);
+                      const draftMeta = draftSubmitMeta.get(r.id);
+                      const isDraft = normalizeVerificationStatus(r) === 'draft';
+                      const submitBlockReason = draftMeta?.blockReason ?? null;
                       const openDetails = () => openRecord(r);
                       const detailCell = tableEditCellProps(
                         openDetails,
@@ -1114,6 +1257,22 @@ export const RCSiteCalibration: React.FC = () => {
 
                       return (
                         <tr key={r.id} className="table-mobile-row table-mobile-row--actions">
+                          <td className="verification-table-col-select table-mobile-col-hide">
+                            {isDraft ? (
+                              <label
+                                className="verification-device-check"
+                                title={submitBlockReason ?? 'Select for bulk submit'}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedDraftIds.has(r.id)}
+                                  onChange={() => toggleDraftSelection(r.id, draftMeta?.submittable ?? false)}
+                                  disabled={submitting || !draftMeta?.submittable}
+                                  aria-label={`Select ${r.customerName || 'verification'}`}
+                                />
+                              </label>
+                            ) : null}
+                          </td>
                           <td className="site-calibration-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
                           <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
                             {formatDate(r.createdAt)}
@@ -1194,8 +1353,8 @@ export const RCSiteCalibration: React.FC = () => {
                                   type="button"
                                   className="btn-icon text-blue"
                                   onClick={() => void handleSubmitRecord(r)}
-                                  disabled={submitting}
-                                  title="Submit for certification"
+                                  disabled={submitting || Boolean(submitBlockReason)}
+                                  title={submitBlockReason ?? 'Submit for certification'}
                                   aria-label={`Submit verification for ${r.customerName}`}
                                 >
                                   <Send size={18} />
@@ -1231,7 +1390,7 @@ export const RCSiteCalibration: React.FC = () => {
                     })}
                     {filteredRecords.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="text-center py-10 text-muted">
+                        <td colSpan={11} className="text-center py-10 text-muted">
                           {records.length === 0
                             ? 'No verification records yet. Click "New" to add a draft.'
                             : `No ${statusFilter === 'all' ? '' : `${verificationStatusLabel(statusFilter).toLowerCase()} `}verifications.`}
