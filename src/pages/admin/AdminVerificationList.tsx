@@ -129,10 +129,10 @@ export const AdminVerificationList: React.FC = () => {
   };
 
   const filterOptions: { value: StatusFilter; label: string; count: number }[] = [
+    { value: 'all', label: 'All', count: counts.all },
+    { value: 'draft', label: 'Draft', count: counts.draft },
     { value: 'submitted', label: 'Submitted', count: counts.submitted },
     { value: 'approved', label: 'Approved', count: counts.approved },
-    { value: 'draft', label: 'Draft', count: counts.draft },
-    { value: 'all', label: 'All', count: counts.all },
   ];
 
   return (

@@ -907,10 +907,10 @@ export const RCSiteCalibration: React.FC = () => {
   }, [records]);
 
   const statusFilterOptions: { value: StatusFilter; label: string; count: number }[] = [
+    { value: 'all', label: 'All', count: statusCounts.all },
     { value: 'draft', label: 'Draft', count: statusCounts.draft },
     { value: 'submitted', label: 'Submitted', count: statusCounts.submitted },
     { value: 'approved', label: 'Approved', count: statusCounts.approved },
-    { value: 'all', label: 'All', count: statusCounts.all },
   ];
 
   const draftSubmitMeta = useMemo(() => {
