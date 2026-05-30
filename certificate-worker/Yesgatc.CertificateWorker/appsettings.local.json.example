@@ -1,0 +1,12 @@
+{
+  "Credentials": {
+    "Aadhar": "123456789012",
+    "Password": "your-super-admin-password"
+  },
+  "Automation": {
+    "DocaCredentials": {
+      "Email": "admin@yesweigh.in",
+      "Password": "your-doca-password"
+    }
+  }
+}

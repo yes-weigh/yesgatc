@@ -1,0 +1,454 @@
+<Window x:Class="Yesgatc.CertificateWorker.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="YesGATC Certificate Worker — Super Admin"
+        Height="860"
+        Width="1280"
+        MinHeight="640"
+        MinWidth="1040"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgAppBrush}"
+        FontFamily="Segoe UI">
+    <Grid>
+        <Rectangle Fill="{StaticResource BgAppBrush}"/>
+
+        <Ellipse Width="520" Height="520"
+                 HorizontalAlignment="Left" VerticalAlignment="Top"
+                 Margin="-180,-120,0,0"
+                 Fill="{StaticResource BlueGlowBrush}"
+                 IsHitTestVisible="False"/>
+        <Ellipse Width="460" Height="460"
+                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                 Margin="0,0,-140,-120"
+                 Fill="{StaticResource OrangeGlowBrush}"
+                 IsHitTestVisible="False"/>
+
+        <Grid Margin="24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.65*"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left: tabbed queues -->
+            <Border Grid.Column="0"
+                    Style="{StaticResource GlassPanel}"
+                    Padding="0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <DockPanel Grid.Row="0" Margin="22,20,22,8">
+                        <Button x:Name="RefreshButton"
+                                Content="Refresh"
+                                Style="{StaticResource SecondaryButton}"
+                                DockPanel.Dock="Right"
+                                Margin="12,0,0,0"
+                                Click="RefreshButton_Click"/>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Verification queues" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock x:Name="QueueSubtitleText"
+                                       Text="All RCs · submit jobs on DOCA first, then certify approved jobs"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </DockPanel>
+
+                    <TabControl x:Name="QueueTabs"
+                                Grid.Row="1"
+                                Style="{StaticResource QueueTabControl}"
+                                Margin="22,0,22,10"
+                                SelectionChanged="QueueTabs_SelectionChanged">
+                        <TabItem x:Name="SubmittedTabItem"
+                                 Style="{StaticResource QueueTabItem}"
+                                 Header="Submitted"/>
+                        <TabItem x:Name="ApprovedTabItem"
+                                 Style="{StaticResource QueueTabItem}"
+                                 Header="Approved"/>
+                    </TabControl>
+
+                    <DataGrid x:Name="JobsGrid"
+                              Grid.Row="2"
+                              Margin="14,0,14,16"
+                              RowStyle="{StaticResource QueueDataGridRow}"
+                              SelectionChanged="JobsGrid_SelectionChanged">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="RC center"
+                                                    Binding="{Binding RcCenterName}"
+                                                    Width="1.2*"
+                                                    ElementStyle="{StaticResource DataGridCellText}"/>
+                                <DataGridTextColumn Header="Customer"
+                                                    Binding="{Binding CustomerName}"
+                                                    Width="1.35*"
+                                                    ElementStyle="{StaticResource DataGridCellText}"/>
+                                <DataGridTextColumn Header="Product"
+                                                    Binding="{Binding ProductName}"
+                                                    Width="1.35*"
+                                                    ElementStyle="{StaticResource DataGridCellText}"/>
+                                <DataGridTextColumn Header="Serial"
+                                                    Binding="{Binding SerialNumber}"
+                                                    Width="*"
+                                                    ElementStyle="{StaticResource DataGridCellMono}"/>
+                                <DataGridTextColumn Header="Type"
+                                                    Binding="{Binding VerificationTypeLabel}"
+                                                    Width="0.85*"
+                                                    ElementStyle="{StaticResource DataGridCellMuted}"/>
+                                <DataGridTextColumn Header="Status"
+                                                    Binding="{Binding StatusLabel}"
+                                                    Width="0.85*"
+                                                    ElementStyle="{StaticResource DataGridCellMuted}"/>
+                                <DataGridTextColumn x:Name="DateColumn"
+                                                    Header="Submitted"
+                                                    Binding="{Binding SubmittedAtDisplay}"
+                                                    Width="*"
+                                                    ElementStyle="{StaticResource DataGridCellMuted}"/>
+                                <DataGridTextColumn x:Name="CertificationColumn"
+                                                    Header="Certification"
+                                                    Binding="{Binding CertificationStatusLabel}"
+                                                    Width="0"
+                                                    ElementStyle="{StaticResource DataGridCellMuted}"/>
+                            </DataGrid.Columns>
+                    </DataGrid>
+
+                    <StackPanel x:Name="EmptyStateText"
+                                Grid.Row="2"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Margin="24"
+                                Visibility="Collapsed">
+                        <Border Width="56" Height="56"
+                                CornerRadius="28"
+                                Background="#143B82F6"
+                                Margin="0,0,0,14"
+                                HorizontalAlignment="Center">
+                            <TextBlock Text="⏳"
+                                       FontSize="24"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock x:Name="EmptyStateTitleText"
+                                   Text="No submitted verifications"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextMainBrush}"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="EmptyStateBodyText"
+                                   Text="Sign in and refresh to load the queue."
+                                   FontSize="13"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Right: controls -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Margin="0,0,0,18">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <Border Width="10" Height="10"
+                                CornerRadius="5"
+                                Margin="0,0,12,0"
+                                VerticalAlignment="Center">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#3B82F6" Offset="0"/>
+                                    <GradientStop Color="#60A5FA" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <TextBlock Text="Certificate Worker"
+                                   FontSize="26"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TitleGradientBrush}"/>
+                    </StackPanel>
+                        <TextBlock Text="Super Admin certificate desk — approve submissions, then certify on DOCA."
+                               FontSize="13"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+
+                <!-- Collapsible sign-in -->
+                <Border Grid.Row="1"
+                        Style="{StaticResource GlassPanel}"
+                        Padding="20"
+                        Margin="0,0,0,16">
+                    <Expander x:Name="SignInExpander"
+                              Style="{StaticResource GlassExpander}"
+                              IsExpanded="False">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse x:Name="SignInStatusDot"
+                                         Style="{StaticResource StatusDot}"
+                                         Margin="0,0,10,0"/>
+                                <StackPanel>
+                                    <TextBlock Text="Super Admin"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock x:Name="SignInSummaryText"
+                                               Text="Not signed in"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextMainBrush}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Expander.Header>
+
+                        <StackPanel Margin="0,4,0,0">
+                            <TextBlock Text="YesGATC (Firebase)" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
+                            <TextBlock x:Name="SignedInLabel"
+                                       Text="Not signed in"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextMainBrush}"
+                                       Margin="0,0,0,12"/>
+
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="10"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="AadharBox"
+                                         Grid.Column="0"
+                                         Style="{StaticResource GlassTextBox}"
+                                         ToolTip="Super Admin 12-digit Aadhar login ID"/>
+                                <PasswordBox x:Name="PasswordBox"
+                                             Grid.Column="2"
+                                             Style="{StaticResource GlassPasswordBox}"
+                                             ToolTip="Super Admin password"/>
+                            </Grid>
+
+                            <Button x:Name="SignInButton"
+                                    Content="Sign in as Super Admin"
+                                    Style="{StaticResource PrimaryButton}"
+                                    HorizontalAlignment="Stretch"
+                                    Margin="0,0,0,18"
+                                    Click="SignInButton_Click"/>
+
+                            <TextBlock Text="DOCA portal" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
+                            <TextBox x:Name="DocaEmailBox"
+                                     Style="{StaticResource GlassTextBox}"
+                                     Margin="0,0,0,10"
+                                     ToolTip="DOCA login email"/>
+                            <PasswordBox x:Name="DocaPasswordBox"
+                                         Style="{StaticResource GlassPasswordBox}"
+                                         Margin="0,0,0,8"
+                                         ToolTip="DOCA login password"/>
+                            <TextBlock Text="Saved locally on this PC after sign-in"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       FontSize="12"/>
+                        </StackPanel>
+                    </Expander>
+                </Border>
+
+                <!-- Current job + navigation -->
+                <Border Grid.Row="2"
+                        Background="{StaticResource AccentBlueSoftBrush}"
+                        BorderBrush="#403B82F6"
+                        BorderThickness="1"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Current job"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource AccentPrimaryBrush}"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock x:Name="JobPositionText"
+                                       Grid.Column="1"
+                                       Text="No jobs loaded"
+                                       FontSize="12"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PreviousJobButton"
+                                    Grid.Column="0"
+                                    Content="← Previous job"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Padding="14,9"
+                                    IsEnabled="False"
+                                    Click="PreviousJobButton_Click"/>
+                            <Button x:Name="NextJobButton"
+                                    Grid.Column="2"
+                                    Content="Next job →"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Padding="14,9"
+                                    IsEnabled="False"
+                                    Click="NextJobButton_Click"/>
+                        </Grid>
+
+                        <TextBlock x:Name="SelectedJobText"
+                                   Text="Sign in and refresh the queue, then pick a job."
+                                   TextWrapping="Wrap"
+                                   FontSize="14"
+                                   LineHeight="22"
+                                   Foreground="{StaticResource TextMainBrush}"/>
+
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                <TextBlock Text="Job status"
+                                           Style="{StaticResource FieldLabel}"
+                                           Margin="0,0,0,6"/>
+                                <ComboBox x:Name="StatusComboBox"
+                                          MinHeight="36"
+                                          FontSize="13"
+                                          IsEnabled="False"
+                                          SelectionChanged="StatusComboBox_SelectionChanged"/>
+                            </StackPanel>
+                            <Button x:Name="ApplyStatusButton"
+                                    Grid.Column="1"
+                                    Content="Apply status"
+                                    Style="{StaticResource SecondaryButton}"
+                                    Padding="14,9"
+                                    VerticalAlignment="Bottom"
+                                    IsEnabled="False"
+                                    Click="ApplyStatusButton_Click"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Actions -->
+                <StackPanel Grid.Row="3" Orientation="Vertical" Margin="0,0,0,14">
+                    <StackPanel x:Name="SubmittedActionsPanel">
+                        <Button x:Name="ApproveAllJobsButton"
+                                Content="Submit all on DOCA &amp; approve"
+                                Style="{StaticResource PrimaryButton}"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,0,0,10"
+                                IsEnabled="False"
+                                ToolTip="Opens DOCA create IC verification for each submitted job; Firebase approve runs only after DOCA success"
+                                Click="ApproveAllJobsButton_Click"/>
+                        <Button x:Name="ApproveJobButton"
+                                Content="Submit selected job on DOCA"
+                                Style="{StaticResource SuccessButton}"
+                                HorizontalAlignment="Stretch"
+                                IsEnabled="False"
+                                ToolTip="Opens DOCA create IC verification; Firebase approve runs only after DOCA success"
+                                Click="ApproveJobButton_Click"/>
+                    </StackPanel>
+
+                    <StackPanel x:Name="ApprovedActionsPanel" Visibility="Collapsed">
+                        <Button x:Name="CertifyAllJobsButton"
+                                Content="Certify all approved jobs"
+                                Style="{StaticResource PrimaryButton}"
+                                HorizontalAlignment="Stretch"
+                                Margin="0,0,0,10"
+                                IsEnabled="False"
+                                ToolTip="Open View IC Verification and search each approved job by serial"
+                                Click="CertifyAllJobsButton_Click"/>
+                        <Button x:Name="CertifyJobButton"
+                                Content="Find selected job on View IC Verification"
+                                Style="{StaticResource SuccessButton}"
+                                HorizontalAlignment="Stretch"
+                                IsEnabled="False"
+                                Click="CertifyJobButton_Click"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Status -->
+                <Border Grid.Row="4"
+                        Style="{StaticResource GlassPanel}"
+                        Padding="16"
+                        VerticalAlignment="Stretch">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                            <Ellipse x:Name="StatusStateDot"
+                                     Style="{StaticResource StatusDot}"
+                                     Margin="0,0,8,0"/>
+                            <TextBlock x:Name="StatusStateText"
+                                       Text="Idle"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextMainBrush}"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock x:Name="StatusTimestampText"
+                                       Text=""
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       VerticalAlignment="Center"
+                                       Margin="10,0,0,0"/>
+                        </StackPanel>
+
+                        <TextBlock x:Name="StatusText"
+                                   Grid.Row="1"
+                                   Text="Sign in as Super Admin to load the global queue."
+                                   TextWrapping="Wrap"
+                                   FontSize="13"
+                                   LineHeight="20"
+                                   Foreground="{StaticResource TextMainBrush}"
+                                   Margin="0,0,0,12"/>
+
+                        <TextBlock Grid.Row="2"
+                                   Text="Activity"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   Margin="0,0,0,6"/>
+
+                        <ListBox x:Name="ActivityLogList"
+                                 Grid.Row="3"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 FontSize="12"
+                                 Foreground="{StaticResource TextMutedBrush}">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0,3"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <ContentPresenter/>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                        </ListBox>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

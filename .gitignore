@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Certificate worker (Windows desktop)
+certificate-worker/**/bin/
+certificate-worker/**/obj/
+certificate-worker/**/appsettings.local.json

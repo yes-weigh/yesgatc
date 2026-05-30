@@ -56,7 +56,7 @@ export type VerificationLocation = 'in_situ' | 'in_premises';
  * Verification request lifecycle — client may create/edit draft and submit.
  * Only the certificate server (Admin SDK) should set `approved` and certificate fields.
  */
-export type VerificationRequestStatus = 'draft' | 'submitted' | 'approved';
+export type VerificationRequestStatus = 'draft' | 'submitted' | 'approved' | 'certified';
 
 /** Who performed the verification in the field. */
 export type VerificationPerformedBy = 'rc' | 'vct';
@@ -314,6 +314,8 @@ export interface SiteCalibration {
   status?: VerificationRequestStatus;
   submittedAt?: string;
   approvedAt?: string;
+  /** Set when the signed certificate is uploaded to DOCA. */
+  certifiedAt?: string;
   /** Filled by certificate server when approved. */
   certificateNumber?: string;
   certificatePdfUrl?: string;

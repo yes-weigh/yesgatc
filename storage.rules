@@ -99,6 +99,11 @@ service firebase.storage {
       allow write: if isAuthenticated();
     }
 
+    match /siteCalibrations/{recordId}/certificate-pdf/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
     match /siteCalibrations/{recordId}/old-verification-certificate/{fileName} {
       allow read: if true;
       allow write: if isAuthenticated();

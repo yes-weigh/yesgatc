@@ -899,7 +899,7 @@ export const RCSiteCalibration: React.FC = () => {
   }, [records, statusFilter]);
 
   const statusCounts = useMemo(() => {
-    const tally = { all: records.length, draft: 0, submitted: 0, approved: 0 };
+    const tally = { all: records.length, draft: 0, submitted: 0, approved: 0, certified: 0 };
     for (const record of records) {
       tally[normalizeVerificationStatus(record)] += 1;
     }
@@ -911,6 +911,7 @@ export const RCSiteCalibration: React.FC = () => {
     { value: 'draft', label: 'Draft', count: statusCounts.draft },
     { value: 'submitted', label: 'Submitted', count: statusCounts.submitted },
     { value: 'approved', label: 'Approved', count: statusCounts.approved },
+    { value: 'certified', label: 'Certified', count: statusCounts.certified },
   ];
 
   const draftSubmitMeta = useMemo(() => {

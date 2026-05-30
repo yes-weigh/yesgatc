@@ -10,12 +10,14 @@ export const VERIFICATION_REQUEST_STATUSES: VerificationRequestStatus[] = [
   'draft',
   'submitted',
   'approved',
+  'certified',
 ];
 
 /** Fields only the certificate server should write (Firebase Admin SDK). */
 export const VERIFICATION_SERVER_MANAGED_FIELDS = [
   'status',
   'approvedAt',
+  'certifiedAt',
   'certificateNumber',
   'certificatePdfUrl',
   'certificatePdfPath',
@@ -36,7 +38,12 @@ export type VerificationApprovalPayload = {
 export function normalizeVerificationStatus(
   record: Pick<SiteCalibration, 'status'>,
 ): VerificationRequestStatus {
-  if (record.status === 'submitted' || record.status === 'approved' || record.status === 'draft') {
+  if (
+    record.status === 'submitted' ||
+    record.status === 'approved' ||
+    record.status === 'certified' ||
+    record.status === 'draft'
+  ) {
     return record.status;
   }
   return 'draft';
@@ -55,8 +62,9 @@ export function canSubmitVerification(record: Pick<SiteCalibration, 'status'>): 
 }
 
 export function canDownloadVerificationCertificate(record: SiteCalibration): boolean {
+  const status = normalizeVerificationStatus(record);
   return (
-    normalizeVerificationStatus(record) === 'approved' &&
+    (status === 'approved' || status === 'certified') &&
     Boolean(record.certificatePdfUrl?.trim())
   );
 }
@@ -68,18 +76,20 @@ export function canDeleteVerification(record: Pick<SiteCalibration, 'status'>): 
 /** Super Admin — interim until certificate server owns the submitted queue. */
 export function canAdminDeleteVerification(record: Pick<SiteCalibration, 'status'>): boolean {
   const status = normalizeVerificationStatus(record);
-  return status === 'submitted' || status === 'approved';
+  return status === 'submitted' || status === 'approved' || status === 'certified';
 }
 
 export function verificationStatusLabel(status: VerificationRequestStatus): string {
   if (status === 'draft') return 'Draft';
   if (status === 'submitted') return 'Submitted';
+  if (status === 'certified') return 'Certified';
   return 'Approved';
 }
 
 export function verificationStatusDescription(status: VerificationRequestStatus): string {
   if (status === 'draft') return 'Open and edit before submitting for certificate generation.';
   if (status === 'submitted') return 'Locked — awaiting certificate server processing.';
+  if (status === 'certified') return 'Signed certificate uploaded to DOCA.';
   return 'Certificate generated and ready to download.';
 }
 

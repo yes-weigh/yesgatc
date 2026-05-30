@@ -176,6 +176,15 @@ service cloud.firestore {
         && verificationRecordStatus(resource.data) == 'draft'
         && verificationRecordStatus(request.resource.data) in ['draft', 'submitted'];
 
+      // Certificate worker — RC approves own submitted verification after DOCA success.
+      allow update: if isRCAdmin()
+        && resource.data.rcId == request.auth.uid
+        && request.resource.data.rcId == resource.data.rcId
+        && verificationRecordStatus(resource.data) == 'submitted'
+        && verificationRecordStatus(request.resource.data) == 'approved'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['status', 'approvedAt', 'updatedAt']);
+
       allow delete: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
         && verificationRecordStatus(resource.data) == 'draft';

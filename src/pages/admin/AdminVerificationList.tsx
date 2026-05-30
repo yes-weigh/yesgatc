@@ -72,7 +72,7 @@ export const AdminVerificationList: React.FC = () => {
   }, [records, statusFilter]);
 
   const counts = useMemo(() => {
-    const tally = { all: records.length, draft: 0, submitted: 0, approved: 0 };
+    const tally = { all: records.length, draft: 0, submitted: 0, approved: 0, certified: 0 };
     for (const record of records) {
       tally[normalizeVerificationStatus(record)] += 1;
     }
@@ -133,6 +133,7 @@ export const AdminVerificationList: React.FC = () => {
     { value: 'draft', label: 'Draft', count: counts.draft },
     { value: 'submitted', label: 'Submitted', count: counts.submitted },
     { value: 'approved', label: 'Approved', count: counts.approved },
+    { value: 'certified', label: 'Certified', count: counts.certified },
   ];
 
   return (

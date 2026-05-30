@@ -5329,6 +5329,11 @@ select.input-field option {
   color: var(--accent-green, #10b981);
 }
 
+.verification-status--certified {
+  background: rgba(245, 158, 11, 0.14);
+  color: #f59e0b;
+}
+
 .verification-row-actions {
   display: inline-flex;
   align-items: center;
