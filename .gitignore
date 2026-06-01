@@ -27,3 +27,8 @@ dist-ssr
 certificate-worker/**/bin/
 certificate-worker/**/obj/
 certificate-worker/**/appsettings.local.json
+certificate-worker/publish/
+
+# Firebase Admin service account (never commit)
+*service-account*.json
+*firebase-adminsdk*.json

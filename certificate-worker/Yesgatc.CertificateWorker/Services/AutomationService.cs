@@ -32,7 +32,95 @@ public sealed class AutomationService : IAsyncDisposable
     /// <summary>-1 = default single browser profile; 0+ = parallel worker slot with its own profile.</summary>
     public int WorkerIndex { get; set; } = -1;
 
-    public bool IsRunning => _context is not null;
+    public bool IsRunning => IsBrowserConnected;
+
+    public bool IsBrowserConnected
+    {
+        get
+        {
+            if (_context is null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return _context.Browser.IsConnected;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
+    public static bool IsBrowserDisconnectedError(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            var message = current.Message;
+            if (message.Contains("Target page, context or browser has been closed", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("Browser has been closed", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("Session closed", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("browser has been disconnected", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("context was destroyed", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public async Task EnsureBrowserReadyAsync(CancellationToken cancellationToken = default)
+    {
+        await ResetContextIfDisconnectedAsync();
+        await EnsureContextAsync(cancellationToken);
+    }
+
+    public async Task<DocaSessionState> ProbeDocaSessionAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureBrowserReadyAsync(cancellationToken);
+        var page = await GetPageAsync();
+
+        if (ManualDocaLoginWait)
+        {
+            await page.BringToFrontAsync();
+            if (IsBlankBrowserPage(page.Url))
+            {
+                await page.GotoAsync(_settings.DocaLoginUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.Load,
+                    Timeout = 60_000,
+                });
+            }
+        }
+        else
+        {
+            await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.Load,
+                Timeout = 60_000,
+            });
+        }
+
+        if (await IsLoginPageAsync(page))
+        {
+            if (!ManualDocaLoginWait)
+            {
+                await TryPrefillLoginAsync(page);
+            }
+
+            await page.BringToFrontAsync();
+            return DocaSessionState.LoginRequired;
+        }
+
+        await page.BringToFrontAsync();
+        return DocaSessionState.LoggedIn;
+    }
+
+    /// <summary>When true, do not navigate away from the DOCA login page while the operator enters a new password.</summary>
+    public bool ManualDocaLoginWait { get; set; }
 
     public string BrowserProfileDirectory
     {
@@ -71,7 +159,7 @@ public sealed class AutomationService : IAsyncDisposable
             DocaCredentials = docaCredentials;
         }
 
-        await EnsureContextAsync(cancellationToken);
+        await EnsureBrowserReadyAsync(cancellationToken);
         var page = await GetPageAsync();
 
         var serial = instrument.SerialNumber.Trim();
@@ -88,7 +176,11 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            await TryPrefillLoginAsync(page);
+            if (!ManualDocaLoginWait)
+            {
+                await TryPrefillLoginAsync(page);
+            }
+
             await page.BringToFrontAsync();
 
             var capturedLogin = await CaptureDocaCredentialsFromBrowserAsync(page);
@@ -147,7 +239,11 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            await TryPrefillLoginAsync(page);
+            if (!ManualDocaLoginWait)
+            {
+                await TryPrefillLoginAsync(page);
+            }
+
             await page.BringToFrontAsync();
 
             var captured = await CaptureDocaCredentialsFromBrowserAsync(page);
@@ -231,7 +327,7 @@ public sealed class AutomationService : IAsyncDisposable
             throw new InvalidOperationException("Serial number is required for View IC Verification lookup.");
         }
 
-        await EnsureContextAsync(cancellationToken);
+        await EnsureBrowserReadyAsync(cancellationToken);
         var page = await GetPageAsync();
 
         if (!continueOnSamePage)
@@ -249,7 +345,11 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            await TryPrefillLoginAsync(page);
+            if (!ManualDocaLoginWait)
+            {
+                await TryPrefillLoginAsync(page);
+            }
+
             await page.BringToFrontAsync();
 
             var captured = await CaptureDocaCredentialsFromBrowserAsync(page);
@@ -336,7 +436,7 @@ public sealed class AutomationService : IAsyncDisposable
         int chromeNumber = 1,
         CancellationToken cancellationToken = default)
     {
-        await EnsureContextAsync(cancellationToken);
+        await EnsureBrowserReadyAsync(cancellationToken);
         var page = await GetPageAsync();
 
         await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
@@ -357,7 +457,11 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            await TryPrefillLoginAsync(page);
+            if (!ManualDocaLoginWait)
+            {
+                await TryPrefillLoginAsync(page);
+            }
+
             await page.BringToFrontAsync();
             return DocaSessionState.LoginRequired;
         }
@@ -388,13 +492,52 @@ public sealed class AutomationService : IAsyncDisposable
         _playwright = null;
     }
 
+    private async Task ResetContextIfDisconnectedAsync()
+    {
+        if (_context is null)
+        {
+            return;
+        }
+
+        if (IsBrowserConnected)
+        {
+            return;
+        }
+
+        try
+        {
+            await _context.CloseAsync();
+        }
+        catch
+        {
+        }
+
+        _context = null;
+    }
+
+    private static bool IsBlankBrowserPage(string url) =>
+        string.IsNullOrWhiteSpace(url) || url.Equals("about:blank", StringComparison.OrdinalIgnoreCase);
+
     private async Task EnsureContextAsync(CancellationToken cancellationToken)
     {
         _playwright ??= await Playwright.CreateAsync();
 
-        if (_context is not null)
+        if (_context is not null && IsBrowserConnected)
         {
             return;
+        }
+
+        if (_context is not null)
+        {
+            try
+            {
+                await _context.CloseAsync();
+            }
+            catch
+            {
+            }
+
+            _context = null;
         }
 
         Directory.CreateDirectory(BrowserProfileDirectory);
@@ -508,6 +651,11 @@ public sealed class AutomationService : IAsyncDisposable
 
     private async Task TryPrefillLoginAsync(IPage page)
     {
+        if (ManualDocaLoginWait)
+        {
+            return;
+        }
+
         var email = DocaCredentials.Email.Trim();
         var password = DocaCredentials.Password;
 

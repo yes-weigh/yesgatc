@@ -23,6 +23,7 @@ import {
   syncAuthPassword,
 } from '../../lib/aadharAuth';
 import { releaseAadharIndex } from '../../lib/aadharIndex';
+import { deleteAuthUserAccount, rollbackCreatedAuthUser } from '../../lib/authUserAdmin';
 import { isVctApproved, isVctActive, vctActiveLabel, vctApprovalLabel } from '../../lib/vctApproval';
 import { uploadVctDocument, uploadVctProfilePhoto, type VctDocKind } from '../../lib/vctDocumentUpload';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
@@ -319,10 +320,12 @@ export const VCTManagement: React.FC = () => {
 
     const cleanAadhar = normalizeAadhar(formValues.aadhar);
     setSubmitting(true);
+    let createdAuthUid: string | undefined;
     try {
       await assertAadharAvailable(cleanAadhar);
       const cred = await createAuthUserForAadhar(cleanAadhar, formValues.password);
       const uid = cred.user.uid;
+      createdAuthUid = uid;
       const docFields = await uploadAllDocs(uid);
       const photoFields = await uploadProfilePhoto(uid);
 
@@ -351,10 +354,12 @@ export const VCTManagement: React.FC = () => {
         batch.set(rcVctMemberRef(user.uid, uid), buildRcVctMemberDoc(profile, uid));
       }
       await batch.commit();
+      createdAuthUid = undefined;
 
       handleCloseModal();
       await fetchVCTs();
     } catch (err: unknown) {
+      await rollbackCreatedAuthUser(createdAuthUid);
       setError(authErrorMessage(err, 'Failed to add technician.'));
     } finally {
       setSubmitting(false);
@@ -442,10 +447,15 @@ export const VCTManagement: React.FC = () => {
       destructive: true,
     });
     if (!ok) return;
-    await deleteDoc(doc(db, 'users', uid));
-    if (user?.uid) await deleteDoc(rcVctMemberRef(user.uid, uid));
-    if (record?.aadhar) await releaseAadharIndex(record.aadhar);
-    await fetchVCTs();
+    try {
+      await deleteDoc(doc(db, 'users', uid));
+      if (user?.uid) await deleteDoc(rcVctMemberRef(user.uid, uid));
+      if (record?.aadhar) await releaseAadharIndex(record.aadhar);
+      await deleteAuthUserAccount(uid).catch(() => undefined);
+      await fetchVCTs();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to remove technician.');
+    }
   };
 
   const handleToggleActive = async (v: VCTRecord) => {

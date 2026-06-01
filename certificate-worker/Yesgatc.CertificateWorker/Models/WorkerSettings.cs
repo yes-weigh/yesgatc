@@ -4,7 +4,30 @@ public sealed class WorkerSettings
 {
     public FirebaseSettings Firebase { get; init; } = new();
     public AutomationSettings Automation { get; init; } = new();
+    public AutoWorkerSettings AutoWorker { get; init; } = new();
     public CredentialSettings Credentials { get; init; } = new();
+}
+
+public sealed class AutoWorkerSettings
+{
+    /// <summary>When true, the worker polls Firebase and processes jobs without manual clicks.</summary>
+    public bool Enabled { get; init; } = true;
+    /// <summary>
+    /// When true, subscribe to Firestore snapshot listeners (onSnapshot-style) instead of polling.
+    /// </summary>
+    public bool UseRealtimeListener { get; init; } = true;
+    /// <summary>Restart the Firestore listener before the auth token expires (minutes).</summary>
+    public int ListenerTokenRefreshMinutes { get; init; } = 45;
+    /// <summary>Fallback poll interval when UseRealtimeListener is false (seconds).</summary>
+    public int PollIntervalSeconds { get; init; } = 5;
+    /// <summary>Wait time before retrying a failed job (seconds).</summary>
+    public int RetryDelaySeconds { get; init; } = 15;
+    /// <summary>How often to refresh retry countdown badges in the queue (seconds).</summary>
+    public int RetryBadgeRefreshSeconds { get; init; } = 15;
+    /// <summary>When true, skip the confirmation dialog for Process all jobs.</summary>
+    public bool SkipBatchConfirmation { get; init; } = true;
+    /// <summary>When waiting for DOCA captcha/login, probe this often (seconds).</summary>
+    public int DocaLoginProbeSeconds { get; init; } = 30;
 }
 
 public sealed class FirebaseSettings
@@ -30,7 +53,7 @@ public sealed class AutomationSettings
     public int ParallelBrowserThreshold { get; init; } = 40;
     /// <summary>Number of parallel Chrome windows for large batches.</summary>
     public int ParallelBrowserCount { get; init; } = 4;
-    /// <summary>Max machine photo size sent to DOCA after compression (bytes).</summary>
+    /// <summary>Max machine photo size for DOCA create-ic-verification form (bytes).</summary>
     public long DocaUploadImageMaxBytes { get; init; } = 350 * 1024;
     /// <summary>Longest edge in pixels for machine photos uploaded to DOCA.</summary>
     public int DocaUploadImageMaxEdgePx { get; init; } = 1600;

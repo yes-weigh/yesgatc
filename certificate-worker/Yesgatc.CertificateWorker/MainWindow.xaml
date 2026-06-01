@@ -99,6 +99,10 @@
                                                     Binding="{Binding NextStepLabel}"
                                                     Width="1.1*"
                                                     ElementStyle="{StaticResource DataGridCellMuted}"/>
+                                <DataGridTextColumn Header="Retry"
+                                                    Binding="{Binding RetryBadge}"
+                                                    Width="0.9*"
+                                                    ElementStyle="{StaticResource DataGridCellRetryBadge}"/>
                                 <DataGridTextColumn Header="Updated"
                                                     Binding="{Binding PipelineDateDisplay}"
                                                     Width="*"
@@ -141,6 +145,7 @@
             <!-- Right: controls -->
             <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -347,8 +352,30 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Auto worker -->
+                <Border Grid.Row="3"
+                        Style="{StaticResource GlassPanel}"
+                        Padding="16"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <CheckBox x:Name="AutoWorkerCheckBox"
+                                  Content="Auto worker (unattended server mode)"
+                                  FontSize="13"
+                                  FontWeight="SemiBold"
+                                  Foreground="{StaticResource TextMainBrush}"
+                                  Checked="AutoWorkerCheckBox_Changed"
+                                  Unchecked="AutoWorkerCheckBox_Changed"/>
+                        <TextBlock x:Name="AutoWorkerStatusText"
+                                   Text="Auto worker polls Firebase and processes jobs automatically."
+                                   FontSize="12"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+
                 <!-- Actions -->
-                <StackPanel Grid.Row="3" Orientation="Vertical" Margin="0,0,0,14">
+                <StackPanel Grid.Row="4" Orientation="Vertical" Margin="0,0,0,14">
                     <Button x:Name="PrepareBulkBrowsersButton"
                             Content="Open Chrome sessions for bulk DOCA"
                             Style="{StaticResource SecondaryButton}"
@@ -383,7 +410,7 @@
                 </StackPanel>
 
                 <!-- Status -->
-                <Border Grid.Row="4"
+                <Border Grid.Row="5"
                         Style="{StaticResource GlassPanel}"
                         Padding="16"
                         VerticalAlignment="Stretch">

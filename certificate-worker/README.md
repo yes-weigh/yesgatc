@@ -7,6 +7,8 @@ Windows desktop app for **Super Admin** staff to process submitted verifications
 - List all `submitted` verifications from every RC
 - Generate DOCA certificates one job at a time or in batch
 - Mark jobs approved in Firebase after DOCA success
+- **Auto worker** — listens to Firestore in real time (onSnapshot-style), processes jobs unattended, retries failures after a configurable delay (default 15 seconds)
+- **Browser recovery** — reopens Chrome if the DOCA window was closed or the RDP session disconnected
 
 ## Prerequisites
 
@@ -50,6 +52,52 @@ Or open `certificate-worker/Yesgatc.CertificateWorker.slnx` in Visual Studio and
 - Playwright automates the DOCA IC verification form
 - **DOCA session persistence:** Chromium profile at `%LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser`
 - **Local credentials:** Super Admin + DOCA saved at `%LOCALAPPDATA%\YesGATC\CertificateWorker\credentials.local.json`
+
+## Windows Server (unattended)
+
+**Full guide:** [server/README-SERVER.md](server/README-SERVER.md)
+
+### GitHub Releases (recommended)
+
+**Dev PC — publish a release:**
+
+```powershell
+git tag certificate-worker-v1.0.0
+git push origin certificate-worker-v1.0.0
+```
+
+**Server — update:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -Start
+```
+
+One-time on server: `gh auth login` (private repo).
+
+### Manual zip copy
+
+1. On dev PC: `powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-release.ps1`
+2. Copy `certificate-worker\publish\Yesgatc.CertificateWorker-win-x64.zip` to the server
+3. On server: extract zip, then run `C:\YesGATC\CertificateWorker\update.ps1 -SourcePath <extracted-folder> -Start`
+
+Install path: `C:\YesGATC\CertificateWorker\`  
+Data (kept across updates): `%LOCALAPPDATA%\YesGATC\CertificateWorker\`
+
+1. Set credentials in `appsettings.local.json` (Super Admin + DOCA).
+2. In `appsettings.json`, keep `AutoWorker.Enabled: true` (default).
+3. Sign in once via RDP, complete DOCA login/captcha in Chrome, then leave the app running.
+4. If DOCA logs out or captcha is needed, RDP in, complete login — the auto worker detects the dashboard and resumes.
+5. Closing Chrome no longer breaks the next run; the worker reopens it automatically.
+
+Auto worker settings (`AutoWorker` section in `appsettings.json`):
+
+| Setting | Default | Purpose |
+|---------|---------|---------|
+| `UseRealtimeListener` | true | Firestore snapshot listener instead of polling |
+| `ListenerTokenRefreshMinutes` | 45 | Reconnect listener before auth token expires |
+| `PollIntervalSeconds` | 5 | Fallback poll when realtime is off or unavailable |
+| `RetryDelaySeconds` | 15 | Wait after a failed job before retry |
+| `SkipBatchConfirmation` | true | No dialog when processing batches |
 
 ## Files
 

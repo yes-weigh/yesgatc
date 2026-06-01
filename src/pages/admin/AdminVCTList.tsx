@@ -7,6 +7,7 @@ import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { StorageImage } from '../../components/StorageImage';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { releaseAadharIndex } from '../../lib/aadharIndex';
+import { deleteAuthUserAccount } from '../../lib/authUserAdmin';
 import { buildRcVctMemberDoc, rcVctMemberRef } from '../../lib/rcVctMembers';
 import { vctApprovalLabel } from '../../lib/vctApproval';
 import { vctDocMetaFromUser, VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
@@ -84,6 +85,7 @@ export const AdminVCTList: React.FC = () => {
       await deleteDoc(doc(db, 'users', uid));
       if (record?.rcId) await deleteDoc(rcVctMemberRef(record.rcId, uid));
       if (record?.aadhar) await releaseAadharIndex(record.aadhar);
+      await deleteAuthUserAccount(uid).catch(() => undefined);
       if (reviewing?.uid === uid) setReviewing(null);
       await fetchVCTs();
     } catch (err: unknown) {

@@ -1,0 +1,67 @@
+name: Release Certificate Worker
+
+on:
+  push:
+    tags:
+      - certificate-worker-v*
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to create (e.g. certificate-worker-v1.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: certificate-worker-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
+      ZIP_PATH: certificate-worker/publish/Yesgatc.CertificateWorker-win-x64.zip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build release zip
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File certificate-worker/scripts/publish-release.ps1
+          if (-not (Test-Path $env:ZIP_PATH)) {
+            throw "Release zip was not created at $env:ZIP_PATH"
+          }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Certificate Worker ${{ env.RELEASE_TAG }}
+          generate_release_notes: true
+          files: ${{ env.ZIP_PATH }}
+          body: |
+            Windows x64 build of the YesGATC Certificate Worker.
+
+            ### Server update (already installed)
+            ```powershell
+            powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -Start
+            ```
+
+            ### First install from GitHub
+            ```powershell
+            New-Item -ItemType Directory -Path C:\YesGATC\CertificateWorker -Force
+            cd C:\YesGATC\CertificateWorker
+            # Copy pull-update.ps1 from this release zip once, or clone the repo server folder.
+            powershell -ExecutionPolicy Bypass -File .\pull-update.ps1 -FirstInstall -CreateLogonTask -Start
+            ```
+
+            Private repo: run `gh auth login` on the server once, or set `$env:GITHUB_TOKEN` before pull-update.

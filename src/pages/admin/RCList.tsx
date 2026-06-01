@@ -15,6 +15,7 @@ import {
   syncAuthPassword,
 } from '../../lib/aadharAuth';
 import { releaseAadharIndex } from '../../lib/aadharIndex';
+import { deleteAuthUserAccount, rollbackCreatedAuthUser } from '../../lib/authUserAdmin';
 import { isValidPhone, requireValidEmail } from '../../lib/contactFields';
 import {
   EMPTY_RC_FORM,
@@ -278,10 +279,12 @@ export const RCList: React.FC = () => {
 
     const cleanAadhar = normalizeAadhar(formValues.aadhar);
     setSubmitting(true);
+    let createdAuthUid: string | undefined;
     try {
       await assertAadharAvailable(cleanAadhar);
       const cred = await createAuthUserForAadhar(cleanAadhar, formValues.password);
       const uid = cred.user.uid;
+      createdAuthUid = uid;
 
       let certMeta: ProductFileMeta | null = null;
       let sealMeta: ProductFileMeta | null = null;
@@ -322,10 +325,12 @@ export const RCList: React.FC = () => {
         createdAt: profile.createdAt,
       });
       await batch.commit();
+      createdAuthUid = undefined;
 
       handleCloseModal();
       await fetchRCs();
     } catch (err: unknown) {
+      await rollbackCreatedAuthUser(createdAuthUid);
       setError(authErrorMessage(err, 'Failed to register regional center.'));
     } finally {
       setSubmitting(false);
@@ -421,6 +426,7 @@ export const RCList: React.FC = () => {
       }
       await deleteDoc(doc(db, 'users', uid));
       if (rc?.aadhar) await releaseAadharIndex(rc.aadhar);
+      await deleteAuthUserAccount(uid).catch(() => undefined);
       await fetchRCs();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to delete regional center.');

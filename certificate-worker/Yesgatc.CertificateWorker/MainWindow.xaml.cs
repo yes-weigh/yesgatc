@@ -1,7 +1,8 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using Yesgatc.CertificateWorker.Models;
 using Yesgatc.CertificateWorker.Services;
@@ -19,7 +20,11 @@ public partial class MainWindow : Window
         Error,
     }
 
-    private sealed record JobPipelineResult(bool Completed, bool LoginRequired, string Message);
+    private sealed record JobPipelineResult(
+        bool Completed,
+        bool LoginRequired,
+        string Message,
+        bool BrowserDisconnected = false);
 
     private sealed class ParallelBatchStats
     {
@@ -29,21 +34,30 @@ public partial class MainWindow : Window
         public string? LastError;
     }
 
-    private readonly ObservableCollection<SiteCalibrationRecord> _jobs = [];
+    private readonly ObservableCollection<CertificationQueueItem> _jobs = [];
     private readonly ObservableCollection<string> _activityLog = [];
     private readonly FirebaseAuthService _authService;
     private readonly FirestoreService _firestoreService;
+    private readonly FirestoreQueueListener _queueListener;
     private readonly PartyDetailsService _partyDetailsService;
     private readonly InstrumentDetailsService _instrumentDetailsService;
     private readonly AutomationService _automationService;
     private readonly LocalCredentialsStore _credentialStore = new();
+    private readonly JobRetryTracker _jobRetries = new();
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private readonly List<AutomationService> _preparedBulkWorkers = [];
 
     private FirebaseSignInResult? _session;
-    private SiteCalibrationRecord? _selectedJob;
+    private CertificationQueueItem? _selectedQueueItem;
     private bool _isBusy;
+    private bool _autoWorkerEnabled;
+    private bool _autoWorkerPausedForDoca;
     private bool _syncingStatusCombo;
+    private bool _useRealtimeListener;
+    private bool _realtimeListenerActive;
+    private DispatcherTimer? _pollFallbackTimer;
+    private DispatcherTimer? _retryBadgeTimer;
+    private DispatcherTimer? _docaProbeTimer;
 
     public MainWindow()
     {
@@ -61,6 +75,13 @@ public partial class MainWindow : Window
         var settings = App.Settings;
         _authService = new FirebaseAuthService(settings.Firebase);
         _firestoreService = new FirestoreService(settings.Firebase);
+        _queueListener = new FirestoreQueueListener(
+            settings.Firebase,
+            settings.AutoWorker.ListenerTokenRefreshMinutes);
+        _queueListener.ResolveIdToken = () => GetFreshIdTokenAsync();
+        _queueListener.QueueUpdated += OnQueueListenerUpdated;
+        _queueListener.ListenerError += OnQueueListenerError;
+        _useRealtimeListener = settings.AutoWorker.UseRealtimeListener;
         _partyDetailsService = new PartyDetailsService(settings.Firebase);
         _instrumentDetailsService = new InstrumentDetailsService(settings.Firebase);
         _automationService = new AutomationService(settings.Automation, _firestoreService);
@@ -70,14 +91,15 @@ public partial class MainWindow : Window
         JobsGrid.ItemsSource = _jobs;
         ActivityLogList.ItemsSource = _activityLog;
         LoadSavedCredentials(settings);
+        ConfigureAutoWorkerFromSettings();
 
         Loaded += MainWindow_Loaded;
         Closed += MainWindow_Closed;
     }
 
-    private SiteCalibrationRecord? SelectedJob => _selectedJob;
+    private SiteCalibrationRecord? SelectedJob => _selectedQueueItem?.Record;
 
-    private void SetSelectedJob(SiteCalibrationRecord? job) => _selectedJob = job;
+    private void SetSelectedQueueItem(CertificationQueueItem? item) => _selectedQueueItem = item;
 
     private void LoadSavedCredentials(WorkerSettings settings)
     {
@@ -132,9 +154,330 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Closed(object? sender, EventArgs e)
     {
+        StopAutoWorkerTimers();
+        await _queueListener.StopAsync();
         await DisposePreparedBulkWorkersAsync();
         await _automationService.DisposeAsync();
         _tokenLock.Dispose();
+    }
+
+    private void ConfigureAutoWorkerFromSettings()
+    {
+        var settings = App.Settings.AutoWorker;
+        _autoWorkerEnabled = settings.Enabled;
+        _useRealtimeListener = settings.UseRealtimeListener;
+        AutoWorkerCheckBox.IsChecked = settings.Enabled;
+        UpdateAutoWorkerStatusText();
+    }
+
+    private async Task StartQueueListenerAsync()
+    {
+        if (_session is null || !_useRealtimeListener)
+        {
+            return;
+        }
+
+        try
+        {
+            await _queueListener.StartAsync();
+            _realtimeListenerActive = true;
+            SetStatus("Watching Firestore for queue changes in real time.", StatusKind.Info);
+        }
+        catch (Exception ex)
+        {
+            _realtimeListenerActive = false;
+            SetStatus(
+                $"Real-time listener unavailable ({ex.Message}). Falling back to polling every {App.Settings.AutoWorker.PollIntervalSeconds}s.",
+                StatusKind.Error);
+            StartPollFallbackTimer();
+        }
+    }
+
+    private async Task StopQueueListenerAsync()
+    {
+        _realtimeListenerActive = false;
+        await _queueListener.StopAsync();
+    }
+
+    private void OnQueueListenerUpdated(IReadOnlyList<SiteCalibrationRecord> records)
+    {
+        _ = Dispatcher.InvokeAsync(async () =>
+        {
+            ApplyQueueRecords(records, "Queue updated from Firestore.");
+            if (_autoWorkerEnabled && !_isBusy && !_autoWorkerPausedForDoca)
+            {
+                await RunAutoWorkerCycleAsync();
+            }
+        });
+    }
+
+    private void OnQueueListenerError(string message)
+    {
+        _ = Dispatcher.InvokeAsync(() => SetStatus(message, StatusKind.Info));
+    }
+
+    private void StartAutoWorkerTimers()
+    {
+        StopAutoWorkerTimers();
+
+        if (!_autoWorkerEnabled || _session is null)
+        {
+            return;
+        }
+
+        if (!_useRealtimeListener || !_realtimeListenerActive)
+        {
+            StartPollFallbackTimer();
+        }
+
+        StartRetryBadgeTimer();
+        UpdateAutoWorkerStatusText();
+    }
+
+    private void StartPollFallbackTimer()
+    {
+        if (_pollFallbackTimer is not null)
+        {
+            return;
+        }
+
+        var settings = App.Settings.AutoWorker;
+        _pollFallbackTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(Math.Max(1, settings.PollIntervalSeconds)),
+        };
+        _pollFallbackTimer.Tick += PollFallbackTimer_Tick;
+        _pollFallbackTimer.Start();
+    }
+
+    private void StartRetryBadgeTimer()
+    {
+        if (_retryBadgeTimer is not null)
+        {
+            return;
+        }
+
+        var settings = App.Settings.AutoWorker;
+        _retryBadgeTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(Math.Max(5, settings.RetryBadgeRefreshSeconds)),
+        };
+        _retryBadgeTimer.Tick += RetryBadgeTimer_Tick;
+        _retryBadgeTimer.Start();
+    }
+
+    private void StopAutoWorkerTimers()
+    {
+        if (_pollFallbackTimer is not null)
+        {
+            _pollFallbackTimer.Tick -= PollFallbackTimer_Tick;
+            _pollFallbackTimer.Stop();
+            _pollFallbackTimer = null;
+        }
+
+        if (_retryBadgeTimer is not null)
+        {
+            _retryBadgeTimer.Tick -= RetryBadgeTimer_Tick;
+            _retryBadgeTimer.Stop();
+            _retryBadgeTimer = null;
+        }
+
+        StopDocaProbeTimer();
+    }
+
+    private void SetDocaLoginPaused(bool paused)
+    {
+        _autoWorkerPausedForDoca = paused;
+        _automationService.ManualDocaLoginWait = paused;
+
+        if (paused)
+        {
+            StartDocaProbeTimer();
+        }
+        else
+        {
+            StopDocaProbeTimer();
+        }
+
+        UpdateAutoWorkerStatusText();
+    }
+
+    private void StartDocaProbeTimer()
+    {
+        if (_docaProbeTimer is not null)
+        {
+            return;
+        }
+
+        var seconds = Math.Max(15, App.Settings.AutoWorker.DocaLoginProbeSeconds);
+        _docaProbeTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(seconds),
+        };
+        _docaProbeTimer.Tick += DocaProbeTimer_Tick;
+        _docaProbeTimer.Start();
+    }
+
+    private void StopDocaProbeTimer()
+    {
+        if (_docaProbeTimer is null)
+        {
+            return;
+        }
+
+        _docaProbeTimer.Tick -= DocaProbeTimer_Tick;
+        _docaProbeTimer.Stop();
+        _docaProbeTimer = null;
+    }
+
+    private async void DocaProbeTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!_autoWorkerPausedForDoca || _session is null || _isBusy)
+        {
+            return;
+        }
+
+        await TryResumeAutoWorkerAfterDocaLoginAsync();
+    }
+
+    private async void PollFallbackTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!_autoWorkerEnabled || _session is null || _isBusy)
+        {
+            return;
+        }
+
+        if (_autoWorkerPausedForDoca)
+        {
+            await TryResumeAutoWorkerAfterDocaLoginAsync();
+            return;
+        }
+
+        await LoadQueueAsync();
+        await RunAutoWorkerCycleAsync();
+    }
+
+    private async void RetryBadgeTimer_Tick(object? sender, EventArgs e)
+    {
+        RefreshRetryBadges();
+
+        if (!_autoWorkerEnabled || _session is null || _isBusy || _autoWorkerPausedForDoca)
+        {
+            return;
+        }
+
+        await RunAutoWorkerCycleAsync();
+    }
+
+    private void AutoWorkerCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        _autoWorkerEnabled = AutoWorkerCheckBox.IsChecked == true;
+        UpdateAutoWorkerStatusText();
+
+        if (_autoWorkerEnabled && _session is not null)
+        {
+            StartAutoWorkerTimers();
+            _ = RunAutoWorkerCycleAsync();
+            return;
+        }
+
+        StopAutoWorkerTimers();
+    }
+
+    private async Task TryResumeAutoWorkerAfterDocaLoginAsync()
+    {
+        try
+        {
+            var state = await _automationService.ProbeDocaSessionAsync();
+            if (state != DocaSessionState.LoggedIn)
+            {
+                UpdateAutoWorkerStatusText();
+                return;
+            }
+
+            SetDocaLoginPaused(false);
+            SetStatus("DOCA session restored — auto worker resuming.", StatusKind.Success);
+            UpdateAutoWorkerStatusText();
+            await RunAutoWorkerCycleAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Waiting for DOCA login — {ex.Message}", StatusKind.Info);
+            UpdateAutoWorkerStatusText();
+        }
+    }
+
+    private async Task RunAutoWorkerCycleAsync()
+    {
+        if (!_autoWorkerEnabled || _session is null || _isBusy || _autoWorkerPausedForDoca)
+        {
+            return;
+        }
+
+        if (!_realtimeListenerActive)
+        {
+            await LoadQueueAsync();
+        }
+
+        var queue = _jobs
+            .Where(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id))
+            .Select(item => item.Record)
+            .ToList();
+
+        if (queue.Count == 0)
+        {
+            UpdateAutoWorkerStatusText();
+            return;
+        }
+
+        await RunWithBusyStateAsync(async () =>
+        {
+            SetStatus($"Auto worker — processing {queue.Count} eligible job(s)…", StatusKind.Working);
+            await ProcessQueueInternalAsync(queue, sequentialOnly: true, fromAutoWorker: true);
+            UpdateAutoWorkerStatusText();
+        });
+    }
+
+    private void RefreshRetryBadges()
+    {
+        foreach (var item in _jobs)
+        {
+            item.RetryBadge = _jobRetries.BadgeFor(item.Id);
+        }
+
+        JobsGrid.Items.Refresh();
+        UpdateAutoWorkerStatusText();
+    }
+
+    private void UpdateAutoWorkerStatusText()
+    {
+        if (!_autoWorkerEnabled)
+        {
+            AutoWorkerStatusText.Text = "Auto worker is off — use Process all jobs manually.";
+            return;
+        }
+
+        if (_session is null)
+        {
+            AutoWorkerStatusText.Text = "Sign in to start unattended processing.";
+            return;
+        }
+
+        if (_autoWorkerPausedForDoca)
+        {
+            AutoWorkerStatusText.Text =
+                "Paused for DOCA login — enter your new password and captcha in Chrome; the page will not be refreshed.";
+            return;
+        }
+
+        var waitingRetries = _jobRetries.Snapshot().Count(pair => DateTimeOffset.Now < pair.Value.RetryAt);
+        var eligible = _jobs.Count(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id));
+        var watchMode = _realtimeListenerActive
+            ? "watching Firestore live"
+            : $"polling every {App.Settings.AutoWorker.PollIntervalSeconds}s";
+        AutoWorkerStatusText.Text = waitingRetries > 0
+            ? $"Running — {eligible} job(s) ready, {waitingRetries} waiting for retry ({watchMode})."
+            : $"Running — {watchMode} · {eligible} job(s) ready.";
     }
 
     private async void SignInButton_Click(object sender, RoutedEventArgs e)
@@ -160,7 +503,7 @@ public partial class MainWindow : Window
 
     private void JobsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        SetSelectedJob(JobsGrid.SelectedItem as SiteCalibrationRecord);
+        SetSelectedQueueItem(JobsGrid.SelectedItem as CertificationQueueItem);
         UpdateSelectionUi();
     }
 
@@ -204,30 +547,95 @@ public partial class MainWindow : Window
         {
             var job = SelectedJob!;
             var jobIndex = SelectedJobIndex();
-            var result = await ProcessJobThroughPipelineAsync(
+            var result = await ProcessJobWithRecoveryAsync(
                 job,
                 _automationService,
-                continueBrowserSession: false);
+                continueBrowserSession: _automationService.IsBrowserConnected);
 
-            if (result.LoginRequired)
-            {
-                SetStatus(result.Message, StatusKind.Error);
-                return;
-            }
-
-            if (result.Completed)
-            {
-                SetStatus(result.Message, StatusKind.Success);
-                await LoadQueueAsync();
-                SelectJobAtIndexAfterRemoval(jobIndex);
-            }
-            else
-            {
-                SetStatus(result.Message, StatusKind.Info);
-                await LoadQueueAsync();
-                SelectJobById(job.Id);
-            }
+            await HandleJobPipelineResultAsync(job, jobIndex, result, fromAutoWorker: false);
         });
+    }
+
+    private async Task HandleJobPipelineResultAsync(
+        SiteCalibrationRecord job,
+        int jobIndex,
+        JobPipelineResult result,
+        bool fromAutoWorker)
+    {
+        if (result.LoginRequired)
+        {
+            if (fromAutoWorker || _autoWorkerEnabled)
+            {
+                SetDocaLoginPaused(true);
+            }
+
+            SetStatus(result.Message, StatusKind.Error);
+            return;
+        }
+
+        if (result.BrowserDisconnected)
+        {
+            SetStatus(result.Message, StatusKind.Info);
+            if (fromAutoWorker || _autoWorkerEnabled)
+            {
+                _jobRetries.Schedule(
+                    job.Id,
+                    result.Message,
+                    TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+                RefreshRetryBadges();
+            }
+
+            await LoadQueueAsync();
+            SelectJobById(job.Id);
+            return;
+        }
+
+        if (result.Completed)
+        {
+            _jobRetries.Clear(job.Id);
+            SetStatus(result.Message, StatusKind.Success);
+            await LoadQueueAsync();
+            SelectJobAtIndexAfterRemoval(jobIndex);
+            return;
+        }
+
+        _jobRetries.Schedule(
+            job.Id,
+            result.Message,
+            TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+        RefreshRetryBadges();
+        SetStatus(result.Message, StatusKind.Info);
+        await LoadQueueAsync();
+        SelectJobById(job.Id);
+    }
+
+    private async Task<JobPipelineResult> ProcessJobWithRecoveryAsync(
+        SiteCalibrationRecord job,
+        AutomationService automation,
+        bool continueBrowserSession)
+    {
+        try
+        {
+            await automation.EnsureBrowserReadyAsync();
+            return await ProcessJobThroughPipelineAsync(job, automation, continueBrowserSession);
+        }
+        catch (Exception ex) when (AutomationService.IsBrowserDisconnectedError(ex))
+        {
+            try
+            {
+                await automation.EnsureBrowserReadyAsync();
+            }
+            catch
+            {
+                // Fall through with a friendly retry message.
+            }
+
+            return new JobPipelineResult(
+                false,
+                false,
+                "DOCA browser was closed or disconnected. Reopening Chrome on the next attempt.",
+                BrowserDisconnected: true);
+        }
     }
 
     private async void PrepareBulkBrowsersButton_Click(object sender, RoutedEventArgs e)
@@ -298,57 +706,81 @@ public partial class MainWindow : Window
             return;
         }
 
-        var queue = _jobs.Where(job => job.NeedsPipelineWork).ToList();
+        var queue = _jobs
+            .Where(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id))
+            .Select(item => item.Record)
+            .ToList();
         if (queue.Count == 0)
         {
-            SetStatus("No jobs are waiting in the pipeline.", StatusKind.Info);
+            var waiting = _jobs.Count(item => item.NeedsPipelineWork && !_jobRetries.IsEligible(item.Id));
+            SetStatus(waiting > 0
+                ? $"No jobs ready — {waiting} waiting for retry."
+                : "No jobs are waiting in the pipeline.",
+                StatusKind.Info);
             return;
         }
 
         var settings = App.Settings.Automation;
-        var useParallel = queue.Count > settings.ParallelBrowserThreshold && settings.ParallelBrowserCount > 1;
-        var parallelHint = useParallel
-            ? $"\n\n{Math.Min(settings.ParallelBrowserCount, queue.Count)} Chrome windows will open and jobs are split across them. " +
-              "Log in to DOCA in each window if prompted (first time only per window)."
-            : "\n\nKeep the DOCA browser window open.";
-
-        var confirm = MessageBox.Show(
-            this,
-            $"Process {queue.Count} job(s)?\n\n" +
-            "Each job runs only the steps it still needs:\n" +
-            "• Submitted → submit on DOCA (duplicate check), then certify\n" +
-            "• Approved → certify only (download, stamp, upload, Firebase)\n\n" +
-            "If phase 1 already succeeded on DOCA, phase 2 resumes without creating a duplicate." +
-            parallelHint,
-            "Process all jobs",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-        if (confirm != MessageBoxResult.Yes)
+        var skipConfirm = _autoWorkerEnabled || App.Settings.AutoWorker.SkipBatchConfirmation;
+        if (!skipConfirm)
         {
-            return;
+            var useParallel = queue.Count > settings.ParallelBrowserThreshold && settings.ParallelBrowserCount > 1;
+            var parallelHint = useParallel
+                ? $"\n\n{Math.Min(settings.ParallelBrowserCount, queue.Count)} Chrome windows will open and jobs are split across them. " +
+                  "Log in to DOCA in each window if prompted (first time only per window)."
+                : "\n\nKeep the DOCA browser window open.";
+
+            var confirm = MessageBox.Show(
+                this,
+                $"Process {queue.Count} job(s)?\n\n" +
+                "Each job runs only the steps it still needs:\n" +
+                "• Submitted → submit on DOCA (duplicate check), then certify\n" +
+                "• Approved → certify only (download, stamp, upload, Firebase)\n\n" +
+                "If phase 1 already succeeded on DOCA, phase 2 resumes without creating a duplicate." +
+                parallelHint,
+                "Process all jobs",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes)
+            {
+                return;
+            }
         }
 
         await RunWithBusyStateAsync(async () =>
         {
             PersistCredentials();
             _automationService.DocaCredentials = CurrentDocaCredentials();
-
-            if (useParallel)
-            {
-                await ProcessAllJobsInParallelAsync(queue, settings.ParallelBrowserCount);
-            }
-            else
-            {
-                await ProcessAllJobsSequentiallyAsync(queue);
-            }
+            await ProcessQueueInternalAsync(queue, sequentialOnly: false, fromAutoWorker: false);
         });
     }
 
-    private async Task ProcessAllJobsSequentiallyAsync(IReadOnlyList<SiteCalibrationRecord> queue)
+    private async Task ProcessQueueInternalAsync(
+        IReadOnlyList<SiteCalibrationRecord> queue,
+        bool sequentialOnly,
+        bool fromAutoWorker)
+    {
+        var settings = App.Settings.Automation;
+        var useParallel = !sequentialOnly
+            && queue.Count > settings.ParallelBrowserThreshold
+            && settings.ParallelBrowserCount > 1;
+
+        if (useParallel)
+        {
+            await ProcessAllJobsInParallelAsync(queue, settings.ParallelBrowserCount, fromAutoWorker);
+        }
+        else
+        {
+            await ProcessAllJobsSequentiallyAsync(queue, fromAutoWorker);
+        }
+    }
+
+    private async Task ProcessAllJobsSequentiallyAsync(IReadOnlyList<SiteCalibrationRecord> queue, bool fromAutoWorker)
     {
         var completed = 0;
         var failed = 0;
         string? lastError = null;
+        var continueSession = _automationService.IsBrowserConnected;
 
         for (var i = 0; i < queue.Count; i++)
         {
@@ -361,15 +793,22 @@ public partial class MainWindow : Window
 
             try
             {
-                var result = await ProcessJobThroughPipelineAsync(
+                var result = await ProcessJobWithRecoveryAsync(
                     job,
                     _automationService,
-                    continueBrowserSession: i > 0);
+                    continueBrowserSession: continueSession || i > 0);
+
+                continueSession = _automationService.IsBrowserConnected;
 
                 if (result.LoginRequired)
                 {
+                    if (fromAutoWorker || _autoWorkerEnabled)
+                    {
+                        SetDocaLoginPaused(true);
+                    }
+
                     SetStatusSafe(
-                        $"{batchLabel} stopped — DOCA login required. Complete login in the browser, then run again.",
+                        $"{batchLabel} paused — complete DOCA login/captcha in Chrome. Auto worker will resume when logged in.",
                         StatusKind.Error);
                     return;
                 }
@@ -377,6 +816,7 @@ public partial class MainWindow : Window
                 if (result.Completed)
                 {
                     completed++;
+                    _jobRetries.Clear(job.Id);
                     SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Success);
                     await LoadQueueAsync();
                 }
@@ -384,6 +824,11 @@ public partial class MainWindow : Window
                 {
                     failed++;
                     lastError = result.Message;
+                    _jobRetries.Schedule(
+                        job.Id,
+                        result.Message,
+                        TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+                    RefreshRetryBadges();
                     SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Info);
                 }
             }
@@ -391,6 +836,11 @@ public partial class MainWindow : Window
             {
                 failed++;
                 lastError = ex.Message;
+                _jobRetries.Schedule(
+                    job.Id,
+                    ex.Message,
+                    TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+                RefreshRetryBadges();
                 SetStatusSafe($"{batchLabel} failed · {ex.Message}", StatusKind.Error);
             }
         }
@@ -399,7 +849,10 @@ public partial class MainWindow : Window
         ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
     }
 
-    private async Task ProcessAllJobsInParallelAsync(IReadOnlyList<SiteCalibrationRecord> queue, int parallelBrowserCount)
+    private async Task ProcessAllJobsInParallelAsync(
+        IReadOnlyList<SiteCalibrationRecord> queue,
+        int parallelBrowserCount,
+        bool fromAutoWorker)
     {
         var workerCount = Math.Min(parallelBrowserCount, queue.Count);
         var buckets = Enumerable.Range(0, workerCount)
@@ -467,7 +920,7 @@ public partial class MainWindow : Window
 
                 try
                 {
-                    var result = await ProcessJobThroughPipelineAsync(
+                    var result = await ProcessJobWithRecoveryAsync(
                         job,
                         automation,
                         continueBrowserSession: i > 0);
@@ -479,6 +932,11 @@ public partial class MainWindow : Window
                         {
                             stats.LastError = result.Message;
                         }
+                        if (_autoWorkerEnabled)
+                        {
+                            SetDocaLoginPaused(true);
+                        }
+
                         SetStatusSafe($"{label} — DOCA login required in Chrome {workerIndex + 1}.", StatusKind.Error);
                         return;
                     }
@@ -486,11 +944,16 @@ public partial class MainWindow : Window
                     if (result.Completed)
                     {
                         Interlocked.Increment(ref stats.Completed);
+                        _jobRetries.Clear(job.Id);
                         SetStatusSafe($"{label} · done", StatusKind.Success);
                     }
                     else
                     {
                         Interlocked.Increment(ref stats.Failed);
+                        _jobRetries.Schedule(
+                            job.Id,
+                            result.Message,
+                            TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
                         lock (stats)
                         {
                             stats.LastError = result.Message;
@@ -501,6 +964,10 @@ public partial class MainWindow : Window
                 catch (Exception ex)
                 {
                     Interlocked.Increment(ref stats.Failed);
+                    _jobRetries.Schedule(
+                        job.Id,
+                        ex.Message,
+                        TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
                     lock (stats)
                     {
                         stats.LastError = ex.Message;
@@ -520,8 +987,10 @@ public partial class MainWindow : Window
 
     private async Task<(List<AutomationService> Workers, bool KeepBrowsersOpen)> AcquireBulkWorkersAsync(int workerCount)
     {
+        _preparedBulkWorkers.RemoveAll(worker => !worker.IsBrowserConnected);
+
         if (_preparedBulkWorkers.Count >= workerCount
-            && _preparedBulkWorkers.Take(workerCount).All(worker => worker.IsRunning))
+            && _preparedBulkWorkers.Take(workerCount).All(worker => worker.IsBrowserConnected))
         {
             for (var i = 0; i < workerCount; i++)
             {
@@ -558,7 +1027,7 @@ public partial class MainWindow : Window
     private void UpdatePrepareBulkBrowsersButtonContent()
     {
         var configured = App.Settings.Automation.ParallelBrowserCount;
-        var openCount = _preparedBulkWorkers.Count(worker => worker.IsRunning);
+        var openCount = _preparedBulkWorkers.Count(worker => worker.IsBrowserConnected);
         PrepareBulkBrowsersButton.Content = openCount > 0
             ? $"Open Chrome sessions for bulk DOCA ({openCount}/{configured} open)"
             : $"Open Chrome sessions for bulk DOCA ({configured})";
@@ -1068,7 +1537,20 @@ public partial class MainWindow : Window
             SignInExpander.IsExpanded = false;
 
             SetStatus("Signed in. Loading certification queue…", StatusKind.Working);
-            await LoadQueueAsync();
+            if (_useRealtimeListener)
+            {
+                await StartQueueListenerAsync();
+            }
+            else
+            {
+                await LoadQueueAsync();
+            }
+
+            StartAutoWorkerTimers();
+            if (_autoWorkerEnabled)
+            {
+                _ = RunAutoWorkerCycleAsync();
+            }
         });
     }
 
@@ -1079,13 +1561,22 @@ public partial class MainWindow : Window
             return;
         }
 
-        var previousId = _selectedJob?.Id;
         var records = await _firestoreService.GetPendingCertificationQueueAsync(_session.IdToken);
+        ApplyQueueRecords(records, $"Loaded {records.Count} job(s) from Firestore.");
+    }
+
+    private void ApplyQueueRecords(IReadOnlyList<SiteCalibrationRecord> records, string statusMessage)
+    {
+        var previousId = _selectedQueueItem?.Id;
 
         _jobs.Clear();
         foreach (var record in records)
         {
-            _jobs.Add(record);
+            var item = new CertificationQueueItem(record)
+            {
+                RetryBadge = _jobRetries.BadgeFor(record.Id),
+            };
+            _jobs.Add(item);
         }
 
         RestoreSelection(previousId);
@@ -1094,27 +1585,30 @@ public partial class MainWindow : Window
         UpdateSelectionUi();
 
         var pending = _jobs.Count(job => job.NeedsPipelineWork);
-        SetStatus($"Loaded {_jobs.Count} job(s) ({pending} pending in pipeline).", StatusKind.Success);
+        var eligible = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
+        SetStatus($"{statusMessage} ({eligible}/{pending} ready in pipeline).", StatusKind.Success);
+        UpdateAutoWorkerStatusText();
     }
 
     private void RestoreSelection(string? previousId)
     {
-        _selectedJob = previousId is null
+        _selectedQueueItem = previousId is null
             ? null
             : _jobs.FirstOrDefault(job => job.Id == previousId);
 
-        JobsGrid.SelectedItem = _selectedJob ?? (_jobs.Count > 0 ? _jobs[0] : null);
-        _selectedJob = JobsGrid.SelectedItem as SiteCalibrationRecord;
+        JobsGrid.SelectedItem = _selectedQueueItem ?? (_jobs.Count > 0 ? _jobs[0] : null);
+        _selectedQueueItem = JobsGrid.SelectedItem as CertificationQueueItem;
     }
 
     private void UpdateQueueSummary()
     {
-        var submitted = _jobs.Count(job => job.IsSubmitted);
-        var approved = _jobs.Count(job => job.IsReadyToCertify);
+        var submitted = _jobs.Count(job => job.Record.IsSubmitted);
+        var approved = _jobs.Count(job => job.Record.IsReadyToCertify);
         QueueCountText.Text = _jobs.Count == 0
             ? "0 jobs pending"
             : $"{_jobs.Count} jobs · {submitted} to submit · {approved} to certify";
-        ProcessAllJobsButton.Content = $"Process all jobs ({_jobs.Count(job => job.NeedsPipelineWork)})";
+        var eligible = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
+        ProcessAllJobsButton.Content = $"Process all jobs ({eligible})";
     }
 
     private void UpdateEmptyState()
@@ -1152,7 +1646,7 @@ public partial class MainWindow : Window
     {
         if (index < 0 || index >= _jobs.Count)
         {
-            SetSelectedJob(null);
+            SetSelectedQueueItem(null);
             JobsGrid.SelectedItem = null;
             UpdateSelectionUi();
             return;
@@ -1161,7 +1655,7 @@ public partial class MainWindow : Window
         var job = _jobs[index];
         JobsGrid.SelectedItem = job;
         JobsGrid.ScrollIntoView(job);
-        SetSelectedJob(job);
+        SetSelectedQueueItem(job);
         UpdateSelectionUi();
     }
 
@@ -1230,7 +1724,7 @@ public partial class MainWindow : Window
         UpdateStatusChangeUi();
         UpdateQueueSummary();
 
-        var pendingCount = _jobs.Count(job => job.NeedsPipelineWork);
+        var pendingCount = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
         ProcessAllJobsButton.IsEnabled = canNavigate && _session is not null && pendingCount > 0;
         ProcessJobButton.IsEnabled = canAct && selected.NeedsPipelineWork;
         UploadCertificatePdfButton.IsEnabled = canAct && selected.NeedsCertificatePdfUpload;

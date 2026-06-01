@@ -358,6 +358,12 @@
         <Setter Property="FontSize" Value="13"/>
     </Style>
 
+    <Style x:Key="DataGridCellRetryBadge" TargetType="TextBlock" BasedOn="{StaticResource DataGridCellText}">
+        <Setter Property="Foreground" Value="#FBBF24"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
     <Style x:Key="QueueDataGridRow" TargetType="DataGridRow">
         <Setter Property="MinHeight" Value="58"/>
         <Setter Property="Margin" Value="0,0,0,8"/>
