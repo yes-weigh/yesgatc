@@ -39,7 +39,7 @@ if (-not (Test-Path (Join-Path $InstallPath "appsettings.local.json"))) {
     $example = Join-Path $InstallPath "appsettings.local.json.example"
     if (Test-Path $example) {
         Copy-Item $example (Join-Path $InstallPath "appsettings.local.json")
-        Write-Host "Created appsettings.local.json from example — edit it with Super Admin + DOCA credentials." -ForegroundColor Yellow
+        Write-Host "Created appsettings.local.json from example - edit it with Super Admin + DOCA credentials." -ForegroundColor Yellow
     }
 }
 
@@ -59,6 +59,6 @@ if ($CreateLogonTask) {
 Write-Host ""
 Write-Host "Install complete." -ForegroundColor Green
 Write-Host "  Run now:  Start-Process '$exePath'"
-Write-Host "  Data dir: $env:LOCALAPPDATA\YesGATC\CertificateWorker  (credentials, DOCA browser profile — kept across updates)"
+Write-Host "  Data dir: $env:LOCALAPPDATA\YesGATC\CertificateWorker (credentials, DOCA browser profile - kept across updates)"
 Write-Host ""
 Write-Host "After first launch: sign in, complete DOCA captcha in Chrome, enable Auto worker, leave the session open or use -CreateLogonTask."

@@ -64,6 +64,10 @@ import {
   applyLaboratorySealToDeviceRows,
   resolveLaboratorySealIdentification,
 } from '../../lib/rcLaboratoryFields';
+import {
+  VerificationListFilters,
+  type VerificationStatusFilter,
+} from '../../components/VerificationListFilters';
 
 type StatusFilter = VerificationRequestStatus | 'all';
 
@@ -906,8 +910,8 @@ export const RCSiteCalibration: React.FC = () => {
     return tally;
   }, [records]);
 
-  const statusFilterOptions: { value: StatusFilter; label: string; count: number }[] = [
-    { value: 'all', label: 'All', count: statusCounts.all },
+  const statusFilterOptions: { value: VerificationStatusFilter; label: string; count: number }[] = [
+    { value: 'all', label: 'All statuses', count: statusCounts.all },
     { value: 'draft', label: 'Draft', count: statusCounts.draft },
     { value: 'submitted', label: 'Submitted', count: statusCounts.submitted },
     { value: 'approved', label: 'Approved', count: statusCounts.approved },
@@ -1166,19 +1170,11 @@ export const RCSiteCalibration: React.FC = () => {
             </div>
           </div>
           <div className="panel-body p-0">
-            <div className="admin-verification-filters">
-              {statusFilterOptions.map(opt => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  className={`admin-verification-filter${statusFilter === opt.value ? ' admin-verification-filter--active' : ''}`}
-                  onClick={() => setStatusFilter(opt.value)}
-                >
-                  {opt.label}
-                  <span className="badge-count">{opt.count}</span>
-                </button>
-              ))}
-            </div>
+            <VerificationListFilters
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+              statusOptions={statusFilterOptions}
+            />
             {selectedDraftIds.size > 0 && (
               <div className="verification-bulk-bar">
                 <span className="verification-bulk-bar-count">

@@ -10,6 +10,10 @@ import {
   verificationVctLabel,
 } from '../../lib/verificationRequest';
 import { ShieldCheck, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  VerificationListFilters,
+  type VerificationStatusFilter,
+} from '../../components/VerificationListFilters';
 import type { FirestoreUserDoc, SiteCalibration, VerificationRequestStatus } from '../../types';
 
 type StatusFilter = VerificationRequestStatus | 'all';
@@ -23,6 +27,7 @@ export const AdminVerificationList: React.FC = () => {
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('submitted');
+  const [rcFilter, setRcFilter] = useState<string>('all');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [listError, setListError] = useState('');
 
@@ -67,9 +72,16 @@ export const AdminVerificationList: React.FC = () => {
   }, [fetchRecords]);
 
   const filteredRecords = useMemo(() => {
-    if (statusFilter === 'all') return records;
-    return records.filter(r => normalizeVerificationStatus(r) === statusFilter);
-  }, [records, statusFilter]);
+    return records.filter(record => {
+      if (statusFilter !== 'all' && normalizeVerificationStatus(record) !== statusFilter) {
+        return false;
+      }
+      if (rcFilter !== 'all' && (record.rcId || '') !== rcFilter) {
+        return false;
+      }
+      return true;
+    });
+  }, [records, statusFilter, rcFilter]);
 
   const counts = useMemo(() => {
     const tally = { all: records.length, draft: 0, submitted: 0, approved: 0, certified: 0 };
@@ -77,6 +89,29 @@ export const AdminVerificationList: React.FC = () => {
       tally[normalizeVerificationStatus(record)] += 1;
     }
     return tally;
+  }, [records]);
+
+  const rcFilterOptions = useMemo(() => {
+    const byRc = new Map<string, { label: string; count: number }>();
+    for (const record of records) {
+      const rcId = record.rcId?.trim() || 'unknown';
+      const label = record.rcCenterName?.trim() || 'Unknown RC';
+      const existing = byRc.get(rcId);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        byRc.set(rcId, { label, count: 1 });
+      }
+    }
+
+    const centres = [...byRc.entries()]
+      .map(([value, { label, count }]) => ({ value, label, count }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    return [
+      { value: 'all', label: 'All RC centres', count: records.length },
+      ...centres,
+    ];
   }, [records]);
 
   const formatDate = (iso?: string) => {
@@ -128,8 +163,8 @@ export const AdminVerificationList: React.FC = () => {
     );
   };
 
-  const filterOptions: { value: StatusFilter; label: string; count: number }[] = [
-    { value: 'all', label: 'All', count: counts.all },
+  const filterOptions: { value: VerificationStatusFilter; label: string; count: number }[] = [
+    { value: 'all', label: 'All statuses', count: counts.all },
     { value: 'draft', label: 'Draft', count: counts.draft },
     { value: 'submitted', label: 'Submitted', count: counts.submitted },
     { value: 'approved', label: 'Approved', count: counts.approved },
@@ -159,19 +194,14 @@ export const AdminVerificationList: React.FC = () => {
         </div>
 
         <div className="panel-body p-0">
-          <div className="admin-verification-filters">
-            {filterOptions.map(opt => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`admin-verification-filter${statusFilter === opt.value ? ' admin-verification-filter--active' : ''}`}
-                onClick={() => setStatusFilter(opt.value)}
-              >
-                {opt.label}
-                <span className="badge-count">{opt.count}</span>
-              </button>
-            ))}
-          </div>
+          <VerificationListFilters
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            statusOptions={filterOptions}
+            rcFilter={rcFilter}
+            onRcFilterChange={setRcFilter}
+            rcOptions={rcFilterOptions}
+          />
 
           {loading ? (
             <div className="flex justify-center py-16">
@@ -264,7 +294,7 @@ export const AdminVerificationList: React.FC = () => {
                   {filteredRecords.length === 0 && (
                     <tr>
                       <td colSpan={10} className="text-center py-10 text-muted">
-                        No {statusFilter === 'all' ? '' : `${statusFilter} `}verifications found.
+                        No verifications match the current filters.
                       </td>
                     </tr>
                   )}

@@ -189,7 +189,7 @@ function Expand-ReleaseZip {
     Expand-Archive -Path $ZipFile -DestinationPath $TargetDirectory -Force
 }
 
-Write-Host "YesGATC Certificate Worker — pull from GitHub Releases" -ForegroundColor Cyan
+Write-Host "YesGATC Certificate Worker - pull from GitHub Releases" -ForegroundColor Cyan
 Write-Host "  Repository: $Repository" -ForegroundColor DarkGray
 
 $token = Get-AuthToken -ExplicitToken $GitHubToken
