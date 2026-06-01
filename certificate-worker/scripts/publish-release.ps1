@@ -35,6 +35,11 @@ function New-ZipFromDirectory {
         [string]$DestinationZip
     )
 
+    $destinationDirectory = Split-Path -Parent $DestinationZip
+    if (-not [string]::IsNullOrWhiteSpace($destinationDirectory)) {
+        New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
+    }
+
     if (Test-Path $DestinationZip) {
         Remove-Item $DestinationZip -Force
     }
