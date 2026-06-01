@@ -494,6 +494,7 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
                 onDeviceRvDocumentSelect={onDeviceRvDocumentSelect}
                 onDeviceRvDocumentRemove={onDeviceRvDocumentRemove}
                 verificationLocation={values.verificationLocation}
+                verificationSubject={values.verificationSubject}
                 feesStructure={resolveRcFeesStructure(rcProfile)}
                 submitting={submitting}
                 readOnly={readOnly}

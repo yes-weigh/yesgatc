@@ -157,6 +157,7 @@ type VerificationDeviceFieldsProps = {
   readOnly?: boolean;
   laboratorySealIdentification?: string;
   verificationLocation?: VerificationLocation | '';
+  verificationSubject?: 'self' | 'customer';
   feesStructure?: RcFeesStructure;
 };
 
@@ -182,12 +183,14 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   readOnly = false,
   laboratorySealIdentification = '',
   verificationLocation = '',
+  verificationSubject = 'customer',
   feesStructure,
 }) => {
   const { products } = useAppContext();
   const selectAllRef = useRef<HTMLInputElement>(null);
   const locked = submitting || readOnly;
   const isRv = verificationType === 'RV';
+  const useSelfFees = verificationSubject === 'self';
   const fees = feesStructure ?? DEFAULT_RC_FEES_STRUCTURE;
 
   const includedDevices = useMemo(
@@ -199,7 +202,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
     if (!isRv) return [];
     return includedDevices.map((row, index) => {
       const product = selectedProduct(products, row);
-      const quote = rcVerificationFeeQuote(fees, verificationLocation, product);
+      const quote = rcVerificationFeeQuote(fees, verificationLocation, product, verificationSubject);
       return {
         localId: row.localId,
         label: row.productName.trim() || row.serialNumber.trim() || `Device ${index + 1}`,
@@ -207,7 +210,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
         ...quote,
       };
     });
-  }, [fees, includedDevices, isRv, products, verificationLocation]);
+  }, [fees, includedDevices, isRv, products, verificationLocation, verificationSubject]);
 
   const totalFees = useMemo(
     () => sumRcVerificationFees(deviceFeeLines),
@@ -215,7 +218,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   );
 
   const showFeesSummary = isRv && includedDevices.length > 0;
-  const showFeeColumn = isRv && Boolean(verificationLocation);
+  const showFeeColumn = isRv && (Boolean(verificationLocation) || useSelfFees);
+  const canCalculateFees = Boolean(verificationLocation) || useSelfFees;
 
   const sealLabelForRow = (row: VerificationDeviceRowValues) =>
     readOnly
@@ -392,7 +396,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
               const product = selectedProduct(products, row);
               const feeQuote = isRv
-                ? rcVerificationFeeQuote(fees, verificationLocation, product)
+                ? rcVerificationFeeQuote(fees, verificationLocation, product, verificationSubject)
                 : null;
 
               return (
@@ -530,7 +534,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
           const product = selectedProduct(products, row);
           const feeQuote = isRv
-            ? rcVerificationFeeQuote(fees, verificationLocation, product)
+            ? rcVerificationFeeQuote(fees, verificationLocation, product, verificationSubject)
             : null;
 
           return (
@@ -703,16 +707,16 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               <IndianRupee size={16} aria-hidden />
               <p className="verification-fees-summary-title mb-0">Verification fees</p>
             </div>
-            {verificationLocation ? (
+            {canCalculateFees ? (
               <span className="verification-fees-summary-location">
-                {verificationLocationLabel(verificationLocation)}
+                {useSelfFees ? 'Self' : verificationLocationLabel(verificationLocation)}
               </span>
             ) : (
               <span className="text-muted text-xs">Select In situ or In the premises to calculate fees</span>
             )}
           </div>
 
-          {verificationLocation && (
+          {canCalculateFees && (
             <>
               <div className="table-scroll-wrap">
                 <table className="data-table verification-fees-table">

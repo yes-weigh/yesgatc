@@ -190,6 +190,7 @@ export interface FirestoreUserDoc {
 export interface RcFeeTierAmounts {
   inPremise: number;
   inSitu: number;
+  self: number;
 }
 
 /** Default fee tiers: up to 20 kg and above 20 kg up to 150 kg. */

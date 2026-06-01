@@ -1,4 +1,4 @@
-import type { CustomerLocation, FirestoreUserDoc, RcFeesStructure, VerificationLocation } from '../types';
+import type { CustomerLocation, FirestoreUserDoc, RcFeeTierAmounts, RcFeesStructure, VerificationLocation } from '../types';
 import type { Product } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
 import { isValidPincode, normalizePincode } from './contactFields';
@@ -40,14 +40,30 @@ export function rcMapsUrl(doc: FirestoreUserDoc): string | null {
 
 /** Certificate date + 1 year (YYYY-MM-DD). */
 export const DEFAULT_RC_FEES_STRUCTURE: RcFeesStructure = {
-  tierUpto20Kg: { inPremise: 750, inSitu: 850 },
-  tierUpto150Kg: { inPremise: 900, inSitu: 1000 },
+  tierUpto20Kg: { inPremise: 750, inSitu: 850, self: 150 },
+  tierUpto150Kg: { inPremise: 900, inSitu: 1000, self: 250 },
 };
+
+function mergeRcFeeTier(
+  tier: Partial<RcFeeTierAmounts> | undefined,
+  defaults: RcFeeTierAmounts,
+): RcFeeTierAmounts {
+  return {
+    inPremise: tier?.inPremise ?? defaults.inPremise,
+    inSitu: tier?.inSitu ?? defaults.inSitu,
+    self: tier?.self ?? defaults.self,
+  };
+}
 
 export function resolveRcFeesStructure(
   doc: Pick<FirestoreUserDoc, 'feesStructure'> | null | undefined,
 ): RcFeesStructure {
-  return doc?.feesStructure ?? DEFAULT_RC_FEES_STRUCTURE;
+  const stored = doc?.feesStructure;
+  if (!stored) return DEFAULT_RC_FEES_STRUCTURE;
+  return {
+    tierUpto20Kg: mergeRcFeeTier(stored.tierUpto20Kg, DEFAULT_RC_FEES_STRUCTURE.tierUpto20Kg),
+    tierUpto150Kg: mergeRcFeeTier(stored.tierUpto150Kg, DEFAULT_RC_FEES_STRUCTURE.tierUpto150Kg),
+  };
 }
 
 export function rcFeesDraftFromUser(doc: Pick<FirestoreUserDoc, 'feesStructure'> | null | undefined): RcFeesStructure {
@@ -71,7 +87,7 @@ export function parseRcFeeAmountInput(value: string): number {
 export function validateRcFeesStructure(fees: RcFeesStructure): string | null {
   const tiers = [fees.tierUpto20Kg, fees.tierUpto150Kg];
   for (const tier of tiers) {
-    for (const amount of [tier.inPremise, tier.inSitu]) {
+    for (const amount of [tier.inPremise, tier.inSitu, tier.self]) {
       if (!Number.isFinite(amount) || amount < 0 || !Number.isInteger(amount)) {
         return 'Fee amounts must be whole numbers (0 or more).';
       }
@@ -111,11 +127,13 @@ export function rcVerificationFeeQuote(
   fees: RcFeesStructure,
   location: VerificationLocation | '',
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+  subject: 'self' | 'customer' | '' = '',
 ): RcVerificationFeeQuote {
   const capacityKg = productMaximumCapacityKg(product);
   const capacityDisplay = formatProductMaximumCapacity(product);
+  const useSelfFees = subject === 'self';
 
-  if (!location) {
+  if (!useSelfFees && !location) {
     return {
       amount: null,
       tierLabel: '—',
@@ -135,7 +153,11 @@ export function rcVerificationFeeQuote(
 
   const tierKey = capacityKg <= 20 ? 'tierUpto20Kg' : 'tierUpto150Kg';
   const tier = fees[tierKey];
-  const amount = location === 'in_situ' ? tier.inSitu : tier.inPremise;
+  const amount = useSelfFees
+    ? tier.self
+    : location === 'in_situ'
+      ? tier.inSitu
+      : tier.inPremise;
   const tierLabel =
     tierKey === 'tierUpto20Kg' ? 'Up to 20 kg' : 'Above 20 kg up to 150 kg';
 

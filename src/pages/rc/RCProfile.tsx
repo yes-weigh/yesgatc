@@ -286,7 +286,7 @@ export const RCProfile: React.FC = () => {
 
   const setFee = (
     tier: keyof RcFeesStructure,
-    field: 'inPremise' | 'inSitu',
+    field: 'inPremise' | 'inSitu' | 'self',
   ) => (value: string) => {
     setDraftFees(prev => ({
       ...prev,
@@ -545,6 +545,7 @@ export const RCProfile: React.FC = () => {
                       <th>Weight range</th>
                       <th>In the premises</th>
                       <th>In situ</th>
+                      <th>Self</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -580,6 +581,21 @@ export const RCProfile: React.FC = () => {
                           formatRcFeeAmount(displayFees.tierUpto20Kg.inSitu)
                         )}
                       </td>
+                      <td>
+                        {editing ? (
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            className="input-field input-field--table"
+                            value={fees.tierUpto20Kg.self || ''}
+                            onChange={e => setFee('tierUpto20Kg', 'self')(e.target.value)}
+                            placeholder="150"
+                            aria-label="Up to 20 kg — self verification fee"
+                          />
+                        ) : (
+                          formatRcFeeAmount(displayFees.tierUpto20Kg.self)
+                        )}
+                      </td>
                     </tr>
                     <tr>
                       <td className="font-medium">Above 20 kg up to 150 kg</td>
@@ -611,6 +627,21 @@ export const RCProfile: React.FC = () => {
                           />
                         ) : (
                           formatRcFeeAmount(displayFees.tierUpto150Kg.inSitu)
+                        )}
+                      </td>
+                      <td>
+                        {editing ? (
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            className="input-field input-field--table"
+                            value={fees.tierUpto150Kg.self || ''}
+                            onChange={e => setFee('tierUpto150Kg', 'self')(e.target.value)}
+                            placeholder="250"
+                            aria-label="Above 20 kg up to 150 kg — self verification fee"
+                          />
+                        ) : (
+                          formatRcFeeAmount(displayFees.tierUpto150Kg.self)
                         )}
                       </td>
                     </tr>
