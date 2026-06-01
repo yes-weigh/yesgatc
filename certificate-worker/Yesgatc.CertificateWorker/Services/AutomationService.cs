@@ -10,7 +10,11 @@ public enum DocaSessionState
     LoginRequired,
 }
 
-public sealed record DocaOpenResult(DocaSessionState State, string Message, bool VerificationApproved = false);
+public sealed record DocaOpenResult(
+    DocaSessionState State,
+    string Message,
+    bool VerificationApproved = false,
+    bool DuplicateOnDoca = false);
 
 public sealed class AutomationService : IAsyncDisposable
 {
@@ -25,18 +29,32 @@ public sealed class AutomationService : IAsyncDisposable
         _firestoreService = firestoreService;
     }
 
+    /// <summary>-1 = default single browser profile; 0+ = parallel worker slot with its own profile.</summary>
+    public int WorkerIndex { get; set; } = -1;
+
     public bool IsRunning => _context is not null;
 
-    public string BrowserProfileDirectory =>
-        string.IsNullOrWhiteSpace(_settings.BrowserProfilePath)
-            ? Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "YesGATC",
-                "CertificateWorker",
-                "doca-browser")
-            : Environment.ExpandEnvironmentVariables(_settings.BrowserProfilePath);
+    public string BrowserProfileDirectory
+    {
+        get
+        {
+            var root = string.IsNullOrWhiteSpace(_settings.BrowserProfilePath)
+                ? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "YesGATC",
+                    "CertificateWorker",
+                    "doca-browser")
+                : Environment.ExpandEnvironmentVariables(_settings.BrowserProfilePath);
+
+            return WorkerIndex >= 0
+                ? Path.Combine(root, $"worker-{WorkerIndex + 1}")
+                : root;
+        }
+    }
 
     public DocaCredentialSettings DocaCredentials { get; set; } = new();
+
+    public Func<CancellationToken, Task<string>>? ResolveFirebaseIdToken { get; set; }
 
     /// <summary>Phase 2 — open OV form, select instrument type, fill party section.</summary>
     public async Task<DocaOpenResult> RunOvStarterAsync(
@@ -55,6 +73,56 @@ public sealed class AutomationService : IAsyncDisposable
 
         await EnsureContextAsync(cancellationToken);
         var page = await GetPageAsync();
+
+        var serial = instrument.SerialNumber.Trim();
+        if (string.IsNullOrWhiteSpace(serial))
+        {
+            throw new InvalidOperationException("Serial number is required before submitting on DOCA.");
+        }
+
+        var duplicateCheck = await DocaViewVerificationService.CheckExistingBySerialAsync(
+            page,
+            _settings.DocaViewIcVerificationUrl,
+            serial,
+            cancellationToken);
+
+        if (await IsLoginPageAsync(page))
+        {
+            await TryPrefillLoginAsync(page);
+            await page.BringToFrontAsync();
+
+            var capturedLogin = await CaptureDocaCredentialsFromBrowserAsync(page);
+            if (capturedLogin is not null)
+            {
+                DocaCredentials = capturedLogin;
+            }
+
+            return new DocaOpenResult(
+                DocaSessionState.LoginRequired,
+                "DOCA login required — complete login, then run automation again.");
+        }
+
+        if (duplicateCheck.Exists && duplicateCheck.Match is not null)
+        {
+            var existing = duplicateCheck.Match;
+            var details = new List<string> { $"Serial {existing.SerialNumber}" };
+            if (!string.IsNullOrWhiteSpace(existing.ApplicationNumber))
+            {
+                details.Add($"Application {existing.ApplicationNumber}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(existing.CertificateNumber))
+            {
+                details.Add($"Certificate {existing.CertificateNumber}");
+            }
+
+            return new DocaOpenResult(
+                DocaSessionState.LoggedIn,
+                $"Duplicate blocked — serial {serial} already exists on DOCA View IC Verification. " +
+                "Skipped create IC verification to prevent a duplicate application. " +
+                string.Join(" · ", details),
+                DuplicateOnDoca: true);
+        }
 
         if (!continueOnSamePage)
         {
@@ -110,7 +178,13 @@ public sealed class AutomationService : IAsyncDisposable
             instrument.StampingImageContentType,
             cancellationToken);
 
-        await DocaFormFiller.FillMachinePhotoSectionAsync(page, instrument, stampingImage.LocalPath);
+        var preparedPhoto = DocaUploadImagePreparer.PrepareMachinePhotoForUpload(
+            stampingImage.LocalPath,
+            Path.GetDirectoryName(stampingImage.LocalPath)!,
+            _settings.DocaUploadImageMaxBytes,
+            _settings.DocaUploadImageMaxEdgePx);
+
+        await DocaFormFiller.FillMachinePhotoSectionAsync(page, instrument, preparedPhoto.Path);
         await DocaFormFiller.WaitForDocaSubmissionSuccessAsync(page);
 
         if (string.Equals(job.Status, "submitted", StringComparison.OrdinalIgnoreCase))
@@ -131,7 +205,7 @@ public sealed class AutomationService : IAsyncDisposable
         return new DocaOpenResult(
             DocaSessionState.LoggedIn,
             $"DOCA certificate generated for {party.BelongToName}. Serial {instrument.SerialNumber}. " +
-            $"{firebaseNote} Stamping plate: {stampingImage.LocalPath} ({sizeKb} KB).",
+            $"{firebaseNote} {preparedPhoto.Summary}. Stamping plate: {stampingImage.LocalPath} ({sizeKb} KB original).",
             VerificationApproved: true);
     }
 
@@ -144,6 +218,7 @@ public sealed class AutomationService : IAsyncDisposable
         InstrumentDetails instrument,
         string firebaseIdToken,
         DocaCredentialSettings? docaCredentials = null,
+        bool continueOnSamePage = false,
         CancellationToken cancellationToken = default)
     {
         if (docaCredentials is not null)
@@ -159,11 +234,18 @@ public sealed class AutomationService : IAsyncDisposable
         await EnsureContextAsync(cancellationToken);
         var page = await GetPageAsync();
 
-        await page.GotoAsync(_settings.DocaViewIcVerificationUrl, new PageGotoOptions
+        if (!continueOnSamePage)
         {
-            WaitUntil = WaitUntilState.Load,
-            Timeout = 60_000,
-        });
+            await page.GotoAsync(_settings.DocaViewIcVerificationUrl, new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.Load,
+                Timeout = 60_000,
+            });
+        }
+        else
+        {
+            await page.BringToFrontAsync();
+        }
 
         if (await IsLoginPageAsync(page))
         {
@@ -202,20 +284,30 @@ public sealed class AutomationService : IAsyncDisposable
             instrument.StampingImageContentType,
             cancellationToken);
 
+        var preparedPhoto = DocaUploadImagePreparer.PrepareMachinePhotoForUpload(
+            instrumentPhoto.LocalPath,
+            Path.GetDirectoryName(instrumentPhoto.LocalPath)!,
+            _settings.DocaUploadImageMaxBytes,
+            _settings.DocaUploadImageMaxEdgePx);
+
         await DocaViewVerificationService.UploadStampedCertificateAsync(
             page,
             _settings.DocaViewIcVerificationUrl,
             job.SerialNumber,
             stampResult.OutputPath,
-            instrumentPhoto.LocalPath,
+            preparedPhoto.Path,
             instrument.Remarks,
             cancellationToken);
 
         var match = downloadResult.Match;
+        var firebaseToken = ResolveFirebaseIdToken is not null
+            ? await ResolveFirebaseIdToken(cancellationToken)
+            : firebaseIdToken;
+
         await _firestoreService.MarkCertifiedWithSignedPdfAsync(
             job.Id,
             stampResult.OutputPath,
-            firebaseIdToken,
+            firebaseToken,
             match.CertificateNumber,
             cancellationToken);
 
@@ -233,8 +325,45 @@ public sealed class AutomationService : IAsyncDisposable
         return new DocaOpenResult(
             DocaSessionState.LoggedIn,
             $"Certificate uploaded to DOCA, saved to Firebase Storage, and marked certified — {string.Join(" · ", details)}. " +
-            $"Signed PDF: {stampResult.OutputPath}. Instrument photo: {instrumentPhoto.LocalPath}.",
+            $"Signed PDF: {stampResult.OutputPath}. Instrument photo: {preparedPhoto.Summary}.",
             VerificationApproved: true);
+    }
+
+    /// <summary>
+    /// Opens (or focuses) the DOCA browser window so the operator can confirm login before bulk runs.
+    /// </summary>
+    public async Task<DocaSessionState> OpenDocaWorkspaceAsync(
+        int chromeNumber = 1,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureContextAsync(cancellationToken);
+        var page = await GetPageAsync();
+
+        await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.Load,
+            Timeout = 60_000,
+        });
+
+        try
+        {
+            await page.EvaluateAsync(
+                "document.title = " + System.Text.Json.JsonSerializer.Serialize($"YesGATC Chrome {chromeNumber} — DOCA"));
+        }
+        catch (PlaywrightException)
+        {
+            // Title tweak is optional; navigation is enough for login verification.
+        }
+
+        if (await IsLoginPageAsync(page))
+        {
+            await TryPrefillLoginAsync(page);
+            await page.BringToFrontAsync();
+            return DocaSessionState.LoginRequired;
+        }
+
+        await page.BringToFrontAsync();
+        return DocaSessionState.LoggedIn;
     }
 
     public async Task ClearSavedSessionAsync()

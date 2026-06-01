@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
-import { normalizePhone } from '../../lib/contactFields';
+import { normalizePhone, normalizePincode } from '../../lib/contactFields';
 import { standardWeightsCertExpiryFromDate } from '../../lib/rcProfileFields';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import type { RcFormValues } from '../../lib/rcProfileFields';
@@ -188,17 +188,32 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
       </div>
 
       <div className="product-form-flat-row rc-form-row-address">
-        <div className="form-group mb-0 rc-form-address">
-          <label htmlFor="rc-address">Address with PIN *</label>
-          <textarea
-            id="rc-address"
-            className="input-field rc-form-address-input"
-            rows={2}
-            placeholder="Full postal address with pin code"
-            value={values.address}
-            onChange={e => onChange({ address: e.target.value })}
-            required
-          />
+        <div className="rc-form-grid rc-form-grid--address">
+          <div className="form-group mb-0">
+            <label htmlFor="rc-pincode">Postal code</label>
+            <input
+              id="rc-pincode"
+              type="text"
+              inputMode="numeric"
+              className="input-field"
+              placeholder="6-digit PIN"
+              value={values.pincode}
+              onChange={e => onChange({ pincode: normalizePincode(e.target.value) })}
+              maxLength={6}
+            />
+          </div>
+          <div className="form-group mb-0 rc-form-address">
+            <label htmlFor="rc-address">Full address *</label>
+            <textarea
+              id="rc-address"
+              className="input-field rc-form-address-input"
+              rows={2}
+              placeholder="Street, city, state"
+              value={values.address}
+              onChange={e => onChange({ address: e.target.value })}
+              required
+            />
+          </div>
         </div>
       </div>
 

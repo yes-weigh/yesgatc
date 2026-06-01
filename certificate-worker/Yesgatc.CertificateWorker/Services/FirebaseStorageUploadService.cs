@@ -50,7 +50,7 @@ public sealed class FirebaseStorageUploadService
             $"https://firebasestorage.googleapis.com/v0/b/{Uri.EscapeDataString(bucket)}/o?name={Uri.EscapeDataString(storagePath)}";
 
         using var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Firebase", idToken);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
         request.Content = new ByteArrayContent(bytes);
         request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
 
@@ -60,7 +60,7 @@ public sealed class FirebaseStorageUploadService
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             throw new InvalidOperationException(
                 $"Could not upload certificate PDF to Firebase Storage ({(int)response.StatusCode}). " +
-                "Deploy storage rules and sign in as Super Admin, then retry. " +
+                "Sign in again as Super Admin, deploy storage rules if needed, then retry. " +
                 body);
         }
 

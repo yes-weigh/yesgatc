@@ -346,10 +346,56 @@ public static class DocaFormFiller
     {
         await SubmitGenerateCertificateAsync(page);
 
-        var successMessage = page.GetByText(
-            "Instrument details saved successfully",
-            new PageGetByTextOptions { Exact = false });
-        await successMessage.WaitForAsync(new LocatorWaitForOptions { Timeout = 120_000 });
+        var deadline = DateTime.UtcNow.AddSeconds(120);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            await ThrowIfDocaInternalServerErrorAsync(page);
+
+            var successMessage = page.GetByText(
+                "Instrument details saved successfully",
+                new PageGetByTextOptions { Exact = false });
+            if (await successMessage.CountAsync() > 0)
+            {
+                try
+                {
+                    await successMessage.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 2_000 });
+                    return;
+                }
+                catch (TimeoutException)
+                {
+                    // Keep polling until the success banner is stable.
+                }
+            }
+
+            await page.WaitForTimeoutAsync(500);
+        }
+
+        await ThrowIfDocaInternalServerErrorAsync(page);
+        throw new InvalidOperationException(
+            "DOCA did not confirm IC verification submission within 120 seconds.");
+    }
+
+    private static async Task ThrowIfDocaInternalServerErrorAsync(IPage page)
+    {
+        var title = await page.TitleAsync();
+        var body = await page.Locator("body").InnerTextAsync();
+
+        var isServerError = title.Contains("500", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("Internal Server Error", StringComparison.OrdinalIgnoreCase)
+            || (page.Url.Contains("gn-certificate-store", StringComparison.OrdinalIgnoreCase)
+                && body.Contains("misconfiguration", StringComparison.OrdinalIgnoreCase));
+
+        if (!isServerError)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "DOCA returned a 500 Internal Server Error after Generate Certificate (gn-certificate-store). " +
+            "This is often caused by a machine photo that is too large for DOCA's server. " +
+            "The worker compresses photos before upload — retry this job. " +
+            "If it happens again, replace the stamping image in the web app with a smaller JPEG (ideally under 350 KB).");
     }
 
     /// <summary>After a successful submission the form stays on the same page; scroll back to the top to fill the next job.</summary>

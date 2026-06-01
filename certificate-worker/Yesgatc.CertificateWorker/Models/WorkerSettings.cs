@@ -26,6 +26,14 @@ public sealed class AutomationSettings
     public string BrowserProfilePath { get; init; } = string.Empty;
     /// <summary>Use installed browser instead of Playwright Chromium. Leave empty for default.</summary>
     public string BrowserChannel { get; init; } = string.Empty;
+    /// <summary>When pending job count exceeds this, batch processing uses multiple browser windows.</summary>
+    public int ParallelBrowserThreshold { get; init; } = 40;
+    /// <summary>Number of parallel Chrome windows for large batches.</summary>
+    public int ParallelBrowserCount { get; init; } = 4;
+    /// <summary>Max machine photo size sent to DOCA after compression (bytes).</summary>
+    public long DocaUploadImageMaxBytes { get; init; } = 350 * 1024;
+    /// <summary>Longest edge in pixels for machine photos uploaded to DOCA.</summary>
+    public int DocaUploadImageMaxEdgePx { get; init; } = 1600;
     public DocaCredentialSettings DocaCredentials { get; init; } = new();
     public CertificateStampSettings CertificateStamp { get; init; } = new();
 }

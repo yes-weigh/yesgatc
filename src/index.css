@@ -1543,6 +1543,11 @@ select.input-field option {
   padding: 0.35rem 0.5rem 0.25rem;
 }
 
+.rc-form-grid--address {
+  grid-template-columns: minmax(7rem, 0.35fr) 1fr;
+  align-items: start;
+}
+
 .rc-form-address {
   width: 100%;
 }

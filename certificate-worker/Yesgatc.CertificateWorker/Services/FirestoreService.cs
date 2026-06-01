@@ -27,6 +27,50 @@ public sealed class FirestoreService
         CancellationToken cancellationToken = default) =>
         GetVerificationsByStatusAsync("approved", idToken, cancellationToken);
 
+    public async Task<IReadOnlyList<SiteCalibrationRecord>> GetPendingCertificationQueueAsync(
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        var submitted = await GetAllSubmittedVerificationsAsync(idToken, cancellationToken);
+        var approved = await GetAllApprovedVerificationsAsync(idToken, cancellationToken);
+
+        return submitted
+            .Concat(approved)
+            .OrderBy(record => record.IsSubmitted ? 0 : 1)
+            .ThenByDescending(record => record.IsSubmitted
+                ? record.SubmittedAt ?? record.Id
+                : record.ApprovedAt ?? record.SubmittedAt ?? record.Id)
+            .ToList();
+    }
+
+    public async Task<SiteCalibrationRecord?> GetVerificationByIdAsync(
+        string jobId,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return null;
+        }
+
+        var rcNames = await GetRcCenterNamesAsync(idToken, cancellationToken);
+        var documents = new FirestoreDocumentClient(_settings);
+
+        try
+        {
+            var fields = await documents.GetFieldsAsync(
+                "siteCalibrations",
+                jobId,
+                idToken,
+                cancellationToken);
+            return MapFromFields(jobId, fields, rcNames);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     public async Task ApproveVerificationAsync(
         string jobId,
         string idToken,
@@ -253,8 +297,16 @@ public sealed class FirestoreService
         FirestoreDocument document,
         IReadOnlyDictionary<string, string> rcNames)
     {
-        var fields = document.Fields ?? new Dictionary<string, JsonElement>();
         var id = document.Name?.Split('/').LastOrDefault() ?? string.Empty;
+        var fields = document.Fields ?? new Dictionary<string, JsonElement>();
+        return MapFromFields(id, fields, rcNames);
+    }
+
+    private static SiteCalibrationRecord MapFromFields(
+        string id,
+        IReadOnlyDictionary<string, JsonElement> fields,
+        IReadOnlyDictionary<string, string> rcNames)
+    {
         var rcId = FirestoreFieldReader.ReadString(fields, "rcId");
 
         return new SiteCalibrationRecord

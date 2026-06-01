@@ -21,6 +21,7 @@ import {
   buildRcFirestoreFields,
   rcFormFromUser,
   standardWeightsCertExpiryFromDate,
+  validateRcPincodeInput,
   type RcFormValues,
 } from '../../lib/rcProfileFields';
 import {
@@ -164,6 +165,8 @@ export const RCList: React.FC = () => {
     if (!formValues.contactPerson.trim()) return 'Contact Person is required.';
     if (!formValues.place.trim()) return 'Place is required.';
     if (!formValues.address.trim()) return 'Address is required.';
+    const pincodeError = validateRcPincodeInput(formValues.pincode);
+    if (pincodeError) return pincodeError;
     if (mode === 'create' && !isValidAadhar(normalizeAadhar(formValues.aadhar))) {
       return 'Aadhar number must be exactly 12 digits.';
     }

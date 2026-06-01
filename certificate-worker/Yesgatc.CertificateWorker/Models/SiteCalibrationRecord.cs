@@ -22,6 +22,44 @@ public sealed class SiteCalibrationRecord
     public bool IsCertified => string.Equals(Status, VerificationStatuses.Certified, StringComparison.OrdinalIgnoreCase);
     public bool HasCertificate => IsCertified || !string.IsNullOrWhiteSpace(CertificatePdfUrl);
     public bool IsReadyToCertify => IsApproved && !IsCertified;
+    public bool NeedsCertificatePdfUpload =>
+        string.IsNullOrWhiteSpace(CertificatePdfUrl) && (IsApproved || IsCertified);
+    public bool NeedsPipelineWork => IsSubmitted || IsReadyToCertify || NeedsCertificatePdfUpload;
+
+    public string NextStepLabel
+    {
+        get
+        {
+            if (IsSubmitted)
+            {
+                return "Phase 1 · Submit on DOCA";
+            }
+
+            if (IsReadyToCertify)
+            {
+                return "Phase 2 · Certify on DOCA";
+            }
+
+            if (NeedsCertificatePdfUpload)
+            {
+                return "Upload PDF to Firebase";
+            }
+
+            return "Complete";
+        }
+    }
+
+    public string PipelineDateDisplay =>
+        IsSubmitted ? SubmittedAtDisplay
+        : IsApproved ? ApprovedAtDisplay
+        : CertifiedAtDisplay;
+
+    public string CertificationStatusLabel =>
+        !string.IsNullOrWhiteSpace(CertificatePdfUrl)
+            ? "PDF in Firebase"
+            : IsCertified
+                ? "Certified (no PDF)"
+                : "Awaiting certify";
 
     public string StatusLabel => VerificationStatuses.Label(Status);
 
@@ -35,8 +73,6 @@ public sealed class SiteCalibrationRecord
     public string SubmittedAtDisplay => FormatTimestamp(SubmittedAt);
     public string ApprovedAtDisplay => FormatTimestamp(ApprovedAt);
     public string CertifiedAtDisplay => FormatTimestamp(CertifiedAt);
-
-    public string CertificationStatusLabel => IsCertified ? "Certified" : "Awaiting DOCA";
 
     private static string FormatTimestamp(string? value)
     {

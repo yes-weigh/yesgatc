@@ -14,8 +14,45 @@ public sealed record CertificatePdfDownloadResult(
     ViewVerificationMatch Match,
     string LocalPdfPath);
 
+public sealed record ViewVerificationDuplicateCheckResult(
+    bool Exists,
+    ViewVerificationMatch? Match = null);
+
 public static class DocaViewVerificationService
 {
+    /// <summary>
+    /// Quick search on View IC Verification (e.g. ?search=SERIAL) before creating a new application.
+    /// Returns whether a row already exists for the serial — does not throw when none is found.
+    /// </summary>
+    public static async Task<ViewVerificationDuplicateCheckResult> CheckExistingBySerialAsync(
+        IPage page,
+        string viewIcVerificationBaseUrl,
+        string serialNumber,
+        CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        var serial = serialNumber.Trim();
+        if (string.IsNullOrWhiteSpace(serial))
+        {
+            return new ViewVerificationDuplicateCheckResult(false);
+        }
+
+        var searchUrl = BuildSearchUrl(viewIcVerificationBaseUrl, serial);
+        await page.GotoAsync(searchUrl, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.Load,
+            Timeout = 60_000,
+        });
+
+        await WaitForViewListPageAsync(page);
+        await EnsureSearchAppliedAsync(page, serial);
+
+        var match = await TryFindExistingMatchAsync(page, serial);
+        return match is null
+            ? new ViewVerificationDuplicateCheckResult(false)
+            : new ViewVerificationDuplicateCheckResult(true, match);
+    }
+
     public static async Task<ViewVerificationMatch> FindBySerialAsync(
         IPage page,
         string viewIcVerificationBaseUrl,
@@ -398,6 +435,22 @@ public static class DocaViewVerificationService
         {
             // Results may already be rendered; row wait handles confirmation.
         }
+    }
+
+    private static async Task<ViewVerificationMatch?> TryFindExistingMatchAsync(IPage page, string serial)
+    {
+        for (var attempt = 0; attempt < 6; attempt++)
+        {
+            var row = await TryFindMatchingRowAsync(page, serial);
+            if (row is not null)
+            {
+                return await ParseRowMatchAsync(row, serial);
+            }
+
+            await page.WaitForTimeoutAsync(500);
+        }
+
+        return null;
     }
 
     private static async Task<ILocator> WaitForMatchingRowAsync(IPage page, string serial)

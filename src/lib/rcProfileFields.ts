@@ -1,6 +1,7 @@
 import type { CustomerLocation, FirestoreUserDoc, RcFeesStructure, VerificationLocation } from '../types';
 import type { Product } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
+import { isValidPincode, normalizePincode } from './contactFields';
 import { resolveLaboratorySealIdentification } from './rcLaboratoryFields';
 export {
   vctProfilePhotoFromUser as rcProfilePhotoFromUser,
@@ -161,6 +162,7 @@ export type RcFormValues = {
   companyName: string;
   contactPerson: string;
   place: string;
+  pincode: string;
   address: string;
   aadhar: string;
   email: string;
@@ -175,6 +177,7 @@ export const EMPTY_RC_FORM: RcFormValues = {
   companyName: '',
   contactPerson: '',
   place: '',
+  pincode: '',
   address: '',
   aadhar: '',
   email: '',
@@ -185,11 +188,20 @@ export const EMPTY_RC_FORM: RcFormValues = {
   standardWeightsCertDate: '',
 };
 
+export function validateRcPincodeInput(pincode: string): string | null {
+  const normalized = normalizePincode(pincode);
+  if (normalized && !isValidPincode(normalized)) {
+    return 'Postal code must be exactly 6 digits.';
+  }
+  return null;
+}
+
 export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
   return {
     companyName: doc.companyName || doc.username || '',
     contactPerson: doc.contactPerson || '',
     place: doc.place || '',
+    pincode: doc.pincode || '',
     address: doc.address || '',
     aadhar: doc.aadhar || '',
     email: doc.email || '',
@@ -236,11 +248,13 @@ export function buildRcFirestoreFields(
   options: { includePassword?: string; isCreate?: boolean },
 ): Partial<FirestoreUserDoc> {
   const expiry = standardWeightsCertExpiryFromDate(values.standardWeightsCertDate);
+  const pincode = normalizePincode(values.pincode);
   const base: Partial<FirestoreUserDoc> = {
     companyName: values.companyName.trim(),
     username: values.companyName.trim(),
     contactPerson: values.contactPerson.trim(),
     place: values.place.trim(),
+    pincode,
     address: values.address.trim(),
     gstNumber: values.gstNumber.trim(),
     email: values.email.trim(),

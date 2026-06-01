@@ -49,27 +49,21 @@
                                 Margin="12,0,0,0"
                                 Click="RefreshButton_Click"/>
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Verification queues" Style="{StaticResource SectionTitle}"/>
+                            <TextBlock Text="Certification queue" Style="{StaticResource SectionTitle}"/>
                             <TextBlock x:Name="QueueSubtitleText"
-                                       Text="All RCs · submit jobs on DOCA first, then certify approved jobs"
+                                       Text="All RCs · submitted and approved jobs in one pipeline"
                                        FontSize="12"
                                        Foreground="{StaticResource TextMutedBrush}"
                                        Margin="0,4,0,0"/>
                         </StackPanel>
                     </DockPanel>
 
-                    <TabControl x:Name="QueueTabs"
-                                Grid.Row="1"
-                                Style="{StaticResource QueueTabControl}"
-                                Margin="22,0,22,10"
-                                SelectionChanged="QueueTabs_SelectionChanged">
-                        <TabItem x:Name="SubmittedTabItem"
-                                 Style="{StaticResource QueueTabItem}"
-                                 Header="Submitted"/>
-                        <TabItem x:Name="ApprovedTabItem"
-                                 Style="{StaticResource QueueTabItem}"
-                                 Header="Approved"/>
-                    </TabControl>
+                    <TextBlock x:Name="QueueCountText"
+                               Grid.Row="1"
+                               Margin="22,0,22,10"
+                               FontSize="12"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               Text="0 jobs pending"/>
 
                     <DataGrid x:Name="JobsGrid"
                               Grid.Row="2"
@@ -101,15 +95,13 @@
                                                     Binding="{Binding StatusLabel}"
                                                     Width="0.85*"
                                                     ElementStyle="{StaticResource DataGridCellMuted}"/>
-                                <DataGridTextColumn x:Name="DateColumn"
-                                                    Header="Submitted"
-                                                    Binding="{Binding SubmittedAtDisplay}"
-                                                    Width="*"
+                                <DataGridTextColumn Header="Next step"
+                                                    Binding="{Binding NextStepLabel}"
+                                                    Width="1.1*"
                                                     ElementStyle="{StaticResource DataGridCellMuted}"/>
-                                <DataGridTextColumn x:Name="CertificationColumn"
-                                                    Header="Certification"
-                                                    Binding="{Binding CertificationStatusLabel}"
-                                                    Width="0"
+                                <DataGridTextColumn Header="Updated"
+                                                    Binding="{Binding PipelineDateDisplay}"
+                                                    Width="*"
                                                     ElementStyle="{StaticResource DataGridCellMuted}"/>
                             </DataGrid.Columns>
                     </DataGrid>
@@ -174,7 +166,7 @@
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource TitleGradientBrush}"/>
                     </StackPanel>
-                        <TextBlock Text="Super Admin certificate desk — approve submissions, then certify on DOCA."
+                        <TextBlock Text="Super Admin certificate desk — one queue, full DOCA pipeline per job."
                                FontSize="13"
                                Foreground="{StaticResource TextMutedBrush}"
                                TextWrapping="Wrap"/>
@@ -310,69 +302,84 @@
                                    LineHeight="22"
                                    Foreground="{StaticResource TextMainBrush}"/>
 
-                        <Grid Margin="0,14,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                <TextBlock Text="Job status"
-                                           Style="{StaticResource FieldLabel}"
-                                           Margin="0,0,0,6"/>
-                                <ComboBox x:Name="StatusComboBox"
-                                          MinHeight="36"
-                                          FontSize="13"
-                                          IsEnabled="False"
-                                          SelectionChanged="StatusComboBox_SelectionChanged"/>
-                            </StackPanel>
-                            <Button x:Name="ApplyStatusButton"
-                                    Grid.Column="1"
-                                    Content="Apply status"
-                                    Style="{StaticResource SecondaryButton}"
-                                    Padding="14,9"
-                                    VerticalAlignment="Bottom"
-                                    IsEnabled="False"
-                                    Click="ApplyStatusButton_Click"/>
-                        </Grid>
+                        <Expander x:Name="StatusOverrideExpander"
+                                  Style="{StaticResource GlassExpander}"
+                                  IsExpanded="False"
+                                  Margin="0,14,0,0">
+                            <Expander.Header>
+                                <StackPanel>
+                                    <TextBlock Text="Manual status override"
+                                               FontSize="11"
+                                               FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                    <TextBlock x:Name="StatusOverrideSummaryText"
+                                               Text="Collapsed — expand only when you need to fix a status"
+                                               FontSize="13"
+                                               Foreground="{StaticResource TextMainBrush}"/>
+                                </StackPanel>
+                            </Expander.Header>
+
+                            <Grid Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                    <TextBlock Text="Job status"
+                                               Style="{StaticResource FieldLabel}"
+                                               Margin="0,0,0,6"/>
+                                    <ComboBox x:Name="StatusComboBox"
+                                              MinHeight="36"
+                                              FontSize="13"
+                                              IsEnabled="False"
+                                              SelectionChanged="StatusComboBox_SelectionChanged"/>
+                                </StackPanel>
+                                <Button x:Name="ApplyStatusButton"
+                                        Grid.Column="1"
+                                        Content="Apply status"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Padding="14,9"
+                                        VerticalAlignment="Bottom"
+                                        IsEnabled="False"
+                                        Click="ApplyStatusButton_Click"/>
+                            </Grid>
+                        </Expander>
                     </StackPanel>
                 </Border>
 
                 <!-- Actions -->
                 <StackPanel Grid.Row="3" Orientation="Vertical" Margin="0,0,0,14">
-                    <StackPanel x:Name="SubmittedActionsPanel">
-                        <Button x:Name="ApproveAllJobsButton"
-                                Content="Submit all on DOCA &amp; approve"
-                                Style="{StaticResource PrimaryButton}"
-                                HorizontalAlignment="Stretch"
-                                Margin="0,0,0,10"
-                                IsEnabled="False"
-                                ToolTip="Opens DOCA create IC verification for each submitted job; Firebase approve runs only after DOCA success"
-                                Click="ApproveAllJobsButton_Click"/>
-                        <Button x:Name="ApproveJobButton"
-                                Content="Submit selected job on DOCA"
-                                Style="{StaticResource SuccessButton}"
-                                HorizontalAlignment="Stretch"
-                                IsEnabled="False"
-                                ToolTip="Opens DOCA create IC verification; Firebase approve runs only after DOCA success"
-                                Click="ApproveJobButton_Click"/>
-                    </StackPanel>
-
-                    <StackPanel x:Name="ApprovedActionsPanel" Visibility="Collapsed">
-                        <Button x:Name="CertifyAllJobsButton"
-                                Content="Certify all approved jobs"
-                                Style="{StaticResource PrimaryButton}"
-                                HorizontalAlignment="Stretch"
-                                Margin="0,0,0,10"
-                                IsEnabled="False"
-                                ToolTip="Open View IC Verification and search each approved job by serial"
-                                Click="CertifyAllJobsButton_Click"/>
-                        <Button x:Name="CertifyJobButton"
-                                Content="Find selected job on View IC Verification"
-                                Style="{StaticResource SuccessButton}"
-                                HorizontalAlignment="Stretch"
-                                IsEnabled="False"
-                                Click="CertifyJobButton_Click"/>
-                    </StackPanel>
+                    <Button x:Name="PrepareBulkBrowsersButton"
+                            Content="Open Chrome sessions for bulk DOCA"
+                            Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Stretch"
+                            Margin="0,0,0,10"
+                            IsEnabled="False"
+                            ToolTip="Opens one Chrome window per parallel worker so you can log in to DOCA before Process all jobs (used when queue exceeds 40 jobs)"
+                            Click="PrepareBulkBrowsersButton_Click"/>
+                    <Button x:Name="ProcessAllJobsButton"
+                            Content="Process all jobs"
+                            Style="{StaticResource SuccessButton}"
+                            HorizontalAlignment="Stretch"
+                            Margin="0,0,0,10"
+                            IsEnabled="False"
+                            ToolTip="For each job: phase 1 submit on DOCA (with duplicate check), then phase 2 certify and save PDF — resumes from the last successful step"
+                            Click="ProcessAllJobsButton_Click"/>
+                    <Button x:Name="ProcessJobButton"
+                            Content="Process selected job"
+                            Style="{StaticResource PrimaryButton}"
+                            HorizontalAlignment="Stretch"
+                            Margin="0,0,0,10"
+                            IsEnabled="False"
+                            ToolTip="Run the pipeline for the selected job only — skips completed phases automatically"
+                            Click="ProcessJobButton_Click"/>
+                    <Button x:Name="UploadCertificatePdfButton"
+                            Content="Upload signed PDF to Firebase"
+                            Style="{StaticResource SecondaryButton}"
+                            HorizontalAlignment="Stretch"
+                            IsEnabled="False"
+                            ToolTip="Upload a locally saved stamped PDF without re-running DOCA (for jobs that failed at Firebase upload)"
+                            Click="UploadCertificatePdfButton_Click"/>
                 </StackPanel>
 
                 <!-- Status -->

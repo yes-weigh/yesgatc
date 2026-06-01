@@ -33,4 +33,17 @@ public static class WorkerDataPaths
         Directory.CreateDirectory(path);
         return path;
     }
+
+    public static string? FindLatestStampedPdf(string jobId)
+    {
+        var directory = CertificatePdfDirectory(jobId);
+        if (!Directory.Exists(directory))
+        {
+            return null;
+        }
+
+        return Directory.EnumerateFiles(directory, "*_stamped.pdf", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+    }
 }

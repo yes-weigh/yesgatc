@@ -74,7 +74,54 @@ public sealed class FirebaseAuthService
             throw new InvalidOperationException("Firebase sign-in did not return a session token.");
         }
 
-        return new FirebaseSignInResult(payload.LocalId, payload.IdToken, payload.Email ?? email);
+        return new FirebaseSignInResult(
+            payload.LocalId,
+            payload.IdToken,
+            payload.Email ?? email,
+            RefreshToken: payload.RefreshToken ?? string.Empty);
+    }
+
+    public async Task<FirebaseSignInResult> RefreshIdTokenAsync(
+        FirebaseSignInResult session,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(session.RefreshToken))
+        {
+            return session;
+        }
+
+        var url =
+            $"https://securetoken.googleapis.com/v1/token?key={Uri.EscapeDataString(_settings.ApiKey)}";
+
+        using var response = await _http.PostAsync(
+            url,
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = session.RefreshToken,
+            }),
+            cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Firebase session expired and could not be refreshed. Sign in again. {body}");
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<RefreshTokenResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Empty refresh response from Firebase.");
+
+        if (string.IsNullOrWhiteSpace(payload.IdToken))
+        {
+            throw new InvalidOperationException("Firebase refresh did not return a new ID token.");
+        }
+
+        return session with
+        {
+            IdToken = payload.IdToken,
+            RefreshToken = string.IsNullOrWhiteSpace(payload.RefreshToken) ? session.RefreshToken : payload.RefreshToken,
+        };
     }
 
     private static string FirstNonEmpty(params string?[] values)
@@ -110,7 +157,13 @@ public sealed class FirebaseAuthService
     private sealed record SignInResponse(
         [property: JsonPropertyName("idToken")] string IdToken,
         [property: JsonPropertyName("localId")] string LocalId,
-        [property: JsonPropertyName("email")] string? Email);
+        [property: JsonPropertyName("email")] string? Email,
+        [property: JsonPropertyName("refreshToken")] string? RefreshToken);
+
+    private sealed record RefreshTokenResponse(
+        [property: JsonPropertyName("id_token")] string IdToken,
+        [property: JsonPropertyName("refresh_token")] string? RefreshToken,
+        [property: JsonPropertyName("user_id")] string? UserId);
 }
 
 public sealed record FirebaseSignInResult(
@@ -118,4 +171,5 @@ public sealed record FirebaseSignInResult(
     string IdToken,
     string Email,
     string DisplayName = "",
-    string Role = "");
+    string Role = "",
+    string RefreshToken = "");
