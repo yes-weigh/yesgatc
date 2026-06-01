@@ -73,10 +73,125 @@ export function canDeleteVerification(record: Pick<SiteCalibration, 'status'>): 
   return normalizeVerificationStatus(record) === 'draft';
 }
 
-/** Super Admin — interim until certificate server owns the submitted queue. */
-export function canAdminDeleteVerification(record: Pick<SiteCalibration, 'status'>): boolean {
+export type VerificationFilterStatus =
+  | VerificationRequestStatus
+  | 'failed_submit'
+  | 'failed_certification';
+
+export type VerificationStatusFilter = VerificationFilterStatus | 'all';
+
+export interface VerificationStatusFilterCounts {
+  all: number;
+  draft: number;
+  submitted: number;
+  approved: number;
+  certified: number;
+  failed_submit: number;
+  failed_certification: number;
+}
+
+export function isVerificationFullyCertified(record: SiteCalibration): boolean {
+  return (
+    normalizeVerificationStatus(record) === 'certified' &&
+    Boolean(record.certificateNumber?.trim()) &&
+    Boolean(record.certificatePdfUrl?.trim())
+  );
+}
+
+export function isVerificationFailedAtSubmit(record: SiteCalibration): boolean {
+  if (normalizeVerificationStatus(record) !== 'submitted') return false;
+  return record.pipelineFailedPhase === 'submit';
+}
+
+export function isVerificationFailedAtCertification(record: SiteCalibration): boolean {
+  if (record.pipelineFailedPhase === 'certification') return true;
   const status = normalizeVerificationStatus(record);
-  return status === 'submitted' || status === 'approved' || status === 'certified';
+  if (status === 'certified') {
+    return !record.certificateNumber?.trim() || !record.certificatePdfUrl?.trim();
+  }
+  return false;
+}
+
+export function getVerificationDisplayStatus(record: SiteCalibration): VerificationFilterStatus {
+  if (isVerificationFailedAtSubmit(record)) return 'failed_submit';
+  if (isVerificationFailedAtCertification(record)) return 'failed_certification';
+  return normalizeVerificationStatus(record);
+}
+
+export function verificationFilterLabel(filter: VerificationStatusFilter): string {
+  if (filter === 'all') return 'All';
+  if (filter === 'failed_submit') return 'Failed at submit';
+  if (filter === 'failed_certification') return 'Failed at certification';
+  return verificationStatusLabel(filter);
+}
+
+export function verificationDisplayStatusLabel(record: SiteCalibration): string {
+  return verificationFilterLabel(getVerificationDisplayStatus(record));
+}
+
+export function matchesVerificationStatusFilter(
+  record: SiteCalibration,
+  filter: VerificationStatusFilter,
+): boolean {
+  if (filter === 'all') return true;
+  if (filter === 'failed_submit') return isVerificationFailedAtSubmit(record);
+  if (filter === 'failed_certification') return isVerificationFailedAtCertification(record);
+  if (filter === 'certified') return isVerificationFullyCertified(record);
+  if (filter === 'submitted') {
+    return normalizeVerificationStatus(record) === 'submitted' && !isVerificationFailedAtSubmit(record);
+  }
+  return normalizeVerificationStatus(record) === filter;
+}
+
+export function tallyVerificationStatusFilters(
+  records: SiteCalibration[],
+): VerificationStatusFilterCounts {
+  const tally: VerificationStatusFilterCounts = {
+    all: records.length,
+    draft: 0,
+    submitted: 0,
+    approved: 0,
+    certified: 0,
+    failed_submit: 0,
+    failed_certification: 0,
+  };
+
+  for (const record of records) {
+    if (isVerificationFailedAtSubmit(record)) {
+      tally.failed_submit += 1;
+      continue;
+    }
+    if (isVerificationFailedAtCertification(record)) {
+      tally.failed_certification += 1;
+      continue;
+    }
+    const status = normalizeVerificationStatus(record);
+    if (status === 'certified') {
+      tally.certified += 1;
+    } else {
+      tally[status] += 1;
+    }
+  }
+
+  return tally;
+}
+
+export function buildVerificationStatusFilterOptions(
+  counts: VerificationStatusFilterCounts,
+): { value: VerificationStatusFilter; label: string; count: number }[] {
+  return [
+    { value: 'all', label: 'All', count: counts.all },
+    { value: 'draft', label: 'Draft', count: counts.draft },
+    { value: 'submitted', label: 'Submitted', count: counts.submitted },
+    { value: 'approved', label: 'Approved', count: counts.approved },
+    { value: 'certified', label: 'Certified', count: counts.certified },
+    { value: 'failed_submit', label: 'Failed at submit', count: counts.failed_submit },
+    {
+      value: 'failed_certification',
+      label: 'Failed at certification',
+      count: counts.failed_certification,
+    },
+  ];
 }
 
 export function verificationStatusLabel(status: VerificationRequestStatus): string {

@@ -5339,6 +5339,16 @@ select.input-field option {
   color: #f59e0b;
 }
 
+.verification-status--failed_submit {
+  background: rgba(239, 68, 68, 0.14);
+  color: #f87171;
+}
+
+.verification-status--failed_certification {
+  background: rgba(249, 115, 22, 0.14);
+  color: #fb923c;
+}
+
 .verification-row-actions {
   display: inline-flex;
   align-items: center;
@@ -5395,6 +5405,43 @@ select.input-field option {
   white-space: nowrap;
   min-width: 7.25rem;
   width: 1%;
+}
+
+.data-table--site-calibration .site-calibration-col-type-cap {
+  min-width: 6.5rem;
+  width: 1%;
+}
+
+.data-table--site-calibration .site-calibration-col-ids {
+  min-width: 6.5rem;
+  width: 1%;
+}
+
+.data-table--site-calibration th.site-calibration-col-type-cap,
+.data-table--site-calibration th.site-calibration-col-ids {
+  white-space: nowrap;
+}
+
+.verification-table-stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.verification-table-stacked-primary {
+  line-height: 1.25;
+}
+
+.verification-table-stacked-secondary {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.25;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .data-table--site-calibration th.site-calibration-col-cap-acc {
@@ -7032,6 +7079,110 @@ select.input-field option {
   border-bottom: 1px solid var(--border-glass);
 }
 
+.verification-list-search {
+  flex: 1 1 12rem;
+  min-width: 10rem;
+  max-width: 22rem;
+}
+
+.verification-list-search .search-input {
+  width: 100%;
+}
+
+.table-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-glass);
+}
+
+.table-pagination-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.table-pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.table-pagination-page {
+  color: var(--text-muted);
+  min-width: 6.5rem;
+  text-align: center;
+}
+
+.verification-detail-body {
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.verification-detail-section + .verification-detail-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border-glass);
+}
+
+.verification-detail-section-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.verification-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.75rem 1rem;
+}
+
+.verification-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.verification-detail-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.verification-detail-value {
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.verification-detail-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.verification-detail-image {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.verification-detail-image-thumb {
+  width: 120px;
+  height: 90px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--border-glass);
+}
+
 .verification-list-filter {
   display: inline-flex;
   align-items: center;
@@ -7050,30 +7201,107 @@ select.input-field option {
   white-space: nowrap;
 }
 
-.verification-list-filter-select {
-  appearance: none;
+.glass-filter-select {
+  position: relative;
+  min-width: 9rem;
+}
+
+.glass-filter-select--wide {
+  min-width: 12rem;
+  max-width: min(20rem, 100%);
+}
+
+.glass-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.75rem;
+  padding: 0.15rem 0.35rem;
   border: none;
+  border-radius: 6px;
   background: transparent;
   color: var(--text-primary);
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
   outline: none;
-  min-width: 9rem;
-  padding-right: 1.25rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right center;
 }
 
-.verification-list-filter-select--wide {
-  min-width: 12rem;
-  max-width: min(20rem, 100%);
+.glass-filter-trigger:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
-.verification-list-filter-select option {
-  color: #0f172a;
-  background: #fff;
+.glass-filter-trigger--open {
+  background: rgba(59, 130, 246, 0.1);
+  color: #93c5fd;
+}
+
+.glass-filter-trigger-value {
+  white-space: nowrap;
+}
+
+.glass-filter-trigger-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.glass-filter-menu {
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  max-height: 16rem;
+  overflow-y: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border-glass);
+  background: var(--bg-glass);
+  -webkit-backdrop-filter: var(--blur-glass);
+  backdrop-filter: var(--blur-glass);
+  box-shadow: var(--shadow-glass);
+}
+
+.glass-filter-menu--portal {
+  position: fixed;
+  z-index: 1200;
+}
+
+.glass-filter-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.glass-filter-option:hover,
+.glass-filter-option--active {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.glass-filter-option--selected {
+  color: #93c5fd;
+}
+
+.glass-filter-option-label {
+  min-width: 0;
+}
+
+.glass-filter-option-count {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.glass-filter-option--selected .glass-filter-option-count {
+  color: #93c5fd;
 }
 
 .admin-verification-filter {

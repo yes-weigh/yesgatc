@@ -318,6 +318,10 @@ export interface SiteCalibration {
   certifiedAt?: string;
   /** Filled by certificate server when approved. */
   certificateNumber?: string;
+  /** Set by certificate worker when DOCA pipeline fails at a known phase. */
+  pipelineFailedPhase?: 'submit' | 'certification';
+  pipelineFailureMessage?: string;
+  pipelineFailedAt?: string;
   certificatePdfUrl?: string;
   certificatePdfPath?: string;
   certificatePdfName?: string;

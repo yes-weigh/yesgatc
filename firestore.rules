@@ -160,7 +160,10 @@ service cloud.firestore {
         return data.get('status', 'draft');
       }
 
-      allow read, write: if isSuperAdmin();
+      allow read: if isSuperAdmin();
+      allow create, update: if isSuperAdmin();
+      allow delete: if isSuperAdmin()
+        && verificationRecordStatus(resource.data) == 'draft';
 
       allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
 

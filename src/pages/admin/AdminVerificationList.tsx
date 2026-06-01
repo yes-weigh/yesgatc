@@ -3,20 +3,23 @@ import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useConfirm } from '../../context/ConfirmContext';
 import {
-  canAdminDeleteVerification,
-  formatVerificationCapAcc,
-  normalizeVerificationStatus,
-  verificationStatusLabel,
-  verificationVctLabel,
+  buildVerificationStatusFilterOptions,
+  canDeleteVerification,
+  matchesVerificationStatusFilter,
+  tallyVerificationStatusFilters,
 } from '../../lib/verificationRequest';
-import { ShieldCheck, RefreshCw, Trash2 } from 'lucide-react';
+import { matchesVerificationSearch } from '../../lib/verificationListSearch';
+import { formatVerificationListDate } from '../../lib/verificationListFormat';
+import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
+import { ShieldCheck, RefreshCw } from 'lucide-react';
 import {
   VerificationListFilters,
   type VerificationStatusFilter,
 } from '../../components/VerificationListFilters';
-import type { FirestoreUserDoc, SiteCalibration, VerificationRequestStatus } from '../../types';
-
-type StatusFilter = VerificationRequestStatus | 'all';
+import { TablePagination } from '../../components/TablePagination';
+import { VerificationDetailPanel } from '../../components/VerificationDetailPanel';
+import { VerificationListTable } from '../../components/VerificationListTable';
+import type { FirestoreUserDoc, SiteCalibration } from '../../types';
 
 interface VerificationRow extends SiteCalibration {
   rcCenterName: string;
@@ -26,8 +29,11 @@ export const AdminVerificationList: React.FC = () => {
   const confirm = useConfirm();
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('submitted');
+  const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('submitted');
   const [rcFilter, setRcFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const [viewingRecord, setViewingRecord] = useState<VerificationRow | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [listError, setListError] = useState('');
 
@@ -73,7 +79,10 @@ export const AdminVerificationList: React.FC = () => {
 
   const filteredRecords = useMemo(() => {
     return records.filter(record => {
-      if (statusFilter !== 'all' && normalizeVerificationStatus(record) !== statusFilter) {
+      if (!matchesVerificationSearch(record, searchTerm, { rcCenterName: record.rcCenterName })) {
+        return false;
+      }
+      if (!matchesVerificationStatusFilter(record, statusFilter)) {
         return false;
       }
       if (rcFilter !== 'all' && (record.rcId || '') !== rcFilter) {
@@ -81,15 +90,18 @@ export const AdminVerificationList: React.FC = () => {
       }
       return true;
     });
-  }, [records, statusFilter, rcFilter]);
+  }, [records, statusFilter, rcFilter, searchTerm]);
 
-  const counts = useMemo(() => {
-    const tally = { all: records.length, draft: 0, submitted: 0, approved: 0, certified: 0 };
-    for (const record of records) {
-      tally[normalizeVerificationStatus(record)] += 1;
-    }
-    return tally;
-  }, [records]);
+  const paginatedRecords = useMemo(
+    () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
+    [filteredRecords, page],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, rcFilter, searchTerm]);
+
+  const counts = useMemo(() => tallyVerificationStatusFilters(records), [records]);
 
   const rcFilterOptions = useMemo(() => {
     const byRc = new Map<string, { label: string; count: number }>();
@@ -109,35 +121,18 @@ export const AdminVerificationList: React.FC = () => {
       .sort((a, b) => a.label.localeCompare(b.label));
 
     return [
-      { value: 'all', label: 'All RC centres', count: records.length },
+      { value: 'all', label: 'All', count: records.length },
       ...centres,
     ];
   }, [records]);
 
-  const formatDate = (iso?: string) => {
-    if (!iso) return '—';
-    try {
-      return new Date(iso).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return iso;
-    }
-  };
-
   const handleDelete = async (record: VerificationRow) => {
-    if (!canAdminDeleteVerification(record)) return;
+    if (!canDeleteVerification(record)) return;
 
-    const status = normalizeVerificationStatus(record);
     const label = `${record.customerName} · ${record.serialNumber || 'no serial'}`;
     const ok = await confirm({
-      title: 'Remove verification?',
-      message:
-        status === 'submitted'
-          ? `Remove submitted verification "${label}"?\n\nThe certificate server is not live yet — this clears the queue for testing. RC users cannot delete submitted records.`
-          : `Remove approved verification "${label}"?\n\nThis cannot be undone.`,
+      title: 'Remove draft verification?',
+      message: `Remove draft verification "${label}"?\n\nThis cannot be undone.`,
       confirmLabel: 'Remove',
       destructive: true,
     });
@@ -146,6 +141,9 @@ export const AdminVerificationList: React.FC = () => {
     setDeletingId(record.id);
     try {
       await deleteDoc(doc(db, 'siteCalibrations', record.id));
+      if (viewingRecord?.id === record.id) {
+        setViewingRecord(null);
+      }
       await fetchRecords();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to remove verification.');
@@ -154,25 +152,19 @@ export const AdminVerificationList: React.FC = () => {
     }
   };
 
-  const renderStatusBadge = (record: SiteCalibration) => {
-    const status = normalizeVerificationStatus(record);
-    return (
-      <span className={`status-badge verification-status verification-status--${status}`}>
-        {verificationStatusLabel(status)}
-      </span>
-    );
-  };
-
-  const filterOptions: { value: VerificationStatusFilter; label: string; count: number }[] = [
-    { value: 'all', label: 'All statuses', count: counts.all },
-    { value: 'draft', label: 'Draft', count: counts.draft },
-    { value: 'submitted', label: 'Submitted', count: counts.submitted },
-    { value: 'approved', label: 'Approved', count: counts.approved },
-    { value: 'certified', label: 'Certified', count: counts.certified },
-  ];
+  const filterOptions = buildVerificationStatusFilterOptions(counts);
+  const rowOffset = (page - 1) * VERIFICATION_TABLE_PAGE_SIZE;
 
   return (
     <div className="fade-in page-content">
+      {viewingRecord && (
+        <VerificationDetailPanel
+          record={viewingRecord}
+          rcCenterName={viewingRecord.rcCenterName}
+          onClose={() => setViewingRecord(null)}
+        />
+      )}
+
       <div className="panel glass panel--table">
         <div className="panel-header justify-between">
           <div>
@@ -180,7 +172,7 @@ export const AdminVerificationList: React.FC = () => {
               <ShieldCheck className="inline-icon text-blue" /> Verifications
             </h2>
             <p className="text-muted text-sm mt-1 mb-0">
-              Super Admin queue management — delete submitted or approved records until the certificate server is live.
+              Super Admin view — all RC verification requests. Only draft records can be deleted.
             </p>
             {listError && (
               <p className="rc-form-topbar-error text-sm mt-1 mb-0" role="alert">
@@ -195,6 +187,9 @@ export const AdminVerificationList: React.FC = () => {
 
         <div className="panel-body p-0">
           <VerificationListFilters
+            searchTerm={searchTerm}
+            onSearchTermChange={setSearchTerm}
+            searchPlaceholder="Search customer, serial, certificate, RC…"
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}
             statusOptions={filterOptions}
@@ -208,99 +203,24 @@ export const AdminVerificationList: React.FC = () => {
               <span className="spinner-inline large" />
             </div>
           ) : (
-            <div className="table-scroll-wrap">
-              <table className="data-table data-table--site-calibration data-table--mobile-cards">
-                <thead>
-                  <tr>
-                    <th className="site-calibration-col-serial">#</th>
-                    <th>Date</th>
-                    <th>RC centre</th>
-                    <th>VCT</th>
-                    <th>Type</th>
-                    <th>Customer</th>
-                    <th className="site-calibration-col-cap-acc">Cap/Acc</th>
-                    <th>Serial</th>
-                    <th>Status</th>
-                    <th className="text-right site-calibration-col-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRecords.map((record, index) => {
-                    const deletable = canAdminDeleteVerification(record);
-                    return (
-                      <tr key={record.id} className="table-mobile-row table-mobile-row--actions">
-                        <td className="site-calibration-col-serial text-muted text-sm table-mobile-col-hide">
-                          {index + 1}
-                        </td>
-                        <td className="text-sm table-mobile-col-hide">{formatDate(record.createdAt)}</td>
-                        <td className="text-sm table-mobile-col-hide">{record.rcCenterName}</td>
-                        <td className="text-sm table-mobile-col-hide">{verificationVctLabel(record)}</td>
-                        <td className="table-mobile-col-hide">
-                          <span
-                            className={`status-badge ${
-                              record.verificationType === 'OV'
-                                ? 'site-calibration-type-ov'
-                                : 'site-calibration-type-rv'
-                            }`}
-                          >
-                            {record.verificationType}
-                          </span>
-                        </td>
-                        <td className="font-medium table-mobile-col-primary">
-                          <span className="table-mobile-primary-text">{record.customerName || '—'}</span>
-                          <div className="table-mobile-summary">
-                            <span className="table-mobile-summary-badges">
-                              {renderStatusBadge(record)}
-                              <span
-                                className={`status-badge ${
-                                  record.verificationType === 'OV'
-                                    ? 'site-calibration-type-ov'
-                                    : 'site-calibration-type-rv'
-                                }`}
-                              >
-                                {record.verificationType}
-                              </span>
-                            </span>
-                            <span>{record.rcCenterName}</span>
-                            <span className="site-calibration-cap-acc-inline">
-                              {formatVerificationCapAcc(record)} · {record.serialNumber || '—'}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="text-sm table-mobile-col-hide site-calibration-col-cap-acc">
-                          {formatVerificationCapAcc(record)}
-                        </td>
-                        <td className="text-sm text-mono table-mobile-col-hide">{record.serialNumber || '—'}</td>
-                        <td className="table-mobile-col-hide">{renderStatusBadge(record)}</td>
-                        <td className="text-right site-calibration-col-actions table-mobile-col-actions">
-                          {deletable ? (
-                            <button
-                              type="button"
-                              className="btn-icon text-red"
-                              onClick={() => void handleDelete(record)}
-                              disabled={deletingId === record.id}
-                              title="Remove verification (Super Admin)"
-                              aria-label={`Remove verification for ${record.customerName}`}
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          ) : (
-                            <span className="text-muted text-xs">RC draft</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {filteredRecords.length === 0 && (
-                    <tr>
-                      <td colSpan={10} className="text-center py-10 text-muted">
-                        No verifications match the current filters.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <VerificationListTable
+                mode="admin"
+                records={paginatedRecords}
+                rowOffset={rowOffset}
+                formatDate={formatVerificationListDate}
+                emptyMessage="No verifications match the current filters."
+                onView={record => setViewingRecord(record as VerificationRow)}
+                onDelete={record => void handleDelete(record as VerificationRow)}
+                deletingId={deletingId}
+              />
+              <TablePagination
+                page={page}
+                totalItems={filteredRecords.length}
+                pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </div>
       </div>

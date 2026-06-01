@@ -6,7 +6,9 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import { tableEditCellProps } from '../../lib/tableEditCell';
+import { VerificationListTable } from '../../components/VerificationListTable';
+import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
+import { TablePagination } from '../../components/TablePagination';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
 import {
   buildNewSiteCalibrationRecord,
@@ -25,17 +27,20 @@ import {
 } from '../../lib/siteCalibrationProfileFields';
 import {
   buildVerificationSubmitPatch,
+  buildVerificationStatusFilterOptions,
   canDeleteVerification,
   canDownloadVerificationCertificate,
   canSubmitVerification,
-  formatVerificationCapAcc,
   isVerificationEditable,
   isVerificationViewable,
+  matchesVerificationStatusFilter,
   normalizeVerificationStatus,
+  tallyVerificationStatusFilters,
+  verificationFilterLabel,
   verificationStatusDescription,
-  verificationStatusLabel,
-  verificationVctLabel,
 } from '../../lib/verificationRequest';
+import { matchesVerificationSearch } from '../../lib/verificationListSearch';
+import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { uploadSiteCalibrationDeviceImage } from '../../lib/siteCalibrationPhotoUpload';
 import {
   emptyDeviceImageSlot,
@@ -55,21 +60,21 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import {
-  Trash2, RefreshCw, Pencil, X, Plus, Save, ShieldCheck, Send, Download, Eye,
+  RefreshCw, Pencil, X, Plus, Save, ShieldCheck, Send, Download, Eye,
 } from 'lucide-react';
-import type { Customer, FirestoreUserDoc, SiteCalibration, VerificationRequestStatus } from '../../types';
+
+import {
+  VerificationListFilters,
+  type VerificationStatusFilter,
+} from '../../components/VerificationListFilters';
+import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
+import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 import { VerificationSessionFields } from './VerificationSessionFields';
 import { useAppContext } from '../../context/AppContext';
 import {
   applyLaboratorySealToDeviceRows,
   resolveLaboratorySealIdentification,
 } from '../../lib/rcLaboratoryFields';
-import {
-  VerificationListFilters,
-  type VerificationStatusFilter,
-} from '../../components/VerificationListFilters';
-
-type StatusFilter = VerificationRequestStatus | 'all';
 
 export const RCSiteCalibration: React.FC = () => {
   const { user } = useAuth();
@@ -88,7 +93,9 @@ export const RCSiteCalibration: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
   const selectAllDraftsRef = useRef<HTMLInputElement>(null);
   const [laboratorySealId, setLaboratorySealId] = useState('');
@@ -854,18 +861,7 @@ export const RCSiteCalibration: React.FC = () => {
     await fetchRecords();
   };
 
-  const formatDate = (iso?: string) => {
-    if (!iso) return '—';
-    try {
-      return new Date(iso).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return iso;
-    }
-  };
+  const formatDate = formatVerificationListDate;
 
   const includedDeviceCount = sessionValues.devices.filter(d => d.included).length;
   const editingRecord = editingId ? records.find(r => r.id === editingId) ?? null : null;
@@ -885,38 +881,21 @@ export const RCSiteCalibration: React.FC = () => {
 
   const canSubmitFromForm = !submitBlockReason;
 
-  const renderStatusBadge = (record: SiteCalibration) => {
-    const status = normalizeVerificationStatus(record);
-    return (
-      <span
-        className={`status-badge verification-status verification-status--${status}`}
-        title={verificationStatusLabel(status)}
-      >
-        {verificationStatusLabel(status)}
-      </span>
-    );
-  };
-
   const filteredRecords = useMemo(() => {
-    if (statusFilter === 'all') return records;
-    return records.filter(r => normalizeVerificationStatus(r) === statusFilter);
-  }, [records, statusFilter]);
+    return records.filter(record => {
+      if (!matchesVerificationSearch(record, searchTerm)) return false;
+      return matchesVerificationStatusFilter(record, statusFilter);
+    });
+  }, [records, statusFilter, searchTerm]);
 
-  const statusCounts = useMemo(() => {
-    const tally = { all: records.length, draft: 0, submitted: 0, approved: 0, certified: 0 };
-    for (const record of records) {
-      tally[normalizeVerificationStatus(record)] += 1;
-    }
-    return tally;
-  }, [records]);
+  const paginatedRecords = useMemo(
+    () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
+    [filteredRecords, page],
+  );
 
-  const statusFilterOptions: { value: VerificationStatusFilter; label: string; count: number }[] = [
-    { value: 'all', label: 'All statuses', count: statusCounts.all },
-    { value: 'draft', label: 'Draft', count: statusCounts.draft },
-    { value: 'submitted', label: 'Submitted', count: statusCounts.submitted },
-    { value: 'approved', label: 'Approved', count: statusCounts.approved },
-    { value: 'certified', label: 'Certified', count: statusCounts.certified },
-  ];
+  const statusCounts = useMemo(() => tallyVerificationStatusFilters(records), [records]);
+
+  const statusFilterOptions = buildVerificationStatusFilterOptions(statusCounts);
 
   const draftSubmitMeta = useMemo(() => {
     const meta = new Map<string, { submittable: boolean; blockReason: string | null }>();
@@ -939,9 +918,15 @@ export const RCSiteCalibration: React.FC = () => {
   const someSelectableDraftsSelected =
     selectableDraftIds.some(id => selectedDraftIds.has(id)) && !allSelectableDraftsSelected;
 
+  const rowOffset = (page - 1) * VERIFICATION_TABLE_PAGE_SIZE;
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, searchTerm]);
+
   useEffect(() => {
     setSelectedDraftIds(new Set());
-  }, [statusFilter]);
+  }, [statusFilter, searchTerm]);
 
   useEffect(() => {
     if (selectAllDraftsRef.current) {
@@ -1010,7 +995,7 @@ export const RCSiteCalibration: React.FC = () => {
                 </p>
                 {isViewMode && editingRecord && (
                   <div className="verification-view-banner mt-2">
-                    {renderStatusBadge(editingRecord)}
+                    <VerificationStatusBadge record={editingRecord} />
                     {editingRecord.submittedAt && (
                       <span className="text-muted text-xs">
                         Submitted {formatDate(editingRecord.submittedAt)}
@@ -1171,6 +1156,9 @@ export const RCSiteCalibration: React.FC = () => {
           </div>
           <div className="panel-body p-0">
             <VerificationListFilters
+              searchTerm={searchTerm}
+              onSearchTermChange={setSearchTerm}
+              searchPlaceholder="Search customer, serial, certificate…"
               statusFilter={statusFilter}
               onStatusFilterChange={setStatusFilter}
               statusOptions={statusFilterOptions}
@@ -1209,194 +1197,39 @@ export const RCSiteCalibration: React.FC = () => {
                 <span className="spinner-inline large"></span>
               </div>
             ) : (
-              <div className="table-scroll-wrap">
-                <table className="data-table data-table--site-calibration data-table--mobile-cards">
-                  <thead>
-                    <tr>
-                      <th className="verification-table-col-select">
-                        {selectableDraftIds.length > 0 ? (
-                          <label className="verification-device-check verification-device-check--header" title="Select all submittable drafts">
-                            <input
-                              ref={selectAllDraftsRef}
-                              type="checkbox"
-                              checked={allSelectableDraftsSelected}
-                              onChange={toggleSelectAllDrafts}
-                              disabled={submitting}
-                              aria-label="Select all submittable drafts"
-                            />
-                            <span className="sr-only">Select all</span>
-                          </label>
-                        ) : null}
-                      </th>
-                      <th className="site-calibration-col-serial">#</th>
-                      <th>Date</th>
-                      <th>VCT</th>
-                      <th>Type</th>
-                      <th>Belongs to</th>
-                      <th className="site-calibration-col-cap-acc">Cap/Acc</th>
-                      <th>Serial number</th>
-                      <th>Certificate no.</th>
-                      <th>Status</th>
-                      <th className="text-right site-calibration-col-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRecords.map((r, index) => {
-                      const editable = isVerificationEditable(r);
-                      const draftMeta = draftSubmitMeta.get(r.id);
-                      const isDraft = normalizeVerificationStatus(r) === 'draft';
-                      const submitBlockReason = draftMeta?.blockReason ?? null;
-                      const openDetails = () => openRecord(r);
-                      const detailCell = tableEditCellProps(
-                        openDetails,
-                        editable ? 'Edit draft verification' : 'View verification details',
-                      );
-
-                      return (
-                        <tr key={r.id} className="table-mobile-row table-mobile-row--actions">
-                          <td className="verification-table-col-select table-mobile-col-hide">
-                            {isDraft ? (
-                              <label
-                                className="verification-device-check"
-                                title={submitBlockReason ?? 'Select for bulk submit'}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedDraftIds.has(r.id)}
-                                  onChange={() => toggleDraftSelection(r.id, draftMeta?.submittable ?? false)}
-                                  disabled={submitting || !draftMeta?.submittable}
-                                  aria-label={`Select ${r.customerName || 'verification'}`}
-                                />
-                              </label>
-                            ) : null}
-                          </td>
-                          <td className="site-calibration-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
-                          <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {formatDate(r.createdAt)}
-                          </td>
-                          <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {verificationVctLabel(r)}
-                          </td>
-                          <td {...detailCell} className="table-mobile-col-hide table-col-editable">
-                            <span
-                              className={`status-badge ${
-                                r.verificationType === 'OV' ? 'site-calibration-type-ov' : 'site-calibration-type-rv'
-                              }`}
-                            >
-                              {r.verificationType}
-                            </span>
-                          </td>
-                          <td {...detailCell} className="font-medium table-mobile-col-primary table-col-editable">
-                            <span className="table-mobile-primary-text">{r.customerName || '—'}</span>
-                            <div className="table-mobile-summary">
-                              <span className="table-mobile-summary-badges">
-                                {renderStatusBadge(r)}
-                                <span
-                                  className={`status-badge ${
-                                    r.verificationType === 'OV' ? 'site-calibration-type-ov' : 'site-calibration-type-rv'
-                                  }`}
-                                >
-                                  {r.verificationType}
-                                </span>
-                              </span>
-                              <span className="site-calibration-cap-acc-inline">
-                                {formatVerificationCapAcc(r)} · {r.serialNumber || '—'}
-                              </span>
-                              <span className="table-mobile-summary-meta">
-                                VCT {verificationVctLabel(r)} · {formatDate(r.createdAt)}
-                              </span>
-                              <span className="table-mobile-summary-meta">
-                                Cert {r.certificateNumber?.trim() || '—'}
-                              </span>
-                            </div>
-                          </td>
-                          <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable site-calibration-col-cap-acc">
-                            {formatVerificationCapAcc(r)}
-                          </td>
-                          <td {...detailCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
-                            {r.serialNumber || '—'}
-                          </td>
-                          <td {...detailCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
-                            {r.certificateNumber?.trim() || '—'}
-                          </td>
-                          <td {...detailCell} className="table-mobile-col-hide table-col-editable">
-                            {renderStatusBadge(r)}
-                          </td>
-                          <td className="text-right site-calibration-col-actions table-mobile-col-actions">
-                            <div className="verification-row-actions">
-                              {editable ? (
-                                <button
-                                  type="button"
-                                  className="btn-icon"
-                                  onClick={() => startEdit(r)}
-                                  title="Edit draft"
-                                  aria-label={`Edit draft verification for ${r.customerName}`}
-                                >
-                                  <Pencil size={18} />
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="btn-icon"
-                                  onClick={() => openRecord(r)}
-                                  title="View details"
-                                  aria-label={`View verification for ${r.customerName}`}
-                                >
-                                  <Eye size={18} />
-                                </button>
-                              )}
-                              {canSubmitVerification(r) && (
-                                <button
-                                  type="button"
-                                  className="btn-icon text-blue"
-                                  onClick={() => void handleSubmitRecord(r)}
-                                  disabled={submitting || Boolean(submitBlockReason)}
-                                  title={submitBlockReason ?? 'Submit for certification'}
-                                  aria-label={`Submit verification for ${r.customerName}`}
-                                >
-                                  <Send size={18} />
-                                </button>
-                              )}
-                              {canDownloadVerificationCertificate(r) && (
-                                <a
-                                  href={r.certificatePdfUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="btn-icon text-green"
-                                  title="Download certificate PDF"
-                                  aria-label={`Download certificate for ${r.customerName}`}
-                                >
-                                  <Download size={18} />
-                                </a>
-                              )}
-                              {canDeleteVerification(r) && (
-                                <button
-                                  type="button"
-                                  className="btn-icon text-red"
-                                  onClick={() => void handleDelete(r)}
-                                  title="Remove draft"
-                                  aria-label={`Remove draft verification for ${r.customerName}`}
-                                >
-                                  <Trash2 size={18} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {filteredRecords.length === 0 && (
-                      <tr>
-                        <td colSpan={11} className="text-center py-10 text-muted">
-                          {records.length === 0
-                            ? 'No verification records yet. Click "New" to add a draft.'
-                            : `No ${statusFilter === 'all' ? '' : `${verificationStatusLabel(statusFilter).toLowerCase()} `}verifications.`}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <VerificationListTable
+                  mode="rc"
+                  records={paginatedRecords}
+                  rowOffset={rowOffset}
+                  formatDate={formatDate}
+                  emptyMessage={
+                    records.length === 0
+                      ? 'No verification records yet. Click "New" to add a draft.'
+                      : `No ${statusFilter === 'all' ? '' : `${verificationFilterLabel(statusFilter).toLowerCase()} `}verifications.`
+                  }
+                  onView={openRecord}
+                  onEdit={startEdit}
+                  onSubmit={handleSubmitRecord}
+                  onDelete={handleDelete}
+                  submitting={submitting}
+                  bulkSelect={{
+                    selectedDraftIds,
+                    draftSubmitMeta,
+                    selectAllDraftsRef,
+                    selectableDraftIds,
+                    allSelectableDraftsSelected,
+                    onToggleDraftSelection: toggleDraftSelection,
+                    onToggleSelectAllDrafts: toggleSelectAllDrafts,
+                  }}
+                />
+                <TablePagination
+                  page={page}
+                  totalItems={filteredRecords.length}
+                  pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                  onPageChange={setPage}
+                />
+              </>
             )}
           </div>
         </div>
