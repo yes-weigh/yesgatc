@@ -29,7 +29,7 @@ export const AdminVerificationList: React.FC = () => {
   const confirm = useConfirm();
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('submitted');
+  const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
   const [rcFilter, setRcFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
