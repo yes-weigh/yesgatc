@@ -1,34 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { Activity, Package, CheckCircle2, Clock, Users, Building2 } from 'lucide-react';
+import { ShieldCheck, XCircle, AlertTriangle, Clock, Users, Building2 } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
-import type { FirestoreUserDoc, Role } from '../../types';
+import { tallyVerificationStatusFilters } from '../../lib/verificationRequest';
+import type { FirestoreUserDoc, Role, SiteCalibration } from '../../types';
 
 interface UserCounts { super_admin: number; rc_admin: number; vct: number; }
 
 export const AdminDashboard: React.FC = () => {
-  const { jobs, products, certificates } = useAppContext();
+  const { jobs } = useAppContext();
   const [userCounts, setUserCounts] = useState<UserCounts>({ super_admin: 0, rc_admin: 0, vct: 0 });
+  const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [loadingVerifications, setLoadingVerifications] = useState(true);
 
   useEffect(() => {
     const fetchCounts = async () => {
-      const snap = await getDocs(collection(db, 'users'));
+      const [userSnap, calibrationSnap] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'siteCalibrations')),
+      ]);
+
       const counts: UserCounts = { super_admin: 0, rc_admin: 0, vct: 0 };
-      snap.docs.forEach(d => {
+      userSnap.docs.forEach(d => {
         const role = (d.data() as FirestoreUserDoc).role as Role;
         if (role in counts) counts[role]++;
       });
       setUserCounts(counts);
       setLoadingUsers(false);
+
+      const records: SiteCalibration[] = calibrationSnap.docs.map(d => ({
+        id: d.id,
+        ...(d.data() as Omit<SiteCalibration, 'id'>),
+      }));
+      setVerifications(records);
+      setLoadingVerifications(false);
     };
-    fetchCounts();
+    void fetchCounts();
   }, []);
 
-  const completedJobs = jobs.filter(j => j.status === 'completed').length;
-  const pendingJobs   = jobs.filter(j => j.status === 'pending_review').length;
-  const assignedJobs  = jobs.filter(j => j.status === 'assigned').length;
+  const verificationTally = useMemo(
+    () => tallyVerificationStatusFilters(verifications),
+    [verifications],
+  );
 
   return (
     <div className="fade-in">
@@ -36,27 +51,37 @@ export const AdminDashboard: React.FC = () => {
       {/* ── Top KPI Row ── */}
       <div className="stats-grid">
         <div className="stat-card glass">
-          <div className="stat-icon text-blue"><Activity /></div>
+          <div className="stat-icon text-blue"><ShieldCheck /></div>
           <div className="stat-content">
-            <h3>Total Jobs</h3>
-            <p className="stat-value">{jobs.length}</p>
-            <p className="stat-sub">{assignedJobs} active · {pendingJobs} pending</p>
+            <h3>Total Verifications</h3>
+            <p className="stat-value">
+              {loadingVerifications ? '—' : verificationTally.all}
+            </p>
+            <p className="stat-sub">
+              {loadingVerifications
+                ? 'Loading…'
+                : `${verificationTally.certified} fully certified`}
+            </p>
           </div>
         </div>
         <div className="stat-card glass">
-          <div className="stat-icon text-green"><CheckCircle2 /></div>
+          <div className="stat-icon text-red"><XCircle /></div>
           <div className="stat-content">
-            <h3>Completed Jobs</h3>
-            <p className="stat-value">{completedJobs}</p>
-            <p className="stat-sub">{certificates.length} certificates issued</p>
+            <h3>Failed at Submit</h3>
+            <p className="stat-value">
+              {loadingVerifications ? '—' : verificationTally.failed_submit}
+            </p>
+            <p className="stat-sub">Submit pipeline failures</p>
           </div>
         </div>
         <div className="stat-card glass">
-          <div className="stat-icon text-orange"><Package /></div>
+          <div className="stat-icon text-orange"><AlertTriangle /></div>
           <div className="stat-content">
-            <h3>Products</h3>
-            <p className="stat-value">{products.length}</p>
-            <p className="stat-sub">Configured in system</p>
+            <h3>Failed at Certification</h3>
+            <p className="stat-value">
+              {loadingVerifications ? '—' : verificationTally.failed_certification}
+            </p>
+            <p className="stat-sub">Incomplete certification data</p>
           </div>
         </div>
       </div>

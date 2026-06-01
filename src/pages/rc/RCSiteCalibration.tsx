@@ -1134,9 +1134,6 @@ export const RCSiteCalibration: React.FC = () => {
               <h2>
                 <ShieldCheck className="inline-icon" /> Verification
               </h2>
-              <p className="text-muted text-sm mt-1">
-                {records.length} verification{records.length !== 1 ? 's' : ''} · one row per device · draft → submit → approved
-              </p>
               {listError && (
                 <p className="rc-form-topbar-error text-sm mt-1" role="alert">
                   {listError}

@@ -172,9 +172,6 @@ export const AdminVerificationList: React.FC = () => {
               <h2>
                 <ShieldCheck className="inline-icon text-blue" /> Verifications
               </h2>
-              <p className="text-muted text-sm mt-1 mb-0">
-                Super Admin view — all RC verification requests. Click a row to view details. Only draft records can be deleted.
-              </p>
               {listError && (
                 <p className="rc-form-topbar-error text-sm mt-1 mb-0" role="alert">
                   {listError}
