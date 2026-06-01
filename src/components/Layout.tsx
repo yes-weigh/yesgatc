@@ -73,6 +73,9 @@ export const Layout: React.FC = () => {
           { path: '/admin/vehicles', icon: <Truck size={20} />, label: 'Vehicle' },
           { path: '/admin/verifications', icon: <ShieldCheck size={20} />, label: 'Verification' },
           { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
+          { path: '/admin/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
+          { path: '/admin/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
+          { path: '/admin/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
         ];
       case 'rc_admin':

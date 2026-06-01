@@ -67,6 +67,7 @@ import {
   VerificationListFilters,
   type VerificationStatusFilter,
 } from '../../components/VerificationListFilters';
+import { sortVerificationsByCertificateDesc } from '../../lib/verificationListSort';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 import { VerificationSessionFields } from './VerificationSessionFields';
@@ -882,10 +883,11 @@ export const RCSiteCalibration: React.FC = () => {
   const canSubmitFromForm = !submitBlockReason;
 
   const filteredRecords = useMemo(() => {
-    return records.filter(record => {
+    const filtered = records.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
       return matchesVerificationStatusFilter(record, statusFilter);
     });
+    return sortVerificationsByCertificateDesc(filtered);
   }, [records, statusFilter, searchTerm]);
 
   const paginatedRecords = useMemo(
@@ -1198,6 +1200,13 @@ export const RCSiteCalibration: React.FC = () => {
               </div>
             ) : (
               <>
+                <TablePagination
+                  page={page}
+                  totalItems={filteredRecords.length}
+                  pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                  onPageChange={setPage}
+                  placement="top"
+                />
                 <VerificationListTable
                   mode="rc"
                   records={paginatedRecords}

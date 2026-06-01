@@ -13,6 +13,8 @@ import { RCList } from './pages/admin/RCList';
 import { AdminVCTList } from './pages/admin/AdminVCTList';
 import { AdminVehicleList } from './pages/admin/AdminVehicleList';
 import { AdminVerificationList } from './pages/admin/AdminVerificationList';
+import { AdminLaboratory } from './pages/admin/AdminLaboratory';
+import { AdminQualityManagement, AdminNotifications } from './pages/admin/AdminMenuPages';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
@@ -53,6 +55,9 @@ const App: React.FC = () => {
                 <Route path="vehicles" element={<AdminVehicleList />} />
                 <Route path="verifications" element={<AdminVerificationList />} />
                 <Route path="products" element={<Products />} />
+                <Route path="laboratory" element={<AdminLaboratory />} />
+                <Route path="quality-management" element={<AdminQualityManagement />} />
+                <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="reports" element={<Reports />} />
               </Route>
             </Route>

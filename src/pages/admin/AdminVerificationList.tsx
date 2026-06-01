@@ -10,6 +10,7 @@ import {
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
+import { sortVerificationsByCertificateDesc } from '../../lib/verificationListSort';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import { ShieldCheck, RefreshCw } from 'lucide-react';
 import {
@@ -78,7 +79,7 @@ export const AdminVerificationList: React.FC = () => {
   }, [fetchRecords]);
 
   const filteredRecords = useMemo(() => {
-    return records.filter(record => {
+    const filtered = records.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm, { rcCenterName: record.rcCenterName })) {
         return false;
       }
@@ -90,6 +91,7 @@ export const AdminVerificationList: React.FC = () => {
       }
       return true;
     });
+    return sortVerificationsByCertificateDesc(filtered);
   }, [records, statusFilter, rcFilter, searchTerm]);
 
   const paginatedRecords = useMemo(
@@ -157,73 +159,80 @@ export const AdminVerificationList: React.FC = () => {
 
   return (
     <div className="fade-in page-content">
-      {viewingRecord && (
+      {viewingRecord ? (
         <VerificationDetailPanel
           record={viewingRecord}
           rcCenterName={viewingRecord.rcCenterName}
           onClose={() => setViewingRecord(null)}
         />
-      )}
-
-      <div className="panel glass panel--table">
-        <div className="panel-header justify-between">
-          <div>
-            <h2>
-              <ShieldCheck className="inline-icon text-blue" /> Verifications
-            </h2>
-            <p className="text-muted text-sm mt-1 mb-0">
-              Super Admin view — all RC verification requests. Only draft records can be deleted.
-            </p>
-            {listError && (
-              <p className="rc-form-topbar-error text-sm mt-1 mb-0" role="alert">
-                {listError}
+      ) : (
+        <div className="panel glass panel--table">
+          <div className="panel-header justify-between">
+            <div>
+              <h2>
+                <ShieldCheck className="inline-icon text-blue" /> Verifications
+              </h2>
+              <p className="text-muted text-sm mt-1 mb-0">
+                Super Admin view — all RC verification requests. Click a row to view details. Only draft records can be deleted.
               </p>
+              {listError && (
+                <p className="rc-form-topbar-error text-sm mt-1 mb-0" role="alert">
+                  {listError}
+                </p>
+              )}
+            </div>
+            <button className="btn-icon" onClick={() => void fetchRecords()} title="Refresh" type="button">
+              <RefreshCw size={18} />
+            </button>
+          </div>
+
+          <div className="panel-body p-0">
+            <VerificationListFilters
+              searchTerm={searchTerm}
+              onSearchTermChange={setSearchTerm}
+              searchPlaceholder="Search customer, serial, certificate, RC…"
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+              statusOptions={filterOptions}
+              rcFilter={rcFilter}
+              onRcFilterChange={setRcFilter}
+              rcOptions={rcFilterOptions}
+            />
+
+            {loading ? (
+              <div className="flex justify-center py-16">
+                <span className="spinner-inline large" />
+              </div>
+            ) : (
+              <>
+                <TablePagination
+                  page={page}
+                  totalItems={filteredRecords.length}
+                  pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                  onPageChange={setPage}
+                  placement="top"
+                />
+                <VerificationListTable
+                  mode="admin"
+                  records={paginatedRecords}
+                  rowOffset={rowOffset}
+                  formatDate={formatVerificationListDate}
+                  emptyMessage="No verifications match the current filters."
+                  onView={record => setViewingRecord(record as VerificationRow)}
+                  onDelete={record => void handleDelete(record as VerificationRow)}
+                  deletingId={deletingId}
+                />
+                <TablePagination
+                  page={page}
+                  totalItems={filteredRecords.length}
+                  pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                  onPageChange={setPage}
+                />
+              </>
             )}
           </div>
-          <button className="btn-icon" onClick={() => void fetchRecords()} title="Refresh" type="button">
-            <RefreshCw size={18} />
-          </button>
         </div>
-
-        <div className="panel-body p-0">
-          <VerificationListFilters
-            searchTerm={searchTerm}
-            onSearchTermChange={setSearchTerm}
-            searchPlaceholder="Search customer, serial, certificate, RC…"
-            statusFilter={statusFilter}
-            onStatusFilterChange={setStatusFilter}
-            statusOptions={filterOptions}
-            rcFilter={rcFilter}
-            onRcFilterChange={setRcFilter}
-            rcOptions={rcFilterOptions}
-          />
-
-          {loading ? (
-            <div className="flex justify-center py-16">
-              <span className="spinner-inline large" />
-            </div>
-          ) : (
-            <>
-              <VerificationListTable
-                mode="admin"
-                records={paginatedRecords}
-                rowOffset={rowOffset}
-                formatDate={formatVerificationListDate}
-                emptyMessage="No verifications match the current filters."
-                onView={record => setViewingRecord(record as VerificationRow)}
-                onDelete={record => void handleDelete(record as VerificationRow)}
-                deletingId={deletingId}
-              />
-              <TablePagination
-                page={page}
-                totalItems={filteredRecords.length}
-                pageSize={VERIFICATION_TABLE_PAGE_SIZE}
-                onPageChange={setPage}
-              />
-            </>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -7,6 +7,7 @@ interface TablePaginationProps {
   totalItems: number;
   pageSize: number;
   onPageChange: (page: number) => void;
+  placement?: 'top' | 'bottom';
 }
 
 export const TablePagination: React.FC<TablePaginationProps> = ({
@@ -14,6 +15,7 @@ export const TablePagination: React.FC<TablePaginationProps> = ({
   totalItems,
   pageSize,
   onPageChange,
+  placement = 'bottom',
 }) => {
   const { start, end, totalPages, safePage } = paginationRange(page, totalItems, pageSize);
 
@@ -22,7 +24,7 @@ export const TablePagination: React.FC<TablePaginationProps> = ({
   }
 
   return (
-    <div className="table-pagination">
+    <div className={`table-pagination${placement === 'top' ? ' table-pagination--top' : ''}`}>
       <span className="table-pagination-summary text-muted text-sm">
         {totalItems <= pageSize
           ? `${totalItems} row${totalItems !== 1 ? 's' : ''}`
