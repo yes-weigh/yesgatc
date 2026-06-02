@@ -30,6 +30,17 @@ export function createEmptyDeviceRow(): CustomerDeviceFormValues {
   };
 }
 
+export function isPendingNewCustomerParty(form: CustomerFormValues): boolean {
+  return Boolean(form.name.trim() && isValidPhone(form.phone));
+}
+
+export function isCustomerPartyReadyToPersist(form: CustomerFormValues): boolean {
+  const pin = normalizePincode(form.pincode);
+  if (pin && !isValidPincode(pin)) return false;
+  if (isValidPincode(pin) && (!form.state.trim() || !form.district.trim())) return false;
+  return true;
+}
+
 export function validateCustomerProfile(input: CustomerFormValues): string | null {
   if (!input.name.trim()) return 'Customer name is required.';
   if (!isValidPhone(input.phone)) return 'Mobile number must be exactly 10 digits.';

@@ -1,5 +1,11 @@
 import type { Customer, CustomerDevice, JobType, Product, SiteCalibration, VerificationLocation } from '../types';
 import {
+  isCustomerPartyReadyToPersist,
+  isPendingNewCustomerParty,
+  validateCustomerProfile,
+  type CustomerFormValues,
+} from './customerProfileFields';
+import {
   buildRcDirectVerificationMeta,
   normalizeVerificationStatus,
   productSnapshotFromProduct,
@@ -364,12 +370,36 @@ export function buildSiteCalibrationFields(
   );
 }
 
-function validateSessionHeader(session: VerificationSessionValues): string | null {
+export type VerificationValidationOptions = {
+  customerForm?: CustomerFormValues;
+};
+
+function validatePendingCustomerParty(
+  customerForm: CustomerFormValues | undefined,
+  forSave: boolean,
+): string | null {
+  if (!customerForm || !isPendingNewCustomerParty(customerForm)) {
+    return forSave
+      ? 'Select a customer from lookup or complete customer details.'
+      : 'Select a customer from lookup or enter name and mobile number.';
+  }
+  if (!forSave) return null;
+  if (!isCustomerPartyReadyToPersist(customerForm)) {
+    return 'Complete postal code and wait for district and state before saving.';
+  }
+  return validateCustomerProfile(customerForm);
+}
+
+function validateSessionHeader(
+  session: VerificationSessionValues,
+  options?: VerificationValidationOptions,
+): string | null {
   if (session.verificationType !== 'OV' && session.verificationType !== 'RV') {
     return 'Select Original Verification or Re-verification.';
   }
   if (session.verificationSubject === 'customer' && !session.customerId.trim()) {
-    return 'Select a customer.';
+    const pendingError = validatePendingCustomerParty(options?.customerForm, true);
+    if (pendingError) return pendingError;
   }
   if (session.verificationSubject === 'self' && !session.customerName.trim()) {
     return 'RC centre details are required for self verification.';
@@ -414,12 +444,14 @@ export function validateVerificationDraft(
   session: VerificationSessionValues,
   _deviceImages: Record<string, DeviceVerificationImagesState>,
   _deviceRvImages: Record<string, DeviceRvDocumentsState> = {},
+  options?: VerificationValidationOptions,
 ): string | null {
   if (session.verificationType !== 'OV' && session.verificationType !== 'RV') {
     return 'Select Original Verification or Re-verification.';
   }
   if (session.verificationSubject === 'customer' && !session.customerId.trim()) {
-    return 'Select a customer.';
+    const pendingError = validatePendingCustomerParty(options?.customerForm, true);
+    if (pendingError) return pendingError;
   }
   if (session.verificationSubject === 'self' && !session.customerName.trim()) {
     return 'RC centre details are required for self verification.';
@@ -505,8 +537,9 @@ export function validateVerificationForSubmit(
   session: VerificationSessionValues,
   deviceImages: Record<string, DeviceVerificationImagesState>,
   deviceRvImages: Record<string, DeviceRvDocumentsState> = {},
+  options?: VerificationValidationOptions,
 ): string | null {
-  return validateVerificationSession(session, deviceImages, deviceRvImages);
+  return validateVerificationSession(session, deviceImages, deviceRvImages, options);
 }
 
 export function validateSiteCalibrationRecord(record: SiteCalibration): string | null {
@@ -530,8 +563,9 @@ export function validateVerificationSession(
   session: VerificationSessionValues,
   deviceImages: Record<string, DeviceVerificationImagesState>,
   deviceRvImages: Record<string, DeviceRvDocumentsState> = {},
+  options?: VerificationValidationOptions,
 ): string | null {
-  const headerError = validateSessionHeader(session);
+  const headerError = validateSessionHeader(session, options);
   if (headerError) return headerError;
 
   const included = session.devices.filter(row => row.included);

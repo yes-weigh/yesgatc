@@ -1,5 +1,16 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Camera, Plus } from 'lucide-react';
+import { VerificationAiStatusPanel } from '../../components/VerificationAiStatusPanel';
+import { VerificationDeclarationPanel } from '../../components/VerificationDeclarationPanel';
+import { VerificationResultSummary } from '../../components/VerificationResultSummary';
+import { useAppContext } from '../../context/AppContext';
+import { buildVerificationAiStatusItems } from '../../lib/verificationAiStatus';
+import {
+  buildDefaultVerificationTestSummary,
+  DEFAULT_VERIFICATION_SUMMARY_INFO,
+  DEFAULT_VERIFICATION_SUMMARY_REMARKS,
+  formatVerificationSummaryDateTime,
+} from '../../lib/verificationTestSummary';
 import {
   VerificationPhotoUploadSection,
   VerificationPhotoUploadSlot,
@@ -37,6 +48,13 @@ type VerificationDeviceEvidenceFieldsProps = {
   readOnly?: boolean;
   showAddDevice?: boolean;
   onAddDevice?: () => void;
+  showResultSummary?: boolean;
+  ambientTemperature?: string;
+  relativeHumidity?: string;
+  hasGpsLocation?: boolean;
+  mandatoryFieldsComplete?: boolean;
+  declarationAccepted?: boolean;
+  onDeclarationAcceptedChange?: (accepted: boolean) => void;
 };
 
 export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEvidenceFieldsProps> = ({
@@ -54,10 +72,62 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
   readOnly = false,
   showAddDevice = false,
   onAddDevice,
+  showResultSummary = false,
+  ambientTemperature = '',
+  relativeHumidity = '',
+  hasGpsLocation = false,
+  mandatoryFieldsComplete = false,
+  declarationAccepted = false,
+  onDeclarationAcceptedChange,
 }) => {
+  const { products } = useAppContext();
   const locked = submitting || readOnly;
   const isRv = verificationType === 'RV';
   const deviceLabel = device.productName.trim() || device.serialNumber.trim() || `Device ${deviceIndex + 1}`;
+
+  const instrumentSummaryLabel = useMemo(() => {
+    const product = products.find(entry => entry.id === device.productId);
+    if (product?.typeOfInstrument?.trim()) {
+      return `${product.typeOfInstrument.trim()} Weighing Scale`;
+    }
+    if (device.productName.trim()) return device.productName.trim();
+    return 'Weighing Scale';
+  }, [products, device.productId, device.productName]);
+
+  const testSummary = useMemo(() => buildDefaultVerificationTestSummary('PASS'), []);
+  const summaryDateTime = useMemo(() => formatVerificationSummaryDateTime(), []);
+
+  const aiStatusItems = useMemo(() => {
+    const product = products.find(entry => entry.id === device.productId);
+    const stamping = images.stamping ?? emptyDeviceImageSlot();
+    const hasStampingImage =
+      !stamping.removed && Boolean(stamping.file?.url || stamping.file?.path || stamping.pendingFile);
+    const oldCertificate = rvDocuments.oldCertificate ?? emptyDeviceImageSlot();
+    const hasOldCertificate =
+      !oldCertificate.removed &&
+      Boolean(oldCertificate.file?.url || oldCertificate.file?.path || oldCertificate.pendingFile);
+
+    return buildVerificationAiStatusItems({
+      verificationType,
+      hasStampingImage,
+      productModelApprovalNo: product?.modelApprovalNo ?? '',
+      hasOldCertificate,
+      hasGpsLocation,
+      ambientTemperature,
+      relativeHumidity,
+      mandatoryFieldsComplete,
+    });
+  }, [
+    products,
+    device.productId,
+    images.stamping,
+    rvDocuments.oldCertificate,
+    verificationType,
+    hasGpsLocation,
+    ambientTemperature,
+    relativeHumidity,
+    mandatoryFieldsComplete,
+  ]);
 
   return (
     <section className="verification-evidence-panel">
@@ -139,6 +209,25 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
             Opens the Devices step to enter details, then return here for photos.
           </p>
         </div>
+      )}
+
+      {showResultSummary && (
+        <>
+          <VerificationAiStatusPanel items={aiStatusItems} />
+          <VerificationResultSummary
+            instrumentLabel={instrumentSummaryLabel}
+            tests={testSummary}
+            overallResult="PASS"
+            dateTime={summaryDateTime}
+            remarks={DEFAULT_VERIFICATION_SUMMARY_REMARKS}
+            infoMessage={DEFAULT_VERIFICATION_SUMMARY_INFO}
+          />
+          <VerificationDeclarationPanel
+            checked={declarationAccepted}
+            onChange={accepted => onDeclarationAcceptedChange?.(accepted)}
+            disabled={locked}
+          />
+        </>
       )}
     </section>
   );

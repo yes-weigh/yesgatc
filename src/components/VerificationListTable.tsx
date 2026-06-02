@@ -237,7 +237,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                         <span className="table-mobile-summary-meta">
                           VCT {verificationVctLabel(record)} · {formatDate(record.createdAt)}
                         </span>
-                        <span className="table-mobile-summary-meta">
+                        <span className="table-mobile-summary-meta verification-list-cert-meta">
                           Cert {record.certificateNumber?.trim() || '—'}
                         </span>
                       </div>
@@ -249,7 +249,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   className="text-sm table-mobile-col-hide table-col-editable site-calibration-col-type-cap"
                 >
                   <div className="verification-table-stacked">
-                    <span className="verification-table-stacked-primary">
+                    <span className="verification-table-stacked-primary site-calibration-cap-acc-inline">
                       {formatVerificationCapAcc(record)}
                     </span>
                     <span className={`status-badge ${typeBadgeClass(record.verificationType)}`}>

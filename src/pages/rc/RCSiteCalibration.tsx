@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, getDoc,
 } from 'firebase/firestore';
@@ -42,7 +43,7 @@ import {
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
-import type { VerificationFormStepId } from '../../lib/verificationFormSteps';
+import type { VerificationFormStepContext, VerificationFormStepId } from '../../lib/verificationFormSteps';
 import { uploadSiteCalibrationDeviceImage } from '../../lib/siteCalibrationPhotoUpload';
 import {
   emptyDeviceImageSlot,
@@ -76,12 +77,14 @@ import {
   VerificationSessionFields,
   type VerificationSessionFieldsHandle,
 } from './VerificationSessionFields';
+import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import type { PersistVerificationPartyResult } from '../../lib/verificationPartyPersist';
 import { useAppContext } from '../../context/AppContext';
 import {
   applyLaboratorySealToDeviceRows,
   resolveLaboratorySealIdentification,
 } from '../../lib/rcLaboratoryFields';
+import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
 
 export const RCSiteCalibration: React.FC = () => {
   const { user } = useAuth();
@@ -108,7 +111,20 @@ export const RCSiteCalibration: React.FC = () => {
   const [laboratorySealId, setLaboratorySealId] = useState('');
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
   const [wizardOnLastStep, setWizardOnLastStep] = useState(false);
+  const [verificationDeclarationAccepted, setVerificationDeclarationAccepted] = useState(false);
   const verificationFieldsRef = useRef<VerificationSessionFieldsHandle>(null);
+  const [partyContext, setPartyContext] = useState<VerificationFormStepContext>({
+    customerForm: EMPTY_CUSTOMER_FORM,
+  });
+
+  const validationOptions = useMemo(
+    () => ({ customerForm: partyContext.customerForm }),
+    [partyContext.customerForm],
+  );
+
+  const handlePartyContextChange = useCallback((context: VerificationFormStepContext) => {
+    setPartyContext(context);
+  }, []);
 
   const handleWizardStepChange = useCallback((_stepId: VerificationFormStepId, isLastStep: boolean) => {
     setWizardOnLastStep(isLastStep);
@@ -219,11 +235,13 @@ export const RCSiteCalibration: React.FC = () => {
     setSessionValues(EMPTY_VERIFICATION_SESSION);
     setDeviceImages({});
     setDeviceRvImages({});
+    setPartyContext({ customerForm: EMPTY_CUSTOMER_FORM });
     setError('');
   };
 
   const handleCloseForm = () => {
     if (formBusy) return;
+    setVerificationDeclarationAccepted(false);
     setShowAddForm(false);
     setEditingId(null);
     setWizardOnLastStep(false);
@@ -280,27 +298,57 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const applyPartyPersistResult = useCallback(
-    async (result: PersistVerificationPartyResult | undefined): Promise<boolean> => {
-      if (!result) return true;
+    async (
+      result: PersistVerificationPartyResult | undefined,
+      currentSession: VerificationSessionValues,
+    ): Promise<{
+      ok: boolean;
+      sessionPatch: Partial<VerificationSessionValues>;
+      customer?: Customer;
+    }> => {
+      if (!result) return { ok: true, sessionPatch: {} };
       if (result.error) {
         setError(result.error);
-        return false;
+        return { ok: false, sessionPatch: {} };
       }
-      if (result.updatedCustomer) {
+
+      const customer = result.createdCustomer ?? result.updatedCustomer;
+      if (result.createdCustomer) {
+        setCustomers(prev =>
+          [...prev, result.createdCustomer!].sort((a, b) => a.name.localeCompare(b.name)),
+        );
+      } else if (result.updatedCustomer) {
         handleCustomerUpdated(result.updatedCustomer);
       }
+
+      const sessionPatch: Partial<VerificationSessionValues> = {};
+      if (customer) {
+        if (customer.id !== currentSession.customerId) {
+          sessionPatch.customerId = customer.id;
+        }
+        sessionPatch.customerName = customer.name;
+      }
+
+      if (Object.keys(sessionPatch).length > 0) {
+        setSessionValues(prev => ({ ...prev, ...sessionPatch }));
+      }
+
       if (result.rcProfileSaved) {
         await fetchLaboratorySeal();
       }
-      return true;
+
+      return { ok: true, sessionPatch, customer };
     },
     [fetchLaboratorySeal],
   );
 
-  const persistPartyBeforeSave = useCallback(async (): Promise<boolean> => {
-    const result = await verificationFieldsRef.current?.persistPartyChanges();
-    return applyPartyPersistResult(result);
-  }, [applyPartyPersistResult]);
+  const persistPartyBeforeSave = useCallback(
+    async (currentSession: VerificationSessionValues) => {
+      const result = await verificationFieldsRef.current?.persistPartyChanges();
+      return applyPartyPersistResult(result, currentSession);
+    },
+    [applyPartyPersistResult],
+  );
 
   const handleDeviceChange = (localId: string, patch: Partial<VerificationDeviceRowValues>) => {
     const { sealIdentificationNumber: _seal, ...rest } = patch;
@@ -538,9 +586,13 @@ export const RCSiteCalibration: React.FC = () => {
     return fields;
   };
 
-  const syncCustomerDevices = async (rows: VerificationDeviceRowValues[]) => {
+  const syncCustomerDevices = async (
+    rows: VerificationDeviceRowValues[],
+    customerId: string,
+    customerOverride?: Customer,
+  ) => {
     if (sessionValues.verificationSubject === 'self') return;
-    const customer = customers.find(c => c.id === sessionValues.customerId);
+    const customer = customerOverride ?? customers.find(c => c.id === customerId);
     if (!customer) return;
 
     let devices = [...(customer.devices || [])];
@@ -588,14 +640,14 @@ export const RCSiteCalibration: React.FC = () => {
     if (!changed) return;
 
     const updatedAt = new Date().toISOString();
-    await updateDoc(doc(db, 'customers', sessionValues.customerId), {
+    await updateDoc(doc(db, 'customers', customerId), {
       devices,
       updatedAt,
     });
 
     setCustomers(prev =>
       prev.map(c =>
-        c.id === sessionValues.customerId ? { ...c, devices, updatedAt } : c,
+        c.id === customerId ? { ...c, devices, updatedAt } : c,
       ),
     );
   };
@@ -603,6 +655,7 @@ export const RCSiteCalibration: React.FC = () => {
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isViewMode) return;
+    if (showAddForm && !wizardOnLastStep) return;
     if (showAddForm) await handleCreate();
     else if (editingId) await handleSaveEdit(editingId);
   };
@@ -620,14 +673,24 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleCreate = async (submitAfterSave = false) => {
     setError('');
-    const validationError = validateVerificationDraft(sessionValues, deviceImages, deviceRvImages);
+    const validationError = validateVerificationDraft(
+      sessionValues,
+      deviceImages,
+      deviceRvImages,
+      validationOptions,
+    );
     if (validationError) {
       setError(validationError);
       return;
     }
 
     if (submitAfterSave) {
-      const submitError = validateVerificationForSubmit(sessionValues, deviceImages, deviceRvImages);
+      const submitError = validateVerificationForSubmit(
+        sessionValues,
+        deviceImages,
+        deviceRvImages,
+        validationOptions,
+      );
       if (submitError) {
         setError(submitError);
         return;
@@ -637,17 +700,19 @@ export const RCSiteCalibration: React.FC = () => {
     const includedRows = sessionValues.devices.filter(row => row.included);
     setSubmitting(true);
     try {
-      if (!(await persistPartyBeforeSave())) return;
+      const applied = await persistPartyBeforeSave(sessionValues);
+      if (!applied.ok) return;
 
+      const sessionForSave = { ...sessionValues, ...applied.sessionPatch };
       const rowsToSync = includedRows.filter(
         row => row.productId.trim() && row.serialNumber.trim(),
       );
-      await syncCustomerDevices(rowsToSync);
+      await syncCustomerDevices(rowsToSync, sessionForSave.customerId, applied.customer);
 
       for (const row of includedRows) {
         const ref = doc(collection(db, 'siteCalibrations'));
         const recordId = ref.id;
-        const imageFields = await uploadRowImages(recordId, row.localId, sessionValues.verificationType === 'RV');
+        const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
         const deviceId = row.isNewDevice ? row.localId : row.deviceId;
         const product = products.find(p => p.id === row.productId) ?? null;
 
@@ -655,7 +720,7 @@ export const RCSiteCalibration: React.FC = () => {
           rcId: user!.uid,
           createdAt: new Date().toISOString(),
           createdByUid: user?.uid,
-          ...buildNewSiteCalibrationRecord(sessionValues, { ...row, deviceId }, product),
+          ...buildNewSiteCalibrationRecord(sessionForSave, { ...row, deviceId }, product),
           ...imageFields,
         };
         await setDoc(ref, record);
@@ -680,7 +745,12 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
-    const validationError = validateVerificationDraft(sessionValues, deviceImages, deviceRvImages);
+    const validationError = validateVerificationDraft(
+      sessionValues,
+      deviceImages,
+      deviceRvImages,
+      validationOptions,
+    );
     if (validationError) {
       setError(validationError);
       return;
@@ -694,15 +764,18 @@ export const RCSiteCalibration: React.FC = () => {
 
     setSubmitting(true);
     try {
-      if (!(await persistPartyBeforeSave())) return;
+      const applied = await persistPartyBeforeSave(sessionValues);
+      if (!applied.ok) return;
+
+      const sessionForSave = { ...sessionValues, ...applied.sessionPatch };
 
       if (row.productId.trim() && row.serialNumber.trim()) {
-        await syncCustomerDevices([row]);
+        await syncCustomerDevices([row], sessionForSave.customerId, applied.customer);
       }
       const product = products.find(p => p.id === row.productId) ?? null;
-      const imageFields = await uploadRowImages(recordId, row.localId, sessionValues.verificationType === 'RV');
+      const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
-        ...buildSiteCalibrationFromRow(sessionValues, row, { product }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
         ...imageFields,
         updatedAt: new Date().toISOString(),
       });
@@ -787,7 +860,12 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const handleSubmitFromForm = async () => {
-    const validationError = validateVerificationForSubmit(sessionValues, deviceImages, deviceRvImages);
+    const validationError = validateVerificationForSubmit(
+      sessionValues,
+      deviceImages,
+      deviceRvImages,
+      validationOptions,
+    );
     if (validationError) {
       setError(validationError);
       return;
@@ -828,15 +906,18 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
-      if (!(await persistPartyBeforeSave())) return;
+      const applied = await persistPartyBeforeSave(sessionValues);
+      if (!applied.ok) return;
+
+      const sessionForSave = { ...sessionValues, ...applied.sessionPatch };
 
       if (row.productId.trim() && row.serialNumber.trim()) {
-        await syncCustomerDevices([row]);
+        await syncCustomerDevices([row], sessionForSave.customerId, applied.customer);
       }
       const product = products.find(p => p.id === row.productId) ?? null;
-      const imageFields = await uploadRowImages(editingId, row.localId, sessionValues.verificationType === 'RV');
+      const imageFields = await uploadRowImages(editingId, row.localId, sessionForSave.verificationType === 'RV');
       await updateDoc(doc(db, 'siteCalibrations', editingId), {
-        ...buildSiteCalibrationFromRow(sessionValues, row, { product }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
         ...imageFields,
         ...buildVerificationSubmitPatch(),
       });
@@ -919,16 +1000,41 @@ export const RCSiteCalibration: React.FC = () => {
   const editingDraft = editingRecord ? isVerificationEditable(editingRecord) : showAddForm;
   const isViewMode = Boolean(editingRecord && !editingDraft);
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
+  const canSaveDraftFromFooter = !isViewMode && (!showAddForm || wizardOnLastStep);
+  const showFormFooter = isViewMode || !showAddForm || wizardOnLastStep;
+  const mobileFloatingChrome = useVerificationMobileLayout(showAddForm);
 
   const draftBlockReason = useMemo(
-    () => (showForm ? validateVerificationDraft(sessionValues, deviceImages, deviceRvImages) : null),
-    [showForm, sessionValues, deviceImages, deviceRvImages],
+    () =>
+      showForm
+        ? validateVerificationDraft(sessionValues, deviceImages, deviceRvImages, validationOptions)
+        : null,
+    [showForm, sessionValues, deviceImages, deviceRvImages, validationOptions],
   );
 
-  const submitBlockReason = useMemo(
-    () => (showForm ? validateVerificationForSubmit(sessionValues, deviceImages, deviceRvImages) : null),
-    [showForm, sessionValues, deviceImages, deviceRvImages],
-  );
+  const submitBlockReason = useMemo(() => {
+    if (!showForm) return null;
+    const validationError = validateVerificationForSubmit(
+      sessionValues,
+      deviceImages,
+      deviceRvImages,
+      validationOptions,
+    );
+    if (validationError) return validationError;
+    if (showAddForm && wizardOnLastStep && !verificationDeclarationAccepted) {
+      return 'Accept the declaration before submitting for certification.';
+    }
+    return null;
+  }, [
+    showForm,
+    sessionValues,
+    deviceImages,
+    deviceRvImages,
+    validationOptions,
+    showAddForm,
+    wizardOnLastStep,
+    verificationDeclarationAccepted,
+  ]);
 
   const canSubmitFromForm = !submitBlockReason;
 
@@ -1021,11 +1127,76 @@ export const RCSiteCalibration: React.FC = () => {
     });
   };
 
+  const verificationFormFooter = showFormFooter ? (
+    <div className="product-form-footer verification-form-footer">
+      {!isViewMode && canSaveDraftFromFooter && draftBlockReason && (
+        <p className="verification-form-footer-hint mb-0" role="status">
+          {draftBlockReason}
+        </p>
+      )}
+
+      <div className="verification-form-footer-row verification-form-footer-row--actions">
+        <button
+          type="button"
+          className="verification-form-btn verification-form-btn--cancel"
+          onClick={handleCloseForm}
+          disabled={formBusy}
+        >
+          {!isViewMode && <X size={16} aria-hidden />}
+          {isViewMode ? 'Close' : 'Cancel'}
+        </button>
+
+        {canSaveDraftFromFooter && (
+          <button
+            type="submit"
+            className="verification-form-btn verification-form-btn--save"
+            disabled={formBusy || Boolean(draftBlockReason)}
+            title={draftBlockReason ?? undefined}
+          >
+            {formBusy ? (
+              <span className="spinner-inline" aria-hidden />
+            ) : (
+              <Save size={16} aria-hidden />
+            )}
+            <span>{saveDraftLabel}</span>
+          </button>
+        )}
+      </div>
+
+      {!isViewMode && wizardOnLastStep && editingDraft && (
+        <>
+          <div className="verification-form-footer-row verification-form-footer-row--submit">
+            <button
+              type="button"
+              className="verification-form-btn verification-form-btn--submit"
+              onClick={() => void handleSubmitFromForm()}
+              disabled={formBusy || !canSubmitFromForm}
+              title={submitBlockReason ?? undefined}
+            >
+              {formBusy ? (
+                <span className="spinner-inline" aria-hidden />
+              ) : (
+                <Send size={16} aria-hidden />
+              )}
+              <span>{submitLabel}</span>
+            </button>
+          </div>
+          {submitBlockReason && (
+            <p className="verification-form-submit-reason mb-0" role="status">
+              {submitBlockReason}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div className="fade-in page-content">
       {showForm && (
         <InlineFormPanel
           id="site-calibration-form"
+          plain={showAddForm}
           className="mb-6 inline-form-panel--wide inline-form-panel--calibration"
         >
           <div className="product-form-panel">
@@ -1048,7 +1219,7 @@ export const RCSiteCalibration: React.FC = () => {
                 </h2>
                 <p className="product-form-topbar-hint text-muted text-sm mt-1 mb-0">
                   {showAddForm
-                    ? 'Complete each step — save or submit on the final Devices step.'
+                    ? 'Complete each step — save or submit on the Evidence step.'
                     : isViewMode && viewingStatus
                       ? verificationStatusDescription(viewingStatus)
                       : 'Update draft verification for this device'}
@@ -1084,7 +1255,12 @@ export const RCSiteCalibration: React.FC = () => {
               </div>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
+            <form
+              onSubmit={handleFormSubmit}
+              className={`product-form${showAddForm ? ' product-form--verification-wizard' : ''}${showAddForm && wizardOnLastStep ? ' product-form--verification-final-step' : ''}${mobileFloatingChrome && showFormFooter ? ' product-form--verification-footer-portaled' : ''}`}
+              autoComplete="off"
+              noValidate
+            >
               <div className="product-form-body">
                 <VerificationSessionFields
                   ref={verificationFieldsRef}
@@ -1108,69 +1284,21 @@ export const RCSiteCalibration: React.FC = () => {
                   readOnly={isViewMode}
                   laboratorySealIdentification={laboratorySealId}
                   onWizardStepChange={handleWizardStepChange}
+                  onDeclarationAcceptedChange={setVerificationDeclarationAccepted}
+                  onPartyContextChange={handlePartyContextChange}
+                  onCancel={handleCloseForm}
+                  wizardNavIncludesCancel={showAddForm}
+                  mobileFloatingChrome={mobileFloatingChrome}
                 />
               </div>
-              <div className="product-form-footer verification-form-footer">
-                {!isViewMode && draftBlockReason && (
-                  <p className="verification-form-footer-hint mb-0" role="status">
-                    {draftBlockReason}
-                  </p>
-                )}
-
-                <div className="verification-form-footer-row verification-form-footer-row--actions">
-                  <button
-                    type="button"
-                    className="verification-form-btn verification-form-btn--cancel"
-                    onClick={handleCloseForm}
-                    disabled={formBusy}
-                  >
-                    {!isViewMode && <X size={16} aria-hidden />}
-                    {isViewMode ? 'Close' : 'Cancel'}
-                  </button>
-
-                  {!isViewMode && (
-                    <button
-                      type="submit"
-                      className="verification-form-btn verification-form-btn--save"
-                      disabled={formBusy || Boolean(draftBlockReason)}
-                      title={draftBlockReason ?? undefined}
-                    >
-                      {formBusy ? (
-                        <span className="spinner-inline" aria-hidden />
-                      ) : (
-                        <Save size={16} aria-hidden />
-                      )}
-                      <span>{saveDraftLabel}</span>
-                    </button>
-                  )}
-                </div>
-
-                {!isViewMode && wizardOnLastStep && editingDraft && (
-                  <>
-                    <div className="verification-form-footer-row verification-form-footer-row--submit">
-                      <button
-                        type="button"
-                        className="verification-form-btn verification-form-btn--submit"
-                        onClick={() => void handleSubmitFromForm()}
-                        disabled={formBusy || !canSubmitFromForm}
-                        title={submitBlockReason ?? undefined}
-                      >
-                        {formBusy ? (
-                          <span className="spinner-inline" aria-hidden />
-                        ) : (
-                          <Send size={16} aria-hidden />
-                        )}
-                        <span>{submitLabel}</span>
-                      </button>
-                    </div>
-                    {submitBlockReason && (
-                      <p className="verification-form-submit-reason mb-0" role="status">
-                        {submitBlockReason}
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
+              {mobileFloatingChrome && verificationFormFooter
+                ? createPortal(
+                    <div className="verification-mobile-chrome verification-mobile-chrome--footer">
+                      {verificationFormFooter}
+                    </div>,
+                    document.body,
+                  )
+                : verificationFormFooter}
             </form>
           </div>
         </InlineFormPanel>

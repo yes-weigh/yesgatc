@@ -1,10 +1,19 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { SegmentToggle } from '../../components/SegmentToggle';
 import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
-import { customerFormFromRecord } from '../../lib/customerProfileFields';
+import { customerFormFromRecord, isPendingNewCustomerParty } from '../../lib/customerProfileFields';
 import {
   buildInitialSelfDeviceRows,
   deviceRowsFromCustomer,
@@ -14,6 +23,7 @@ import {
   type VerificationDeviceRowValues,
   type VerificationSessionValues,
   type VerificationSubject,
+  validateVerificationForSubmit,
 } from '../../lib/siteCalibrationProfileFields';
 import { rcProfileToFormValues } from '../../lib/rcProfileFormFields';
 import { applyLaboratorySealToDeviceRows } from '../../lib/rcLaboratoryFields';
@@ -33,6 +43,7 @@ import {
   isVerificationFormStepComplete,
   VERIFICATION_FORM_STEPS,
   verificationFormStepBlockReason,
+  type VerificationFormStepContext,
   type VerificationFormStepId,
 } from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
@@ -67,6 +78,11 @@ type VerificationSessionFieldsProps = {
   readOnly?: boolean;
   laboratorySealIdentification?: string;
   onWizardStepChange?: (stepId: VerificationFormStepId, isLastStep: boolean) => void;
+  onDeclarationAcceptedChange?: (accepted: boolean) => void;
+  onPartyContextChange?: (context: VerificationFormStepContext) => void;
+  onCancel?: () => void;
+  wizardNavIncludesCancel?: boolean;
+  mobileFloatingChrome?: boolean;
 };
 
 export type VerificationSessionFieldsHandle = {
@@ -108,6 +124,11 @@ export const VerificationSessionFields = forwardRef<
   readOnly = false,
   laboratorySealIdentification = '',
   onWizardStepChange,
+  onDeclarationAcceptedChange,
+  onPartyContextChange,
+  onCancel,
+  wizardNavIncludesCancel = false,
+  mobileFloatingChrome = false,
   },
   ref,
 ) {
@@ -123,6 +144,16 @@ export const VerificationSessionFields = forwardRef<
   const [weatherError, setWeatherError] = useState('');
   const [customerPartyForm, setCustomerPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
   const [rcPartyForm, setRcPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
+  const [declarationAccepted, setDeclarationAccepted] = useState(false);
+
+  const stepContext = useMemo<VerificationFormStepContext>(
+    () => ({ customerForm: customerPartyForm }),
+    [customerPartyForm],
+  );
+
+  useEffect(() => {
+    onPartyContextChange?.(stepContext);
+  }, [onPartyContextChange, stepContext]);
   const lastSelfWeatherKeyRef = useRef('');
   const lastRcPartySeedRef = useRef('');
 
@@ -152,21 +183,27 @@ export const VerificationSessionFields = forwardRef<
   const continueLabel =
     isOnEvidenceStep && !isLastEvidenceDevice && includedDeviceEntries.length > 1
       ? 'Next device'
-      : 'Continue';
+      : 'Proceed';
 
   const devicesStepIndex = VERIFICATION_FORM_STEPS.findIndex(step => step.id === 'devices');
+  const showWizardCancel =
+    Boolean(wizardNavIncludesCancel && onCancel && currentStep.id !== 'devices');
   const canAddDeviceFromEvidence =
     !readOnly && !lockCustomer && isOnEvidenceStep && isLastEvidenceDevice;
+
+  const showBackNav =
+    activeStep > 0 || (isOnEvidenceStep && evidenceDeviceIndex > 0);
+  const showWizardBottomBar = !readOnly && !isLastStep;
 
   const completedStepIds = useMemo(() => {
     const completed = new Set<VerificationFormStepId>();
     for (const step of VERIFICATION_FORM_STEPS) {
-      if (isVerificationFormStepComplete(step.id, values, rcProfile)) {
+      if (isVerificationFormStepComplete(step.id, values, rcProfile, stepContext)) {
         completed.add(step.id);
       }
     }
     return completed;
-  }, [values, rcProfile]);
+  }, [values, rcProfile, stepContext]);
 
   useEffect(() => {
     if (values.verificationLocation !== 'in_situ') {
@@ -199,6 +236,25 @@ export const VerificationSessionFields = forwardRef<
     setStepError('');
   }, [activeStep]);
 
+  useEffect(() => {
+    if (!wizardNavIncludesCancel) return;
+    if (currentStep.id === 'evidence') {
+      setDeclarationAccepted(true);
+      onDeclarationAcceptedChange?.(true);
+      return;
+    }
+    setDeclarationAccepted(false);
+    onDeclarationAcceptedChange?.(false);
+  }, [currentStep.id, wizardNavIncludesCancel, onDeclarationAcceptedChange]);
+
+  const handleDeclarationAcceptedChange = useCallback(
+    (accepted: boolean) => {
+      setDeclarationAccepted(accepted);
+      onDeclarationAcceptedChange?.(accepted);
+    },
+    [onDeclarationAcceptedChange],
+  );
+
   const handleStepSelect = (index: number) => {
     if (readOnly || index <= furthestStep) {
       if (VERIFICATION_FORM_STEPS[index]?.id === 'evidence') {
@@ -211,7 +267,7 @@ export const VerificationSessionFields = forwardRef<
 
   const handleContinue = () => {
     if (readOnly) return;
-    const reason = verificationFormStepBlockReason(currentStep.id, values, rcProfile);
+    const reason = verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext);
     if (reason) {
       setStepError(reason);
       return;
@@ -281,7 +337,21 @@ export const VerificationSessionFields = forwardRef<
   };
 
   const isSelf = values.verificationSubject === 'self';
-  const showDevices = isSelf || Boolean(values.customerId);
+  const showDevices =
+    isSelf || Boolean(values.customerId) || isPendingNewCustomerParty(customerPartyForm);
+
+  const hasGpsLocation = useMemo(() => {
+    const party = isSelf ? rcPartyForm : customerPartyForm;
+    return Boolean(party.latitude.trim() && party.longitude.trim());
+  }, [isSelf, rcPartyForm, customerPartyForm]);
+
+  const mandatoryFieldsComplete = useMemo(
+    () =>
+      validateVerificationForSubmit(values, deviceImages, deviceRvImages, {
+        customerForm: customerPartyForm,
+      }) === null,
+    [values, deviceImages, deviceRvImages, customerPartyForm],
+  );
 
   useImperativeHandle(
     ref,
@@ -295,6 +365,8 @@ export const VerificationSessionFields = forwardRef<
             customerForm: customerPartyForm,
             rcForm: rcPartyForm,
             rcUid,
+            rcId: rcUid,
+            createdByUid: rcUid,
           },
           customers,
         );
@@ -398,13 +470,11 @@ export const VerificationSessionFields = forwardRef<
     (patch: Partial<CustomerFormValues>) => {
       setCustomerPartyForm(prev => {
         const next = { ...prev, ...patch };
-        if (values.customerId) {
-          onChange({ customerName: next.name });
-        }
+        onChange({ customerName: next.name });
         return next;
       });
     },
-    [onChange, values.customerId],
+    [onChange],
   );
 
   const handleRcPartyChange = useCallback((patch: Partial<CustomerFormValues>) => {
@@ -560,18 +630,81 @@ export const VerificationSessionFields = forwardRef<
 
   const partyFormDisabled = locked || lockCustomer;
 
-  return (
-    <div className="verification-wizard product-form-flat site-calibration-form-flat">
-      <VerificationFormStepper
-        steps={VERIFICATION_FORM_STEPS}
-        activeStep={activeStep}
-        furthestStep={furthestStep}
-        completedStepIds={readOnly ? completedStepIds : undefined}
-        onStepSelect={handleStepSelect}
-        readOnly={readOnly}
-      />
+  const stepper = (
+    <VerificationFormStepper
+      steps={VERIFICATION_FORM_STEPS}
+      activeStep={activeStep}
+      furthestStep={furthestStep}
+      completedStepIds={readOnly ? completedStepIds : undefined}
+      onStepSelect={handleStepSelect}
+      readOnly={readOnly}
+    />
+  );
 
-      <div className="verification-wizard-stage glass">
+  const wizardBottomBar =
+    showWizardBottomBar ? (
+      <div className="verification-wizard-bottom-bar">
+        {stepError && (
+          <p className="verification-wizard-bottom-bar-error rc-form-topbar-error mb-0" role="alert">
+            {stepError}
+          </p>
+        )}
+        <div className="verification-wizard-bottom-bar-actions">
+          {showBackNav && (
+            <button
+              type="button"
+              className="verification-form-btn verification-form-btn--back"
+              onClick={handleBack}
+              disabled={locked}
+            >
+              <ChevronLeft size={16} aria-hidden /> Back
+            </button>
+          )}
+          {showWizardCancel && (
+            <button
+              type="button"
+              className="verification-form-btn verification-form-btn--cancel"
+              onClick={onCancel}
+              disabled={locked}
+            >
+              <X size={16} aria-hidden /> Cancel
+            </button>
+          )}
+          <button
+            type="button"
+            className="verification-form-btn verification-form-btn--continue"
+            onClick={handleContinue}
+            disabled={locked}
+          >
+            {continueLabel} <ChevronRight size={16} aria-hidden />
+          </button>
+        </div>
+      </div>
+    ) : null;
+
+  return (
+    <div
+      className={[
+        'verification-wizard',
+        'product-form-flat',
+        'site-calibration-form-flat',
+        mobileFloatingChrome ? 'verification-wizard--floating-chrome' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {mobileFloatingChrome
+        ? createPortal(
+            <div className="verification-mobile-chrome verification-mobile-chrome--stepper">
+              {stepper}
+            </div>,
+            document.body,
+          )
+        : stepper}
+      <div className="verification-wizard-stepper-spacer" aria-hidden />
+
+      <div className="verification-wizard-content">
+        <div className="verification-wizard-stage">
         <div className="verification-wizard-stage-head">
           <h3 className="verification-wizard-stage-title">{currentStep.label}</h3>
           <p className="verification-wizard-stage-desc text-muted text-sm mb-0">
@@ -638,6 +771,11 @@ export const VerificationSessionFields = forwardRef<
                     onChange={handleCustomerPartyChange}
                     disabled={partyFormDisabled}
                     compact
+                    locationCapture={
+                      !partyFormDisabled &&
+                      values.verificationSubject === 'customer' &&
+                      !values.customerId
+                    }
                     lookup={
                       partyFormDisabled
                         ? undefined
@@ -772,6 +910,13 @@ export const VerificationSessionFields = forwardRef<
               readOnly={readOnly}
               showAddDevice={canAddDeviceFromEvidence}
               onAddDevice={handleAddDeviceFromEvidence}
+              showResultSummary={isLastEvidenceDevice}
+              ambientTemperature={values.ambientTemperature}
+              relativeHumidity={values.relativeHumidity}
+              hasGpsLocation={hasGpsLocation}
+              mandatoryFieldsComplete={mandatoryFieldsComplete}
+              declarationAccepted={readOnly ? true : declarationAccepted}
+              onDeclarationAcceptedChange={readOnly ? undefined : handleDeclarationAcceptedChange}
             />
           )}
 
@@ -783,66 +928,44 @@ export const VerificationSessionFields = forwardRef<
 
           {currentStep.id === 'devices' && !showDevices && (
             <p className="text-muted text-sm mb-0">
-              Select a customer above to load devices.
+              Select a customer above to load instruments.
             </p>
           )}
         </div>
-
-        {!readOnly ? (
-          <div className="verification-wizard-nav">
-            {stepError && (
-              <p className="verification-wizard-nav-error rc-form-topbar-error mb-0" role="alert">
-                {stepError}
-              </p>
-            )}
-            <div className="verification-wizard-nav-actions">
-              {(activeStep > 0 || (isOnEvidenceStep && evidenceDeviceIndex > 0)) && (
-                <button
-                  type="button"
-                  className="btn btn-secondary flex items-center gap-1.5"
-                  onClick={handleBack}
-                  disabled={locked}
-                >
-                  <ChevronLeft size={16} /> Back
-                </button>
-              )}
-              {!isLastStep && (
-                <button
-                  type="button"
-                  className="btn btn-primary flex items-center gap-1.5"
-                  onClick={handleContinue}
-                  disabled={locked}
-                >
-                  {continueLabel} <ChevronRight size={16} />
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="verification-wizard-nav">
-            <div className="verification-wizard-nav-actions">
-              {(activeStep > 0 || (isOnEvidenceStep && evidenceDeviceIndex > 0)) && (
-                <button
-                  type="button"
-                  className="btn btn-secondary flex items-center gap-1.5"
-                  onClick={handleReadOnlyBack}
-                >
-                  <ChevronLeft size={16} /> Previous
-                </button>
-              )}
-              {!isLastStep && (
-                <button
-                  type="button"
-                  className="btn btn-secondary flex items-center gap-1.5"
-                  onClick={handleReadOnlyNext}
-                >
-                  {continueLabel} <ChevronRight size={16} />
-                </button>
-              )}
-            </div>
-          </div>
-        )}
       </div>
+      </div>
+
+      {mobileFloatingChrome && wizardBottomBar
+        ? createPortal(
+            <div className="verification-mobile-chrome verification-mobile-chrome--actions">
+              {wizardBottomBar}
+            </div>,
+            document.body,
+          )
+        : wizardBottomBar}
+
+      {readOnly && !isLastStep && (
+        <div className="verification-wizard-bottom-bar verification-wizard-bottom-bar--readonly">
+          <div className="verification-wizard-bottom-bar-actions">
+            {showBackNav && (
+              <button
+                type="button"
+                className="verification-form-btn verification-form-btn--back"
+                onClick={handleReadOnlyBack}
+              >
+                <ChevronLeft size={16} aria-hidden /> Previous
+              </button>
+            )}
+            <button
+              type="button"
+              className="verification-form-btn verification-form-btn--continue"
+              onClick={handleReadOnlyNext}
+            >
+              {continueLabel} <ChevronRight size={16} aria-hidden />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

@@ -1,19 +1,17 @@
-import { doc, updateDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Customer } from '../types';
-import { isValidPincode, normalizePincode } from './contactFields';
+import { normalizePhone } from './contactFields';
 import {
   buildCustomerProfileFields,
+  isCustomerPartyReadyToPersist,
   validateCustomerProfile,
   type CustomerFormValues,
 } from './customerProfileFields';
 import { rcProfilePatchFromFormValues } from './rcProfileFormFields';
 
 export function isPartyFormReadyToPersist(form: CustomerFormValues): boolean {
-  const pin = normalizePincode(form.pincode);
-  if (pin && !isValidPincode(pin)) return false;
-  if (isValidPincode(pin) && (!form.state.trim() || !form.district.trim())) return false;
-  return true;
+  return isCustomerPartyReadyToPersist(form);
 }
 
 export type PersistVerificationPartyParams = {
@@ -22,19 +20,54 @@ export type PersistVerificationPartyParams = {
   customerForm: CustomerFormValues;
   rcForm: CustomerFormValues;
   rcUid?: string;
+  rcId?: string;
+  createdByUid?: string;
 };
 
 export type PersistVerificationPartyResult = {
   error: string | null;
+  createdCustomer?: Customer;
   updatedCustomer?: Customer;
   rcProfileSaved?: boolean;
 };
+
+function findCustomerByPhone(customers: Customer[], phone: string): Customer | undefined {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return undefined;
+  return customers.find(c => normalizePhone(c.phone) === normalized);
+}
+
+async function saveExistingCustomerProfile(
+  customerId: string,
+  customerForm: CustomerFormValues,
+  existingCustomers: Customer[],
+): Promise<PersistVerificationPartyResult> {
+  const profile = buildCustomerProfileFields(customerForm);
+  const updatedAt = new Date().toISOString();
+  await updateDoc(doc(db, 'customers', customerId), {
+    ...profile,
+    updatedAt,
+  });
+  const existing = existingCustomers.find(c => c.id === customerId);
+  return {
+    error: null,
+    updatedCustomer: {
+      id: customerId,
+      rcId: existing?.rcId ?? '',
+      createdAt: existing?.createdAt ?? updatedAt,
+      devices: existing?.devices ?? [],
+      ...existing,
+      ...profile,
+      updatedAt,
+    },
+  };
+}
 
 export async function persistVerificationPartyProfile(
   params: PersistVerificationPartyParams,
   existingCustomers: Customer[],
 ): Promise<PersistVerificationPartyResult> {
-  const { isSelf, customerId, customerForm, rcForm, rcUid } = params;
+  const { isSelf, customerId, customerForm, rcForm, rcUid, rcId, createdByUid } = params;
 
   if (isSelf) {
     if (!rcUid || !rcForm.name.trim()) return { error: null };
@@ -55,8 +88,6 @@ export async function persistVerificationPartyProfile(
     }
   }
 
-  if (!customerId.trim()) return { error: null };
-
   if (!customerForm.name.trim() || !customerForm.phone.trim()) return { error: null };
   if (!isPartyFormReadyToPersist(customerForm)) {
     return {
@@ -67,16 +98,33 @@ export async function persistVerificationPartyProfile(
   if (validationError) return { error: validationError };
 
   try {
+    if (customerId.trim()) {
+      return saveExistingCustomerProfile(customerId, customerForm, existingCustomers);
+    }
+
+    const existingByPhone = findCustomerByPhone(existingCustomers, customerForm.phone);
+    if (existingByPhone) {
+      return saveExistingCustomerProfile(existingByPhone.id, customerForm, existingCustomers);
+    }
+
+    if (!rcId) {
+      return { error: 'RC account is required to create a customer.' };
+    }
+
     const profile = buildCustomerProfileFields(customerForm);
-    const updatedAt = new Date().toISOString();
-    await updateDoc(doc(db, 'customers', customerId), {
+    const createdAt = new Date().toISOString();
+    const ref = doc(collection(db, 'customers'));
+    const record: Omit<Customer, 'id'> = {
+      rcId,
+      createdAt,
+      createdByUid,
+      devices: [],
       ...profile,
-      updatedAt,
-    });
-    const existing = existingCustomers.find(c => c.id === customerId);
+    };
+    await setDoc(ref, record);
     return {
       error: null,
-      updatedCustomer: existing ? { ...existing, ...profile, updatedAt } : undefined,
+      createdCustomer: { id: ref.id, ...record },
     };
   } catch (err: unknown) {
     return {

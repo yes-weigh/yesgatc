@@ -34,10 +34,6 @@ export const VerificationFormStepper: React.FC<VerificationFormStepperProps> = (
 
   return (
     <div className="verification-wizard-stepper-wrap">
-      <p className="verification-wizard-step-counter" aria-live="polite">
-        Step {activeStep + 1} of {steps.length}
-      </p>
-
       <nav className="verification-wizard-stepper" aria-label="Verification form steps">
         <ol ref={listRef} className="verification-wizard-stepper-list">
           {steps.map((step, index) => {

@@ -1,4 +1,5 @@
 import type { FirestoreUserDoc } from '../types';
+import { isPendingNewCustomerParty, type CustomerFormValues } from './customerProfileFields';
 import {
   validateVerificationDeviceDetails,
   type VerificationSessionValues,
@@ -22,21 +23,26 @@ export const VERIFICATION_FORM_STEPS: VerificationFormStepDef[] = [
   },
   {
     id: 'devices',
-    label: 'Devices',
-    shortLabel: 'Devices',
-    description: 'Select devices and enter serial numbers, MPE, and seal details.',
+    label: 'Instruments',
+    shortLabel: 'Instruments',
+    description: 'Select instruments and enter serial numbers, MPE, and seal details.',
   },
   {
     id: 'evidence',
     label: 'Evidence',
     shortLabel: 'Photos',
-    description: 'Attach verification photos and documents for each selected device.',
+    description: 'Attach verification photos and documents for each selected instrument.',
   },
 ];
+
+export type VerificationFormStepContext = {
+  customerForm?: CustomerFormValues;
+};
 
 function partyStepBlockReason(
   values: VerificationSessionValues,
   rcProfile: FirestoreUserDoc | null | undefined,
+  context?: VerificationFormStepContext,
 ): string | null {
   if (values.verificationSubject === 'self') {
     const name =
@@ -47,8 +53,9 @@ function partyStepBlockReason(
     if (!name) return 'RC centre details are still loading. Please wait a moment.';
     return null;
   }
-  if (!values.customerId.trim()) return 'Select a customer to continue.';
-  return null;
+  if (values.customerId.trim()) return null;
+  if (context?.customerForm && isPendingNewCustomerParty(context.customerForm)) return null;
+  return 'Select a customer from lookup or enter name and mobile number.';
 }
 
 function siteStepBlockReason(values: VerificationSessionValues): string | null {
@@ -88,14 +95,16 @@ export function isVerificationFormStepComplete(
   stepId: VerificationFormStepId,
   values: VerificationSessionValues,
   rcProfile: FirestoreUserDoc | null | undefined,
+  context?: VerificationFormStepContext,
 ): boolean {
-  return verificationFormStepBlockReason(stepId, values, rcProfile) === null;
+  return verificationFormStepBlockReason(stepId, values, rcProfile, context) === null;
 }
 
 export function verificationFormStepBlockReason(
   stepId: VerificationFormStepId,
   values: VerificationSessionValues,
   rcProfile: FirestoreUserDoc | null | undefined,
+  context?: VerificationFormStepContext,
 ): string | null {
   if (stepId === 'setup') {
     if (values.verificationType !== 'OV' && values.verificationType !== 'RV') {
@@ -104,7 +113,7 @@ export function verificationFormStepBlockReason(
     if (values.verificationSubject !== 'self' && values.verificationSubject !== 'customer') {
       return 'Choose Self or Customer.';
     }
-    const partyReason = partyStepBlockReason(values, rcProfile);
+    const partyReason = partyStepBlockReason(values, rcProfile, context);
     if (partyReason) return partyReason;
     return siteStepBlockReason(values);
   }
@@ -127,10 +136,11 @@ export function findInitialVerificationFormStep(
   values: VerificationSessionValues,
   rcProfile: FirestoreUserDoc | null | undefined,
   readOnly: boolean,
+  context?: VerificationFormStepContext,
 ): number {
   if (readOnly) return 0;
   for (let i = 0; i < VERIFICATION_FORM_STEPS.length; i++) {
-    if (!isVerificationFormStepComplete(VERIFICATION_FORM_STEPS[i].id, values, rcProfile)) {
+    if (!isVerificationFormStepComplete(VERIFICATION_FORM_STEPS[i].id, values, rcProfile, context)) {
       return i;
     }
   }

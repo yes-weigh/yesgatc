@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Building2, ChevronDown, MapPin, Phone, User, UserRound } from 'lucide-react';
+import { Building2, ChevronDown, Crosshair, MapPin, Phone, User, UserRound, X } from 'lucide-react';
 import {
   isValidPincode,
   normalizePhone,
@@ -26,6 +26,8 @@ type PartyInformationFormProps = {
     selectedCustomerId?: string;
     onSelectCustomer: (customer: Customer) => void;
   };
+  /** Show GPS capture for new customers (no selected customer id). */
+  locationCapture?: boolean;
 };
 
 function RequiredMark() {
@@ -63,6 +65,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
   nameLabel,
   districtLabel = 'District',
   lookup,
+  locationCapture = false,
 }) => {
   const listId = useId();
   const nameWrapRef = useRef<HTMLDivElement>(null);
@@ -73,6 +76,8 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
   const [menuStyle, setMenuStyle] = useState<LookupMenuPosition | null>(null);
   const [pincodeLookupLoading, setPincodeLookupLoading] = useState(false);
   const [pincodeLookupError, setPincodeLookupError] = useState('');
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState('');
   const lastPincodeLookupRef = useRef('');
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -196,6 +201,37 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
     onChange(patch);
   };
 
+  const handleDetectLocation = () => {
+    setLocationError('');
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported in this browser.');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        onChange({
+          latitude: pos.coords.latitude.toFixed(6),
+          longitude: pos.coords.longitude.toFixed(6),
+        });
+        setLocating(false);
+      },
+      err => {
+        setLocating(false);
+        setLocationError(err.message || 'Could not detect location.');
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+    );
+  };
+
+  const handleClearLocation = () => {
+    setLocationError('');
+    onChange({ latitude: '', longitude: '' });
+  };
+
+  const hasLocation = Boolean(values.latitude.trim() && values.longitude.trim());
+  const showLocationCapture = locationCapture && !disabled;
+
   const lookupMenu =
     lookupOpen && menuStyle && lookupEnabled
       ? createPortal(
@@ -239,7 +275,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
                 width: menuStyle.width,
               }}
             >
-              No matching customers.
+              No matching customers. A new customer will be created when you save.
             </div>
           ),
           document.body,
@@ -435,6 +471,69 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
             </div>
           </div>
         </div>
+
+        {showLocationCapture && (
+          <div className="party-info-field party-info-field--full party-info-location">
+            <span className="party-info-label party-info-location-label">
+              <MapPin size={14} aria-hidden /> GPS
+              <span className="party-info-location-optional">Optional</span>
+            </span>
+            <div className="party-info-location-controls">
+              <button
+                type="button"
+                className="party-info-location-btn"
+                onClick={handleDetectLocation}
+                disabled={locating}
+              >
+                {locating ? (
+                  <span className="party-info-pin-spinner" aria-label="Detecting location" />
+                ) : (
+                  <Crosshair size={14} aria-hidden />
+                )}
+                Use my location
+              </button>
+              {hasLocation && (
+                <button
+                  type="button"
+                  className="party-info-location-btn party-info-location-btn--clear"
+                  onClick={handleClearLocation}
+                  disabled={locating}
+                  title="Clear location"
+                  aria-label="Clear location"
+                >
+                  <X size={14} aria-hidden />
+                </button>
+              )}
+              <div className="party-info-location-coords">
+                <input
+                  id="party-info-latitude"
+                  type="text"
+                  className="input-field party-info-input party-info-input--coords"
+                  placeholder="Lat"
+                  value={values.latitude}
+                  readOnly
+                  tabIndex={-1}
+                  aria-label="Latitude"
+                />
+                <input
+                  id="party-info-longitude"
+                  type="text"
+                  className="input-field party-info-input party-info-input--coords"
+                  placeholder="Lng"
+                  value={values.longitude}
+                  readOnly
+                  tabIndex={-1}
+                  aria-label="Longitude"
+                />
+              </div>
+            </div>
+            {locationError && (
+              <p className="party-info-field-hint party-info-field-hint--error text-sm m-0 mt-1" role="alert">
+                {locationError}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {lookupMenu}

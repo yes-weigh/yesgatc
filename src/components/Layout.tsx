@@ -229,10 +229,10 @@ export const Layout: React.FC = () => {
       )}
 
       <main
-        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}`}
+        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}${useShieldBrand ? ' mobile-verification' : ''}`}
       >
         {isMobile && (
-          <header className="mobile-app-bar">
+          <header className={`mobile-app-bar${useShieldBrand ? ' mobile-app-bar--sticky' : ''}`}>
             <button
               type="button"
               className="mobile-app-bar-menu collapse-btn"
