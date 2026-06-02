@@ -30,6 +30,7 @@ import {
   RCLeads,
 } from './pages/rc/RCMenuPages';
 import { VCTDashboard } from './pages/vct/VCTDashboard';
+import { VCTProfile } from './pages/vct/VCTProfile';
 import { Certificates } from './pages/vct/Certificates';
 import { Reports } from './pages/shared/Reports';
 import { Placeholder } from './pages/Placeholder';
@@ -88,6 +89,7 @@ const App: React.FC = () => {
                 <Route index element={<VCTDashboard />} />
                 <Route path="certificates" element={<Certificates />} />
                 <Route path="reports" element={<Placeholder />} />
+                <Route path="profile" element={<VCTProfile />} />
               </Route>
             </Route>
 

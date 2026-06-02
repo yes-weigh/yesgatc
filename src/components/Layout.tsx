@@ -5,6 +5,7 @@ import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { formatContactSubtitle } from '../lib/contactFields';
 import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
+import { vctProfilePhotoFromUser } from '../lib/vctProfileFields';
 import { MobileAppBarBrandIcon } from './MobileAppBarBrandIcon';
 import { StorageImage } from './StorageImage';
 import {
@@ -47,9 +48,10 @@ export const Layout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-  const [rcProfilePhoto, setRcProfilePhoto] = useState<{ url?: string; path?: string } | null>(null);
+  const [profilePhoto, setProfilePhoto] = useState<{ url?: string; path?: string } | null>(null);
 
-  const rcProfilePath = user?.role === 'rc_admin' ? '/rc/profile' : null;
+  const profilePath =
+    user?.role === 'rc_admin' ? '/rc/profile' : user?.role === 'vct' ? '/vct/profile' : null;
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768);
@@ -62,8 +64,8 @@ export const Layout: React.FC = () => {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!user?.uid || user.role !== 'rc_admin') {
-      setRcProfilePhoto(null);
+    if (!user?.uid || (user.role !== 'rc_admin' && user.role !== 'vct')) {
+      setProfilePhoto(null);
       return;
     }
     let cancelled = false;
@@ -71,10 +73,14 @@ export const Layout: React.FC = () => {
       try {
         const snap = await getDoc(doc(db, 'users', user.uid));
         if (cancelled || !snap.exists()) return;
-        const photo = rcProfilePhotoFromUser(snap.data() as FirestoreUserDoc);
-        setRcProfilePhoto(photo ? { url: photo.url, path: photo.path } : null);
+        const data = snap.data() as FirestoreUserDoc;
+        const photo =
+          user.role === 'rc_admin'
+            ? rcProfilePhotoFromUser(data)
+            : vctProfilePhotoFromUser(data);
+        setProfilePhoto(photo ? { url: photo.url, path: photo.path } : null);
       } catch {
-        if (!cancelled) setRcProfilePhoto(null);
+        if (!cancelled) setProfilePhoto(null);
       }
     })();
     return () => {
@@ -130,6 +136,7 @@ export const Layout: React.FC = () => {
           { path: '/vct', icon: <ClipboardList size={20} />, label: 'Job Queue' },
           { path: '/vct/certificates', icon: <Award size={20} />, label: 'Certificates' },
           { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/vct/profile', icon: <Settings size={20} />, label: 'My profile' },
         ];
       default:
         return [];
@@ -201,7 +208,7 @@ export const Layout: React.FC = () => {
         ))}
       </nav>
 
-      {user.role !== 'rc_admin' && (mobile || !collapsed) && (
+      {user.role !== 'rc_admin' && user.role !== 'vct' && (mobile || !collapsed) && (
         <div className="sidebar-footer">
           <ShieldCheck size={14} />
           <span>{roleLabel}</span>
@@ -256,18 +263,18 @@ export const Layout: React.FC = () => {
                 )}
               </div>
             </div>
-            {rcProfilePath && (
+            {profilePath && (
               <button
                 type="button"
-                className={`mobile-profile-shortcut${location.pathname === rcProfilePath ? ' mobile-profile-shortcut--active' : ''}`}
-                onClick={() => navigate(rcProfilePath)}
+                className={`mobile-profile-shortcut${location.pathname === profilePath ? ' mobile-profile-shortcut--active' : ''}`}
+                onClick={() => navigate(profilePath)}
                 title="My profile"
                 aria-label="Open my profile"
               >
-                {rcProfilePhoto?.url || rcProfilePhoto?.path ? (
+                {profilePhoto?.url || profilePhoto?.path ? (
                   <StorageImage
-                    url={rcProfilePhoto.url}
-                    path={rcProfilePhoto.path}
+                    url={profilePhoto.url}
+                    path={profilePhoto.path}
                     alt=""
                     className="mobile-profile-shortcut-img"
                   />
@@ -283,17 +290,17 @@ export const Layout: React.FC = () => {
         {!isMobile && (
           <header className="top-bar glass">
             <h1 className="page-title">{pageTitle}</h1>
-            {rcProfilePath ? (
+            {profilePath ? (
               <button
                 type="button"
                 className="user-chip user-chip--profile-link"
-                onClick={() => navigate(rcProfilePath)}
+                onClick={() => navigate(profilePath)}
                 title="My profile"
               >
-                {rcProfilePhoto?.url || rcProfilePhoto?.path ? (
+                {profilePhoto?.url || profilePhoto?.path ? (
                   <StorageImage
-                    url={rcProfilePhoto.url}
-                    path={rcProfilePhoto.path}
+                    url={profilePhoto.url}
+                    path={profilePhoto.path}
                     alt=""
                     className="user-chip-avatar"
                   />
