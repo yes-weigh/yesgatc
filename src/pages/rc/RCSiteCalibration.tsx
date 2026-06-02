@@ -65,7 +65,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import {
-  Pencil, Plus, Save, Send, Download, Eye, X,
+  Pencil, Plus, Save, Send, Download, Eye, X, Play,
 } from 'lucide-react';
 
 import {
@@ -86,6 +86,8 @@ import {
   applyLaboratorySealToDeviceRows,
   resolveLaboratorySealIdentification,
 } from '../../lib/rcLaboratoryFields';
+import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
+import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
 
@@ -104,6 +106,10 @@ export const RCSiteCalibration: React.FC = () => {
   const [deviceImages, setDeviceImages] = useState<Record<string, DeviceVerificationImagesState>>({});
   const [deviceRvImages, setDeviceRvImages] = useState<Record<string, DeviceRvDocumentsState>>({});
 
+  const [submitProgress, setSubmitProgress] = useState<{
+    recordIds: string[];
+    simulate: boolean;
+  } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
@@ -145,6 +151,20 @@ export const RCSiteCalibration: React.FC = () => {
   const handleWizardStepChange = useCallback((_stepId: VerificationFormStepId, isLastStep: boolean) => {
     setWizardOnLastStep(isLastStep);
   }, []);
+
+  const beginSubmitProgress = useCallback((recordIds: string[]) => {
+    if (!recordIds.length) return;
+    unlockVerificationSuccessAudio();
+    setSubmitProgress({ recordIds, simulate: false });
+  }, []);
+
+  /** TEMP — remove with simulate button when animation preview is no longer needed. */
+  const handleSimulateServerProcess = () => {
+    if (formBusy) return;
+    unlockVerificationSuccessAudio();
+    handleCloseForm();
+    setSubmitProgress({ recordIds: ['__demo__'], simulate: true });
+  };
 
   const fetchLaboratorySeal = useCallback(async () => {
     if (!rcUid) return;
@@ -746,6 +766,8 @@ export const RCSiteCalibration: React.FC = () => {
       );
       await syncCustomerDevices(rowsToSync, sessionForSave.customerId, applied.customer);
 
+      const submittedRecordIds: string[] = [];
+
       for (const row of includedRows) {
         const ref = doc(collection(db, 'siteCalibrations'));
         const recordId = ref.id;
@@ -768,11 +790,15 @@ export const RCSiteCalibration: React.FC = () => {
         await setDoc(ref, record);
         if (submitAfterSave) {
           await updateDoc(ref, buildVerificationSubmitPatch());
+          submittedRecordIds.push(recordId);
         }
       }
 
       handleCloseForm();
       await fetchRecords();
+      if (submitAfterSave) {
+        beginSubmitProgress(submittedRecordIds);
+      }
     } catch (err: unknown) {
       setError(formatSaveError(err, 'Failed to save verification records.'));
     } finally {
@@ -847,12 +873,14 @@ export const RCSiteCalibration: React.FC = () => {
     });
     if (!ok) return;
 
+    unlockVerificationSuccessAudio();
     setSubmitting(true);
     setListError('');
     try {
       await updateDoc(doc(db, 'siteCalibrations', record.id), buildVerificationSubmitPatch());
       if (editingId === record.id) handleCloseForm();
       await fetchRecords();
+      beginSubmitProgress([record.id]);
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to submit verification.');
     } finally {
@@ -883,6 +911,7 @@ export const RCSiteCalibration: React.FC = () => {
     });
     if (!ok) return;
 
+    unlockVerificationSuccessAudio();
     setSubmitting(true);
     setListError('');
     try {
@@ -894,6 +923,7 @@ export const RCSiteCalibration: React.FC = () => {
       setSelectedDraftIds(new Set());
       if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
       await fetchRecords();
+      beginSubmitProgress(selectedRecords.map(record => record.id));
     } catch (err: unknown) {
       setListError(formatSaveError(err, 'Failed to submit selected verifications.'));
     } finally {
@@ -923,6 +953,7 @@ export const RCSiteCalibration: React.FC = () => {
         confirmLabel: 'Save & submit',
       });
       if (!ok) return;
+      unlockVerificationSuccessAudio();
       await handleCreate(true);
       return;
     }
@@ -945,6 +976,7 @@ export const RCSiteCalibration: React.FC = () => {
     });
     if (!ok) return;
 
+    unlockVerificationSuccessAudio();
     setSubmitting(true);
     setError('');
     try {
@@ -965,6 +997,7 @@ export const RCSiteCalibration: React.FC = () => {
       });
       handleCloseForm();
       await fetchRecords();
+      beginSubmitProgress([editingId]);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to submit verification.');
     } finally {
@@ -1208,6 +1241,18 @@ export const RCSiteCalibration: React.FC = () => {
       {!isViewMode && wizardOnLastStep && editingDraft && (
         <>
           <div className="verification-form-footer-row verification-form-footer-row--submit">
+            {/* TEMP — remove when submit progress animation is finalized */}
+            {showAddForm && (
+              <button
+                type="button"
+                className="verification-form-btn verification-form-btn--simulate"
+                onClick={handleSimulateServerProcess}
+                disabled={formBusy}
+              >
+                <Play size={16} aria-hidden />
+                <span>Simulate server process</span>
+              </button>
+            )}
             <button
               type="button"
               className="verification-form-btn verification-form-btn--submit"
@@ -1440,6 +1485,14 @@ export const RCSiteCalibration: React.FC = () => {
             </>
           )}
         </div>
+      )}
+
+      {submitProgress && submitProgress.recordIds.length > 0 && (
+        <VerificationSubmitProgressOverlay
+          recordIds={submitProgress.recordIds}
+          simulate={submitProgress.simulate}
+          onClose={() => setSubmitProgress(null)}
+        />
       )}
     </div>
   );

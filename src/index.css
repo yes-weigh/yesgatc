@@ -7257,6 +7257,9 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-form-footer-row--submit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
   padding-top: 0;
   margin-top: 0;
   border-top: none;
@@ -7342,6 +7345,21 @@ body.verification-mobile-wizard-active {
   box-shadow: 0 3px 12px rgba(22, 163, 74, 0.34);
 }
 
+/* TEMP — remove with simulate button */
+.verification-form-btn--simulate {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(148, 163, 184, 0.35);
+  border-style: dashed;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.verification-form-btn--simulate:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(148, 163, 184, 0.5);
+  color: #f8fafc;
+}
+
 .verification-form-btn:disabled {
   cursor: not-allowed;
   box-shadow: none;
@@ -7393,7 +7411,13 @@ body.verification-mobile-wizard-active {
   }
 
   .verification-form-footer-row--submit {
+    flex-direction: row;
     justify-content: flex-end;
+  }
+
+  .verification-form-btn--simulate {
+    width: auto;
+    min-width: 12rem;
   }
 
   .verification-form-btn--submit {
@@ -11140,5 +11164,311 @@ body.verification-mobile-wizard-active {
 .data-table--site-calibration .verification-table-col-select {
   padding-left: 0.75rem;
   padding-right: 0.35rem;
+}
+
+/* Verification submit progress overlay */
+.verification-submit-progress-root {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.28s ease;
+}
+
+.verification-submit-progress-root--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.verification-submit-progress-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.verification-submit-progress-card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 24rem);
+  padding: 1.35rem 1.25rem 1.15rem;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.12), transparent 55%),
+    linear-gradient(160deg, rgba(15, 23, 42, 0.98) 0%, rgba(8, 15, 30, 0.96) 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  text-align: center;
+  transform: scale(0.92) translateY(12px);
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.35s ease;
+}
+
+.verification-submit-progress-root--visible .verification-submit-progress-card {
+  transform: scale(1) translateY(0);
+}
+
+.verification-submit-progress-card--pulse {
+  animation: verificationSubmitProgressPop 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes verificationSubmitProgressPop {
+  0% { transform: scale(0.96); }
+  45% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+.verification-submit-progress-card--submitted {
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
+.verification-submit-progress-card--approved {
+  border-color: rgba(34, 197, 94, 0.38);
+}
+
+.verification-submit-progress-card--certified {
+  border-color: rgba(45, 212, 191, 0.42);
+}
+
+.verification-submit-progress-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin: 0 0 1.1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.verification-submit-progress-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  opacity: 0.45;
+}
+
+.verification-submit-progress-step--active,
+.verification-submit-progress-step--done {
+  opacity: 1;
+}
+
+.verification-submit-progress-step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.verification-submit-progress-step--active .verification-submit-progress-step-dot {
+  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
+}
+
+.verification-submit-progress-card--approved .verification-submit-progress-step--active .verification-submit-progress-step-dot {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.18);
+  color: #86efac;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+}
+
+.verification-submit-progress-card--certified .verification-submit-progress-step--active .verification-submit-progress-step-dot {
+  border-color: rgba(45, 212, 191, 0.55);
+  background: rgba(45, 212, 191, 0.18);
+  color: #5eead4;
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.12);
+}
+
+.verification-submit-progress-step--done .verification-submit-progress-step-dot {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+}
+
+.verification-submit-progress-step-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.verification-submit-progress-visual {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 7.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.verification-submit-progress-glow {
+  position: absolute;
+  width: 7rem;
+  height: 7rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.34) 0%, rgba(59, 130, 246, 0) 72%);
+  animation: verificationSubmitProgressGlow 2.4s ease-in-out infinite;
+}
+
+.verification-submit-progress-card--approved .verification-submit-progress-glow {
+  background: radial-gradient(circle, rgba(34, 197, 94, 0.34) 0%, rgba(34, 197, 94, 0) 72%);
+}
+
+.verification-submit-progress-card--certified .verification-submit-progress-glow {
+  background: radial-gradient(circle, rgba(45, 212, 191, 0.36) 0%, rgba(45, 212, 191, 0) 72%);
+}
+
+@keyframes verificationSubmitProgressGlow {
+  0%, 100% { transform: scale(0.92); opacity: 0.75; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+.verification-submit-progress-icon-wrap {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.75rem;
+  height: 4.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #dbeafe;
+  animation: verificationSubmitProgressIconIn 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.verification-submit-progress-card--approved .verification-submit-progress-icon-wrap {
+  color: #bbf7d0;
+}
+
+.verification-submit-progress-card--certified .verification-submit-progress-icon-wrap {
+  color: #99f6e4;
+}
+
+@keyframes verificationSubmitProgressIconIn {
+  0% { transform: scale(0.7) rotate(-8deg); opacity: 0; }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+.verification-submit-progress-icon-badge {
+  position: absolute;
+  right: -0.15rem;
+  bottom: -0.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  background: #22c55e;
+  color: #fff;
+  border: 2px solid rgba(15, 23, 42, 0.95);
+  box-shadow: 0 8px 18px rgba(34, 197, 94, 0.35);
+}
+
+.verification-submit-progress-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #93c5fd;
+}
+
+.verification-submit-progress-card--approved .verification-submit-progress-title {
+  color: #86efac;
+}
+
+.verification-submit-progress-card--certified .verification-submit-progress-title {
+  color: #5eead4;
+}
+
+.verification-submit-progress-message {
+  margin: 0 0 0.85rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.verification-submit-progress-waiting {
+  margin-top: -0.35rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.verification-submit-progress-demo-badge {
+  display: inline-block;
+  margin: 0.35rem 0 0.65rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+}
+
+.verification-submit-progress-done {
+  width: 100%;
+  margin-top: 0.15rem;
+}
+
+.verification-submit-progress-confetti {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.verification-submit-progress-confetti-piece {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  width: 0.42rem;
+  height: 0.72rem;
+  border-radius: 1px;
+  opacity: 0;
+  animation: verificationSubmitProgressConfetti 1.15s ease-out forwards;
+}
+
+.verification-submit-progress-confetti-piece.piece-0 { background: #f97316; --tx: -3.2rem; --ty: -2.8rem; --rot: 35deg; animation-delay: 0.05s; }
+.verification-submit-progress-confetti-piece.piece-1 { background: #eab308; --tx: 2.8rem; --ty: -3rem; --rot: -28deg; animation-delay: 0.12s; }
+.verification-submit-progress-confetti-piece.piece-2 { background: #38bdf8; --tx: -1.4rem; --ty: -3.6rem; --rot: 18deg; animation-delay: 0.08s; }
+.verification-submit-progress-confetti-piece.piece-3 { background: #22c55e; --tx: 3.4rem; --ty: -1.8rem; --rot: -42deg; animation-delay: 0.16s; }
+.verification-submit-progress-confetti-piece.piece-4 { background: #f43f5e; --tx: -2.6rem; --ty: -1.2rem; --rot: 52deg; animation-delay: 0.1s; }
+.verification-submit-progress-confetti-piece.piece-5 { background: #a78bfa; --tx: 1rem; --ty: -3.8rem; --rot: -12deg; animation-delay: 0.18s; }
+
+.verification-submit-progress-confetti-piece:nth-child(odd) { top: 48%; }
+.verification-submit-progress-confetti-piece:nth-child(3n) { top: 36%; }
+
+@keyframes verificationSubmitProgressConfetti {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4) rotate(0deg);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1) rotate(var(--rot));
+  }
 }
 
