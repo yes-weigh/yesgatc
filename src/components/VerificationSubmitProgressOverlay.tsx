@@ -1,16 +1,32 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { CheckCircle2, FileCheck, FileText, ShieldCheck } from 'lucide-react';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import {
+  Calendar,
+  CalendarClock,
+  CheckCircle2,
+  Clock3,
+  FileCheck,
+  FileText,
+  MapPin,
+  Scale,
+  ShieldCheck,
+  UserRound,
+} from 'lucide-react';
 import { db } from '../firebase';
 import { playVerificationSuccessSound } from '../lib/playVerificationSuccessSound';
+import {
+  buildVerificationSubmitProgressDetails,
+  verificationSubmitProgressFooterMessage,
+  type VerificationProgressDetailRow,
+} from '../lib/verificationSubmitProgressDetails';
 import {
   VERIFICATION_SUBMIT_PROGRESS_STAGES,
   resolveVerificationSubmitProgressStage,
   verificationSubmitProgressStageIndex,
   type VerificationSubmitProgressStage,
 } from '../lib/verificationSubmitProgressStages';
-import type { SiteCalibration } from '../types';
+import type { Customer, SiteCalibration } from '../types';
 
 type VerificationSubmitProgressOverlayProps = {
   recordIds: string[];
@@ -28,10 +44,94 @@ function stageIcon(stage: VerificationSubmitProgressStage) {
   }
 }
 
+function detailRowIcon(rowId: string) {
+  switch (rowId) {
+    case 'application':
+    case 'certificate':
+      return FileText;
+    case 'instrument':
+    case 'capacity':
+      return Scale;
+    case 'customer':
+    case 'client':
+      return UserRound;
+    case 'location':
+      return MapPin;
+    case 'submitted-date':
+    case 'verified-on':
+      return Calendar;
+    case 'submitted-time':
+    case 'approved-on':
+      return Clock3;
+    case 'valid-upto':
+      return CalendarClock;
+    default:
+      return FileText;
+  }
+}
+
+function VerificationProgressQrPlaceholder() {
+  const cells = useMemo(
+    () =>
+      Array.from({ length: 64 }, (_, index) => {
+        const row = Math.floor(index / 8);
+        const col = index % 8;
+        const filled =
+          (row + col) % 3 === 0 ||
+          row === 0 ||
+          col === 0 ||
+          row === 7 ||
+          col === 7 ||
+          (row >= 2 && row <= 4 && col >= 2 && col <= 4);
+        return filled;
+      }),
+    [],
+  );
+
+  return (
+    <div className="verification-submit-progress-qr" aria-hidden>
+      <div className="verification-submit-progress-qr-grid">
+        {cells.map((filled, index) => (
+          <span
+            key={index}
+            className={`verification-submit-progress-qr-cell${
+              filled ? ' verification-submit-progress-qr-cell--filled' : ''
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VerificationProgressDetails({
+  rows,
+}: {
+  rows: VerificationProgressDetailRow[];
+}) {
+  return (
+    <dl className="verification-submit-progress-details">
+      {rows.map(row => {
+        const Icon = detailRowIcon(row.id);
+        return (
+          <div key={row.id} className="verification-submit-progress-detail-row">
+            <dt className="verification-submit-progress-detail-label">
+              <Icon size={15} aria-hidden />
+              <span>{row.label}</span>
+            </dt>
+            <dd className="verification-submit-progress-detail-value">{row.value}</dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
 export const VerificationSubmitProgressOverlay: React.FC<
   VerificationSubmitProgressOverlayProps
 > = ({ recordIds, onClose }) => {
   const [recordsById, setRecordsById] = useState<Record<string, SiteCalibration>>({});
+  const [customersById, setCustomersById] = useState<Record<string, Customer>>({});
   const [visible, setVisible] = useState(false);
   const [stagePulse, setStagePulse] = useState(false);
   const previousStageRef = useRef<VerificationSubmitProgressStage>('submitted');
@@ -65,11 +165,54 @@ export const VerificationSubmitProgressOverlay: React.FC<
     [recordIds, recordsById],
   );
 
+  const primaryRecord = trackedRecords[0] ?? null;
+
+  useEffect(() => {
+    const customerIds = [...new Set(trackedRecords.map(record => record.customerId).filter(Boolean))];
+    if (!customerIds.length) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const entries = await Promise.all(
+        customerIds.map(async customerId => {
+          try {
+            const snap = await getDoc(doc(db, 'customers', customerId));
+            if (!snap.exists()) return null;
+            return [customerId, { id: snap.id, ...(snap.data() as Omit<Customer, 'id'>) }] as const;
+          } catch {
+            return null;
+          }
+        }),
+      );
+
+      if (cancelled) return;
+
+      setCustomersById(prev => {
+        const next = { ...prev };
+        for (const entry of entries) {
+          if (entry) next[entry[0]] = entry[1];
+        }
+        return next;
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [trackedRecords]);
+
   const stage = resolveVerificationSubmitProgressStage(trackedRecords);
   const stageIndex = verificationSubmitProgressStageIndex(stage);
   const stageMeta = VERIFICATION_SUBMIT_PROGRESS_STAGES[stageIndex];
   const StageIcon = stageIcon(stage);
   const waitingForServer = trackedRecords.length < recordIds.length;
+  const customer = primaryRecord ? customersById[primaryRecord.customerId] : undefined;
+  const detailRows = primaryRecord
+    ? buildVerificationSubmitProgressDetails(stage, primaryRecord, customer)
+    : [];
+  const footerMessage = verificationSubmitProgressFooterMessage(stage);
+  const extraRecordCount = Math.max(0, recordIds.length - 1);
 
   useEffect(() => {
     if (previousStageRef.current === stage) return;
@@ -105,26 +248,6 @@ export const VerificationSubmitProgressOverlay: React.FC<
           stagePulse ? ' verification-submit-progress-card--pulse' : ''
         }`}
       >
-        <ol className="verification-submit-progress-steps" aria-label="Verification progress">
-          {VERIFICATION_SUBMIT_PROGRESS_STAGES.map((item, index) => {
-            const done = index < stageIndex;
-            const active = index === stageIndex;
-            return (
-              <li
-                key={item.id}
-                className={`verification-submit-progress-step${
-                  done ? ' verification-submit-progress-step--done' : ''
-                }${active ? ' verification-submit-progress-step--active' : ''}`}
-              >
-                <span className="verification-submit-progress-step-dot">
-                  {done ? <CheckCircle2 size={14} aria-hidden /> : index + 1}
-                </span>
-                <span className="verification-submit-progress-step-label">{item.shortLabel}</span>
-              </li>
-            );
-          })}
-        </ol>
-
         <div className="verification-submit-progress-visual" aria-hidden>
           {stage === 'certified' && (
             <div className="verification-submit-progress-confetti">
@@ -146,6 +269,30 @@ export const VerificationSubmitProgressOverlay: React.FC<
           {stageMeta.title}
         </h2>
         <p className="verification-submit-progress-message">{stageMeta.message}</p>
+
+        {extraRecordCount > 0 && (
+          <p className="verification-submit-progress-multi mb-0">
+            Showing details for 1 of {recordIds.length} verifications.
+          </p>
+        )}
+
+        {detailRows.length > 0 && (
+          <VerificationProgressDetails rows={detailRows} />
+        )}
+
+        {stage === 'certified' && (
+          <div className="verification-submit-progress-certified-footer">
+            {footerMessage && (
+              <p className="verification-submit-progress-success-label mb-0">{footerMessage}</p>
+            )}
+            <VerificationProgressQrPlaceholder />
+            <p className="verification-submit-progress-signatory mb-0">Authorised Signatory</p>
+          </div>
+        )}
+
+        {footerMessage && stage === 'submitted' && (
+          <p className="verification-submit-progress-footer-note mb-0">{footerMessage}</p>
+        )}
 
         {(waitingForServer || waitingMessage) && stage !== 'certified' && (
           <p className="verification-submit-progress-waiting mb-0" role="status">
