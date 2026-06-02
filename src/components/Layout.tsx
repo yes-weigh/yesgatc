@@ -14,7 +14,6 @@ import {
   Package,
   BarChart3,
   ClipboardList,
-  Award,
   Menu,
   X,
   UserCircle,
@@ -28,6 +27,7 @@ import {
   Bell,
   UserPlus,
   Sparkles,
+  GraduationCap,
 } from 'lucide-react';
 
 import type { FirestoreUserDoc } from '../types';
@@ -133,9 +133,15 @@ export const Layout: React.FC = () => {
         ];
       case 'vct':
         return [
-          { path: '/vct', icon: <ClipboardList size={20} />, label: 'Job Queue' },
-          { path: '/vct/certificates', icon: <Award size={20} />, label: 'Certificates' },
-          { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/vct', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { path: '/vct/leads', icon: <UserPlus size={20} />, label: 'Leads' },
+          { path: '/vct/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
+          { path: '/vct/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
+          { path: '/vct/customers', icon: <UserRound size={20} />, label: 'Customer' },
+          { path: '/vct/products', icon: <Package size={20} />, label: 'Product' },
+          { path: '/vct/training', icon: <GraduationCap size={20} />, label: 'Training' },
+          { path: '/vct/notifications', icon: <Bell size={20} />, label: 'Notifications' },
+          { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Report' },
           { path: '/vct/profile', icon: <Settings size={20} />, label: 'My profile' },
         ];
       default:

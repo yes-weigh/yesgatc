@@ -13,6 +13,7 @@ import {
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   limit,
   query,
@@ -143,6 +144,85 @@ async function run() {
       ok('Unauthenticated profile cannot create VCT under another RC');
     } catch (err) {
       fail('Unauthenticated profile cannot create VCT under another RC', err);
+    }
+
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', VCT_UID), {
+        aadhar: VCT_AADHAR,
+        role: 'vct',
+        rcId: RC_UID,
+        approvalStatus: 'approved',
+        active: true,
+        username: 'Test Technician',
+        phone: '9876543210',
+        workflowMode: 'auto',
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    const vctDb = testEnv.authenticatedContext(VCT_UID).firestore();
+
+    try {
+      await assertSucceeds(
+        getDocs(
+          query(collection(vctDb, 'siteCalibrations'), where('rcId', '==', RC_UID)),
+        ),
+      );
+      ok('VCT can list site calibrations for their RC');
+    } catch (err) {
+      fail('VCT can list site calibrations for their RC', err);
+    }
+
+    const verificationId = 'vct-verification-001';
+    try {
+      await assertSucceeds(
+        setDoc(doc(vctDb, 'siteCalibrations', verificationId), {
+          rcId: RC_UID,
+          createdByUid: VCT_UID,
+          status: 'draft',
+          verificationType: 'OV',
+          customerName: 'Test Customer',
+          productName: 'Test Scale',
+          serialNumber: 'SN-001',
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      ok('VCT can create draft verification for their RC');
+    } catch (err) {
+      fail('VCT can create draft verification for their RC', err);
+    }
+
+    try {
+      await assertSucceeds(getDoc(doc(vctDb, 'users', RC_UID)));
+      ok('VCT can read parent RC profile (laboratory seal)');
+    } catch (err) {
+      fail('VCT can read parent RC profile (laboratory seal)', err);
+    }
+
+    try {
+      await assertSucceeds(
+        getDocs(query(collection(vctDb, 'customers'), where('rcId', '==', RC_UID))),
+      );
+      ok('VCT can list customers for their RC');
+    } catch (err) {
+      fail('VCT can list customers for their RC', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(doc(vctDb, 'siteCalibrations', 'vct-verification-bad'), {
+          rcId: 'other-rc-999',
+          createdByUid: VCT_UID,
+          status: 'draft',
+          verificationType: 'OV',
+          customerName: 'Test Customer',
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      ok('VCT cannot create verification under another RC');
+    } catch (err) {
+      fail('VCT cannot create verification under another RC', err);
     }
   } finally {
     await testEnv.cleanup();

@@ -4,8 +4,10 @@ import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, getDoc,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
+import { useRcScope } from '../../lib/roleScope';
+import { resolveVerificationDraftActorMeta } from '../../lib/verificationRequest';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
@@ -87,6 +89,7 @@ import {
 import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
 
 export const RCSiteCalibration: React.FC = () => {
+  const { rcUid, actorUid, isVct } = useRcScope();
   const { user } = useAuth();
   const { products } = useAppContext();
   const confirm = useConfirm();
@@ -110,6 +113,7 @@ export const RCSiteCalibration: React.FC = () => {
   const selectAllDraftsRef = useRef<HTMLInputElement>(null);
   const [laboratorySealId, setLaboratorySealId] = useState('');
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
+  const [actorProfile, setActorProfile] = useState<FirestoreUserDoc | null>(null);
   const [wizardOnLastStep, setWizardOnLastStep] = useState(false);
   const [verificationDeclarationAccepted, setVerificationDeclarationAccepted] = useState(false);
   const verificationFieldsRef = useRef<VerificationSessionFieldsHandle>(null);
@@ -122,6 +126,17 @@ export const RCSiteCalibration: React.FC = () => {
     [partyContext.customerForm],
   );
 
+  const verificationDraftActor = useMemo(
+    () =>
+      resolveVerificationDraftActorMeta({
+        isVct,
+        actorUid,
+        actorUsername: actorProfile?.username ?? user?.username,
+        actorWorkflowMode: actorProfile?.workflowMode,
+      }),
+    [isVct, actorUid, actorProfile?.username, actorProfile?.workflowMode, user?.username],
+  );
+
   const handlePartyContextChange = useCallback((context: VerificationFormStepContext) => {
     setPartyContext(context);
   }, []);
@@ -131,9 +146,9 @@ export const RCSiteCalibration: React.FC = () => {
   }, []);
 
   const fetchLaboratorySeal = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!rcUid) return;
     try {
-      const snap = await getDoc(doc(db, 'users', user.uid));
+      const snap = await getDoc(doc(db, 'users', rcUid));
       const docData = snap.exists() ? (snap.data() as FirestoreUserDoc) : null;
       setRcProfile(docData);
       setLaboratorySealId(resolveLaboratorySealIdentification(docData));
@@ -141,14 +156,14 @@ export const RCSiteCalibration: React.FC = () => {
       setRcProfile(null);
       setLaboratorySealId(resolveLaboratorySealIdentification(null));
     }
-  }, [user?.uid]);
+  }, [rcUid]);
 
   const fetchRecords = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!rcUid) return;
     setLoading(true);
     setListError('');
     try {
-      const q = query(collection(db, 'siteCalibrations'), where('rcId', '==', user.uid));
+      const q = query(collection(db, 'siteCalibrations'), where('rcId', '==', rcUid));
       const snap = await getDocs(q);
       const rows = snap.docs
         .map(d => ({ id: d.id, ...(d.data() as Omit<SiteCalibration, 'id'>) }))
@@ -170,12 +185,12 @@ export const RCSiteCalibration: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.uid]);
+  }, [rcUid]);
 
   const fetchCustomers = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!rcUid) return;
     try {
-      const q = query(collection(db, 'customers'), where('rcId', '==', user.uid));
+      const q = query(collection(db, 'customers'), where('rcId', '==', rcUid));
       const snap = await getDocs(q);
       const rows = snap.docs
         .map(d => ({ id: d.id, ...(d.data() as Omit<Customer, 'id'>) }))
@@ -184,7 +199,28 @@ export const RCSiteCalibration: React.FC = () => {
     } catch {
       setCustomers([]);
     }
-  }, [user?.uid]);
+  }, [rcUid]);
+
+  useEffect(() => {
+    if (!isVct || !actorUid) {
+      setActorProfile(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', actorUid));
+        if (!cancelled) {
+          setActorProfile(snap.exists() ? (snap.data() as FirestoreUserDoc) : null);
+        }
+      } catch {
+        if (!cancelled) setActorProfile(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isVct, actorUid]);
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -199,9 +235,9 @@ export const RCSiteCalibration: React.FC = () => {
   const isEditMode = editingId !== null;
 
   useEffect(() => {
-    if (!showForm || !user?.uid) return;
+    if (!showForm || !rcUid) return;
     void fetchLaboratorySeal();
-  }, [showForm, user?.uid, fetchLaboratorySeal]);
+  }, [showForm, rcUid, fetchLaboratorySeal]);
 
   useEffect(() => {
     if (!showForm || !laboratorySealId) return;
@@ -717,10 +753,15 @@ export const RCSiteCalibration: React.FC = () => {
         const product = products.find(p => p.id === row.productId) ?? null;
 
         const record: Omit<SiteCalibration, 'id'> = {
-          rcId: user!.uid,
+          rcId: rcUid!,
           createdAt: new Date().toISOString(),
-          createdByUid: user?.uid,
-          ...buildNewSiteCalibrationRecord(sessionForSave, { ...row, deviceId }, product),
+          createdByUid: actorUid ?? undefined,
+          ...buildNewSiteCalibrationRecord(
+            sessionForSave,
+            { ...row, deviceId },
+            product,
+            verificationDraftActor,
+          ),
           ...imageFields,
         };
         await setDoc(ref, record);
@@ -933,8 +974,8 @@ export const RCSiteCalibration: React.FC = () => {
   const handleStartAdd = () => {
     setEditingId(null);
     setError('');
-    if (user?.uid && rcProfile) {
-      const session = buildSelfVerificationSession(rcProfile, user.uid, laboratorySealId);
+    if (rcUid && rcProfile) {
+      const session = buildSelfVerificationSession(rcProfile, rcUid, laboratorySealId);
       setSessionValues(session);
       setDeviceImages({
         [session.devices[0]?.localId]: emptyDeviceVerificationImagesState(),
@@ -1278,7 +1319,7 @@ export const RCSiteCalibration: React.FC = () => {
                   onDeviceRvDocumentRemove={handleDeviceRvDocumentRemove}
                   customers={customers}
                   rcProfile={rcProfile}
-                  rcUid={user?.uid}
+                  rcUid={rcUid ?? undefined}
                   submitting={formBusy}
                   lockCustomer={isEditMode}
                   readOnly={isViewMode}

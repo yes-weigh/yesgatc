@@ -3,7 +3,7 @@ import {
   collection, getDocs, doc, setDoc, updateDoc, query, where, deleteField,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { useAuth } from '../../context/AuthContext';
+import { useRcScope } from '../../lib/roleScope';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { StorageImage } from '../../components/StorageImage';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
@@ -43,7 +43,7 @@ function devicesStateFromRecord(record: Customer): CustomerDeviceRowState[] {
 }
 
 export const RCCustomers: React.FC = () => {
-  const { user } = useAuth();
+  const { rcUid, actorUid } = useRcScope();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -85,11 +85,11 @@ export const RCCustomers: React.FC = () => {
   const phoneDuplicateBlocksSave = showAddForm && duplicateCustomer !== null;
 
   const fetchCustomers = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!rcUid) return;
     setLoading(true);
     setListError('');
     try {
-      const q = query(collection(db, 'customers'), where('rcId', '==', user.uid));
+      const q = query(collection(db, 'customers'), where('rcId', '==', rcUid));
       const snap = await getDocs(q);
       const rows = snap.docs
         .map(d => ({ id: d.id, ...(d.data() as Omit<Customer, 'id'>) }))
@@ -111,7 +111,7 @@ export const RCCustomers: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.uid]);
+  }, [rcUid]);
 
   useEffect(() => {
     Promise.resolve().then(() => fetchCustomers());
@@ -241,9 +241,9 @@ export const RCCustomers: React.FC = () => {
       const deviceRecords = uploadAllDevices();
 
       const record: Omit<Customer, 'id'> = {
-        rcId: user!.uid,
+        rcId: rcUid!,
         createdAt: new Date().toISOString(),
-        createdByUid: user?.uid,
+        createdByUid: actorUid ?? undefined,
         ...buildCustomerProfileFields(formValues),
         ...photoFields,
         devices: deviceRecords,

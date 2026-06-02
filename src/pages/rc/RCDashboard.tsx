@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useAppContext } from '../../context/AppContext';
-import { useAuth } from '../../context/AuthContext';
 import {
   UserPlus,
   ClipboardPlus,
@@ -17,6 +16,7 @@ import {
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
+import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
 import { normalizeVerificationStatus } from '../../lib/verificationRequest';
 import type { SiteCalibration, WorkflowMode } from '../../types';
 
@@ -65,42 +65,50 @@ function KpiCard({ to, label, value, sub, icon, accent, placeholder, loading }: 
 
 export const RCDashboard: React.FC = () => {
   const { jobs, updateJob, addCertificate, loadingData } = useAppContext();
-  const { user } = useAuth();
+  const { rcUid, actorUid, isVct } = useRcScope();
+  const basePath = useRoleBasePath();
   const [vctOptions, setVctOptions] = useState<VCTOption[]>([]);
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
   const [loadingVerifications, setLoadingVerifications] = useState(true);
 
   const fetchVerifications = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!rcUid) return;
     setLoadingVerifications(true);
     try {
-      const q = query(collection(db, 'siteCalibrations'), where('rcId', '==', user.uid));
+      const q = query(collection(db, 'siteCalibrations'), where('rcId', '==', rcUid));
       const snap = await getDocs(q);
       setVerifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as SiteCalibration)));
     } finally {
       setLoadingVerifications(false);
     }
-  }, [user?.uid]);
+  }, [rcUid]);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    const fetchVCTs = async () => {
-      const records = await fetchRcVctUsers(user.uid);
-      setVctOptions(records.map(data => ({
-        uid: data.uid,
-        username: data.username || data.aadhar,
-        phone: data.phone,
-        email: data.email,
-        workflowMode: data.workflowMode ?? 'auto',
-      })));
-    };
-    fetchVCTs();
-    fetchVerifications();
-  }, [user?.uid, fetchVerifications]);
+    if (!rcUid) return;
+    if (!isVct) {
+      const fetchVCTs = async () => {
+        const records = await fetchRcVctUsers(rcUid);
+        setVctOptions(records.map(data => ({
+          uid: data.uid,
+          username: data.username || data.aadhar,
+          phone: data.phone,
+          email: data.email,
+          workflowMode: data.workflowMode ?? 'auto',
+        })));
+      };
+      void fetchVCTs();
+    } else {
+      setVctOptions([]);
+    }
+    void fetchVerifications();
+  }, [rcUid, isVct, fetchVerifications]);
 
   const myJobs = useMemo(
-    () => jobs.filter(j => j.createdByUid === user?.uid),
-    [jobs, user?.uid],
+    () =>
+      isVct
+        ? jobs.filter(j => j.assignedTo === actorUid)
+        : jobs.filter(j => j.createdByUid === actorUid),
+    [jobs, actorUid, isVct],
   );
 
   const metrics = useMemo(() => {
@@ -147,7 +155,7 @@ export const RCDashboard: React.FC = () => {
     <div className="fade-in rc-dashboard">
       <section className="rc-kpi-grid" aria-label="Dashboard overview">
         <KpiCard
-          to="/rc/customers"
+          to={`${basePath}/customers`}
           label="New Lead"
           value={metrics.newLeads}
           sub="Inquiry pipeline — capture and convert prospects"
@@ -157,7 +165,7 @@ export const RCDashboard: React.FC = () => {
           loading={false}
         />
         <KpiCard
-          to="/rc/new-job"
+          to={`${basePath}/new-job`}
           label="New Job"
           value={metrics.newJobs}
           sub="Created in the last 7 days"
@@ -166,7 +174,7 @@ export const RCDashboard: React.FC = () => {
           loading={kpiLoading}
         />
         <KpiCard
-          to="/rc/new-job"
+          to={`${basePath}/new-job`}
           label="Assigned Jobs"
           value={metrics.assignedJobs}
           sub="With VCT technicians in the field"
@@ -175,7 +183,7 @@ export const RCDashboard: React.FC = () => {
           loading={kpiLoading}
         />
         <KpiCard
-          to="/rc/verification"
+          to={`${basePath}/verification`}
           label="Verifications · Draft"
           value={metrics.draftVerifications}
           sub="Editable — finish and submit when ready"
@@ -184,7 +192,7 @@ export const RCDashboard: React.FC = () => {
           loading={kpiLoading}
         />
         <KpiCard
-          to="/rc/verification"
+          to={`${basePath}/verification`}
           label="Verifications · Submitted"
           value={metrics.submittedVerifications}
           sub="Locked — awaiting certificate server"
@@ -193,7 +201,7 @@ export const RCDashboard: React.FC = () => {
           loading={kpiLoading}
         />
         <KpiCard
-          to="/rc/verification"
+          to={`${basePath}/verification`}
           label="Verifications · Issued"
           value={metrics.issuedVerifications}
           sub="Approved certificates ready to download"
@@ -230,14 +238,16 @@ export const RCDashboard: React.FC = () => {
                           </p>
                         )}
                       </div>
-                      <button
-                        className="btn-approve"
-                        onClick={() => handleApprove(job.id)}
-                        title="Approve & Issue Certificate"
-                        type="button"
-                      >
-                        <Check size={18} />
-                      </button>
+                      {!isVct && (
+                        <button
+                          className="btn-approve"
+                          onClick={() => handleApprove(job.id)}
+                          title="Approve & Issue Certificate"
+                          type="button"
+                        >
+                          <Check size={18} />
+                        </button>
+                      )}
                     </div>
                   </li>
                 );
@@ -263,7 +273,7 @@ export const RCDashboard: React.FC = () => {
               <div className="rc-dashboard-empty">
                 <FilePenLine size={36} className="text-muted" />
                 <p className="text-muted">No draft verifications yet.</p>
-                <Link to="/rc/verification" className="btn btn-secondary btn-sm mt-2">
+                <Link to={`${basePath}/verification`} className="btn btn-secondary btn-sm mt-2">
                   Start verification
                 </Link>
               </div>
@@ -286,7 +296,7 @@ export const RCDashboard: React.FC = () => {
                 ))}
                 {metrics.draftVerifications > metrics.recentDrafts.length && (
                   <li className="p-3 text-center border-t">
-                    <Link to="/rc/verification" className="text-sm text-blue">
+                    <Link to={`${basePath}/verification`} className="text-sm text-blue">
                       View all {metrics.draftVerifications} drafts
                     </Link>
                   </li>

@@ -6,9 +6,10 @@ import {
   type CustomerFormValues,
 } from './customerProfileFields';
 import {
-  buildRcDirectVerificationMeta,
+  buildVerificationDraftMeta,
   normalizeVerificationStatus,
   productSnapshotFromProduct,
+  type VerificationDraftActorMeta,
 } from './verificationRequest';
 import type { ProductFileMeta } from './productApprovalUpload';
 import {
@@ -330,10 +331,11 @@ export function buildNewSiteCalibrationRecord(
   session: VerificationSessionValues,
   row: VerificationDeviceRowValues,
   product?: Product | null,
+  draftActor: VerificationDraftActorMeta = { actor: 'rc' },
 ): Omit<SiteCalibration, 'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt'> {
   return {
     ...buildSiteCalibrationFromRow(session, row, { product }),
-    ...buildRcDirectVerificationMeta(),
+    ...buildVerificationDraftMeta(draftActor),
   };
 }
 

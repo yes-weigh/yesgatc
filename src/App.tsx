@@ -29,11 +29,10 @@ import {
   RCNotifications,
   RCLeads,
 } from './pages/rc/RCMenuPages';
-import { VCTDashboard } from './pages/vct/VCTDashboard';
 import { VCTProfile } from './pages/vct/VCTProfile';
+import { VCTTraining } from './pages/vct/VCTMenuPages';
 import { Certificates } from './pages/vct/Certificates';
 import { Reports } from './pages/shared/Reports';
-import { Placeholder } from './pages/Placeholder';
 
 const App: React.FC = () => {
   return (
@@ -86,10 +85,18 @@ const App: React.FC = () => {
             {/* VCT Routes */}
             <Route element={<ProtectedRoute allowedRoles={['vct']} />}>
               <Route path="/vct" element={<Layout />}>
-                <Route index element={<VCTDashboard />} />
-                <Route path="certificates" element={<Certificates />} />
-                <Route path="reports" element={<Placeholder />} />
+                <Route index element={<RCDashboard />} />
+                <Route path="leads" element={<RCLeads />} />
+                <Route path="new-job" element={<RCJobQueue />} />
+                <Route path="verification" element={<RCSiteCalibration />} />
+                <Route path="customers" element={<RCCustomers />} />
+                <Route path="products" element={<RCProducts />} />
+                <Route path="training" element={<VCTTraining />} />
+                <Route path="notifications" element={<RCNotifications />} />
+                <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<VCTProfile />} />
+                <Route path="certificates" element={<Certificates />} />
+                <Route path="queue" element={<Navigate to="/vct/new-job" replace />} />
               </Route>
             </Route>
 

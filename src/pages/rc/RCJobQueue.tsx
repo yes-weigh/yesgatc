@@ -3,9 +3,9 @@ import { deleteDoc, doc } from 'firebase/firestore';
 import { useLocation } from 'react-router-dom';
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
-import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
+import { useRcScope } from '../../lib/roleScope';
 import { ClipboardList, Search, Filter, Trash2, CheckCircle2, Clock, PlayCircle, Plus, X, Zap, Users } from 'lucide-react';
 import { formatTechnicianLabel } from '../../lib/contactFields';
 import { isVctOperational } from '../../lib/vctApproval';
@@ -20,7 +20,7 @@ interface VCTOption {
 }
 
 export const RCJobQueue: React.FC = () => {
-  const { user } = useAuth();
+  const { rcUid, actorUid, isVct } = useRcScope();
   const { jobs, createJob, products } = useAppContext();
   const confirm = useConfirm();
   const location = useLocation();
@@ -44,10 +44,10 @@ export const RCJobQueue: React.FC = () => {
   const inheritedMode: WorkflowMode = selectedVCT?.workflowMode ?? 'auto';
 
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!rcUid) return;
     const fetchVCTs = async () => {
       setLoadingVCTs(true);
-      const records = await fetchRcVctUsers(user.uid);
+      const records = await fetchRcVctUsers(rcUid);
       const list = records
         .filter(data => isVctOperational(data))
         .map(data => ({
@@ -58,16 +58,21 @@ export const RCJobQueue: React.FC = () => {
           workflowMode: data.workflowMode ?? 'auto',
         }));
       setVctOptions(list);
-      if (list.length > 0) setAssignedTo(list[0].uid);
+      if (isVct && actorUid) {
+        setAssignedTo(actorUid);
+      } else if (list.length > 0) {
+        setAssignedTo(list[0].uid);
+      }
       setLoadingVCTs(false);
     };
-    fetchVCTs();
-  }, [user?.uid]);
+    void fetchVCTs();
+  }, [rcUid, actorUid, isVct]);
 
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customer || !product || !serial) return;
-    if (!assignedTo) {
+    const assignee = isVct ? actorUid : assignedTo;
+    if (!assignee) {
       alert('Please add a VCT Technician to your centre first.');
       return;
     }
@@ -79,14 +84,14 @@ export const RCJobQueue: React.FC = () => {
         serial,
         jobType,
         status: 'assigned',
-        assignedTo,
+        assignedTo: assignee,
         technicalData: null,
         photos: [],
         paymentStatus: jobType === 'RV' ? 'pending' : 'not_required',
         rcWorkflowMode: inheritedMode,
         rcApproved: false,
         createdAt: new Date().toISOString(),
-        createdByUid: user?.uid,
+        createdByUid: actorUid ?? undefined,
       });
       setCustomer(''); setProduct(''); setSerial('');
       setShowAddForm(false);
@@ -95,10 +100,10 @@ export const RCJobQueue: React.FC = () => {
     }
   };
 
-  // Only show jobs created by this RC Admin
   const myJobs = useMemo(() => {
-    return jobs.filter(j => j.createdByUid === user?.uid);
-  }, [jobs, user?.uid]);
+    if (isVct) return jobs.filter(j => j.assignedTo === actorUid);
+    return jobs.filter(j => j.createdByUid === actorUid);
+  }, [jobs, actorUid, isVct]);
 
   const filteredJobs = useMemo(() => {
     return myJobs.filter(job => {

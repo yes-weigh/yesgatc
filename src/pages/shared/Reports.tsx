@@ -15,8 +15,11 @@ export const Reports: React.FC = () => {
   // Filter jobs based on role
   const relevantJobs = useMemo(() => {
     if (isSuper) return jobs;
+    if (user?.role === 'vct') {
+      return jobs.filter(j => j.assignedTo === user.uid || j.createdByUid === user.uid);
+    }
     return jobs.filter(j => j.createdByUid === user?.uid);
-  }, [jobs, isSuper, user?.uid]);
+  }, [jobs, isSuper, user?.uid, user?.role]);
 
   // Aggregate Data: Jobs by Status
   const statusData = useMemo(() => {

@@ -19,6 +19,20 @@ service cloud.firestore {
     function isRCAdmin()       { return isAuthenticated() && role() == 'rc_admin'; }
     function isVCT()           { return isAuthenticated() && role() == 'vct'; }
 
+    function requestUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function vctRcId() {
+      return requestUser().rcId;
+    }
+
+    function isOperationalVct() {
+      return isVCT()
+        && vctApprovalStatus(requestUser()) == 'approved'
+        && requestUser().get('active', true) != false;
+    }
+
     function vctApprovalStatus(data) {
       return data.get('approvalStatus', 'approved');
     }
@@ -27,6 +41,14 @@ service cloud.firestore {
     match /users/{uid} {
 
       allow get: if isAuthenticated() && request.auth.uid == uid;
+
+      allow get: if isOperationalVct()
+        && uid == vctRcId()
+        && resource.data.role == 'rc_admin';
+
+      allow get: if isOperationalVct()
+        && resource.data.role == 'vct'
+        && resource.data.rcId == vctRcId();
 
       allow read, write: if isSuperAdmin();
 
@@ -87,6 +109,7 @@ service cloud.firestore {
       match /members/{vctUid} {
         allow read, write: if isSuperAdmin();
         allow read: if isRCAdmin() && request.auth.uid == rcId;
+        allow read: if isOperationalVct() && rcId == vctRcId();
         allow create: if isRCAdmin() && request.auth.uid == rcId;
         allow update: if isRCAdmin() && request.auth.uid == rcId;
         allow delete: if isRCAdmin()
@@ -144,12 +167,22 @@ service cloud.firestore {
 
       allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
 
+      allow read: if isOperationalVct() && resource.data.rcId == vctRcId();
+
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid;
+
+      allow create: if isOperationalVct()
+        && request.resource.data.rcId == vctRcId()
+        && request.resource.data.get('createdByUid', '') == request.auth.uid;
 
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == request.auth.uid;
+
+      allow update: if isOperationalVct()
+        && resource.data.rcId == vctRcId()
+        && request.resource.data.rcId == vctRcId();
 
       // RC cannot delete customers once registered; Super Admin may remove records.
     }
@@ -167,13 +200,27 @@ service cloud.firestore {
 
       allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
 
+      allow read: if isOperationalVct() && resource.data.rcId == vctRcId();
+
       // RC creates draft records only; submit is a separate update.
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid
         && verificationRecordStatus(request.resource.data) == 'draft';
 
+      allow create: if isOperationalVct()
+        && request.resource.data.rcId == vctRcId()
+        && request.resource.data.get('createdByUid', '') == request.auth.uid
+        && verificationRecordStatus(request.resource.data) == 'draft';
+
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
+        && request.resource.data.rcId == resource.data.rcId
+        && verificationRecordStatus(request.resource.data) != 'approved'
+        && verificationRecordStatus(resource.data) == 'draft'
+        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted'];
+
+      allow update: if isOperationalVct()
+        && resource.data.rcId == vctRcId()
         && request.resource.data.rcId == resource.data.rcId
         && verificationRecordStatus(request.resource.data) != 'approved'
         && verificationRecordStatus(resource.data) == 'draft'
@@ -190,6 +237,10 @@ service cloud.firestore {
 
       allow delete: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
+        && verificationRecordStatus(resource.data) == 'draft';
+
+      allow delete: if isOperationalVct()
+        && resource.data.rcId == vctRcId()
         && verificationRecordStatus(resource.data) == 'draft';
     }
   }

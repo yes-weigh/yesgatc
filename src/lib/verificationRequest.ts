@@ -4,6 +4,7 @@ import type {
   VerificationPerformedBy,
   VerificationRequestSource,
   VerificationRequestStatus,
+  WorkflowMode,
 } from '../types';
 
 export const VERIFICATION_REQUEST_STATUSES: VerificationRequestStatus[] = [
@@ -243,6 +244,44 @@ export function buildRcDirectVerificationMeta(): {
     status: 'draft',
     performedBy: 'rc',
     requestSource: 'rc_direct',
+  };
+}
+
+export type VerificationDraftActorMeta =
+  | { actor: 'rc' }
+  | { actor: 'vct'; vctId: string; vctName: string; workflowMode?: WorkflowMode };
+
+export function buildVerificationDraftMeta(
+  actor: VerificationDraftActorMeta,
+): Pick<SiteCalibration, 'status' | 'performedBy' | 'requestSource' | 'vctId' | 'vctName'> {
+  if (actor.actor === 'rc') {
+    return buildRcDirectVerificationMeta();
+  }
+
+  return {
+    status: 'draft',
+    performedBy: 'vct',
+    requestSource: actor.workflowMode === 'manual' ? 'vct_manual' : 'vct_auto',
+    vctId: actor.vctId,
+    vctName: actor.vctName.trim() || 'VCT',
+  };
+}
+
+export function resolveVerificationDraftActorMeta(params: {
+  isVct: boolean;
+  actorUid: string | null;
+  actorUsername?: string;
+  actorWorkflowMode?: WorkflowMode;
+}): VerificationDraftActorMeta {
+  if (!params.isVct || !params.actorUid) {
+    return { actor: 'rc' };
+  }
+
+  return {
+    actor: 'vct',
+    vctId: params.actorUid,
+    vctName: params.actorUsername?.trim() || 'VCT',
+    workflowMode: params.actorWorkflowMode ?? 'auto',
   };
 }
 
