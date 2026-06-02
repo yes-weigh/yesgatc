@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { doc, getDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { isValidPhone, isValidPincode, normalizePhone, normalizePincode, requireValidEmail } from '../../lib/contactFields';
-import { Building2, CreditCard, Crosshair, MapPin, FileText, Save, Pencil, X, Mail, Phone, User, ExternalLink, IndianRupee } from 'lucide-react';
+import { Building2, CreditCard, Crosshair, MapPin, FileText, Save, Pencil, X, Mail, Phone, User, ExternalLink, IndianRupee, LogOut } from 'lucide-react';
 import {
   parseRcLocation,
   rcMapsUrl,
@@ -79,7 +80,8 @@ const Field: React.FC<{
 );
 
 export const RCProfile: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Partial<RCProfile>>({});
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -295,6 +297,11 @@ export const RCProfile: React.FC = () => {
         [field]: parseRcFeeAmountInput(value),
       },
     }));
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
   };
 
   if (loading) {
@@ -745,6 +752,13 @@ export const RCProfile: React.FC = () => {
             <span className="text-muted text-sm">
               UID: <span className="text-mono-muted">{user?.uid}</span>
             </span>
+          </div>
+
+          <div className="profile-logout-section">
+            <button type="button" className="profile-logout-btn" onClick={() => void handleLogout()}>
+              <LogOut size={18} aria-hidden />
+              <span>Logout</span>
+            </button>
           </div>
         </div>
       </div>

@@ -41,6 +41,8 @@ import {
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
+import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
+import type { VerificationFormStepId } from '../../lib/verificationFormSteps';
 import { uploadSiteCalibrationDeviceImage } from '../../lib/siteCalibrationPhotoUpload';
 import {
   emptyDeviceImageSlot,
@@ -60,7 +62,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import {
-  RefreshCw, Pencil, X, Plus, Save, ShieldCheck, Send, Download, Eye,
+  Pencil, Plus, Save, Send, Download, Eye,
 } from 'lucide-react';
 
 import {
@@ -101,6 +103,11 @@ export const RCSiteCalibration: React.FC = () => {
   const selectAllDraftsRef = useRef<HTMLInputElement>(null);
   const [laboratorySealId, setLaboratorySealId] = useState('');
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
+  const [wizardOnLastStep, setWizardOnLastStep] = useState(false);
+
+  const handleWizardStepChange = useCallback((_stepId: VerificationFormStepId, isLastStep: boolean) => {
+    setWizardOnLastStep(isLastStep);
+  }, []);
 
   const fetchLaboratorySeal = useCallback(async () => {
     if (!user?.uid) return;
@@ -214,6 +221,7 @@ export const RCSiteCalibration: React.FC = () => {
     if (formBusy) return;
     setShowAddForm(false);
     setEditingId(null);
+    setWizardOnLastStep(false);
     resetForm();
   };
 
@@ -895,6 +903,20 @@ export const RCSiteCalibration: React.FC = () => {
     [filteredRecords, page],
   );
 
+  const customersById = useMemo(
+    () => new Map(customers.map(customer => [customer.id, customer])),
+    [customers],
+  );
+
+  const paginatedRecordsWithPhotos = useMemo(
+    () =>
+      enrichVerificationListRecords(paginatedRecords, {
+        rcProfile,
+        customersById,
+      }),
+    [paginatedRecords, rcProfile, customersById],
+  );
+
   const statusCounts = useMemo(() => tallyVerificationStatusFilters(records), [records]);
 
   const statusFilterOptions = buildVerificationStatusFilterOptions(statusCounts);
@@ -965,7 +987,7 @@ export const RCSiteCalibration: React.FC = () => {
           className="mb-6 inline-form-panel--wide inline-form-panel--calibration"
         >
           <div className="product-form-panel">
-            <div className="product-form-topbar">
+            <div className={`product-form-topbar${showAddForm ? ' product-form-topbar--new-mobile' : ''}`}>
               <div className="product-form-topbar-text">
                 <h2 id="site-calibration-form-title">
                   {showAddForm ? (
@@ -982,15 +1004,9 @@ export const RCSiteCalibration: React.FC = () => {
                     </>
                   )}
                 </h2>
-                <p className="text-muted text-sm mt-1 mb-0">
+                <p className="product-form-topbar-hint text-muted text-sm mt-1 mb-0">
                   {showAddForm
-                    ? sessionValues.customerId
-                      ? includedDeviceCount === 0
-                        ? 'Select at least one device to verify'
-                        : includedDeviceCount === 1
-                          ? '1 device selected — creates 1 draft row'
-                          : `${includedDeviceCount} devices selected — creates ${includedDeviceCount} draft rows (one per device)`
-                      : 'Select a customer to load registered devices'
+                    ? 'Complete each step — save or submit on the final Devices step.'
                     : isViewMode && viewingStatus
                       ? verificationStatusDescription(viewingStatus)
                       : 'Update draft verification for this device'}
@@ -1024,15 +1040,6 @@ export const RCSiteCalibration: React.FC = () => {
                   {error || '\u00a0'}
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                onClick={handleCloseForm}
-                disabled={formBusy}
-                aria-label="Close"
-              >
-                <X size={15} /> Close
-              </button>
             </div>
 
             <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
@@ -1058,6 +1065,7 @@ export const RCSiteCalibration: React.FC = () => {
                   readOnly={isViewMode}
                   laboratorySealIdentification={laboratorySealId}
                   onCustomerUpdated={handleCustomerUpdated}
+                  onWizardStepChange={handleWizardStepChange}
                 />
               </div>
               <div className="product-form-footer verification-form-footer">
@@ -1069,7 +1077,7 @@ export const RCSiteCalibration: React.FC = () => {
                 >
                   {isViewMode ? 'Close' : 'Cancel'}
                 </button>
-                {!isViewMode && (
+                {!isViewMode && wizardOnLastStep && (
                   <>
                     <button
                       type="submit"
@@ -1128,116 +1136,98 @@ export const RCSiteCalibration: React.FC = () => {
       )}
 
       {!showForm && (
-        <div className="panel glass panel--table mb-6">
-          <div className="panel-header justify-between">
-            <div>
-              <h2>
-                <ShieldCheck className="inline-icon" /> Verification
-              </h2>
-              {listError && (
-                <p className="rc-form-topbar-error text-sm mt-1" role="alert">
-                  {listError}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
+        <div className="verification-list-page fade-in">
+          {listError && (
+            <p className="verification-list-error rc-form-topbar-error text-sm" role="alert">
+              {listError}
+            </p>
+          )}
+          <VerificationListFilters
+            searchTerm={searchTerm}
+            onSearchTermChange={setSearchTerm}
+            searchPlaceholder="Search verification…"
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            statusOptions={statusFilterOptions}
+            onNewClick={handleStartAdd}
+            onRefresh={() => void fetchRecords()}
+            refreshing={loading}
+          />
+          {selectedDraftIds.size > 0 && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {selectedDraftIds.size} draft{selectedDraftIds.size !== 1 ? 's' : ''} selected
+              </span>
               <button
                 type="button"
-                className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
-                onClick={handleStartAdd}
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleBulkSubmitRecords()}
+                disabled={submitting}
               >
-                <Plus size={16} /> New
+                {submitting ? (
+                  <span className="spinner-inline"></span>
+                ) : (
+                  <>
+                    <Send size={16} /> Submit for certification
+                  </>
+                )}
               </button>
-              <button className="btn-icon" onClick={fetchRecords} title="Refresh" type="button">
-                <RefreshCw size={18} />
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3"
+                onClick={() => setSelectedDraftIds(new Set())}
+                disabled={submitting}
+              >
+                Clear selection
               </button>
             </div>
-          </div>
-          <div className="panel-body p-0">
-            <VerificationListFilters
-              searchTerm={searchTerm}
-              onSearchTermChange={setSearchTerm}
-              searchPlaceholder="Search customer, serial, certificate…"
-              statusFilter={statusFilter}
-              onStatusFilterChange={setStatusFilter}
-              statusOptions={statusFilterOptions}
-            />
-            {selectedDraftIds.size > 0 && (
-              <div className="verification-bulk-bar">
-                <span className="verification-bulk-bar-count">
-                  {selectedDraftIds.size} draft{selectedDraftIds.size !== 1 ? 's' : ''} selected
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
-                  onClick={() => void handleBulkSubmitRecords()}
-                  disabled={submitting}
-                >
-                  {submitting ? (
-                    <span className="spinner-inline"></span>
-                  ) : (
-                    <>
-                      <Send size={16} /> Submit for certification
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary text-sm py-1.5 px-3"
-                  onClick={() => setSelectedDraftIds(new Set())}
-                  disabled={submitting}
-                >
-                  Clear selection
-                </button>
-              </div>
-            )}
-            {loading ? (
-              <div className="flex justify-center py-16">
-                <span className="spinner-inline large"></span>
-              </div>
-            ) : (
-              <>
-                <TablePagination
-                  page={page}
-                  totalItems={filteredRecords.length}
-                  pageSize={VERIFICATION_TABLE_PAGE_SIZE}
-                  onPageChange={setPage}
-                  placement="top"
-                />
-                <VerificationListTable
-                  mode="rc"
-                  records={paginatedRecords}
-                  rowOffset={rowOffset}
-                  formatDate={formatDate}
-                  emptyMessage={
-                    records.length === 0
-                      ? 'No verification records yet. Click "New" to add a draft.'
-                      : `No ${statusFilter === 'all' ? '' : `${verificationFilterLabel(statusFilter).toLowerCase()} `}verifications.`
-                  }
-                  onView={openRecord}
-                  onEdit={startEdit}
-                  onSubmit={handleSubmitRecord}
-                  onDelete={handleDelete}
-                  submitting={submitting}
-                  bulkSelect={{
-                    selectedDraftIds,
-                    draftSubmitMeta,
-                    selectAllDraftsRef,
-                    selectableDraftIds,
-                    allSelectableDraftsSelected,
-                    onToggleDraftSelection: toggleDraftSelection,
-                    onToggleSelectAllDrafts: toggleSelectAllDrafts,
-                  }}
-                />
-                <TablePagination
-                  page={page}
-                  totalItems={filteredRecords.length}
-                  pageSize={VERIFICATION_TABLE_PAGE_SIZE}
-                  onPageChange={setPage}
-                />
-              </>
-            )}
-          </div>
+          )}
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <span className="spinner-inline large"></span>
+            </div>
+          ) : (
+            <>
+              <TablePagination
+                page={page}
+                totalItems={filteredRecords.length}
+                pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                onPageChange={setPage}
+                placement="top"
+              />
+              <VerificationListTable
+                mode="rc"
+                records={paginatedRecordsWithPhotos}
+                rowOffset={rowOffset}
+                formatDate={formatDate}
+                emptyMessage={
+                  records.length === 0
+                    ? 'No verification records yet. Click "New" to add a draft.'
+                    : `No ${statusFilter === 'all' ? '' : `${verificationFilterLabel(statusFilter).toLowerCase()} `}verifications.`
+                }
+                onView={openRecord}
+                onEdit={startEdit}
+                onSubmit={handleSubmitRecord}
+                onDelete={handleDelete}
+                submitting={submitting}
+                bulkSelect={{
+                  selectedDraftIds,
+                  draftSubmitMeta,
+                  selectAllDraftsRef,
+                  selectableDraftIds,
+                  allSelectableDraftsSelected,
+                  onToggleDraftSelection: toggleDraftSelection,
+                  onToggleSelectAllDrafts: toggleSelectAllDrafts,
+                }}
+              />
+              <TablePagination
+                page={page}
+                totalItems={filteredRecords.length}
+                pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                onPageChange={setPage}
+              />
+            </>
+          )}
         </div>
       )}
     </div>

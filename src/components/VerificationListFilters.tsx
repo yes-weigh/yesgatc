@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Filter, Search } from 'lucide-react';
+import { ChevronDown, LayoutGrid, Plus, RefreshCw, Search } from 'lucide-react';
 import type { VerificationStatusFilter } from '../lib/verificationRequest';
 
 export type { VerificationStatusFilter } from '../lib/verificationRequest';
@@ -23,24 +23,24 @@ interface FilterSelectOption {
   count: number;
 }
 
-interface GlassFilterSelectProps {
+type MenuPosition = { top: number; left: number; width: number };
+
+interface FullWidthFilterSelectProps {
   id: string;
   label: string;
   value: string;
   options: FilterSelectOption[];
   onChange: (value: string) => void;
-  wide?: boolean;
+  variant?: 'primary' | 'secondary';
 }
 
-type MenuPosition = { top: number; left: number; width: number };
-
-const GlassFilterSelect: React.FC<GlassFilterSelectProps> = ({
+const FullWidthFilterSelect: React.FC<FullWidthFilterSelectProps> = ({
   id,
   label,
   value,
   options,
   onChange,
-  wide = false,
+  variant = 'primary',
 }) => {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -55,18 +55,18 @@ const GlassFilterSelect: React.FC<GlassFilterSelectProps> = ({
     if (!el) return;
     const rect = el.getBoundingClientRect();
     setMenuStyle({
-      top: rect.bottom + 4,
+      top: rect.bottom + 6,
       left: rect.left,
-      width: Math.max(rect.width, wide ? 220 : 180),
+      width: rect.width,
     });
-  }, [wide]);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
     const onDocMouseDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (rootRef.current?.contains(target)) return;
-      if ((target as Element).closest?.('.glass-filter-menu--portal')) return;
+      if ((target as Element).closest?.('.verification-stage-menu--portal')) return;
       setOpen(false);
     };
     document.addEventListener('mousedown', onDocMouseDown);
@@ -131,7 +131,7 @@ const GlassFilterSelect: React.FC<GlassFilterSelectProps> = ({
       ? createPortal(
           <ul
             id={listId}
-            className="glass-filter-menu glass-filter-menu--portal"
+            className="verification-stage-menu verification-stage-menu--portal"
             style={{
               top: menuStyle.top,
               left: menuStyle.left,
@@ -144,16 +144,16 @@ const GlassFilterSelect: React.FC<GlassFilterSelectProps> = ({
               <li key={opt.value} role="presentation">
                 <button
                   type="button"
-                  className={`glass-filter-option${
-                    index === activeIndex ? ' glass-filter-option--active' : ''
-                  }${opt.value === value ? ' glass-filter-option--selected' : ''}`}
+                  className={`verification-stage-option${
+                    index === activeIndex ? ' verification-stage-option--active' : ''
+                  }${opt.value === value ? ' verification-stage-option--selected' : ''}`}
                   role="option"
                   aria-selected={opt.value === value}
                   onMouseDown={e => e.preventDefault()}
                   onClick={() => pickOption(opt)}
                 >
-                  <span className="glass-filter-option-label">{opt.label}</span>
-                  <span className="glass-filter-option-count">{opt.count}</span>
+                  <span className="verification-stage-option-label">{opt.label}</span>
+                  <span className="verification-stage-option-count">{opt.count}</span>
                 </button>
               </li>
             ))}
@@ -164,13 +164,13 @@ const GlassFilterSelect: React.FC<GlassFilterSelectProps> = ({
 
   return (
     <div
-      className={`glass-filter-select${wide ? ' glass-filter-select--wide' : ''}`}
+      className={`verification-stage-select verification-stage-select--${variant}`}
       ref={rootRef}
     >
       <button
         id={id}
         type="button"
-        className={`glass-filter-trigger${open ? ' glass-filter-trigger--open' : ''}`}
+        className={`verification-stage-bar${open ? ' verification-stage-bar--open' : ''}`}
         onClick={() => setOpen(prev => !prev)}
         onKeyDown={handleKeyDown}
         aria-haspopup="listbox"
@@ -178,10 +178,9 @@ const GlassFilterSelect: React.FC<GlassFilterSelectProps> = ({
         aria-controls={listId}
         aria-label={`${label}: ${selected?.label ?? value}`}
       >
-        <span className="glass-filter-trigger-value">
-          {selected ? `${selected.label} (${selected.count})` : value}
-        </span>
-        <ChevronDown size={14} className="glass-filter-trigger-chevron" aria-hidden />
+        <LayoutGrid size={18} className="verification-stage-bar-icon" aria-hidden />
+        <span className="verification-stage-bar-label">{selected?.label ?? value}</span>
+        <ChevronDown size={18} className="verification-stage-bar-chevron" aria-hidden />
       </button>
       {menuPortal}
     </div>
@@ -198,6 +197,9 @@ interface VerificationListFiltersProps {
   searchTerm?: string;
   onSearchTermChange?: (value: string) => void;
   searchPlaceholder?: string;
+  onNewClick?: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }
 
 export const VerificationListFilters: React.FC<VerificationListFiltersProps> = ({
@@ -209,14 +211,17 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
   rcOptions,
   searchTerm = '',
   onSearchTermChange,
-  searchPlaceholder = 'Search customer, serial, certificate…',
+  searchPlaceholder = 'Search verification…',
+  onNewClick,
+  onRefresh,
+  refreshing = false,
 }) => {
-  const showRcFilter = Boolean(rcOptions?.length && onRcFilterChange);
+  const showRcFilter = Boolean(rcOptions?.length && rcOptions.length > 1 && onRcFilterChange);
   const showSearch = Boolean(onSearchTermChange);
 
   const rcSelectOptions: FilterSelectOption[] = (rcOptions ?? []).map(opt => ({
     value: opt.value,
-    label: opt.value === 'all' ? 'All' : opt.label,
+    label: opt.value === 'all' ? 'All centres' : opt.label,
     count: opt.count,
   }));
 
@@ -227,46 +232,71 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
   }));
 
   return (
-    <div className="verification-list-toolbar">
-      {showSearch && (
-        <div className="verification-list-search search-wrap">
-          <Search size={16} className="search-icon" aria-hidden />
-          <input
-            type="search"
-            className="search-input"
-            placeholder={searchPlaceholder}
-            value={searchTerm}
-            onChange={e => onSearchTermChange?.(e.target.value)}
-            aria-label="Search verification jobs"
-          />
-        </div>
-      )}
+    <div className="verification-list-toolbar-ref">
+      <FullWidthFilterSelect
+        id="verification-status-filter"
+        label="Stage"
+        value={statusFilter}
+        options={statusSelectOptions}
+        onChange={value => onStatusFilterChange(value as VerificationStatusFilter)}
+        variant="primary"
+      />
 
       {showRcFilter && (
-        <div className="verification-list-filter">
-          <Filter size={16} className="text-muted" aria-hidden />
-          <span className="verification-list-filter-label">RC centre</span>
-          <GlassFilterSelect
-            id="verification-rc-filter"
-            label="RC centre"
-            value={rcFilter ?? 'all'}
-            options={rcSelectOptions}
-            onChange={onRcFilterChange!}
-            wide
-          />
-        </div>
+        <FullWidthFilterSelect
+          id="verification-rc-filter"
+          label="RC centre"
+          value={rcFilter ?? 'all'}
+          options={rcSelectOptions}
+          onChange={onRcFilterChange!}
+          variant="secondary"
+        />
       )}
 
-      <div className="verification-list-filter">
-        <Filter size={16} className="text-muted" aria-hidden />
-        <span className="verification-list-filter-label">Status</span>
-        <GlassFilterSelect
-          id="verification-status-filter"
-          label="Status"
-          value={statusFilter}
-          options={statusSelectOptions}
-          onChange={value => onStatusFilterChange(value as VerificationStatusFilter)}
-        />
+      <div className="verification-list-actions-row">
+        {onNewClick && (
+          <button
+            type="button"
+            className="verification-list-new-btn"
+            onClick={onNewClick}
+            aria-label="New verification job"
+          >
+            <span className="verification-list-new-btn-icon" aria-hidden>
+              <Plus size={20} strokeWidth={2.5} />
+            </span>
+            <span className="verification-list-new-btn-text">
+              <span className="verification-list-new-btn-title">New</span>
+              <span className="verification-list-new-btn-sub">New verification job</span>
+            </span>
+          </button>
+        )}
+
+        {showSearch && (
+          <div className="verification-list-search-ref search-wrap">
+            <Search size={16} className="search-icon" aria-hidden />
+            <input
+              type="search"
+              className="search-input"
+              placeholder={searchPlaceholder}
+              value={searchTerm}
+              onChange={e => onSearchTermChange?.(e.target.value)}
+              aria-label="Search verification jobs"
+            />
+          </div>
+        )}
+
+        {onRefresh && (
+          <button
+            type="button"
+            className="verification-list-refresh-btn btn-icon"
+            onClick={onRefresh}
+            title="Refresh list"
+            aria-label="Refresh list"
+            disabled={refreshing}
+          >
+            <RefreshCw size={18} className={refreshing ? 'spinner-inline' : undefined} />
+          </button>
+        )}
       </div>
     </div>
   );

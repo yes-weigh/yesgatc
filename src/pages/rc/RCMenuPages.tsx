@@ -1,15 +1,8 @@
 import React from 'react';
-import { Bell, ClipboardCheck, Upload, UserPlus } from 'lucide-react';
+import { Bell, ClipboardCheck, UserPlus } from 'lucide-react';
 import { RCModulePage } from './RCModulePage';
 
 export { RCLaboratory } from './RCLaboratory';
-
-export const RCUploadCertificate: React.FC = () => (
-  <RCModulePage
-    title="Manual Upload"
-    icon={<Upload className="inline-icon" />}
-  />
-);
 
 export const RCQualityManagement: React.FC = () => (
   <RCModulePage

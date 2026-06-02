@@ -12,7 +12,6 @@ import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { sortVerificationsByCertificateDesc } from '../../lib/verificationListSort';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
-import { ShieldCheck, RefreshCw } from 'lucide-react';
 import {
   VerificationListFilters,
   type VerificationStatusFilter,
@@ -20,7 +19,8 @@ import {
 import { TablePagination } from '../../components/TablePagination';
 import { VerificationDetailPanel } from '../../components/VerificationDetailPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
-import type { FirestoreUserDoc, SiteCalibration } from '../../types';
+import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
+import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 interface VerificationRow extends SiteCalibration {
   rcCenterName: string;
@@ -29,6 +29,10 @@ interface VerificationRow extends SiteCalibration {
 export const AdminVerificationList: React.FC = () => {
   const confirm = useConfirm();
   const [records, setRecords] = useState<VerificationRow[]>([]);
+  const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
+  const [rcUsersById, setRcUsersById] = useState<
+    Map<string, Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath'>>
+  >(() => new Map());
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
   const [rcFilter, setRcFilter] = useState<string>('all');
@@ -42,18 +46,31 @@ export const AdminVerificationList: React.FC = () => {
     setLoading(true);
     setListError('');
     try {
-      const [calibrationSnap, userSnap] = await Promise.all([
+      const [calibrationSnap, userSnap, customerSnap] = await Promise.all([
         getDocs(collection(db, 'siteCalibrations')),
         getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'customers')),
       ]);
 
       const rcByUid = new Map<string, string>();
+      const rcProfiles = new Map<string, Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath'>>();
       userSnap.docs.forEach(d => {
         const data = d.data() as FirestoreUserDoc;
         if (data.role === 'rc_admin') {
           rcByUid.set(d.id, data.companyName || data.username || '—');
+          rcProfiles.set(d.id, {
+            profilePhotoUrl: data.profilePhotoUrl,
+            profilePhotoPath: data.profilePhotoPath,
+          });
         }
       });
+
+      const customerMap = new Map<string, Customer>();
+      customerSnap.docs.forEach(d => {
+        customerMap.set(d.id, { id: d.id, ...(d.data() as Omit<Customer, 'id'>) });
+      });
+      setCustomersById(customerMap);
+      setRcUsersById(rcProfiles);
 
       const rows: VerificationRow[] = calibrationSnap.docs.map(d => {
         const data = d.data() as Omit<SiteCalibration, 'id'>;
@@ -97,6 +114,15 @@ export const AdminVerificationList: React.FC = () => {
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
     [filteredRecords, page],
+  );
+
+  const paginatedRecordsWithPhotos = useMemo(
+    () =>
+      enrichVerificationListRecords(paginatedRecords, {
+        rcUsersById,
+        customersById,
+      }),
+    [paginatedRecords, rcUsersById, customersById],
   );
 
   useEffect(() => {
@@ -166,68 +192,58 @@ export const AdminVerificationList: React.FC = () => {
           onClose={() => setViewingRecord(null)}
         />
       ) : (
-        <div className="panel glass panel--table">
-          <div className="panel-header justify-between">
-            <div>
-              <h2>
-                <ShieldCheck className="inline-icon text-blue" /> Verifications
-              </h2>
-              {listError && (
-                <p className="rc-form-topbar-error text-sm mt-1 mb-0" role="alert">
-                  {listError}
-                </p>
-              )}
+        <div className="verification-list-page fade-in">
+          {listError && (
+            <p className="verification-list-error rc-form-topbar-error text-sm" role="alert">
+              {listError}
+            </p>
+          )}
+
+          <VerificationListFilters
+            searchTerm={searchTerm}
+            onSearchTermChange={setSearchTerm}
+            searchPlaceholder="Search verification…"
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            statusOptions={filterOptions}
+            rcFilter={rcFilter}
+            onRcFilterChange={setRcFilter}
+            rcOptions={rcFilterOptions}
+            onRefresh={() => void fetchRecords()}
+            refreshing={loading}
+          />
+
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <span className="spinner-inline large" />
             </div>
-            <button className="btn-icon" onClick={() => void fetchRecords()} title="Refresh" type="button">
-              <RefreshCw size={18} />
-            </button>
-          </div>
-
-          <div className="panel-body p-0">
-            <VerificationListFilters
-              searchTerm={searchTerm}
-              onSearchTermChange={setSearchTerm}
-              searchPlaceholder="Search customer, serial, certificate, RC…"
-              statusFilter={statusFilter}
-              onStatusFilterChange={setStatusFilter}
-              statusOptions={filterOptions}
-              rcFilter={rcFilter}
-              onRcFilterChange={setRcFilter}
-              rcOptions={rcFilterOptions}
-            />
-
-            {loading ? (
-              <div className="flex justify-center py-16">
-                <span className="spinner-inline large" />
-              </div>
-            ) : (
-              <>
-                <TablePagination
-                  page={page}
-                  totalItems={filteredRecords.length}
-                  pageSize={VERIFICATION_TABLE_PAGE_SIZE}
-                  onPageChange={setPage}
-                  placement="top"
-                />
-                <VerificationListTable
-                  mode="admin"
-                  records={paginatedRecords}
-                  rowOffset={rowOffset}
-                  formatDate={formatVerificationListDate}
-                  emptyMessage="No verifications match the current filters."
-                  onView={record => setViewingRecord(record as VerificationRow)}
-                  onDelete={record => void handleDelete(record as VerificationRow)}
-                  deletingId={deletingId}
-                />
-                <TablePagination
-                  page={page}
-                  totalItems={filteredRecords.length}
-                  pageSize={VERIFICATION_TABLE_PAGE_SIZE}
-                  onPageChange={setPage}
-                />
-              </>
-            )}
-          </div>
+          ) : (
+            <>
+              <TablePagination
+                page={page}
+                totalItems={filteredRecords.length}
+                pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                onPageChange={setPage}
+                placement="top"
+              />
+              <VerificationListTable
+                mode="admin"
+                records={paginatedRecordsWithPhotos}
+                rowOffset={rowOffset}
+                formatDate={formatVerificationListDate}
+                emptyMessage="No verifications match the current filters."
+                onView={record => setViewingRecord(record as VerificationRow)}
+                onDelete={record => void handleDelete(record as VerificationRow)}
+                deletingId={deletingId}
+              />
+              <TablePagination
+                page={page}
+                totalItems={filteredRecords.length}
+                pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                onPageChange={setPage}
+              />
+            </>
+          )}
         </div>
       )}
     </div>

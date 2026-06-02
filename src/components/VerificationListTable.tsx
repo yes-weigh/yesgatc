@@ -1,5 +1,5 @@
 import React, { type RefObject } from 'react';
-import { Download, Pencil, Send, Trash2 } from 'lucide-react';
+import { Download, Pencil, Send, Store, Trash2, UserCircle } from 'lucide-react';
 import {
   canDeleteVerification,
   canDownloadVerificationCertificate,
@@ -9,7 +9,10 @@ import {
   normalizeVerificationStatus,
   verificationVctLabel,
 } from '../lib/verificationRequest';
+import { inferVerificationSubject } from '../lib/siteCalibrationProfileFields';
+import { verificationListAccentClass } from '../lib/verificationListPartyPhoto';
 import { tableEditCellProps } from '../lib/tableEditCell';
+import { StorageImage } from './StorageImage';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
 import type { SiteCalibration } from '../types';
 
@@ -17,6 +20,8 @@ export type VerificationListTableMode = 'rc' | 'admin';
 
 export interface VerificationListTableRecord extends SiteCalibration {
   rcCenterName?: string;
+  partyPhotoUrl?: string;
+  partyPhotoPath?: string;
 }
 
 export interface VerificationListBulkSelectProps {
@@ -61,6 +66,39 @@ function stopRowClick(e: React.MouseEvent | React.KeyboardEvent) {
   e.stopPropagation();
 }
 
+function VerificationPartyAvatar({
+  record,
+  className = '',
+}: {
+  record: VerificationListTableRecord;
+  className?: string;
+}) {
+  const accentClass = verificationListAccentClass(record.id);
+  const isSelf = inferVerificationSubject(record) === 'self';
+  const photoUrl = record.partyPhotoUrl;
+  const photoPath = record.partyPhotoPath;
+
+  if (photoUrl || photoPath) {
+    return (
+      <StorageImage
+        url={photoUrl}
+        path={photoPath}
+        alt=""
+        className={`verification-list-avatar ${accentClass} ${className}`.trim()}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`verification-list-avatar verification-list-avatar--placeholder ${accentClass} ${className}`.trim()}
+      aria-hidden
+    >
+      {isSelf ? <UserCircle size={20} /> : <Store size={18} />}
+    </span>
+  );
+}
+
 export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   mode,
   records,
@@ -77,7 +115,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
 }) => {
   const showBulkSelect = mode === 'rc' && bulkSelect;
   const showRcCentre = mode === 'admin';
-  const colSpan = 8 + (showBulkSelect ? 1 : 0) + (showRcCentre ? 1 : 0);
+  const colSpan = 9 + (showBulkSelect ? 1 : 0) + (showRcCentre ? 1 : 0);
 
   return (
     <div className="table-scroll-wrap">
@@ -105,6 +143,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
               </th>
             )}
             <th className="site-calibration-col-serial">#</th>
+            <th className="verification-table-col-media">Photo</th>
             <th>Date</th>
             {showRcCentre && <th>RC centre</th>}
             <th>VCT</th>
@@ -134,10 +173,11 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const showSubmit = mode === 'rc' && canSubmitVerification(record) && onSubmit;
             const showDownload = canDownloadVerificationCertificate(record);
             const showDelete = deletable && onDelete;
-            const hasActions = showEdit || showSubmit || showDownload || showDelete;
+            const hasDraftActions = showEdit || showSubmit || showDelete;
+            const accentClass = verificationListAccentClass(record.id);
 
             return (
-              <tr key={record.id} className="table-mobile-row table-mobile-row--actions">
+              <tr key={record.id} className="table-mobile-row table-mobile-row--media-actions">
                 {showBulkSelect && (
                   <td className="verification-table-col-select table-mobile-col-hide">
                     {isDraft ? (
@@ -162,6 +202,12 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                 <td className="site-calibration-col-serial text-muted text-sm table-mobile-col-hide">
                   {rowOffset + index + 1}
                 </td>
+                <td
+                  {...detailCell}
+                  className="verification-table-col-media table-mobile-col-media table-col-editable"
+                >
+                  <VerificationPartyAvatar record={record} />
+                </td>
                 <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
                   {formatDate(record.createdAt)}
                 </td>
@@ -174,26 +220,31 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   {verificationVctLabel(record)}
                 </td>
                 <td {...detailCell} className="font-medium table-mobile-col-primary table-col-editable">
-                  <span className="table-mobile-primary-text">{record.customerName || '—'}</span>
-                  <div className="table-mobile-summary">
-                    <span className="table-mobile-summary-badges">
-                      <VerificationStatusBadge record={record} />
-                      <span className={`status-badge ${typeBadgeClass(record.verificationType)}`}>
-                        {record.verificationType}
-                      </span>
-                    </span>
-                    {showRcCentre && record.rcCenterName && (
-                      <span>{record.rcCenterName}</span>
-                    )}
-                    <span className="site-calibration-cap-acc-inline">
-                      {formatVerificationCapAcc(record)} · {record.serialNumber || '—'}
-                    </span>
-                    <span className="table-mobile-summary-meta">
-                      VCT {verificationVctLabel(record)} · {formatDate(record.createdAt)}
-                    </span>
-                    <span className="table-mobile-summary-meta">
-                      Cert {record.certificateNumber?.trim() || '—'}
-                    </span>
+                  <div className="verification-list-primary">
+                    <VerificationPartyAvatar record={record} className="verification-list-avatar--desktop" />
+                    <div className="min-w-0">
+                      <span className="table-mobile-primary-text">{record.customerName || '—'}</span>
+                      <div className="table-mobile-summary">
+                        <span className="table-mobile-summary-badges">
+                          <VerificationStatusBadge record={record} />
+                          <span className={`status-badge ${typeBadgeClass(record.verificationType)}`}>
+                            {record.verificationType}
+                          </span>
+                        </span>
+                        {showRcCentre && record.rcCenterName && (
+                          <span>{record.rcCenterName}</span>
+                        )}
+                        <span className="site-calibration-cap-acc-inline">
+                          {formatVerificationCapAcc(record)} · {record.serialNumber || '—'}
+                        </span>
+                        <span className="table-mobile-summary-meta">
+                          VCT {verificationVctLabel(record)} · {formatDate(record.createdAt)}
+                        </span>
+                        <span className="table-mobile-summary-meta">
+                          Cert {record.certificateNumber?.trim() || '—'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </td>
                 <td
@@ -227,63 +278,67 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   className="verification-status-actions-cell table-mobile-col-actions table-col-editable"
                 >
                   <div className="verification-status-actions">
-                    <VerificationStatusBadge record={record} />
-                    {hasActions && (
-                      <div
-                        className="verification-row-actions"
-                        onClick={stopRowClick}
-                        onKeyDown={stopRowClick}
-                        role="presentation"
-                      >
-                        {showEdit && (
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            onClick={() => onEdit!(record)}
-                            title="Edit draft"
-                            aria-label={`Edit draft verification for ${record.customerName}`}
-                          >
-                            <Pencil size={18} />
-                          </button>
-                        )}
-                        {showSubmit && (
-                          <button
-                            type="button"
-                            className="btn-icon text-blue"
-                            onClick={() => void onSubmit!(record)}
-                            disabled={submitting || Boolean(submitBlockReason)}
-                            title={submitBlockReason ?? 'Submit for certification'}
-                            aria-label={`Submit verification for ${record.customerName}`}
-                          >
-                            <Send size={18} />
-                          </button>
-                        )}
-                        {showDownload && (
-                          <a
-                            href={record.certificatePdfUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn-icon text-green"
-                            title="Download certificate PDF"
-                            aria-label={`Download certificate for ${record.customerName}`}
-                          >
-                            <Download size={18} />
-                          </a>
-                        )}
-                        {showDelete && (
-                          <button
-                            type="button"
-                            className="btn-icon text-red"
-                            onClick={() => void onDelete!(record)}
-                            disabled={deletingId === record.id}
-                            title="Remove draft"
-                            aria-label={`Remove draft verification for ${record.customerName}`}
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
-                      </div>
-                    )}
+                    <span className="verification-status-badge-desktop">
+                      <VerificationStatusBadge record={record} />
+                    </span>
+                    <div
+                      className="verification-row-actions"
+                      onClick={stopRowClick}
+                      onKeyDown={stopRowClick}
+                      role="presentation"
+                    >
+                      {showDownload && (
+                        <a
+                          href={record.certificatePdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={`verification-list-download-btn ${accentClass}`}
+                          title="Download certificate PDF"
+                          aria-label={`Download certificate for ${record.customerName}`}
+                        >
+                          <Download size={18} />
+                        </a>
+                      )}
+                      {hasDraftActions && (
+                        <div className="verification-list-draft-actions">
+                          {showEdit && (
+                            <button
+                              type="button"
+                              className="btn-icon"
+                              onClick={() => onEdit!(record)}
+                              title="Edit draft"
+                              aria-label={`Edit draft verification for ${record.customerName}`}
+                            >
+                              <Pencil size={18} />
+                            </button>
+                          )}
+                          {showSubmit && (
+                            <button
+                              type="button"
+                              className="btn-icon text-blue"
+                              onClick={() => void onSubmit!(record)}
+                              disabled={submitting || Boolean(submitBlockReason)}
+                              title={submitBlockReason ?? 'Submit for certification'}
+                              aria-label={`Submit verification for ${record.customerName}`}
+                            >
+                              <Send size={18} />
+                            </button>
+                          )}
+                          {showDelete && (
+                            <button
+                              type="button"
+                              className="btn-icon text-red"
+                              onClick={() => void onDelete!(record)}
+                              disabled={deletingId === record.id}
+                              title="Remove draft"
+                              aria-label={`Remove draft verification for ${record.customerName}`}
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </td>
               </tr>

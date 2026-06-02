@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { CustomerSelect } from '../../components/CustomerSelect';
 import { CustomerDetailsSpecs } from '../../components/CustomerDetailsSpecs';
 import { RcDetailsSpecs } from '../../components/RcDetailsSpecs';
-import type { Customer, FirestoreUserDoc, JobType, VerificationLocation } from '../../types';
+import { VerificationFormStepper } from '../../components/VerificationFormStepper';
+import type { Customer, FirestoreUserDoc, JobType } from '../../types';
 import {
   buildInitialSelfDeviceRows,
   deviceRowsFromCustomer,
   syncVerificationDevicesAfterCustomerUpdate,
-  VERIFICATION_LOCATION_OPTIONS,
+  verificationLocationLabel,
   type DeviceVerificationImagesState,
   type DeviceRvDocumentsState,
   type VerificationDeviceRowValues,
@@ -22,6 +24,12 @@ import type { RvDocumentKind } from '../../lib/verificationRvDeviceImages';
 import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import { lookupWeatherByPincode } from '../../lib/pincodeWeatherLookup';
 import { isValidPincode, normalizePincode } from '../../lib/contactFields';
+import {
+  isVerificationFormStepComplete,
+  VERIFICATION_FORM_STEPS,
+  verificationFormStepBlockReason,
+  type VerificationFormStepId,
+} from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
 import { VerificationDeviceFields } from './VerificationDeviceFields';
 import { CustomerInlineEditPanel } from './CustomerInlineEditPanel';
@@ -52,6 +60,7 @@ type VerificationSessionFieldsProps = {
   readOnly?: boolean;
   laboratorySealIdentification?: string;
   onCustomerUpdated?: (customer: Customer) => void;
+  onWizardStepChange?: (stepId: VerificationFormStepId, isLastStep: boolean) => void;
 };
 
 const VERIFICATION_OPTIONS: { value: JobType; label: string }[] = [
@@ -85,9 +94,73 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
   readOnly = false,
   laboratorySealIdentification = '',
   onCustomerUpdated,
+  onWizardStepChange,
 }) => {
   const { products } = useAppContext();
   const locked = submitting || readOnly;
+
+  const [activeStep, setActiveStep] = useState(0);
+  const [furthestStep, setFurthestStep] = useState(0);
+  const [stepError, setStepError] = useState('');
+
+  const currentStep = VERIFICATION_FORM_STEPS[activeStep];
+  const isLastStep = activeStep === VERIFICATION_FORM_STEPS.length - 1;
+
+  const completedStepIds = useMemo(() => {
+    const completed = new Set<VerificationFormStepId>();
+    for (const step of VERIFICATION_FORM_STEPS) {
+      if (isVerificationFormStepComplete(step.id, values, rcProfile)) {
+        completed.add(step.id);
+      }
+    }
+    return completed;
+  }, [values, rcProfile]);
+
+  useEffect(() => {
+    if (values.verificationLocation !== 'in_situ') {
+      onChange({ verificationLocation: 'in_situ' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lock location to in situ for all verifications
+  }, []);
+
+  useEffect(() => {
+    if (readOnly) {
+      setFurthestStep(VERIFICATION_FORM_STEPS.length - 1);
+    }
+  }, [readOnly]);
+
+  useEffect(() => {
+    onWizardStepChange?.(currentStep.id, isLastStep);
+  }, [currentStep.id, isLastStep, onWizardStepChange]);
+
+  useEffect(() => {
+    setStepError('');
+  }, [activeStep]);
+
+  const handleStepSelect = (index: number) => {
+    if (readOnly || index <= furthestStep) {
+      setActiveStep(index);
+      setStepError('');
+    }
+  };
+
+  const handleContinue = () => {
+    if (readOnly) return;
+    const reason = verificationFormStepBlockReason(currentStep.id, values, rcProfile);
+    if (reason) {
+      setStepError(reason);
+      return;
+    }
+    setStepError('');
+    const nextStep = Math.min(activeStep + 1, VERIFICATION_FORM_STEPS.length - 1);
+    setFurthestStep(prev => Math.max(prev, nextStep));
+    setActiveStep(nextStep);
+  };
+
+  const handleBack = () => {
+    setStepError('');
+    setActiveStep(prev => Math.max(prev - 1, 0));
+  };
 
   const withLaboratorySeal = (devices: VerificationDeviceRowValues[]) => {
     if (readOnly || !laboratorySealIdentification.trim()) return devices;
@@ -326,185 +399,246 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
   };
 
   return (
-    <div className="product-form-flat site-calibration-form-flat">
-      <div className="product-form-flat-row site-calibration-form-row">
-        <fieldset className="site-calibration-type-field mb-0">
-          <legend className="form-group-label">Verification type *</legend>
-          <div className="site-calibration-type-options">
-            {VERIFICATION_OPTIONS.map(opt => (
-              <label key={opt.value} className="site-calibration-type-option">
-                <input
-                  type="radio"
-                  name="verificationType"
-                  value={opt.value}
-                  checked={values.verificationType === opt.value}
-                  onChange={() => handleVerificationTypeChange(opt.value)}
-                  disabled={locked}
-                  required
-                />
-                <span>{opt.label}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+    <div className="verification-wizard product-form-flat site-calibration-form-flat">
+      <VerificationFormStepper
+        steps={VERIFICATION_FORM_STEPS}
+        activeStep={activeStep}
+        furthestStep={furthestStep}
+        completedStepIds={readOnly ? completedStepIds : undefined}
+        onStepSelect={handleStepSelect}
+        readOnly={readOnly}
+      />
 
-        <div className="site-calibration-form-grid">
-          <fieldset className="site-calibration-type-field mb-0 site-calibration-form-span-full">
-            <legend className="form-group-label">Belongs to *</legend>
-            <div className="site-calibration-type-options">
-              {SUBJECT_OPTIONS.map(opt => (
-                <label key={opt.value} className="site-calibration-type-option">
-                  <input
-                    type="radio"
-                    name="verificationSubject"
-                    value={opt.value}
-                    checked={values.verificationSubject === opt.value}
-                    onChange={() => handleSubjectChange(opt.value)}
-                    disabled={locked || lockCustomer || (opt.value === 'self' && values.verificationType === 'RV')}
-                  />
-                  <span>{opt.label}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+      <div className="verification-wizard-stage glass">
+        <div className="verification-wizard-stage-head">
+          <h3 className="verification-wizard-stage-title">{currentStep.label}</h3>
+          <p className="verification-wizard-stage-desc text-muted text-sm mb-0">
+            {currentStep.description}
+          </p>
+        </div>
 
-          {isSelf ? (
-            rcProfile ? (
-              <RcDetailsSpecs rc={rcProfile} />
-            ) : (
-              <p className="text-muted text-sm site-calibration-form-span-full mb-0">
-                Loading RC centre details…
-              </p>
-            )
-          ) : (
-            <>
-              <div className="form-group mb-0 site-calibration-form-span-full">
-                <label htmlFor="verification-customer">Customer *</label>
-                <CustomerSelect
-                  customers={customers}
-                  inputId="verification-customer"
-                  value={{
-                    customerId: values.customerId,
-                    customerName: values.customerName,
-                  }}
-                  onChange={handleCustomerSelect}
-                  disabled={locked || lockCustomer}
-                />
-              </div>
-
-              {selectedCustomer && editingCustomer && !readOnly && (
-                <CustomerInlineEditPanel
-                  customer={selectedCustomer}
-                  onSaved={handleCustomerSaved}
-                  onClose={() => setEditingCustomer(false)}
-                />
-              )}
-
-              {selectedCustomer && !editingCustomer && (
-                <CustomerDetailsSpecs
-                  customer={selectedCustomer}
-                  showDevices={false}
-                  onEdit={readOnly || lockCustomer ? undefined : () => setEditingCustomer(true)}
-                  editDisabled={locked}
-                />
-              )}
-            </>
-          )}
-
-          <div className="verification-env-section site-calibration-form-span-full">
-            <p className="site-calibration-details-subheading mb-2">Site conditions</p>
-            <div className="verification-env-grid">
-              <fieldset className="verification-device-location-field mb-0">
-                <legend className="form-group-label">Location *</legend>
-                <div className="verification-device-location-options">
-                  {VERIFICATION_LOCATION_OPTIONS.map((opt, index) => (
-                    <label key={opt.value} className="verification-device-location-option site-calibration-type-option">
+        <div key={currentStep.id} className="verification-wizard-panel fade-in">
+          {currentStep.id === 'type' && (
+            <div className="site-calibration-form-row">
+              <fieldset className="site-calibration-type-field mb-0">
+                <legend className="form-group-label">Verification type *</legend>
+                <div className="site-calibration-type-options verification-wizard-type-options">
+                  {VERIFICATION_OPTIONS.map(opt => (
+                    <label key={opt.value} className="site-calibration-type-option">
                       <input
                         type="radio"
-                        name="verification-session-location"
+                        name="verificationType"
                         value={opt.value}
-                        checked={values.verificationLocation === opt.value}
-                        onChange={() => onChange({ verificationLocation: opt.value as VerificationLocation })}
+                        checked={values.verificationType === opt.value}
+                        onChange={() => handleVerificationTypeChange(opt.value)}
                         disabled={locked}
-                        required={index === 0}
+                        required
+                      />
+                      <span className="verification-option-label">
+                        <span className="verification-option-label-full">{opt.label}</span>
+                        <span className="verification-option-label-short">{opt.value}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="site-calibration-type-field mb-0 site-calibration-form-span-full">
+                <legend className="form-group-label">Belongs to *</legend>
+                <div className="site-calibration-type-options">
+                  {SUBJECT_OPTIONS.map(opt => (
+                    <label key={opt.value} className="site-calibration-type-option">
+                      <input
+                        type="radio"
+                        name="verificationSubject"
+                        value={opt.value}
+                        checked={values.verificationSubject === opt.value}
+                        onChange={() => handleSubjectChange(opt.value)}
+                        disabled={locked || lockCustomer || (opt.value === 'self' && values.verificationType === 'RV')}
                       />
                       <span>{opt.label}</span>
                     </label>
                   ))}
                 </div>
               </fieldset>
+            </div>
+          )}
 
-              <div className="form-group mb-0">
-                <label htmlFor="verification-temp">Ambient temperature (°C)</label>
-                <input
-                  id="verification-temp"
-                  type="text"
-                  inputMode="decimal"
-                  className="input-field"
-                  placeholder={weatherLoading ? 'Fetching weather…' : 'e.g. 28.5'}
-                  value={values.ambientTemperature}
-                  onChange={e => onChange({ ambientTemperature: e.target.value })}
-                  disabled={locked || weatherLoading}
-                />
-                <p className="text-muted text-xs mt-1 mb-0">
-                  {readOnly
-                    ? 'Recorded at verification time.'
-                    : weatherLoading
-                      ? 'Prefilling from weather…'
-                      : isSelf
-                        ? 'Required for submit. Auto-filled from RC postal code or GPS on My Profile when set.'
-                        : 'Required for submit. Auto-filled when a customer is selected.'}
-                </p>
-                {weatherError && (
-                  <p className="text-orange text-xs mt-1 mb-0" role="alert">{weatherError}</p>
+          {currentStep.id === 'party_site' && (
+            <div className="verification-party-site-step">
+              <div className="site-calibration-form-grid">
+                {isSelf ? (
+                  rcProfile ? (
+                    <RcDetailsSpecs rc={rcProfile} />
+                  ) : (
+                    <p className="text-muted text-sm site-calibration-form-span-full mb-0">
+                      Loading RC centre details…
+                    </p>
+                  )
+                ) : (
+                  <>
+                    <div className="form-group mb-0 site-calibration-form-span-full">
+                      <label htmlFor="verification-customer">Customer *</label>
+                      <CustomerSelect
+                        customers={customers}
+                        inputId="verification-customer"
+                        value={{
+                          customerId: values.customerId,
+                          customerName: values.customerName,
+                        }}
+                        onChange={handleCustomerSelect}
+                        disabled={locked || lockCustomer}
+                      />
+                    </div>
+
+                    {selectedCustomer && editingCustomer && !readOnly && (
+                      <CustomerInlineEditPanel
+                        customer={selectedCustomer}
+                        onSaved={handleCustomerSaved}
+                        onClose={() => setEditingCustomer(false)}
+                      />
+                    )}
+
+                    {selectedCustomer && !editingCustomer && (
+                      <CustomerDetailsSpecs
+                        customer={selectedCustomer}
+                        showDevices={false}
+                        onEdit={readOnly || lockCustomer ? undefined : () => setEditingCustomer(true)}
+                        editDisabled={locked}
+                      />
+                    )}
+                  </>
                 )}
               </div>
 
-              <div className="form-group mb-0">
-                <label htmlFor="verification-humidity">Relative humidity (%)</label>
-                <input
-                  id="verification-humidity"
-                  type="text"
-                  inputMode="decimal"
-                  className="input-field"
-                  placeholder={weatherLoading ? 'Fetching weather…' : 'e.g. 65'}
-                  value={values.relativeHumidity}
-                  onChange={e => onChange({ relativeHumidity: e.target.value })}
-                  disabled={locked || weatherLoading}
-                />
-                <p className="text-muted text-xs mt-1 mb-0">
-                  {readOnly ? 'Recorded at verification time.' : 'Required for submit.'}
-                </p>
+              <div className="verification-env-section verification-env-section--combined">
+                <div className="verification-site-location-display">
+                  <span className="form-group-label">Location</span>
+                  <span className="verification-site-location-badge">
+                    {verificationLocationLabel('in_situ')}
+                  </span>
+                </div>
+                <div className="verification-env-grid verification-env-grid--metrics">
+                  <div className="form-group mb-0">
+                    <label htmlFor="verification-temp">Temperature (°C)</label>
+                    <input
+                      id="verification-temp"
+                      type="text"
+                      inputMode="decimal"
+                      className="input-field"
+                      placeholder={weatherLoading ? 'Fetching…' : '28.5'}
+                      value={values.ambientTemperature}
+                      onChange={e => onChange({ ambientTemperature: e.target.value })}
+                      disabled={locked || weatherLoading}
+                    />
+                    {weatherError && (
+                      <p className="text-orange text-xs mt-1 mb-0" role="alert">{weatherError}</p>
+                    )}
+                  </div>
+
+                  <div className="form-group mb-0">
+                    <label htmlFor="verification-humidity">Humidity (%)</label>
+                    <input
+                      id="verification-humidity"
+                      type="text"
+                      inputMode="decimal"
+                      className="input-field"
+                      placeholder={weatherLoading ? 'Fetching…' : '65'}
+                      value={values.relativeHumidity}
+                      onChange={e => onChange({ relativeHumidity: e.target.value })}
+                      disabled={locked || weatherLoading}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {showDevices && (
-            <div className="site-calibration-form-span-full">
-              <VerificationDeviceFields
-                devices={values.devices}
-                deviceImages={deviceImages}
-                deviceRvImages={deviceRvImages}
-                verificationType={values.verificationType}
-                onDeviceChange={onDeviceChange}
-                onDeviceAdd={onDeviceAdd}
-                onDeviceRemove={onDeviceRemove}
-                onDeviceImageSelect={onDeviceImageSelect}
-                onDeviceImageRemove={onDeviceImageRemove}
-                onDeviceRvDocumentSelect={onDeviceRvDocumentSelect}
-                onDeviceRvDocumentRemove={onDeviceRvDocumentRemove}
-                verificationLocation={values.verificationLocation}
-                verificationSubject={values.verificationSubject}
-                feesStructure={resolveRcFeesStructure(rcProfile)}
-                submitting={submitting}
-                readOnly={readOnly}
-                laboratorySealIdentification={laboratorySealIdentification}
-                manualEntryOnly={isSelf}
-                createMode={!lockCustomer && !readOnly && !isSelf}
-              />
-            </div>
+          {currentStep.id === 'devices' && showDevices && (
+            <VerificationDeviceFields
+              devices={values.devices}
+              deviceImages={deviceImages}
+              deviceRvImages={deviceRvImages}
+              verificationType={values.verificationType}
+              onDeviceChange={onDeviceChange}
+              onDeviceAdd={onDeviceAdd}
+              onDeviceRemove={onDeviceRemove}
+              onDeviceImageSelect={onDeviceImageSelect}
+              onDeviceImageRemove={onDeviceImageRemove}
+              onDeviceRvDocumentSelect={onDeviceRvDocumentSelect}
+              onDeviceRvDocumentRemove={onDeviceRvDocumentRemove}
+              verificationLocation={values.verificationLocation || 'in_situ'}
+              verificationSubject={values.verificationSubject}
+              feesStructure={resolveRcFeesStructure(rcProfile)}
+              submitting={submitting}
+              readOnly={readOnly}
+              laboratorySealIdentification={laboratorySealIdentification}
+              manualEntryOnly={isSelf}
+              createMode={!lockCustomer && !readOnly && !isSelf}
+            />
+          )}
+
+          {currentStep.id === 'devices' && !showDevices && (
+            <p className="text-muted text-sm mb-0">
+              Select a customer on the Details step first to load devices.
+            </p>
           )}
         </div>
+
+        {!readOnly ? (
+          <div className="verification-wizard-nav">
+            {stepError && (
+              <p className="verification-wizard-nav-error rc-form-topbar-error mb-0" role="alert">
+                {stepError}
+              </p>
+            )}
+            <div className="verification-wizard-nav-actions">
+              {activeStep > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-secondary flex items-center gap-1.5"
+                  onClick={handleBack}
+                  disabled={locked}
+                >
+                  <ChevronLeft size={16} /> Back
+                </button>
+              )}
+              {!isLastStep && (
+                <button
+                  type="button"
+                  className="btn btn-primary flex items-center gap-1.5"
+                  onClick={handleContinue}
+                  disabled={locked}
+                >
+                  Continue <ChevronRight size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="verification-wizard-nav">
+            <div className="verification-wizard-nav-actions">
+              {activeStep > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-secondary flex items-center gap-1.5"
+                  onClick={handleBack}
+                >
+                  <ChevronLeft size={16} /> Previous
+                </button>
+              )}
+              {!isLastStep && (
+                <button
+                  type="button"
+                  className="btn btn-secondary flex items-center gap-1.5"
+                  onClick={() => setActiveStep(prev => Math.min(prev + 1, VERIFICATION_FORM_STEPS.length - 1))}
+                >
+                  Next <ChevronRight size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

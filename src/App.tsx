@@ -24,7 +24,6 @@ import { RCCustomers } from './pages/rc/RCCustomers';
 import { RCProducts } from './pages/rc/RCProducts';
 import { RCSiteCalibration } from './pages/rc/RCSiteCalibration';
 import {
-  RCUploadCertificate,
   RCLaboratory,
   RCQualityManagement,
   RCNotifications,
@@ -70,7 +69,6 @@ const App: React.FC = () => {
                 <Route path="verification" element={<RCSiteCalibration />} />
                 <Route path="site-calibration" element={<Navigate to="/rc/verification" replace />} />
                 <Route path="queue" element={<Navigate to="/rc/new-job" replace />} />
-                <Route path="upload-certificate" element={<RCUploadCertificate />} />
                 <Route path="customers" element={<RCCustomers />} />
                 <Route path="leads" element={<RCLeads />} />
                 <Route path="products" element={<RCProducts />} />

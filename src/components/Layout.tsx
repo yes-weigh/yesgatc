@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { formatContactSubtitle } from '../lib/contactFields';
+import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
+import { MobileAppBarBrandIcon } from './MobileAppBarBrandIcon';
+import { StorageImage } from './StorageImage';
 import {
   LayoutDashboard,
   Building2,
@@ -9,37 +14,42 @@ import {
   BarChart3,
   ClipboardList,
   Award,
-  LogOut,
   Menu,
   X,
   UserCircle,
   ShieldCheck,
   Settings,
   Truck,
-  Upload,
   UserRound,
   Wrench,
   Scale,
   ClipboardCheck,
   Bell,
   UserPlus,
+  Sparkles,
 } from 'lucide-react';
+
+import type { FirestoreUserDoc } from '../types';
 
 type NavItem = {
   path: string;
   icon: React.ReactNode;
   label: string;
   pageTitle?: string;
+  mobileSubtitle?: string;
 };
 
 export const Layout: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [rcProfilePhoto, setRcProfilePhoto] = useState<{ url?: string; path?: string } | null>(null);
+
+  const rcProfilePath = user?.role === 'rc_admin' ? '/rc/profile' : null;
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768);
@@ -51,10 +61,26 @@ export const Layout: React.FC = () => {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
+  useEffect(() => {
+    if (!user?.uid || user.role !== 'rc_admin') {
+      setRcProfilePhoto(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (cancelled || !snap.exists()) return;
+        const photo = rcProfilePhotoFromUser(snap.data() as FirestoreUserDoc);
+        setRcProfilePhoto(photo ? { url: photo.url, path: photo.path } : null);
+      } catch {
+        if (!cancelled) setRcProfilePhoto(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, user?.role, location.pathname]);
 
   if (!user) return null;
 
@@ -71,7 +97,7 @@ export const Layout: React.FC = () => {
             pageTitle: 'Verification and Calibration Technician',
           },
           { path: '/admin/vehicles', icon: <Truck size={20} />, label: 'Vehicle' },
-          { path: '/admin/verifications', icon: <ShieldCheck size={20} />, label: 'Verification' },
+          { path: '/admin/verifications', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
           { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
           { path: '/admin/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
           { path: '/admin/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
@@ -83,8 +109,7 @@ export const Layout: React.FC = () => {
           { path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
           { path: '/rc/leads', icon: <UserPlus size={20} />, label: 'Leads' },
           { path: '/rc/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
-          { path: '/rc/verification', icon: <ShieldCheck size={20} />, label: 'Verification' },
-          { path: '/rc/upload-certificate', icon: <Upload size={20} />, label: 'Manual Upload' },
+          { path: '/rc/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
           { path: '/rc/customers', icon: <UserRound size={20} />, label: 'Customer' },
           { path: '/rc/products', icon: <Package size={20} />, label: 'Product' },
           {
@@ -112,11 +137,10 @@ export const Layout: React.FC = () => {
   };
 
   const navItems = getNavItems();
-
-  const getPageTitle = () => {
-    const item = navItems.find(n => n.path === location.pathname);
-    return item?.pageTitle ?? item?.label ?? 'Dashboard';
-  };
+  const currentNavItem = navItems.find(item => item.path === location.pathname);
+  const pageTitle = currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
+  const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
+  const useShieldBrand = location.pathname.includes('verification');
 
   const roleLabel = {
     super_admin: 'Super Admin',
@@ -207,30 +231,91 @@ export const Layout: React.FC = () => {
       <main
         className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}`}
       >
-        <header className="top-bar glass">
-          {isMobile && (
+        {isMobile && (
+          <header className="mobile-app-bar">
             <button
-              className="collapse-btn"
+              type="button"
+              className="mobile-app-bar-menu collapse-btn"
               onClick={() => setMobileOpen(true)}
               title="Open menu"
-              style={{ marginRight: '1rem' }}
+              aria-label="Open menu"
             >
               <Menu size={22} />
             </button>
-          )}
-          <h1 className="page-title">{getPageTitle()}</h1>
-          <div className="user-chip">
-            <UserCircle size={20} className="text-blue" />
-            <div className="user-info">
-              <span className="user-name">{user.username}</span>
-              <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
+            <div className="mobile-app-bar-brand">
+              <MobileAppBarBrandIcon variant={useShieldBrand ? 'shield' : 'page'}>
+                {!useShieldBrand ? pageIcon : null}
+              </MobileAppBarBrandIcon>
+              <div className="mobile-app-bar-text">
+                <h1 className="mobile-app-bar-title">{pageTitle}</h1>
+                {currentNavItem?.mobileSubtitle && (
+                  <p className="mobile-app-bar-subtitle">
+                    <Sparkles size={14} className="mobile-app-bar-subtitle-icon" aria-hidden />
+                    {currentNavItem.mobileSubtitle}
+                  </p>
+                )}
+              </div>
             </div>
-            <button className="logout-btn" onClick={handleLogout}>
-              <LogOut size={16} />
-              <span>Logout</span>
-            </button>
-          </div>
-        </header>
+            {rcProfilePath && (
+              <button
+                type="button"
+                className={`mobile-profile-shortcut${location.pathname === rcProfilePath ? ' mobile-profile-shortcut--active' : ''}`}
+                onClick={() => navigate(rcProfilePath)}
+                title="My profile"
+                aria-label="Open my profile"
+              >
+                {rcProfilePhoto?.url || rcProfilePhoto?.path ? (
+                  <StorageImage
+                    url={rcProfilePhoto.url}
+                    path={rcProfilePhoto.path}
+                    alt=""
+                    className="mobile-profile-shortcut-img"
+                  />
+                ) : (
+                  <span className="mobile-profile-shortcut-placeholder" aria-hidden>
+                    <UserCircle size={22} className="text-blue" />
+                  </span>
+                )}
+              </button>
+            )}
+          </header>
+        )}
+        {!isMobile && (
+          <header className="top-bar glass">
+            <h1 className="page-title">{pageTitle}</h1>
+            {rcProfilePath ? (
+              <button
+                type="button"
+                className="user-chip user-chip--profile-link"
+                onClick={() => navigate(rcProfilePath)}
+                title="My profile"
+              >
+                {rcProfilePhoto?.url || rcProfilePhoto?.path ? (
+                  <StorageImage
+                    url={rcProfilePhoto.url}
+                    path={rcProfilePhoto.path}
+                    alt=""
+                    className="user-chip-avatar"
+                  />
+                ) : (
+                  <UserCircle size={20} className="text-blue" />
+                )}
+                <div className="user-info">
+                  <span className="user-name">{user.username}</span>
+                  <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
+                </div>
+              </button>
+            ) : (
+              <div className="user-chip">
+                <UserCircle size={20} className="text-blue" />
+                <div className="user-info">
+                  <span className="user-name">{user.username}</span>
+                  <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
+                </div>
+              </div>
+            )}
+          </header>
+        )}
         <div className="content-area">
           <Outlet />
         </div>
