@@ -7,6 +7,14 @@
         { "fieldPath": "role", "order": "ASCENDING" },
         { "fieldPath": "rcId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "siteCalibrations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "rcId", "order": "ASCENDING" },
+        { "fieldPath": "createdByUid", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { getDocs } from 'firebase/firestore';
 import { useAppContext } from '../../context/AppContext';
 import {
   UserPlus,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
+import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
 import { normalizeVerificationStatus } from '../../lib/verificationRequest';
 import type { SiteCalibration, WorkflowMode } from '../../types';
@@ -75,13 +76,13 @@ export const RCDashboard: React.FC = () => {
     if (!rcUid) return;
     setLoadingVerifications(true);
     try {
-      const q = query(collection(db, 'siteCalibrations'), where('rcId', '==', rcUid));
+      const q = verificationRecordsQuery(db, rcUid, { isVct, actorUid });
       const snap = await getDocs(q);
       setVerifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as SiteCalibration)));
     } finally {
       setLoadingVerifications(false);
     }
-  }, [rcUid]);
+  }, [rcUid, isVct, actorUid]);
 
   useEffect(() => {
     if (!rcUid) return;

@@ -193,6 +193,11 @@ service cloud.firestore {
         return data.get('status', 'draft');
       }
 
+      function vctOwnsVerification(data) {
+        return data.get('createdByUid', '') == request.auth.uid
+          || data.get('vctId', '') == request.auth.uid;
+      }
+
       allow read: if isSuperAdmin();
       allow create, update: if isSuperAdmin();
       allow delete: if isSuperAdmin()
@@ -200,7 +205,9 @@ service cloud.firestore {
 
       allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
 
-      allow read: if isOperationalVct() && resource.data.rcId == vctRcId();
+      allow read: if isOperationalVct()
+        && resource.data.rcId == vctRcId()
+        && vctOwnsVerification(resource.data);
 
       // RC creates draft records only; submit is a separate update.
       allow create: if isRCAdmin()
@@ -210,6 +217,8 @@ service cloud.firestore {
       allow create: if isOperationalVct()
         && request.resource.data.rcId == vctRcId()
         && request.resource.data.get('createdByUid', '') == request.auth.uid
+        && request.resource.data.get('vctId', '') == request.auth.uid
+        && request.resource.data.get('performedBy', '') == 'vct'
         && verificationRecordStatus(request.resource.data) == 'draft';
 
       allow update: if isRCAdmin()
@@ -222,6 +231,7 @@ service cloud.firestore {
       allow update: if isOperationalVct()
         && resource.data.rcId == vctRcId()
         && request.resource.data.rcId == resource.data.rcId
+        && vctOwnsVerification(resource.data)
         && verificationRecordStatus(request.resource.data) != 'approved'
         && verificationRecordStatus(resource.data) == 'draft'
         && verificationRecordStatus(request.resource.data) in ['draft', 'submitted'];
@@ -241,6 +251,7 @@ service cloud.firestore {
 
       allow delete: if isOperationalVct()
         && resource.data.rcId == vctRcId()
+        && vctOwnsVerification(resource.data)
         && verificationRecordStatus(resource.data) == 'draft';
     }
   }

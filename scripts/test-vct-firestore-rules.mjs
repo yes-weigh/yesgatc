@@ -163,15 +163,39 @@ async function run() {
 
     const vctDb = testEnv.authenticatedContext(VCT_UID).firestore();
 
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'siteCalibrations', 'rc-verification-001'), {
+        rcId: RC_UID,
+        createdByUid: RC_UID,
+        performedBy: 'rc',
+        status: 'draft',
+        verificationType: 'OV',
+        customerName: 'RC Customer',
+        createdAt: new Date().toISOString(),
+      });
+    });
+
     try {
       await assertSucceeds(
         getDocs(
-          query(collection(vctDb, 'siteCalibrations'), where('rcId', '==', RC_UID)),
+          query(
+            collection(vctDb, 'siteCalibrations'),
+            where('rcId', '==', RC_UID),
+            where('createdByUid', '==', VCT_UID),
+          ),
         ),
       );
-      ok('VCT can list site calibrations for their RC');
+      ok('VCT can list only their own verifications');
     } catch (err) {
-      fail('VCT can list site calibrations for their RC', err);
+      fail('VCT can list only their own verifications', err);
+    }
+
+    try {
+      await assertFails(getDoc(doc(vctDb, 'siteCalibrations', 'rc-verification-001')));
+      ok('VCT cannot read RC admin verification');
+    } catch (err) {
+      fail('VCT cannot read RC admin verification', err);
     }
 
     const verificationId = 'vct-verification-001';
@@ -180,6 +204,10 @@ async function run() {
         setDoc(doc(vctDb, 'siteCalibrations', verificationId), {
           rcId: RC_UID,
           createdByUid: VCT_UID,
+          vctId: VCT_UID,
+          vctName: 'Test Technician',
+          performedBy: 'vct',
+          requestSource: 'vct_auto',
           status: 'draft',
           verificationType: 'OV',
           customerName: 'Test Customer',

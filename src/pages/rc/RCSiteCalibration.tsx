@@ -86,6 +86,7 @@ import {
   applyLaboratorySealToDeviceRows,
   resolveLaboratorySealIdentification,
 } from '../../lib/rcLaboratoryFields';
+import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
 
 export const RCSiteCalibration: React.FC = () => {
@@ -163,7 +164,7 @@ export const RCSiteCalibration: React.FC = () => {
     setLoading(true);
     setListError('');
     try {
-      const q = query(collection(db, 'siteCalibrations'), where('rcId', '==', rcUid));
+      const q = verificationRecordsQuery(db, rcUid, { isVct, actorUid });
       const snap = await getDocs(q);
       const rows = snap.docs
         .map(d => ({ id: d.id, ...(d.data() as Omit<SiteCalibration, 'id'>) }))
@@ -185,7 +186,7 @@ export const RCSiteCalibration: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [rcUid]);
+  }, [rcUid, isVct, actorUid]);
 
   const fetchCustomers = useCallback(async () => {
     if (!rcUid) return;
