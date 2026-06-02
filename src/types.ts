@@ -346,6 +346,14 @@ export interface SiteCalibration {
   standardWeightImagePath?: string;
   standardWeightImageName?: string;
   standardWeightImageContentType?: string;
+  verificationSealImageUrl?: string;
+  verificationSealImagePath?: string;
+  verificationSealImageName?: string;
+  verificationSealImageContentType?: string;
+  installationImageUrl?: string;
+  installationImagePath?: string;
+  installationImageName?: string;
+  installationImageContentType?: string;
   /** Re-verification only — year the device was manufactured. */
   manufacturingYear?: number;
   oldVerificationCertificateUrl?: string;

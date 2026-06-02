@@ -1,7 +1,10 @@
 import type { FirestoreUserDoc } from '../types';
-import type { VerificationSessionValues } from './siteCalibrationProfileFields';
+import {
+  validateVerificationDeviceDetails,
+  type VerificationSessionValues,
+} from './siteCalibrationProfileFields';
 
-export type VerificationFormStepId = 'type' | 'party_site' | 'devices';
+export type VerificationFormStepId = 'setup' | 'devices' | 'evidence';
 
 export type VerificationFormStepDef = {
   id: VerificationFormStepId;
@@ -12,22 +15,22 @@ export type VerificationFormStepDef = {
 
 export const VERIFICATION_FORM_STEPS: VerificationFormStepDef[] = [
   {
-    id: 'type',
-    label: 'Verification type',
-    shortLabel: 'Type',
-    description: 'Choose original or re-verification and who this request belongs to.',
-  },
-  {
-    id: 'party_site',
-    label: 'Party & site',
-    shortLabel: 'Details',
-    description: 'Confirm the party, location, and ambient conditions.',
+    id: 'setup',
+    label: 'Belongs to',
+    shortLabel: 'Belongs to',
+    description: 'Choose who this verification belongs to and confirm site conditions.',
   },
   {
     id: 'devices',
-    label: 'Devices & evidence',
+    label: 'Devices',
     shortLabel: 'Devices',
-    description: 'Select devices, enter readings, and attach required photos or documents.',
+    description: 'Select devices and enter serial numbers, MPE, and seal details.',
+  },
+  {
+    id: 'evidence',
+    label: 'Evidence',
+    shortLabel: 'Photos',
+    description: 'Attach verification photos and documents for each selected device.',
   },
 ];
 
@@ -65,6 +68,22 @@ function siteStepBlockReason(values: VerificationSessionValues): string | null {
   return null;
 }
 
+function devicesStepBlockReason(values: VerificationSessionValues): string | null {
+  const included = values.devices.filter(row => row.included);
+  if (included.length === 0) return 'Select at least one device.';
+
+  for (let i = 0; i < values.devices.length; i++) {
+    const row = values.devices[i];
+    if (!row.included) continue;
+    const rowError = validateVerificationDeviceDetails(row, i, {
+      verificationType: values.verificationType,
+    });
+    if (rowError) return rowError;
+  }
+
+  return null;
+}
+
 export function isVerificationFormStepComplete(
   stepId: VerificationFormStepId,
   values: VerificationSessionValues,
@@ -78,25 +97,29 @@ export function verificationFormStepBlockReason(
   values: VerificationSessionValues,
   rcProfile: FirestoreUserDoc | null | undefined,
 ): string | null {
-  if (stepId === 'type') {
+  if (stepId === 'setup') {
     if (values.verificationType !== 'OV' && values.verificationType !== 'RV') {
-      return 'Select Original Verification or Re-verification.';
+      return 'Select OV or RV.';
     }
     if (values.verificationSubject !== 'self' && values.verificationSubject !== 'customer') {
-      return 'Choose whether this verification is for Self or a Customer.';
+      return 'Choose Self or Customer.';
     }
-    return null;
-  }
-
-  if (stepId === 'party_site') {
     const partyReason = partyStepBlockReason(values, rcProfile);
     if (partyReason) return partyReason;
     return siteStepBlockReason(values);
   }
 
-  if (values.devices.filter(row => row.included).length === 0) {
-    return 'Select at least one device to include.';
+  if (stepId === 'devices') {
+    return devicesStepBlockReason(values);
   }
+
+  if (stepId === 'evidence') {
+    if (values.devices.filter(row => row.included).length === 0) {
+      return 'Select at least one device on the previous step.';
+    }
+    return null;
+  }
+
   return null;
 }
 

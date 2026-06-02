@@ -62,7 +62,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import {
-  Pencil, Plus, Save, Send, Download, Eye,
+  Pencil, Plus, Save, Send, Download, Eye, X,
 } from 'lucide-react';
 
 import {
@@ -72,7 +72,11 @@ import {
 import { sortVerificationsByCertificateDesc } from '../../lib/verificationListSort';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
-import { VerificationSessionFields } from './VerificationSessionFields';
+import {
+  VerificationSessionFields,
+  type VerificationSessionFieldsHandle,
+} from './VerificationSessionFields';
+import type { PersistVerificationPartyResult } from '../../lib/verificationPartyPersist';
 import { useAppContext } from '../../context/AppContext';
 import {
   applyLaboratorySealToDeviceRows,
@@ -104,6 +108,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [laboratorySealId, setLaboratorySealId] = useState('');
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
   const [wizardOnLastStep, setWizardOnLastStep] = useState(false);
+  const verificationFieldsRef = useRef<VerificationSessionFieldsHandle>(null);
 
   const handleWizardStepChange = useCallback((_stepId: VerificationFormStepId, isLastStep: boolean) => {
     setWizardOnLastStep(isLastStep);
@@ -273,6 +278,29 @@ export const RCSiteCalibration: React.FC = () => {
         .sort((a, b) => a.name.localeCompare(b.name)),
     );
   };
+
+  const applyPartyPersistResult = useCallback(
+    async (result: PersistVerificationPartyResult | undefined): Promise<boolean> => {
+      if (!result) return true;
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      if (result.updatedCustomer) {
+        handleCustomerUpdated(result.updatedCustomer);
+      }
+      if (result.rcProfileSaved) {
+        await fetchLaboratorySeal();
+      }
+      return true;
+    },
+    [fetchLaboratorySeal],
+  );
+
+  const persistPartyBeforeSave = useCallback(async (): Promise<boolean> => {
+    const result = await verificationFieldsRef.current?.persistPartyChanges();
+    return applyPartyPersistResult(result);
+  }, [applyPartyPersistResult]);
 
   const handleDeviceChange = (localId: string, patch: Partial<VerificationDeviceRowValues>) => {
     const { sealIdentificationNumber: _seal, ...rest } = patch;
@@ -609,6 +637,8 @@ export const RCSiteCalibration: React.FC = () => {
     const includedRows = sessionValues.devices.filter(row => row.included);
     setSubmitting(true);
     try {
+      if (!(await persistPartyBeforeSave())) return;
+
       const rowsToSync = includedRows.filter(
         row => row.productId.trim() && row.serialNumber.trim(),
       );
@@ -664,6 +694,8 @@ export const RCSiteCalibration: React.FC = () => {
 
     setSubmitting(true);
     try {
+      if (!(await persistPartyBeforeSave())) return;
+
       if (row.productId.trim() && row.serialNumber.trim()) {
         await syncCustomerDevices([row]);
       }
@@ -796,6 +828,8 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
+      if (!(await persistPartyBeforeSave())) return;
+
       if (row.productId.trim() && row.serialNumber.trim()) {
         await syncCustomerDevices([row]);
       }
@@ -873,6 +907,14 @@ export const RCSiteCalibration: React.FC = () => {
   const formatDate = formatVerificationListDate;
 
   const includedDeviceCount = sessionValues.devices.filter(d => d.included).length;
+  const saveDraftLabel =
+    showAddForm && includedDeviceCount > 1
+      ? `Save ${includedDeviceCount} drafts`
+      : 'Save draft';
+  const submitLabel =
+    showAddForm && includedDeviceCount > 1
+      ? `Submit ${includedDeviceCount} for certification`
+      : 'Submit for certification';
   const editingRecord = editingId ? records.find(r => r.id === editingId) ?? null : null;
   const editingDraft = editingRecord ? isVerificationEditable(editingRecord) : showAddForm;
   const isViewMode = Boolean(editingRecord && !editingDraft);
@@ -1045,6 +1087,7 @@ export const RCSiteCalibration: React.FC = () => {
             <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
               <div className="product-form-body">
                 <VerificationSessionFields
+                  ref={verificationFieldsRef}
                   values={sessionValues}
                   onChange={patchSession}
                   onCustomerChange={handleCustomerChange}
@@ -1064,68 +1107,66 @@ export const RCSiteCalibration: React.FC = () => {
                   lockCustomer={isEditMode}
                   readOnly={isViewMode}
                   laboratorySealIdentification={laboratorySealId}
-                  onCustomerUpdated={handleCustomerUpdated}
                   onWizardStepChange={handleWizardStepChange}
                 />
               </div>
               <div className="product-form-footer verification-form-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleCloseForm}
-                  disabled={formBusy}
-                >
-                  {isViewMode ? 'Close' : 'Cancel'}
-                </button>
-                {!isViewMode && wizardOnLastStep && (
-                  <>
+                {!isViewMode && draftBlockReason && (
+                  <p className="verification-form-footer-hint mb-0" role="status">
+                    {draftBlockReason}
+                  </p>
+                )}
+
+                <div className="verification-form-footer-row verification-form-footer-row--actions">
+                  <button
+                    type="button"
+                    className="verification-form-btn verification-form-btn--cancel"
+                    onClick={handleCloseForm}
+                    disabled={formBusy}
+                  >
+                    {!isViewMode && <X size={16} aria-hidden />}
+                    {isViewMode ? 'Close' : 'Cancel'}
+                  </button>
+
+                  {!isViewMode && (
                     <button
                       type="submit"
-                      className="btn btn-primary flex items-center gap-2"
+                      className="verification-form-btn verification-form-btn--save"
                       disabled={formBusy || Boolean(draftBlockReason)}
                       title={draftBlockReason ?? undefined}
                     >
                       {formBusy ? (
-                        <span className="spinner-inline"></span>
-                      ) : showAddForm ? (
-                        <>
-                          <Save size={16} />{' '}
-                          {includedDeviceCount > 1
-                            ? `Save ${includedDeviceCount} drafts`
-                            : 'Save draft'}
-                        </>
+                        <span className="spinner-inline" aria-hidden />
                       ) : (
-                        <>
-                          <Save size={18} /> Save draft
-                        </>
+                        <Save size={16} aria-hidden />
                       )}
+                      <span>{saveDraftLabel}</span>
                     </button>
-                    {editingDraft && (
-                      <div className="verification-form-submit-group">
-                        <button
-                          type="button"
-                          className="btn btn-success flex items-center gap-2"
-                          onClick={() => void handleSubmitFromForm()}
-                          disabled={formBusy || !canSubmitFromForm}
-                          title={submitBlockReason ?? undefined}
-                        >
-                          {formBusy ? (
-                            <span className="spinner-inline"></span>
-                          ) : (
-                            <>
-                              <Send size={16} />{' '}
-                              {showAddForm && includedDeviceCount > 1
-                                ? `Submit ${includedDeviceCount} for certification`
-                                : 'Submit for certification'}
-                            </>
-                          )}
-                        </button>
-                        {submitBlockReason && (
-                          <p className="verification-form-submit-reason text-muted text-xs mb-0">
-                            {submitBlockReason}
-                          </p>
+                  )}
+                </div>
+
+                {!isViewMode && wizardOnLastStep && editingDraft && (
+                  <>
+                    <div className="verification-form-footer-row verification-form-footer-row--submit">
+                      <button
+                        type="button"
+                        className="verification-form-btn verification-form-btn--submit"
+                        onClick={() => void handleSubmitFromForm()}
+                        disabled={formBusy || !canSubmitFromForm}
+                        title={submitBlockReason ?? undefined}
+                      >
+                        {formBusy ? (
+                          <span className="spinner-inline" aria-hidden />
+                        ) : (
+                          <Send size={16} aria-hidden />
                         )}
-                      </div>
+                        <span>{submitLabel}</span>
+                      </button>
+                    </div>
+                    {submitBlockReason && (
+                      <p className="verification-form-submit-reason mb-0" role="status">
+                        {submitBlockReason}
+                      </p>
                     )}
                   </>
                 )}

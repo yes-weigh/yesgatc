@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { FileText, IndianRupee, Plus, Receipt, Trash2 } from 'lucide-react';
+import { FileText, IndianRupee, Plus, Receipt, Scale, Trash2 } from 'lucide-react';
 import { ProductSelect } from '../../components/ProductSelect';
 import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
 import { ManufacturingYearPicker } from '../../components/ManufacturingYearPicker';
@@ -47,7 +47,6 @@ const VerificationImageColumnHead: React.FC<{
       className="verification-image-col-head"
       title={`${config.label}${required ? ' (required for submit)' : ' (optional)'}`}
     >
-      <img src={config.placeholderSrc} alt="" className="verification-image-col-head-icon" />
       <span className="verification-image-col-head-label">
         {config.shortLabel}
         {required ? ' *' : ''}
@@ -87,7 +86,6 @@ const DeviceVerificationUpload: React.FC<{
       compact
       iconActions
       hideLabel={hideLabel}
-      placeholderSrc={config.placeholderSrc}
     />
   );
 };
@@ -152,6 +150,12 @@ type VerificationDeviceFieldsProps = {
   submitting: boolean;
   /** New verification — multiple devices can be saved as separate table rows. */
   createMode?: boolean;
+  /** Compact layout for the verification wizard (mobile-first). */
+  compact?: boolean;
+  /** When false, device details only — photos/docs are on the evidence step. */
+  includeEvidence?: boolean;
+  /** Hide add-device controls (wizard adds devices from the evidence step). */
+  allowAddDevice?: boolean;
   /** Self verification — manual device entry only, no registered customer devices. */
   manualEntryOnly?: boolean;
   readOnly?: boolean;
@@ -179,6 +183,9 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   onDeviceRvDocumentRemove,
   submitting,
   createMode = false,
+  compact = false,
+  includeEvidence = true,
+  allowAddDevice = true,
   manualEntryOnly = false,
   readOnly = false,
   laboratorySealIdentification = '',
@@ -273,37 +280,62 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
 
   if (devices.length === 0) {
     return (
-      <div className="verification-devices-empty">
-        <p className="text-muted text-sm mb-3">
+      <div className={`verification-devices-empty${compact ? ' verification-devices-empty--compact' : ''}`}>
+        <p className="text-muted text-sm mb-0">
           {manualEntryOnly
-            ? 'Add a device to verify.'
-            : 'This customer has no registered devices yet.'}
+            ? allowAddDevice
+              ? 'Add a device to verify.'
+              : 'No device yet — complete the previous step to continue.'
+            : allowAddDevice
+              ? 'This customer has no registered devices yet.'
+              : 'No devices selected yet.'}
         </p>
-        {!readOnly && (
+        {!readOnly && allowAddDevice && (
           <button
             type="button"
-            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
+            className={`verification-devices-add-btn${compact ? ' verification-devices-add-btn--compact' : ' btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5'}`}
             onClick={onDeviceAdd}
             disabled={locked}
           >
-            <Plus size={15} /> Add device
+            <Plus size={15} aria-hidden /> Add device
           </button>
         )}
       </div>
     );
   }
 
+  const panelClassName = [
+    'verification-devices-panel',
+    compact ? 'verification-devices-panel--compact' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className="verification-devices-panel">
-      <div className="verification-devices-head">
-        <div>
-          <p className="site-calibration-details-heading mb-0">Devices to verify</p>
-          {isRv && (
+    <div className={panelClassName}>
+      <header className="verification-devices-panel-head">
+        <span className="verification-devices-panel-head-icon" aria-hidden>
+          <Scale size={18} />
+        </span>
+        <div className="verification-devices-panel-head-text">
+          <h3 className="verification-devices-panel-title">
+            {compact
+              ? includeEvidence
+                ? 'Devices & evidence'
+                : 'Devices'
+              : 'Devices to verify'}
+          </h3>
+          {compact && createMode && includedCount > 0 && (
+            <p className="verification-devices-panel-meta mb-0">
+              {includedCount} selected · {includedCount} draft row{includedCount !== 1 ? 's' : ''}
+            </p>
+          )}
+          {!compact && isRv && (
             <p className="verification-rv-hint text-muted text-xs mt-1 mb-0">
               Re-verification requires year of manufacturing and old certificate &amp; invoice for each device.
             </p>
           )}
-          {createMode && (
+          {!compact && createMode && (
             <p className="verification-devices-batch-hint text-muted text-xs mt-1 mb-0">
               Tick the devices to include. Each selected device is saved as a draft row in the verification table.
               {includedCount > 0 && (
@@ -314,15 +346,35 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               )}
             </p>
           )}
-          {!readOnly && laboratorySealIdentification && (
+          {!compact && !readOnly && laboratorySealIdentification && (
             <p className="text-muted text-xs mt-1 mb-0">
               Seal ID is prefilled from Laboratory ({laboratorySealIdentification}).
             </p>
           )}
         </div>
-      </div>
+        {compact && createMode && devices.length > 1 && !readOnly && (
+          <div className="verification-devices-bulk-actions verification-devices-bulk-actions--compact">
+            <button
+              type="button"
+              className="verification-devices-bulk-btn"
+              onClick={() => setAllIncluded(true)}
+              disabled={locked || allIncluded}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              className="verification-devices-bulk-btn"
+              onClick={() => setAllIncluded(false)}
+              disabled={locked || includedCount === 0}
+            >
+              None
+            </button>
+          </div>
+        )}
+      </header>
 
-      {createMode && devices.length > 1 && (
+      {!compact && createMode && devices.length > 1 && (
         <div className="verification-devices-bulk-actions">
           <button
             type="button"
@@ -369,12 +421,12 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               <th>MPE</th>
               <th>Seal ID</th>
               {isRv && <th className="verification-devices-col-mfg-year">Mfg year</th>}
-              {VERIFICATION_IMAGE_KINDS.map(kind => (
+              {includeEvidence && VERIFICATION_IMAGE_KINDS.map(kind => (
                 <th key={kind} className="verification-devices-col-image">
                   <VerificationImageColumnHead kind={kind} verificationType={verificationType} />
                 </th>
               ))}
-              {isRv && RV_DOCUMENT_KINDS.map(kind => (
+              {includeEvidence && isRv && RV_DOCUMENT_KINDS.map(kind => (
                 <th key={kind} className="verification-devices-col-image">
                   <RvDocumentColumnHead kind={kind} />
                 </th>
@@ -423,7 +475,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       {product && (
                         <ProductDetailsSpecs
                           product={product}
-                          embedded
+                          dense={compact}
+                          embedded={compact}
                           className="verification-device-product-details"
                         />
                       )}
@@ -471,7 +524,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       />
                     </td>
                   )}
-                  {VERIFICATION_IMAGE_KINDS.map(kind => (
+                  {includeEvidence && VERIFICATION_IMAGE_KINDS.map(kind => (
                     <td key={kind} className="verification-devices-col-image">
                       <DeviceVerificationUpload
                         kind={kind}
@@ -484,7 +537,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       />
                     </td>
                   ))}
-                  {isRv && RV_DOCUMENT_KINDS.map(kind => (
+                  {includeEvidence && isRv && RV_DOCUMENT_KINDS.map(kind => (
                     <td key={kind} className="verification-devices-col-image">
                       <RvDocumentUpload
                         kind={kind}
@@ -528,7 +581,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
         </table>
       </div>
 
-      <div className="verification-devices-mobile">
+      <div className={`verification-devices-mobile${compact ? ' verification-devices-mobile--compact' : ''}`}>
         {devices.map((row, index) => {
           const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
           const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
@@ -540,7 +593,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           return (
             <div
               key={row.localId}
-              className={`verification-device-card${row.included ? '' : ' verification-device-card--skipped'}`}
+              className={`verification-device-card${compact ? ' verification-device-card--compact' : ''}${row.included ? '' : ' verification-device-card--skipped'}`}
             >
               <div className="verification-device-card-head">
                 <label className="verification-device-check">
@@ -550,25 +603,30 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     onChange={e => onDeviceChange(row.localId, { included: e.target.checked })}
                     disabled={locked}
                   />
-                  <span>Device {index + 1}</span>
+                  <span>{compact ? `#${index + 1}` : `Device ${index + 1}`}</span>
                 </label>
                 {row.isNewDevice && !readOnly && (
                   <button
                     type="button"
-                    className="btn-icon text-red"
+                    className="btn-icon text-red verification-device-card-remove"
                     onClick={() => onDeviceRemove(row.localId)}
                     disabled={locked}
                     title="Remove device"
                     aria-label={`Remove device ${index + 1}`}
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={compact ? 14 : 16} />
                   </button>
                 )}
               </div>
 
               <div className="verification-device-card-body">
-                <div className="form-group mb-0">
-                  <label htmlFor={`verification-mobile-product-${row.localId}`}>Product</label>
+                <div className="verification-device-field verification-device-field--full">
+                  <label
+                    className="verification-device-label"
+                    htmlFor={`verification-mobile-product-${row.localId}`}
+                  >
+                    Product <span className="verification-device-required">*</span>
+                  </label>
                   <ProductSelect
                     products={products}
                     inputId={`verification-mobile-product-${row.localId}`}
@@ -576,77 +634,90 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     onChange={next => handleProductChange(row.localId, next)}
                     disabled={locked || !row.included}
                   />
-                  {product && (
-                    <ProductDetailsSpecs
-                      product={product}
-                      embedded
-                      className="verification-device-product-details"
+                </div>
+
+                <div className="verification-device-fields-grid">
+                  <div className="verification-device-field">
+                    <label
+                      className="verification-device-label"
+                      htmlFor={`verification-mobile-serial-${row.localId}`}
+                    >
+                      Serial <span className="verification-device-required">*</span>
+                    </label>
+                    <input
+                      id={`verification-mobile-serial-${row.localId}`}
+                      type="text"
+                      className="input-field verification-device-input"
+                      placeholder="Serial no."
+                      value={row.serialNumber}
+                      onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
+                      disabled={locked || !row.included}
                     />
-                  )}
+                  </div>
+
+                  <div className="verification-device-field">
+                    <label
+                      className="verification-device-label"
+                      htmlFor={`verification-mobile-mpe-${row.localId}`}
+                    >
+                      MPE
+                    </label>
+                    <input
+                      id={`verification-mobile-mpe-${row.localId}`}
+                      type="number"
+                      step="any"
+                      className="input-field verification-device-input"
+                      placeholder="MPE"
+                      value={row.maximumPermissibleError}
+                      onChange={e => onDeviceChange(row.localId, { maximumPermissibleError: e.target.value })}
+                      disabled={locked || !row.included}
+                    />
+                  </div>
                 </div>
 
-                <div className="form-group mb-0">
-                  <label htmlFor={`verification-mobile-serial-${row.localId}`}>Serial number</label>
-                  <input
-                    id={`verification-mobile-serial-${row.localId}`}
-                    type="text"
-                    className="input-field"
-                    value={row.serialNumber}
-                    onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-                    disabled={locked || !row.included}
-                  />
-                </div>
-
-                <div className="form-group mb-0">
-                  <label htmlFor={`verification-mobile-mpe-${row.localId}`}>MPE</label>
-                  <input
-                    id={`verification-mobile-mpe-${row.localId}`}
-                    type="number"
-                    step="any"
-                    className="input-field"
-                    value={row.maximumPermissibleError}
-                    onChange={e => onDeviceChange(row.localId, { maximumPermissibleError: e.target.value })}
-                    disabled={locked || !row.included}
-                  />
-                </div>
-
-                <div className="form-group mb-0">
-                  <label htmlFor={`verification-mobile-seal-${row.localId}`}>Seal identification number</label>
+                <div className="verification-device-field verification-device-field--full">
+                  <label
+                    className="verification-device-label"
+                    htmlFor={`verification-mobile-seal-${row.localId}`}
+                  >
+                    Seal ID
+                  </label>
                   <input
                     id={`verification-mobile-seal-${row.localId}`}
                     type="text"
-                    className="input-field input-readonly"
+                    className="input-field verification-device-input input-readonly"
                     value={sealLabelForRow(row)}
                     readOnly
                     tabIndex={-1}
                     title={readOnly ? 'Seal identification at submission' : 'Managed on Laboratory page'}
                   />
-                  {!readOnly && (
-                    <p className="text-muted text-xs mt-1 mb-0">Update on the Laboratory page.</p>
-                  )}
                 </div>
 
+                {product && (
+                  <ProductDetailsSpecs
+                    product={product}
+                    dense={compact}
+                    embedded={compact}
+                    className="verification-device-product-details"
+                  />
+                )}
+
                 {isRv && row.included && verificationLocation && (
-                  <div className="verification-device-fee-inline">
-                    <span className="text-muted text-xs">Verification fee</span>
+                  <div className="verification-device-fee-inline verification-device-fee-inline--compact">
+                    <span className="verification-device-fee-inline-label">Fee</span>
                     <strong className="verification-device-fee">
                       {feeQuote?.amount != null
                         ? formatRcFeeAmount(feeQuote.amount)
                         : feeQuote?.incompleteReason ?? '—'}
                     </strong>
-                    {feeQuote?.tierLabel && feeQuote.tierLabel !== '—' && (
-                      <span className="text-muted text-xs">
-                        {feeQuote.tierLabel} · {verificationLocationLabel(verificationLocation)}
-                      </span>
-                    )}
                   </div>
                 )}
 
                 {isRv && (
-                  <div className="verification-rv-device-section">
-                    <p className="form-group-label mb-2">Re-verification details</p>
-                    <div className="form-group mb-0">
-                      <label>Year of manufacturing *</label>
+                  <section className="verification-device-section">
+                    <h4 className="verification-device-section-title">Re-verification</h4>
+                    <div className="verification-device-field verification-device-field--full">
+                      <label className="verification-device-label">Mfg year *</label>
                       <ManufacturingYearPicker
                         value={row.manufacturingYear}
                         onChange={year => onDeviceChange(row.localId, { manufacturingYear: year })}
@@ -654,46 +725,50 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         readOnly={readOnly}
                       />
                     </div>
-                    <div className="form-group mb-0 verification-device-card-upload">
-                      <p className="form-group-label mb-2">Previous documents</p>
-                      <div className="verification-mobile-photo-list">
-                        {RV_DOCUMENT_KINDS.map(kind => (
-                          <div key={kind} className="verification-mobile-photo-item">
-                            <RvDocumentColumnHead kind={kind} />
-                            <RvDocumentUpload
-                              kind={kind}
-                              document={rvDocuments[kind]}
-                              disabled={locked || !row.included}
-                              hideLabel
-                              onSelect={e => handleRvDocumentInput(row.localId, kind, e)}
-                              onRemove={() => onDeviceRvDocumentRemove?.(row.localId, kind)}
-                            />
-                          </div>
-                        ))}
+                    {includeEvidence && (
+                      <div className="verification-device-section">
+                        <h4 className="verification-device-section-title">Previous docs</h4>
+                        <div className={`verification-mobile-photo-list${compact ? ' verification-mobile-photo-grid' : ''}`}>
+                          {RV_DOCUMENT_KINDS.map(kind => (
+                            <div key={kind} className="verification-mobile-photo-item">
+                              <RvDocumentColumnHead kind={kind} />
+                              <RvDocumentUpload
+                                kind={kind}
+                                document={rvDocuments[kind]}
+                                disabled={locked || !row.included}
+                                hideLabel
+                                onSelect={e => handleRvDocumentInput(row.localId, kind, e)}
+                                onRemove={() => onDeviceRvDocumentRemove?.(row.localId, kind)}
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    )}
+                  </section>
                 )}
 
-                <div className="form-group mb-0 verification-device-card-upload">
-                  <p className="form-group-label mb-2">Verification photos</p>
-                  <div className="verification-mobile-photo-list">
-                    {VERIFICATION_IMAGE_KINDS.map(kind => (
-                      <div key={kind} className="verification-mobile-photo-item">
-                        <VerificationImageColumnHead kind={kind} verificationType={verificationType} />
-                        <DeviceVerificationUpload
-                          kind={kind}
-                          verificationType={verificationType}
-                          image={images[kind]}
-                          disabled={locked || !row.included}
-                          hideLabel
-                          onSelect={e => handleFileInput(row.localId, kind, e)}
-                          onRemove={() => onDeviceImageRemove(row.localId, kind)}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                {includeEvidence && (
+                  <section className="verification-device-section">
+                    <h4 className="verification-device-section-title">Verification photos</h4>
+                    <div className={`verification-mobile-photo-list${compact ? ' verification-mobile-photo-grid' : ''}`}>
+                      {VERIFICATION_IMAGE_KINDS.map(kind => (
+                        <div key={kind} className="verification-mobile-photo-item">
+                          <VerificationImageColumnHead kind={kind} verificationType={verificationType} />
+                          <DeviceVerificationUpload
+                            kind={kind}
+                            verificationType={verificationType}
+                            image={images[kind]}
+                            disabled={locked || !row.included}
+                            hideLabel
+                            onSelect={e => handleFileInput(row.localId, kind, e)}
+                            onRemove={() => onDeviceImageRemove(row.localId, kind)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
               </div>
             </div>
           );
@@ -701,10 +776,10 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
       </div>
 
       {showFeesSummary && (
-        <div className="verification-fees-summary">
+        <div className={`verification-fees-summary${compact ? ' verification-fees-summary--compact' : ''}`}>
           <div className="verification-fees-summary-head">
-            <div className="flex items-center gap-2">
-              <IndianRupee size={16} aria-hidden />
+            <div className="verification-fees-summary-head-main">
+              <IndianRupee size={compact ? 14 : 16} aria-hidden />
               <p className="verification-fees-summary-title mb-0">Verification fees</p>
             </div>
             {canCalculateFees ? (
@@ -712,43 +787,58 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                 {useSelfFees ? 'Self' : verificationLocationLabel(verificationLocation)}
               </span>
             ) : (
-              <span className="text-muted text-xs">Select In situ or In the premises to calculate fees</span>
+              <span className="text-muted text-xs">Select location to calculate fees</span>
             )}
           </div>
 
           {canCalculateFees && (
             <>
-              <div className="table-scroll-wrap">
-                <table className="data-table verification-fees-table">
-                  <thead>
-                    <tr>
-                      <th>Device</th>
-                      <th>Max capacity</th>
-                      <th>Fee tier</th>
-                      <th className="text-right">Fee</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {deviceFeeLines.map(line => (
-                      <tr key={line.localId}>
-                        <td className="font-medium">{line.label}</td>
-                        <td>{line.capacityDisplay}</td>
-                        <td>{line.tierLabel}</td>
-                        <td className="text-right">
-                          {line.amount != null ? (
-                            <span className="verification-device-fee">{formatRcFeeAmount(line.amount)}</span>
-                          ) : (
-                            <span className="text-muted text-xs">{line.incompleteReason ?? '—'}</span>
-                          )}
-                        </td>
+              {!compact && (
+                <div className="table-scroll-wrap">
+                  <table className="data-table verification-fees-table">
+                    <thead>
+                      <tr>
+                        <th>Device</th>
+                        <th>Max capacity</th>
+                        <th>Fee tier</th>
+                        <th className="text-right">Fee</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {deviceFeeLines.map(line => (
+                        <tr key={line.localId}>
+                          <td className="font-medium">{line.label}</td>
+                          <td>{line.capacityDisplay}</td>
+                          <td>{line.tierLabel}</td>
+                          <td className="text-right">
+                            {line.amount != null ? (
+                              <span className="verification-device-fee">{formatRcFeeAmount(line.amount)}</span>
+                            ) : (
+                              <span className="text-muted text-xs">{line.incompleteReason ?? '—'}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {compact && (
+                <ul className="verification-fees-compact-list mb-0">
+                  {deviceFeeLines.map(line => (
+                    <li key={line.localId} className="verification-fees-compact-item">
+                      <span className="verification-fees-compact-item-name">{line.label}</span>
+                      <span className="verification-fees-compact-item-fee">
+                        {line.amount != null ? formatRcFeeAmount(line.amount) : line.incompleteReason ?? '—'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
               <div className="verification-fees-total">
-                <span>Total fees</span>
+                <span>Total</span>
                 <strong>{formatRcFeeAmount(totalFees)}</strong>
               </div>
             </>
@@ -756,15 +846,15 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
         </div>
       )}
 
-      {!readOnly && (
+      {!readOnly && allowAddDevice && (
         <div className="verification-devices-footer">
           <button
             type="button"
-            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5"
+            className={`verification-devices-add-btn${compact ? ' verification-devices-add-btn--compact' : ' btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5'}`}
             onClick={onDeviceAdd}
             disabled={locked}
           >
-            <Plus size={15} /> Add device
+            <Plus size={15} aria-hidden /> Add device
           </button>
         </div>
       )}

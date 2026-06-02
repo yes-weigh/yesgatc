@@ -187,22 +187,34 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             <h3 className="verification-detail-section-title">Attachments</h3>
             <div className="verification-detail-images">
               <DetailImage
-                label="Scale"
-                url={record.scaleImageUrl}
-                path={record.scaleImagePath}
-                name={record.scaleImageName}
-              />
-              <DetailImage
-                label="Stamping plate"
+                label="Serial number plate"
                 url={record.stampingImageUrl}
                 path={record.stampingImagePath}
                 name={record.stampingImageName}
               />
               <DetailImage
-                label="Standard weight"
+                label="Instrument"
+                url={record.scaleImageUrl}
+                path={record.scaleImagePath}
+                name={record.scaleImageName}
+              />
+              <DetailImage
+                label="Testing"
                 url={record.standardWeightImageUrl}
                 path={record.standardWeightImagePath}
                 name={record.standardWeightImageName}
+              />
+              <DetailImage
+                label="Verification seal"
+                url={record.verificationSealImageUrl}
+                path={record.verificationSealImagePath}
+                name={record.verificationSealImageName}
+              />
+              <DetailImage
+                label="Installation"
+                url={record.installationImageUrl}
+                path={record.installationImagePath}
+                name={record.installationImageName}
               />
               {record.verificationType === 'RV' && (
                 <>

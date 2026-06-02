@@ -448,14 +448,10 @@ export function validateVerificationDraft(
   return null;
 }
 
-export function validateVerificationDeviceRow(
+export function validateVerificationDeviceDetails(
   row: VerificationDeviceRowValues,
   index: number,
-  images: DeviceVerificationImagesState,
-  options?: {
-    verificationType?: JobType | '';
-    rvDocuments?: DeviceRvDocumentsState;
-  },
+  options?: { verificationType?: JobType | '' },
 ): string | null {
   const label = `Device ${index + 1}`;
   if (!row.productId.trim()) return `${label}: select a product.`;
@@ -472,6 +468,28 @@ export function validateVerificationDeviceRow(
     if (!isValidManufacturingYear(row.manufacturingYear)) {
       return `${label}: select year of manufacturing.`;
     }
+  }
+
+  return null;
+}
+
+export function validateVerificationDeviceRow(
+  row: VerificationDeviceRowValues,
+  index: number,
+  images: DeviceVerificationImagesState,
+  options?: {
+    verificationType?: JobType | '';
+    rvDocuments?: DeviceRvDocumentsState;
+  },
+): string | null {
+  const detailsError = validateVerificationDeviceDetails(row, index, {
+    verificationType: options?.verificationType,
+  });
+  if (detailsError) return detailsError;
+
+  const label = `Device ${index + 1}`;
+
+  if (options?.verificationType === 'RV') {
     const rvError = validateDeviceRvDocuments(
       options.rvDocuments ?? emptyDeviceRvDocumentsState(),
       label,

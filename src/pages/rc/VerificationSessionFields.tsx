@@ -1,14 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { CustomerSelect } from '../../components/CustomerSelect';
-import { CustomerDetailsSpecs } from '../../components/CustomerDetailsSpecs';
-import { RcDetailsSpecs } from '../../components/RcDetailsSpecs';
+import { SegmentToggle } from '../../components/SegmentToggle';
+import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
+import { customerFormFromRecord } from '../../lib/customerProfileFields';
 import {
   buildInitialSelfDeviceRows,
   deviceRowsFromCustomer,
-  syncVerificationDevicesAfterCustomerUpdate,
   verificationLocationLabel,
   type DeviceVerificationImagesState,
   type DeviceRvDocumentsState,
@@ -16,14 +15,20 @@ import {
   type VerificationSessionValues,
   type VerificationSubject,
 } from '../../lib/siteCalibrationProfileFields';
+import { rcProfileToFormValues } from '../../lib/rcProfileFormFields';
 import { applyLaboratorySealToDeviceRows } from '../../lib/rcLaboratoryFields';
 import {
+  emptyDeviceVerificationImagesState,
   type VerificationImageKind,
 } from '../../lib/verificationDeviceImages';
 import type { RvDocumentKind } from '../../lib/verificationRvDeviceImages';
 import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import { lookupWeatherByPincode } from '../../lib/pincodeWeatherLookup';
 import { isValidPincode, normalizePincode } from '../../lib/contactFields';
+import {
+  persistVerificationPartyProfile,
+  type PersistVerificationPartyResult,
+} from '../../lib/verificationPartyPersist';
 import {
   isVerificationFormStepComplete,
   VERIFICATION_FORM_STEPS,
@@ -32,7 +37,8 @@ import {
 } from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
 import { VerificationDeviceFields } from './VerificationDeviceFields';
-import { CustomerInlineEditPanel } from './CustomerInlineEditPanel';
+import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFields';
+import { EMPTY_CUSTOMER_FORM, type CustomerFormValues } from './CustomerFormFields';
 
 type VerificationSessionFieldsProps = {
   values: VerificationSessionValues;
@@ -59,13 +65,16 @@ type VerificationSessionFieldsProps = {
   lockCustomer?: boolean;
   readOnly?: boolean;
   laboratorySealIdentification?: string;
-  onCustomerUpdated?: (customer: Customer) => void;
   onWizardStepChange?: (stepId: VerificationFormStepId, isLastStep: boolean) => void;
 };
 
-const VERIFICATION_OPTIONS: { value: JobType; label: string }[] = [
-  { value: 'OV', label: 'Original Verification' },
-  { value: 'RV', label: 'Re-verification' },
+export type VerificationSessionFieldsHandle = {
+  persistPartyChanges: () => Promise<PersistVerificationPartyResult>;
+};
+
+const VERIFICATION_TYPE_OPTIONS: { value: JobType; label: string }[] = [
+  { value: 'OV', label: 'OV' },
+  { value: 'RV', label: 'RV' },
 ];
 
 const SUBJECT_OPTIONS: { value: VerificationSubject; label: string }[] = [
@@ -73,7 +82,11 @@ const SUBJECT_OPTIONS: { value: VerificationSubject; label: string }[] = [
   { value: 'customer', label: 'Customer' },
 ];
 
-export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps> = ({
+export const VerificationSessionFields = forwardRef<
+  VerificationSessionFieldsHandle,
+  VerificationSessionFieldsProps
+>(function VerificationSessionFields(
+  {
   values,
   onChange,
   onCustomerChange,
@@ -93,18 +106,56 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
   lockCustomer = false,
   readOnly = false,
   laboratorySealIdentification = '',
-  onCustomerUpdated,
   onWizardStepChange,
-}) => {
+  },
+  ref,
+) {
   const { products } = useAppContext();
   const locked = submitting || readOnly;
 
   const [activeStep, setActiveStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
+  const [evidenceDeviceIndex, setEvidenceDeviceIndex] = useState(0);
+  const [pendingEvidenceDeviceIndex, setPendingEvidenceDeviceIndex] = useState<number | null>(null);
   const [stepError, setStepError] = useState('');
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState('');
+  const [customerPartyForm, setCustomerPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
+  const [rcPartyForm, setRcPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
+  const lastSelfWeatherKeyRef = useRef('');
+  const lastRcPartySeedRef = useRef('');
 
   const currentStep = VERIFICATION_FORM_STEPS[activeStep];
-  const isLastStep = activeStep === VERIFICATION_FORM_STEPS.length - 1;
+
+  const includedDeviceEntries = useMemo(
+    () =>
+      values.devices
+        .map((row, sessionIndex) => ({ row, sessionIndex }))
+        .filter(entry => entry.row.included),
+    [values.devices],
+  );
+
+  const isOnEvidenceStep = currentStep.id === 'evidence';
+  const isLastEvidenceDevice =
+    includedDeviceEntries.length === 0 ||
+    evidenceDeviceIndex >= includedDeviceEntries.length - 1;
+  const isLastStep = isOnEvidenceStep && isLastEvidenceDevice;
+
+  const stepDescription =
+    isOnEvidenceStep && includedDeviceEntries.length > 0
+      ? includedDeviceEntries.length > 1
+        ? `Attach photos and documents for device ${evidenceDeviceIndex + 1} of ${includedDeviceEntries.length}. Use Next device to continue.`
+        : 'Attach verification photos and documents for the selected device.'
+      : currentStep.description;
+
+  const continueLabel =
+    isOnEvidenceStep && !isLastEvidenceDevice && includedDeviceEntries.length > 1
+      ? 'Next device'
+      : 'Continue';
+
+  const devicesStepIndex = VERIFICATION_FORM_STEPS.findIndex(step => step.id === 'devices');
+  const canAddDeviceFromEvidence =
+    !readOnly && !lockCustomer && isOnEvidenceStep && isLastEvidenceDevice;
 
   const completedStepIds = useMemo(() => {
     const completed = new Set<VerificationFormStepId>();
@@ -130,6 +181,16 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
   }, [readOnly]);
 
   useEffect(() => {
+    if (!isOnEvidenceStep) {
+      setEvidenceDeviceIndex(0);
+      return;
+    }
+    setEvidenceDeviceIndex(prev =>
+      Math.min(prev, Math.max(0, includedDeviceEntries.length - 1)),
+    );
+  }, [isOnEvidenceStep, includedDeviceEntries.length]);
+
+  useEffect(() => {
     onWizardStepChange?.(currentStep.id, isLastStep);
   }, [currentStep.id, isLastStep, onWizardStepChange]);
 
@@ -139,6 +200,9 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
 
   const handleStepSelect = (index: number) => {
     if (readOnly || index <= furthestStep) {
+      if (VERIFICATION_FORM_STEPS[index]?.id === 'evidence') {
+        setEvidenceDeviceIndex(0);
+      }
       setActiveStep(index);
       setStepError('');
     }
@@ -152,13 +216,61 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
       return;
     }
     setStepError('');
+
+    if (isOnEvidenceStep && !isLastEvidenceDevice) {
+      setEvidenceDeviceIndex(prev => prev + 1);
+      return;
+    }
+
+    if (currentStep.id === 'setup' && values.devices.length === 0) {
+      onDeviceAdd();
+    }
+
     const nextStep = Math.min(activeStep + 1, VERIFICATION_FORM_STEPS.length - 1);
     setFurthestStep(prev => Math.max(prev, nextStep));
     setActiveStep(nextStep);
+
+    if (currentStep.id === 'devices') {
+      setEvidenceDeviceIndex(pendingEvidenceDeviceIndex ?? 0);
+      setPendingEvidenceDeviceIndex(null);
+    } else if (currentStep.id === 'setup') {
+      setEvidenceDeviceIndex(0);
+      setPendingEvidenceDeviceIndex(null);
+    }
+  };
+
+  const handleAddDeviceFromEvidence = () => {
+    if (!canAddDeviceFromEvidence) return;
+    const nextDeviceIndex = includedDeviceEntries.length;
+    onDeviceAdd();
+    setPendingEvidenceDeviceIndex(nextDeviceIndex);
+    setStepError('');
+    setActiveStep(devicesStepIndex);
+    setFurthestStep(prev => Math.max(prev, devicesStepIndex));
   };
 
   const handleBack = () => {
     setStepError('');
+    if (isOnEvidenceStep && evidenceDeviceIndex > 0) {
+      setEvidenceDeviceIndex(prev => prev - 1);
+      return;
+    }
+    setActiveStep(prev => Math.max(prev - 1, 0));
+  };
+
+  const handleReadOnlyNext = () => {
+    if (isOnEvidenceStep && !isLastEvidenceDevice) {
+      setEvidenceDeviceIndex(prev => prev + 1);
+      return;
+    }
+    setActiveStep(prev => Math.min(prev + 1, VERIFICATION_FORM_STEPS.length - 1));
+  };
+
+  const handleReadOnlyBack = () => {
+    if (isOnEvidenceStep && evidenceDeviceIndex > 0) {
+      setEvidenceDeviceIndex(prev => prev - 1);
+      return;
+    }
     setActiveStep(prev => Math.max(prev - 1, 0));
   };
 
@@ -166,18 +278,38 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
     if (readOnly || !laboratorySealIdentification.trim()) return devices;
     return applyLaboratorySealToDeviceRows(devices, laboratorySealIdentification.trim());
   };
-  const [weatherLoading, setWeatherLoading] = useState(false);
-  const [weatherError, setWeatherError] = useState('');
-  const [editingCustomer, setEditingCustomer] = useState(false);
-  const lastSelfWeatherKeyRef = useRef('');
-
-  const selectedCustomer = useMemo(
-    () => customers.find(c => c.id === values.customerId) ?? null,
-    [customers, values.customerId],
-  );
 
   const isSelf = values.verificationSubject === 'self';
   const showDevices = isSelf || Boolean(values.customerId);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      persistPartyChanges: async () => {
+        if (readOnly || lockCustomer) return { error: null };
+        return persistVerificationPartyProfile(
+          {
+            isSelf,
+            customerId: values.customerId,
+            customerForm: customerPartyForm,
+            rcForm: rcPartyForm,
+            rcUid,
+          },
+          customers,
+        );
+      },
+    }),
+    [
+      readOnly,
+      lockCustomer,
+      isSelf,
+      values.customerId,
+      customerPartyForm,
+      rcPartyForm,
+      rcUid,
+      customers,
+    ],
+  );
 
   const prefillWeather = async (
     pincode: string,
@@ -237,6 +369,51 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
     return prefillWeather(rc.pincode ?? '', { location: rc.location });
   };
 
+  useEffect(() => {
+    if (isSelf) return;
+    if (!values.customerId) {
+      setCustomerPartyForm(EMPTY_CUSTOMER_FORM);
+      return;
+    }
+    const customer = customers.find(c => c.id === values.customerId);
+    if (customer) {
+      setCustomerPartyForm(customerFormFromRecord(customer));
+    }
+  }, [isSelf, values.customerId]);
+
+  useEffect(() => {
+    if (!isSelf) {
+      lastRcPartySeedRef.current = '';
+      return;
+    }
+    if (!rcProfile || !rcUid) return;
+    const seedKey = `${rcUid}:${rcProfile.companyName ?? ''}:${rcProfile.pincode ?? ''}`;
+    if (lastRcPartySeedRef.current === seedKey) return;
+    lastRcPartySeedRef.current = seedKey;
+    setRcPartyForm(rcProfileToFormValues(rcProfile));
+  }, [isSelf, rcUid, rcProfile]);
+
+  const handleCustomerPartyChange = useCallback(
+    (patch: Partial<CustomerFormValues>) => {
+      setCustomerPartyForm(prev => {
+        const next = { ...prev, ...patch };
+        if (values.customerId) {
+          onChange({ customerName: next.name });
+        }
+        return next;
+      });
+    },
+    [onChange, values.customerId],
+  );
+
+  const handleRcPartyChange = useCallback((patch: Partial<CustomerFormValues>) => {
+    setRcPartyForm(prev => {
+      const next = { ...prev, ...patch };
+      onChange({ customerName: next.name });
+      return next;
+    });
+  }, [onChange]);
+
   const applyCustomerSubject = () => {
     if (lockCustomer) return;
     lastSelfWeatherKeyRef.current = '';
@@ -249,7 +426,6 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
       ambientTemperature: '',
       relativeHumidity: '',
     });
-    setEditingCustomer(false);
     setWeatherError('');
   };
 
@@ -265,7 +441,6 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
       ambientTemperature: '',
       relativeHumidity: '',
     });
-    setEditingCustomer(false);
     setWeatherError('');
   };
 
@@ -343,7 +518,6 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
         ambientTemperature: '',
         relativeHumidity: '',
       });
-      setEditingCustomer(false);
       setWeatherError('');
       return;
     }
@@ -362,7 +536,6 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
 
   const handleCustomerSelect = (next: { customerId: string; customerName: string }) => {
     if (lockCustomer) return;
-    setEditingCustomer(false);
     const customer = customers.find(c => c.id === next.customerId) ?? null;
     const existingNewDevices = values.devices.filter(d => d.isNewDevice);
     const registeredRows = withLaboratorySeal(deviceRowsFromCustomer(customer, products));
@@ -379,24 +552,12 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
     void prefillWeatherForCustomer(customer);
   };
 
-  const handleCustomerSaved = (updated: Customer) => {
-    const mergedDevices = withLaboratorySeal(
-      syncVerificationDevicesAfterCustomerUpdate(values.devices, updated, products),
-    );
-    onCustomerUpdated?.(updated);
-    onCustomerChange(updated.id, updated.name, mergedDevices, { preserveDeviceImages: true });
-    onChange({
-      customerId: updated.id,
-      customerName: updated.name,
-      devices: mergedDevices,
-    });
-    setEditingCustomer(false);
-
-    const pinChanged = updated.pincode?.trim() !== selectedCustomer?.pincode?.trim();
-    if (pinChanged) {
-      void prefillWeatherForCustomer(updated);
-    }
+  const handleSelectCustomerFromLookup = (customer: Customer) => {
+    setCustomerPartyForm(customerFormFromRecord(customer));
+    handleCustomerSelect({ customerId: customer.id, customerName: customer.name });
   };
+
+  const partyFormDisabled = locked || lockCustomer;
 
   return (
     <div className="verification-wizard product-form-flat site-calibration-form-flat">
@@ -413,142 +574,122 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
         <div className="verification-wizard-stage-head">
           <h3 className="verification-wizard-stage-title">{currentStep.label}</h3>
           <p className="verification-wizard-stage-desc text-muted text-sm mb-0">
-            {currentStep.description}
+            {stepDescription}
           </p>
         </div>
 
         <div key={currentStep.id} className="verification-wizard-panel fade-in">
-          {currentStep.id === 'type' && (
-            <div className="site-calibration-form-row">
-              <fieldset className="site-calibration-type-field mb-0">
-                <legend className="form-group-label">Verification type *</legend>
-                <div className="site-calibration-type-options verification-wizard-type-options">
-                  {VERIFICATION_OPTIONS.map(opt => (
-                    <label key={opt.value} className="site-calibration-type-option">
-                      <input
-                        type="radio"
-                        name="verificationType"
-                        value={opt.value}
-                        checked={values.verificationType === opt.value}
-                        onChange={() => handleVerificationTypeChange(opt.value)}
-                        disabled={locked}
-                        required
-                      />
-                      <span className="verification-option-label">
-                        <span className="verification-option-label-full">{opt.label}</span>
-                        <span className="verification-option-label-short">{opt.value}</span>
-                      </span>
-                    </label>
-                  ))}
+          {currentStep.id === 'setup' && (
+            <div className="verification-setup-step">
+              <div className="verification-setup-toggles">
+                <div className="verification-setup-toggle-field">
+                  <span className="verification-setup-toggle-label">Type</span>
+                  <SegmentToggle
+                    ariaLabel="Verification type"
+                    value={values.verificationType === 'RV' ? 'RV' : 'OV'}
+                    options={VERIFICATION_TYPE_OPTIONS.map(opt => ({
+                      value: opt.value,
+                      label: opt.label,
+                    }))}
+                    onChange={handleVerificationTypeChange}
+                    disabled={locked}
+                  />
                 </div>
-              </fieldset>
-
-              <fieldset className="site-calibration-type-field mb-0 site-calibration-form-span-full">
-                <legend className="form-group-label">Belongs to *</legend>
-                <div className="site-calibration-type-options">
-                  {SUBJECT_OPTIONS.map(opt => (
-                    <label key={opt.value} className="site-calibration-type-option">
-                      <input
-                        type="radio"
-                        name="verificationSubject"
-                        value={opt.value}
-                        checked={values.verificationSubject === opt.value}
-                        onChange={() => handleSubjectChange(opt.value)}
-                        disabled={locked || lockCustomer || (opt.value === 'self' && values.verificationType === 'RV')}
-                      />
-                      <span>{opt.label}</span>
-                    </label>
-                  ))}
+                <div className="verification-setup-toggle-field">
+                  <span className="verification-setup-toggle-label">Party</span>
+                  <SegmentToggle
+                    ariaLabel="Verification party"
+                    value={values.verificationSubject === 'customer' ? 'customer' : 'self'}
+                    options={SUBJECT_OPTIONS.map(opt => ({
+                      value: opt.value,
+                      label: opt.label,
+                      disabled:
+                        lockCustomer ||
+                        (opt.value === 'self' && values.verificationType === 'RV'),
+                    }))}
+                    onChange={handleSubjectChange}
+                    disabled={locked || lockCustomer}
+                  />
                 </div>
-              </fieldset>
-            </div>
-          )}
+              </div>
 
-          {currentStep.id === 'party_site' && (
-            <div className="verification-party-site-step">
-              <div className="site-calibration-form-grid">
+              <div className="verification-party-site-step">
                 {isSelf ? (
                   rcProfile ? (
-                    <RcDetailsSpecs rc={rcProfile} />
+                    <PartyInformationForm
+                      title="SELF INFORMATION"
+                      values={rcPartyForm}
+                      onChange={handleRcPartyChange}
+                      disabled={partyFormDisabled}
+                      compact
+                      nameLabel="Centre Name"
+                      districtLabel="Place"
+                    />
                   ) : (
                     <p className="text-muted text-sm site-calibration-form-span-full mb-0">
                       Loading RC centre details…
                     </p>
                   )
                 ) : (
-                  <>
-                    <div className="form-group mb-0 site-calibration-form-span-full">
-                      <label htmlFor="verification-customer">Customer *</label>
-                      <CustomerSelect
-                        customers={customers}
-                        inputId="verification-customer"
-                        value={{
-                          customerId: values.customerId,
-                          customerName: values.customerName,
-                        }}
-                        onChange={handleCustomerSelect}
-                        disabled={locked || lockCustomer}
+                  <PartyInformationForm
+                    title="CUSTOMER INFORMATION"
+                    values={customerPartyForm}
+                    onChange={handleCustomerPartyChange}
+                    disabled={partyFormDisabled}
+                    compact
+                    lookup={
+                      partyFormDisabled
+                        ? undefined
+                        : {
+                            customers,
+                            selectedCustomerId: values.customerId,
+                            onSelectCustomer: handleSelectCustomerFromLookup,
+                          }
+                    }
+                  />
+                )}
+
+                <div className="verification-site-conditions">
+                  <div className="verification-site-conditions-head">
+                    <span className="verification-site-conditions-title">Site conditions</span>
+                    <span className="verification-site-location-badge">
+                      {verificationLocationLabel('in_situ')}
+                    </span>
+                  </div>
+                  <div className="verification-site-conditions-metrics">
+                    <div className="form-group mb-0 verification-site-metric">
+                      <label htmlFor="verification-temp">Temp (°C)</label>
+                      <input
+                        id="verification-temp"
+                        type="text"
+                        inputMode="decimal"
+                        className="input-field verification-site-metric-input"
+                        placeholder={weatherLoading ? '…' : '28.5'}
+                        value={values.ambientTemperature}
+                        onChange={e => onChange({ ambientTemperature: e.target.value })}
+                        disabled={locked || weatherLoading}
                       />
                     </div>
 
-                    {selectedCustomer && editingCustomer && !readOnly && (
-                      <CustomerInlineEditPanel
-                        customer={selectedCustomer}
-                        onSaved={handleCustomerSaved}
-                        onClose={() => setEditingCustomer(false)}
+                    <div className="form-group mb-0 verification-site-metric">
+                      <label htmlFor="verification-humidity">Humidity (%)</label>
+                      <input
+                        id="verification-humidity"
+                        type="text"
+                        inputMode="decimal"
+                        className="input-field verification-site-metric-input"
+                        placeholder={weatherLoading ? '…' : '65'}
+                        value={values.relativeHumidity}
+                        onChange={e => onChange({ relativeHumidity: e.target.value })}
+                        disabled={locked || weatherLoading}
                       />
-                    )}
-
-                    {selectedCustomer && !editingCustomer && (
-                      <CustomerDetailsSpecs
-                        customer={selectedCustomer}
-                        showDevices={false}
-                        onEdit={readOnly || lockCustomer ? undefined : () => setEditingCustomer(true)}
-                        editDisabled={locked}
-                      />
-                    )}
-                  </>
-                )}
-              </div>
-
-              <div className="verification-env-section verification-env-section--combined">
-                <div className="verification-site-location-display">
-                  <span className="form-group-label">Location</span>
-                  <span className="verification-site-location-badge">
-                    {verificationLocationLabel('in_situ')}
-                  </span>
-                </div>
-                <div className="verification-env-grid verification-env-grid--metrics">
-                  <div className="form-group mb-0">
-                    <label htmlFor="verification-temp">Temperature (°C)</label>
-                    <input
-                      id="verification-temp"
-                      type="text"
-                      inputMode="decimal"
-                      className="input-field"
-                      placeholder={weatherLoading ? 'Fetching…' : '28.5'}
-                      value={values.ambientTemperature}
-                      onChange={e => onChange({ ambientTemperature: e.target.value })}
-                      disabled={locked || weatherLoading}
-                    />
-                    {weatherError && (
-                      <p className="text-orange text-xs mt-1 mb-0" role="alert">{weatherError}</p>
-                    )}
+                    </div>
                   </div>
-
-                  <div className="form-group mb-0">
-                    <label htmlFor="verification-humidity">Humidity (%)</label>
-                    <input
-                      id="verification-humidity"
-                      type="text"
-                      inputMode="decimal"
-                      className="input-field"
-                      placeholder={weatherLoading ? 'Fetching…' : '65'}
-                      value={values.relativeHumidity}
-                      onChange={e => onChange({ relativeHumidity: e.target.value })}
-                      disabled={locked || weatherLoading}
-                    />
-                  </div>
+                  {weatherError && (
+                    <p className="verification-site-conditions-error text-orange text-xs mb-0" role="alert">
+                      {weatherError}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -575,12 +716,73 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
               laboratorySealIdentification={laboratorySealIdentification}
               manualEntryOnly={isSelf}
               createMode={!lockCustomer && !readOnly && !isSelf}
+              compact
+              includeEvidence={false}
+              allowAddDevice={false}
             />
+          )}
+
+          {currentStep.id === 'evidence' && showDevices && includedDeviceEntries.length > 0 && (
+            <VerificationDeviceEvidenceFields
+              device={includedDeviceEntries[evidenceDeviceIndex].row}
+              deviceIndex={evidenceDeviceIndex}
+              totalDevices={includedDeviceEntries.length}
+              verificationType={values.verificationType}
+              images={
+                deviceImages[includedDeviceEntries[evidenceDeviceIndex].row.localId] ??
+                emptyDeviceVerificationImagesState()
+              }
+              rvDocuments={
+                deviceRvImages[includedDeviceEntries[evidenceDeviceIndex].row.localId]
+              }
+              onImageSelect={(kind, file) =>
+                onDeviceImageSelect(
+                  includedDeviceEntries[evidenceDeviceIndex].row.localId,
+                  kind,
+                  file,
+                )
+              }
+              onImageRemove={kind =>
+                onDeviceImageRemove(
+                  includedDeviceEntries[evidenceDeviceIndex].row.localId,
+                  kind,
+                )
+              }
+              onRvDocumentSelect={
+                onDeviceRvDocumentSelect
+                  ? (kind, file) =>
+                      onDeviceRvDocumentSelect(
+                        includedDeviceEntries[evidenceDeviceIndex].row.localId,
+                        kind,
+                        file,
+                      )
+                  : undefined
+              }
+              onRvDocumentRemove={
+                onDeviceRvDocumentRemove
+                  ? kind =>
+                      onDeviceRvDocumentRemove(
+                        includedDeviceEntries[evidenceDeviceIndex].row.localId,
+                        kind,
+                      )
+                  : undefined
+              }
+              submitting={submitting}
+              readOnly={readOnly}
+              showAddDevice={canAddDeviceFromEvidence}
+              onAddDevice={handleAddDeviceFromEvidence}
+            />
+          )}
+
+          {currentStep.id === 'evidence' && showDevices && includedDeviceEntries.length === 0 && (
+            <p className="text-muted text-sm mb-0">
+              Select at least one device on the previous step.
+            </p>
           )}
 
           {currentStep.id === 'devices' && !showDevices && (
             <p className="text-muted text-sm mb-0">
-              Select a customer on the Details step first to load devices.
+              Select a customer above to load devices.
             </p>
           )}
         </div>
@@ -593,7 +795,7 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
               </p>
             )}
             <div className="verification-wizard-nav-actions">
-              {activeStep > 0 && (
+              {(activeStep > 0 || (isOnEvidenceStep && evidenceDeviceIndex > 0)) && (
                 <button
                   type="button"
                   className="btn btn-secondary flex items-center gap-1.5"
@@ -610,7 +812,7 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
                   onClick={handleContinue}
                   disabled={locked}
                 >
-                  Continue <ChevronRight size={16} />
+                  {continueLabel} <ChevronRight size={16} />
                 </button>
               )}
             </div>
@@ -618,11 +820,11 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
         ) : (
           <div className="verification-wizard-nav">
             <div className="verification-wizard-nav-actions">
-              {activeStep > 0 && (
+              {(activeStep > 0 || (isOnEvidenceStep && evidenceDeviceIndex > 0)) && (
                 <button
                   type="button"
                   className="btn btn-secondary flex items-center gap-1.5"
-                  onClick={handleBack}
+                  onClick={handleReadOnlyBack}
                 >
                   <ChevronLeft size={16} /> Previous
                 </button>
@@ -631,9 +833,9 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
                 <button
                   type="button"
                   className="btn btn-secondary flex items-center gap-1.5"
-                  onClick={() => setActiveStep(prev => Math.min(prev + 1, VERIFICATION_FORM_STEPS.length - 1))}
+                  onClick={handleReadOnlyNext}
                 >
-                  Next <ChevronRight size={16} />
+                  {continueLabel} <ChevronRight size={16} />
                 </button>
               )}
             </div>
@@ -642,4 +844,4 @@ export const VerificationSessionFields: React.FC<VerificationSessionFieldsProps>
       </div>
     </div>
   );
-};
+});

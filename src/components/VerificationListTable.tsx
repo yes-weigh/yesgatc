@@ -10,7 +10,6 @@ import {
   verificationVctLabel,
 } from '../lib/verificationRequest';
 import { inferVerificationSubject } from '../lib/siteCalibrationProfileFields';
-import { verificationListAccentClass } from '../lib/verificationListPartyPhoto';
 import { tableEditCellProps } from '../lib/tableEditCell';
 import { StorageImage } from './StorageImage';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
@@ -73,7 +72,6 @@ function VerificationPartyAvatar({
   record: VerificationListTableRecord;
   className?: string;
 }) {
-  const accentClass = verificationListAccentClass(record.id);
   const isSelf = inferVerificationSubject(record) === 'self';
   const photoUrl = record.partyPhotoUrl;
   const photoPath = record.partyPhotoPath;
@@ -84,14 +82,14 @@ function VerificationPartyAvatar({
         url={photoUrl}
         path={photoPath}
         alt=""
-        className={`verification-list-avatar ${accentClass} ${className}`.trim()}
+        className={`verification-list-avatar ${className}`.trim()}
       />
     );
   }
 
   return (
     <span
-      className={`verification-list-avatar verification-list-avatar--placeholder ${accentClass} ${className}`.trim()}
+      className={`verification-list-avatar verification-list-avatar--placeholder ${className}`.trim()}
       aria-hidden
     >
       {isSelf ? <UserCircle size={20} /> : <Store size={18} />}
@@ -174,7 +172,6 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const showDownload = canDownloadVerificationCertificate(record);
             const showDelete = deletable && onDelete;
             const hasDraftActions = showEdit || showSubmit || showDelete;
-            const accentClass = verificationListAccentClass(record.id);
 
             return (
               <tr key={record.id} className="table-mobile-row table-mobile-row--media-actions">
@@ -292,7 +289,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                           href={record.certificatePdfUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className={`verification-list-download-btn ${accentClass}`}
+                          className="verification-list-download-btn"
                           title="Download certificate PDF"
                           aria-label={`Download certificate for ${record.customerName}`}
                         >

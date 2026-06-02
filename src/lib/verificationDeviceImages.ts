@@ -1,7 +1,13 @@
 import type { JobType, SiteCalibration } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
 
-export type VerificationImageKind = 'scale' | 'stamping' | 'standardWeight';
+/** Internal storage keys — legacy `scale` / `stamping` / `standardWeight` unchanged for existing records. */
+export type VerificationImageKind =
+  | 'stamping'
+  | 'scale'
+  | 'standardWeight'
+  | 'verificationSeal'
+  | 'installation';
 
 export type DeviceImageSlotState = {
   file: ProductFileMeta | null;
@@ -12,15 +18,20 @@ export type DeviceImageSlotState = {
 };
 
 export type DeviceVerificationImagesState = {
-  scale: DeviceImageSlotState;
   stamping: DeviceImageSlotState;
+  scale: DeviceImageSlotState;
   standardWeight: DeviceImageSlotState;
+  verificationSeal: DeviceImageSlotState;
+  installation: DeviceImageSlotState;
 };
 
+/** Display order on the evidence step. */
 export const VERIFICATION_IMAGE_KINDS: VerificationImageKind[] = [
-  'scale',
   'stamping',
+  'scale',
   'standardWeight',
+  'verificationSeal',
+  'installation',
 ];
 
 export const VERIFICATION_IMAGE_CONFIG: Record<
@@ -29,34 +40,44 @@ export const VERIFICATION_IMAGE_CONFIG: Record<
     label: string;
     shortLabel: string;
     hint: string;
-    placeholderSrc: string;
     storageFolder: string;
     defaultName: string;
   }
 > = {
-  scale: {
-    label: 'Scale image',
-    shortLabel: 'Scale',
-    hint: 'Optional for OV · required for RV submit',
-    placeholderSrc: '/verification/scaleimagelogo.png',
-    storageFolder: 'scale-image',
-    defaultName: 'Scale image',
-  },
   stamping: {
-    label: 'Stamping plate image',
-    shortLabel: 'Stamping plate',
+    label: 'Serial number plate photo',
+    shortLabel: 'Serial plate',
     hint: 'Required for submit',
-    placeholderSrc: '/verification/sealimagelogo.png',
     storageFolder: 'stamping-image',
     defaultName: 'Stamping plate image',
   },
+  scale: {
+    label: 'Instrument photo',
+    shortLabel: 'Instrument',
+    hint: 'Optional',
+    storageFolder: 'scale-image',
+    defaultName: 'Scale image',
+  },
   standardWeight: {
-    label: 'With standard weight image',
-    shortLabel: 'Std. weight',
-    hint: 'Optional for OV · required for RV submit',
-    placeholderSrc: '/verification/withweightlogo.png',
+    label: 'Testing photos',
+    shortLabel: 'Testing',
+    hint: 'Optional',
     storageFolder: 'standard-weight-image',
     defaultName: 'With standard weight image',
+  },
+  verificationSeal: {
+    label: 'Verification seal photo',
+    shortLabel: 'Seal',
+    hint: 'Optional',
+    storageFolder: 'verification-seal-image',
+    defaultName: 'Verification seal photo',
+  },
+  installation: {
+    label: 'Installation photo',
+    shortLabel: 'Installation',
+    hint: 'Optional',
+    storageFolder: 'installation-image',
+    defaultName: 'Installation photo',
   },
 };
 
@@ -68,23 +89,35 @@ type ImageFieldKeys = {
 };
 
 const IMAGE_FIELD_KEYS: Record<VerificationImageKind, ImageFieldKeys> = {
-  scale: {
-    url: 'scaleImageUrl',
-    path: 'scaleImagePath',
-    name: 'scaleImageName',
-    contentType: 'scaleImageContentType',
-  },
   stamping: {
     url: 'stampingImageUrl',
     path: 'stampingImagePath',
     name: 'stampingImageName',
     contentType: 'stampingImageContentType',
   },
+  scale: {
+    url: 'scaleImageUrl',
+    path: 'scaleImagePath',
+    name: 'scaleImageName',
+    contentType: 'scaleImageContentType',
+  },
   standardWeight: {
     url: 'standardWeightImageUrl',
     path: 'standardWeightImagePath',
     name: 'standardWeightImageName',
     contentType: 'standardWeightImageContentType',
+  },
+  verificationSeal: {
+    url: 'verificationSealImageUrl',
+    path: 'verificationSealImagePath',
+    name: 'verificationSealImageName',
+    contentType: 'verificationSealImageContentType',
+  },
+  installation: {
+    url: 'installationImageUrl',
+    path: 'installationImagePath',
+    name: 'installationImageName',
+    contentType: 'installationImageContentType',
   },
 };
 
@@ -100,9 +133,11 @@ export function emptyDeviceImageSlot(): DeviceImageSlotState {
 
 export function emptyDeviceVerificationImagesState(): DeviceVerificationImagesState {
   return {
-    scale: emptyDeviceImageSlot(),
     stamping: emptyDeviceImageSlot(),
+    scale: emptyDeviceImageSlot(),
     standardWeight: emptyDeviceImageSlot(),
+    verificationSeal: emptyDeviceImageSlot(),
+    installation: emptyDeviceImageSlot(),
   };
 }
 
@@ -157,23 +192,23 @@ export function imageFieldsFromMeta(
   };
 }
 
+/** Only serial number plate (stored as stamping) is mandatory for submit. */
 export function requiredVerificationImageKinds(
-  verificationType: JobType | '' | undefined,
+  _verificationType?: JobType | '' | undefined,
 ): VerificationImageKind[] {
-  if (verificationType === 'RV') return [...VERIFICATION_IMAGE_KINDS];
   return ['stamping'];
 }
 
 export function isVerificationImageRequired(
   kind: VerificationImageKind,
-  verificationType: JobType | '' | undefined,
+  verificationType?: JobType | '' | undefined,
 ): boolean {
   return requiredVerificationImageKinds(verificationType).includes(kind);
 }
 
 export function verificationImageHint(
   kind: VerificationImageKind,
-  verificationType: JobType | '' | undefined,
+  verificationType?: JobType | '' | undefined,
 ): string {
   return isVerificationImageRequired(kind, verificationType)
     ? 'Required for submit'

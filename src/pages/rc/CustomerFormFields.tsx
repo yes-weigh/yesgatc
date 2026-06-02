@@ -137,6 +137,8 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
   const [pincodeLookupLoading, setPincodeLookupLoading] = useState(false);
   const [pincodeLookupError, setPincodeLookupError] = useState('');
   const lastPincodeLookupRef = useRef('');
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     const pin = normalizePincode(values.pincode);
@@ -146,20 +148,20 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
       setPincodeLookupLoading(false);
       setPincodeLookupError('');
       if (values.state || values.district) {
-        onChange({ state: '', district: '' });
+        onChangeRef.current({ state: '', district: '' });
       }
+      return;
+    }
+
+    if (values.state.trim() && values.district.trim()) {
+      lastPincodeLookupRef.current = pin;
+      setPincodeLookupLoading(false);
       return;
     }
 
     if (lastPincodeLookupRef.current === pin) return;
 
-    if (values.state.trim() && values.district.trim()) {
-      lastPincodeLookupRef.current = pin;
-      return;
-    }
-
     let cancelled = false;
-    lastPincodeLookupRef.current = pin;
     setPincodeLookupLoading(true);
     setPincodeLookupError('');
 
@@ -167,16 +169,19 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
       .then(result => {
         if (cancelled) return;
         if (result) {
-          onChange({ state: result.state, district: result.district });
+          lastPincodeLookupRef.current = pin;
+          onChangeRef.current({ state: result.state, district: result.district });
           setPincodeLookupError('');
         } else {
-          onChange({ state: '', district: '' });
+          lastPincodeLookupRef.current = '';
+          onChangeRef.current({ state: '', district: '' });
           setPincodeLookupError('No location found for this postal code.');
         }
       })
       .catch(() => {
         if (cancelled) return;
-        onChange({ state: '', district: '' });
+        lastPincodeLookupRef.current = '';
+        onChangeRef.current({ state: '', district: '' });
         setPincodeLookupError('Could not look up postal code.');
       })
       .finally(() => {
@@ -185,8 +190,9 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
 
     return () => {
       cancelled = true;
+      setPincodeLookupLoading(false);
     };
-  }, [values.pincode, onChange]);
+  }, [values.pincode, values.state, values.district]);
 
   const handlePincodeChange = (raw: string) => {
     const next = normalizePincode(raw);
