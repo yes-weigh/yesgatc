@@ -37,6 +37,16 @@ service cloud.firestore {
       return data.get('approvalStatus', 'approved');
     }
 
+    function validVerificationApplicationNumber(data) {
+      return data.get('applicationNumber', '') is string
+        && data.applicationNumber.matches('^VC/[0-9]{2}/[0-9]+$');
+    }
+
+    function verificationApplicationNumberUnchanged() {
+      return request.resource.data.get('applicationNumber', null)
+        == resource.data.get('applicationNumber', null);
+    }
+
     // ── users ─────────────────────────────────────────────────────
     match /users/{uid} {
 
@@ -212,21 +222,24 @@ service cloud.firestore {
       // RC creates draft records only; submit is a separate update.
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid
-        && verificationRecordStatus(request.resource.data) == 'draft';
+        && verificationRecordStatus(request.resource.data) == 'draft'
+        && validVerificationApplicationNumber(request.resource.data);
 
       allow create: if isOperationalVct()
         && request.resource.data.rcId == vctRcId()
         && request.resource.data.get('createdByUid', '') == request.auth.uid
         && request.resource.data.get('vctId', '') == request.auth.uid
         && request.resource.data.get('performedBy', '') == 'vct'
-        && verificationRecordStatus(request.resource.data) == 'draft';
+        && verificationRecordStatus(request.resource.data) == 'draft'
+        && validVerificationApplicationNumber(request.resource.data);
 
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == resource.data.rcId
         && verificationRecordStatus(request.resource.data) != 'approved'
         && verificationRecordStatus(resource.data) == 'draft'
-        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted'];
+        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted']
+        && verificationApplicationNumberUnchanged();
 
       allow update: if isOperationalVct()
         && resource.data.rcId == vctRcId()
@@ -234,7 +247,8 @@ service cloud.firestore {
         && vctOwnsVerification(resource.data)
         && verificationRecordStatus(request.resource.data) != 'approved'
         && verificationRecordStatus(resource.data) == 'draft'
-        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted'];
+        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted']
+        && verificationApplicationNumberUnchanged();
 
       // Certificate worker — RC approves own submitted verification after DOCA success.
       allow update: if isRCAdmin()
@@ -253,6 +267,37 @@ service cloud.firestore {
         && resource.data.rcId == vctRcId()
         && vctOwnsVerification(resource.data)
         && verificationRecordStatus(resource.data) == 'draft';
+    }
+
+    // ── internal counters (verification application numbers) ─────
+    match /_counters/{counterId} {
+      function isVerificationApplicationCounter() {
+        return counterId.matches('verificationApplicationNumber_[0-9]{2}');
+      }
+
+      allow read: if isAuthenticated()
+        && (isRCAdmin() || isOperationalVct())
+        && isVerificationApplicationCounter();
+
+      allow create: if isAuthenticated()
+        && (isRCAdmin() || isOperationalVct())
+        && isVerificationApplicationCounter()
+        && request.resource.data.keys().hasOnly(['nextSeq', 'year'])
+        && request.resource.data.nextSeq is int
+        && request.resource.data.nextSeq >= 2
+        && request.resource.data.year is int;
+
+      allow create: if isSuperAdmin();
+
+      allow update: if isAuthenticated()
+        && (isRCAdmin() || isOperationalVct())
+        && isVerificationApplicationCounter()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nextSeq', 'year'])
+        && request.resource.data.nextSeq is int
+        && request.resource.data.nextSeq > resource.data.nextSeq
+        && request.resource.data.year is int;
+
+      allow update: if isSuperAdmin();
     }
   }
 }

@@ -7257,9 +7257,6 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-form-footer-row--submit {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
   padding-top: 0;
   margin-top: 0;
   border-top: none;
@@ -7345,21 +7342,6 @@ body.verification-mobile-wizard-active {
   box-shadow: 0 3px 12px rgba(22, 163, 74, 0.34);
 }
 
-/* TEMP — remove with simulate button */
-.verification-form-btn--simulate {
-  width: 100%;
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(148, 163, 184, 0.35);
-  border-style: dashed;
-  color: rgba(226, 232, 240, 0.88);
-}
-
-.verification-form-btn--simulate:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(148, 163, 184, 0.5);
-  color: #f8fafc;
-}
-
 .verification-form-btn:disabled {
   cursor: not-allowed;
   box-shadow: none;
@@ -7411,13 +7393,7 @@ body.verification-mobile-wizard-active {
   }
 
   .verification-form-footer-row--submit {
-    flex-direction: row;
     justify-content: flex-end;
-  }
-
-  .verification-form-btn--simulate {
-    width: auto;
-    min-width: 12rem;
   }
 
   .verification-form-btn--submit {
@@ -11409,20 +11385,6 @@ body.verification-mobile-wizard-active {
   margin-bottom: 0.85rem;
   font-size: 0.78rem;
   color: var(--text-muted);
-}
-
-.verification-submit-progress-demo-badge {
-  display: inline-block;
-  margin: 0.35rem 0 0.65rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.12);
-  border: 1px solid rgba(251, 191, 36, 0.28);
 }
 
 .verification-submit-progress-done {

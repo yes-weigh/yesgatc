@@ -87,6 +87,9 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               {record.submittedAt && (
                 <span className="text-muted text-xs">Submitted {formatDateTime(record.submittedAt)}</span>
               )}
+              {record.applicationNumber?.trim() && (
+                <span className="text-mono text-xs">App {record.applicationNumber.trim()}</span>
+              )}
               {record.certificateNumber?.trim() && (
                 <span className="text-mono text-xs">Cert {record.certificateNumber.trim()}</span>
               )}
@@ -117,6 +120,16 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             <h3 className="verification-detail-section-title">Overview</h3>
             <div className="verification-detail-grid">
               <DetailField label="Record ID" value={<span className="text-mono text-sm">{record.id}</span>} />
+              <DetailField
+                label="Application no."
+                value={
+                  record.applicationNumber?.trim() ? (
+                    <span className="text-mono">{record.applicationNumber.trim()}</span>
+                  ) : (
+                    '—'
+                  )
+                }
+              />
               <DetailField label="RC centre" value={rcCenterName || '—'} />
               <DetailField label="VCT" value={verificationVctLabel(record)} />
               <DetailField label="Type" value={record.verificationType} />

@@ -15,8 +15,6 @@ import type { SiteCalibration } from '../types';
 type VerificationSubmitProgressOverlayProps = {
   recordIds: string[];
   onClose: () => void;
-  /** TEMP — remove when certificate worker testing is no longer needed. */
-  simulate?: boolean;
 };
 
 function stageIcon(stage: VerificationSubmitProgressStage) {
@@ -32,9 +30,8 @@ function stageIcon(stage: VerificationSubmitProgressStage) {
 
 export const VerificationSubmitProgressOverlay: React.FC<
   VerificationSubmitProgressOverlayProps
-> = ({ recordIds, onClose, simulate = false }) => {
+> = ({ recordIds, onClose }) => {
   const [recordsById, setRecordsById] = useState<Record<string, SiteCalibration>>({});
-  const [simulatedStage, setSimulatedStage] = useState<VerificationSubmitProgressStage>('submitted');
   const [visible, setVisible] = useState(false);
   const [stagePulse, setStagePulse] = useState(false);
   const previousStageRef = useRef<VerificationSubmitProgressStage>('submitted');
@@ -46,7 +43,6 @@ export const VerificationSubmitProgressOverlay: React.FC<
   }, []);
 
   useEffect(() => {
-    if (simulate) return;
     if (!recordIds.length) return;
 
     const unsubs = recordIds.map(recordId =>
@@ -62,34 +58,18 @@ export const VerificationSubmitProgressOverlay: React.FC<
     return () => {
       unsubs.forEach(unsub => unsub());
     };
-  }, [recordIds, simulate]);
-
-  useEffect(() => {
-    if (!simulate) return;
-    setSimulatedStage('submitted');
-    successSoundPlayedRef.current = false;
-    previousStageRef.current = 'submitted';
-
-    const approvedTimer = window.setTimeout(() => setSimulatedStage('approved'), 2400);
-    const certifiedTimer = window.setTimeout(() => setSimulatedStage('certified'), 5200);
-
-    return () => {
-      window.clearTimeout(approvedTimer);
-      window.clearTimeout(certifiedTimer);
-    };
-  }, [simulate]);
+  }, [recordIds]);
 
   const trackedRecords = useMemo(
     () => recordIds.map(id => recordsById[id]).filter(Boolean) as SiteCalibration[],
     [recordIds, recordsById],
   );
 
-  const firestoreStage = resolveVerificationSubmitProgressStage(trackedRecords);
-  const stage = simulate ? simulatedStage : firestoreStage;
+  const stage = resolveVerificationSubmitProgressStage(trackedRecords);
   const stageIndex = verificationSubmitProgressStageIndex(stage);
   const stageMeta = VERIFICATION_SUBMIT_PROGRESS_STAGES[stageIndex];
   const StageIcon = stageIcon(stage);
-  const waitingForServer = !simulate && trackedRecords.length < recordIds.length;
+  const waitingForServer = trackedRecords.length < recordIds.length;
 
   useEffect(() => {
     if (previousStageRef.current === stage) return;
@@ -105,9 +85,8 @@ export const VerificationSubmitProgressOverlay: React.FC<
     playVerificationSuccessSound();
   }, [stage]);
 
-  const waitingMessage = simulate
-    ? 'Simulating certificate server progress…'
-    : stage === 'submitted'
+  const waitingMessage =
+    stage === 'submitted'
       ? 'Waiting for approval from the certificate server…'
       : stage === 'approved'
         ? 'Generating your certificate…'
@@ -166,9 +145,6 @@ export const VerificationSubmitProgressOverlay: React.FC<
         <h2 id="verification-submit-progress-title" className="verification-submit-progress-title">
           {stageMeta.title}
         </h2>
-        {simulate && (
-          <p className="verification-submit-progress-demo-badge mb-0">Demo preview</p>
-        )}
         <p className="verification-submit-progress-message">{stageMeta.message}</p>
 
         {(waitingForServer || waitingMessage) && stage !== 'certified' && (

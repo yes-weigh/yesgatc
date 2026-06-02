@@ -319,6 +319,8 @@ export interface SiteCalibration {
   certifiedAt?: string;
   /** Filled by certificate server when approved. */
   certificateNumber?: string;
+  /** Internal application reference — e.g. VC/26/1. Assigned at draft creation. */
+  applicationNumber?: string;
   /** Set by certificate worker when DOCA pipeline fails at a known phase. */
   pipelineFailedPhase?: 'submit' | 'certification';
   pipelineFailureMessage?: string;

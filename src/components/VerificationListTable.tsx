@@ -46,6 +46,8 @@ export interface VerificationListTableProps {
   deletingId?: string | null;
   submitting?: boolean;
   bulkSelect?: VerificationListBulkSelectProps;
+  /** Hide VCT column — e.g. VCT login only sees own verifications. */
+  hideVctColumn?: boolean;
 }
 
 function typeBadgeClass(type: SiteCalibration['verificationType']): string {
@@ -110,10 +112,13 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   deletingId = null,
   submitting = false,
   bulkSelect,
+  hideVctColumn = false,
 }) => {
   const showBulkSelect = mode === 'rc' && bulkSelect;
   const showRcCentre = mode === 'admin';
-  const colSpan = 9 + (showBulkSelect ? 1 : 0) + (showRcCentre ? 1 : 0);
+  const showVctColumn = !hideVctColumn;
+  const colSpan =
+    9 + (showBulkSelect ? 1 : 0) + (showRcCentre ? 1 : 0) - (hideVctColumn ? 1 : 0);
 
   return (
     <div className="table-scroll-wrap">
@@ -144,13 +149,13 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             <th className="verification-table-col-media">Photo</th>
             <th>Date</th>
             {showRcCentre && <th>RC centre</th>}
-            <th>VCT</th>
+            {showVctColumn && <th>VCT</th>}
             <th>Belongs to</th>
             <th className="site-calibration-col-type-cap">
               <StackedHeader top="Cap/Acc" bottom="Type" />
             </th>
             <th className="site-calibration-col-ids">
-              <StackedHeader top="Serial" bottom="Cert" />
+              <StackedHeader top="Serial" bottom="App · Cert" />
             </th>
             <th>Status</th>
           </tr>
@@ -213,9 +218,11 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                     {record.rcCenterName || '—'}
                   </td>
                 )}
-                <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
-                  {verificationVctLabel(record)}
-                </td>
+                {showVctColumn && (
+                  <td {...detailCell} className="text-sm table-mobile-col-hide table-col-editable">
+                    {verificationVctLabel(record)}
+                  </td>
+                )}
                 <td {...detailCell} className="font-medium table-mobile-col-primary table-col-editable">
                   <div className="verification-list-primary">
                     <VerificationPartyAvatar record={record} className="verification-list-avatar--desktop" />
@@ -235,10 +242,13 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                           {formatVerificationCapAcc(record)} · {record.serialNumber || '—'}
                         </span>
                         <span className="table-mobile-summary-meta">
-                          VCT {verificationVctLabel(record)} · {formatDate(record.createdAt)}
+                          {showVctColumn
+                            ? `VCT ${verificationVctLabel(record)} · ${formatDate(record.createdAt)}`
+                            : formatDate(record.createdAt)}
                         </span>
                         <span className="table-mobile-summary-meta verification-list-cert-meta">
-                          Cert {record.certificateNumber?.trim() || '—'}
+                          App {record.applicationNumber?.trim() || '—'} · Cert{' '}
+                          {record.certificateNumber?.trim() || '—'}
                         </span>
                       </div>
                     </div>
@@ -266,6 +276,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                       {record.serialNumber || '—'}
                     </span>
                     <span className="text-mono verification-table-stacked-secondary">
+                      {record.applicationNumber?.trim() || '—'} ·{' '}
                       {record.certificateNumber?.trim() || '—'}
                     </span>
                   </div>

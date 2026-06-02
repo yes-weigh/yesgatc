@@ -22,6 +22,7 @@ export function matchesVerificationSearch(
     record.customerName,
     record.serialNumber,
     record.certificateNumber,
+    record.applicationNumber,
     record.productName,
     record.vctName,
     record.vctId,

@@ -65,7 +65,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import {
-  Pencil, Plus, Save, Send, Download, Eye, X, Play,
+  Pencil, Plus, Save, Send, Download, Eye, X,
 } from 'lucide-react';
 
 import {
@@ -88,6 +88,7 @@ import {
 } from '../../lib/rcLaboratoryFields';
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
+import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
 
@@ -106,10 +107,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [deviceImages, setDeviceImages] = useState<Record<string, DeviceVerificationImagesState>>({});
   const [deviceRvImages, setDeviceRvImages] = useState<Record<string, DeviceRvDocumentsState>>({});
 
-  const [submitProgress, setSubmitProgress] = useState<{
-    recordIds: string[];
-    simulate: boolean;
-  } | null>(null);
+  const [submitProgressRecordIds, setSubmitProgressRecordIds] = useState<string[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
@@ -155,16 +153,8 @@ export const RCSiteCalibration: React.FC = () => {
   const beginSubmitProgress = useCallback((recordIds: string[]) => {
     if (!recordIds.length) return;
     unlockVerificationSuccessAudio();
-    setSubmitProgress({ recordIds, simulate: false });
+    setSubmitProgressRecordIds(recordIds);
   }, []);
-
-  /** TEMP — remove with simulate button when animation preview is no longer needed. */
-  const handleSimulateServerProcess = () => {
-    if (formBusy) return;
-    unlockVerificationSuccessAudio();
-    handleCloseForm();
-    setSubmitProgress({ recordIds: ['__demo__'], simulate: true });
-  };
 
   const fetchLaboratorySeal = useCallback(async () => {
     if (!rcUid) return;
@@ -767,8 +757,10 @@ export const RCSiteCalibration: React.FC = () => {
       await syncCustomerDevices(rowsToSync, sessionForSave.customerId, applied.customer);
 
       const submittedRecordIds: string[] = [];
+      const applicationNumbers = await allocateVerificationApplicationNumbers(db, includedRows.length);
 
-      for (const row of includedRows) {
+      for (let rowIndex = 0; rowIndex < includedRows.length; rowIndex += 1) {
+        const row = includedRows[rowIndex];
         const ref = doc(collection(db, 'siteCalibrations'));
         const recordId = ref.id;
         const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
@@ -779,6 +771,7 @@ export const RCSiteCalibration: React.FC = () => {
           rcId: rcUid!,
           createdAt: new Date().toISOString(),
           createdByUid: actorUid ?? undefined,
+          applicationNumber: applicationNumbers[rowIndex],
           ...buildNewSiteCalibrationRecord(
             sessionForSave,
             { ...row, deviceId },
@@ -1241,18 +1234,6 @@ export const RCSiteCalibration: React.FC = () => {
       {!isViewMode && wizardOnLastStep && editingDraft && (
         <>
           <div className="verification-form-footer-row verification-form-footer-row--submit">
-            {/* TEMP — remove when submit progress animation is finalized */}
-            {showAddForm && (
-              <button
-                type="button"
-                className="verification-form-btn verification-form-btn--simulate"
-                onClick={handleSimulateServerProcess}
-                disabled={formBusy}
-              >
-                <Play size={16} aria-hidden />
-                <span>Simulate server process</span>
-              </button>
-            )}
             <button
               type="button"
               className="verification-form-btn verification-form-btn--submit"
@@ -1317,6 +1298,11 @@ export const RCSiteCalibration: React.FC = () => {
                     {editingRecord.submittedAt && (
                       <span className="text-muted text-xs">
                         Submitted {formatDate(editingRecord.submittedAt)}
+                      </span>
+                    )}
+                    {editingRecord.applicationNumber?.trim() && (
+                      <span className="text-mono text-xs">
+                        App {editingRecord.applicationNumber.trim()}
                       </span>
                     )}
                     {editingRecord.certificateNumber?.trim() && (
@@ -1453,6 +1439,7 @@ export const RCSiteCalibration: React.FC = () => {
               />
               <VerificationListTable
                 mode="rc"
+                hideVctColumn={isVct}
                 records={paginatedRecordsWithPhotos}
                 rowOffset={rowOffset}
                 formatDate={formatDate}
@@ -1487,11 +1474,10 @@ export const RCSiteCalibration: React.FC = () => {
         </div>
       )}
 
-      {submitProgress && submitProgress.recordIds.length > 0 && (
+      {submitProgressRecordIds && submitProgressRecordIds.length > 0 && (
         <VerificationSubmitProgressOverlay
-          recordIds={submitProgress.recordIds}
-          simulate={submitProgress.simulate}
-          onClose={() => setSubmitProgress(null)}
+          recordIds={submitProgressRecordIds}
+          onClose={() => setSubmitProgressRecordIds(null)}
         />
       )}
     </div>
