@@ -11462,29 +11462,22 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-submit-progress-qr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 7.5rem;
   height: 7.5rem;
   padding: 0.45rem;
   border-radius: 10px;
   background: #fff;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  text-decoration: none;
 }
 
-.verification-submit-progress-qr-grid {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-  gap: 1px;
-  width: 100%;
-  height: 100%;
-}
-
-.verification-submit-progress-qr-cell {
-  border-radius: 1px;
-  background: #fff;
-}
-
-.verification-submit-progress-qr-cell--filled {
-  background: #0f172a;
+.verification-submit-progress-qr svg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .verification-submit-progress-signatory {

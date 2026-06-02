@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import QRCode from 'react-qr-code';
 import {
   Calendar,
   CalendarClock,
@@ -14,6 +15,7 @@ import {
   UserRound,
 } from 'lucide-react';
 import { db } from '../firebase';
+import { buildDocaCertificateViewUrl } from '../lib/docaCertificateUrl';
 import { playVerificationSuccessSound } from '../lib/playVerificationSuccessSound';
 import {
   buildVerificationSubmitProgressDetails,
@@ -70,37 +72,27 @@ function detailRowIcon(rowId: string) {
   }
 }
 
-function VerificationProgressQrPlaceholder() {
-  const cells = useMemo(
-    () =>
-      Array.from({ length: 64 }, (_, index) => {
-        const row = Math.floor(index / 8);
-        const col = index % 8;
-        const filled =
-          (row + col) % 3 === 0 ||
-          row === 0 ||
-          col === 0 ||
-          row === 7 ||
-          col === 7 ||
-          (row >= 2 && row <= 4 && col >= 2 && col <= 4);
-        return filled;
-      }),
-    [],
-  );
+function VerificationProgressQr({ certificateNumber }: { certificateNumber?: string | null }) {
+  const url = useMemo(() => buildDocaCertificateViewUrl(certificateNumber), [certificateNumber]);
+  if (!url) return null;
 
   return (
-    <div className="verification-submit-progress-qr" aria-hidden>
-      <div className="verification-submit-progress-qr-grid">
-        {cells.map((filled, index) => (
-          <span
-            key={index}
-            className={`verification-submit-progress-qr-cell${
-              filled ? ' verification-submit-progress-qr-cell--filled' : ''
-            }`}
-          />
-        ))}
-      </div>
-    </div>
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="verification-submit-progress-qr"
+      aria-label={`View DOCA certificate ${certificateNumber?.trim()}`}
+    >
+      <QRCode
+        value={url}
+        size={108}
+        bgColor="#ffffff"
+        fgColor="#0f172a"
+        level="M"
+        aria-hidden
+      />
+    </a>
   );
 }
 
@@ -285,7 +277,7 @@ export const VerificationSubmitProgressOverlay: React.FC<
             {footerMessage && (
               <p className="verification-submit-progress-success-label mb-0">{footerMessage}</p>
             )}
-            <VerificationProgressQrPlaceholder />
+            <VerificationProgressQr certificateNumber={primaryRecord?.certificateNumber} />
             <p className="verification-submit-progress-signatory mb-0">Authorised Signatory</p>
           </div>
         )}

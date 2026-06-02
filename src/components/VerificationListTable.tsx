@@ -247,8 +247,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                             : formatDate(record.createdAt)}
                         </span>
                         <span className="table-mobile-summary-meta verification-list-cert-meta">
-                          App {record.applicationNumber?.trim() || '—'} · Cert{' '}
-                          {record.certificateNumber?.trim() || '—'}
+                          Cert {record.certificateNumber?.trim() || '—'}
                         </span>
                       </div>
                     </div>
