@@ -248,7 +248,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
 
   const handleLookupKeyDown = (
     e: React.KeyboardEvent<HTMLInputElement>,
-    field: 'name' | 'phone',
+    _field: 'name' | 'phone',
   ) => {
     if (!lookupOpen) return;
     if (e.key === 'ArrowDown') {

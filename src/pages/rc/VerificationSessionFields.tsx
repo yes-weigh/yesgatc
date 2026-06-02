@@ -1,4 +1,4 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { SegmentToggle } from '../../components/SegmentToggle';
 import { PartyInformationForm } from '../../components/PartyInformationForm';
@@ -38,7 +38,8 @@ import {
 import { useAppContext } from '../../context/AppContext';
 import { VerificationDeviceFields } from './VerificationDeviceFields';
 import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFields';
-import { EMPTY_CUSTOMER_FORM, type CustomerFormValues } from './CustomerFormFields';
+import type { CustomerFormValues } from '../../lib/customerProfileFields';
+import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 
 type VerificationSessionFieldsProps = {
   values: VerificationSessionValues;

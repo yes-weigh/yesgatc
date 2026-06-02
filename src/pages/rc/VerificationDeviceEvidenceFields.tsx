@@ -19,7 +19,8 @@ import {
   type DeviceRvDocumentsState,
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
-import type { JobType, VerificationDeviceRowValues } from '../../lib/siteCalibrationProfileFields';
+import type { JobType } from '../../types';
+import type { VerificationDeviceRowValues } from '../../lib/siteCalibrationProfileFields';
 
 type VerificationDeviceEvidenceFieldsProps = {
   device: VerificationDeviceRowValues;
