@@ -8736,7 +8736,20 @@ body.image-capture-overlay-open {
   gap: 0.35rem;
 }
 
+.image-capture-overlay-gallery-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .image-capture-overlay-gallery-btn {
+  position: relative;
   justify-self: start;
   display: inline-flex;
   align-items: center;
@@ -8748,6 +8761,19 @@ body.image-capture-overlay-open {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
   cursor: pointer;
+  overflow: hidden;
+}
+
+.image-capture-overlay-gallery-btn .image-capture-overlay-gallery-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  clip: auto;
+  overflow: visible;
 }
 
 .image-capture-overlay-gallery-btn:active {

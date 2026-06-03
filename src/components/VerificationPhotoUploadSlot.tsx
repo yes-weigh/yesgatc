@@ -27,8 +27,8 @@ export type VerificationPhotoSlotIcon = 'camera' | 'document' | 'invoice';
 type CameraSession = {
   slotKey: string;
   label: string;
+  accept: string;
   onCaptured: (file: File) => void;
-  onPickGallery: () => void;
   onFallbackNativeCamera: () => void;
 };
 
@@ -114,8 +114,8 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
         section.openInAppCamera({
           slotKey,
           label,
+          accept,
           onCaptured: onSelect,
-          onPickGallery: () => openGallery(),
           onFallbackNativeCamera: () => openCamera(),
         });
       } else {
@@ -235,8 +235,8 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
                   section.openInAppCamera({
                     slotKey,
                     label,
+                    accept,
                     onCaptured: onSelect,
-                    onPickGallery: () => openGallery(),
                     onFallbackNativeCamera: () => openCamera(),
                   });
                 } else if (mobileSourceChoice && icon === 'camera') openCamera();
@@ -318,21 +318,17 @@ export const VerificationPhotoUploadSection: React.FC<VerificationPhotoUploadSec
       <ImageCaptureOverlay
         open={cameraSession !== null}
         label={cameraSession?.label ?? ''}
+        accept={cameraSession?.accept}
         facing={cameraFacing}
         onClose={() => setCameraSession(null)}
         onCaptured={file => {
           cameraSession?.onCaptured(file);
           setCameraSession(null);
         }}
-        onPickGallery={() => {
-          const session = cameraSession;
-          setCameraSession(null);
-          session?.onPickGallery();
-        }}
         onFallbackNativeCamera={() => {
           const session = cameraSession;
-          setCameraSession(null);
           session?.onFallbackNativeCamera();
+          setCameraSession(null);
         }}
       />
     </VerificationPhotoSectionContext.Provider>

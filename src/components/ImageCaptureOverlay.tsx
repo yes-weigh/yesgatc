@@ -1,16 +1,22 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FlipHorizontal2, Image as ImageIcon, X, Zap, ZapOff } from 'lucide-react';
 import { captureImageFileFromVideo } from '../lib/captureImageFromVideo';
 import type { ImageCaptureFacing } from '../lib/imageCapture';
 
+/** Gallery pickers on mobile open more reliably with `image/*` than a long MIME list. */
+function galleryAcceptAttribute(accept: string): string {
+  if (accept.split(',').some(part => part.trim().startsWith('image/'))) return 'image/*';
+  return accept;
+}
+
 export type ImageCaptureOverlayProps = {
   open: boolean;
   label: string;
+  accept?: string;
   facing?: ImageCaptureFacing;
   onClose: () => void;
   onCaptured: (file: File) => void;
-  onPickGallery: () => void;
   /** Native file input fallback when getUserMedia is unavailable. */
   onFallbackNativeCamera?: () => void;
 };
@@ -18,12 +24,14 @@ export type ImageCaptureOverlayProps = {
 export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   open,
   label,
+  accept = 'image/jpeg,image/png,image/webp,image/gif',
   facing: initialFacing = 'environment',
   onClose,
   onCaptured,
-  onPickGallery,
   onFallbackNativeCamera,
 }) => {
+  const galleryInputId = useId().replace(/:/g, '');
+  const galleryAccept = galleryAcceptAttribute(accept);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [facing, setFacing] = useState<ImageCaptureFacing>(initialFacing);
@@ -115,10 +123,16 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     onClose();
   }, [onClose, stopStream]);
 
-  const handleGallery = useCallback(() => {
-    stopStream();
-    onPickGallery();
-  }, [onPickGallery, stopStream]);
+  const handleGalleryChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      stopStream();
+      onCaptured(file);
+    },
+    [onCaptured, stopStream],
+  );
 
   if (!open || typeof document === 'undefined') return null;
 
@@ -151,9 +165,9 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
           <div className="image-capture-overlay-error">
             <p>{error}</p>
             <div className="image-capture-overlay-error-actions">
-              <button type="button" className="image-capture-overlay-text-btn" onClick={handleGallery}>
+              <label htmlFor={galleryInputId} className="image-capture-overlay-text-btn">
                 Select from images
-              </button>
+              </label>
               {onFallbackNativeCamera && (
                 <button
                   type="button"
@@ -181,14 +195,17 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
 
       <div className="image-capture-overlay-bottom">
         <div className="image-capture-overlay-controls">
-          <button
-            type="button"
-            className="image-capture-overlay-gallery-btn"
-            onClick={handleGallery}
-            aria-label="Select from images"
-          >
-            <ImageIcon size={22} />
-          </button>
+          <label className="image-capture-overlay-gallery-btn">
+            <input
+              id={galleryInputId}
+              type="file"
+              accept={galleryAccept}
+              className="image-capture-overlay-gallery-input"
+              onChange={handleGalleryChange}
+            />
+            <ImageIcon size={22} aria-hidden />
+            <span className="sr-only">Select from images</span>
+          </label>
 
           <div className="image-capture-overlay-shutter-wrap">
             <span className="image-capture-overlay-mode">Photo</span>
