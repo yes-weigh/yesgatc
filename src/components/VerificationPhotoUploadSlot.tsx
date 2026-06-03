@@ -156,32 +156,17 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
     >
       {inputs}
 
-      {!hasFile && !uploading && mobileSourceChoice && (
-        <div className="verification-photo-slot-frame">
-          <button
-            type="button"
-            className="verification-photo-slot-icon-btn"
-            onClick={handlePrimaryCapture}
-            disabled={locked}
-            aria-label={
-              icon === 'camera'
-                ? `${label}. Take photo with camera.`
-                : `${label}. Upload file.`
-            }
-          >
-            <SlotIcon kind={icon} />
-          </button>
-          {labelNode}
-        </div>
-      )}
-
-      {!hasFile && !uploading && !mobileSourceChoice && (
+      {!hasFile && !uploading && (
         <button
           type="button"
           className="verification-photo-slot-trigger"
           onClick={handlePrimaryCapture}
           disabled={locked}
-          aria-label={`${label}. Upload photo.`}
+          aria-label={
+            mobileSourceChoice && icon === 'camera'
+              ? `${label}. Take photo with camera.`
+              : `${label}. Upload photo.`
+          }
         >
           <div className="verification-photo-slot-frame">
             <SlotIcon kind={icon} />

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { FlipHorizontal2, Image as ImageIcon, X, Zap, ZapOff } from 'lucide-react';
 import { captureImageFileFromVideo } from '../lib/captureImageFromVideo';
 import type { ImageCaptureFacing } from '../lib/imageCapture';
+import { loadPhotoCaptureStamp, type PhotoCaptureStamp } from '../lib/photoCaptureStamp';
 
 /** Gallery pickers on mobile open more reliably with `image/*` than a long MIME list. */
 function galleryAcceptAttribute(accept: string): string {
@@ -39,6 +40,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flashOn, setFlashOn] = useState(false);
+  const [captureStamp, setCaptureStamp] = useState<PhotoCaptureStamp | null>(null);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach(track => track.stop());
@@ -99,12 +101,27 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     return () => document.body.classList.remove('image-capture-overlay-open');
   }, [open]);
 
+  useEffect(() => {
+    if (!open) {
+      setCaptureStamp(null);
+      return;
+    }
+    let cancelled = false;
+    void loadPhotoCaptureStamp().then(stamp => {
+      if (!cancelled) setCaptureStamp(stamp);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
   const handleShutter = useCallback(async () => {
     const video = videoRef.current;
     if (!video || !ready || capturing) return;
     setCapturing(true);
     try {
-      const file = await captureImageFileFromVideo(video);
+      const stamp = captureStamp ?? (await loadPhotoCaptureStamp());
+      const file = await captureImageFileFromVideo(video, { stamp: stamp ?? undefined });
       if (file) {
         stopStream();
         onCaptured(file);
@@ -112,7 +129,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     } finally {
       setCapturing(false);
     }
-  }, [ready, capturing, onCaptured, stopStream]);
+  }, [ready, capturing, onCaptured, stopStream, captureStamp]);
 
   const handleFlip = useCallback(() => {
     setFacing(prev => (prev === 'environment' ? 'user' : 'environment'));
@@ -124,7 +141,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   }, [onClose, stopStream]);
 
   const handleGalleryChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       e.target.value = '';
       if (!file) return;

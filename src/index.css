@@ -8425,40 +8425,6 @@ body.verification-mobile-wizard-active {
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.verification-photo-slot-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.15rem;
-  margin: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-radius: 8px;
-  color: inherit;
-  transition: background 0.15s ease, transform 0.15s ease;
-}
-
-.verification-photo-slot-icon-btn:hover:not(:disabled) {
-  background: rgba(59, 130, 246, 0.12);
-}
-
-.verification-photo-slot-icon-btn:focus-visible {
-  outline: 2px solid rgba(96, 165, 250, 0.55);
-  outline-offset: 2px;
-}
-
-.verification-photo-slot-icon-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.verification-photo-slot-frame:has(.verification-photo-slot-icon-btn:hover:not(:disabled)),
-.verification-photo-slot-frame:has(.verification-photo-slot-icon-btn:focus-visible) {
-  border-color: rgba(96, 165, 250, 0.55);
-  background: rgba(59, 130, 246, 0.06);
-}
-
 .verification-photo-slot-trigger:hover:not(:disabled) .verification-photo-slot-frame,
 .verification-photo-slot-trigger:focus-visible .verification-photo-slot-frame {
   border-color: rgba(96, 165, 250, 0.55);
