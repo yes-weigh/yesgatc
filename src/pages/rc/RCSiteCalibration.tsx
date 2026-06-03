@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
 import { createPortal } from 'react-dom';
 import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, getDoc,
@@ -143,11 +143,11 @@ export const RCSiteCalibration: React.FC = () => {
   );
 
   const handlePartyContextChange = useCallback((context: VerificationFormStepContext) => {
-    setPartyContext(context);
+    startTransition(() => setPartyContext(context));
   }, []);
 
   const handleWizardStepChange = useCallback((_stepId: VerificationFormStepId, isLastStep: boolean) => {
-    setWizardOnLastStep(isLastStep);
+    startTransition(() => setWizardOnLastStep(isLastStep));
   }, []);
 
   const beginSubmitProgress = useCallback((recordIds: string[]) => {

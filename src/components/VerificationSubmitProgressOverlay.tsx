@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import QRCode from 'react-qr-code';
+import { QRCode } from 'react-qr-code';
 import {
   Calendar,
   CalendarClock,
@@ -28,6 +28,7 @@ import {
   verificationSubmitProgressStageIndex,
   type VerificationSubmitProgressStage,
 } from '../lib/verificationSubmitProgressStages';
+import { VerificationSubmitProgressCountdown } from './VerificationSubmitProgressCountdown';
 import type { Customer, SiteCalibration } from '../types';
 
 type VerificationSubmitProgressOverlayProps = {
@@ -220,12 +221,7 @@ export const VerificationSubmitProgressOverlay: React.FC<
     playVerificationSuccessSound();
   }, [stage]);
 
-  const waitingMessage =
-    stage === 'submitted'
-      ? 'Waiting for approval from the certificate server…'
-      : stage === 'approved'
-        ? 'Generating your certificate…'
-        : null;
+  const waitingMessage = waitingForServer ? 'Syncing submission status…' : null;
 
   return createPortal(
     <div
@@ -262,6 +258,10 @@ export const VerificationSubmitProgressOverlay: React.FC<
         </h2>
         <p className="verification-submit-progress-message">{stageMeta.message}</p>
 
+        {!waitingForServer && stage !== 'certified' && (
+          <VerificationSubmitProgressCountdown stage={stage} />
+        )}
+
         {extraRecordCount > 0 && (
           <p className="verification-submit-progress-multi mb-0">
             Showing details for 1 of {recordIds.length} verifications.
@@ -288,7 +288,7 @@ export const VerificationSubmitProgressOverlay: React.FC<
 
         {(waitingForServer || waitingMessage) && stage !== 'certified' && (
           <p className="verification-submit-progress-waiting mb-0" role="status">
-            {waitingForServer ? 'Syncing submission status…' : waitingMessage}
+            {waitingMessage}
           </p>
         )}
 
