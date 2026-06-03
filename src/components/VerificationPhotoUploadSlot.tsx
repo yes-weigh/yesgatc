@@ -106,6 +106,11 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
     if (!hasFile) setStampPending(false);
   }, [hasFile]);
 
+  const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
+    disabled: locked,
+    onSelect,
+  });
+
   const cameraCaptureSession = useCallback((): ImageCaptureSession => {
     return {
       onCaptured: immediate => {
@@ -119,11 +124,6 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
       onFallbackNativeCamera: () => openCamera(),
     };
   }, [onSelect, openCamera]);
-
-  const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
-    disabled: locked,
-    onSelect,
-  });
 
   const useInAppCamera = mobileSourceChoice && icon === 'camera' && shouldUseInAppCameraCapture();
 
