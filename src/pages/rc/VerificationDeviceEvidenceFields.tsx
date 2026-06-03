@@ -158,6 +158,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
           return (
             <VerificationPhotoUploadSlot
               key={kind}
+              slotKey={kind}
               label={config.label}
               required={isVerificationImageRequired(kind, verificationType)}
               file={slot.file}
@@ -179,6 +180,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
             return (
               <VerificationPhotoUploadSlot
                 key={kind}
+                slotKey={kind}
                 label={config.label}
                 required
                 file={slot.file}
