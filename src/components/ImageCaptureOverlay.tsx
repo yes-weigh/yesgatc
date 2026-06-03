@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { FlipHorizontal2, Image as ImageIcon, X, Zap, ZapOff } from 'lucide-react';
 import { captureImageFileFromVideo } from '../lib/captureImageFromVideo';
 import type { ImageCaptureFacing } from '../lib/imageCapture';
-import { loadPhotoCaptureStamp, type PhotoCaptureStamp } from '../lib/photoCaptureStamp';
+import { loadPhotoCaptureStamp } from '../lib/photoCaptureStamp';
 
 /** Gallery pickers on mobile open more reliably with `image/*` than a long MIME list. */
 function galleryAcceptAttribute(accept: string): string {
@@ -40,7 +40,6 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flashOn, setFlashOn] = useState(false);
-  const [captureStamp, setCaptureStamp] = useState<PhotoCaptureStamp | null>(null);
   const [review, setReview] = useState<{ url: string; file: File } | null>(null);
 
   const stopStream = useCallback(() => {
@@ -110,26 +109,12 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     });
   }, [open]);
 
-  useEffect(() => {
-    if (!open) {
-      setCaptureStamp(null);
-      return;
-    }
-    let cancelled = false;
-    void loadPhotoCaptureStamp().then(stamp => {
-      if (!cancelled) setCaptureStamp(stamp);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
-
   const handleShutter = useCallback(async () => {
     const video = videoRef.current;
     if (!video || !ready || capturing) return;
     setCapturing(true);
     try {
-      const stamp = captureStamp ?? (await loadPhotoCaptureStamp());
+      const stamp = await loadPhotoCaptureStamp();
       const file = await captureImageFileFromVideo(video, { stamp: stamp ?? undefined });
       if (file) {
         stopStream();
@@ -138,7 +123,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     } finally {
       setCapturing(false);
     }
-  }, [ready, capturing, stopStream, captureStamp]);
+  }, [ready, capturing, stopStream]);
 
   const clearReview = useCallback(() => {
     setReview(prev => {

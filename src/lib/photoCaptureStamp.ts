@@ -14,37 +14,110 @@ type GeoPosition = {
 };
 
 const STAMP_FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const MAP_ZOOM = 18;
+const TILE_SIZE = 256;
+/** Above this, village-level labels are often misleading vs true position. */
+const POOR_ACCURACY_METERS = 80;
 
-function getCurrentPosition(timeoutMs = 12_000): Promise<GeoPosition> {
+function latLonToWorldPx(lat: number, lon: number, zoom: number): { x: number; y: number } {
+  const scale = TILE_SIZE * 2 ** zoom;
+  const x = ((lon + 180) / 360) * scale;
+  const latRad = (lat * Math.PI) / 180;
+  const y =
+    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * scale;
+  return { x, y };
+}
+
+function tileXY(lat: number, lon: number, zoom: number): { x: number; y: number } {
+  const world = latLonToWorldPx(lat, lon, zoom);
+  return {
+    x: Math.floor(world.x / TILE_SIZE),
+    y: Math.floor(world.y / TILE_SIZE),
+  };
+}
+
+/** Pixel offset (0–256) of lat/lon within its slippy-map tile. */
+function pixelInTile(lat: number, lon: number, zoom: number): { px: number; py: number } {
+  const world = latLonToWorldPx(lat, lon, zoom);
+  const tile = tileXY(lat, lon, zoom);
+  return {
+    px: world.x - tile.x * TILE_SIZE,
+    py: world.y - tile.y * TILE_SIZE,
+  };
+}
+
+/**
+ * Prefer a fresh, high-accuracy fix. Uses watchPosition briefly, then keeps the best reading.
+ */
+function getBestCurrentPosition(timeoutMs = 14_000): Promise<GeoPosition> {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       reject(new Error('Geolocation not supported'));
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      pos =>
-        resolve({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracyMeters: pos.coords.accuracy,
-        }),
-      err => reject(err),
-      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60_000 },
-    );
+
+    let best: GeoPosition | null = null;
+    let settled = false;
+    let watchId: number | null = null;
+
+    const consider = (pos: GeolocationPosition) => {
+      const candidate: GeoPosition = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracyMeters: pos.coords.accuracy,
+      };
+      const bestAcc = best?.accuracyMeters ?? Number.POSITIVE_INFINITY;
+      const candAcc = candidate.accuracyMeters ?? Number.POSITIVE_INFINITY;
+      if (!best || candAcc < bestAcc) best = candidate;
+      if (candAcc <= 20) settleOk();
+    };
+
+    const settleOk = () => {
+      if (settled || !best) return;
+      settled = true;
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      clearTimeout(timer);
+      resolve(best);
+    };
+
+    const timer = setTimeout(() => {
+      if (best) settleOk();
+      else if (!settled) {
+        settled = true;
+        if (watchId != null) navigator.geolocation.clearWatch(watchId);
+        reject(new Error('GPS timeout'));
+      }
+    }, timeoutMs);
+
+    const geoOpts: PositionOptions = {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: timeoutMs,
+    };
+
+    watchId = navigator.geolocation.watchPosition(consider, () => {}, geoOpts);
+
+    navigator.geolocation.getCurrentPosition(consider, () => {}, geoOpts);
   });
 }
 
-/** OpenStreetMap Nominatim — free, no API key; use sparingly (1 req/s policy). */
-async function reverseGeocode(lat: number, lon: number): Promise<{ placeName?: string; addressLine?: string }> {
+/** OpenStreetMap Nominatim — free; prefer neighbourhood over village (village labels are often wrong). */
+async function reverseGeocode(
+  lat: number,
+  lon: number,
+): Promise<{ placeName?: string; addressLine?: string }> {
   const url = new URL('https://nominatim.openstreetmap.org/reverse');
-  url.searchParams.set('format', 'json');
+  url.searchParams.set('format', 'jsonv2');
   url.searchParams.set('lat', String(lat));
   url.searchParams.set('lon', String(lon));
-  url.searchParams.set('zoom', '18');
+  url.searchParams.set('zoom', '19');
   url.searchParams.set('addressdetails', '1');
 
   const res = await fetch(url.toString(), {
-    headers: { Accept: 'application/json', 'Accept-Language': 'en' },
+    headers: {
+      Accept: 'application/json',
+      'Accept-Language': 'en',
+    },
   });
   if (!res.ok) return {};
 
@@ -53,31 +126,35 @@ async function reverseGeocode(lat: number, lon: number): Promise<{ placeName?: s
     address?: Record<string, string | undefined>;
   };
 
-  const addr = data.address;
-  const locality =
-    addr?.city || addr?.town || addr?.village || addr?.suburb || addr?.county || '';
-  const state = addr?.state || '';
-  const country = addr?.country || '';
-  const placeName = [locality, state, country].filter(Boolean).join(', ') || undefined;
+  const addr = data.address ?? {};
 
-  const street = [addr?.house_number, addr?.road].filter(Boolean).join(' ');
-  const postcode = addr?.postcode || '';
-  const addressLine =
-    data.display_name ||
-    [street, locality, postcode, country].filter(Boolean).join(', ') ||
-    undefined;
+  const primaryLocality =
+    addr.neighbourhood ||
+    addr.suburb ||
+    addr.hamlet ||
+    addr.quarter ||
+    addr.residential ||
+    addr.city_district ||
+    addr.town ||
+    addr.city ||
+    addr.municipality ||
+    '';
+
+  const state = addr.state || '';
+  const country = addr.country || '';
+  const placeName = [primaryLocality, state, country].filter(Boolean).join(', ') || undefined;
+
+  const street = [addr.house_number, addr.road].filter(Boolean).join(' ');
+  const secondary = addr.village && addr.village !== primaryLocality ? addr.village : '';
+  const postcode = addr.postcode || '';
+  const addressParts = [street, secondary, primaryLocality, postcode, country].filter(Boolean);
+  const addressLine = addressParts.length > 0 ? addressParts.join(', ') : data.display_name;
 
   return { placeName, addressLine };
 }
 
-/** Load a single satellite tile (Esri World Imagery — no API key). May fail CORS on some networks. */
-function loadSatelliteTile(lat: number, lon: number, zoom = 17): Promise<HTMLImageElement | null> {
-  const n = 2 ** zoom;
-  const x = Math.floor(((lon + 180) / 360) * n);
-  const latRad = (lat * Math.PI) / 180;
-  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
-  const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${y}/${x}`;
-
+function loadSatelliteTile(z: number, x: number, y: number): Promise<HTMLImageElement | null> {
+  const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
   return new Promise(resolve => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -121,24 +198,30 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   return lines.slice(0, 3);
 }
 
-/** Fetch GPS + optional address while the camera is open. */
+/** Fetch GPS at capture time (always fresh). */
 export async function loadPhotoCaptureStamp(): Promise<PhotoCaptureStamp | null> {
   try {
-    const pos = await getCurrentPosition();
+    const pos = await getBestCurrentPosition();
     const capturedAt = new Date();
+    const accuracy = pos.accuracyMeters;
+
     let placeName: string | undefined;
     let addressLine: string | undefined;
-    try {
-      const geo = await reverseGeocode(pos.latitude, pos.longitude);
-      placeName = geo.placeName;
-      addressLine = geo.addressLine;
-    } catch {
-      /* address is optional */
+
+    if ((accuracy ?? 0) <= POOR_ACCURACY_METERS) {
+      try {
+        const geo = await reverseGeocode(pos.latitude, pos.longitude);
+        placeName = geo.placeName;
+        addressLine = geo.addressLine;
+      } catch {
+        /* address is optional */
+      }
     }
+
     return {
       latitude: pos.latitude,
       longitude: pos.longitude,
-      accuracyMeters: pos.accuracyMeters,
+      accuracyMeters: accuracy,
       placeName,
       addressLine,
       capturedAt,
@@ -148,7 +231,28 @@ export async function loadPhotoCaptureStamp(): Promise<PhotoCaptureStamp | null>
   }
 }
 
-/** Burn GPS, time, and optional satellite inset into the bottom of a canvas. */
+function drawMapPin(
+  ctx: CanvasRenderingContext2D,
+  pinX: number,
+  pinY: number,
+  scale: number,
+  mapSize: number,
+) {
+  const pinR = Math.max(mapSize * 0.08, 5 * scale);
+  ctx.fillStyle = '#3b82f6';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = Math.max(2, scale * 1.5);
+  ctx.beginPath();
+  ctx.arc(pinX, pinY, pinR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(pinX, pinY, pinR * 0.35, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Burn GPS, time, and satellite inset into the bottom of a canvas. */
 export async function drawPhotoCaptureStamp(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -166,8 +270,15 @@ export async function drawPhotoCaptureStamp(
   const latStr = `Lat ${stamp.latitude.toFixed(6)}°`;
   const lonStr = `Long ${stamp.longitude.toFixed(6)}°`;
   const timeStr = formatStampDateTime(stamp.capturedAt);
+  const accuracyNote =
+    stamp.accuracyMeters != null && stamp.accuracyMeters > POOR_ACCURACY_METERS
+      ? `GPS accuracy ±${Math.round(stamp.accuracyMeters)}m — using coordinates`
+      : stamp.accuracyMeters != null && stamp.accuracyMeters > 25
+        ? `GPS ±${Math.round(stamp.accuracyMeters)}m`
+        : null;
 
   const textLines: string[] = [];
+  if (accuracyNote) textLines.push(accuracyNote);
   if (stamp.placeName) textLines.push(stamp.placeName);
   if (stamp.addressLine && stamp.addressLine !== stamp.placeName) {
     textLines.push(...wrapText(ctx, stamp.addressLine, width * 0.62));
@@ -176,8 +287,7 @@ export async function drawPhotoCaptureStamp(
   textLines.push(timeStr);
 
   ctx.font = `${fontMd}px ${STAMP_FONT_FAMILY}`;
-  const textBlockHeight =
-    textLines.length * (fontMd + lineGap) + pad * 2;
+  const textBlockHeight = textLines.length * (fontMd + lineGap) + pad * 2;
   const barHeight = Math.max(textBlockHeight, mapSize + pad * 2);
   const barTop = height - barHeight;
 
@@ -185,7 +295,9 @@ export async function drawPhotoCaptureStamp(
   ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
   ctx.fillRect(0, barTop, width, barHeight);
 
-  const mapImg = await loadSatelliteTile(stamp.latitude, stamp.longitude);
+  const { x: tileX, y: tileY } = tileXY(stamp.latitude, stamp.longitude, MAP_ZOOM);
+  const { px, py } = pixelInTile(stamp.latitude, stamp.longitude, MAP_ZOOM);
+  const mapImg = await loadSatelliteTile(MAP_ZOOM, tileX, tileY);
   const textLeft = mapImg ? pad + mapSize + pad : pad;
 
   if (mapImg) {
@@ -196,40 +308,34 @@ export async function drawPhotoCaptureStamp(
     ctx.drawImage(mapImg, mapX, mapY, mapSize, mapSize);
     ctx.strokeRect(mapX, mapY, mapSize, mapSize);
 
-    const pinX = mapX + mapSize / 2;
-    const pinY = mapY + mapSize / 2;
-    ctx.fillStyle = '#ef4444';
-    ctx.beginPath();
-    ctx.arc(pinX, pinY - mapSize * 0.08, mapSize * 0.08, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(pinX, pinY - mapSize * 0.08, mapSize * 0.03, 0, Math.PI * 2);
-    ctx.fill();
+    const pinX = mapX + (px / TILE_SIZE) * mapSize;
+    const pinY = mapY + (py / TILE_SIZE) * mapSize;
+    drawMapPin(ctx, pinX, pinY, scale, mapSize);
   }
 
   ctx.fillStyle = '#ffffff';
   ctx.textBaseline = 'top';
   let y = barTop + pad;
 
-  if (stamp.placeName) {
+  const titleLine = stamp.placeName;
+  if (titleLine) {
     ctx.font = `600 ${fontLg}px ${STAMP_FONT_FAMILY}`;
-    ctx.fillText(stamp.placeName, textLeft, y);
+    ctx.fillText(titleLine, textLeft, y);
     y += fontLg + lineGap;
   }
 
-  ctx.font = `${fontSm}px ${STAMP_FONT_FAMILY}`;
-  const detailLines = stamp.placeName
-    ? textLines.filter((line, i) => i > 0 || line !== stamp.placeName)
-    : textLines;
-
-  for (const line of detailLines) {
+  for (const line of textLines) {
+    if (line === titleLine) continue;
     const isCoords = line.startsWith('Lat ');
     const isTime = line === timeStr;
-    ctx.font = `${isCoords || isTime ? 500 : 400} ${isCoords || isTime ? fontSm : fontMd}px ${STAMP_FONT_FAMILY}`;
-    ctx.fillStyle = isCoords || isTime ? 'rgba(255, 255, 255, 0.92)' : 'rgba(255, 255, 255, 0.88)';
+    const isAccuracy = line.startsWith('GPS');
+    ctx.font = `${isCoords || isTime || isAccuracy ? 500 : 400} ${
+      isCoords || isTime ? fontSm : fontMd
+    }px ${STAMP_FONT_FAMILY}`;
+    ctx.fillStyle =
+      isAccuracy ? 'rgba(251, 191, 36, 0.95)' : isCoords || isTime ? 'rgba(255, 255, 255, 0.92)' : 'rgba(255, 255, 255, 0.88)';
     const maxW = width - textLeft - pad;
-    for (const wrapped of isCoords || isTime ? [line] : wrapText(ctx, line, maxW)) {
+    for (const wrapped of isCoords || isTime || isAccuracy ? [line] : wrapText(ctx, line, maxW)) {
       ctx.fillText(wrapped, textLeft, y);
       y += (isCoords || isTime ? fontSm : fontMd) + lineGap;
     }
