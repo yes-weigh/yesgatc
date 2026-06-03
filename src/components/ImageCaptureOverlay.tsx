@@ -41,6 +41,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [flashOn, setFlashOn] = useState(false);
   const [captureStamp, setCaptureStamp] = useState<PhotoCaptureStamp | null>(null);
+  const [review, setReview] = useState<{ url: string; file: File } | null>(null);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach(track => track.stop());
@@ -102,6 +103,14 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   }, [open]);
 
   useEffect(() => {
+    if (open) return;
+    setReview(prev => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, [open]);
+
+  useEffect(() => {
     if (!open) {
       setCaptureStamp(null);
       return;
@@ -124,21 +133,40 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
       const file = await captureImageFileFromVideo(video, { stamp: stamp ?? undefined });
       if (file) {
         stopStream();
-        onCaptured(file);
+        setReview({ url: URL.createObjectURL(file), file });
       }
     } finally {
       setCapturing(false);
     }
-  }, [ready, capturing, onCaptured, stopStream, captureStamp]);
+  }, [ready, capturing, stopStream, captureStamp]);
+
+  const clearReview = useCallback(() => {
+    setReview(prev => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, []);
+
+  const handleUsePhoto = useCallback(() => {
+    if (!review) return;
+    onCaptured(review.file);
+    clearReview();
+  }, [review, onCaptured, clearReview]);
+
+  const handleRetake = useCallback(() => {
+    clearReview();
+    void startStream();
+  }, [clearReview, startStream]);
 
   const handleFlip = useCallback(() => {
     setFacing(prev => (prev === 'environment' ? 'user' : 'environment'));
   }, []);
 
   const handleClose = useCallback(() => {
+    clearReview();
     stopStream();
     onClose();
-  }, [onClose, stopStream]);
+  }, [onClose, stopStream, clearReview]);
 
   const handleGalleryChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -178,7 +206,9 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
       </div>
 
       <div className="image-capture-overlay-viewport">
-        {error ? (
+        {review ? (
+          <img src={review.url} alt="Captured preview" className="image-capture-overlay-review-img" />
+        ) : error ? (
           <div className="image-capture-overlay-error">
             <p>{error}</p>
             <div className="image-capture-overlay-error-actions">
@@ -210,42 +240,63 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
         )}
       </div>
 
-      <div className="image-capture-overlay-bottom">
-        <div className="image-capture-overlay-controls">
-          <label className="image-capture-overlay-gallery-btn">
-            <input
-              id={galleryInputId}
-              type="file"
-              accept={galleryAccept}
-              className="image-capture-overlay-gallery-input"
-              onChange={handleGalleryChange}
-            />
-            <ImageIcon size={22} aria-hidden />
-            <span className="sr-only">Select from images</span>
-          </label>
-
-          <div className="image-capture-overlay-shutter-wrap">
-            <span className="image-capture-overlay-mode">Photo</span>
+      {review ? (
+        <div className="image-capture-overlay-bottom image-capture-overlay-bottom--review">
+          <div className="image-capture-overlay-review-actions">
             <button
               type="button"
-              className="image-capture-overlay-shutter"
-              onClick={() => void handleShutter()}
-              disabled={!ready || capturing || Boolean(error)}
-              aria-label="Take photo"
-            />
+              className="image-capture-overlay-review-btn image-capture-overlay-review-btn--secondary"
+              onClick={handleRetake}
+            >
+              Retake
+            </button>
+            <button
+              type="button"
+              className="image-capture-overlay-review-btn image-capture-overlay-review-btn--primary"
+              onClick={handleUsePhoto}
+            >
+              Use photo
+            </button>
           </div>
-
-          <button
-            type="button"
-            className="image-capture-overlay-icon-btn image-capture-overlay-flip-btn"
-            onClick={handleFlip}
-            disabled={Boolean(error)}
-            aria-label="Switch camera"
-          >
-            <FlipHorizontal2 size={22} />
-          </button>
         </div>
-      </div>
+      ) : (
+        <div className="image-capture-overlay-bottom">
+          <div className="image-capture-overlay-controls">
+            <label className="image-capture-overlay-gallery-btn">
+              <input
+                id={galleryInputId}
+                type="file"
+                accept={galleryAccept}
+                className="image-capture-overlay-gallery-input"
+                onChange={handleGalleryChange}
+              />
+              <ImageIcon size={22} aria-hidden />
+              <span className="sr-only">Select from images</span>
+            </label>
+
+            <div className="image-capture-overlay-shutter-wrap">
+              <span className="image-capture-overlay-mode">Photo</span>
+              <button
+                type="button"
+                className="image-capture-overlay-shutter"
+                onClick={() => void handleShutter()}
+                disabled={!ready || capturing || Boolean(error)}
+                aria-label="Take photo"
+              />
+            </div>
+
+            <button
+              type="button"
+              className="image-capture-overlay-icon-btn image-capture-overlay-flip-btn"
+              onClick={handleFlip}
+              disabled={Boolean(error)}
+              aria-label="Switch camera"
+            >
+              <FlipHorizontal2 size={22} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>,
     document.body,
   );

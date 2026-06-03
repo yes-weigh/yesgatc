@@ -12,10 +12,12 @@ import {
   FileText,
   Plus,
   Receipt,
+  Eye,
   RefreshCw,
   X,
 } from 'lucide-react';
 import { StorageImage } from './StorageImage';
+import { VerificationPhotoViewer } from './VerificationPhotoViewer';
 import type { ProductFileMeta } from '../lib/productApprovalUpload';
 import { isPdfContentType } from '../lib/productApprovalUpload';
 import { useImageFileInputs } from '../lib/useImageFileInputs';
@@ -96,6 +98,8 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   const section = useContext(VerificationPhotoSectionContext);
   const locked = disabled || uploading;
   const hasFile = Boolean(file);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const isImagePreview = hasFile && file && !isPdfContentType(file.contentType);
 
   const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
     disabled: locked,
@@ -185,27 +189,45 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
 
       {hasFile && !uploading && (
         <div className="verification-photo-slot-frame verification-photo-slot-frame--preview">
-          {file && !isPdfContentType(file.contentType) ? (
-            <StorageImage
-              url={file.url}
-              path={file.path}
-              alt=""
-              className="verification-photo-slot-preview"
-            />
+          {isImagePreview && file ? (
+            <button
+              type="button"
+              className="verification-photo-slot-preview-btn"
+              onClick={() => setViewerOpen(true)}
+              aria-label={`View ${label}`}
+            >
+              <StorageImage
+                url={file.url}
+                path={file.path}
+                alt=""
+                className="verification-photo-slot-preview"
+              />
+            </button>
           ) : (
             <div className="verification-photo-slot-doc-icon">
               <FileText size={28} aria-hidden />
             </div>
           )}
           <div className="verification-photo-slot-actions">
+            {isImagePreview && (
+              <button
+                type="button"
+                className="verification-photo-slot-action"
+                onClick={() => setViewerOpen(true)}
+                aria-label={`View ${label}`}
+                title="View"
+              >
+                <Eye size={14} />
+              </button>
+            )}
             {file?.url && !file.url.startsWith('blob:') && (
               <a
                 href={file.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="verification-photo-slot-action"
-                aria-label={`View ${label}`}
-                title="View"
+                aria-label={`Open ${label} in new tab`}
+                title="Open in new tab"
                 onClick={e => e.stopPropagation()}
               >
                 <ExternalLink size={14} />
@@ -252,6 +274,16 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
             {required && <span className="verification-photo-slot-required"> *</span>}
           </span>
         </div>
+      )}
+
+      {isImagePreview && file && (
+        <VerificationPhotoViewer
+          open={viewerOpen}
+          label={label}
+          imageUrl={file.url}
+          storagePath={file.path}
+          onClose={() => setViewerOpen(false)}
+        />
       )}
     </div>
   );
