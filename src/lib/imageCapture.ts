@@ -23,6 +23,13 @@ export function shouldUseMobileCameraCapture(): boolean {
   return isPwaStandalone() || isMobileTouchDevice();
 }
 
+/** In-app camera UI (WhatsApp-style) instead of the OS `<input capture>` screen. */
+export function shouldUseInAppCameraCapture(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  if (!shouldUseMobileCameraCapture()) return false;
+  return Boolean(navigator.mediaDevices?.getUserMedia);
+}
+
 export function acceptAllowsImageCapture(accept: string): boolean {
   const parts = accept.split(',').map(part => part.trim().toLowerCase()).filter(Boolean);
   const hasImage = parts.some(

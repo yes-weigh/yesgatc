@@ -11,7 +11,6 @@ import {
   Camera,
   ExternalLink,
   FileText,
-  Image as ImageIcon,
   Plus,
   Receipt,
   RefreshCw,
@@ -21,6 +20,8 @@ import { StorageImage } from './StorageImage';
 import type { ProductFileMeta } from '../lib/productApprovalUpload';
 import { isPdfContentType } from '../lib/productApprovalUpload';
 import { useImageFileInputs } from '../lib/useImageFileInputs';
+import { shouldUseInAppCameraCapture, type ImageCaptureFacing } from '../lib/imageCapture';
+import { ImageCaptureOverlay } from './ImageCaptureOverlay';
 
 export type VerificationPhotoSlotIcon = 'camera' | 'document' | 'invoice';
 
@@ -31,11 +32,19 @@ type SlotRegistryEntry = {
   supportsMobileCapture: boolean;
 };
 
+type CameraSession = {
+  slotKey: string;
+  label: string;
+  onCaptured: (file: File) => void;
+  onPickGallery: () => void;
+  onFallbackNativeCamera: () => void;
+};
+
 type VerificationPhotoSectionContextValue = {
   register: (key: string, entry: SlotRegistryEntry) => void;
   unregister: (key: string) => void;
   setActive: (key: string) => void;
-  openGalleryForActive: () => void;
+  openInAppCamera: (session: CameraSession) => void;
 };
 
 const VerificationPhotoSectionContext = createContext<VerificationPhotoSectionContextValue | null>(
@@ -108,6 +117,8 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
     section?.setActive(slotKey);
   }, [section, slotKey]);
 
+  const useInAppCamera = mobileSourceChoice && icon === 'camera' && shouldUseInAppCameraCapture();
+
   const handlePrimaryCapture = useCallback(() => {
     activateSlot();
     if (!mobileSourceChoice) {
@@ -115,11 +126,33 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
       return;
     }
     if (icon === 'camera') {
-      openCamera();
+      if (useInAppCamera && section) {
+        section.openInAppCamera({
+          slotKey,
+          label,
+          onCaptured: onSelect,
+          onPickGallery: () => openGallery(),
+          onFallbackNativeCamera: () => openCamera(),
+        });
+      } else {
+        openCamera();
+      }
     } else {
       openGallery();
     }
-  }, [activateSlot, mobileSourceChoice, icon, openPicker, openCamera, openGallery]);
+  }, [
+    activateSlot,
+    mobileSourceChoice,
+    icon,
+    useInAppCamera,
+    section,
+    slotKey,
+    label,
+    onSelect,
+    openPicker,
+    openCamera,
+    openGallery,
+  ]);
 
   const handleGalleryFromSection = useCallback(() => {
     activateSlot();
@@ -237,7 +270,15 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
               onClick={e => {
                 e.stopPropagation();
                 activateSlot();
-                if (mobileSourceChoice && icon === 'camera') openCamera();
+                if (useInAppCamera && section) {
+                  section.openInAppCamera({
+                    slotKey,
+                    label,
+                    onCaptured: onSelect,
+                    onPickGallery: () => openGallery(),
+                    onFallbackNativeCamera: () => openCamera(),
+                  });
+                } else if (mobileSourceChoice && icon === 'camera') openCamera();
                 else openPicker();
               }}
               disabled={locked}
@@ -285,6 +326,7 @@ export const VerificationPhotoUploadSection: React.FC<VerificationPhotoUploadSec
 }) => {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [registry, setRegistry] = useState<Record<string, SlotRegistryEntry>>({});
+  const [cameraSession, setCameraSession] = useState<CameraSession | null>(null);
 
   const register = useCallback((key: string, entry: SlotRegistryEntry) => {
     setRegistry(prev => ({ ...prev, [key]: entry }));
@@ -303,37 +345,22 @@ export const VerificationPhotoUploadSection: React.FC<VerificationPhotoUploadSec
     setActiveKey(key);
   }, []);
 
-  const resolveGalleryTarget = useCallback((): SlotRegistryEntry | null => {
-    const entries = Object.entries(registry);
-    if (entries.length === 0) return null;
-
-    if (activeKey && registry[activeKey] && !registry[activeKey].disabled) {
-      return registry[activeKey];
-    }
-
-    const firstEmpty = entries.find(([, entry]) => !entry.hasFile && !entry.disabled);
-    if (firstEmpty) return firstEmpty[1];
-
-    const firstEnabled = entries.find(([, entry]) => !entry.disabled);
-    return firstEnabled ? firstEnabled[1] : null;
-  }, [registry, activeKey]);
-
-  const openGalleryForActive = useCallback(() => {
-    const target = resolveGalleryTarget();
-    target?.openGallery();
-  }, [resolveGalleryTarget]);
+  const openInAppCamera = useCallback((session: CameraSession) => {
+    setActiveKey(session.slotKey);
+    setCameraSession(session);
+  }, []);
 
   const sectionContext = useMemo(
     () => ({
       register,
       unregister,
       setActive,
-      openGalleryForActive,
+      openInAppCamera,
     }),
-    [register, unregister, setActive, openGalleryForActive],
+    [register, unregister, setActive, openInAppCamera],
   );
 
-  const showGalleryLink = Object.values(registry).some(entry => entry.supportsMobileCapture);
+  const cameraFacing: ImageCaptureFacing = 'environment';
 
   return (
     <VerificationPhotoSectionContext.Provider value={sectionContext}>
@@ -354,20 +381,27 @@ export const VerificationPhotoUploadSection: React.FC<VerificationPhotoUploadSec
         >
           {children}
         </div>
-        {showGalleryLink && (
-          <footer className="verification-photo-upload-section-foot">
-            <button
-              type="button"
-              className="verification-photo-upload-gallery-link"
-              onClick={openGalleryForActive}
-              aria-label="Select from images"
-            >
-              <ImageIcon size={16} aria-hidden />
-              Select from images
-            </button>
-          </footer>
-        )}
       </section>
+      <ImageCaptureOverlay
+        open={cameraSession !== null}
+        label={cameraSession?.label ?? ''}
+        facing={cameraFacing}
+        onClose={() => setCameraSession(null)}
+        onCaptured={file => {
+          cameraSession?.onCaptured(file);
+          setCameraSession(null);
+        }}
+        onPickGallery={() => {
+          const session = cameraSession;
+          setCameraSession(null);
+          session?.onPickGallery();
+        }}
+        onFallbackNativeCamera={() => {
+          const session = cameraSession;
+          setCameraSession(null);
+          session?.onFallbackNativeCamera();
+        }}
+      />
     </VerificationPhotoSectionContext.Provider>
   );
 };
