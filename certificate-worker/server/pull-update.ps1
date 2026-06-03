@@ -239,13 +239,10 @@ if ($shouldInstall) {
     }
 
     Write-Host "Running first-time install to $InstallPath ..." -ForegroundColor Cyan
-    $installArgs = @{
-        SourcePath = $ExtractDir
-        InstallPath = $InstallPath
-    }
+    $installArgs = @("-SourcePath", $ExtractDir, "-InstallPath", $InstallPath)
 
     if ($CreateLogonTask) {
-        $installArgs.CreateLogonTask = $true
+        $installArgs += "-CreateLogonTask"
     }
 
     & powershell -ExecutionPolicy Bypass -File $installScript @installArgs
@@ -261,24 +258,23 @@ else {
     }
 
     Write-Host "Updating installed worker at $InstallPath ..." -ForegroundColor Cyan
-    $updateArgs = @{
-        SourcePath = $ExtractDir
-        InstallPath = $InstallPath
-    }
+    $updateArgs = @("-SourcePath", $ExtractDir, "-InstallPath", $InstallPath)
 
     if ($SkipPlaywright) {
-        $updateArgs.SkipPlaywright = $true
+        $updateArgs += "-SkipPlaywright"
     }
 
     if ($Start) {
-        $updateArgs.Start = $true
+        $updateArgs += "-Start"
     }
 
     & powershell -ExecutionPolicy Bypass -File $updateScript @updateArgs
 }
 
 $pullUpdateDest = Join-Path $InstallPath "pull-update.ps1"
-Copy-Item $PSCommandPath $pullUpdateDest -Force
+if ($PSCommandPath -ne $pullUpdateDest) {
+    Copy-Item $PSCommandPath $pullUpdateDest -Force
+}
 
 Write-Host ""
 Write-Host "GitHub pull complete." -ForegroundColor Green

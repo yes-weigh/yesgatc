@@ -63,7 +63,10 @@ if (-not $SkipPlaywright) {
     }
 }
 
-Copy-Item $PSCommandPath (Join-Path $InstallPath "update.ps1") -Force -ErrorAction SilentlyContinue
+$updateDest = Join-Path $InstallPath "update.ps1"
+if ($PSCommandPath -ne $updateDest) {
+    Copy-Item $PSCommandPath $updateDest -Force -ErrorAction SilentlyContinue
+}
 
 $pullUpdateSrc = Join-Path $SourcePath "pull-update.ps1"
 if (Test-Path $pullUpdateSrc) {

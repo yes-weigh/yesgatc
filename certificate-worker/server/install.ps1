@@ -31,9 +31,23 @@ New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
 
 & "$PSScriptRoot\update.ps1" -SourcePath $SourcePath -InstallPath $InstallPath
 
-Copy-Item (Join-Path $PSScriptRoot "update.ps1") (Join-Path $InstallPath "update.ps1") -Force
-Copy-Item (Join-Path $PSScriptRoot "pull-update.ps1") (Join-Path $InstallPath "pull-update.ps1") -Force
-Copy-Item (Join-Path $PSScriptRoot "README-SERVER.md") (Join-Path $InstallPath "README-SERVER.md") -Force -ErrorAction SilentlyContinue
+$updateDest = Join-Path $InstallPath "update.ps1"
+$updateSrc = Join-Path $PSScriptRoot "update.ps1"
+if ($updateSrc -ne $updateDest -and (Test-Path $updateSrc)) {
+    Copy-Item $updateSrc $updateDest -Force
+}
+
+$pullUpdateDest = Join-Path $InstallPath "pull-update.ps1"
+$pullUpdateSrc = Join-Path $PSScriptRoot "pull-update.ps1"
+if ($pullUpdateSrc -ne $pullUpdateDest -and (Test-Path $pullUpdateSrc)) {
+    Copy-Item $pullUpdateSrc $pullUpdateDest -Force
+}
+
+$readmeDest = Join-Path $InstallPath "README-SERVER.md"
+$readmeSrc = Join-Path $PSScriptRoot "README-SERVER.md"
+if ($readmeSrc -ne $readmeDest -and (Test-Path $readmeSrc)) {
+    Copy-Item $readmeSrc $readmeDest -Force -ErrorAction SilentlyContinue
+}
 
 if (-not (Test-Path (Join-Path $InstallPath "appsettings.local.json"))) {
     $example = Join-Path $InstallPath "appsettings.local.json.example"
