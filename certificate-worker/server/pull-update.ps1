@@ -68,7 +68,7 @@ function Get-LatestCertificateWorkerTagFromApi {
     $headers = @{
         Accept = "application/vnd.github+json"
         "X-GitHub-Api-Version" = "2022-11-28"
-        User-Agent = "YesGATC-CertificateWorker-PullUpdate"
+        "User-Agent" = "YesGATC-CertificateWorker-PullUpdate"
     }
 
     if ($Token) {
@@ -112,7 +112,7 @@ function Download-ReleaseAssetWithApi {
     $headers = @{
         Accept = "application/vnd.github+json"
         "X-GitHub-Api-Version" = "2022-11-28"
-        User-Agent = "YesGATC-CertificateWorker-PullUpdate"
+        "User-Agent" = "YesGATC-CertificateWorker-PullUpdate"
     }
 
     if ($Token) {
@@ -129,7 +129,7 @@ function Download-ReleaseAssetWithApi {
 
     $downloadHeaders = @{
         Accept = "application/octet-stream"
-        User-Agent = "YesGATC-CertificateWorker-PullUpdate"
+        "User-Agent" = "YesGATC-CertificateWorker-PullUpdate"
     }
 
     if ($Token) {
