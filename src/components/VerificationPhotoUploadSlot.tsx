@@ -1,12 +1,18 @@
-import React, { useRef } from 'react';
-import { Camera, ExternalLink, FileText, Plus, Receipt, RefreshCw, X } from 'lucide-react';
+import React from 'react';
+import {
+  Camera,
+  ExternalLink,
+  FileText,
+  Image as ImageIcon,
+  Plus,
+  Receipt,
+  RefreshCw,
+  X,
+} from 'lucide-react';
 import { StorageImage } from './StorageImage';
 import type { ProductFileMeta } from '../lib/productApprovalUpload';
 import { isPdfContentType } from '../lib/productApprovalUpload';
-import {
-  fileInputAcceptForCapture,
-  getImageCaptureAttribute,
-} from '../lib/imageCapture';
+import { useImageFileInputs } from '../lib/useImageFileInputs';
 
 export type VerificationPhotoSlotIcon = 'camera' | 'document' | 'invoice';
 
@@ -58,17 +64,13 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   onRemove,
   icon = 'camera',
 }) => {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const capture = getImageCaptureAttribute(accept);
-  const fileAccept = fileInputAcceptForCapture(accept, capture);
   const locked = disabled || uploading;
   const hasFile = Boolean(file);
 
-  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const next = e.target.files?.[0];
-    e.target.value = '';
-    if (next) onSelect(next);
-  };
+  const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
+    disabled: locked,
+    onSelect,
+  });
 
   return (
     <div
@@ -80,22 +82,13 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
         .filter(Boolean)
         .join(' ')}
     >
-      <input
-        ref={inputRef}
-        type="file"
-        accept={fileAccept}
-        capture={capture}
-        className="sr-only"
-        onChange={handleInput}
-        disabled={locked}
-        aria-label={label}
-      />
+      {inputs}
 
-      {!hasFile && !uploading && (
+      {!hasFile && !uploading && !mobileSourceChoice && (
         <button
           type="button"
           className="verification-photo-slot-trigger"
-          onClick={() => inputRef.current?.click()}
+          onClick={openPicker}
           disabled={locked}
           aria-label={`${label}. Upload photo.`}
         >
@@ -107,6 +100,38 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
             </span>
           </div>
         </button>
+      )}
+
+      {!hasFile && !uploading && mobileSourceChoice && (
+        <div className="verification-photo-slot-frame verification-photo-slot-frame--sources">
+          <SlotIcon kind={icon} />
+          <span className="verification-photo-slot-label">
+            {label}
+            {required && <span className="verification-photo-slot-required"> *</span>}
+          </span>
+          <div className="verification-photo-slot-source-actions">
+            <button
+              type="button"
+              className="verification-photo-slot-source-btn"
+              onClick={openCamera}
+              disabled={locked}
+              aria-label={`${label}. Take photo with camera.`}
+            >
+              <Camera size={14} aria-hidden />
+              Camera
+            </button>
+            <button
+              type="button"
+              className="verification-photo-slot-source-btn"
+              onClick={openGallery}
+              disabled={locked}
+              aria-label={`${label}. Choose from gallery.`}
+            >
+              <ImageIcon size={14} aria-hidden />
+              Gallery
+            </button>
+          </div>
+        </div>
       )}
 
       {uploading && (
@@ -147,16 +172,41 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
                 <ExternalLink size={14} />
               </a>
             )}
-            <button
-              type="button"
-              className="verification-photo-slot-action"
-              onClick={() => inputRef.current?.click()}
-              disabled={locked}
-              aria-label={`Replace ${label}`}
-              title="Replace"
-            >
-              <RefreshCw size={14} />
-            </button>
+            {mobileSourceChoice ? (
+              <>
+                <button
+                  type="button"
+                  className="verification-photo-slot-action"
+                  onClick={openCamera}
+                  disabled={locked}
+                  aria-label={`Replace ${label} with camera`}
+                  title="Camera"
+                >
+                  <Camera size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="verification-photo-slot-action"
+                  onClick={openGallery}
+                  disabled={locked}
+                  aria-label={`Replace ${label} from gallery`}
+                  title="Gallery"
+                >
+                  <ImageIcon size={14} />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="verification-photo-slot-action"
+                onClick={openPicker}
+                disabled={locked}
+                aria-label={`Replace ${label}`}
+                title="Replace"
+              >
+                <RefreshCw size={14} />
+              </button>
+            )}
             <button
               type="button"
               className="verification-photo-slot-action verification-photo-slot-action--danger"

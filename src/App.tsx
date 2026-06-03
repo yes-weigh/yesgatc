@@ -33,12 +33,14 @@ import { VCTProfile } from './pages/vct/VCTProfile';
 import { VCTTraining } from './pages/vct/VCTMenuPages';
 import { Certificates } from './pages/vct/Certificates';
 import { Reports } from './pages/shared/Reports';
+import { PwaInstallBanner } from './components/PwaInstallBanner';
 
 const App: React.FC = () => {
   return (
     <AuthProvider>
       <AppProvider>
         <ConfirmProvider>
+        <PwaInstallBanner />
         <Router>
           <Routes>
             <Route path="/login" element={<Login />} />

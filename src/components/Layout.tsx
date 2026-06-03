@@ -28,6 +28,7 @@ import {
   UserPlus,
   Sparkles,
   GraduationCap,
+  LogOut,
 } from 'lucide-react';
 
 import type { FirestoreUserDoc } from '../types';
@@ -41,7 +42,7 @@ type NavItem = {
 };
 
 export const Layout: React.FC = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -89,6 +90,11 @@ export const Layout: React.FC = () => {
   }, [user?.uid, user?.role, location.pathname]);
 
   if (!user) return null;
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
 
   const getNavItems = (): NavItem[] => {
     switch (user.role) {
@@ -214,7 +220,22 @@ export const Layout: React.FC = () => {
         ))}
       </nav>
 
-      {user.role !== 'rc_admin' && user.role !== 'vct' && (mobile || !collapsed) && (
+      {user.role === 'super_admin' && mobile && (
+        <div className="sidebar-mobile-account">
+          <div className="sidebar-mobile-user">
+            <UserCircle size={28} className="text-blue shrink-0" />
+            <div className="sidebar-mobile-user-text">
+              <div className="sidebar-mobile-user-name">{user.username}</div>
+              <div className="sidebar-mobile-user-meta text-muted">{formatContactSubtitle(user)}</div>
+            </div>
+          </div>
+          <button type="button" className="sidebar-mobile-logout" onClick={() => void handleLogout()}>
+            <LogOut size={16} aria-hidden />
+            Logout
+          </button>
+        </div>
+      )}
+      {user.role === 'super_admin' && !mobile && !collapsed && (
         <div className="sidebar-footer">
           <ShieldCheck size={14} />
           <span>{roleLabel}</span>
@@ -269,7 +290,7 @@ export const Layout: React.FC = () => {
                 )}
               </div>
             </div>
-            {profilePath && (
+            {profilePath ? (
               <button
                 type="button"
                 className={`mobile-profile-shortcut${location.pathname === profilePath ? ' mobile-profile-shortcut--active' : ''}`}
@@ -290,7 +311,17 @@ export const Layout: React.FC = () => {
                   </span>
                 )}
               </button>
-            )}
+            ) : user.role === 'super_admin' ? (
+              <button
+                type="button"
+                className="mobile-profile-shortcut"
+                onClick={() => void handleLogout()}
+                title="Logout"
+                aria-label="Logout"
+              >
+                <LogOut size={20} className="text-red" aria-hidden />
+              </button>
+            ) : null}
           </header>
         )}
         {!isMobile && (
@@ -325,6 +356,15 @@ export const Layout: React.FC = () => {
                   <span className="user-name">{user.username}</span>
                   <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
                 </div>
+                <button
+                  type="button"
+                  className="logout-btn"
+                  onClick={() => void handleLogout()}
+                  title="Logout"
+                >
+                  <LogOut size={16} aria-hidden />
+                  <span>Logout</span>
+                </button>
               </div>
             )}
           </header>

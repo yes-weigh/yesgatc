@@ -1,12 +1,9 @@
 import React from 'react';
-import { ExternalLink, FileText, Info, RefreshCw, Upload, X } from 'lucide-react';
+import { Camera, ExternalLink, FileText, Image as ImageIcon, Info, RefreshCw, Upload, X } from 'lucide-react';
 import { StorageImage } from '../../components/StorageImage';
 import { isPdfContentType, type ProductFileMeta } from '../../lib/productApprovalUpload';
-import {
-  fileInputAcceptForCapture,
-  getImageCaptureAttribute,
-  mobileCameraUploadLabel,
-} from '../../lib/imageCapture';
+import { mobileCameraUploadLabel } from '../../lib/imageCapture';
+import { useImageFileInputs } from '../../lib/useImageFileInputs';
 
 export const FormSection: React.FC<{
   step: number;
@@ -82,7 +79,7 @@ export const UploadField: React.FC<{
   accept,
   uploadLabel,
   formats,
-  inputRef,
+  inputRef: _inputRef,
   onSelect,
   onRemove,
   submitting,
@@ -96,10 +93,26 @@ export const UploadField: React.FC<{
 }) => {
   const useIconActions = avatar || iconActions;
   const showImagePreview = variant === 'image' || (file != null && !isPdfContentType(file.contentType));
-  const capture = getImageCaptureAttribute(accept, { avatar });
-  const fileAccept = fileInputAcceptForCapture(accept, capture);
-  const dropzoneUploadLabel = mobileCameraUploadLabel(uploadLabel, capture);
-  const dropzoneFormats = capture ? 'Camera or gallery' : formats;
+
+  const forwardFileSelect = (file: File) => {
+    const fileList = {
+      0: file,
+      length: 1,
+      item: (index: number) => (index === 0 ? file : null),
+    } as unknown as FileList;
+    onSelect({ target: { files: fileList, value: '' } } as React.ChangeEvent<HTMLInputElement>);
+  };
+
+  const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
+    avatar,
+    disabled: uploading || submitting,
+    onSelect: forwardFileSelect,
+  });
+
+  const dropzoneUploadLabel = mobileSourceChoice
+    ? 'Add photo'
+    : mobileCameraUploadLabel(uploadLabel, undefined);
+  const dropzoneFormats = mobileSourceChoice ? 'Camera or gallery' : formats;
 
   return (
   <div
@@ -120,22 +133,14 @@ export const UploadField: React.FC<{
         </div>
       ) : (
         <>
-          <input
-            ref={inputRef}
-            type="file"
-            accept={fileAccept}
-            capture={capture}
-            className="sr-only"
-            onChange={onSelect}
-            disabled={uploading || submitting}
-          />
+          {inputs}
 
-          {!file && !uploading && (
+          {!file && !uploading && !mobileSourceChoice && (
             <button
               type="button"
               className={`product-upload-dropzone${compact ? ' product-upload-dropzone--compact' : ''}${avatar ? ' product-upload-dropzone--avatar' : ''}`}
               onMouseDown={e => uploadDisabled && e.preventDefault()}
-              onClick={() => !uploadDisabled && inputRef.current?.click()}
+              onClick={() => !uploadDisabled && openPicker()}
               disabled={submitting || uploadDisabled}
               title={uploadDisabled ? disabledReason : useIconActions ? `${dropzoneUploadLabel} · ${dropzoneFormats}` : undefined}
               aria-label={useIconActions ? `${label}. ${dropzoneUploadLabel}. ${dropzoneFormats}` : undefined}
@@ -152,6 +157,46 @@ export const UploadField: React.FC<{
                 </span>
               )}
             </button>
+          )}
+
+          {!file && !uploading && mobileSourceChoice && (
+            <div
+              className={`product-upload-dropzone product-upload-dropzone--sources${compact ? ' product-upload-dropzone--compact' : ''}${avatar ? ' product-upload-dropzone--avatar' : ''}`}
+            >
+              {placeholderSrc ? (
+                <img src={placeholderSrc} alt="" className="product-upload-placeholder-img" />
+              ) : (
+                <Upload size={avatar ? 28 : compact ? 18 : 22} className="text-muted shrink-0" />
+              )}
+              {!useIconActions && (
+                <span className="product-upload-dropzone-text">
+                  <span className="product-upload-dropzone-title">{label}</span>
+                  <span className="product-upload-dropzone-meta">{dropzoneFormats}</span>
+                </span>
+              )}
+              <div className="product-upload-source-actions">
+                <button
+                  type="button"
+                  className="product-upload-source-btn"
+                  onClick={() => !uploadDisabled && openCamera()}
+                  disabled={submitting || uploadDisabled}
+                  aria-label={`${label}. Take photo with camera.`}
+                >
+                  <Camera size={14} aria-hidden />
+                  Camera
+                </button>
+                <button
+                  type="button"
+                  className="product-upload-source-btn"
+                  onClick={() => !uploadDisabled && openGallery()}
+                  disabled={submitting || uploadDisabled}
+                  aria-label={`${label}. Choose from gallery.`}
+                >
+                  <ImageIcon size={14} aria-hidden />
+                  Gallery
+                </button>
+              </div>
+            </div>
           )}
 
           {uploading && (
@@ -196,16 +241,41 @@ export const UploadField: React.FC<{
                         <ExternalLink size={16} />
                       </a>
                     )}
-                    <button
-                      type="button"
-                      className="product-upload-icon-btn"
-                      onClick={() => inputRef.current?.click()}
-                      disabled={submitting}
-                      aria-label="Replace photo"
-                      title="Replace"
-                    >
-                      <RefreshCw size={16} />
-                    </button>
+                    {mobileSourceChoice ? (
+                      <>
+                        <button
+                          type="button"
+                          className="product-upload-icon-btn"
+                          onClick={openCamera}
+                          disabled={submitting}
+                          aria-label="Replace photo with camera"
+                          title="Camera"
+                        >
+                          <Camera size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="product-upload-icon-btn"
+                          onClick={openGallery}
+                          disabled={submitting}
+                          aria-label="Replace photo from gallery"
+                          title="Gallery"
+                        >
+                          <ImageIcon size={16} />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="product-upload-icon-btn"
+                        onClick={openPicker}
+                        disabled={submitting}
+                        aria-label="Replace photo"
+                        title="Replace"
+                      >
+                        <RefreshCw size={16} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="product-upload-icon-btn product-upload-icon-btn--danger"
@@ -250,14 +320,35 @@ export const UploadField: React.FC<{
                       >
                         <ExternalLink size={12} /> View
                       </a>
-                      <button
-                        type="button"
-                        className="btn btn-secondary text-xs py-1 px-2"
-                        onClick={() => inputRef.current?.click()}
-                        disabled={submitting}
-                      >
-                        Replace
-                      </button>
+                      {mobileSourceChoice ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-secondary text-xs py-1 px-2"
+                            onClick={openCamera}
+                            disabled={submitting}
+                          >
+                            <Camera size={12} /> Camera
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary text-xs py-1 px-2"
+                            onClick={openGallery}
+                            disabled={submitting}
+                          >
+                            <ImageIcon size={12} /> Gallery
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-secondary text-xs py-1 px-2"
+                          onClick={openPicker}
+                          disabled={submitting}
+                        >
+                          Replace
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="btn btn-secondary text-xs py-1 px-2 text-red"
