@@ -37,6 +37,16 @@ Windows desktop app for **Super Admin** staff to process submitted verifications
 
 ## Run
 
+**One command from repo root (recommended for local dev):**
+
+```powershell
+npm run worker:dev
+```
+
+Builds Debug, closes any running instance, then launches the app. Close the window to stop — the terminal returns immediately (no stuck `dotnet run`).
+
+**Alternative:**
+
 ```powershell
 cd certificate-worker\Yesgatc.CertificateWorker
 dotnet run
@@ -52,6 +62,26 @@ Or open `certificate-worker/Yesgatc.CertificateWorker.slnx` in Visual Studio and
 - Playwright automates the DOCA IC verification form
 - **DOCA session persistence:** Chromium profile at `%LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser`
 - **Local credentials:** Super Admin + DOCA saved at `%LOCALAPPDATA%\YesGATC\CertificateWorker\credentials.local.json`
+
+### DOCA captcha OCR (optional AI)
+
+By default the worker uses **OpenAI vision** (`gpt-4o-mini`) when an API key is set, with **Tesseract fallback** if the API fails.
+
+Add to `appsettings.local.json`:
+
+```json
+"Automation": {
+  "CaptchaOcr": {
+    "Provider": "OpenAI",
+    "ApiKey": "sk-...",
+    "Model": "gpt-4o-mini"
+  }
+}
+```
+
+Or set environment variable `OPENAI_API_KEY`. Use `"Provider": "Tesseract"` for local-only OCR (no API).
+
+OpenRouter and other OpenAI-compatible APIs: set `ApiBaseUrl` (e.g. `https://openrouter.ai/api/v1`).
 
 ## Windows Server (unattended)
 

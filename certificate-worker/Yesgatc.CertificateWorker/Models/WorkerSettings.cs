@@ -57,6 +57,11 @@ public sealed class AutomationSettings
     public long DocaUploadImageMaxBytes { get; init; } = 350 * 1024;
     /// <summary>Longest edge in pixels for machine photos uploaded to DOCA.</summary>
     public int DocaUploadImageMaxEdgePx { get; init; } = 1600;
+    /// <summary>OCR the DOCA login captcha and submit the form automatically.</summary>
+    public bool AutoSolveCaptcha { get; init; } = true;
+    /// <summary>Captcha OCR + login retries before pausing for manual login.</summary>
+    public int CaptchaMaxAttempts { get; init; } = 5;
+    public CaptchaOcrSettings CaptchaOcr { get; init; } = new();
     public DocaCredentialSettings DocaCredentials { get; init; } = new();
     public CertificateStampSettings CertificateStamp { get; init; } = new();
 }
@@ -89,6 +94,25 @@ public sealed class DocaCredentialSettings
 {
     public string Email { get; init; } = string.Empty;
     public string Password { get; init; } = string.Empty;
+}
+
+/// <summary>Captcha OCR — local Tesseract or OpenAI-compatible vision API.</summary>
+public sealed class CaptchaOcrSettings
+{
+    /// <summary>OpenAI (vision API) or Tesseract (local).</summary>
+    public string Provider { get; init; } = "OpenAI";
+
+    /// <summary>API key for OpenAI or any OpenAI-compatible endpoint. Env: OPENAI_API_KEY.</summary>
+    public string ApiKey { get; init; } = string.Empty;
+
+    /// <summary>Chat model with vision support, e.g. gpt-4o-mini.</summary>
+    public string Model { get; init; } = "gpt-4o-mini";
+
+    /// <summary>Default OpenAI. Set to https://openrouter.ai/api/v1 for OpenRouter, etc.</summary>
+    public string ApiBaseUrl { get; init; } = "https://api.openai.com/v1";
+
+    /// <summary>If the AI provider fails or returns garbage, retry with local Tesseract.</summary>
+    public bool FallbackToTesseract { get; init; } = true;
 }
 
 public sealed class CredentialSettings

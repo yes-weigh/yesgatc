@@ -20,8 +20,10 @@ public sealed class AutomationService : IAsyncDisposable
 {
     private readonly AutomationSettings _settings;
     private readonly FirestoreService _firestoreService;
+    private readonly SemaphoreSlim _browserLock = new(1, 1);
     private IPlaywright? _playwright;
     private IBrowserContext? _context;
+    private bool _pageHandlersAttached;
 
     public AutomationService(AutomationSettings settings, FirestoreService firestoreService)
     {
@@ -74,8 +76,43 @@ public sealed class AutomationService : IAsyncDisposable
 
     public async Task EnsureBrowserReadyAsync(CancellationToken cancellationToken = default)
     {
-        await ResetContextIfDisconnectedAsync();
-        await EnsureContextAsync(cancellationToken);
+        await _browserLock.WaitAsync(cancellationToken);
+        try
+        {
+            await ResetContextIfDisconnectedAsync();
+            await EnsureContextAsync(cancellationToken);
+            await ConsolidateToSingleDocaPageAsync();
+        }
+        finally
+        {
+            _browserLock.Release();
+        }
+    }
+
+    /// <summary>Before processing a job: launch Chrome if needed and confirm DOCA session is usable.</summary>
+    public async Task<DocaOpenResult?> EnsureDocaSessionForJobAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureBrowserReadyAsync(cancellationToken);
+        var page = await GetPageAsync();
+
+        if (IsBlankBrowserPage(page.Url))
+        {
+            await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.Load,
+                Timeout = 60_000,
+            });
+        }
+
+        if (await IsLoginPageAsync(page))
+        {
+            return await TryEnsureLoggedInOrReturnLoginRequiredAsync(
+                page,
+                "retry the job",
+                cancellationToken);
+        }
+
+        return null;
     }
 
     public async Task<DocaSessionState> ProbeDocaSessionAsync(CancellationToken cancellationToken = default)
@@ -106,13 +143,10 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            if (!ManualDocaLoginWait)
-            {
-                await TryPrefillLoginAsync(page);
-            }
-
+            // During periodic probe, always retry AI auto-login even when paused for a prior failure.
+            var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
             await page.BringToFrontAsync();
-            return DocaSessionState.LoginRequired;
+            return loginState;
         }
 
         await page.BringToFrontAsync();
@@ -176,22 +210,14 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            if (!ManualDocaLoginWait)
+            var loginFailure = await TryEnsureLoggedInOrReturnLoginRequiredAsync(
+                page,
+                "run automation again",
+                cancellationToken);
+            if (loginFailure is not null)
             {
-                await TryPrefillLoginAsync(page);
+                return loginFailure;
             }
-
-            await page.BringToFrontAsync();
-
-            var capturedLogin = await CaptureDocaCredentialsFromBrowserAsync(page);
-            if (capturedLogin is not null)
-            {
-                DocaCredentials = capturedLogin;
-            }
-
-            return new DocaOpenResult(
-                DocaSessionState.LoginRequired,
-                "DOCA login required — complete login, then run automation again.");
         }
 
         if (duplicateCheck.Exists && duplicateCheck.Match is not null)
@@ -239,22 +265,14 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            if (!ManualDocaLoginWait)
+            var loginFailure = await TryEnsureLoggedInOrReturnLoginRequiredAsync(
+                page,
+                "run automation again",
+                cancellationToken);
+            if (loginFailure is not null)
             {
-                await TryPrefillLoginAsync(page);
+                return loginFailure;
             }
-
-            await page.BringToFrontAsync();
-
-            var captured = await CaptureDocaCredentialsFromBrowserAsync(page);
-            if (captured is not null)
-            {
-                DocaCredentials = captured;
-            }
-
-            return new DocaOpenResult(
-                DocaSessionState.LoginRequired,
-                "DOCA login required — complete login, then run automation again.");
         }
 
         await page.GetByText("Instrument Generate Certificate", new PageGetByTextOptions { Exact = false })
@@ -282,6 +300,12 @@ public sealed class AutomationService : IAsyncDisposable
 
         await DocaFormFiller.FillMachinePhotoSectionAsync(page, instrument, preparedPhoto.Path);
         await DocaFormFiller.WaitForDocaSubmissionSuccessAsync(page);
+
+        var postSubmitLogin = await TryEnsureLoggedInOnPageAsync(page, "run automation again", cancellationToken);
+        if (postSubmitLogin is not null)
+        {
+            return postSubmitLogin;
+        }
 
         if (string.Equals(job.Status, "submitted", StringComparison.OrdinalIgnoreCase))
         {
@@ -345,22 +369,14 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            if (!ManualDocaLoginWait)
+            var loginFailure = await TryEnsureLoggedInOrReturnLoginRequiredAsync(
+                page,
+                "run certification again",
+                cancellationToken);
+            if (loginFailure is not null)
             {
-                await TryPrefillLoginAsync(page);
+                return loginFailure;
             }
-
-            await page.BringToFrontAsync();
-
-            var captured = await CaptureDocaCredentialsFromBrowserAsync(page);
-            if (captured is not null)
-            {
-                DocaCredentials = captured;
-            }
-
-            return new DocaOpenResult(
-                DocaSessionState.LoginRequired,
-                "DOCA login required — complete login, then run certification again.");
         }
 
         var downloadDirectory = WorkerDataPaths.CertificatePdfDirectory(job.Id);
@@ -370,6 +386,12 @@ public sealed class AutomationService : IAsyncDisposable
             job.SerialNumber,
             downloadDirectory,
             cancellationToken);
+
+        var postDownloadLogin = await TryEnsureLoggedInOnPageAsync(page, "run certification again", cancellationToken);
+        if (postDownloadLogin is not null)
+        {
+            return postDownloadLogin;
+        }
 
         var stampResult = CertificatePdfStampService.StampPrincipalOfficerSignature(
             downloadResult.LocalPdfPath,
@@ -398,6 +420,12 @@ public sealed class AutomationService : IAsyncDisposable
             preparedPhoto.Path,
             instrument.Remarks,
             cancellationToken);
+
+        var postUploadLogin = await TryEnsureLoggedInOnPageAsync(page, "run certification again", cancellationToken);
+        if (postUploadLogin is not null)
+        {
+            return postUploadLogin;
+        }
 
         var match = downloadResult.Match;
         var firebaseToken = ResolveFirebaseIdToken is not null
@@ -439,16 +467,18 @@ public sealed class AutomationService : IAsyncDisposable
         await EnsureBrowserReadyAsync(cancellationToken);
         var page = await GetPageAsync();
 
-        await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
+        await page.GotoAsync(_settings.DocaLoginUrl, new PageGotoOptions
         {
             WaitUntil = WaitUntilState.Load,
             Timeout = 60_000,
         });
 
+        page = await ConsolidateToSingleDocaPageAsync();
+
         try
         {
             await page.EvaluateAsync(
-                "document.title = " + System.Text.Json.JsonSerializer.Serialize($"YesGATC Chrome {chromeNumber} — DOCA"));
+                "document.title = " + System.Text.Json.JsonSerializer.Serialize($"YesGATC Chrome {chromeNumber} - DOCA"));
         }
         catch (PlaywrightException)
         {
@@ -457,16 +487,9 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            if (!ManualDocaLoginWait)
-            {
-                await TryPrefillLoginAsync(page);
-            }
-
-            await page.BringToFrontAsync();
-            return DocaSessionState.LoginRequired;
+            return await EnsureDocaLoggedInAsync(page, cancellationToken);
         }
 
-        await page.BringToFrontAsync();
         return DocaSessionState.LoggedIn;
     }
 
@@ -482,14 +505,23 @@ public sealed class AutomationService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_context is not null)
+        await _browserLock.WaitAsync();
+        try
         {
-            await _context.CloseAsync();
-            _context = null;
-        }
+            if (_context is not null)
+            {
+                DetachPageHandlers();
+                await _context.CloseAsync();
+                _context = null;
+            }
 
-        _playwright?.Dispose();
-        _playwright = null;
+            _playwright?.Dispose();
+            _playwright = null;
+        }
+        finally
+        {
+            _browserLock.Release();
+        }
     }
 
     private async Task ResetContextIfDisconnectedAsync()
@@ -518,12 +550,204 @@ public sealed class AutomationService : IAsyncDisposable
     private static bool IsBlankBrowserPage(string url) =>
         string.IsNullOrWhiteSpace(url) || url.Equals("about:blank", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsDocaPage(string url) =>
+        url.Contains("doca.gov.in", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Keep one work tab — prefer DOCA and close every blank/extra tab.</summary>
+    private async Task<IPage> ConsolidateToSingleDocaPageAsync()
+    {
+        if (_context is null)
+        {
+            throw new InvalidOperationException("Browser context is not initialized.");
+        }
+
+        for (var pass = 0; pass < 4; pass++)
+        {
+            var pages = _context.Pages.ToList();
+            if (pages.Count == 0)
+            {
+                break;
+            }
+
+            if (pages.Count == 1)
+            {
+                return pages[0];
+            }
+
+            var hasDocaOrLoadedPage = pages.Any(page => IsDocaPage(page.Url) || !IsBlankBrowserPage(page.Url));
+
+            foreach (var page in pages)
+            {
+                if (hasDocaOrLoadedPage && IsBlankBrowserPage(page.Url))
+                {
+                    try
+                    {
+                        await page.CloseAsync();
+                    }
+                    catch (PlaywrightException)
+                    {
+                    }
+                }
+            }
+
+            pages = _context.Pages.ToList();
+            if (pages.Count <= 1)
+            {
+                break;
+            }
+
+            var keeper = pages.FirstOrDefault(page => IsDocaPage(page.Url))
+                ?? pages.FirstOrDefault(page => !IsBlankBrowserPage(page.Url))
+                ?? pages[0];
+
+            foreach (var page in pages)
+            {
+                if (ReferenceEquals(page, keeper))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await page.CloseAsync();
+                }
+                catch (PlaywrightException)
+                {
+                }
+            }
+
+            await Task.Delay(150);
+        }
+
+        var remaining = _context.Pages.ToList();
+        if (remaining.Count == 0)
+        {
+            return await _context.NewPageAsync();
+        }
+
+        var primary = remaining.FirstOrDefault(page => IsDocaPage(page.Url))
+            ?? remaining.FirstOrDefault(page => !IsBlankBrowserPage(page.Url))
+            ?? remaining[0];
+        await primary.BringToFrontAsync();
+        return primary;
+    }
+
+    private void AttachPageHandlers()
+    {
+        if (_context is null || _pageHandlersAttached)
+        {
+            return;
+        }
+
+        _context.Page += OnBrowserContextPage;
+        _pageHandlersAttached = true;
+    }
+
+    private void DetachPageHandlers()
+    {
+        if (_context is null || !_pageHandlersAttached)
+        {
+            return;
+        }
+
+        _context.Page -= OnBrowserContextPage;
+        _pageHandlersAttached = false;
+    }
+
+    private async void OnBrowserContextPage(object? sender, IPage page)
+    {
+        if (_context is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Task.Delay(100);
+            if (_context.Pages.Count <= 1)
+            {
+                return;
+            }
+
+            if (IsBlankBrowserPage(page.Url))
+            {
+                await page.CloseAsync();
+            }
+        }
+        catch (PlaywrightException)
+        {
+        }
+    }
+
+    private static void ClearStaleProfileLocks(string profileDirectory)
+    {
+        if (!Directory.Exists(profileDirectory))
+        {
+            return;
+        }
+
+        foreach (var lockName in new[] { "SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile" })
+        {
+            var lockPath = Path.Combine(profileDirectory, lockName);
+            if (!File.Exists(lockPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                File.Delete(lockPath);
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    private async Task<IBrowserContext> LaunchPersistentContextAsync(
+        BrowserTypeLaunchPersistentContextOptions launchOptions)
+    {
+        if (_playwright is null)
+        {
+            throw new InvalidOperationException("Playwright is not initialized.");
+        }
+
+        try
+        {
+            return await _playwright.Chromium.LaunchPersistentContextAsync(
+                BrowserProfileDirectory,
+                launchOptions);
+        }
+        catch (PlaywrightException ex) when (IsExistingBrowserSessionError(ex))
+        {
+            ClearStaleProfileLocks(BrowserProfileDirectory);
+            return await _playwright.Chromium.LaunchPersistentContextAsync(
+                BrowserProfileDirectory,
+                launchOptions);
+        }
+    }
+
+    private static bool IsExistingBrowserSessionError(PlaywrightException exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current.Message.Contains("existing browser session", StringComparison.OrdinalIgnoreCase)
+                || current.Message.Contains("Opening in", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private async Task EnsureContextAsync(CancellationToken cancellationToken)
     {
         _playwright ??= await Playwright.CreateAsync();
 
         if (_context is not null && IsBrowserConnected)
         {
+            await ConsolidateToSingleDocaPageAsync();
             return;
         }
 
@@ -550,6 +774,13 @@ public sealed class AutomationService : IAsyncDisposable
             ViewportSize = ViewportSize.NoViewport,
             AcceptDownloads = true,
             DownloadsPath = downloadsPath,
+            Args =
+            [
+                "--disable-session-crashed-bubble",
+                "--disable-restore-session-state",
+                "--no-first-run",
+                "--no-default-browser-check",
+            ],
         };
 
         if (!string.IsNullOrWhiteSpace(_settings.BrowserChannel))
@@ -559,9 +790,9 @@ public sealed class AutomationService : IAsyncDisposable
 
         try
         {
-            _context = await _playwright.Chromium.LaunchPersistentContextAsync(
-                BrowserProfileDirectory,
-                launchOptions);
+            _context = await LaunchPersistentContextAsync(launchOptions);
+            AttachPageHandlers();
+            await ConsolidateToSingleDocaPageAsync();
         }
         catch (PlaywrightException ex) when (!string.IsNullOrWhiteSpace(launchOptions.Channel))
         {
@@ -580,7 +811,7 @@ public sealed class AutomationService : IAsyncDisposable
             throw new InvalidOperationException("Browser context is not initialized.");
         }
 
-        return _context.Pages.FirstOrDefault() ?? await _context.NewPageAsync();
+        return await ConsolidateToSingleDocaPageAsync();
     }
 
     private async Task<bool> IsOnIcVerificationFormAsync(IPage page)
@@ -598,6 +829,64 @@ public sealed class AutomationService : IAsyncDisposable
 
         var formHeading = page.GetByText("Instrument Generate Certificate", new PageGetByTextOptions { Exact = false });
         return await formHeading.CountAsync() > 0;
+    }
+
+    private async Task<DocaSessionState> EnsureDocaLoggedInAsync(
+        IPage page,
+        CancellationToken cancellationToken = default,
+        bool forceAutoLogin = false)
+    {
+        if (!await IsLoginPageAsync(page))
+        {
+            return DocaSessionState.LoggedIn;
+        }
+
+        if (!forceAutoLogin && ManualDocaLoginWait)
+        {
+            await page.BringToFrontAsync();
+            return DocaSessionState.LoginRequired;
+        }
+
+        return await DocaLoginAutomation.TryLoginAsync(page, _settings, DocaCredentials, cancellationToken);
+    }
+
+    private async Task<DocaOpenResult?> TryEnsureLoggedInOnPageAsync(
+        IPage page,
+        string retryHint,
+        CancellationToken cancellationToken)
+    {
+        if (!await IsLoginPageAsync(page))
+        {
+            return null;
+        }
+
+        return await TryEnsureLoggedInOrReturnLoginRequiredAsync(page, retryHint, cancellationToken);
+    }
+
+    private async Task<DocaOpenResult?> TryEnsureLoggedInOrReturnLoginRequiredAsync(
+        IPage page,
+        string retryHint,
+        CancellationToken cancellationToken)
+    {
+        var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken);
+        if (loginState == DocaSessionState.LoggedIn)
+        {
+            return null;
+        }
+
+        await page.BringToFrontAsync();
+
+        var captured = await CaptureDocaCredentialsFromBrowserAsync(page);
+        if (captured is not null)
+        {
+            DocaCredentials = captured;
+        }
+
+        var message = _settings.AutoSolveCaptcha
+            ? $"DOCA auto-login failed after {_settings.CaptchaMaxAttempts} AI captcha attempt(s). Worker will keep retrying; check DOCA email/password if this persists."
+            : $"DOCA login required — complete login, then {retryHint}.";
+
+        return new DocaOpenResult(DocaSessionState.LoginRequired, message);
     }
 
     private async Task<bool> IsLoginPageAsync(IPage page)
@@ -620,7 +909,11 @@ public sealed class AutomationService : IAsyncDisposable
 
     public async Task<DocaCredentialSettings?> CaptureDocaCredentialsFromBrowserAsync(IPage? page = null)
     {
-        page ??= _context?.Pages.FirstOrDefault();
+        if (page is null && _context is not null)
+        {
+            page = await GetPageAsync();
+        }
+
         if (page is null)
         {
             return null;
@@ -647,39 +940,5 @@ public sealed class AutomationService : IAsyncDisposable
             Email = email.Trim(),
             Password = password,
         };
-    }
-
-    private async Task TryPrefillLoginAsync(IPage page)
-    {
-        if (ManualDocaLoginWait)
-        {
-            return;
-        }
-
-        var email = DocaCredentials.Email.Trim();
-        var password = DocaCredentials.Password;
-
-        if (string.IsNullOrWhiteSpace(email) && string.IsNullOrWhiteSpace(password))
-        {
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(email))
-        {
-            var emailField = page.Locator("input[type='email'], input[name*='email' i], input[id*='email' i]").First;
-            if (await emailField.CountAsync() > 0)
-            {
-                await emailField.FillAsync(email);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(password))
-        {
-            var passwordField = page.Locator("input[type='password']").First;
-            if (await passwordField.CountAsync() > 0)
-            {
-                await passwordField.FillAsync(password);
-            }
-        }
     }
 }

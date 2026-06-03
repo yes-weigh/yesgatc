@@ -7,6 +7,11 @@
     "DocaCredentials": {
       "Email": "admin@yesweigh.in",
       "Password": "your-doca-password"
+    },
+    "CaptchaOcr": {
+      "Provider": "OpenAI",
+      "ApiKey": "sk-your-openai-key",
+      "Model": "gpt-4o-mini"
     }
   }
 }

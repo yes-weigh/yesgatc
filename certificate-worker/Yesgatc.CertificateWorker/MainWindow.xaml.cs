@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using Microsoft.Win32;
 using Yesgatc.CertificateWorker.Models;
 using Yesgatc.CertificateWorker.Services;
 
@@ -52,25 +51,16 @@ public partial class MainWindow : Window
     private bool _isBusy;
     private bool _autoWorkerEnabled;
     private bool _autoWorkerPausedForDoca;
-    private bool _syncingStatusCombo;
     private bool _useRealtimeListener;
     private bool _realtimeListenerActive;
     private DispatcherTimer? _pollFallbackTimer;
     private DispatcherTimer? _retryBadgeTimer;
     private DispatcherTimer? _docaProbeTimer;
+    private bool _autoWorkerCyclePending;
 
     public MainWindow()
     {
         InitializeComponent();
-
-        foreach (var status in VerificationStatuses.All)
-        {
-            StatusComboBox.Items.Add(new ComboBoxItem
-            {
-                Content = VerificationStatuses.Label(status),
-                Tag = status,
-            });
-        }
 
         var settings = App.Settings;
         _authService = new FirebaseAuthService(settings.Firebase);
@@ -108,13 +98,13 @@ public partial class MainWindow : Window
         AadharBox.Text = FirstNonEmpty(
             saved.SuperAdmin.Aadhar,
             settings.Credentials.Aadhar);
-        PasswordBox.Password = FirstNonEmpty(
+        PasswordBox.Text = FirstNonEmpty(
             saved.SuperAdmin.Password,
             settings.Credentials.Password);
         DocaEmailBox.Text = FirstNonEmpty(
             saved.Doca.Email,
             settings.Automation.DocaCredentials.Email);
-        DocaPasswordBox.Password = FirstNonEmpty(
+        DocaPasswordBox.Text = FirstNonEmpty(
             saved.Doca.Password,
             settings.Automation.DocaCredentials.Password);
 
@@ -128,28 +118,61 @@ public partial class MainWindow : Window
     private DocaCredentialSettings CurrentDocaCredentials() => new()
     {
         Email = DocaEmailBox.Text.Trim(),
-        Password = DocaPasswordBox.Password,
+        Password = DocaPasswordBox.Text,
     };
 
     private void PersistCredentials()
     {
         _credentialStore.SaveAll(
             AadharBox.Text,
-            PasswordBox.Password,
+            PasswordBox.Text,
             DocaEmailBox.Text,
-            DocaPasswordBox.Password);
+            DocaPasswordBox.Text);
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        if (!string.IsNullOrWhiteSpace(AadharBox.Text) && !string.IsNullOrWhiteSpace(PasswordBox.Password))
+        await StartDocaBrowserAsync();
+
+        if (!string.IsNullOrWhiteSpace(AadharBox.Text) && !string.IsNullOrWhiteSpace(PasswordBox.Text))
         {
             await SignInAndLoadAsync();
             return;
         }
 
         SignInExpander.IsExpanded = true;
-        SetStatus("Enter Super Admin credentials and sign in to load the queue.", StatusKind.Idle);
+        SetStatus(
+            _automationService.IsBrowserConnected
+                ? "DOCA browser is open. Enter Super Admin credentials and sign in."
+                : "Enter Super Admin credentials and sign in to load the queue.",
+            StatusKind.Idle);
+    }
+
+    private async Task StartDocaBrowserAsync()
+    {
+        try
+        {
+            _automationService.DocaCredentials = CurrentDocaCredentials();
+            SetStatus("Opening DOCA browser...", StatusKind.Working);
+            var state = await _automationService.OpenDocaWorkspaceAsync();
+
+            if (state == DocaSessionState.LoginRequired)
+            {
+                if (_autoWorkerEnabled)
+                {
+                    SetDocaLoginPaused(true);
+                }
+
+                SetStatus("DOCA auto-login failed — worker will retry with AI captcha. Check DOCA email/password in the app.", StatusKind.Info);
+                return;
+            }
+
+            SetStatus("DOCA browser open and logged in to DOCA.", StatusKind.Success);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not open DOCA browser: {ex.Message}", StatusKind.Error);
+        }
     }
 
     private async void MainWindow_Closed(object? sender, EventArgs e)
@@ -166,7 +189,6 @@ public partial class MainWindow : Window
         var settings = App.Settings.AutoWorker;
         _autoWorkerEnabled = settings.Enabled;
         _useRealtimeListener = settings.UseRealtimeListener;
-        AutoWorkerCheckBox.IsChecked = settings.Enabled;
         UpdateAutoWorkerStatusText();
     }
 
@@ -204,10 +226,18 @@ public partial class MainWindow : Window
         _ = Dispatcher.InvokeAsync(async () =>
         {
             ApplyQueueRecords(records, "Queue updated from Firestore.");
-            if (_autoWorkerEnabled && !_isBusy && !_autoWorkerPausedForDoca)
+            if (!_autoWorkerEnabled || _autoWorkerPausedForDoca)
             {
-                await RunAutoWorkerCycleAsync();
+                return;
             }
+
+            if (_isBusy)
+            {
+                _autoWorkerCyclePending = true;
+                return;
+            }
+
+            await RunAutoWorkerCycleAsync();
         });
     }
 
@@ -288,7 +318,7 @@ public partial class MainWindow : Window
     private void SetDocaLoginPaused(bool paused)
     {
         _autoWorkerPausedForDoca = paused;
-        _automationService.ManualDocaLoginWait = paused;
+        ApplyManualDocaLoginWaitToAllAutomation(paused);
 
         if (paused)
         {
@@ -300,6 +330,15 @@ public partial class MainWindow : Window
         }
 
         UpdateAutoWorkerStatusText();
+    }
+
+    private void ApplyManualDocaLoginWaitToAllAutomation(bool paused)
+    {
+        _automationService.ManualDocaLoginWait = paused;
+        foreach (var worker in _preparedBulkWorkers)
+        {
+            worker.ManualDocaLoginWait = paused;
+        }
     }
 
     private void StartDocaProbeTimer()
@@ -332,7 +371,7 @@ public partial class MainWindow : Window
 
     private async void DocaProbeTimer_Tick(object? sender, EventArgs e)
     {
-        if (!_autoWorkerPausedForDoca || _session is null || _isBusy)
+        if (!_autoWorkerPausedForDoca || _session is null)
         {
             return;
         }
@@ -342,7 +381,7 @@ public partial class MainWindow : Window
 
     private async void PollFallbackTimer_Tick(object? sender, EventArgs e)
     {
-        if (!_autoWorkerEnabled || _session is null || _isBusy)
+        if (!_autoWorkerEnabled || _session is null)
         {
             return;
         }
@@ -350,6 +389,11 @@ public partial class MainWindow : Window
         if (_autoWorkerPausedForDoca)
         {
             await TryResumeAutoWorkerAfterDocaLoginAsync();
+            return;
+        }
+
+        if (_isBusy)
+        {
             return;
         }
 
@@ -367,21 +411,6 @@ public partial class MainWindow : Window
         }
 
         await RunAutoWorkerCycleAsync();
-    }
-
-    private void AutoWorkerCheckBox_Changed(object sender, RoutedEventArgs e)
-    {
-        _autoWorkerEnabled = AutoWorkerCheckBox.IsChecked == true;
-        UpdateAutoWorkerStatusText();
-
-        if (_autoWorkerEnabled && _session is not null)
-        {
-            StartAutoWorkerTimers();
-            _ = RunAutoWorkerCycleAsync();
-            return;
-        }
-
-        StopAutoWorkerTimers();
     }
 
     private async Task TryResumeAutoWorkerAfterDocaLoginAsync()
@@ -402,15 +431,21 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            SetStatus($"Waiting for DOCA login — {ex.Message}", StatusKind.Info);
+            SetStatus($"Waiting for DOCA auto-login — {ex.Message}", StatusKind.Info);
             UpdateAutoWorkerStatusText();
         }
     }
 
     private async Task RunAutoWorkerCycleAsync()
     {
-        if (!_autoWorkerEnabled || _session is null || _isBusy || _autoWorkerPausedForDoca)
+        if (!_autoWorkerEnabled || _session is null || _autoWorkerPausedForDoca)
         {
+            return;
+        }
+
+        if (_isBusy)
+        {
+            _autoWorkerCyclePending = true;
             return;
         }
 
@@ -453,7 +488,7 @@ public partial class MainWindow : Window
     {
         if (!_autoWorkerEnabled)
         {
-            AutoWorkerStatusText.Text = "Auto worker is off — use Process all jobs manually.";
+            AutoWorkerStatusText.Text = "Disabled in appsettings.json.";
             return;
         }
 
@@ -466,7 +501,7 @@ public partial class MainWindow : Window
         if (_autoWorkerPausedForDoca)
         {
             AutoWorkerStatusText.Text =
-                "Paused for DOCA login — enter your new password and captcha in Chrome; the page will not be refreshed.";
+                "Paused for DOCA login — retrying AI auto-login every few seconds until session is restored.";
             return;
         }
 
@@ -498,61 +533,6 @@ public partial class MainWindow : Window
         {
             SetStatus("Refreshing queue…", StatusKind.Working);
             await LoadQueueAsync();
-        });
-    }
-
-    private void JobsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        SetSelectedQueueItem(JobsGrid.SelectedItem as CertificationQueueItem);
-        UpdateSelectionUi();
-    }
-
-    private void PreviousJobButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_isBusy || _jobs.Count == 0)
-        {
-            return;
-        }
-
-        var index = SelectedJobIndex();
-        SelectJobAtIndex(index <= 0 ? _jobs.Count - 1 : index - 1);
-    }
-
-    private void NextJobButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_isBusy || _jobs.Count == 0)
-        {
-            return;
-        }
-
-        var index = SelectedJobIndex();
-        SelectJobAtIndex(index < 0 || index >= _jobs.Count - 1 ? 0 : index + 1);
-    }
-
-    private async void ProcessJobButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedJob is null || _session is null)
-        {
-            SetStatus("Select a job from the queue first.", StatusKind.Info);
-            return;
-        }
-
-        if (!SelectedJob.NeedsPipelineWork)
-        {
-            SetStatus("This job has no pending pipeline steps.", StatusKind.Info);
-            return;
-        }
-
-        await RunWithBusyStateAsync(async () =>
-        {
-            var job = SelectedJob!;
-            var jobIndex = SelectedJobIndex();
-            var result = await ProcessJobWithRecoveryAsync(
-                job,
-                _automationService,
-                continueBrowserSession: _automationService.IsBrowserConnected);
-
-            await HandleJobPipelineResultAsync(job, jobIndex, result, fromAutoWorker: false);
         });
     }
 
@@ -617,6 +597,13 @@ public partial class MainWindow : Window
         try
         {
             await automation.EnsureBrowserReadyAsync();
+
+            var sessionGate = await automation.EnsureDocaSessionForJobAsync();
+            if (sessionGate is not null)
+            {
+                return new JobPipelineResult(false, true, sessionGate.Message);
+            }
+
             return await ProcessJobThroughPipelineAsync(job, automation, continueBrowserSession);
         }
         catch (Exception ex) when (AutomationService.IsBrowserDisconnectedError(ex))
@@ -636,123 +623,6 @@ public partial class MainWindow : Window
                 "DOCA browser was closed or disconnected. Reopening Chrome on the next attempt.",
                 BrowserDisconnected: true);
         }
-    }
-
-    private async void PrepareBulkBrowsersButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_session is null)
-        {
-            SetStatus("Sign in as Super Admin first.", StatusKind.Info);
-            return;
-        }
-
-        var browserCount = App.Settings.Automation.ParallelBrowserCount;
-        if (browserCount < 1)
-        {
-            SetStatus("ParallelBrowserCount must be at least 1 in appsettings.json.", StatusKind.Error);
-            return;
-        }
-
-        await RunWithBusyStateAsync(async () =>
-        {
-            PersistCredentials();
-            _automationService.DocaCredentials = CurrentDocaCredentials();
-
-            SetStatus($"Opening {browserCount} Chrome session(s) for DOCA login check…", StatusKind.Working);
-            await DisposePreparedBulkWorkersAsync();
-
-            var loginRequired = 0;
-            var ready = 0;
-
-            for (var i = 0; i < browserCount; i++)
-            {
-                var automation = CreateAutomationWorker(i);
-                var state = await automation.OpenDocaWorkspaceAsync(i + 1);
-                _preparedBulkWorkers.Add(automation);
-
-                if (state == DocaSessionState.LoginRequired)
-                {
-                    loginRequired++;
-                }
-                else
-                {
-                    ready++;
-                }
-            }
-
-            UpdatePrepareBulkBrowsersButtonContent();
-
-            if (loginRequired == 0)
-            {
-                SetStatus(
-                    $"All {browserCount} Chrome sessions are open and logged in to DOCA. Ready for bulk processing.",
-                    StatusKind.Success);
-            }
-            else
-            {
-                SetStatus(
-                    $"Opened {browserCount} Chrome sessions — {ready} logged in, {loginRequired} need DOCA login. " +
-                    "Complete login in each window, then click this button again to verify.",
-                    StatusKind.Info);
-            }
-        });
-    }
-
-    private async void ProcessAllJobsButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_session is null)
-        {
-            SetStatus("Sign in as Super Admin first.", StatusKind.Info);
-            return;
-        }
-
-        var queue = _jobs
-            .Where(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id))
-            .Select(item => item.Record)
-            .ToList();
-        if (queue.Count == 0)
-        {
-            var waiting = _jobs.Count(item => item.NeedsPipelineWork && !_jobRetries.IsEligible(item.Id));
-            SetStatus(waiting > 0
-                ? $"No jobs ready — {waiting} waiting for retry."
-                : "No jobs are waiting in the pipeline.",
-                StatusKind.Info);
-            return;
-        }
-
-        var settings = App.Settings.Automation;
-        var skipConfirm = _autoWorkerEnabled || App.Settings.AutoWorker.SkipBatchConfirmation;
-        if (!skipConfirm)
-        {
-            var useParallel = queue.Count > settings.ParallelBrowserThreshold && settings.ParallelBrowserCount > 1;
-            var parallelHint = useParallel
-                ? $"\n\n{Math.Min(settings.ParallelBrowserCount, queue.Count)} Chrome windows will open and jobs are split across them. " +
-                  "Log in to DOCA in each window if prompted (first time only per window)."
-                : "\n\nKeep the DOCA browser window open.";
-
-            var confirm = MessageBox.Show(
-                this,
-                $"Process {queue.Count} job(s)?\n\n" +
-                "Each job runs only the steps it still needs:\n" +
-                "• Submitted → submit on DOCA (duplicate check), then certify\n" +
-                "• Approved → certify only (download, stamp, upload, Firebase)\n\n" +
-                "If phase 1 already succeeded on DOCA, phase 2 resumes without creating a duplicate." +
-                parallelHint,
-                "Process all jobs",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            if (confirm != MessageBoxResult.Yes)
-            {
-                return;
-            }
-        }
-
-        await RunWithBusyStateAsync(async () =>
-        {
-            PersistCredentials();
-            _automationService.DocaCredentials = CurrentDocaCredentials();
-            await ProcessQueueInternalAsync(queue, sequentialOnly: false, fromAutoWorker: false);
-        });
     }
 
     private async Task ProcessQueueInternalAsync(
@@ -789,7 +659,6 @@ public partial class MainWindow : Window
 
             SelectJobOnUiThread(job.Id);
             SetStatusSafe($"{batchLabel} · Serial {job.SerialNumber} ({job.NextStepLabel})…", StatusKind.Working);
-            SetProcessAllButtonContentSafe($"{batchLabel}…");
 
             try
             {
@@ -800,36 +669,23 @@ public partial class MainWindow : Window
 
                 continueSession = _automationService.IsBrowserConnected;
 
-                if (result.LoginRequired)
+                if (TryHandleSequentialJobResult(
+                        job,
+                        i,
+                        result,
+                        fromAutoWorker,
+                        batchLabel,
+                        ref completed,
+                        ref failed,
+                        ref lastError,
+                        out var stopBatch))
                 {
-                    if (fromAutoWorker || _autoWorkerEnabled)
+                    if (stopBatch)
                     {
-                        SetDocaLoginPaused(true);
+                        await LoadQueueAsync();
+                        ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: result.LoginRequired);
+                        return;
                     }
-
-                    SetStatusSafe(
-                        $"{batchLabel} paused — complete DOCA login/captcha in Chrome. Auto worker will resume when logged in.",
-                        StatusKind.Error);
-                    return;
-                }
-
-                if (result.Completed)
-                {
-                    completed++;
-                    _jobRetries.Clear(job.Id);
-                    SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Success);
-                    await LoadQueueAsync();
-                }
-                else
-                {
-                    failed++;
-                    lastError = result.Message;
-                    _jobRetries.Schedule(
-                        job.Id,
-                        result.Message,
-                        TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
-                    RefreshRetryBadges();
-                    SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Info);
                 }
             }
             catch (Exception ex)
@@ -842,11 +698,84 @@ public partial class MainWindow : Window
                     TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
                 RefreshRetryBadges();
                 SetStatusSafe($"{batchLabel} failed · {ex.Message}", StatusKind.Error);
+
+                if (AutomationService.IsBrowserDisconnectedError(ex))
+                {
+                    SetStatusSafe(
+                        $"{batchLabel} — browser disconnected. Stopping batch; will retry on the next auto-worker cycle.",
+                        StatusKind.Info);
+                    await LoadQueueAsync();
+                    ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
+                    return;
+                }
             }
         }
 
         await LoadQueueAsync();
         ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
+    }
+
+    private bool TryHandleSequentialJobResult(
+        SiteCalibrationRecord job,
+        int jobIndex,
+        JobPipelineResult result,
+        bool fromAutoWorker,
+        string batchLabel,
+        ref int completed,
+        ref int failed,
+        ref string? lastError,
+        out bool stopBatch)
+    {
+        stopBatch = false;
+
+        if (result.LoginRequired)
+        {
+            if (fromAutoWorker || _autoWorkerEnabled)
+            {
+                SetDocaLoginPaused(true);
+            }
+
+            lastError = result.Message;
+            SetStatusSafe(
+                $"{batchLabel} paused — DOCA auto-login required. Worker will retry until logged in.",
+                StatusKind.Error);
+            stopBatch = true;
+            return true;
+        }
+
+        if (result.BrowserDisconnected)
+        {
+            failed++;
+            lastError = result.Message;
+            _jobRetries.Schedule(
+                job.Id,
+                result.Message,
+                TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+            RefreshRetryBadges();
+            SetStatusSafe(
+                $"{batchLabel} — browser disconnected. Stopping batch; Chrome will reopen on the next cycle.",
+                StatusKind.Info);
+            stopBatch = true;
+            return true;
+        }
+
+        if (result.Completed)
+        {
+            completed++;
+            _jobRetries.Clear(job.Id);
+            SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Success);
+            return true;
+        }
+
+        failed++;
+        lastError = result.Message;
+        _jobRetries.Schedule(
+            job.Id,
+            result.Message,
+            TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+        RefreshRetryBadges();
+        SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Info);
+        return true;
     }
 
     private async Task ProcessAllJobsInParallelAsync(
@@ -941,6 +870,24 @@ public partial class MainWindow : Window
                         return;
                     }
 
+                    if (result.BrowserDisconnected)
+                    {
+                        Interlocked.Increment(ref stats.Failed);
+                        _jobRetries.Schedule(
+                            job.Id,
+                            result.Message,
+                            TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+                        lock (stats)
+                        {
+                            stats.LastError = result.Message;
+                        }
+                        RefreshRetryBadges();
+                        SetStatusSafe(
+                            $"{label} — browser disconnected. Stopping Chrome {workerIndex + 1}; will retry on the next cycle.",
+                            StatusKind.Info);
+                        return;
+                    }
+
                     if (result.Completed)
                     {
                         Interlocked.Increment(ref stats.Completed);
@@ -972,7 +919,16 @@ public partial class MainWindow : Window
                     {
                         stats.LastError = ex.Message;
                     }
+                    RefreshRetryBadges();
                     SetStatusSafe($"{label} failed · {ex.Message}", StatusKind.Error);
+
+                    if (AutomationService.IsBrowserDisconnectedError(ex))
+                    {
+                        SetStatusSafe(
+                            $"{label} — browser disconnected. Stopping Chrome {workerIndex + 1}; will retry on the next cycle.",
+                            StatusKind.Info);
+                        return;
+                    }
                 }
             }
         }
@@ -996,6 +952,7 @@ public partial class MainWindow : Window
             {
                 _preparedBulkWorkers[i].DocaCredentials = CurrentDocaCredentials();
                 _preparedBulkWorkers[i].ResolveFirebaseIdToken = GetFreshIdTokenAsync;
+                _preparedBulkWorkers[i].ManualDocaLoginWait = _autoWorkerPausedForDoca;
             }
 
             SetStatusSafe(
@@ -1021,16 +978,6 @@ public partial class MainWindow : Window
         }
 
         _preparedBulkWorkers.Clear();
-        UpdatePrepareBulkBrowsersButtonContent();
-    }
-
-    private void UpdatePrepareBulkBrowsersButtonContent()
-    {
-        var configured = App.Settings.Automation.ParallelBrowserCount;
-        var openCount = _preparedBulkWorkers.Count(worker => worker.IsBrowserConnected);
-        PrepareBulkBrowsersButton.Content = openCount > 0
-            ? $"Open Chrome sessions for bulk DOCA ({openCount}/{configured} open)"
-            : $"Open Chrome sessions for bulk DOCA ({configured})";
     }
 
     private AutomationService CreateAutomationWorker(int workerIndex)
@@ -1040,6 +987,7 @@ public partial class MainWindow : Window
             WorkerIndex = workerIndex,
             DocaCredentials = CurrentDocaCredentials(),
             ResolveFirebaseIdToken = GetFreshIdTokenAsync,
+            ManualDocaLoginWait = _autoWorkerPausedForDoca,
         };
         return automation;
     }
@@ -1049,8 +997,7 @@ public partial class MainWindow : Window
         if (loginStopped)
         {
             SetStatusSafe(
-                $"Batch paused — complete DOCA login in the browser window(s), then run again. " +
-                $"{completed} completed so far. {lastError}",
+                $"Batch paused — DOCA auto-login in progress. {completed} completed so far. {lastError}",
                 StatusKind.Error);
             return;
         }
@@ -1078,17 +1025,6 @@ public partial class MainWindow : Window
         }
 
         Dispatcher.Invoke(() => SetStatus(message, kind));
-    }
-
-    private void SetProcessAllButtonContentSafe(string content)
-    {
-        if (Dispatcher.CheckAccess())
-        {
-            ProcessAllJobsButton.Content = content;
-            return;
-        }
-
-        Dispatcher.Invoke(() => ProcessAllJobsButton.Content = content);
     }
 
     private void SelectJobOnUiThread(string jobId)
@@ -1308,68 +1244,10 @@ public partial class MainWindow : Window
         DocaEmailBox.Text = captured.Email;
         if (!string.IsNullOrWhiteSpace(captured.Password))
         {
-            DocaPasswordBox.Password = captured.Password;
+            DocaPasswordBox.Text = captured.Password;
         }
 
         PersistCredentials();
-    }
-
-    private async void UploadCertificatePdfButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_session is null || SelectedJob is null)
-        {
-            return;
-        }
-
-        var job = SelectedJob;
-        if (!job.NeedsCertificatePdfUpload)
-        {
-            MessageBox.Show(
-                this,
-                "This job already has a certificate PDF URL in Firebase.",
-                "Certificate Worker",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            return;
-        }
-
-        await RunWithBusyStateAsync(async () =>
-        {
-            var pdfPath = WorkerDataPaths.FindLatestStampedPdf(job.Id);
-            if (string.IsNullOrWhiteSpace(pdfPath))
-            {
-                var dialog = new OpenFileDialog
-                {
-                    Title = "Select signed certificate PDF",
-                    Filter = "PDF files (*.pdf)|*.pdf",
-                    CheckFileExists = true,
-                };
-
-                if (dialog.ShowDialog(this) != true)
-                {
-                    SetStatus("Certificate PDF upload cancelled.", StatusKind.Info);
-                    return;
-                }
-
-                pdfPath = dialog.FileName;
-            }
-
-            SetStatus($"Uploading signed PDF to Firebase Storage for serial {job.SerialNumber}…", StatusKind.Working);
-            var token = await GetFreshIdTokenAsync();
-            await _firestoreService.MarkCertifiedWithSignedPdfAsync(
-                job.Id,
-                pdfPath,
-                token,
-                cancellationToken: CancellationToken.None);
-
-            SetStatus(
-                $"Certificate PDF uploaded — serial {job.SerialNumber}. Refresh the web app to download.",
-                StatusKind.Success);
-            AddActivityEntry($"Uploaded certificate PDF for {job.CustomerName} · serial {job.SerialNumber}");
-
-            await LoadQueueAsync();
-            SelectJobById(job.Id);
-        });
     }
 
     private async Task<string> GetFreshIdTokenAsync(CancellationToken cancellationToken = default)
@@ -1413,130 +1291,19 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void ApplyStatusButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_session is null || SelectedJob is null)
-        {
-            return;
-        }
-
-        var newStatus = GetSelectedStatusFromCombo();
-        if (newStatus is null)
-        {
-            return;
-        }
-
-        if (string.Equals(VerificationStatuses.Normalize(SelectedJob.Status), newStatus, StringComparison.OrdinalIgnoreCase))
-        {
-            SetStatus($"Job is already {VerificationStatuses.Label(newStatus)}.", StatusKind.Info);
-            return;
-        }
-
-        var confirm = MessageBox.Show(
-            this,
-            $"Change status for serial {SelectedJob.SerialNumber}?\n\n" +
-            $"{SelectedJob.StatusLabel} → {VerificationStatuses.Label(newStatus)}",
-            "Update job status",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-        if (confirm != MessageBoxResult.Yes)
-        {
-            SyncStatusComboToSelectedJob();
-            return;
-        }
-
-        await RunWithBusyStateAsync(async () =>
-        {
-            var job = SelectedJob!;
-            await _firestoreService.UpdateVerificationStatusAsync(job.Id, newStatus, _session!.IdToken);
-            SetStatus(
-                $"Updated serial {job.SerialNumber} to {VerificationStatuses.Label(newStatus)}.",
-                StatusKind.Success);
-            await LoadQueueAsync();
-        });
-    }
-
-    private void StatusComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_syncingStatusCombo)
-        {
-            return;
-        }
-
-        UpdateStatusChangeUi();
-    }
-
-    private string? GetSelectedStatusFromCombo()
-    {
-        if (StatusComboBox.SelectedItem is ComboBoxItem item
-            && item.Tag is string status)
-        {
-            return status;
-        }
-
-        return null;
-    }
-
-    private void SyncStatusComboToSelectedJob()
-    {
-        _syncingStatusCombo = true;
-        try
-        {
-            var normalized = VerificationStatuses.Normalize(SelectedJob?.Status);
-            StatusComboBox.SelectedItem = StatusComboBox.Items
-                .Cast<ComboBoxItem>()
-                .FirstOrDefault(item => string.Equals(item.Tag as string, normalized, StringComparison.OrdinalIgnoreCase));
-        }
-        finally
-        {
-            _syncingStatusCombo = false;
-        }
-    }
-
-    private void UpdateStatusChangeUi()
-    {
-        var selected = SelectedJob;
-        var canChangeStatus = !_isBusy && _session is not null && selected is not null;
-        StatusComboBox.IsEnabled = canChangeStatus;
-
-        if (selected is null || _session is null)
-        {
-            StatusOverrideSummaryText.Text = "Collapsed — expand only when you need to fix a status";
-        }
-        else
-        {
-            StatusOverrideSummaryText.Text =
-                $"Current: {selected.StatusLabel} · serial {selected.SerialNumber}";
-        }
-
-        if (!canChangeStatus)
-        {
-            ApplyStatusButton.IsEnabled = false;
-            return;
-        }
-
-        var current = VerificationStatuses.Normalize(selected!.Status);
-        var target = GetSelectedStatusFromCombo();
-        ApplyStatusButton.IsEnabled = target is not null
-            && !string.Equals(current, target, StringComparison.OrdinalIgnoreCase);
-    }
-
     private async Task SignInAndLoadAsync()
     {
         await RunWithBusyStateAsync(async () =>
         {
             SetStatus("Signing in as Super Admin…", StatusKind.Working);
-            _session = await _authService.SignInAsSuperAdminAsync(AadharBox.Text, PasswordBox.Password);
-            SignedInLabel.Text = string.IsNullOrWhiteSpace(_session.DisplayName)
-                ? _session.Email
-                : _session.DisplayName;
+            _session = await _authService.SignInAsSuperAdminAsync(AadharBox.Text, PasswordBox.Text);
 
             PersistCredentials();
             _automationService.DocaCredentials = CurrentDocaCredentials();
             UpdateSignInSummary();
             SignInExpander.IsExpanded = false;
 
-            SetStatus("Signed in. Loading certification queue…", StatusKind.Working);
+            SetStatus("Signed in. Loading certification queue...", StatusKind.Working);
             if (_useRealtimeListener)
             {
                 await StartQueueListenerAsync();
@@ -1549,7 +1316,14 @@ public partial class MainWindow : Window
             StartAutoWorkerTimers();
             if (_autoWorkerEnabled)
             {
-                _ = RunAutoWorkerCycleAsync();
+                if (_autoWorkerPausedForDoca)
+                {
+                    _ = TryResumeAutoWorkerAfterDocaLoginAsync();
+                }
+                else
+                {
+                    _ = RunAutoWorkerCycleAsync();
+                }
             }
         });
     }
@@ -1582,7 +1356,6 @@ public partial class MainWindow : Window
         RestoreSelection(previousId);
         UpdateQueueSummary();
         UpdateEmptyState();
-        UpdateSelectionUi();
 
         var pending = _jobs.Count(job => job.NeedsPipelineWork);
         var eligible = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
@@ -1607,8 +1380,6 @@ public partial class MainWindow : Window
         QueueCountText.Text = _jobs.Count == 0
             ? "0 jobs pending"
             : $"{_jobs.Count} jobs · {submitted} to submit · {approved} to certify";
-        var eligible = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
-        ProcessAllJobsButton.Content = $"Process all jobs ({eligible})";
     }
 
     private void UpdateEmptyState()
@@ -1648,7 +1419,6 @@ public partial class MainWindow : Window
         {
             SetSelectedQueueItem(null);
             JobsGrid.SelectedItem = null;
-            UpdateSelectionUi();
             return;
         }
 
@@ -1656,7 +1426,6 @@ public partial class MainWindow : Window
         JobsGrid.SelectedItem = job;
         JobsGrid.ScrollIntoView(job);
         SetSelectedQueueItem(job);
-        UpdateSelectionUi();
     }
 
     private void SelectJobAtIndexAfterRemoval(int removedIndex)
@@ -1670,74 +1439,11 @@ public partial class MainWindow : Window
         SelectJobAtIndex(Math.Min(removedIndex, _jobs.Count - 1));
     }
 
-    private void UpdateSelectionUi()
-    {
-        var canNavigate = !_isBusy && _jobs.Count > 0;
-        var selected = SelectedJob;
-        var canAct = canNavigate && _session is not null && selected is not null;
-        var index = SelectedJobIndex();
-
-        PreviousJobButton.IsEnabled = canNavigate;
-        NextJobButton.IsEnabled = canNavigate;
-
-        if (_jobs.Count == 0)
-        {
-            JobPositionText.Text = "No jobs loaded";
-            SelectedJobText.Text = _session is null
-                ? "Sign in as Super Admin and refresh the queue."
-                : "No submitted or approved jobs are waiting.";
-            ProcessAllJobsButton.IsEnabled = false;
-            ProcessJobButton.IsEnabled = false;
-            UploadCertificatePdfButton.IsEnabled = false;
-            PrepareBulkBrowsersButton.IsEnabled = _session is not null && !_isBusy;
-            StatusComboBox.IsEnabled = false;
-            ApplyStatusButton.IsEnabled = false;
-            UpdateQueueSummary();
-            UpdatePrepareBulkBrowsersButtonContent();
-            return;
-        }
-
-        JobPositionText.Text = selected is null
-            ? $"{_jobs.Count} job(s) in queue"
-            : $"Job {index + 1} of {_jobs.Count}";
-
-        if (selected is null)
-        {
-            SelectedJobText.Text = "Select a job from the queue or use Previous / Next job.";
-            ProcessAllJobsButton.IsEnabled = _session is not null && !_isBusy;
-            ProcessJobButton.IsEnabled = false;
-            UploadCertificatePdfButton.IsEnabled = false;
-            PrepareBulkBrowsersButton.IsEnabled = _session is not null && !_isBusy;
-            SyncStatusComboToSelectedJob();
-            UpdateStatusChangeUi();
-            UpdateQueueSummary();
-            UpdatePrepareBulkBrowsersButtonContent();
-            return;
-        }
-
-        SelectedJobText.Text =
-            $"{selected.RcCenterName}\n{selected.CustomerName}\n{selected.ProductName} · Serial {selected.SerialNumber}\n" +
-            $"{selected.VerificationTypeLabel} · {selected.StatusLabel} · {selected.NextStepLabel}\n" +
-            $"Updated {selected.PipelineDateDisplay} · {selected.CertificationStatusLabel}";
-
-        SyncStatusComboToSelectedJob();
-        UpdateStatusChangeUi();
-        UpdateQueueSummary();
-
-        var pendingCount = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
-        ProcessAllJobsButton.IsEnabled = canNavigate && _session is not null && pendingCount > 0;
-        ProcessJobButton.IsEnabled = canAct && selected.NeedsPipelineWork;
-        UploadCertificatePdfButton.IsEnabled = canAct && selected.NeedsCertificatePdfUpload;
-        PrepareBulkBrowsersButton.IsEnabled = _session is not null && !_isBusy;
-        UpdatePrepareBulkBrowsersButtonContent();
-    }
-
     private void UpdateSignInSummary()
     {
         if (_session is null)
         {
             SignInSummaryText.Text = "Not signed in";
-            SignedInLabel.Text = "Not signed in";
             SignInStatusDot.Fill = (Brush)FindResource("TextMutedBrush");
             return;
         }
@@ -1746,7 +1452,6 @@ public partial class MainWindow : Window
             ? _session.Email
             : $"{_session.DisplayName} · Super Admin";
         SignInSummaryText.Text = summary;
-        SignedInLabel.Text = summary;
         SignInStatusDot.Fill = (Brush)FindResource("AccentGreenBrush");
     }
 
@@ -1760,14 +1465,6 @@ public partial class MainWindow : Window
         _isBusy = true;
         SignInButton.IsEnabled = false;
         RefreshButton.IsEnabled = false;
-        PrepareBulkBrowsersButton.IsEnabled = false;
-        ProcessAllJobsButton.IsEnabled = false;
-        ProcessJobButton.IsEnabled = false;
-        UploadCertificatePdfButton.IsEnabled = false;
-        PreviousJobButton.IsEnabled = false;
-        NextJobButton.IsEnabled = false;
-        StatusComboBox.IsEnabled = false;
-        ApplyStatusButton.IsEnabled = false;
 
         try
         {
@@ -1783,7 +1480,12 @@ public partial class MainWindow : Window
             _isBusy = false;
             SignInButton.IsEnabled = true;
             RefreshButton.IsEnabled = true;
-            UpdateSelectionUi();
+
+            if (_autoWorkerCyclePending && _autoWorkerEnabled && !_autoWorkerPausedForDoca && _session is not null)
+            {
+                _autoWorkerCyclePending = false;
+                _ = RunAutoWorkerCycleAsync();
+            }
         }
     }
 
