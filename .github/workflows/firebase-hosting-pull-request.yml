@@ -14,6 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npm install && npm run build
+        env:
+          VITE_WEATHERAPI_KEY: ${{ secrets.VITE_WEATHERAPI_KEY }}
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

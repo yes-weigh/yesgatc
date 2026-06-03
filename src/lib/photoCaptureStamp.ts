@@ -101,139 +101,7 @@ function getBestCurrentPosition(timeoutMs = 14_000): Promise<GeoPosition> {
   });
 }
 
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const r = 6_371_000;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-  return 2 * r * Math.asin(Math.sqrt(a));
-}
-
-/** OSM admin keys — often name a distant panchayat/village, not the GPS point. */
-const DISTANT_ADMIN_KEYS = new Set([
-  'village',
-  'town',
-  'city',
-  'municipality',
-  'county',
-  'state_district',
-  'region',
-  'district',
-]);
-
-/**
- * Labels for the photo stamp: road / POI / suburb only (never village/town/city).
- * Coordinates on the stamp stay authoritative; names must match the point, not Pullara-style boundaries.
- */
-async function reverseGeocode(
-  lat: number,
-  lon: number,
-): Promise<{ placeName?: string; addressLine?: string }> {
-  const url = new URL('https://nominatim.openstreetmap.org/reverse');
-  url.searchParams.set('format', 'jsonv2');
-  url.searchParams.set('lat', String(lat));
-  url.searchParams.set('lon', String(lon));
-  url.searchParams.set('zoom', '18');
-  url.searchParams.set('addressdetails', '1');
-
-  const res = await fetch(url.toString(), {
-    headers: {
-      Accept: 'application/json',
-      'Accept-Language': 'en',
-    },
-  });
-  if (!res.ok) return {};
-
-  const data = (await res.json()) as {
-    lat?: string;
-    lon?: string;
-    name?: string;
-    type?: string;
-    address?: Record<string, string | undefined>;
-  };
-
-  const resultLat = Number(data.lat);
-  const resultLon = Number(data.lon);
-  const centerMismatch =
-    Number.isFinite(resultLat) &&
-    Number.isFinite(resultLon) &&
-    haversineMeters(lat, lon, resultLat, resultLon) > 350;
-
-  const addr = data.address ?? {};
-  const state = addr.state || '';
-  const country = addr.country || '';
-  const postcode = addr.postcode || '';
-
-  const road = [addr.house_number, addr.road].filter(Boolean).join(' ').trim();
-  const microArea =
-    addr.neighbourhood ||
-    addr.suburb ||
-    addr.quarter ||
-    addr.hamlet ||
-    addr.residential ||
-    '';
-  const nameIsDistantAdmin =
-    data.type === 'village' ||
-    data.type === 'town' ||
-    data.type === 'city' ||
-    data.type === 'administrative';
-  const poi = [
-    addr.amenity,
-    addr.shop,
-    addr.office,
-    addr.building,
-    addr.retail,
-    nameIsDistantAdmin ? undefined : data.name,
-  ]
-    .filter(Boolean)
-    .join(', ');
-
-  const distantNames = new Set(
-    Object.entries(addr)
-      .filter(([key]) => DISTANT_ADMIN_KEYS.has(key))
-      .map(([, value]) => value?.trim().toLowerCase())
-      .filter(Boolean),
-  );
-
-  const useLabel = (value: string | undefined): string | undefined => {
-    const trimmed = value?.trim();
-    if (!trimmed) return undefined;
-    if (distantNames.has(trimmed.toLowerCase())) return undefined;
-    return trimmed;
-  };
-
-  const safePoi = useLabel(poi);
-  const safeRoad = useLabel(road);
-  const safeMicro = useLabel(microArea);
-
-  if (centerMismatch && !safeRoad && !safePoi) {
-    return {
-      placeName: postcode ? `${postcode}, ${state}, ${country}`.replace(/^, /, '') : undefined,
-      addressLine: undefined,
-    };
-  }
-
-  const headline =
-    safePoi ||
-    safeRoad ||
-    safeMicro ||
-    undefined;
-
-  const placeName = headline
-    ? [headline, state, country].filter(Boolean).join(', ')
-    : undefined;
-
-  const addressParts = [safeRoad, safeMicro, postcode].filter(
-    (part): part is string => Boolean(part && part.length > 0),
-  );
-  const addressLine = addressParts.length > 0 ? addressParts.join(', ') : undefined;
-
-  return { placeName, addressLine };
-}
+import { reverseGeocodeForStamp } from './reverseGeocode';
 
 function loadSatelliteTile(z: number, x: number, y: number): Promise<HTMLImageElement | null> {
   const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
@@ -291,7 +159,7 @@ export async function loadPhotoCaptureStamp(): Promise<PhotoCaptureStamp | null>
     let addressLine: string | undefined;
 
     try {
-      const geo = await reverseGeocode(pos.latitude, pos.longitude);
+      const geo = await reverseGeocodeForStamp(pos.latitude, pos.longitude);
       placeName = geo.placeName;
       addressLine = geo.addressLine;
     } catch {
