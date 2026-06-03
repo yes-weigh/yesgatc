@@ -49,6 +49,7 @@ export const Layout: React.FC = () => {
 
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [suppressSidebarOverlayHistory, setSuppressSidebarOverlayHistory] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [profilePhoto, setProfilePhoto] = useState<{ url?: string; path?: string } | null>(null);
 
@@ -62,10 +63,13 @@ export const Layout: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    setSuppressSidebarOverlayHistory(true);
     setMobileOpen(false);
   }, [location.pathname]);
 
-  useHistoryOverlay(isMobile && mobileOpen, () => setMobileOpen(false));
+  useHistoryOverlay(isMobile && mobileOpen, () => setMobileOpen(false), {
+    suppressHistoryBackWhenInactive: suppressSidebarOverlayHistory,
+  });
 
   useEffect(() => {
     if (!user?.uid || (user.role !== 'rc_admin' && user.role !== 'vct')) {
@@ -273,7 +277,10 @@ export const Layout: React.FC = () => {
             <button
               type="button"
               className="mobile-app-bar-menu collapse-btn"
-              onClick={() => setMobileOpen(true)}
+              onClick={() => {
+                setSuppressSidebarOverlayHistory(false);
+                setMobileOpen(true);
+              }}
               title="Open menu"
               aria-label="Open menu"
             >
