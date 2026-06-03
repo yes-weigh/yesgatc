@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { getDocs } from 'firebase/firestore';
 import { useAppContext } from '../../context/AppContext';
 import {
-  UserPlus,
   ClipboardPlus,
   Users,
   FilePenLine,
@@ -18,7 +17,11 @@ import { db } from '../../firebase';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
-import { normalizeVerificationStatus } from '../../lib/verificationRequest';
+import {
+  normalizeVerificationStatus,
+  tallyVerificationStatusFilters,
+  verificationStatusDescription,
+} from '../../lib/verificationRequest';
 import type { SiteCalibration, WorkflowMode } from '../../types';
 
 interface VCTOption {
@@ -36,15 +39,14 @@ interface KpiCardProps {
   sub: string;
   icon: React.ReactNode;
   accent: 'violet' | 'sky' | 'cyan' | 'slate' | 'blue' | 'emerald';
-  placeholder?: boolean;
   loading?: boolean;
 }
 
 const NEW_JOB_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-function KpiCard({ to, label, value, sub, icon, accent, placeholder, loading }: KpiCardProps) {
+function KpiCard({ to, label, value, sub, icon, accent, loading }: KpiCardProps) {
   return (
-    <Link to={to} className={`rc-kpi-card rc-kpi-card--${accent}${placeholder ? ' rc-kpi-card--placeholder' : ''}`}>
+    <Link to={to} className={`rc-kpi-card rc-kpi-card--${accent}`}>
       <div className="rc-kpi-card__glow" aria-hidden="true" />
       <div className="rc-kpi-card__top">
         <div className="rc-kpi-card__icon">{icon}</div>
@@ -59,7 +61,6 @@ function KpiCard({ to, label, value, sub, icon, accent, placeholder, loading }: 
         )}
         <p className="rc-kpi-card__sub">{sub}</p>
       </div>
-      {placeholder && <span className="rc-kpi-card__pill">Coming soon</span>}
     </Link>
   );
 }
@@ -118,23 +119,17 @@ export const RCDashboard: React.FC = () => {
     const assignedJobs = myJobs.filter(j => j.status === 'assigned');
     const pendingReview = myJobs.filter(j => j.status === 'pending_review');
 
+    const verificationTally = tallyVerificationStatusFilters(verifications);
     const draftVerifications = verifications.filter(
       v => normalizeVerificationStatus(v) === 'draft',
     );
-    const submittedVerifications = verifications.filter(
-      v => normalizeVerificationStatus(v) === 'submitted',
-    );
-    const issuedVerifications = verifications.filter(
-      v => normalizeVerificationStatus(v) === 'approved',
-    );
 
     return {
-      newLeads: 0,
       newJobs: newJobs.length,
       assignedJobs: assignedJobs.length,
-      draftVerifications: draftVerifications.length,
-      submittedVerifications: submittedVerifications.length,
-      issuedVerifications: issuedVerifications.length,
+      draftVerifications: verificationTally.draft,
+      submittedVerifications: verificationTally.submitted,
+      certifiedVerifications: verificationTally.certified,
       pendingReview,
       recentDrafts: draftVerifications.slice(0, 4),
     };
@@ -155,16 +150,6 @@ export const RCDashboard: React.FC = () => {
   return (
     <div className="fade-in rc-dashboard">
       <section className="rc-kpi-grid" aria-label="Dashboard overview">
-        <KpiCard
-          to={`${basePath}/customers`}
-          label="New Lead"
-          value={metrics.newLeads}
-          sub="Inquiry pipeline — capture and convert prospects"
-          icon={<UserPlus size={22} />}
-          accent="violet"
-          placeholder
-          loading={false}
-        />
         <KpiCard
           to={`${basePath}/new-job`}
           label="New Job"
@@ -203,9 +188,9 @@ export const RCDashboard: React.FC = () => {
         />
         <KpiCard
           to={`${basePath}/verification`}
-          label="Verifications · Issued"
-          value={metrics.issuedVerifications}
-          sub="Approved certificates ready to download"
+          label="Verifications · Certified"
+          value={metrics.certifiedVerifications}
+          sub={verificationStatusDescription('certified')}
           icon={<Award size={22} />}
           accent="emerald"
           loading={kpiLoading}

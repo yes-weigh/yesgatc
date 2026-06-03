@@ -2,6 +2,7 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useId,
   useMemo,
   useState,
@@ -22,7 +23,7 @@ import type { ProductFileMeta } from '../lib/productApprovalUpload';
 import { isPdfContentType } from '../lib/productApprovalUpload';
 import { useImageFileInputs } from '../lib/useImageFileInputs';
 import { shouldUseInAppCameraCapture, type ImageCaptureFacing } from '../lib/imageCapture';
-import { ImageCaptureOverlay } from './ImageCaptureOverlay';
+import { ImageCaptureOverlay, type ImageCaptureSession } from './ImageCaptureOverlay';
 
 export type VerificationPhotoSlotIcon = 'camera' | 'document' | 'invoice';
 
@@ -30,8 +31,7 @@ type CameraSession = {
   slotKey: string;
   label: string;
   accept: string;
-  onCaptured: (file: File) => void;
-  onFallbackNativeCamera: () => void;
+  capture: ImageCaptureSession;
 };
 
 type VerificationPhotoSectionContextValue = {
@@ -99,7 +99,26 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   const locked = disabled || uploading;
   const hasFile = Boolean(file);
   const [viewerOpen, setViewerOpen] = useState(false);
+  const [stampPending, setStampPending] = useState(false);
   const isImagePreview = hasFile && file && !isPdfContentType(file.contentType);
+
+  useEffect(() => {
+    if (!hasFile) setStampPending(false);
+  }, [hasFile]);
+
+  const cameraCaptureSession = useCallback((): ImageCaptureSession => {
+    return {
+      onCaptured: immediate => {
+        setStampPending(true);
+        onSelect(immediate);
+      },
+      onStamped: stamped => {
+        setStampPending(false);
+        onSelect(stamped);
+      },
+      onFallbackNativeCamera: () => openCamera(),
+    };
+  }, [onSelect, openCamera]);
 
   const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
     disabled: locked,
@@ -119,8 +138,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
           slotKey,
           label,
           accept,
-          onCaptured: onSelect,
-          onFallbackNativeCamera: () => openCamera(),
+          capture: cameraCaptureSession(),
         });
       } else {
         openCamera();
@@ -135,6 +153,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
     section,
     slotKey,
     label,
+    cameraCaptureSession,
     onSelect,
     openPicker,
     openCamera,
@@ -154,6 +173,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
         'verification-photo-slot',
         hasFile ? 'verification-photo-slot--filled' : '',
         uploading ? 'verification-photo-slot--uploading' : '',
+        stampPending ? 'verification-photo-slot--stamp-pending' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -243,8 +263,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
                     slotKey,
                     label,
                     accept,
-                    onCaptured: onSelect,
-                    onFallbackNativeCamera: () => openCamera(),
+                    capture: cameraCaptureSession(),
                   });
                 } else if (mobileSourceChoice && icon === 'camera') openCamera();
                 else openPicker();
@@ -282,6 +301,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
           label={label}
           imageUrl={file.url}
           storagePath={file.path}
+          stampPending={stampPending}
           onClose={() => setViewerOpen(false)}
         />
       )}
@@ -337,16 +357,8 @@ export const VerificationPhotoUploadSection: React.FC<VerificationPhotoUploadSec
         label={cameraSession?.label ?? ''}
         accept={cameraSession?.accept}
         facing={cameraFacing}
+        session={cameraSession?.capture ?? null}
         onClose={() => setCameraSession(null)}
-        onCaptured={file => {
-          cameraSession?.onCaptured(file);
-          setCameraSession(null);
-        }}
-        onFallbackNativeCamera={() => {
-          const session = cameraSession;
-          session?.onFallbackNativeCamera();
-          setCameraSession(null);
-        }}
       />
     </VerificationPhotoSectionContext.Provider>
   );

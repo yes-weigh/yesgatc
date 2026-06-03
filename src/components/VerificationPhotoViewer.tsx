@@ -8,6 +8,7 @@ type VerificationPhotoViewerProps = {
   label: string;
   imageUrl: string;
   storagePath?: string;
+  stampPending?: boolean;
   onClose: () => void;
 };
 
@@ -16,6 +17,7 @@ export const VerificationPhotoViewer: React.FC<VerificationPhotoViewerProps> = (
   label,
   imageUrl,
   storagePath = '',
+  stampPending = false,
   onClose,
 }) => {
   useEffect(() => {
@@ -63,7 +65,9 @@ export const VerificationPhotoViewer: React.FC<VerificationPhotoViewerProps> = (
           className="verification-photo-viewer-img"
         />
       </div>
-      <p className="verification-photo-viewer-hint">Tap outside to close</p>
+      <p className="verification-photo-viewer-hint">
+        {stampPending ? 'Adding location overlay… Tap outside to close' : 'Tap outside to close'}
+      </p>
     </div>,
     document.body,
   );

@@ -18,6 +18,9 @@ const MAP_ZOOM = 18;
 const TILE_SIZE = 256;
 /** Above this, village-level labels are often misleading vs true position. */
 const POOR_ACCURACY_METERS = 80;
+/** Visual scale for stamp text and map inset on the photo. */
+const STAMP_LAYOUT_MULTIPLIER = 2;
+const GEOCODE_REUSE_MAX_METERS = 120;
 
 function latLonToWorldPx(lat: number, lon: number, zoom: number): { x: number; y: number } {
   const scale = TILE_SIZE * 2 ** zoom;
@@ -103,6 +106,18 @@ function getBestCurrentPosition(timeoutMs = 14_000): Promise<GeoPosition> {
 
 import { reverseGeocodeForStamp } from './reverseGeocode';
 
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const r = 6_371_000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return 2 * r * Math.asin(Math.sqrt(a));
+}
+
 function loadSatelliteTile(z: number, x: number, y: number): Promise<HTMLImageElement | null> {
   const url = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
   return new Promise(resolve => {
@@ -148,35 +163,62 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   return lines.slice(0, 3);
 }
 
-/** Fetch GPS at capture time (always fresh). */
+/** Prefetch while the camera is open (GPS + geocode). */
 export async function loadPhotoCaptureStamp(): Promise<PhotoCaptureStamp | null> {
+  return buildPhotoCaptureStamp(new Date(), null);
+}
+
+async function buildPhotoCaptureStamp(
+  capturedAt: Date,
+  prefetched: PhotoCaptureStamp | null,
+): Promise<PhotoCaptureStamp | null> {
   try {
-    const pos = await getBestCurrentPosition();
-    const capturedAt = new Date();
-    const accuracy = pos.accuracyMeters;
+    const pos = await getBestCurrentPosition(prefetched ? 5000 : 14_000);
+    const moved =
+      !prefetched ||
+      haversineMeters(
+        prefetched.latitude,
+        prefetched.longitude,
+        pos.latitude,
+        pos.longitude,
+      ) > GEOCODE_REUSE_MAX_METERS;
 
-    let placeName: string | undefined;
-    let addressLine: string | undefined;
+    let placeName = prefetched?.placeName;
+    let addressLine = prefetched?.addressLine;
 
-    try {
-      const geo = await reverseGeocodeForStamp(pos.latitude, pos.longitude);
-      placeName = geo.placeName;
-      addressLine = geo.addressLine;
-    } catch {
-      /* address is optional — coordinates always shown */
+    if (moved) {
+      try {
+        const geo = await reverseGeocodeForStamp(pos.latitude, pos.longitude);
+        placeName = geo.placeName;
+        addressLine = geo.addressLine;
+      } catch {
+        /* keep prefetched labels if any */
+      }
     }
 
     return {
       latitude: pos.latitude,
       longitude: pos.longitude,
-      accuracyMeters: accuracy,
+      accuracyMeters: pos.accuracyMeters,
       placeName,
       addressLine,
       capturedAt,
     };
   } catch {
-    return null;
+    if (!prefetched) return null;
+    return { ...prefetched, capturedAt };
   }
+}
+
+/**
+ * Build stamp at shutter time — reuses prefetched geocode when position is stable.
+ */
+export async function stampForCapture(
+  capturedAt: Date,
+  prefetched: PhotoCaptureStamp | null,
+): Promise<PhotoCaptureStamp | null> {
+  if (!prefetched) return buildPhotoCaptureStamp(capturedAt, null);
+  return buildPhotoCaptureStamp(capturedAt, prefetched);
 }
 
 function drawMapPin(
@@ -207,7 +249,7 @@ export async function drawPhotoCaptureStamp(
   height: number,
   stamp: PhotoCaptureStamp,
 ): Promise<void> {
-  const scale = Math.max(width / 1080, 0.55);
+  const scale = Math.max(width / 1080, 0.55) * STAMP_LAYOUT_MULTIPLIER;
   const pad = Math.round(12 * scale);
   const mapSize = Math.round(Math.min(width * 0.22, height * 0.2, 140 * scale));
   const fontSm = Math.round(11 * scale);

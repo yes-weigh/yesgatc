@@ -435,21 +435,25 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const handleDeviceImageSelect = (localId: string, kind: VerificationImageKind, file: File) => {
-    const previewUrl = URL.createObjectURL(file);
-    setDeviceImages(prev => ({
-      ...prev,
-      [localId]: {
-        ...(prev[localId] ?? emptyDeviceVerificationImagesState()),
-        [kind]: {
-          ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()),
-          pendingFile: file,
-          removed: false,
-          file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
-          uploading: false,
-          progress: 0,
+    setDeviceImages(prev => {
+      const prevUrl = prev[localId]?.[kind]?.file?.url;
+      if (prevUrl?.startsWith('blob:')) URL.revokeObjectURL(prevUrl);
+      const previewUrl = URL.createObjectURL(file);
+      return {
+        ...prev,
+        [localId]: {
+          ...(prev[localId] ?? emptyDeviceVerificationImagesState()),
+          [kind]: {
+            ...(prev[localId]?.[kind] ?? emptyDeviceImageSlot()),
+            pendingFile: file,
+            removed: false,
+            file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
+            uploading: false,
+            progress: 0,
+          },
         },
-      },
-    }));
+      };
+    });
   };
 
   const handleDeviceImageRemove = (localId: string, kind: VerificationImageKind) => {
