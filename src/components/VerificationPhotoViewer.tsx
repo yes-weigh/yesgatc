@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { StorageImage } from './StorageImage';
 
 type VerificationPhotoViewerProps = {
@@ -20,6 +21,8 @@ export const VerificationPhotoViewer: React.FC<VerificationPhotoViewerProps> = (
   stampPending = false,
   onClose,
 }) => {
+  useHistoryOverlay(open, onClose);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {

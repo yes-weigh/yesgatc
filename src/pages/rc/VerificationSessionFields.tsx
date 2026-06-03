@@ -87,6 +87,8 @@ type VerificationSessionFieldsProps = {
 
 export type VerificationSessionFieldsHandle = {
   persistPartyChanges: () => Promise<PersistVerificationPartyResult>;
+  /** Wizard step back when the hardware back button is pressed. */
+  tryHistoryBack: () => boolean;
 };
 
 const VERIFICATION_TYPE_OPTIONS: { value: JobType; label: string }[] = [
@@ -371,6 +373,13 @@ export const VerificationSessionFields = forwardRef<
           customers,
         );
       },
+      tryHistoryBack: () => {
+        if (readOnly) return false;
+        const canBack = activeStep > 0 || (isOnEvidenceStep && evidenceDeviceIndex > 0);
+        if (!canBack) return false;
+        handleBack();
+        return true;
+      },
     }),
     [
       readOnly,
@@ -381,6 +390,9 @@ export const VerificationSessionFields = forwardRef<
       rcPartyForm,
       rcUid,
       customers,
+      activeStep,
+      isOnEvidenceStep,
+      evidenceDeviceIndex,
     ],
   );
 

@@ -90,6 +90,7 @@ import { VerificationSubmitProgressOverlay } from '../../components/Verification
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
+import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
 import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
 
 export const RCSiteCalibration: React.FC = () => {
@@ -294,6 +295,17 @@ export const RCSiteCalibration: React.FC = () => {
     setWizardOnLastStep(false);
     resetForm();
   };
+
+  const formBusyRef = useRef(formBusy);
+  formBusyRef.current = formBusy;
+
+  const handleFormHistoryBack = useCallback(() => {
+    if (formBusyRef.current) return;
+    if (verificationFieldsRef.current?.tryHistoryBack()) return;
+    handleCloseForm();
+  }, []);
+
+  useHistoryOverlay(showForm, handleFormHistoryBack);
 
   useEffect(() => {
     if (!showForm) return;

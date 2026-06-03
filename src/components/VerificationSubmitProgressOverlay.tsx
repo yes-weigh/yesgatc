@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   UserRound,
 } from 'lucide-react';
+import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { db } from '../firebase';
 import { buildDocaCertificateViewUrl } from '../lib/docaCertificateUrl';
 import { playVerificationSuccessSound } from '../lib/playVerificationSuccessSound';
@@ -123,6 +124,8 @@ function VerificationProgressDetails({
 export const VerificationSubmitProgressOverlay: React.FC<
   VerificationSubmitProgressOverlayProps
 > = ({ recordIds, onClose }) => {
+  useHistoryOverlay(recordIds.length > 0, onClose);
+
   const [recordsById, setRecordsById] = useState<Record<string, SiteCalibration>>({});
   const [customersById, setCustomersById] = useState<Record<string, Customer>>({});
   const [visible, setVisible] = useState(false);

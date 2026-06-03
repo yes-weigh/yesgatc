@@ -31,6 +31,7 @@ import {
   LogOut,
 } from 'lucide-react';
 
+import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import type { FirestoreUserDoc } from '../types';
 
 type NavItem = {
@@ -63,6 +64,8 @@ export const Layout: React.FC = () => {
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
+
+  useHistoryOverlay(isMobile && mobileOpen, () => setMobileOpen(false));
 
   useEffect(() => {
     if (!user?.uid || (user.role !== 'rc_admin' && user.role !== 'vct')) {

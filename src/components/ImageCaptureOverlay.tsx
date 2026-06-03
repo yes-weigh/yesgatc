@@ -7,6 +7,7 @@ import {
   produceStampedPhotoFromCanvas,
 } from '../lib/captureImageFromVideo';
 import type { ImageCaptureFacing } from '../lib/imageCapture';
+import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { loadPhotoCaptureStamp, type PhotoCaptureStamp } from '../lib/photoCaptureStamp';
 
 /** Gallery pickers on mobile open more reliably with `image/*` than a long MIME list. */
@@ -163,6 +164,8 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     stopStream();
     onClose();
   }, [onClose, stopStream]);
+
+  useHistoryOverlay(open, handleClose);
 
   const handleGalleryChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {

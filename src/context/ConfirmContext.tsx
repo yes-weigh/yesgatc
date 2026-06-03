@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 
 export type ConfirmOptions = {
   title?: string;
@@ -42,6 +43,8 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
     current.resolve(result);
     setPending(null);
   }, []);
+
+  useHistoryOverlay(Boolean(pending), () => dismiss(false));
 
   useEffect(() => {
     if (!pending) return;
