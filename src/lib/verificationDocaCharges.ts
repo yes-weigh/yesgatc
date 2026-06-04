@@ -1,9 +1,11 @@
-import {
-  rcVerificationFeeQuote,
-  verificationFeeWithGst,
-  type RcFeesStructure,
-} from './rcProfileFields';
-import type { JobType, Product, SiteCalibration, VerificationLocation } from '../types';
+import { rcVerificationFeeQuote, verificationFeeWithGst } from './rcProfileFields';
+import type {
+  JobType,
+  Product,
+  RcFeesStructure,
+  SiteCalibration,
+  VerificationLocation,
+} from '../types';
 
 export type VerificationDocaChargeFields = {
   verificationFeeBase: number;
