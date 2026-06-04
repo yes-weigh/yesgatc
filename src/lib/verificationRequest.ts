@@ -113,10 +113,20 @@ export function isVerificationFailedAtSubmit(record: SiteCalibration): boolean {
 export function isVerificationFailedAtCertification(record: SiteCalibration): boolean {
   if (record.pipelineFailedPhase === 'certification') return true;
   const status = normalizeVerificationStatus(record);
+  // status "certified" with a certificate number means DOCA issued the cert — not a failure
+  // even when the signed PDF was never stored in Firebase (missing certificatePdfUrl).
   if (status === 'certified') {
-    return !record.certificateNumber?.trim() || !record.certificatePdfUrl?.trim();
+    return !record.certificateNumber?.trim();
   }
   return false;
+}
+
+/** True when Firestore is certified and DOCA issued a certificate number. */
+export function isVerificationCertifiedOnDoca(record: SiteCalibration): boolean {
+  return (
+    normalizeVerificationStatus(record) === 'certified' &&
+    Boolean(record.certificateNumber?.trim())
+  );
 }
 
 export function getVerificationDisplayStatus(record: SiteCalibration): VerificationFilterStatus {
@@ -134,6 +144,25 @@ export function verificationFilterLabel(filter: VerificationStatusFilter): strin
 
 export function verificationDisplayStatusLabel(record: SiteCalibration): string {
   return verificationFilterLabel(getVerificationDisplayStatus(record));
+}
+
+export function verificationDisplayStatusTitle(record: SiteCalibration): string | undefined {
+  if (isVerificationCertifiedOnDoca(record) && !record.certificatePdfUrl?.trim()) {
+    return 'Certified on DOCA — signed PDF is not stored in Firebase yet.';
+  }
+  const display = getVerificationDisplayStatus(record);
+  if (display === 'failed_submit' || display === 'failed_certification') {
+    return record.pipelineFailureMessage?.trim() || verificationDisplayStatusLabel(record);
+  }
+  if (
+    display === 'draft' ||
+    display === 'submitted' ||
+    display === 'approved' ||
+    display === 'certified'
+  ) {
+    return verificationStatusDescription(display);
+  }
+  return verificationDisplayStatusLabel(record);
 }
 
 export function matchesVerificationStatusFilter(

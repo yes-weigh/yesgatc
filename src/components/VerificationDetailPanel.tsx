@@ -2,10 +2,14 @@ import React from 'react';
 import { Eye, X } from 'lucide-react';
 import { InlineFormPanel } from './InlineFormPanel';
 import { StorageImage } from './StorageImage';
+import { VerificationCertifiedSummary } from './VerificationCertifiedSummary';
 import { VERIFICATION_LOCATION_OPTIONS } from '../lib/siteCalibrationProfileFields';
-import { VerificationCertifiedActions } from './VerificationCertifiedActions';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
-import { formatVerificationCapAcc, verificationVctLabel } from '../lib/verificationRequest';
+import {
+  canShowVerificationCertifiedActions,
+  formatVerificationCapAcc,
+  verificationVctLabel,
+} from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
 
 interface VerificationDetailPanelProps {
@@ -68,6 +72,20 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
   rcCenterName,
   onClose,
 }) => {
+  if (canShowVerificationCertifiedActions(record)) {
+    return (
+      <InlineFormPanel
+        id="verification-detail-panel"
+        plain
+        className="mb-6 inline-form-panel--wide inline-form-panel--certified-summary"
+      >
+        <div className="product-form-panel">
+          <VerificationCertifiedSummary record={record} onClose={onClose} />
+        </div>
+      </InlineFormPanel>
+    );
+  }
+
   return (
     <InlineFormPanel id="verification-detail-panel" className="mb-6 inline-form-panel--wide">
       <div className="product-form-panel">
@@ -91,7 +109,6 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
                 <span className="text-mono text-xs">Cert {record.certificateNumber.trim()}</span>
               )}
             </div>
-            <VerificationCertifiedActions record={record} className="mt-3" />
           </div>
           <button
             type="button"

@@ -10,7 +10,7 @@ import { useRcScope } from '../../lib/roleScope';
 import { resolveVerificationDraftActorMeta } from '../../lib/verificationRequest';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
-import { VerificationCertifiedActions } from '../../components/VerificationCertifiedActions';
+import { VerificationCertifiedSummary } from '../../components/VerificationCertifiedSummary';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
 import { TablePagination } from '../../components/TablePagination';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
@@ -33,6 +33,7 @@ import {
   buildVerificationSubmitPatch,
   buildVerificationStatusFilterOptions,
   canDeleteVerification,
+  canShowVerificationCertifiedActions,
   canSubmitVerification,
   isVerificationEditable,
   isVerificationViewable,
@@ -1045,9 +1046,12 @@ export const RCSiteCalibration: React.FC = () => {
   const editingRecord = editingId ? records.find(r => r.id === editingId) ?? null : null;
   const editingDraft = editingRecord ? isVerificationEditable(editingRecord) : showAddForm;
   const isViewMode = Boolean(editingRecord && !editingDraft);
+  const isCertifiedActionsView =
+    isViewMode && editingRecord !== null && canShowVerificationCertifiedActions(editingRecord);
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
-  const canSaveDraftFromFooter = !isViewMode && (!showAddForm || wizardOnLastStep);
-  const showFormFooter = isViewMode || !showAddForm || wizardOnLastStep;
+  const canSaveDraftFromFooter =
+    !isViewMode && !isCertifiedActionsView && (!showAddForm || wizardOnLastStep);
+  const showFormFooter = isCertifiedActionsView || isViewMode || !showAddForm || wizardOnLastStep;
   const mobileFloatingChrome = useVerificationMobileLayout(showAddForm);
 
   const draftBlockReason = useMemo(
@@ -1174,8 +1178,12 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const verificationFormFooter = showFormFooter ? (
-    <div className="product-form-footer verification-form-footer">
-      {!isViewMode && canSaveDraftFromFooter && draftBlockReason && (
+    <div
+      className={`product-form-footer verification-form-footer${
+        isCertifiedActionsView ? ' verification-form-footer--certified-summary' : ''
+      }`}
+    >
+      {!isCertifiedActionsView && !isViewMode && canSaveDraftFromFooter && draftBlockReason && (
         <p className="verification-form-footer-hint mb-0" role="status">
           {draftBlockReason}
         </p>
@@ -1188,8 +1196,8 @@ export const RCSiteCalibration: React.FC = () => {
           onClick={handleCloseForm}
           disabled={formBusy}
         >
-          {!isViewMode && <X size={16} aria-hidden />}
-          {isViewMode ? 'Close' : 'Cancel'}
+          {!isViewMode && !isCertifiedActionsView && <X size={16} aria-hidden />}
+          {isViewMode || isCertifiedActionsView ? 'Close' : 'Cancel'}
         </button>
 
         {canSaveDraftFromFooter && (
@@ -1242,116 +1250,122 @@ export const RCSiteCalibration: React.FC = () => {
       {showForm && (
         <InlineFormPanel
           id="site-calibration-form"
-          plain={showAddForm}
-          className="mb-6 inline-form-panel--wide inline-form-panel--calibration"
+          plain={showAddForm || isCertifiedActionsView}
+          className={`mb-6 inline-form-panel--wide inline-form-panel--calibration${
+            isCertifiedActionsView ? ' inline-form-panel--certified-summary' : ''
+          }`}
         >
           <div className="product-form-panel">
-            <div className={`product-form-topbar${showAddForm ? ' product-form-topbar--new-mobile' : ''}`}>
-              <div className="product-form-topbar-text">
-                <h2 id="site-calibration-form-title">
-                  {showAddForm ? (
-                    <>
-                      <Plus className="inline-icon" /> New Verification
-                    </>
-                  ) : isViewMode ? (
-                    <>
-                      <Eye className="inline-icon" /> View Verification
-                    </>
-                  ) : (
-                    <>
-                      <Pencil className="inline-icon" /> Edit Verification
-                    </>
-                  )}
-                </h2>
-                <p className="product-form-topbar-hint text-muted text-sm mt-1 mb-0">
-                  {showAddForm
-                    ? 'Complete each step — save or submit on the Evidence step.'
-                    : isViewMode && viewingStatus
-                      ? verificationStatusDescription(viewingStatus)
-                      : 'Update draft verification for this device'}
-                </p>
-                {isViewMode && editingRecord && (
-                  <div className="verification-view-banner mt-2">
-                    <VerificationStatusBadge record={editingRecord} />
-                    {editingRecord.submittedAt && (
-                      <span className="text-muted text-xs">
-                        Submitted {formatDate(editingRecord.submittedAt)}
-                      </span>
+            {isCertifiedActionsView && editingRecord ? (
+              <VerificationCertifiedSummary
+                record={editingRecord}
+                customerPhone={
+                  editingRecord.customerId
+                    ? customers.find(c => c.id === editingRecord.customerId)?.phone
+                    : undefined
+                }
+                onClose={handleCloseForm}
+                closeDisabled={formBusy}
+              />
+            ) : (
+              <>
+                <div className={`product-form-topbar${showAddForm ? ' product-form-topbar--new-mobile' : ''}`}>
+                  <div className="product-form-topbar-text">
+                    <h2 id="site-calibration-form-title">
+                      {showAddForm ? (
+                        <>
+                          <Plus className="inline-icon" /> New Verification
+                        </>
+                      ) : isViewMode ? (
+                        <>
+                          <Eye className="inline-icon" /> View Verification
+                        </>
+                      ) : (
+                        <>
+                          <Pencil className="inline-icon" /> Edit Verification
+                        </>
+                      )}
+                    </h2>
+                    <p className="product-form-topbar-hint text-muted text-sm mt-1 mb-0">
+                      {showAddForm
+                        ? 'Complete each step — save or submit on the Evidence step.'
+                        : isViewMode && viewingStatus
+                          ? verificationStatusDescription(viewingStatus)
+                          : 'Update draft verification for this device'}
+                    </p>
+                    {isViewMode && editingRecord && (
+                      <div className="verification-view-banner mt-2">
+                        <VerificationStatusBadge record={editingRecord} />
+                        {editingRecord.submittedAt && (
+                          <span className="text-muted text-xs">
+                            Submitted {formatDate(editingRecord.submittedAt)}
+                          </span>
+                        )}
+                        {editingRecord.applicationNumber?.trim() && (
+                          <span className="text-mono text-xs">
+                            App {editingRecord.applicationNumber.trim()}
+                          </span>
+                        )}
+                        {editingRecord.certificateNumber?.trim() && (
+                          <span className="text-mono text-xs">
+                            Cert {editingRecord.certificateNumber.trim()}
+                          </span>
+                        )}
+                      </div>
                     )}
-                    {editingRecord.applicationNumber?.trim() && (
-                      <span className="text-mono text-xs">
-                        App {editingRecord.applicationNumber.trim()}
-                      </span>
-                    )}
-                    {editingRecord.certificateNumber?.trim() && (
-                      <span className="text-mono text-xs">
-                        Cert {editingRecord.certificateNumber.trim()}
-                      </span>
-                    )}
+                    <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
+                      {error || '\u00a0'}
+                    </p>
                   </div>
-                )}
-                {isViewMode && editingRecord && (
-                  <VerificationCertifiedActions
-                    record={editingRecord}
-                    customerPhone={
-                      editingRecord.customerId
-                        ? customers.find(c => c.id === editingRecord.customerId)?.phone
-                        : undefined
-                    }
-                    className="mt-3"
-                  />
-                )}
-                <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
-                  {error || '\u00a0'}
-                </p>
-              </div>
-            </div>
+                </div>
 
-            <form
-              onSubmit={handleFormSubmit}
-              className={`product-form${showAddForm ? ' product-form--verification-wizard' : ''}${showAddForm && wizardOnLastStep ? ' product-form--verification-final-step' : ''}${mobileFloatingChrome && showFormFooter ? ' product-form--verification-footer-portaled' : ''}`}
-              autoComplete="off"
-              noValidate
-            >
-              <div className="product-form-body">
-                <VerificationSessionFields
-                  ref={verificationFieldsRef}
-                  values={sessionValues}
-                  onChange={patchSession}
-                  onCustomerChange={handleCustomerChange}
-                  deviceImages={deviceImages}
-                  deviceRvImages={deviceRvImages}
-                  onDeviceChange={handleDeviceChange}
-                  onDeviceAdd={handleDeviceAdd}
-                  onDeviceRemove={handleDeviceRemove}
-                  onDeviceImageSelect={handleDeviceImageSelect}
-                  onDeviceImageRemove={handleDeviceImageRemove}
-                  onDeviceRvDocumentSelect={handleDeviceRvDocumentSelect}
-                  onDeviceRvDocumentRemove={handleDeviceRvDocumentRemove}
-                  customers={customers}
-                  rcProfile={rcProfile}
-                  rcUid={rcUid ?? undefined}
-                  submitting={formBusy}
-                  lockCustomer={isEditMode}
-                  readOnly={isViewMode}
-                  laboratorySealIdentification={laboratorySealId}
-                  onWizardStepChange={handleWizardStepChange}
-                  onDeclarationAcceptedChange={setVerificationDeclarationAccepted}
-                  onPartyContextChange={handlePartyContextChange}
-                  onCancel={handleCloseForm}
-                  wizardNavIncludesCancel={showAddForm}
-                  mobileFloatingChrome={mobileFloatingChrome}
-                />
-              </div>
-              {mobileFloatingChrome && verificationFormFooter
-                ? createPortal(
-                    <div className="verification-mobile-chrome verification-mobile-chrome--footer">
-                      {verificationFormFooter}
-                    </div>,
-                    document.body,
-                  )
-                : verificationFormFooter}
-            </form>
+                <form
+                  onSubmit={handleFormSubmit}
+                  className={`product-form${showAddForm ? ' product-form--verification-wizard' : ''}${showAddForm && wizardOnLastStep ? ' product-form--verification-final-step' : ''}${mobileFloatingChrome && showFormFooter ? ' product-form--verification-footer-portaled' : ''}`}
+                  autoComplete="off"
+                  noValidate
+                >
+                  <div className="product-form-body">
+                    <VerificationSessionFields
+                      ref={verificationFieldsRef}
+                      values={sessionValues}
+                      onChange={patchSession}
+                      onCustomerChange={handleCustomerChange}
+                      deviceImages={deviceImages}
+                      deviceRvImages={deviceRvImages}
+                      onDeviceChange={handleDeviceChange}
+                      onDeviceAdd={handleDeviceAdd}
+                      onDeviceRemove={handleDeviceRemove}
+                      onDeviceImageSelect={handleDeviceImageSelect}
+                      onDeviceImageRemove={handleDeviceImageRemove}
+                      onDeviceRvDocumentSelect={handleDeviceRvDocumentSelect}
+                      onDeviceRvDocumentRemove={handleDeviceRvDocumentRemove}
+                      customers={customers}
+                      rcProfile={rcProfile}
+                      rcUid={rcUid ?? undefined}
+                      submitting={formBusy}
+                      lockCustomer={isEditMode}
+                      readOnly={isViewMode}
+                      laboratorySealIdentification={laboratorySealId}
+                      onWizardStepChange={handleWizardStepChange}
+                      onDeclarationAcceptedChange={setVerificationDeclarationAccepted}
+                      onPartyContextChange={handlePartyContextChange}
+                      onCancel={handleCloseForm}
+                      wizardNavIncludesCancel={showAddForm}
+                      mobileFloatingChrome={mobileFloatingChrome}
+                    />
+                  </div>
+                  {mobileFloatingChrome && verificationFormFooter
+                    ? createPortal(
+                        <div className="verification-mobile-chrome verification-mobile-chrome--footer">
+                          {verificationFormFooter}
+                        </div>,
+                        document.body,
+                      )
+                    : verificationFormFooter}
+                </form>
+              </>
+            )}
           </div>
         </InlineFormPanel>
       )}

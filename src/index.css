@@ -7811,6 +7811,65 @@ body.verification-mobile-wizard-active {
   margin: 0.35rem 0 0.15rem;
 }
 
+.inline-form-panel--certified-summary .product-form-panel {
+  background: transparent;
+}
+
+.verification-certified-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1.25rem;
+  padding: 1rem 1rem 1.15rem;
+  min-height: min(70vh, 520px);
+  justify-content: center;
+}
+
+.verification-certified-summary-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  text-align: center;
+}
+
+.verification-certified-summary-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.verification-certified-summary-cert {
+  font-size: 0.78rem;
+  color: rgba(203, 213, 225, 0.9);
+}
+
+.verification-certified-summary .verification-certified-actions {
+  max-width: 28rem;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.verification-certified-summary-footer {
+  margin-top: auto;
+  padding-top: 0.35rem;
+}
+
+.verification-form-footer--certified-summary {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.verification-form-footer--certified-summary .verification-form-footer-row--actions {
+  justify-content: center;
+}
+
+.verification-form-footer--certified-summary .verification-form-btn--cancel {
+  min-width: 8.5rem;
+}
+
 @media (max-width: 520px) {
   .verification-certified-actions {
     gap: 0.35rem;

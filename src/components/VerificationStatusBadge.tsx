@@ -2,6 +2,7 @@ import React from 'react';
 import {
   getVerificationDisplayStatus,
   verificationDisplayStatusLabel,
+  verificationDisplayStatusTitle,
 } from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
 
@@ -14,7 +15,7 @@ export const VerificationStatusBadge: React.FC<VerificationStatusBadgeProps> = (
   return (
     <span
       className={`status-badge verification-status verification-status--${displayStatus}`}
-      title={verificationDisplayStatusLabel(record)}
+      title={verificationDisplayStatusTitle(record) ?? verificationDisplayStatusLabel(record)}
     >
       {verificationDisplayStatusLabel(record)}
     </span>
