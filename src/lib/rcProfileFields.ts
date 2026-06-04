@@ -1,4 +1,11 @@
-import type { CustomerLocation, FirestoreUserDoc, RcFeeTierAmounts, RcFeesStructure, VerificationLocation } from '../types';
+import type {
+  CustomerLocation,
+  FirestoreUserDoc,
+  JobType,
+  RcFeeTierAmounts,
+  RcFeesStructure,
+  VerificationLocation,
+} from '../types';
 import type { Product } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
 import { isValidPincode, normalizePincode } from './contactFields';
@@ -78,6 +85,21 @@ export function formatRcFeeAmount(amount: number): string {
   return `₹${amount.toLocaleString('en-IN')}`;
 }
 
+/** GST applied on top of quoted verification fees (e.g. RV ₹150 / ₹250 base). */
+export const VERIFICATION_FEE_GST_RATE = 0.18;
+
+export type VerificationFeeWithGst = {
+  base: number;
+  gst: number;
+  total: number;
+};
+
+export function verificationFeeWithGst(baseAmount: number): VerificationFeeWithGst {
+  const base = Math.round(baseAmount);
+  const gst = Math.round(base * VERIFICATION_FEE_GST_RATE);
+  return { base, gst, total: base + gst };
+}
+
 export function parseRcFeeAmountInput(value: string): number {
   const digits = value.replace(/\D/g, '');
   if (!digits) return 0;
@@ -128,10 +150,12 @@ export function rcVerificationFeeQuote(
   location: VerificationLocation | '',
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
   subject: 'self' | 'customer' | '' = '',
+  verificationType: JobType | '' = '',
 ): RcVerificationFeeQuote {
   const capacityKg = productMaximumCapacityKg(product);
   const capacityDisplay = formatProductMaximumCapacity(product);
-  const useSelfFees = subject === 'self';
+  /** RV always uses self-tier fees (e.g. ₹150 / ₹250), regardless of party or location. */
+  const useSelfFees = verificationType === 'RV' || subject === 'self';
 
   if (!useSelfFees && !location) {
     return {

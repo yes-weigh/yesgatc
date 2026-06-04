@@ -6924,6 +6924,21 @@ body.verification-mobile-wizard-active {
     gap: 0.28rem 0.35rem;
   }
 
+  .verification-wizard .verification-device-fields-grid--with-mfg {
+    grid-template-columns: minmax(0, 1fr) minmax(4.25rem, 5.5rem) minmax(2.5rem, 3.25rem);
+    gap: 0.28rem 0.3rem;
+  }
+
+  .verification-wizard .verification-device-fields-grid--with-mfg .mfg-year-picker-trigger {
+    padding: 0.28rem 0.3rem;
+    font-size: 0.72rem;
+  }
+
+  .verification-wizard .verification-device-field--mpe-narrow .verification-device-input {
+    padding: 0.28rem 0.25rem;
+    font-size: 0.72rem;
+  }
+
   .verification-wizard .verification-device-section-title {
     font-size: 0.58rem;
     margin-bottom: 0.25rem;
@@ -6994,9 +7009,23 @@ body.verification-mobile-wizard-active {
     font-size: 0.65rem;
   }
 
-  .verification-wizard .verification-fees-total {
+  .verification-wizard .verification-fee-breakdown.verification-fees-total {
+    margin-top: 0.35rem;
+    padding: 0.38rem 0.42rem;
+    font-size: 0.68rem;
+    gap: 0.22rem;
+  }
+
+  .verification-wizard .verification-fees-total-line--grand {
     font-size: 0.75rem;
-    padding-top: 0.25rem;
+  }
+
+  .verification-wizard .verification-fees-total-line--grand strong {
+    font-size: 0.82rem;
+  }
+
+  .verification-wizard .verification-fee-breakdown--inline {
+    font-size: 0.6rem;
   }
 
   .segment-toggle-btn {
@@ -9922,6 +9951,37 @@ body.verification-photo-viewer-open {
   gap: 0.45rem 0.55rem;
 }
 
+.verification-device-fields-grid--with-mfg {
+  grid-template-columns: minmax(0, 1fr) minmax(4.75rem, 6.25rem) minmax(2.75rem, 3.75rem);
+  gap: 0.35rem 0.4rem;
+}
+
+.verification-device-field--mfg-year,
+.verification-device-field--mpe-narrow {
+  min-width: 0;
+}
+
+.verification-device-field--mfg-year .mfg-year-picker {
+  min-width: 0;
+}
+
+.verification-device-fields-grid--with-mfg .mfg-year-picker-trigger {
+  min-height: 0;
+  padding: 0.5rem 0.4rem;
+  gap: 0.2rem;
+  font-size: 0.8125rem;
+}
+
+.verification-device-fields-grid--with-mfg .mfg-year-picker-trigger-icon {
+  display: none;
+}
+
+.verification-device-field--mpe-narrow .verification-device-input {
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
+  text-align: center;
+}
+
 .verification-device-field--full {
   grid-column: 1 / -1;
 }
@@ -10109,8 +10169,103 @@ body.verification-photo-viewer-open {
 }
 
 .verification-devices-col-fee {
-  min-width: 5.5rem;
-  white-space: nowrap;
+  min-width: 8.5rem;
+  white-space: normal;
+  vertical-align: top;
+}
+
+.verification-fee-breakdown--cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.verification-fee-breakdown-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.verification-fee-breakdown-line-label {
+  color: rgba(148, 163, 184, 0.88);
+  font-weight: 500;
+}
+
+.verification-fee-breakdown-line--total strong.verification-device-fee {
+  font-size: 0.8rem;
+}
+
+.verification-fee-breakdown--inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.2rem 0.35rem;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.verification-fee-breakdown--inline .verification-fee-breakdown-base {
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.verification-fee-breakdown--inline .verification-fee-breakdown-gst {
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.verification-fee-breakdown--inline .verification-fee-breakdown-gst-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.verification-fee-breakdown--inline .verification-fee-breakdown-plus,
+.verification-fee-breakdown--inline .verification-fee-breakdown-eq {
+  color: rgba(148, 163, 184, 0.65);
+  font-size: 0.62rem;
+}
+
+.verification-fee-breakdown--inline .verification-fee-breakdown-total {
+  color: #bbf7d0;
+  font-weight: 700;
+}
+
+.verification-fee-breakdown.verification-fees-total {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.1);
+  font-size: 0.85rem;
+}
+
+.verification-fees-total-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.verification-fees-total-line--grand {
+  margin-top: 0.15rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(34, 197, 94, 0.22);
+  font-size: 0.95rem;
+}
+
+.verification-fees-total-line--grand strong {
+  font-size: 1.15rem;
+  color: #bbf7d0;
+  font-weight: 700;
 }
 
 .verification-device-fee {

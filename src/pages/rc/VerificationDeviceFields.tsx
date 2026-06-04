@@ -8,10 +8,11 @@ import { UploadField } from '../admin/productFormUi';
 import { useAppContext } from '../../context/AppContext';
 import {
   DEFAULT_RC_FEES_STRUCTURE,
-  formatRcFeeAmount,
   rcVerificationFeeQuote,
   sumRcVerificationFees,
+  verificationFeeWithGst,
 } from '../../lib/rcProfileFields';
+import { VerificationFeeBreakdown } from '../../components/VerificationFeeBreakdown';
 import {
   mpeStringFromProduct,
   verificationLocationLabel,
@@ -213,7 +214,13 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
     if (!isRv) return [];
     return includedDevices.map((row, index) => {
       const product = selectedProduct(products, row);
-      const quote = rcVerificationFeeQuote(fees, verificationLocation, product, verificationSubject);
+      const quote = rcVerificationFeeQuote(
+        fees,
+        verificationLocation,
+        product,
+        verificationSubject,
+        verificationType,
+      );
       return {
         localId: row.localId,
         label: row.productName.trim() || row.serialNumber.trim() || `Device ${index + 1}`,
@@ -223,14 +230,14 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
     });
   }, [fees, includedDevices, isRv, products, verificationLocation, verificationSubject]);
 
-  const totalFees = useMemo(
-    () => sumRcVerificationFees(deviceFeeLines),
-    [deviceFeeLines],
-  );
+  const feeTotals = useMemo(() => {
+    const base = sumRcVerificationFees(deviceFeeLines);
+    return verificationFeeWithGst(base);
+  }, [deviceFeeLines]);
 
   const showFeesSummary = isRv && includedDevices.length > 0;
-  const showFeeColumn = isRv && (Boolean(verificationLocation) || useSelfFees);
-  const canCalculateFees = Boolean(verificationLocation) || useSelfFees;
+  const showFeeColumn = isRv;
+  const canCalculateFees = isRv || Boolean(verificationLocation) || useSelfFees;
 
   const sealLabelForRow = (row: VerificationDeviceRowValues) =>
     readOnly
@@ -438,9 +445,9 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               </th>
               <th>Product</th>
               <th>Serial</th>
+              {isRv && <th className="verification-devices-col-mfg-year">Mfg year</th>}
               <th>MPE</th>
               <th>Seal ID</th>
-              {isRv && <th className="verification-devices-col-mfg-year">Mfg year</th>}
               {includeEvidence && VERIFICATION_IMAGE_KINDS.map(kind => (
                 <th key={kind} className="verification-devices-col-image">
                   <VerificationImageColumnHead kind={kind} verificationType={verificationType} />
@@ -455,7 +462,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                 <th className="verification-devices-col-fee">
                   <span className="verification-image-col-head">
                     <IndianRupee size={15} aria-hidden />
-                    <span className="verification-image-col-head-label">Fee</span>
+                    <span className="verification-image-col-head-label">Fee (GST)</span>
                   </span>
                 </th>
               )}
@@ -468,7 +475,13 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
               const product = selectedProduct(products, row);
               const feeQuote = isRv
-                ? rcVerificationFeeQuote(fees, verificationLocation, product, verificationSubject)
+                ? rcVerificationFeeQuote(
+                    fees,
+                    verificationLocation,
+                    product,
+                    verificationSubject,
+                    verificationType,
+                  )
                 : null;
 
               return (
@@ -515,6 +528,16 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       enterKeyHint="next"
                     />
                   </td>
+                  {isRv && (
+                    <td className="verification-devices-col-mfg-year">
+                      <ManufacturingYearPicker
+                        value={row.manufacturingYear}
+                        onChange={year => onDeviceChange(row.localId, { manufacturingYear: year })}
+                        disabled={locked || !row.included}
+                        readOnly={readOnly}
+                      />
+                    </td>
+                  )}
                   <td>
                     <input
                       type="number"
@@ -537,16 +560,6 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       title={readOnly ? 'Seal identification at submission' : 'Managed on Laboratory page'}
                     />
                   </td>
-                  {isRv && (
-                    <td className="verification-devices-col-mfg-year">
-                      <ManufacturingYearPicker
-                        value={row.manufacturingYear}
-                        onChange={year => onDeviceChange(row.localId, { manufacturingYear: year })}
-                        disabled={locked || !row.included}
-                        readOnly={readOnly}
-                      />
-                    </td>
-                  )}
                   {includeEvidence && VERIFICATION_IMAGE_KINDS.map(kind => (
                     <td key={kind} className="verification-devices-col-image">
                       <DeviceVerificationUpload
@@ -577,7 +590,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       {!row.included ? (
                         <span className="text-muted text-sm">—</span>
                       ) : feeQuote?.amount != null ? (
-                        <span className="verification-device-fee">{formatRcFeeAmount(feeQuote.amount)}</span>
+                        <VerificationFeeBreakdown baseAmount={feeQuote.amount} variant="cell" />
                       ) : (
                         <span className="text-muted text-xs">{feeQuote?.incompleteReason ?? '—'}</span>
                       )}
@@ -610,7 +623,13 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
           const product = selectedProduct(products, row);
           const feeQuote = isRv
-            ? rcVerificationFeeQuote(fees, verificationLocation, product, verificationSubject)
+            ? rcVerificationFeeQuote(
+                fees,
+                verificationLocation,
+                product,
+                verificationSubject,
+                verificationType,
+              )
             : null;
 
           return (
@@ -659,7 +678,9 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   />
                 </div>
 
-                <div className="verification-device-fields-grid">
+                <div
+                  className={`verification-device-fields-grid${isRv ? ' verification-device-fields-grid--with-mfg' : ''}`}
+                >
                   <div className="verification-device-field">
                     <label
                       className="verification-device-label"
@@ -681,7 +702,23 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     />
                   </div>
 
-                  <div className="verification-device-field">
+                  {isRv && (
+                    <div className="verification-device-field verification-device-field--mfg-year">
+                      <label className="verification-device-label">
+                        Year <span className="verification-device-required">*</span>
+                      </label>
+                      <ManufacturingYearPicker
+                        value={row.manufacturingYear}
+                        onChange={year => onDeviceChange(row.localId, { manufacturingYear: year })}
+                        disabled={locked || !row.included}
+                        readOnly={readOnly}
+                      />
+                    </div>
+                  )}
+
+                  <div
+                    className={`verification-device-field${isRv ? ' verification-device-field--mpe-narrow' : ''}`}
+                  >
                     <label
                       className="verification-device-label"
                       htmlFor={`verification-mobile-mpe-${row.localId}`}
@@ -728,49 +765,35 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   />
                 )}
 
-                {isRv && row.included && verificationLocation && (
+                {isRv && row.included && (
                   <div className="verification-device-fee-inline verification-device-fee-inline--compact">
-                    <span className="verification-device-fee-inline-label">Fee</span>
-                    <strong className="verification-device-fee">
-                      {feeQuote?.amount != null
-                        ? formatRcFeeAmount(feeQuote.amount)
-                        : feeQuote?.incompleteReason ?? '—'}
-                    </strong>
+                    <span className="verification-device-fee-inline-label">Fee (incl. GST)</span>
+                    {feeQuote?.amount != null ? (
+                      <VerificationFeeBreakdown baseAmount={feeQuote.amount} variant="cell" />
+                    ) : (
+                      <span className="text-muted text-xs">{feeQuote?.incompleteReason ?? '—'}</span>
+                    )}
                   </div>
                 )}
 
-                {isRv && (
+                {isRv && includeEvidence && (
                   <section className="verification-device-section">
-                    <h4 className="verification-device-section-title">Re-verification</h4>
-                    <div className="verification-device-field verification-device-field--full">
-                      <label className="verification-device-label">Mfg year *</label>
-                      <ManufacturingYearPicker
-                        value={row.manufacturingYear}
-                        onChange={year => onDeviceChange(row.localId, { manufacturingYear: year })}
-                        disabled={locked || !row.included}
-                        readOnly={readOnly}
-                      />
-                    </div>
-                    {includeEvidence && (
-                      <div className="verification-device-section">
-                        <h4 className="verification-device-section-title">Previous docs</h4>
-                        <div className={`verification-mobile-photo-list${compact ? ' verification-mobile-photo-grid' : ''}`}>
-                          {RV_DOCUMENT_KINDS.map(kind => (
-                            <div key={kind} className="verification-mobile-photo-item">
-                              <RvDocumentColumnHead kind={kind} />
-                              <RvDocumentUpload
-                                kind={kind}
-                                document={rvDocuments[kind]}
-                                disabled={locked || !row.included}
-                                hideLabel
-                                onSelect={e => handleRvDocumentInput(row.localId, kind, e)}
-                                onRemove={() => onDeviceRvDocumentRemove?.(row.localId, kind)}
-                              />
-                            </div>
-                          ))}
+                    <h4 className="verification-device-section-title">Previous docs</h4>
+                    <div className={`verification-mobile-photo-list${compact ? ' verification-mobile-photo-grid' : ''}`}>
+                      {RV_DOCUMENT_KINDS.map(kind => (
+                        <div key={kind} className="verification-mobile-photo-item">
+                          <RvDocumentColumnHead kind={kind} />
+                          <RvDocumentUpload
+                            kind={kind}
+                            document={rvDocuments[kind]}
+                            disabled={locked || !row.included}
+                            hideLabel
+                            onSelect={e => handleRvDocumentInput(row.localId, kind, e)}
+                            onRemove={() => onDeviceRvDocumentRemove?.(row.localId, kind)}
+                          />
                         </div>
-                      </div>
-                    )}
+                      ))}
+                    </div>
                   </section>
                 )}
 
@@ -810,7 +833,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
             </div>
             {canCalculateFees ? (
               <span className="verification-fees-summary-location">
-                {useSelfFees ? 'Self' : verificationLocationLabel(verificationLocation)}
+                {isRv ? 'Re-verification rate' : useSelfFees ? 'Self' : verificationLocationLabel(verificationLocation)}
               </span>
             ) : (
               <span className="text-muted text-xs">Select location to calculate fees</span>
@@ -827,7 +850,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         <th>Device</th>
                         <th>Max capacity</th>
                         <th>Fee tier</th>
-                        <th className="text-right">Fee</th>
+                        <th className="text-right">Fee (incl. GST)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -838,7 +861,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                           <td>{line.tierLabel}</td>
                           <td className="text-right">
                             {line.amount != null ? (
-                              <span className="verification-device-fee">{formatRcFeeAmount(line.amount)}</span>
+                              <VerificationFeeBreakdown baseAmount={line.amount} variant="cell" />
                             ) : (
                               <span className="text-muted text-xs">{line.incompleteReason ?? '—'}</span>
                             )}
@@ -856,17 +879,22 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     <li key={line.localId} className="verification-fees-compact-item">
                       <span className="verification-fees-compact-item-name">{line.label}</span>
                       <span className="verification-fees-compact-item-fee">
-                        {line.amount != null ? formatRcFeeAmount(line.amount) : line.incompleteReason ?? '—'}
+                        {line.amount != null ? (
+                          <VerificationFeeBreakdown baseAmount={line.amount} variant="inline" />
+                        ) : (
+                          line.incompleteReason ?? '—'
+                        )}
                       </span>
                     </li>
                   ))}
                 </ul>
               )}
 
-              <div className="verification-fees-total">
-                <span>Total</span>
-                <strong>{formatRcFeeAmount(totalFees)}</strong>
-              </div>
+              <VerificationFeeBreakdown
+                baseAmount={feeTotals.base}
+                variant="total-footer"
+                className="verification-fees-total"
+              />
             </>
           )}
         </div>
