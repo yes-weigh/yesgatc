@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { focusMobileTextInput, getVerificationSerialInput } from '../../lib/focusMobileInput';
 import { FileText, IndianRupee, Plus, Receipt, Scale, Trash2 } from 'lucide-react';
 import { ProductSelect } from '../../components/ProductSelect';
 import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
@@ -158,6 +159,8 @@ type VerificationDeviceFieldsProps = {
   allowAddDevice?: boolean;
   /** Self verification — manual device entry only, no registered customer devices. */
   manualEntryOnly?: boolean;
+  /** Increment to focus the first included device serial field (wizard navigation). */
+  focusSerialRequest?: number;
   readOnly?: boolean;
   laboratorySealIdentification?: string;
   verificationLocation?: VerificationLocation | '';
@@ -187,6 +190,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   includeEvidence = true,
   allowAddDevice = true,
   manualEntryOnly = false,
+  focusSerialRequest = 0,
   readOnly = false,
   laboratorySealIdentification = '',
   verificationLocation = '',
@@ -242,6 +246,22 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
       selectAllRef.current.indeterminate = someIncluded;
     }
   }, [someIncluded, allIncluded, devices.length]);
+
+  useLayoutEffect(() => {
+    if (!focusSerialRequest || locked) return;
+
+    const targetRow = devices.find(d => d.included) ?? devices[0];
+    if (!targetRow) return;
+
+    const tryFocus = () => {
+      const input = getVerificationSerialInput(targetRow.localId);
+      if (input) focusMobileTextInput(input);
+    };
+
+    tryFocus();
+    const retryId = window.setTimeout(tryFocus, 120);
+    return () => window.clearTimeout(retryId);
+  }, [focusSerialRequest, devices, locked]);
 
   const setAllIncluded = (included: boolean) => {
     for (const device of devices) {
@@ -484,12 +504,15 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   </td>
                   <td>
                     <input
+                      id={`verification-serial-${row.localId}`}
                       type="text"
                       className="input-field input-field--table"
                       placeholder="Serial number"
                       value={row.serialNumber}
                       onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
                       disabled={locked || !row.included}
+                      autoComplete="off"
+                      enterKeyHint="next"
                     />
                   </td>
                   <td>
@@ -647,11 +670,14 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     <input
                       id={`verification-mobile-serial-${row.localId}`}
                       type="text"
+                      inputMode="text"
                       className="input-field verification-device-input"
                       placeholder="Serial no."
                       value={row.serialNumber}
                       onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
                       disabled={locked || !row.included}
+                      autoComplete="off"
+                      enterKeyHint="next"
                     />
                   </div>
 

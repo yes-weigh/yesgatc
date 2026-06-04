@@ -1,5 +1,6 @@
 import type { CustomerFormValues } from './customerProfileFields';
-import type { FirestoreUserDoc } from '../types';
+import { parseRcLocation } from './rcProfileFields';
+import type { CustomerLocation, FirestoreUserDoc } from '../types';
 
 export function rcProfileToFormValues(
   rc: Pick<
@@ -22,8 +23,10 @@ export function rcProfileToFormValues(
 
 export function rcProfilePatchFromFormValues(
   values: CustomerFormValues,
-): Pick<FirestoreUserDoc, 'companyName' | 'phone' | 'email' | 'address' | 'pincode' | 'place'> {
-  return {
+): Pick<FirestoreUserDoc, 'companyName' | 'phone' | 'email' | 'address' | 'pincode' | 'place'> & {
+  location?: CustomerLocation;
+} {
+  const base = {
     companyName: values.name.trim(),
     phone: values.phone.trim(),
     email: values.email.trim(),
@@ -31,4 +34,6 @@ export function rcProfilePatchFromFormValues(
     pincode: values.pincode.trim(),
     place: values.district.trim(),
   };
+  const location = parseRcLocation(values);
+  return location ? { ...base, location } : base;
 }

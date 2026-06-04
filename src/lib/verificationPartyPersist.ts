@@ -1,13 +1,15 @@
-import { collection, doc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteField, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Customer } from '../types';
 import { normalizePhone } from './contactFields';
 import {
   buildCustomerProfileFields,
   isCustomerPartyReadyToPersist,
+  parseCustomerLocation,
   validateCustomerProfile,
   type CustomerFormValues,
 } from './customerProfileFields';
+import { parseRcLocation } from './rcProfileFields';
 import { rcProfilePatchFromFormValues } from './rcProfileFormFields';
 
 export function isPartyFormReadyToPersist(form: CustomerFormValues): boolean {
@@ -44,10 +46,14 @@ async function saveExistingCustomerProfile(
 ): Promise<PersistVerificationPartyResult> {
   const profile = buildCustomerProfileFields(customerForm);
   const updatedAt = new Date().toISOString();
-  await updateDoc(doc(db, 'customers', customerId), {
+  const updates: Record<string, unknown> = {
     ...profile,
     updatedAt,
-  });
+  };
+  if (!parseCustomerLocation(customerForm)) {
+    updates.location = deleteField();
+  }
+  await updateDoc(doc(db, 'customers', customerId), updates);
   const existing = existingCustomers.find(c => c.id === customerId);
   return {
     error: null,
@@ -79,7 +85,12 @@ export async function persistVerificationPartyProfile(
     const validationError = validateCustomerProfile(rcForm);
     if (validationError) return { error: validationError };
     try {
-      await updateDoc(doc(db, 'users', rcUid), rcProfilePatchFromFormValues(rcForm));
+      const patch = rcProfilePatchFromFormValues(rcForm);
+      const updates: Record<string, unknown> = { ...patch };
+      if (!parseRcLocation(rcForm)) {
+        updates.location = deleteField();
+      }
+      await updateDoc(doc(db, 'users', rcUid), updates);
       return { error: null, rcProfileSaved: true };
     } catch (err: unknown) {
       return {

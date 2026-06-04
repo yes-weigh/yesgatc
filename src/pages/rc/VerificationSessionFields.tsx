@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CloudSun, Droplets, Thermometer, X } from 'lucide-react';
 import { SegmentToggle } from '../../components/SegmentToggle';
 import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
@@ -147,6 +147,7 @@ export const VerificationSessionFields = forwardRef<
   const [customerPartyForm, setCustomerPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
   const [rcPartyForm, setRcPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
+  const [focusSerialRequest, setFocusSerialRequest] = useState(0);
 
   const stepContext = useMemo<VerificationFormStepContext>(
     () => ({ customerForm: customerPartyForm }),
@@ -264,6 +265,9 @@ export const VerificationSessionFields = forwardRef<
       }
       setActiveStep(index);
       setStepError('');
+      if (VERIFICATION_FORM_STEPS[index]?.id === 'devices') {
+        setFocusSerialRequest(n => n + 1);
+      }
     }
   };
 
@@ -295,6 +299,9 @@ export const VerificationSessionFields = forwardRef<
     } else if (currentStep.id === 'setup') {
       setEvidenceDeviceIndex(0);
       setPendingEvidenceDeviceIndex(null);
+      if (VERIFICATION_FORM_STEPS[nextStep]?.id === 'devices') {
+        setFocusSerialRequest(n => n + 1);
+      }
     }
   };
 
@@ -306,6 +313,7 @@ export const VerificationSessionFields = forwardRef<
     setStepError('');
     setActiveStep(devicesStepIndex);
     setFurthestStep(prev => Math.max(prev, devicesStepIndex));
+    setFocusSerialRequest(n => n + 1);
   };
 
   const handleBack = () => {
@@ -641,6 +649,7 @@ export const VerificationSessionFields = forwardRef<
   };
 
   const partyFormDisabled = locked || lockCustomer;
+  const partyLocationCapture = !partyFormDisabled;
 
   const stepper = (
     <VerificationFormStepper
@@ -769,7 +778,8 @@ export const VerificationSessionFields = forwardRef<
                       disabled={partyFormDisabled}
                       compact
                       nameLabel="Centre Name"
-                      districtLabel="Place"
+                      districtLabel="District"
+                      locationCapture={partyLocationCapture}
                     />
                   ) : (
                     <p className="text-muted text-sm site-calibration-form-span-full mb-0">
@@ -783,11 +793,7 @@ export const VerificationSessionFields = forwardRef<
                     onChange={handleCustomerPartyChange}
                     disabled={partyFormDisabled}
                     compact
-                    locationCapture={
-                      !partyFormDisabled &&
-                      values.verificationSubject === 'customer' &&
-                      !values.customerId
-                    }
+                    locationCapture={partyLocationCapture}
                     lookup={
                       partyFormDisabled
                         ? undefined
@@ -800,48 +806,73 @@ export const VerificationSessionFields = forwardRef<
                   />
                 )}
 
-                <div className="verification-site-conditions">
-                  <div className="verification-site-conditions-head">
-                    <span className="verification-site-conditions-title">Site conditions</span>
-                    <span className="verification-site-location-badge">
+                <section className="verification-env-panel" aria-labelledby="verification-env-title">
+                  <header className="verification-env-panel-head">
+                    <div className="verification-env-weather-icon" aria-hidden>
+                      <CloudSun strokeWidth={2} />
+                    </div>
+                    <div className="verification-env-panel-head-text">
+                      <h3 id="verification-env-title" className="verification-env-panel-title">
+                        Environmental conditions
+                      </h3>
+                      <p className="verification-env-panel-subtitle">
+                        Record current environmental conditions at site
+                      </p>
+                    </div>
+                    <span className="verification-env-badge">
+                      <span className="verification-env-badge-dot" aria-hidden />
                       {verificationLocationLabel('in_situ')}
                     </span>
-                  </div>
-                  <div className="verification-site-conditions-metrics">
-                    <div className="form-group mb-0 verification-site-metric">
-                      <label htmlFor="verification-temp">Temp (°C)</label>
-                      <input
-                        id="verification-temp"
-                        type="text"
-                        inputMode="decimal"
-                        className="input-field verification-site-metric-input"
-                        placeholder={weatherLoading ? '…' : '28.5'}
-                        value={values.ambientTemperature}
-                        onChange={e => onChange({ ambientTemperature: e.target.value })}
-                        disabled={locked || weatherLoading}
-                      />
-                    </div>
+                  </header>
+                  <div className="verification-env-panel-body">
+                    <div className="verification-env-metrics">
+                      <div className="verification-env-metric verification-env-metric--temp">
+                        <div className="verification-env-metric-icon" aria-hidden>
+                          <Thermometer strokeWidth={2} />
+                        </div>
+                        <div className="verification-env-metric-field">
+                          <label htmlFor="verification-temp">Temperature (°C)</label>
+                          <input
+                            id="verification-temp"
+                            type="text"
+                            inputMode="decimal"
+                            className="verification-env-metric-input"
+                            placeholder={weatherLoading ? '…' : '28.5'}
+                            value={values.ambientTemperature}
+                            onChange={e => onChange({ ambientTemperature: e.target.value })}
+                            disabled={locked || weatherLoading}
+                          />
+                        </div>
+                        <span className="verification-env-metric-unit">°C</span>
+                      </div>
 
-                    <div className="form-group mb-0 verification-site-metric">
-                      <label htmlFor="verification-humidity">Humidity (%)</label>
-                      <input
-                        id="verification-humidity"
-                        type="text"
-                        inputMode="decimal"
-                        className="input-field verification-site-metric-input"
-                        placeholder={weatherLoading ? '…' : '65'}
-                        value={values.relativeHumidity}
-                        onChange={e => onChange({ relativeHumidity: e.target.value })}
-                        disabled={locked || weatherLoading}
-                      />
+                      <div className="verification-env-metric verification-env-metric--humidity">
+                        <div className="verification-env-metric-icon" aria-hidden>
+                          <Droplets strokeWidth={2} />
+                        </div>
+                        <div className="verification-env-metric-field">
+                          <label htmlFor="verification-humidity">Humidity (%)</label>
+                          <input
+                            id="verification-humidity"
+                            type="text"
+                            inputMode="decimal"
+                            className="verification-env-metric-input"
+                            placeholder={weatherLoading ? '…' : '65'}
+                            value={values.relativeHumidity}
+                            onChange={e => onChange({ relativeHumidity: e.target.value })}
+                            disabled={locked || weatherLoading}
+                          />
+                        </div>
+                        <span className="verification-env-metric-unit">%</span>
+                      </div>
                     </div>
                   </div>
                   {weatherError && (
-                    <p className="verification-site-conditions-error text-orange text-xs mb-0" role="alert">
+                    <p className="verification-env-panel-error text-orange text-xs mb-0" role="alert">
                       {weatherError}
                     </p>
                   )}
-                </div>
+                </section>
               </div>
             </div>
           )}
@@ -870,6 +901,7 @@ export const VerificationSessionFields = forwardRef<
               compact
               includeEvidence={false}
               allowAddDevice={false}
+              focusSerialRequest={focusSerialRequest}
             />
           )}
 
