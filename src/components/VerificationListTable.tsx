@@ -21,6 +21,7 @@ export interface VerificationListTableRecord extends SiteCalibration {
   rcCenterName?: string;
   partyPhotoUrl?: string;
   partyPhotoPath?: string;
+  serialVersionCount?: number;
 }
 
 export interface VerificationListBulkSelectProps {
@@ -240,6 +241,12 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                         )}
                         <span className="site-calibration-cap-acc-inline">
                           {formatVerificationCapAcc(record)} · {record.serialNumber || '—'}
+                          {record.serialVersionCount != null && record.serialVersionCount > 1 && (
+                            <span className="verification-list-version-badge">
+                              {' '}
+                              · {record.serialVersionCount} versions
+                            </span>
+                          )}
                         </span>
                         <span className="table-mobile-summary-meta">
                           {showVctColumn
@@ -273,6 +280,12 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   <div className="verification-table-stacked">
                     <span className="text-mono verification-table-stacked-primary">
                       {record.serialNumber || '—'}
+                      {record.serialVersionCount != null && record.serialVersionCount > 1 && (
+                        <span className="verification-list-version-badge verification-list-version-badge--inline">
+                          {' '}
+                          ({record.serialVersionCount})
+                        </span>
+                      )}
                     </span>
                     <span className="text-mono verification-table-stacked-secondary">
                       {record.applicationNumber?.trim() || '—'} ·{' '}

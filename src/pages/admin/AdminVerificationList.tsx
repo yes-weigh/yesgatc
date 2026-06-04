@@ -10,7 +10,7 @@ import {
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
-import { sortVerificationsByCertificateDesc } from '../../lib/verificationListSort';
+import { collapseVerificationsForListDisplay } from '../../lib/verificationListGrouping';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import {
   VerificationListFilters,
@@ -116,7 +116,7 @@ export const AdminVerificationList: React.FC = () => {
       }
       return true;
     });
-    return sortVerificationsByCertificateDesc(filtered);
+    return collapseVerificationsForListDisplay(filtered, records);
   }, [records, statusFilter, rcFilter, searchTerm]);
 
   const paginatedRecords = useMemo(

@@ -8386,6 +8386,19 @@ body.verification-mobile-wizard-active {
   min-width: 0;
 }
 
+.verification-list-version-badge {
+  font-size: 0.72em;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.95);
+  white-space: nowrap;
+}
+
+.verification-list-version-badge--inline {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: rgba(251, 191, 36, 0.95);
+}
+
 .verification-list-avatar--desktop {
   display: none;
 }

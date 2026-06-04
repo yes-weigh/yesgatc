@@ -73,7 +73,7 @@ import {
   VerificationListFilters,
   type VerificationStatusFilter,
 } from '../../components/VerificationListFilters';
-import { sortVerificationsByCertificateDesc } from '../../lib/verificationListSort';
+import { collapseVerificationsForListDisplay } from '../../lib/verificationListGrouping';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 import {
@@ -1096,7 +1096,7 @@ export const RCSiteCalibration: React.FC = () => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
       return matchesVerificationStatusFilter(record, statusFilter);
     });
-    return sortVerificationsByCertificateDesc(filtered);
+    return collapseVerificationsForListDisplay(filtered, records);
   }, [records, statusFilter, searchTerm]);
 
   const paginatedRecords = useMemo(
