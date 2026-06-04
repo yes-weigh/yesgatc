@@ -108,6 +108,16 @@ public partial class MainWindow : Window
             saved.Doca.Password,
             settings.Automation.DocaCredentials.Password);
 
+        // Load captcha API key: saved store wins, then appsettings, then env var.
+        var captchaKey = FirstNonEmpty(
+            saved.CaptchaApiKey,
+            FirstNonEmpty(
+                settings.Automation.CaptchaOcr.ApiKey,
+                Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? string.Empty));
+        CaptchaApiKeyBox.Text = captchaKey;
+        OpenAiCaptchaOcr.RuntimeApiKeyOverride = string.IsNullOrWhiteSpace(captchaKey) ? null : captchaKey;
+        UpdateCaptchaApiKeyHint();
+
         _automationService.DocaCredentials = CurrentDocaCredentials();
         UpdateSignInSummary();
     }
@@ -127,7 +137,25 @@ public partial class MainWindow : Window
             AadharBox.Text,
             PasswordBox.Text,
             DocaEmailBox.Text,
-            DocaPasswordBox.Text);
+            DocaPasswordBox.Text,
+            CaptchaApiKeyBox.Text);
+    }
+
+    /// <summary>
+    /// Shows the last 6 characters of the active key (e.g. "…8GcA") so the user
+    /// can confirm which key is in use without exposing the full secret.
+    /// </summary>
+    private void UpdateCaptchaApiKeyHint()
+    {
+        var active = OpenAiCaptchaOcr.ResolveApiKey(App.Settings.Automation.CaptchaOcr);
+        if (string.IsNullOrWhiteSpace(active))
+        {
+            CaptchaApiKeyHint.Text = "not set";
+            return;
+        }
+
+        var tail = active.Length > 6 ? active[^6..] : active;
+        CaptchaApiKeyHint.Text = $"active: …{tail}";
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -524,6 +552,12 @@ public partial class MainWindow : Window
     {
         PersistCredentials();
         _automationService.DocaCredentials = CurrentDocaCredentials();
+
+        // Apply captcha key immediately so auto-login uses it without restart.
+        var apiKey = CaptchaApiKeyBox.Text.Trim();
+        OpenAiCaptchaOcr.RuntimeApiKeyOverride = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey;
+        UpdateCaptchaApiKeyHint();
+
         SetStatus("Credentials saved locally.", StatusKind.Success);
     }
 

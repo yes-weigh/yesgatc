@@ -166,6 +166,20 @@
                                  Margin="0,0,0,8"/>
                         <TextBox x:Name="DocaPasswordBox"
                                  Style="{StaticResource GlassTextBox}"
+                                 Margin="0,0,0,14"/>
+
+                        <DockPanel Margin="0,0,0,4">
+                            <TextBlock x:Name="CaptchaApiKeyHint"
+                                       DockPanel.Dock="Right"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       VerticalAlignment="Center"
+                                       Text=""/>
+                            <TextBlock Text="Captcha AI Key"
+                                       Style="{StaticResource FieldLabel}"/>
+                        </DockPanel>
+                        <TextBox x:Name="CaptchaApiKeyBox"
+                                 Style="{StaticResource GlassTextBox}"
                                  Margin="0,0,0,12"/>
 
                         <Button x:Name="SaveCredsButton"

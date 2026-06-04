@@ -51,12 +51,13 @@ public sealed class LocalCredentialsStore
         File.WriteAllText(FilePath, json);
     }
 
-    public void SaveAll(string aadhar, string password, string docaEmail, string docaPassword)
+    public void SaveAll(string aadhar, string password, string docaEmail, string docaPassword, string captchaApiKey = "")
     {
         Save(new StoredCredentials
         {
             SuperAdmin = new CredentialSettings { Aadhar = aadhar.Trim(), Password = password },
             Doca = new DocaCredentialSettings { Email = docaEmail.Trim(), Password = docaPassword },
+            CaptchaApiKey = captchaApiKey.Trim(),
         });
     }
 }
@@ -65,6 +66,7 @@ public sealed class StoredCredentials
 {
     public CredentialSettings SuperAdmin { get; set; } = new();
     public DocaCredentialSettings Doca { get; set; } = new();
+    public string CaptchaApiKey { get; set; } = string.Empty;
 
     [JsonPropertyName("rc")]
     public CredentialSettings? LegacyRc { get; set; }

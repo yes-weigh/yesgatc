@@ -100,8 +100,19 @@ public static class OpenAiCaptchaOcr
         return CaptchaTextPattern.IsMatch(normalized) ? normalized : string.Empty;
     }
 
+    /// <summary>
+    /// Set at runtime from saved credentials so the key takes effect immediately
+    /// without requiring an app restart.
+    /// </summary>
+    public static string? RuntimeApiKeyOverride { get; set; }
+
     public static string? ResolveApiKey(CaptchaOcrSettings settings)
     {
+        if (!string.IsNullOrWhiteSpace(RuntimeApiKeyOverride))
+        {
+            return RuntimeApiKeyOverride.Trim();
+        }
+
         if (!string.IsNullOrWhiteSpace(settings.ApiKey))
         {
             return settings.ApiKey.Trim();
