@@ -7955,6 +7955,7 @@ body.verification-mobile-wizard-active {
 
 .verification-summary-details-card {
   position: relative;
+  overflow: hidden;
 }
 
 .verification-summary-details-card--voided .verification-summary-details-grid {
@@ -7964,35 +7965,43 @@ body.verification-mobile-wizard-active {
   user-select: none;
 }
 
-.verification-summary-details-void-overlay {
+.verification-void-watermark {
   position: absolute;
   inset: 0;
+  z-index: 4;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.35rem;
-  padding: 1rem;
-  text-align: center;
-  border-radius: inherit;
-  background: rgba(15, 23, 42, 0.55);
-  color: #fecaca;
+  overflow: hidden;
   pointer-events: none;
+  border-radius: inherit;
+  background: rgba(15, 23, 42, 0.28);
 }
 
-.verification-summary-details-void-label {
-  font-size: 1.35rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+.verification-void-watermark__text {
+  font-size: clamp(2.75rem, 22vw, 5.25rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.28em;
+  padding-left: 0.28em;
   text-transform: uppercase;
+  color: rgba(248, 113, 113, 0.78);
+  -webkit-text-stroke: 2px rgba(127, 29, 29, 0.45);
+  transform: rotate(-34deg);
+  text-shadow:
+    0 0 48px rgba(239, 68, 68, 0.35),
+    3px 3px 0 rgba(0, 0, 0, 0.2);
+  user-select: none;
 }
 
-.verification-summary-details-void-hint {
-  max-width: 14rem;
-  font-size: 0.72rem;
-  font-weight: 500;
-  line-height: 1.35;
-  color: rgba(254, 202, 202, 0.88);
+.verification-void-watermark--certificate .verification-void-watermark__text {
+  font-size: clamp(3.5rem, 11vw, 7.5rem);
+  letter-spacing: 0.32em;
+  padding-left: 0.32em;
+}
+
+.verification-void-watermark--details .verification-void-watermark__text {
+  font-size: clamp(2.25rem, 18vw, 4.5rem);
 }
 
 .verification-version-card--voided {
@@ -8163,6 +8172,8 @@ body.verification-mobile-wizard-active {
   }
 
   .verification-certificate-preview-frame {
+    position: relative;
+    overflow: hidden;
     height: min(72vh, 620px);
     min-height: 420px;
     background: #0f172a;
@@ -8176,9 +8187,12 @@ body.verification-mobile-wizard-active {
     background: #fff;
   }
 
-  .verification-certificate-preview--voided .verification-certificate-preview-frame {
-    opacity: 0.35;
-    filter: grayscale(0.5);
+  .verification-certificate-preview--voided .verification-certificate-preview-iframe {
+    filter: grayscale(0.45) brightness(0.88);
+  }
+
+  .verification-certificate-preview--voided .verification-void-watermark {
+    background: rgba(69, 10, 10, 0.22);
   }
 }
 

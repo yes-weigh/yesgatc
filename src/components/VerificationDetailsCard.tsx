@@ -1,6 +1,6 @@
 import React from 'react';
-import { Ban } from 'lucide-react';
 import { isVerificationCertificateVoided } from '../lib/verificationCertificateVoid';
+import { VerificationVoidWatermark } from './VerificationVoidWatermark';
 import { VERIFICATION_LOCATION_OPTIONS, verificationTypeLabel } from '../lib/siteCalibrationProfileFields';
 import { formatVerificationListDate } from '../lib/verificationListFormat';
 import { formatVerificationCapAcc, verificationVctLabel } from '../lib/verificationRequest';
@@ -81,15 +81,7 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
         <DetailRow label="Certified" value={formatVerificationListDate(record.certifiedAt)} />
         <DetailRow label="Verified on" value={formatVerificationListDate(verifiedOn)} />
       </div>
-      {isVoided && (
-        <div className="verification-summary-details-void-overlay" role="status" aria-live="polite">
-          <Ban size={28} strokeWidth={2.25} aria-hidden />
-          <span className="verification-summary-details-void-label">Void</span>
-          <span className="verification-summary-details-void-hint">
-            This certificate is no longer valid in YES LAB.
-          </span>
-        </div>
-      )}
+      {isVoided && <VerificationVoidWatermark variant="details" />}
     </section>
   );
 };

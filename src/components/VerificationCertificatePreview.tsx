@@ -3,6 +3,7 @@ import { ExternalLink } from 'lucide-react';
 import { isVerificationCertificateVoided } from '../lib/verificationCertificateVoid';
 import { resolveCertificatePreviewUrl } from '../lib/verificationCertifiedActions';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
+import { VerificationVoidWatermark } from './VerificationVoidWatermark';
 import type { SiteCalibration } from '../types';
 
 type VerificationCertificatePreviewProps = {
@@ -56,6 +57,7 @@ export const VerificationCertificatePreview: React.FC<VerificationCertificatePre
             sandbox="allow-scripts allow-same-origin allow-popups"
           />
         )}
+        {isVoided && <VerificationVoidWatermark variant="certificate" />}
       </div>
     </aside>
   );
