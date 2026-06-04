@@ -165,7 +165,14 @@
                                  Style="{StaticResource GlassTextBox}"
                                  Margin="0,0,0,8"/>
                         <TextBox x:Name="DocaPasswordBox"
-                                 Style="{StaticResource GlassTextBox}"/>
+                                 Style="{StaticResource GlassTextBox}"
+                                 Margin="0,0,0,12"/>
+
+                        <Button x:Name="SaveCredsButton"
+                                Content="Save Credentials"
+                                Style="{StaticResource SecondaryButton}"
+                                HorizontalAlignment="Stretch"
+                                Click="SaveCredsButton_Click"/>
                     </StackPanel>
                 </Expander>
             </Border>

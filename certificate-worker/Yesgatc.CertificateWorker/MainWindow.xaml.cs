@@ -520,6 +520,13 @@ public partial class MainWindow : Window
         await SignInAndLoadAsync();
     }
 
+    private void SaveCredsButton_Click(object sender, RoutedEventArgs e)
+    {
+        PersistCredentials();
+        _automationService.DocaCredentials = CurrentDocaCredentials();
+        SetStatus("Credentials saved locally.", StatusKind.Success);
+    }
+
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
         if (_session is null)
