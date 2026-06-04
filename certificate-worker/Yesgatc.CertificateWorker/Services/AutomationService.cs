@@ -202,46 +202,6 @@ public sealed class AutomationService : IAsyncDisposable
             throw new InvalidOperationException("Serial number is required before submitting on DOCA.");
         }
 
-        var duplicateCheck = await DocaViewVerificationService.CheckExistingBySerialAsync(
-            page,
-            _settings.DocaViewIcVerificationUrl,
-            serial,
-            cancellationToken);
-
-        if (await IsLoginPageAsync(page))
-        {
-            var loginFailure = await TryEnsureLoggedInOrReturnLoginRequiredAsync(
-                page,
-                "run automation again",
-                cancellationToken);
-            if (loginFailure is not null)
-            {
-                return loginFailure;
-            }
-        }
-
-        if (duplicateCheck.Exists && duplicateCheck.Match is not null)
-        {
-            var existing = duplicateCheck.Match;
-            var details = new List<string> { $"Serial {existing.SerialNumber}" };
-            if (!string.IsNullOrWhiteSpace(existing.ApplicationNumber))
-            {
-                details.Add($"Application {existing.ApplicationNumber}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(existing.CertificateNumber))
-            {
-                details.Add($"Certificate {existing.CertificateNumber}");
-            }
-
-            return new DocaOpenResult(
-                DocaSessionState.LoggedIn,
-                $"Duplicate blocked — serial {serial} already exists on DOCA View IC Verification. " +
-                "Skipped create IC verification to prevent a duplicate application. " +
-                string.Join(" · ", details),
-                DuplicateOnDoca: true);
-        }
-
         if (!continueOnSamePage)
         {
             await page.GotoAsync(_settings.DocaCreateIcVerificationUrl, new PageGotoOptions

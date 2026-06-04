@@ -475,16 +475,53 @@ public static class DocaViewVerificationService
         var rows = page.Locator("table tbody tr");
         var rowCount = await rows.CountAsync();
 
+        var dataRows = new List<ILocator>();
+        var serialMatches = new List<ILocator>();
+
         for (var index = 0; index < rowCount; index++)
         {
             var row = rows.Nth(index);
+            if (!await RowHasDataAsync(row))
+            {
+                continue;
+            }
+
+            dataRows.Add(row);
             if (await RowContainsSerialAsync(row, serial))
             {
-                return row;
+                serialMatches.Add(row);
             }
         }
 
-        return null;
+        if (dataRows.Count == 0)
+        {
+            return null;
+        }
+
+        // Search can return multiple rows for the same serial — always use the top data row.
+        if (serialMatches.Count > 1 || dataRows.Count > 1)
+        {
+            return dataRows[0];
+        }
+
+        if (serialMatches.Count == 1)
+        {
+            return serialMatches[0];
+        }
+
+        return dataRows[0];
+    }
+
+    private static async Task<bool> RowHasDataAsync(ILocator row)
+    {
+        var text = (await row.InnerTextAsync()).Trim();
+        if (text.Length == 0)
+        {
+            return false;
+        }
+
+        return !text.Contains("no data", StringComparison.OrdinalIgnoreCase)
+            && !text.Contains("no record", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<bool> RowContainsSerialAsync(ILocator row, string serial)
@@ -528,6 +565,12 @@ public static class DocaViewVerificationService
             applicationNumber = NullIfEmpty(values[1]);
             certificateNumber = NullIfEmpty(values[2]);
         }
+        else if (values.Count >= 3)
+        {
+            // Top-row selection when the table layout does not repeat the serial in a cell.
+            applicationNumber = NullIfEmpty(values[1]);
+            certificateNumber = NullIfEmpty(values[2]);
+        }
 
         if (serialIndex >= 4)
         {
@@ -538,7 +581,12 @@ public static class DocaViewVerificationService
             instrument = NullIfEmpty(values[3]);
         }
 
-        return new ViewVerificationMatch(serial, applicationNumber, certificateNumber, instrument);
+        var rowSerial = serialIndex >= 0 ? values[serialIndex] : values[0];
+        return new ViewVerificationMatch(
+            string.IsNullOrWhiteSpace(rowSerial) ? serial : rowSerial,
+            applicationNumber,
+            certificateNumber,
+            instrument);
     }
 
     private static async Task<ILocator> FindSearchInputAsync(IPage page)
