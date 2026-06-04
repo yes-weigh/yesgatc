@@ -39,6 +39,8 @@ export const AdminVerificationList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [viewingRecord, setViewingRecord] = useState<VerificationRow | null>(null);
+  const [lastViewedVerificationId, setLastViewedVerificationId] = useState<string | null>(null);
+  const [rowHighlightFlashId, setRowHighlightFlashId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [listError, setListError] = useState('');
 
@@ -137,6 +139,27 @@ export const AdminVerificationList: React.FC = () => {
     setPage(1);
   }, [statusFilter, rcFilter, searchTerm]);
 
+  useEffect(() => {
+    if (viewingRecord || !rowHighlightFlashId) return;
+
+    const scrollTarget = document.querySelector(
+      `[data-verification-row-id="${rowHighlightFlashId}"]`,
+    );
+    scrollTarget?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+
+    const timer = window.setTimeout(() => setRowHighlightFlashId(null), 1400);
+    return () => clearTimeout(timer);
+  }, [viewingRecord, rowHighlightFlashId]);
+
+  const closeVerificationDetails = () => {
+    const closingId = viewingRecord?.id ?? null;
+    if (closingId) {
+      setLastViewedVerificationId(closingId);
+      setRowHighlightFlashId(closingId);
+    }
+    setViewingRecord(null);
+  };
+
   const counts = useMemo(() => tallyVerificationStatusFilters(records), [records]);
 
   const rcFilterOptions = useMemo(() => {
@@ -180,6 +203,10 @@ export const AdminVerificationList: React.FC = () => {
       if (viewingRecord?.id === record.id) {
         setViewingRecord(null);
       }
+      if (lastViewedVerificationId === record.id) {
+        setLastViewedVerificationId(null);
+        setRowHighlightFlashId(null);
+      }
       await fetchRecords();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to remove verification.');
@@ -198,7 +225,7 @@ export const AdminVerificationList: React.FC = () => {
           record={viewingRecord}
           allRecords={records}
           rcCenterName={viewingRecord.rcCenterName}
-          onClose={() => setViewingRecord(null)}
+          onClose={closeVerificationDetails}
           onRecordsChanged={async () => {
             await fetchRecords();
           }}
@@ -244,7 +271,12 @@ export const AdminVerificationList: React.FC = () => {
                 rowOffset={rowOffset}
                 formatDate={formatVerificationListDate}
                 emptyMessage="No verifications match the current filters."
-                onView={record => setViewingRecord(record as VerificationRow)}
+                onView={record => {
+                  setLastViewedVerificationId(record.id);
+                  setViewingRecord(record as VerificationRow);
+                }}
+                lastViewedRecordId={lastViewedVerificationId}
+                flashRecordId={rowHighlightFlashId}
                 onDelete={record => void handleDelete(record as VerificationRow)}
                 deletingId={deletingId}
               />

@@ -49,6 +49,10 @@ export interface VerificationListTableProps {
   bulkSelect?: VerificationListBulkSelectProps;
   /** Hide VCT column — e.g. VCT login only sees own verifications. */
   hideVctColumn?: boolean;
+  /** Row to emphasize after closing details (same RC + serial list row id). */
+  lastViewedRecordId?: string | null;
+  /** Brief pulse on that row when returning to the list. */
+  flashRecordId?: string | null;
 }
 
 function typeBadgeClass(type: SiteCalibration['verificationType']): string {
@@ -114,6 +118,8 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   submitting = false,
   bulkSelect,
   hideVctColumn = false,
+  lastViewedRecordId = null,
+  flashRecordId = null,
 }) => {
   const showBulkSelect = mode === 'rc' && bulkSelect;
   const showRcCentre = mode === 'admin';
@@ -178,9 +184,24 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const showDownload = canDownloadVerificationCertificate(record);
             const showDelete = deletable && onDelete;
             const hasDraftActions = showEdit || showSubmit || showDelete;
+            const isLastViewed =
+              Boolean(lastViewedRecordId) &&
+              lastViewedRecordId === record.id;
+            const isFlash = Boolean(flashRecordId) && flashRecordId === record.id;
 
             return (
-              <tr key={record.id} className="table-mobile-row table-mobile-row--media-actions">
+              <tr
+                key={record.id}
+                data-verification-row-id={record.id}
+                className={[
+                  'table-mobile-row',
+                  'table-mobile-row--media-actions',
+                  isLastViewed ? 'verification-table-row--last-viewed' : '',
+                  isFlash ? 'verification-table-row--flash' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
                 {showBulkSelect && (
                   <td className="verification-table-col-select table-mobile-col-hide">
                     {isDraft ? (

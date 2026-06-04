@@ -105,6 +105,8 @@ export const RCSiteCalibration: React.FC = () => {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [lastViewedVerificationId, setLastViewedVerificationId] = useState<string | null>(null);
+  const [rowHighlightFlashId, setRowHighlightFlashId] = useState<string | null>(null);
   const [sessionValues, setSessionValues] = useState<VerificationSessionValues>(EMPTY_VERIFICATION_SESSION);
   const [deviceImages, setDeviceImages] = useState<Record<string, DeviceVerificationImagesState>>({});
   const [deviceRvImages, setDeviceRvImages] = useState<Record<string, DeviceRvDocumentsState>>({});
@@ -290,6 +292,10 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleCloseForm = () => {
     if (formBusy) return;
+    if (editingId) {
+      setLastViewedVerificationId(editingId);
+      setRowHighlightFlashId(editingId);
+    }
     setVerificationDeclarationAccepted(false);
     setShowAddForm(false);
     setEditingId(null);
@@ -1000,6 +1006,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   const openRecord = (record: SiteCalibration) => {
     if (!isVerificationViewable(record)) return;
+    setLastViewedVerificationId(record.id);
     setShowAddForm(false);
     setEditingId(record.id);
     const session = verificationSessionFromRecord(record);
@@ -1148,6 +1155,18 @@ export const RCSiteCalibration: React.FC = () => {
   useEffect(() => {
     setPage(1);
   }, [statusFilter, searchTerm]);
+
+  useEffect(() => {
+    if (showForm || !rowHighlightFlashId) return;
+
+    const scrollTarget = document.querySelector(
+      `[data-verification-row-id="${rowHighlightFlashId}"]`,
+    );
+    scrollTarget?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+
+    const timer = window.setTimeout(() => setRowHighlightFlashId(null), 1400);
+    return () => clearTimeout(timer);
+  }, [showForm, rowHighlightFlashId]);
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
@@ -1450,6 +1469,8 @@ export const RCSiteCalibration: React.FC = () => {
                     : `No ${statusFilter === 'all' ? '' : `${verificationFilterLabel(statusFilter).toLowerCase()} `}verifications.`
                 }
                 onView={openRecord}
+                lastViewedRecordId={lastViewedVerificationId}
+                flashRecordId={rowHighlightFlashId}
                 onEdit={startEdit}
                 onSubmit={handleSubmitRecord}
                 onDelete={handleDelete}
