@@ -1,5 +1,6 @@
 import React from 'react';
 import { isVerificationCertificateVoided } from '../lib/verificationCertificateVoid';
+import { VerificationInstrumentPhotoCorner } from './VerificationInstrumentPhotoCorner';
 import { VerificationVoidWatermark } from './VerificationVoidWatermark';
 import { VERIFICATION_LOCATION_OPTIONS, verificationTypeLabel } from '../lib/siteCalibrationProfileFields';
 import { formatVerificationListDate } from '../lib/verificationListFormat';
@@ -81,6 +82,7 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
         <DetailRow label="Certified" value={formatVerificationListDate(record.certifiedAt)} />
         <DetailRow label="Verified on" value={formatVerificationListDate(verifiedOn)} />
       </div>
+      <VerificationInstrumentPhotoCorner record={record} />
       {isVoided && <VerificationVoidWatermark variant="details" />}
     </section>
   );

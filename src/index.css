@@ -7854,7 +7854,7 @@ body.verification-mobile-wizard-active {
   width: 100%;
   max-width: 28rem;
   margin: 0 auto;
-  padding: 0.85rem 0.9rem;
+  padding: 0.85rem 5.25rem 0.85rem 0.9rem;
   border-radius: 12px;
   border: 1px solid rgba(71, 85, 105, 0.45);
   background: rgba(15, 23, 42, 0.72);
@@ -7956,6 +7956,79 @@ body.verification-mobile-wizard-active {
 .verification-summary-details-card {
   position: relative;
   overflow: hidden;
+}
+
+.verification-summary-details-instrument-photo {
+  position: absolute;
+  right: 0.55rem;
+  bottom: 0.55rem;
+  z-index: 5;
+}
+
+.verification-summary-details-instrument-photo-trigger {
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.verification-summary-details-instrument-photo-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.verification-summary-details-instrument-photo-trigger:not(:disabled):hover
+  .verification-summary-details-instrument-photo-frame,
+.verification-summary-details-instrument-photo-trigger:not(:disabled):focus-visible
+  .verification-summary-details-instrument-photo-frame {
+  border-color: rgba(74, 222, 128, 0.75);
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18);
+}
+
+.verification-summary-details-instrument-photo-frame {
+  position: relative;
+  display: block;
+  width: 4.35rem;
+  height: 4.35rem;
+  border-radius: 10px;
+  border: 1px solid rgba(71, 85, 105, 0.55);
+  background: rgba(8, 15, 30, 0.92);
+  overflow: hidden;
+}
+
+.verification-summary-details-instrument-photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.verification-summary-details-instrument-photo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: rgba(148, 163, 184, 0.75);
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.verification-summary-details-instrument-photo-camera {
+  position: absolute;
+  right: -0.15rem;
+  bottom: -0.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  border: 1.5px solid #22a06b;
+  background: rgba(15, 23, 42, 0.96);
+  color: #86efac;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
 }
 
 .verification-summary-details-card--voided .verification-summary-details-grid {

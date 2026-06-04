@@ -152,11 +152,12 @@ export function imageMetaFromRecord(
   kind: VerificationImageKind,
 ): ProductFileMeta | null {
   const keys = IMAGE_FIELD_KEYS[kind];
-  const url = record[keys.url] as string | undefined;
-  if (!url) return null;
+  const url = (record[keys.url] as string | undefined)?.trim() ?? '';
+  const path = (record[keys.path] as string | undefined)?.trim() ?? '';
+  if (!url && !path) return null;
   return {
     url,
-    path: (record[keys.path] as string) || '',
+    path,
     name: (record[keys.name] as string) || VERIFICATION_IMAGE_CONFIG[kind].defaultName,
     contentType: (record[keys.contentType] as string) || 'image/jpeg',
   };
