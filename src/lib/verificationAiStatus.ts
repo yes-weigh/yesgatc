@@ -10,6 +10,7 @@ export type VerificationAiStatusItem = {
 export type VerificationAiStatusInput = {
   verificationType: JobType | '';
   hasStampingImage: boolean;
+  hasInstrumentImage: boolean;
   productModelApprovalNo: string;
   hasOldCertificate: boolean;
   hasGpsLocation: boolean;
@@ -47,6 +48,12 @@ export function buildVerificationAiStatusItems(
       label: 'Serial Plate Read',
       statusLabel: input.hasStampingImage ? 'Success' : 'Pending',
       success: input.hasStampingImage,
+    },
+    {
+      id: 'instrument-photo',
+      label: 'Instrument Photo',
+      statusLabel: input.hasInstrumentImage ? 'Captured' : 'Pending',
+      success: input.hasInstrumentImage,
     },
     {
       id: 'model-approval',

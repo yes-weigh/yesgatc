@@ -13,17 +13,53 @@ public sealed class FirebaseStorageDownloadService
 
     public string StampingImagesDirectory => WorkerDataPaths.StampingImagesDirectory;
 
-    public async Task<StampingImageDownload> DownloadStampingImageAsync(
+    public Task<StampingImageDownload> DownloadStampingImageAsync(
         string jobId,
         string serialNumber,
         string downloadUrl,
         string fileName,
         string contentType,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        DownloadVerificationImageAsync(
+            jobId,
+            serialNumber,
+            downloadUrl,
+            fileName,
+            contentType,
+            "stamping",
+            "Serial number plate photo",
+            cancellationToken);
+
+    public Task<StampingImageDownload> DownloadScaleImageAsync(
+        string jobId,
+        string serialNumber,
+        string downloadUrl,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken = default) =>
+        DownloadVerificationImageAsync(
+            jobId,
+            serialNumber,
+            downloadUrl,
+            fileName,
+            contentType,
+            "scale",
+            "Instrument photo",
+            cancellationToken);
+
+    private async Task<StampingImageDownload> DownloadVerificationImageAsync(
+        string jobId,
+        string serialNumber,
+        string downloadUrl,
+        string fileName,
+        string contentType,
+        string imageKind,
+        string imageLabel,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(downloadUrl))
         {
-            throw new InvalidOperationException("Image download URL is missing.");
+            throw new InvalidOperationException($"{imageLabel} download URL is missing.");
         }
 
         if (string.IsNullOrWhiteSpace(jobId))
@@ -35,7 +71,7 @@ public sealed class FirebaseStorageDownloadService
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"Could not download stamping plate image ({(int)response.StatusCode}).");
+                $"Could not download {imageLabel.ToLowerInvariant()} ({(int)response.StatusCode}).");
         }
 
         var extension = ResolveExtension(fileName, contentType);
@@ -43,7 +79,7 @@ public sealed class FirebaseStorageDownloadService
         var jobDirectory = Path.Combine(StampingImagesDirectory, SanitizePathSegment(jobId, "job"));
         Directory.CreateDirectory(jobDirectory);
 
-        var localFileName = $"{safeSerial}-stamping{extension}";
+        var localFileName = $"{safeSerial}-{imageKind}{extension}";
         var localPath = Path.Combine(jobDirectory, localFileName);
 
         await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))

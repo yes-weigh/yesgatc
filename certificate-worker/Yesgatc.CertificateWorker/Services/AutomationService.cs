@@ -398,17 +398,17 @@ public sealed class AutomationService : IAsyncDisposable
             _settings.CertificateStamp);
 
         var imageDownload = new FirebaseStorageDownloadService();
-        var instrumentPhoto = await imageDownload.DownloadStampingImageAsync(
+        var scaleImage = await imageDownload.DownloadScaleImageAsync(
             job.Id,
             instrument.SerialNumber,
-            instrument.StampingImageUrl,
-            instrument.StampingImageName,
-            instrument.StampingImageContentType,
+            instrument.ScaleImageUrl,
+            instrument.ScaleImageName,
+            instrument.ScaleImageContentType,
             cancellationToken);
 
         var preparedPhoto = DocaUploadImagePreparer.PrepareMachinePhotoForUpload(
-            instrumentPhoto.LocalPath,
-            Path.GetDirectoryName(instrumentPhoto.LocalPath)!,
+            scaleImage.LocalPath,
+            Path.GetDirectoryName(scaleImage.LocalPath)!,
             _settings.DocaUploadImageMaxBytes,
             _settings.DocaUploadImageMaxEdgePx);
 
@@ -453,7 +453,7 @@ public sealed class AutomationService : IAsyncDisposable
         return new DocaOpenResult(
             DocaSessionState.LoggedIn,
             $"Certificate uploaded to DOCA, saved to Firebase Storage, and marked certified — {string.Join(" · ", details)}. " +
-            $"Signed PDF: {stampResult.OutputPath}. Instrument photo: {preparedPhoto.Summary}.",
+            $"Signed PDF: {stampResult.OutputPath}. Instrument photo (scale): {preparedPhoto.Summary}.",
             VerificationApproved: true);
     }
 

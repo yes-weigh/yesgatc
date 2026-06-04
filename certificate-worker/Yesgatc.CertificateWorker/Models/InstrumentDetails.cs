@@ -31,4 +31,7 @@ public sealed class InstrumentDetails
     public string StampingImageUrl { get; init; } = string.Empty;
     public string StampingImageName { get; init; } = "Stamping plate image";
     public string StampingImageContentType { get; init; } = "image/jpeg";
+    public string ScaleImageUrl { get; init; } = string.Empty;
+    public string ScaleImageName { get; init; } = "Scale image";
+    public string ScaleImageContentType { get; init; } = "image/jpeg";
 }

@@ -71,6 +71,14 @@ public sealed class InstrumentDetailsService
             FirestoreFieldReader.ReadString(calibrationFields, "stampingImageContentType"),
             "image/jpeg");
 
+        var scaleImageUrl = FirestoreFieldReader.ReadString(calibrationFields, "scaleImageUrl");
+        var scaleImageName = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "scaleImageName"),
+            "Scale image");
+        var scaleImageContentType = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "scaleImageContentType"),
+            "image/jpeg");
+
         var maxCapacity = FirstDouble(
             FirestoreFieldReader.ReadDouble(calibrationFields, "maximumCapacity"),
             productFields is not null
@@ -176,7 +184,13 @@ public sealed class InstrumentDetailsService
         if (string.IsNullOrWhiteSpace(stampingImageUrl))
         {
             throw new InvalidOperationException(
-                "Stamping plate image is missing on the verification record.");
+                "Serial number plate photo is missing on the verification record.");
+        }
+
+        if (string.IsNullOrWhiteSpace(scaleImageUrl))
+        {
+            throw new InvalidOperationException(
+                "Instrument photo is missing on the verification record.");
         }
 
         return new InstrumentDetails
@@ -202,6 +216,9 @@ public sealed class InstrumentDetailsService
             StampingImageUrl = stampingImageUrl,
             StampingImageName = stampingImageName,
             StampingImageContentType = stampingImageContentType,
+            ScaleImageUrl = scaleImageUrl,
+            ScaleImageName = scaleImageName,
+            ScaleImageContentType = scaleImageContentType,
         };
     }
 

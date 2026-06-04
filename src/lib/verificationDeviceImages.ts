@@ -54,7 +54,7 @@ export const VERIFICATION_IMAGE_CONFIG: Record<
   scale: {
     label: 'Instrument photo',
     shortLabel: 'Instrument',
-    hint: 'Optional',
+    hint: 'Required for submit',
     storageFolder: 'scale-image',
     defaultName: 'Scale image',
   },
@@ -192,11 +192,11 @@ export function imageFieldsFromMeta(
   };
 }
 
-/** Only serial number plate (stored as stamping) is mandatory for submit. */
+/** Serial number plate and instrument photo are mandatory for submit. */
 export function requiredVerificationImageKinds(
   _verificationType?: JobType | '' | undefined,
 ): VerificationImageKind[] {
-  return ['stamping'];
+  return ['stamping', 'scale'];
 }
 
 export function isVerificationImageRequired(

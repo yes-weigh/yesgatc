@@ -102,6 +102,9 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
     const stamping = images.stamping ?? emptyDeviceImageSlot();
     const hasStampingImage =
       !stamping.removed && Boolean(stamping.file?.url || stamping.file?.path || stamping.pendingFile);
+    const scale = images.scale ?? emptyDeviceImageSlot();
+    const hasInstrumentImage =
+      !scale.removed && Boolean(scale.file?.url || scale.file?.path || scale.pendingFile);
     const oldCertificate = rvDocuments.oldCertificate ?? emptyDeviceImageSlot();
     const hasOldCertificate =
       !oldCertificate.removed &&
@@ -110,6 +113,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
     return buildVerificationAiStatusItems({
       verificationType,
       hasStampingImage,
+      hasInstrumentImage,
       productModelApprovalNo: product?.modelApprovalNo ?? '',
       hasOldCertificate,
       hasGpsLocation,
@@ -121,6 +125,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
     products,
     device.productId,
     images.stamping,
+    images.scale,
     rvDocuments.oldCertificate,
     verificationType,
     hasGpsLocation,
