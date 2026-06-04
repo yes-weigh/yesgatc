@@ -59,6 +59,53 @@ function Resolve-GhExecutable {
     return $null
 }
 
+function Get-CertificateWorkerVersionFromTag {
+    param([string]$Tag)
+
+    if ($Tag -match '^certificate-worker-v(\d+)\.(\d+)\.(\d+)$') {
+        return [version]"$($matches[1]).$($matches[2]).$($matches[3])"
+    }
+
+    return [version]"0.0.0"
+}
+
+function Select-LatestCertificateWorkerTag {
+    param([string[]]$Tags)
+
+    $workerTags = $Tags | Where-Object { $_ -like "${TagPrefix}*" }
+    if (-not $workerTags -or $workerTags.Count -eq 0) {
+        return $null
+    }
+
+    return $workerTags |
+        Sort-Object { Get-CertificateWorkerVersionFromTag $_ } -Descending |
+        Select-Object -First 1
+}
+
+function Get-LatestCertificateWorkerTagFromGh {
+    param([string]$Repo)
+
+    $ghPath = Resolve-GhExecutable
+    if (-not $ghPath) {
+        return $null
+    }
+
+    # gh columns: Title, Type, Tag, PublishedAt — tag is column 3 (index 2).
+    $lines = & $ghPath release list --repo $Repo --limit 50
+    if (-not $lines) {
+        return $null
+    }
+
+    $tags = foreach ($line in $lines) {
+        $parts = $line -split "`t"
+        if ($parts.Count -ge 3) {
+            $parts[2].Trim()
+        }
+    }
+
+    return Select-LatestCertificateWorkerTag -Tags $tags
+}
+
 function Get-LatestCertificateWorkerTagFromApi {
     param(
         [string]$Repo,
@@ -75,6 +122,7 @@ function Get-LatestCertificateWorkerTagFromApi {
         $headers.Authorization = "Bearer $Token"
     }
 
+    $allTags = [System.Collections.Generic.List[string]]::new()
     $page = 1
     while ($page -le 5) {
         $uri = "https://api.github.com/repos/$Repo/releases?per_page=100&page=$page"
@@ -85,8 +133,8 @@ function Get-LatestCertificateWorkerTagFromApi {
         }
 
         foreach ($release in $releases) {
-            if ($release.tag_name -like "$TagPrefix*") {
-                return $release.tag_name
+            if ($release.tag_name -like "${TagPrefix}*") {
+                $allTags.Add($release.tag_name)
             }
         }
 
@@ -95,6 +143,11 @@ function Get-LatestCertificateWorkerTagFromApi {
         }
 
         $page++
+    }
+
+    $latest = Select-LatestCertificateWorkerTag -Tags $allTags
+    if ($latest) {
+        return $latest
     }
 
     throw "No GitHub release found with tag prefix '$TagPrefix'. Create one with tag certificate-worker-v1.0.0"
@@ -196,14 +249,8 @@ $token = Get-AuthToken -ExplicitToken $GitHubToken
 $releaseTag = $Tag.Trim()
 
 if ([string]::IsNullOrWhiteSpace($releaseTag)) {
-    $ghPath = Resolve-GhExecutable
-    if ($ghPath) {
-        Write-Host "Resolving latest $TagPrefix* release via GitHub CLI ..." -ForegroundColor DarkGray
-        $releaseTag = & $ghPath release list --repo $Repository --limit 30 `
-            | ForEach-Object { ($_ -split "`t")[0] } `
-            | Where-Object { $_ -like "$TagPrefix*" } `
-            | Select-Object -First 1
-    }
+    Write-Host "Resolving latest $TagPrefix* release via GitHub CLI ..." -ForegroundColor DarkGray
+    $releaseTag = Get-LatestCertificateWorkerTagFromGh -Repo $Repository
 
     if ([string]::IsNullOrWhiteSpace($releaseTag)) {
         Write-Host "Resolving latest $TagPrefix* release via GitHub API ..." -ForegroundColor DarkGray
