@@ -352,7 +352,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           )}
           {!compact && isRv && (
             <p className="verification-rv-hint text-muted text-xs mt-1 mb-0">
-              Re-verification requires year of manufacturing and old certificate &amp; invoice for each device.
+              Re-verification requires year of manufacturing and old certificate for each device. Old invoice is optional.
             </p>
           )}
           {!compact && createMode && (

@@ -35,11 +35,20 @@ export const RV_DOCUMENT_CONFIG: Record<
   oldInvoice: {
     label: 'Old invoice',
     shortLabel: 'Old invoice',
-    hint: 'Required for re-verification submit',
+    hint: 'Optional',
     storageFolder: 'old-invoice',
     defaultName: 'Old invoice',
   },
 };
+
+/** RV submit requires previous certificate only — old invoice is optional. */
+export function requiredRvDocumentKinds(): RvDocumentKind[] {
+  return ['oldCertificate'];
+}
+
+export function isRvDocumentRequired(kind: RvDocumentKind): boolean {
+  return requiredRvDocumentKinds().includes(kind);
+}
 
 type DocumentFieldKeys = {
   url: keyof SiteCalibration;
@@ -125,7 +134,7 @@ export function validateDeviceRvDocuments(
   documents: DeviceRvDocumentsState,
   deviceLabel: string,
 ): string | null {
-  for (const kind of RV_DOCUMENT_KINDS) {
+  for (const kind of requiredRvDocumentKinds()) {
     const error = validateDeviceImageSlot(
       documents[kind],
       `${deviceLabel}: ${RV_DOCUMENT_CONFIG[kind].label}`,

@@ -27,6 +27,7 @@ import {
   emptyDeviceRvDocumentsState,
   RV_DOCUMENT_CONFIG,
   RV_DOCUMENT_KINDS,
+  isRvDocumentRequired,
   type DeviceRvDocumentsState,
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
@@ -187,7 +188,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
                 key={kind}
                 slotKey={kind}
                 label={config.label}
-                required
+                required={isRvDocumentRequired(kind)}
                 file={slot.file}
                 uploading={slot.uploading}
                 progress={slot.progress}
