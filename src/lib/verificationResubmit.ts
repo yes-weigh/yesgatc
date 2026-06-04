@@ -161,6 +161,42 @@ export function verificationVersionTitle(
   return 'Verification';
 }
 
+/** Lower rank = shown higher in the serial group list. */
+export function verificationVersionDisplayRank(
+  record: SiteCalibration,
+  group: SiteCalibration[],
+): number {
+  switch (verificationVersionTitle(record, group)) {
+    case 'Correct certificate':
+      return 0;
+    case 'Resubmission in progress':
+      return 1;
+    case 'Verification':
+      return 2;
+    case 'Corrupted certificate':
+      return 3;
+    case 'Void certificate':
+      return 4;
+    default:
+      return 2;
+  }
+}
+
+/** Active certificates first; void and corrupted copies at the bottom. */
+export function sortVerificationSerialGroupForDisplay(group: SiteCalibration[]): SiteCalibration[] {
+  return [...group].sort((a, b) => {
+    const rankDiff =
+      verificationVersionDisplayRank(a, group) - verificationVersionDisplayRank(b, group);
+    if (rankDiff !== 0) return rankDiff;
+
+    const aKey = certificateSortKey(a);
+    const bKey = certificateSortKey(b);
+    const rank = verificationVersionDisplayRank(a, group);
+    if (rank <= 1) return bKey.localeCompare(aKey);
+    return aKey.localeCompare(bKey);
+  });
+}
+
 export function verificationVersionSubtitle(record: SiteCalibration): string {
   const parts: string[] = [];
   if (record.applicationNumber?.trim()) {

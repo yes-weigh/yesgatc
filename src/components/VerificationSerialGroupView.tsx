@@ -13,6 +13,7 @@ import {
   getVerificationSerialGroup,
   pickResubmitSourceForSerialGroup,
   resubmitSerialGroupForDoca,
+  sortVerificationSerialGroupForDisplay,
   verificationVersionSubtitle,
   verificationVersionTitle,
 } from '../lib/verificationResubmit';
@@ -57,6 +58,11 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
   const group = useMemo(
     () => getVerificationSerialGroup(allRecords, record),
     [allRecords, record],
+  );
+
+  const sortedGroup = useMemo(
+    () => sortVerificationSerialGroupForDisplay(group),
+    [group],
   );
 
   const isSuperAdmin = user?.role === 'super_admin';
@@ -126,20 +132,30 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
 
   return (
     <div className="verification-certified-summary verification-serial-group">
-      <div className="verification-certified-summary-head">
-        <h2 id="site-calibration-form-title" className="verification-certified-summary-title">
-          {record.customerName || 'Verification'}
-        </h2>
-        {record.serialNumber?.trim() && (
-          <p className="verification-certified-summary-cert text-mono mb-0">
-            Serial {record.serialNumber.trim()}
-          </p>
-        )}
-        {showGroupHeading && (
-          <p className="verification-serial-group-hint mb-0">
-            {group.length} records for this serial
-          </p>
-        )}
+      <div className="verification-serial-group-topbar">
+        <div className="verification-certified-summary-head">
+          <h2 id="site-calibration-form-title" className="verification-certified-summary-title">
+            {record.customerName || 'Verification'}
+          </h2>
+          {record.serialNumber?.trim() && (
+            <p className="verification-certified-summary-cert text-mono mb-0">
+              Serial {record.serialNumber.trim()}
+            </p>
+          )}
+          {showGroupHeading && (
+            <p className="verification-serial-group-hint mb-0">
+              {group.length} records for this serial
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          className="verification-form-btn verification-form-btn--cancel verification-serial-group-close"
+          onClick={onClose}
+          disabled={closeDisabled || resubmitting}
+        >
+          Close
+        </button>
       </div>
 
       {error && (
@@ -148,32 +164,8 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
         </p>
       )}
 
-      {showSerialResubmit && (
-        <div className="verification-serial-group-resubmit">
-          <button
-            type="button"
-            className="verification-form-btn verification-form-btn--resubmit"
-            disabled={resubmitting || closeDisabled}
-            onClick={() => void handleSerialResubmit()}
-          >
-            {resubmitting ? (
-              <span className="spinner-inline" aria-hidden />
-            ) : (
-              <RefreshCw size={16} aria-hidden />
-            )}
-            <span>Resubmit on DOCA</span>
-          </button>
-          {voidOthersCount > 0 && (
-            <p className="verification-serial-group-resubmit-hint mb-0">
-              Marks {voidOthersCount} other certificate{voidOthersCount === 1 ? '' : 's'} as void,
-              then queues one new run.
-            </p>
-          )}
-        </div>
-      )}
-
       <div className="verification-serial-group-versions">
-        {group.map(version => {
+        {sortedGroup.map(version => {
           const tone = versionTone(version, group);
           const showActions = canShowVerificationCertifiedActions(version);
           const isVoided = isVerificationCertificateVoided(version);
@@ -218,20 +210,29 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
         })}
       </div>
 
-      <div className="verification-certified-summary-footer">
-        <div className="product-form-footer verification-form-footer verification-form-footer--certified-summary">
-          <div className="verification-form-footer-row verification-form-footer-row--actions">
-            <button
-              type="button"
-              className="verification-form-btn verification-form-btn--cancel"
-              onClick={onClose}
-              disabled={closeDisabled || resubmitting}
-            >
-              Close
-            </button>
-          </div>
+      {showSerialResubmit && (
+        <div className="verification-serial-group-resubmit verification-serial-group-resubmit--footer">
+          {voidOthersCount > 0 && (
+            <p className="verification-serial-group-resubmit-hint mb-0">
+              Marks {voidOthersCount} other certificate{voidOthersCount === 1 ? '' : 's'} as void,
+              then queues one new run.
+            </p>
+          )}
+          <button
+            type="button"
+            className="verification-form-btn verification-form-btn--resubmit"
+            disabled={resubmitting || closeDisabled}
+            onClick={() => void handleSerialResubmit()}
+          >
+            {resubmitting ? (
+              <span className="spinner-inline" aria-hidden />
+            ) : (
+              <RefreshCw size={16} aria-hidden />
+            )}
+            <span>Resubmit on DOCA</span>
+          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 };

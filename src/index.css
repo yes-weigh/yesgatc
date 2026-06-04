@@ -8008,6 +8008,35 @@ body.verification-mobile-wizard-active {
   border-color: rgba(127, 29, 29, 0.55);
 }
 
+.verification-serial-group-topbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.verification-serial-group-close.verification-form-btn--cancel {
+  flex: 0 0 auto;
+  align-self: center;
+  min-width: 8.5rem;
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(74, 222, 128, 0.52);
+  color: #86efac;
+}
+
+.verification-serial-group-close.verification-form-btn--cancel:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.26);
+  border-color: rgba(74, 222, 128, 0.72);
+  color: #bbf7d0;
+}
+
+.verification-serial-group-close.verification-form-btn--cancel:active:not(:disabled) {
+  background: rgba(22, 163, 74, 0.34);
+  border-color: rgba(134, 239, 172, 0.85);
+  color: #f0fdf4;
+}
+
 .verification-serial-group-resubmit {
   display: flex;
   flex-direction: column;
@@ -8016,6 +8045,12 @@ body.verification-mobile-wizard-active {
   width: 100%;
   max-width: 28rem;
   margin: 0 auto;
+}
+
+.verification-serial-group-resubmit--footer {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(71, 85, 105, 0.35);
 }
 
 .verification-serial-group-resubmit .verification-form-btn--resubmit {
@@ -8111,6 +8146,26 @@ body.verification-mobile-wizard-active {
 
   .verification-serial-group {
     min-height: min(75vh, 640px);
+  }
+
+  .verification-serial-group-topbar {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .verification-serial-group-topbar .verification-certified-summary-head {
+    align-items: flex-start;
+    text-align: left;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .verification-serial-group-close {
+    align-self: flex-start;
+    flex-shrink: 0;
+    margin-top: 0.15rem;
   }
 
   .verification-serial-group-versions {
