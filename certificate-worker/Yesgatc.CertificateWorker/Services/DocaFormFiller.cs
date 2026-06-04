@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
@@ -118,7 +119,7 @@ public static class DocaFormFiller
         await ScrollToLabelAsync(page, "Verification & Charges");
 
         await FillPlainFieldAsync(page, ["Money Receipt"], instrument.MoneyReceiptNumber, inputIndex: 0);
-        await FillPlainFieldAsync(page, ["Money Receipt", "Dated"], instrument.MoneyReceiptDated, inputIndex: 1);
+        await FillDateFieldAsync(page, ["Dated", "Money Receipt Dated"], instrument.MoneyReceiptDated);
         await FillPlainFieldAsync(page, ["Verification Fee"], instrument.VerificationFeeTotal);
         await FillPlainFieldAsync(page, ["Carriage", "Conveyance"], "0");
         await FillPlainFieldAsync(page, ["Total deposited"], instrument.TotalDeposited);
@@ -827,6 +828,300 @@ public static class DocaFormFiller
         await input.FillAsync(value);
     }
 
+    /// <summary>
+    /// DOCA money-receipt date fields use a calendar widget (often readonly). Plain FillAsync does not stick.
+    /// </summary>
+    private static async Task FillDateFieldAsync(IPage page, string[] labels, string value, int inputIndex = 0)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        if (!TryParseDocaDateString(value, out var targetDate))
+        {
+            throw new InvalidOperationException($"DOCA date value is not valid: \"{value}\".");
+        }
+
+        var input = await FindTextInputByLabelsAsync(page, labels, inputIndex);
+        await input.ScrollIntoViewIfNeededAsync();
+
+        var inputType = await input.GetAttributeAsync("type");
+        if (string.Equals(inputType, "date", StringComparison.OrdinalIgnoreCase))
+        {
+            await input.FillAsync(targetDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            return;
+        }
+
+        if (await TrySetDateFieldViaScriptAsync(input, value, targetDate)
+            && await IsDateFieldFilledAsync(input, targetDate))
+        {
+            return;
+        }
+
+        if (await TrySetDateFieldViaCalendarUiAsync(page, input, targetDate)
+            && await IsDateFieldFilledAsync(input, targetDate))
+        {
+            return;
+        }
+
+        await input.ClickAsync();
+        await input.PressAsync("Control+A");
+        await input.PressAsync("Backspace");
+        await input.FillAsync(value);
+        await input.PressAsync("Tab");
+        await page.WaitForTimeoutAsync(200);
+
+        if (!await IsDateFieldFilledAsync(input, targetDate))
+        {
+            throw new InvalidOperationException(
+                $"Could not set DOCA date field ({string.Join(" / ", labels)}) to \"{value}\".");
+        }
+    }
+
+    private static bool TryParseDocaDateString(string value, out DateTime date)
+    {
+        var trimmed = value.Trim();
+        var formats = new[]
+        {
+            "dd-MM-yy",
+            "dd-MM-yyyy",
+            "dd/MM/yy",
+            "dd/MM/yyyy",
+            "d-M-yyyy",
+            "d/M/yyyy",
+        };
+
+        return DateTime.TryParseExact(
+            trimmed,
+            formats,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out date);
+    }
+
+    private static async Task<bool> IsDateFieldFilledAsync(ILocator input, DateTime expected)
+    {
+        var actualText = (await input.InputValueAsync()).Trim();
+        if (string.IsNullOrWhiteSpace(actualText))
+        {
+            actualText = (await input.GetAttributeAsync("value"))?.Trim() ?? string.Empty;
+        }
+
+        if (TryParseDocaDateString(actualText, out var actualDate))
+        {
+            return actualDate.Date == expected.Date;
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> TrySetDateFieldViaScriptAsync(
+        ILocator input,
+        string displayValue,
+        DateTime targetDate)
+    {
+        try
+        {
+            var method = await input.EvaluateAsync<string?>(
+                """
+                (el, args) => {
+                  const display = args.display;
+                  const y = args.y;
+                  const m = args.m;
+                  const d = args.d;
+                  const target = new Date(y, m - 1, d);
+
+                  const jQuery = window.jQuery || window.$;
+                  if (jQuery && typeof jQuery.fn.datepicker === 'function') {
+                    try {
+                      jQuery(el).datepicker('setDate', target);
+                      jQuery(el).datepicker('update', target);
+                      jQuery(el).trigger('changeDate');
+                      jQuery(el).trigger('change');
+                      return 'bootstrap-datepicker';
+                    } catch (_) {}
+                  }
+
+                  if (el._flatpickr) {
+                    el._flatpickr.setDate(target, true);
+                    return 'flatpickr';
+                  }
+
+                  const wasReadOnly = el.readOnly;
+                  el.readOnly = false;
+                  el.value = display;
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                  if (wasReadOnly) {
+                    el.readOnly = true;
+                  }
+                  return 'native';
+                }
+                """,
+                new
+                {
+                    display = displayValue,
+                    y = targetDate.Year,
+                    m = targetDate.Month,
+                    d = targetDate.Day,
+                });
+
+            return !string.IsNullOrWhiteSpace(method);
+        }
+        catch (PlaywrightException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task<bool> TrySetDateFieldViaCalendarUiAsync(
+        IPage page,
+        ILocator input,
+        DateTime targetDate)
+    {
+        try
+        {
+            await input.ClickAsync(new LocatorClickOptions { Timeout = 10_000 });
+            await page.WaitForTimeoutAsync(350);
+
+            var picker = await FindVisibleDatepickerAsync(page, input);
+            if (picker is null)
+            {
+                return false;
+            }
+
+            await NavigateDatepickerToMonthAsync(page, picker, targetDate);
+
+            var dayText = targetDate.Day.ToString(CultureInfo.InvariantCulture);
+            var dayCells = picker.Locator(
+                "td.day:not(.disabled):not(.old):not(.new), " +
+                "td[data-day]:not(.disabled):not(.old):not(.new)");
+            var count = await dayCells.CountAsync();
+            for (var index = 0; index < count; index++)
+            {
+                var cell = dayCells.Nth(index);
+                var text = (await cell.InnerTextAsync()).Trim();
+                if (string.Equals(text, dayText, StringComparison.Ordinal))
+                {
+                    await cell.ClickAsync();
+                    await page.WaitForTimeoutAsync(250);
+                    return true;
+                }
+            }
+
+            var epochMs = new DateTimeOffset(
+                targetDate.Year,
+                targetDate.Month,
+                targetDate.Day,
+                0,
+                0,
+                0,
+                TimeSpan.Zero).ToUnixTimeMilliseconds();
+            var byDataDate = picker.Locator($"td.day[data-date='{epochMs}']");
+            if (await byDataDate.CountAsync() > 0)
+            {
+                await byDataDate.First.ClickAsync();
+                await page.WaitForTimeoutAsync(250);
+                return true;
+            }
+        }
+        catch (PlaywrightException)
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private static async Task<ILocator?> FindVisibleDatepickerAsync(IPage page, ILocator input)
+    {
+        var pickers = page.Locator(
+            ".datepicker.datepicker-dropdown:visible, " +
+            "div.datepicker-dropdown:visible, " +
+            ".bootstrap-datetimepicker-widget.dropdown-menu:visible, " +
+            ".datepicker:visible");
+        if (await pickers.CountAsync() > 0)
+        {
+            return pickers.First;
+        }
+
+        var calendarTrigger = input.Locator(
+            "xpath=ancestor::div[contains(@class,'input-group')][1]//*[contains(@class,'glyphicon-calendar') or contains(@class,'fa-calendar') or contains(@class,'bi-calendar')][1]");
+        if (await calendarTrigger.CountAsync() > 0)
+        {
+            await calendarTrigger.First.ClickAsync();
+            await page.WaitForTimeoutAsync(350);
+            if (await pickers.CountAsync() > 0)
+            {
+                return pickers.First;
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task NavigateDatepickerToMonthAsync(IPage page, ILocator picker, DateTime target)
+    {
+        for (var attempt = 0; attempt < 48; attempt++)
+        {
+            var visible = await TryReadDatepickerMonthAsync(picker);
+            if (visible is { } month
+                && month.Year == target.Year
+                && month.Month == target.Month)
+            {
+                return;
+            }
+
+            if (visible is null)
+            {
+                await picker.Locator(".next, th.next").First.ClickAsync(new LocatorClickOptions { Timeout = 2_000 });
+                await page.WaitForTimeoutAsync(150);
+                continue;
+            }
+
+            var goForward = visible.Value.Year < target.Year
+                || (visible.Value.Year == target.Year && visible.Value.Month < target.Month);
+            var nav = goForward
+                ? picker.Locator(".next, th.next")
+                : picker.Locator(".prev, th.prev");
+            if (await nav.CountAsync() == 0)
+            {
+                return;
+            }
+
+            await nav.First.ClickAsync(new LocatorClickOptions { Timeout = 2_000 });
+            await page.WaitForTimeoutAsync(150);
+        }
+    }
+
+    private static async Task<(int Year, int Month)?> TryReadDatepickerMonthAsync(ILocator picker)
+    {
+        var header = picker.Locator(".datepicker-switch, th.datepicker-switch");
+        if (await header.CountAsync() == 0)
+        {
+            return null;
+        }
+
+        var text = (await header.First.InnerTextAsync()).Trim();
+        if (DateTime.TryParseExact(
+                text,
+                "MMMM yyyy",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsed))
+        {
+            return (parsed.Year, parsed.Month);
+        }
+
+        if (DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+        {
+            return (parsed.Year, parsed.Month);
+        }
+
+        return null;
+    }
+
     private static async Task ClearPlainFieldAsync(
         IPage page,
         string[] labels,
@@ -1096,6 +1391,14 @@ public static class DocaFormFiller
             yield return "money_receipt";
             yield return "moneyreceipt";
             yield return "receipt";
+        }
+
+        if (lower.Contains("dated"))
+        {
+            yield return "money_receipt_date";
+            yield return "moneyreceiptdate";
+            yield return "receipt_date";
+            yield return "dated";
         }
 
         if (lower.Contains("verification fee"))

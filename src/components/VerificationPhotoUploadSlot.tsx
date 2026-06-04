@@ -55,6 +55,10 @@ type VerificationPhotoUploadSlotProps = {
   onSelect: (file: File) => void;
   onRemove: () => void;
   icon?: VerificationPhotoSlotIcon;
+  /** Mobile/PWA: open camera (in-app or native). Default true. */
+  allowCamera?: boolean;
+  /** GPS/date stamp on in-app camera capture. Only instrument + stamping plate. */
+  geoStamp?: boolean;
 };
 
 const SlotIcon: React.FC<{ kind: VerificationPhotoSlotIcon }> = ({ kind }) => {
@@ -92,6 +96,8 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   onSelect,
   onRemove,
   icon = 'camera',
+  allowCamera = true,
+  geoStamp = false,
 }) => {
   const autoKey = useId();
   const slotKey = slotKeyProp ?? autoKey;
@@ -112,27 +118,31 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   });
 
   const cameraCaptureSession = useCallback((): ImageCaptureSession => {
-    return {
+    const session: ImageCaptureSession = {
       onCaptured: immediate => {
-        setStampPending(true);
+        if (geoStamp) setStampPending(true);
         onSelect(immediate);
-      },
-      onStamped: stamped => {
-        setStampPending(false);
-        onSelect(stamped);
       },
       onFallbackNativeCamera: () => openCamera(),
     };
-  }, [onSelect, openCamera]);
+    if (geoStamp) {
+      session.onStamped = stamped => {
+        setStampPending(false);
+        onSelect(stamped);
+      };
+    }
+    return session;
+  }, [onSelect, openCamera, geoStamp]);
 
-  const useInAppCamera = mobileSourceChoice && icon === 'camera' && shouldUseInAppCameraCapture();
+  const useInAppCamera =
+    allowCamera && mobileSourceChoice && shouldUseInAppCameraCapture();
 
   const handlePrimaryCapture = useCallback(() => {
     if (!mobileSourceChoice) {
       openPicker();
       return;
     }
-    if (icon === 'camera') {
+    if (allowCamera) {
       if (useInAppCamera && section) {
         section.openInAppCamera({
           slotKey,
@@ -143,12 +153,14 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
       } else {
         openCamera();
       }
-    } else {
+    } else if (mobileSourceChoice) {
       openGallery();
+    } else {
+      openPicker();
     }
   }, [
     mobileSourceChoice,
-    icon,
+    allowCamera,
     useInAppCamera,
     section,
     slotKey,
@@ -187,7 +199,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
           onClick={handlePrimaryCapture}
           disabled={locked}
           aria-label={
-            mobileSourceChoice && icon === 'camera'
+            mobileSourceChoice && allowCamera
               ? `${label}. Take photo with camera.`
               : `${label}. Upload photo.`
           }
@@ -265,14 +277,15 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
                     accept,
                     capture: cameraCaptureSession(),
                   });
-                } else if (mobileSourceChoice && icon === 'camera') openCamera();
+                } else if (mobileSourceChoice && allowCamera) openCamera();
+                else if (mobileSourceChoice) openGallery();
                 else openPicker();
               }}
               disabled={locked}
               aria-label={`Replace ${label}`}
               title="Replace"
             >
-              {mobileSourceChoice && icon === 'camera' ? <Camera size={14} /> : <RefreshCw size={14} />}
+              {mobileSourceChoice && allowCamera ? <Camera size={14} /> : <RefreshCw size={14} />}
             </button>
             <button
               type="button"

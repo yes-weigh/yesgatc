@@ -171,6 +171,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
               uploading={slot.uploading}
               progress={slot.progress}
               disabled={locked}
+              geoStamp={kind === 'stamping' || kind === 'scale'}
               onSelect={file => onImageSelect(kind, file)}
               onRemove={() => onImageRemove(kind)}
             />

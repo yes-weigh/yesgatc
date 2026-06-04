@@ -113,7 +113,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !session?.onStamped) return;
     let cancelled = false;
     void loadPhotoCaptureStamp().then(stamp => {
       if (!cancelled) setStampPrefetch(stamp);
@@ -121,7 +121,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, session?.onStamped]);
 
   const handleShutter = useCallback(async () => {
     const video = videoRef.current;
