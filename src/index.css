@@ -8024,6 +8024,92 @@ body.verification-mobile-wizard-active {
   cursor: not-allowed;
 }
 
+.verification-certificate-preview--desktop-only {
+  display: none;
+}
+
+@media (min-width: 960px) {
+  .inline-form-panel--certified-summary.inline-form-panel--wide {
+    max-width: min(1120px, calc(100vw - 18rem));
+  }
+
+  .verification-serial-group {
+    min-height: min(75vh, 640px);
+  }
+
+  .verification-serial-group-versions {
+    max-width: none;
+  }
+
+  .verification-version-card--has-preview .verification-version-card-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .verification-certificate-preview--desktop-only {
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: 0.75rem;
+  }
+
+  .verification-certificate-preview {
+    min-height: 0;
+    border-radius: 12px;
+    border: 1px solid rgba(71, 85, 105, 0.45);
+    background: rgba(15, 23, 42, 0.85);
+    overflow: hidden;
+  }
+
+  .verification-certificate-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.5rem 0.65rem;
+    border-bottom: 1px solid rgba(71, 85, 105, 0.4);
+  }
+
+  .verification-certificate-preview-title {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: rgba(148, 163, 184, 0.95);
+  }
+
+  .verification-certificate-preview-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #93c5fd;
+    text-decoration: none;
+  }
+
+  .verification-certificate-preview-open:hover {
+    color: #bfdbfe;
+  }
+
+  .verification-certificate-preview-frame {
+    height: min(72vh, 620px);
+    min-height: 420px;
+    background: #0f172a;
+  }
+
+  .verification-certificate-preview-iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: #fff;
+  }
+}
+
 @media (max-width: 520px) {
   .verification-certified-actions {
     gap: 0.35rem;

@@ -12,6 +12,7 @@ import {
 } from '../lib/verificationResubmit';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
 import { VerificationCertifiedActions } from './VerificationCertifiedActions';
+import { VerificationCertificatePreview } from './VerificationCertificatePreview';
 import { VerificationDetailsCard } from './VerificationDetailsCard';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
 import type { SiteCalibration } from '../types';
@@ -113,41 +114,54 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
           return (
             <article
               key={version.id}
-              className={`verification-version-card verification-version-card--${tone}`}
+              className={`verification-version-card verification-version-card--${tone}${
+                showActions ? ' verification-version-card--has-preview' : ''
+              }`}
             >
-              <header className="verification-version-card-head">
-                <div className="verification-version-card-head-text">
-                  <h3 className="verification-version-card-title">
-                    {verificationVersionTitle(version, group)}
-                  </h3>
-                  <p className="verification-version-card-subtitle mb-0">
-                    {verificationVersionSubtitle(version)}
-                  </p>
-                </div>
-                <VerificationStatusBadge record={version} />
-              </header>
+              <div className="verification-version-card-layout">
+                <div className="verification-version-card-main">
+                  <header className="verification-version-card-head">
+                    <div className="verification-version-card-head-text">
+                      <h3 className="verification-version-card-title">
+                        {verificationVersionTitle(version, group)}
+                      </h3>
+                      <p className="verification-version-card-subtitle mb-0">
+                        {verificationVersionSubtitle(version)}
+                      </p>
+                    </div>
+                    <VerificationStatusBadge record={version} />
+                  </header>
 
-              {showActions && (
-                <VerificationCertifiedActions record={version} customerPhone={customerPhone} />
-              )}
-
-              <VerificationDetailsCard record={version} />
-
-              {showResubmit && (
-                <button
-                  type="button"
-                  className="verification-form-btn verification-form-btn--resubmit"
-                  disabled={Boolean(resubmittingId) || closeDisabled}
-                  onClick={() => void handleResubmit(version)}
-                >
-                  {resubmittingId === version.id ? (
-                    <span className="spinner-inline" aria-hidden />
-                  ) : (
-                    <RefreshCw size={16} aria-hidden />
+                  {showActions && (
+                    <VerificationCertifiedActions record={version} customerPhone={customerPhone} />
                   )}
-                  <span>Resubmit on DOCA</span>
-                </button>
-              )}
+
+                  <VerificationDetailsCard record={version} />
+
+                  {showResubmit && (
+                    <button
+                      type="button"
+                      className="verification-form-btn verification-form-btn--resubmit"
+                      disabled={Boolean(resubmittingId) || closeDisabled}
+                      onClick={() => void handleResubmit(version)}
+                    >
+                      {resubmittingId === version.id ? (
+                        <span className="spinner-inline" aria-hidden />
+                      ) : (
+                        <RefreshCw size={16} aria-hidden />
+                      )}
+                      <span>Resubmit on DOCA</span>
+                    </button>
+                  )}
+                </div>
+
+                {showActions && (
+                  <VerificationCertificatePreview
+                    record={version}
+                    className="verification-certificate-preview--desktop-only"
+                  />
+                )}
+              </div>
             </article>
           );
         })}

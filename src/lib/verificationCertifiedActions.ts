@@ -43,16 +43,21 @@ export const VERIFICATION_CERTIFIED_ACTION_ORDER: VerificationCertifiedActionId[
   'whatsapp-share',
 ];
 
+/** URL for certificate preview / download — stored PDF preferred, else public DOCA page. */
+export function resolveCertificatePreviewUrl(record: SiteCalibration): string | null {
+  const certificateNumber = record.certificateNumber?.trim() ?? '';
+  const docaUrl = buildDocaCertificateViewUrl(certificateNumber);
+  if (canDownloadVerificationCertificate(record) && record.certificatePdfUrl?.trim()) {
+    return record.certificatePdfUrl.trim();
+  }
+  return docaUrl;
+}
+
 export function buildVerificationCertifiedActions(
   record: SiteCalibration,
   options?: { customerPhone?: string | null },
 ): VerificationCertifiedAction[] {
-  const certificateNumber = record.certificateNumber?.trim() ?? '';
-  const docaCertificateUrl = buildDocaCertificateViewUrl(certificateNumber);
-  const certificateHref =
-    canDownloadVerificationCertificate(record) && record.certificatePdfUrl?.trim()
-      ? record.certificatePdfUrl.trim()
-      : docaCertificateUrl;
+  const certificateHref = resolveCertificatePreviewUrl(record);
 
   const byId = new Map<VerificationCertifiedActionId, VerificationCertifiedAction>();
 
