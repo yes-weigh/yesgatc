@@ -5,7 +5,7 @@ namespace Yesgatc.CertificateWorker.Services;
 
 internal static class DocaVerificationCharges
 {
-    private const double GstRate = 0.2;
+    private const double GstRate = 0.18;
 
     public static DocaChargeAmounts Resolve(
         IReadOnlyDictionary<string, System.Text.Json.JsonElement>? calibrationFields,

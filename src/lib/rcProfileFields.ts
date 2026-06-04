@@ -86,7 +86,7 @@ export function formatRcFeeAmount(amount: number): string {
 }
 
 /** GST applied on top of quoted verification fees (e.g. RV ₹150 / ₹250 base). */
-export const VERIFICATION_FEE_GST_RATE = 0.2;
+export const VERIFICATION_FEE_GST_RATE = 0.18;
 
 export type VerificationFeeWithGst = {
   base: number;

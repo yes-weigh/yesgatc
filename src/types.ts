@@ -324,7 +324,7 @@ export interface SiteCalibration {
   /** Fee breakdown for DOCA Verification & Charges (INR, whole rupees). */
   verificationFeeBase?: number;
   verificationFeeGst?: number;
-  /** Verification fee incl. 20% GST — filled on DOCA as Verification Fee and Total deposited. */
+  /** Verification fee incl. 18% GST — filled on DOCA as Verification Fee and Total deposited. */
   verificationFeeTotal?: number;
   /** Stored for future DOCA automation; worker currently submits 0. */
   carriageConveyanceFee?: number;
