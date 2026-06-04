@@ -187,10 +187,12 @@ public sealed class InstrumentDetailsService
                 "Serial number plate photo is missing on the verification record.");
         }
 
-        if (string.IsNullOrWhiteSpace(scaleImageUrl))
+        var scaleImageUsesStampingFallback = string.IsNullOrWhiteSpace(scaleImageUrl);
+        if (scaleImageUsesStampingFallback)
         {
-            throw new InvalidOperationException(
-                "Instrument photo is missing on the verification record.");
+            scaleImageUrl = stampingImageUrl;
+            scaleImageName = stampingImageName;
+            scaleImageContentType = stampingImageContentType;
         }
 
         return new InstrumentDetails
@@ -219,6 +221,7 @@ public sealed class InstrumentDetailsService
             ScaleImageUrl = scaleImageUrl,
             ScaleImageName = scaleImageName,
             ScaleImageContentType = scaleImageContentType,
+            ScaleImageUsesStampingFallback = scaleImageUsesStampingFallback,
         };
     }
 

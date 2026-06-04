@@ -34,4 +34,6 @@ public sealed class InstrumentDetails
     public string ScaleImageUrl { get; init; } = string.Empty;
     public string ScaleImageName { get; init; } = "Scale image";
     public string ScaleImageContentType { get; init; } = "image/jpeg";
+    /// <summary>True when instrument photo was missing and stamping plate image is used instead.</summary>
+    public bool ScaleImageUsesStampingFallback { get; init; }
 }

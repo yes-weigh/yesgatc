@@ -410,10 +410,14 @@ public sealed class AutomationService : IAsyncDisposable
             details.Add($"Certificate {match.CertificateNumber}");
         }
 
+        var instrumentPhotoNote = instrument.ScaleImageUsesStampingFallback
+            ? "Instrument photo (stamping plate fallback)"
+            : "Instrument photo (scale)";
+
         return new DocaOpenResult(
             DocaSessionState.LoggedIn,
             $"Certificate uploaded to DOCA, saved to Firebase Storage, and marked certified — {string.Join(" · ", details)}. " +
-            $"Signed PDF: {stampResult.OutputPath}. Instrument photo (scale): {preparedPhoto.Summary}.",
+            $"Signed PDF: {stampResult.OutputPath}. {instrumentPhotoNote}: {preparedPhoto.Summary}.",
             VerificationApproved: true);
     }
 
