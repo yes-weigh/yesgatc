@@ -544,8 +544,6 @@ export const VerificationSessionFields = forwardRef<
       lastSelfWeatherKeyRef.current = '';
       return;
     }
-    if (values.verificationType === 'RV') return;
-
     const pincode = normalizePincode(rcProfile?.pincode ?? '');
     const hasPincode = isValidPincode(pincode);
     const hasLocation =
@@ -581,7 +579,6 @@ export const VerificationSessionFields = forwardRef<
   const handleSubjectChange = (subject: VerificationSubject) => {
     if (lockCustomer || subject === values.verificationSubject) return;
     if (subject === 'self') {
-      if (values.verificationType === 'RV') return;
       lastSelfWeatherKeyRef.current = '';
       applySelfSubject();
       return;
@@ -592,7 +589,6 @@ export const VerificationSessionFields = forwardRef<
 
   useEffect(() => {
     if (readOnly || lockCustomer || values.verificationSubject !== 'self') return;
-    if (values.verificationType === 'RV') return;
     if (!rcProfile || !rcUid) return;
     if (values.customerId === rcUid && values.customerName.trim()) return;
     applySelfSubject();
@@ -621,13 +617,6 @@ export const VerificationSessionFields = forwardRef<
       devices: values.devices.map(device => ({ ...device, manufacturingYear: '' })),
     });
   };
-
-  useEffect(() => {
-    if (readOnly || lockCustomer || values.verificationType !== 'RV') return;
-    if (values.verificationSubject !== 'self') return;
-    applyCustomerSubject();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-verification is always customer-owned
-  }, [readOnly, lockCustomer, values.verificationType, values.verificationSubject]);
 
   const handleCustomerSelect = (next: { customerId: string; customerName: string }) => {
     if (lockCustomer) return;
@@ -762,9 +751,7 @@ export const VerificationSessionFields = forwardRef<
                     options={SUBJECT_OPTIONS.map(opt => ({
                       value: opt.value,
                       label: opt.label,
-                      disabled:
-                        lockCustomer ||
-                        (opt.value === 'self' && values.verificationType === 'RV'),
+                      disabled: lockCustomer,
                     }))}
                     onChange={handleSubjectChange}
                     disabled={locked || lockCustomer}
