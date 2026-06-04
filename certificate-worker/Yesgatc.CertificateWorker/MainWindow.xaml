@@ -259,7 +259,15 @@
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              FontSize="12"
-                             Foreground="{StaticResource TextMutedBrush}">
+                             Foreground="{StaticResource TextMutedBrush}"
+                             MouseDoubleClick="ActivityLogList_MouseDoubleClick">
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Copy Selected" Click="CopyLogItem_Click"/>
+                                <MenuItem Header="Copy All Logs" Click="CopyAllLogs_Click"/>
+                                <MenuItem Header="Open Log File" Click="OpenLogFile_Click"/>
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="0,2"/>
@@ -273,8 +281,14 @@
                                         </ControlTemplate>
                                     </Setter.Value>
                                 </Setter>
+                                <Setter Property="ToolTip" Value="{Binding}"/>
                             </Style>
                         </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap"/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
                     </ListBox>
                 </Grid>
             </Border>

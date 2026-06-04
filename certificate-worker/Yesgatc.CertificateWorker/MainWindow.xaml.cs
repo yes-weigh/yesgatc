@@ -199,7 +199,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            SetStatus($"Could not open DOCA browser: {ex.Message}", StatusKind.Error);
+            SetStatus($"Could not open DOCA browser: {ex.Message}", ex, StatusKind.Error);
         }
     }
 
@@ -238,6 +238,7 @@ public partial class MainWindow : Window
             _realtimeListenerActive = false;
             SetStatus(
                 $"Real-time listener unavailable ({ex.Message}). Falling back to polling every {App.Settings.AutoWorker.PollIntervalSeconds}s.",
+                ex,
                 StatusKind.Error);
             StartPollFallbackTimer();
         }
@@ -459,7 +460,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            SetStatus($"Waiting for DOCA auto-login — {ex.Message}", StatusKind.Info);
+            SetStatus($"Waiting for DOCA auto-login — {ex.Message}", ex, StatusKind.Info);
             UpdateAutoWorkerStatusText();
         }
     }
@@ -575,6 +576,77 @@ public partial class MainWindow : Window
             SetStatus("Refreshing queue…", StatusKind.Working);
             await LoadQueueAsync();
         });
+    }
+
+    private void ActivityLogList_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        CopySelectedLog();
+    }
+
+    private void CopyLogItem_Click(object sender, RoutedEventArgs e)
+    {
+        CopySelectedLog();
+    }
+
+    private void CopySelectedLog()
+    {
+        if (ActivityLogList.SelectedItem is string log)
+        {
+            try
+            {
+                Clipboard.SetText(log);
+            }
+            catch
+            {
+                // Clipboard access might fail, ignore
+            }
+        }
+    }
+
+    private void CopyAllLogs_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var logs = string.Join(Environment.NewLine, _activityLog);
+            Clipboard.SetText(logs);
+        }
+        catch
+        {
+        }
+    }
+
+    private void OpenLogFile_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var logPath = GetLogFilePath();
+            if (System.IO.File.Exists(logPath))
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = logPath,
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                MessageBox.Show(this, "Log file does not exist yet.", "Certificate Worker", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Could not open log file: {ex.Message}", "Certificate Worker", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private static string GetLogFilePath()
+    {
+        var directory = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "YesGATC",
+            "CertificateWorker");
+        System.IO.Directory.CreateDirectory(directory);
+        return System.IO.Path.Combine(directory, "activity.log");
     }
 
     private async Task HandleJobPipelineResultAsync(
@@ -738,7 +810,7 @@ public partial class MainWindow : Window
                     ex.Message,
                     TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
                 RefreshRetryBadges();
-                SetStatusSafe($"{batchLabel} failed · {ex.Message}", StatusKind.Error);
+                SetStatusSafe($"{batchLabel} failed · {ex.Message}", ex, StatusKind.Error);
 
                 if (AutomationService.IsBrowserDisconnectedError(ex))
                 {
@@ -961,7 +1033,7 @@ public partial class MainWindow : Window
                         stats.LastError = ex.Message;
                     }
                     RefreshRetryBadges();
-                    SetStatusSafe($"{label} failed · {ex.Message}", StatusKind.Error);
+                    SetStatusSafe($"{label} failed · {ex.Message}", ex, StatusKind.Error);
 
                     if (AutomationService.IsBrowserDisconnectedError(ex))
                     {
@@ -1059,13 +1131,18 @@ public partial class MainWindow : Window
 
     private void SetStatusSafe(string message, StatusKind kind)
     {
+        SetStatusSafe(message, null, kind);
+    }
+
+    private void SetStatusSafe(string message, Exception? ex, StatusKind kind)
+    {
         if (Dispatcher.CheckAccess())
         {
-            SetStatus(message, kind);
+            SetStatus(message, ex, kind);
             return;
         }
 
-        Dispatcher.Invoke(() => SetStatus(message, kind));
+        Dispatcher.Invoke(() => SetStatus(message, ex, kind));
     }
 
     private void SelectJobOnUiThread(string jobId)
@@ -1513,7 +1590,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, StatusKind.Error);
+            SetStatus(ex.Message, ex, StatusKind.Error);
             MessageBox.Show(this, ex.Message, "Certificate Worker", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         finally
@@ -1531,6 +1608,34 @@ public partial class MainWindow : Window
     }
 
     private void SetStatus(string message, StatusKind kind = StatusKind.Info)
+    {
+        SetStatus(message, null, kind);
+    }
+
+    private static readonly object LogFileLock = new();
+
+    private void LogToFile(string message, Exception? ex = null)
+    {
+        try
+        {
+            var logPath = GetLogFilePath();
+            lock (LogFileLock)
+            {
+                var logLine = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}";
+                if (ex != null)
+                {
+                    logLine += $"{Environment.NewLine}{ex.ToString()}{Environment.NewLine}";
+                }
+                System.IO.File.AppendAllText(logPath, logLine + Environment.NewLine);
+            }
+        }
+        catch
+        {
+            // Ignore logging errors to prevent crash
+        }
+    }
+
+    private void SetStatus(string message, Exception? ex, StatusKind kind = StatusKind.Info)
     {
         StatusText.Text = message;
         StatusTimestampText.Text = DateTime.Now.ToString("HH:mm:ss");
@@ -1560,6 +1665,7 @@ public partial class MainWindow : Window
         }
 
         AddActivityEntry(message);
+        LogToFile(message, ex);
     }
 
     private void AddActivityEntry(string message)
