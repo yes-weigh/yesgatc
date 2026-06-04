@@ -730,6 +730,9 @@ export const RCSiteCalibration: React.FC = () => {
         ? String((err as { code: string }).code)
         : '';
     if (code === 'permission-denied') {
+      if (isVct) {
+        return 'Permission denied. Ensure your technician account is approved and linked to your RC centre, then try again.';
+      }
       return 'Missing or insufficient permissions. Deploy Firestore rules: firebase deploy --only firestore:rules';
     }
     return err instanceof Error ? err.message : fallback;
@@ -1343,6 +1346,7 @@ export const RCSiteCalibration: React.FC = () => {
                       customers={customers}
                       rcProfile={rcProfile}
                       rcUid={rcUid ?? undefined}
+                      actorUid={actorUid ?? undefined}
                       submitting={formBusy}
                       lockCustomer={isEditMode}
                       readOnly={isViewMode}

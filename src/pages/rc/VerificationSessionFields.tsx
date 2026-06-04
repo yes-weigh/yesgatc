@@ -73,6 +73,8 @@ type VerificationSessionFieldsProps = {
   customers: Customer[];
   rcProfile: FirestoreUserDoc | null;
   rcUid?: string;
+  /** Authenticated user — VCT uid or RC admin uid (not the RC centre id). */
+  actorUid?: string;
   submitting: boolean;
   lockCustomer?: boolean;
   readOnly?: boolean;
@@ -121,6 +123,7 @@ export const VerificationSessionFields = forwardRef<
   customers,
   rcProfile,
   rcUid,
+  actorUid,
   submitting,
   lockCustomer = false,
   readOnly = false,
@@ -376,7 +379,7 @@ export const VerificationSessionFields = forwardRef<
             rcForm: rcPartyForm,
             rcUid,
             rcId: rcUid,
-            createdByUid: rcUid,
+            createdByUid: actorUid ?? rcUid,
           },
           customers,
         );
@@ -397,6 +400,7 @@ export const VerificationSessionFields = forwardRef<
       customerPartyForm,
       rcPartyForm,
       rcUid,
+      actorUid,
       customers,
       activeStep,
       isOnEvidenceStep,

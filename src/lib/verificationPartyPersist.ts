@@ -77,6 +77,11 @@ export async function persistVerificationPartyProfile(
 
   if (isSelf) {
     if (!rcUid || !rcForm.name.trim()) return { error: null };
+    // VCT verifications default to Self (RC centre) — technicians cannot patch the RC profile.
+    const persisterOwnsRcProfile = !createdByUid || createdByUid === rcUid;
+    if (!persisterOwnsRcProfile) {
+      return { error: null };
+    }
     if (!isPartyFormReadyToPersist(rcForm)) {
       return {
         error: 'Complete postal code and wait for district and state before saving.',
