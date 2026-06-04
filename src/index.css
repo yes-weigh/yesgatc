@@ -7819,10 +7819,9 @@ body.verification-mobile-wizard-active {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 1.25rem;
+  gap: 1rem;
   padding: 1rem 1rem 1.15rem;
   min-height: min(70vh, 520px);
-  justify-content: center;
 }
 
 .verification-certified-summary-head {
@@ -7851,9 +7850,57 @@ body.verification-mobile-wizard-active {
   width: 100%;
 }
 
+.verification-summary-details-card {
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 0.85rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(71, 85, 105, 0.45);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.verification-summary-details-title {
+  margin: 0 0 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.verification-summary-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem 0.75rem;
+}
+
+.verification-summary-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.verification-summary-detail-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.88);
+}
+
+.verification-summary-detail-value {
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: #f1f5f9;
+  overflow-wrap: anywhere;
+}
+
 .verification-certified-summary-footer {
   margin-top: auto;
-  padding-top: 0.35rem;
+  padding-top: 0.5rem;
 }
 
 .verification-form-footer--certified-summary {
@@ -7868,6 +7915,113 @@ body.verification-mobile-wizard-active {
 
 .verification-form-footer--certified-summary .verification-form-btn--cancel {
   min-width: 8.5rem;
+}
+
+.verification-serial-group-hint {
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.verification-serial-group-error {
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+.verification-serial-group-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+.verification-version-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem 0.9rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid rgba(71, 85, 105, 0.45);
+  background: rgba(15, 23, 42, 0.55);
+}
+
+.verification-version-card--corrupted {
+  border-color: rgba(251, 146, 60, 0.45);
+  background: rgba(124, 45, 18, 0.22);
+}
+
+.verification-version-card--correct {
+  border-color: rgba(74, 222, 128, 0.35);
+  background: rgba(22, 101, 52, 0.18);
+}
+
+.verification-version-card--pending {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(30, 64, 175, 0.2);
+}
+
+.verification-version-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.verification-version-card-head-text {
+  min-width: 0;
+}
+
+.verification-version-card-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.verification-version-card-subtitle {
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: rgba(203, 213, 225, 0.88);
+  overflow-wrap: anywhere;
+}
+
+.verification-version-card .verification-certified-actions,
+.verification-version-card .verification-summary-details-card {
+  max-width: none;
+  margin: 0;
+}
+
+.verification-form-btn--resubmit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 146, 60, 0.5);
+  background: rgba(180, 83, 9, 0.25);
+  color: #fdba74;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.verification-form-btn--resubmit:hover:not(:disabled) {
+  background: rgba(180, 83, 9, 0.4);
+}
+
+.verification-form-btn--resubmit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 @media (max-width: 520px) {

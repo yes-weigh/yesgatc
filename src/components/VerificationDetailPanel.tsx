@@ -2,7 +2,8 @@ import React from 'react';
 import { Eye, X } from 'lucide-react';
 import { InlineFormPanel } from './InlineFormPanel';
 import { StorageImage } from './StorageImage';
-import { VerificationCertifiedSummary } from './VerificationCertifiedSummary';
+import { VerificationSerialGroupView } from './VerificationSerialGroupView';
+import { getVerificationSerialGroup } from '../lib/verificationResubmit';
 import { VERIFICATION_LOCATION_OPTIONS } from '../lib/siteCalibrationProfileFields';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
 import {
@@ -14,8 +15,10 @@ import type { SiteCalibration } from '../types';
 
 interface VerificationDetailPanelProps {
   record: SiteCalibration;
+  allRecords?: SiteCalibration[];
   rcCenterName?: string;
   onClose: () => void;
+  onRecordsChanged?: (newRecordId?: string) => void | Promise<void>;
 }
 
 function formatDateTime(iso?: string): string {
@@ -69,10 +72,20 @@ function DetailImage({
 
 export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = ({
   record,
+  allRecords = [],
   rcCenterName,
   onClose,
+  onRecordsChanged,
 }) => {
-  if (canShowVerificationCertifiedActions(record)) {
+  const serialGroup = getVerificationSerialGroup(
+    allRecords.length ? allRecords : [record],
+    record,
+  );
+  const showCertifiedGroupView =
+    serialGroup.some(r => canShowVerificationCertifiedActions(r)) ||
+    (canShowVerificationCertifiedActions(record) && serialGroup.length === 1);
+
+  if (showCertifiedGroupView) {
     return (
       <InlineFormPanel
         id="verification-detail-panel"
@@ -80,7 +93,12 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
         className="mb-6 inline-form-panel--wide inline-form-panel--certified-summary"
       >
         <div className="product-form-panel">
-          <VerificationCertifiedSummary record={record} onClose={onClose} />
+          <VerificationSerialGroupView
+            record={record}
+            allRecords={allRecords.length ? allRecords : [record]}
+            onClose={onClose}
+            onResubmitted={onRecordsChanged}
+          />
         </div>
       </InlineFormPanel>
     );

@@ -321,6 +321,16 @@ export interface SiteCalibration {
   certificateNumber?: string;
   /** Internal application reference — e.g. VC/26/1. Assigned at draft creation. */
   applicationNumber?: string;
+  /** Super Admin resubmit — links to the source document when this is a DOCA re-run. */
+  resubmittedFromId?: string;
+  /** Shared id for all versions of the same serial resubmission chain. */
+  resubmissionRootId?: string;
+  resubmissionOrdinal?: number;
+  resubmittedByUid?: string;
+  resubmittedAt?: string;
+  /** Set on the original when a resubmission was queued. */
+  certificateQuality?: 'corrupted_qr';
+  supersededByResubmissionId?: string;
   /** Set by certificate worker when DOCA pipeline fails at a known phase. */
   pipelineFailedPhase?: 'submit' | 'certification';
   pipelineFailureMessage?: string;

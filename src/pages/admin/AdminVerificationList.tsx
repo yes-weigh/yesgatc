@@ -95,6 +95,14 @@ export const AdminVerificationList: React.FC = () => {
     void fetchRecords();
   }, [fetchRecords]);
 
+  useEffect(() => {
+    if (!viewingRecord) return;
+    const fresh = records.find(r => r.id === viewingRecord.id);
+    if (fresh) {
+      setViewingRecord(fresh);
+    }
+  }, [records, viewingRecord?.id]);
+
   const filteredRecords = useMemo(() => {
     const filtered = records.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm, { rcCenterName: record.rcCenterName })) {
@@ -188,8 +196,12 @@ export const AdminVerificationList: React.FC = () => {
       {viewingRecord ? (
         <VerificationDetailPanel
           record={viewingRecord}
+          allRecords={records}
           rcCenterName={viewingRecord.rcCenterName}
           onClose={() => setViewingRecord(null)}
+          onRecordsChanged={async () => {
+            await fetchRecords();
+          }}
         />
       ) : (
         <div className="verification-list-page fade-in">

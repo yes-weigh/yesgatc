@@ -1,5 +1,6 @@
 import React from 'react';
 import { VerificationCertifiedActions } from './VerificationCertifiedActions';
+import { VerificationDetailsCard } from './VerificationDetailsCard';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
 import type { SiteCalibration } from '../types';
 
@@ -31,6 +32,7 @@ export const VerificationCertifiedSummary: React.FC<VerificationCertifiedSummary
       <VerificationStatusBadge record={record} />
     </div>
     <VerificationCertifiedActions record={record} customerPhone={customerPhone} />
+    <VerificationDetailsCard record={record} />
     <div className="verification-certified-summary-footer">
       <div className="product-form-footer verification-form-footer verification-form-footer--certified-summary">
         <div className="verification-form-footer-row verification-form-footer-row--actions">

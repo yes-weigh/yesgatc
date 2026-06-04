@@ -10,7 +10,7 @@ import { useRcScope } from '../../lib/roleScope';
 import { resolveVerificationDraftActorMeta } from '../../lib/verificationRequest';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
-import { VerificationCertifiedSummary } from '../../components/VerificationCertifiedSummary';
+import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
 import { TablePagination } from '../../components/TablePagination';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
@@ -1260,8 +1260,9 @@ export const RCSiteCalibration: React.FC = () => {
         >
           <div className="product-form-panel">
             {isCertifiedActionsView && editingRecord ? (
-              <VerificationCertifiedSummary
+              <VerificationSerialGroupView
                 record={editingRecord}
+                allRecords={records}
                 customerPhone={
                   editingRecord.customerId
                     ? customers.find(c => c.id === editingRecord.customerId)?.phone
@@ -1269,6 +1270,9 @@ export const RCSiteCalibration: React.FC = () => {
                 }
                 onClose={handleCloseForm}
                 closeDisabled={formBusy}
+                onResubmitted={async () => {
+                  await fetchRecords();
+                }}
               />
             ) : (
               <>
