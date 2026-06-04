@@ -10268,6 +10268,61 @@ body.verification-photo-viewer-open {
   font-weight: 700;
 }
 
+.verification-fees-carriage-block {
+  margin-top: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.verification-fees-carriage-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(226, 232, 240, 0.95);
+}
+
+.verification-fees-carriage-hint {
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: rgba(148, 163, 184, 0.9);
+  line-height: 1.35;
+}
+
+.verification-fees-carriage-list {
+  margin-top: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.verification-fees-carriage-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  font-size: 0.78rem;
+}
+
+.verification-fees-carriage-item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.verification-fees-carriage-input {
+  width: 5.5rem;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.verification-fees-carriage-value {
+  font-variant-numeric: tabular-nums;
+  color: #e2e8f0;
+}
+
 .verification-device-fee {
   font-weight: 700;
   color: #bbf7d0;

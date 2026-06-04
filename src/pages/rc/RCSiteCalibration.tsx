@@ -90,6 +90,8 @@ import {
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
+import { computeVerificationDocaCharges } from '../../lib/verificationDocaCharges';
+import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
 import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
@@ -792,6 +794,14 @@ export const RCSiteCalibration: React.FC = () => {
         const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
         const deviceId = row.isNewDevice ? row.localId : row.deviceId;
         const product = products.find(p => p.id === row.productId) ?? null;
+        const docaCharges = computeVerificationDocaCharges(
+          resolveRcFeesStructure(rcProfile),
+          sessionForSave.verificationType,
+          sessionForSave.verificationLocation,
+          sessionForSave.verificationSubject,
+          product,
+          row.carriageConveyanceFee,
+        );
 
         const record: Omit<SiteCalibration, 'id'> = {
           rcId: rcUid!,
@@ -803,6 +813,7 @@ export const RCSiteCalibration: React.FC = () => {
             { ...row, deviceId },
             product,
             verificationDraftActor,
+            docaCharges,
           ),
           ...imageFields,
         };
@@ -860,9 +871,17 @@ export const RCSiteCalibration: React.FC = () => {
         await syncCustomerDevices([row], sessionForSave.customerId, applied.customer);
       }
       const product = products.find(p => p.id === row.productId) ?? null;
+      const docaCharges = computeVerificationDocaCharges(
+        resolveRcFeesStructure(rcProfile),
+        sessionForSave.verificationType,
+        sessionForSave.verificationLocation,
+        sessionForSave.verificationSubject,
+        product,
+        row.carriageConveyanceFee,
+      );
       const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
-        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, { product, docaCharges }),
         ...imageFields,
         updatedAt: new Date().toISOString(),
       });
@@ -970,9 +989,17 @@ export const RCSiteCalibration: React.FC = () => {
         await syncCustomerDevices([row], sessionForSave.customerId, applied.customer);
       }
       const product = products.find(p => p.id === row.productId) ?? null;
+      const docaCharges = computeVerificationDocaCharges(
+        resolveRcFeesStructure(rcProfile),
+        sessionForSave.verificationType,
+        sessionForSave.verificationLocation,
+        sessionForSave.verificationSubject,
+        product,
+        row.carriageConveyanceFee,
+      );
       const imageFields = await uploadRowImages(editingId, row.localId, sessionForSave.verificationType === 'RV');
       await updateDoc(doc(db, 'siteCalibrations', editingId), {
-        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, { product, docaCharges }),
         ...imageFields,
         ...buildVerificationSubmitPatch(),
       });

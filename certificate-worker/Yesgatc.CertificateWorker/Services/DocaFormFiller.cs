@@ -117,11 +117,11 @@ public static class DocaFormFiller
     {
         await ScrollToLabelAsync(page, "Verification & Charges");
 
-        await TryClearPlainFieldAsync(page, ["Money Receipt"], inputIndex: 0);
-        await TryClearPlainFieldAsync(page, ["Money Receipt", "Dated"], inputIndex: 1);
-        await TryClearPlainFieldAsync(page, ["Verification Fee"]);
-        await TryClearPlainFieldAsync(page, ["Carriage", "Conveyance"]);
-        await TryClearPlainFieldAsync(page, ["Total deposited"]);
+        await FillPlainFieldAsync(page, ["Money Receipt"], instrument.MoneyReceiptNumber, inputIndex: 0);
+        await FillPlainFieldAsync(page, ["Money Receipt", "Dated"], instrument.MoneyReceiptDated, inputIndex: 1);
+        await FillPlainFieldAsync(page, ["Verification Fee"], instrument.VerificationFeeTotal);
+        await FillPlainFieldAsync(page, ["Carriage", "Conveyance"], "0");
+        await FillPlainFieldAsync(page, ["Total deposited"], instrument.TotalDeposited);
         await FillPlainFieldAsync(page, ["Model Approval"], instrument.ModelApprovalNo);
 
         var placeLabels = instrument.VerificationLocation == "in_premises"

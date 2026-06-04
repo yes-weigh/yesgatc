@@ -118,6 +118,9 @@ public partial class MainWindow : Window
         OpenAiCaptchaOcr.RuntimeApiKeyOverride = string.IsNullOrWhiteSpace(captchaKey) ? null : captchaKey;
         UpdateCaptchaApiKeyHint();
 
+        DocaFillOnlyCheckBox.IsChecked = saved.DocaFillOnly;
+        ApplyDocaFillOnlyToAutomationWorkers();
+
         _automationService.DocaCredentials = CurrentDocaCredentials();
         UpdateSignInSummary();
     }
@@ -131,6 +134,18 @@ public partial class MainWindow : Window
         Password = DocaPasswordBox.Text,
     };
 
+    private bool DocaFillOnlyEnabled => DocaFillOnlyCheckBox.IsChecked == true;
+
+    private void ApplyDocaFillOnlyToAutomationWorkers()
+    {
+        var fillOnly = DocaFillOnlyEnabled;
+        _automationService.DocaFillOnly = fillOnly;
+        foreach (var worker in _preparedBulkWorkers)
+        {
+            worker.DocaFillOnly = fillOnly;
+        }
+    }
+
     private void PersistCredentials()
     {
         _credentialStore.SaveAll(
@@ -138,7 +153,16 @@ public partial class MainWindow : Window
             PasswordBox.Text,
             DocaEmailBox.Text,
             DocaPasswordBox.Text,
-            CaptchaApiKeyBox.Text);
+            CaptchaApiKeyBox.Text,
+            DocaFillOnlyEnabled);
+    }
+
+    private void DocaFillOnlyCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        ApplyDocaFillOnlyToAutomationWorkers();
+        PersistCredentials();
+        var mode = DocaFillOnlyEnabled ? "fill-only" : "full submit";
+        AddActivityEntry($"DOCA automation mode: {mode} (saved).");
     }
 
     /// <summary>
@@ -1099,6 +1123,7 @@ public partial class MainWindow : Window
         {
             WorkerIndex = workerIndex,
             DocaCredentials = CurrentDocaCredentials(),
+            DocaFillOnly = DocaFillOnlyEnabled,
             ResolveFirebaseIdToken = GetFreshIdTokenAsync,
             ManualDocaLoginWait = _autoWorkerPausedForDoca,
         };
@@ -1172,6 +1197,7 @@ public partial class MainWindow : Window
         }
 
         automation.DocaCredentials = CurrentDocaCredentials();
+        automation.DocaFillOnly = DocaFillOnlyEnabled;
 
         var current = job;
         var ranPhase1 = false;
@@ -1184,6 +1210,11 @@ public partial class MainWindow : Window
             if (submitResult.State == DocaSessionState.LoginRequired)
             {
                 return new JobPipelineResult(false, true, submitResult.Message);
+            }
+
+            if (submitResult.FillOnlyCompleted)
+            {
+                return new JobPipelineResult(true, false, submitResult.Message);
             }
 
             if (submitResult.DuplicateOnDoca)
@@ -1293,6 +1324,7 @@ public partial class MainWindow : Window
 
         var docaCredentials = CurrentDocaCredentials();
         automation.DocaCredentials = docaCredentials;
+        automation.DocaFillOnly = DocaFillOnlyEnabled;
 
         var party = await _partyDetailsService.ResolveForJobAsync(job, job.RcId, _session.IdToken);
         var instrument = await _instrumentDetailsService.ResolveForJobAsync(job, job.RcId, _session.IdToken);

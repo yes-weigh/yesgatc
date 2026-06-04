@@ -170,6 +170,37 @@ public sealed class InstrumentDetailsService
                 "Product model approval number is missing.");
         }
 
+        var applicationNumber = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "applicationNumber"));
+        if (string.IsNullOrWhiteSpace(applicationNumber))
+        {
+            throw new InvalidOperationException(
+                "Application number is missing on the verification record.");
+        }
+
+        var verificationType = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "verificationType"),
+            job.VerificationType);
+        var verificationSubject = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "verificationSubject"),
+            "customer");
+
+        var fees = RcFeesResolver.Resolve(rcFields);
+        var charges = DocaVerificationCharges.Resolve(
+            calibrationFields,
+            productFields,
+            fees,
+            verificationType,
+            verificationLocation,
+            verificationSubject);
+
+        var submittedAt = FirestoreFieldReader.ReadString(calibrationFields, "submittedAt");
+        var moneyReceiptDated = DocaVerificationCharges.FormatMoneyReceiptDate(
+            string.IsNullOrWhiteSpace(submittedAt) ? job.SubmittedAt : submittedAt);
+
+        var manufacturingYear = FirestoreFieldReader.ReadDouble(calibrationFields, "manufacturingYear");
+        var yearOfManufacture = ResolveYearOfManufacture(verificationType, manufacturingYear);
+
         if (verificationLocation is not ("in_situ" or "in_premises"))
         {
             throw new InvalidOperationException(
@@ -199,7 +230,11 @@ public sealed class InstrumentDetailsService
         {
             TypeOfInstrument = "Electronic",
             Manufacturer = manufacturer,
-            YearOfManufacture = DateTime.Now.Year.ToString(CultureInfo.InvariantCulture),
+            YearOfManufacture = yearOfManufacture,
+            MoneyReceiptNumber = applicationNumber,
+            MoneyReceiptDated = moneyReceiptDated,
+            VerificationFeeTotal = charges.VerificationFeeTotalText,
+            TotalDeposited = charges.TotalDepositedText,
             AccuracyClass = "III",
             MaximumCapacity = DocaMetrologicalFormatter.FormatMaximumCapacity(maxCapacity.Value),
             MinimumCapacity = DocaMetrologicalFormatter.FormatGrams(minCapacity.Value),
@@ -223,6 +258,18 @@ public sealed class InstrumentDetailsService
             ScaleImageContentType = scaleImageContentType,
             ScaleImageUsesStampingFallback = scaleImageUsesStampingFallback,
         };
+    }
+
+    private static string ResolveYearOfManufacture(string verificationType, double? manufacturingYear)
+    {
+        if (string.Equals(verificationType, "RV", StringComparison.OrdinalIgnoreCase)
+            && manufacturingYear is > 0)
+        {
+            return ((int)Math.Round(manufacturingYear.Value, MidpointRounding.AwayFromZero))
+                .ToString(CultureInfo.InvariantCulture);
+        }
+
+        return DateTime.Now.Year.ToString(CultureInfo.InvariantCulture);
     }
 
     private static string FormatIntervalCount(double value)

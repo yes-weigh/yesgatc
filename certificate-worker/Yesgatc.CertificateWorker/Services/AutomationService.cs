@@ -14,7 +14,8 @@ public sealed record DocaOpenResult(
     DocaSessionState State,
     string Message,
     bool VerificationApproved = false,
-    bool DuplicateOnDoca = false);
+    bool DuplicateOnDoca = false,
+    bool FillOnlyCompleted = false);
 
 public sealed class AutomationService : IAsyncDisposable
 {
@@ -176,6 +177,9 @@ public sealed class AutomationService : IAsyncDisposable
 
     public DocaCredentialSettings DocaCredentials { get; set; } = new();
 
+    /// <summary>Fill DOCA IC form fields only — skip Generate Certificate and Firebase approval.</summary>
+    public bool DocaFillOnly { get; set; }
+
     public Func<CancellationToken, Task<string>>? ResolveFirebaseIdToken { get; set; }
 
     /// <summary>Phase 2 — open OV form, select instrument type, fill party section.</summary>
@@ -259,6 +263,20 @@ public sealed class AutomationService : IAsyncDisposable
             _settings.DocaUploadImageMaxEdgePx);
 
         await DocaFormFiller.FillMachinePhotoSectionAsync(page, instrument, preparedPhoto.Path);
+
+        if (DocaFillOnly)
+        {
+            await page.BringToFrontAsync();
+            var fillOnlyNote =
+                $"DOCA form filled for {party.BelongToName}. Serial {instrument.SerialNumber}. " +
+                "Generate Certificate was not clicked (fill-only mode). " +
+                $"{preparedPhoto.Summary}. Stamping plate: {stampingImage.LocalPath}.";
+            return new DocaOpenResult(
+                DocaSessionState.LoggedIn,
+                fillOnlyNote,
+                FillOnlyCompleted: true);
+        }
+
         await DocaFormFiller.WaitForDocaSubmissionSuccessAsync(page);
 
         var postSubmitLogin = await TryEnsureLoggedInOnPageAsync(page, "run automation again", cancellationToken);

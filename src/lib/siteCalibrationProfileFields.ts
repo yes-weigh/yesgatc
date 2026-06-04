@@ -58,6 +58,8 @@ export type VerificationDeviceRowValues = {
   sealIdentificationNumber: string;
   /** Re-verification only — year of manufacturing (YYYY). */
   manufacturingYear: string;
+  /** Carriage / conveyance (INR) — stored for DOCA; automation uses 0 until wired. */
+  carriageConveyanceFee: string;
   /** @deprecated session-level verificationLocation is used instead */
   verificationLocation: VerificationLocation | '';
 };
@@ -172,6 +174,7 @@ export function createEmptyVerificationDeviceRow(): VerificationDeviceRowValues 
     maximumPermissibleError: '',
     sealIdentificationNumber: '',
     manufacturingYear: '',
+    carriageConveyanceFee: '0',
     verificationLocation: '',
   };
 }
@@ -204,6 +207,7 @@ export function deviceRowFromCustomerDevice(
     maximumPermissibleError: mpeStringFromProduct(product),
     sealIdentificationNumber: '',
     manufacturingYear: '',
+    carriageConveyanceFee: '0',
     verificationLocation: '',
   };
 }
@@ -234,6 +238,7 @@ export function syncVerificationDevicesAfterCustomerUpdate(
       included: existing.included,
       sealIdentificationNumber: existing.sealIdentificationNumber,
       manufacturingYear: existing.manufacturingYear,
+      carriageConveyanceFee: existing.carriageConveyanceFee,
     };
   });
 
@@ -271,6 +276,10 @@ export function verificationSessionFromRecord(
             ? String(record.manufacturingYear)
             : '',
         verificationLocation: '',
+        carriageConveyanceFee:
+          record.carriageConveyanceFee !== undefined && record.carriageConveyanceFee !== null
+            ? String(record.carriageConveyanceFee)
+            : '0',
       },
     ],
   };
@@ -296,7 +305,10 @@ export function siteCalibrationFormFromRecord(record: SiteCalibration): SiteCali
 export function buildSiteCalibrationFromRow(
   session: VerificationSessionValues,
   row: VerificationDeviceRowValues,
-  options?: { product?: Product | null },
+  options?: {
+    product?: Product | null;
+    docaCharges?: import('./verificationDocaCharges').VerificationDocaChargeFields | null;
+  },
 ): Omit<
   SiteCalibration,
   'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt' | 'status' | 'submittedAt' | 'approvedAt'
@@ -324,6 +336,9 @@ export function buildSiteCalibrationFromRow(
     const year = row.manufacturingYear.trim();
     if (year) fields.manufacturingYear = Number(year);
   }
+  if (options?.docaCharges) {
+    Object.assign(fields, options.docaCharges);
+  }
   return fields;
 }
 
@@ -332,9 +347,10 @@ export function buildNewSiteCalibrationRecord(
   row: VerificationDeviceRowValues,
   product?: Product | null,
   draftActor: VerificationDraftActorMeta = { actor: 'rc' },
+  docaCharges?: import('./verificationDocaCharges').VerificationDocaChargeFields | null,
 ): Omit<SiteCalibration, 'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt'> {
   return {
-    ...buildSiteCalibrationFromRow(session, row, { product }),
+    ...buildSiteCalibrationFromRow(session, row, { product, docaCharges }),
     ...buildVerificationDraftMeta(draftActor),
   };
 }
@@ -367,6 +383,7 @@ export function buildSiteCalibrationFields(
       maximumPermissibleError: values.maximumPermissibleError,
       sealIdentificationNumber: values.sealIdentificationNumber,
       manufacturingYear: '',
+      carriageConveyanceFee: '0',
       verificationLocation: '',
     },
   );

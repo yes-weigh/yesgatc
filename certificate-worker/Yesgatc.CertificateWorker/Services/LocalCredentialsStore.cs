@@ -51,13 +51,20 @@ public sealed class LocalCredentialsStore
         File.WriteAllText(FilePath, json);
     }
 
-    public void SaveAll(string aadhar, string password, string docaEmail, string docaPassword, string captchaApiKey = "")
+    public void SaveAll(
+        string aadhar,
+        string password,
+        string docaEmail,
+        string docaPassword,
+        string captchaApiKey = "",
+        bool docaFillOnly = false)
     {
         Save(new StoredCredentials
         {
             SuperAdmin = new CredentialSettings { Aadhar = aadhar.Trim(), Password = password },
             Doca = new DocaCredentialSettings { Email = docaEmail.Trim(), Password = docaPassword },
             CaptchaApiKey = captchaApiKey.Trim(),
+            DocaFillOnly = docaFillOnly,
         });
     }
 }
@@ -67,6 +74,9 @@ public sealed class StoredCredentials
     public CredentialSettings SuperAdmin { get; set; } = new();
     public DocaCredentialSettings Doca { get; set; } = new();
     public string CaptchaApiKey { get; set; } = string.Empty;
+
+    /// <summary>When true, Phase 1 fills the DOCA form but does not click Generate Certificate.</summary>
+    public bool DocaFillOnly { get; set; }
 
     [JsonPropertyName("rc")]
     public CredentialSettings? LegacyRc { get; set; }

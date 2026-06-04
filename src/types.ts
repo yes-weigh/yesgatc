@@ -321,6 +321,14 @@ export interface SiteCalibration {
   certificateNumber?: string;
   /** Internal application reference — e.g. VC/26/1. Assigned at draft creation. */
   applicationNumber?: string;
+  /** Fee breakdown for DOCA Verification & Charges (INR, whole rupees). */
+  verificationFeeBase?: number;
+  verificationFeeGst?: number;
+  /** Verification fee incl. 18% GST — filled on DOCA as Verification Fee and Total deposited. */
+  verificationFeeTotal?: number;
+  /** Stored for future DOCA automation; worker currently submits 0. */
+  carriageConveyanceFee?: number;
+  totalDeposited?: number;
   /** Super Admin resubmit — links to the source document when this is a DOCA re-run. */
   resubmittedFromId?: string;
   /** Shared id for all versions of the same serial resubmission chain. */

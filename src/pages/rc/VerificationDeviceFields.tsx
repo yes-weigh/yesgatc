@@ -8,10 +8,12 @@ import { UploadField } from '../admin/productFormUi';
 import { useAppContext } from '../../context/AppContext';
 import {
   DEFAULT_RC_FEES_STRUCTURE,
+  formatRcFeeAmount,
   rcVerificationFeeQuote,
   sumRcVerificationFees,
   verificationFeeWithGst,
 } from '../../lib/rcProfileFields';
+import { parseCarriageConveyanceFeeInput } from '../../lib/verificationDocaCharges';
 import { VerificationFeeBreakdown } from '../../components/VerificationFeeBreakdown';
 import {
   mpeStringFromProduct,
@@ -889,6 +891,41 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   ))}
                 </ul>
               )}
+
+              <div className="verification-fees-carriage-block">
+                <p className="verification-fees-carriage-title mb-0">Carriage / Conveyance (per device)</p>
+                <p className="verification-fees-carriage-hint mb-0">
+                  Stored on the record for DOCA. Automation submits ₹0 until this is enabled on the worker.
+                </p>
+                <ul className="verification-fees-carriage-list mb-0">
+                  {includedDevices.map(device => (
+                    <li key={device.localId} className="verification-fees-carriage-item">
+                      <span className="verification-fees-carriage-item-name">
+                        {device.productName.trim() || device.serialNumber.trim() || 'Device'}
+                      </span>
+                      {!readOnly && !locked ? (
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          className="input-field verification-fees-carriage-input"
+                          value={device.carriageConveyanceFee}
+                          onChange={e =>
+                            onDeviceChange(device.localId, {
+                              carriageConveyanceFee: e.target.value,
+                            })
+                          }
+                          aria-label={`Carriage / conveyance for ${device.serialNumber || 'device'}`}
+                        />
+                      ) : (
+                        <span className="verification-fees-carriage-value">
+                          {formatRcFeeAmount(parseCarriageConveyanceFeeInput(device.carriageConveyanceFee))}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
               <VerificationFeeBreakdown
                 baseAmount={feeTotals.base}
