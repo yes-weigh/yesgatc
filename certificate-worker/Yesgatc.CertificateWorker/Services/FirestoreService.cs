@@ -98,6 +98,9 @@ public sealed class FirestoreService
         string? certificateNumber = null,
         CancellationToken cancellationToken = default)
     {
+        var verification = await GetVerificationByIdAsync(jobId, idToken, cancellationToken);
+        var resubmittedFromId = verification?.ResubmittedFromId?.Trim();
+
         var now = DateTime.UtcNow.ToString("O");
         var fields = new Dictionary<string, string>
         {
@@ -124,6 +127,39 @@ public sealed class FirestoreService
             "siteCalibrations",
             jobId,
             fields,
+            idToken,
+            cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(resubmittedFromId))
+        {
+            await VoidSupersededCertificateAsync(resubmittedFromId, idToken, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Voids the source verification when a DOCA resubmission finishes certifying.
+    /// </summary>
+    public async Task VoidSupersededCertificateAsync(
+        string recordId,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(recordId))
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow.ToString("O");
+        var documents = new FirestoreDocumentClient(_settings);
+        await documents.PatchStringFieldsAsync(
+            "siteCalibrations",
+            recordId,
+            new Dictionary<string, string>
+            {
+                ["certificateVoidedAt"] = now,
+                ["certificateVoidReason"] = "resubmit_superseded",
+                ["updatedAt"] = now,
+            },
             idToken,
             cancellationToken);
     }
@@ -323,6 +359,7 @@ public sealed class FirestoreService
             ApprovedAt = FirestoreFieldReader.ReadString(fields, "approvedAt"),
             CertifiedAt = FirestoreFieldReader.ReadString(fields, "certifiedAt"),
             CertificatePdfUrl = FirestoreFieldReader.ReadString(fields, "certificatePdfUrl"),
+            ResubmittedFromId = FirestoreFieldReader.ReadString(fields, "resubmittedFromId"),
             SealIdentificationNumber = FirestoreFieldReader.ReadString(fields, "sealIdentificationNumber"),
         };
     }

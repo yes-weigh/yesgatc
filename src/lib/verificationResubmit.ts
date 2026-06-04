@@ -6,6 +6,11 @@ import {
   isVerificationFullyCertified,
   normalizeVerificationStatus,
 } from './verificationRequest';
+import {
+  canVoidVerificationCertificate,
+  isVerificationCertificateVoided,
+  voidVerificationCertificate,
+} from './verificationCertificateVoid';
 import type { SiteCalibration } from '../types';
 
 /** Original record marked when Super Admin queues a DOCA resubmission. */
@@ -62,11 +67,55 @@ export function hasPendingResubmission(
   });
 }
 
+/** True when any resubmission clone for this serial is still in the pipeline. */
+export function hasPendingResubmissionInGroup(group: SiteCalibration[]): boolean {
+  return group.some(record => {
+    if (!record.resubmittedFromId?.trim()) return false;
+    const status = normalizeVerificationStatus(record);
+    return status === 'submitted' || status === 'approved';
+  });
+}
+
+function certificateSortKey(record: SiteCalibration): string {
+  return record.certifiedAt || record.approvedAt || record.createdAt || '';
+}
+
+/** Prefer the opened record when eligible; otherwise the latest certified copy. */
+export function pickResubmitSourceForSerialGroup(
+  group: SiteCalibration[],
+  preferred?: SiteCalibration,
+): SiteCalibration | null {
+  const eligible = group.filter(r => canResubmitVerification(r, group));
+  if (eligible.length === 0) return null;
+
+  if (preferred && eligible.some(r => r.id === preferred.id)) {
+    return preferred;
+  }
+
+  return [...eligible].sort((a, b) => certificateSortKey(b).localeCompare(certificateSortKey(a)))[0];
+}
+
+export function canResubmitSerialGroup(
+  group: SiteCalibration[],
+  preferred?: SiteCalibration,
+): boolean {
+  if (hasPendingResubmissionInGroup(group)) return false;
+  return pickResubmitSourceForSerialGroup(group, preferred) !== null;
+}
+
+export function countVoidableCertificatesInGroup(
+  group: SiteCalibration[],
+  exceptId: string,
+): number {
+  return group.filter(r => r.id !== exceptId && canVoidVerificationCertificate(r)).length;
+}
+
 /** Super Admin may queue a fresh DOCA run from a completed verification. */
 export function canResubmitVerification(
   record: SiteCalibration,
   group: SiteCalibration[],
 ): boolean {
+  if (isVerificationCertificateVoided(record)) return false;
   if (record.supersededByResubmissionId?.trim()) return false;
   if (hasPendingResubmission(record.id, group)) return false;
 
@@ -84,6 +133,10 @@ export function verificationVersionTitle(
   record: SiteCalibration,
   group: SiteCalibration[],
 ): string {
+  if (isVerificationCertificateVoided(record)) {
+    return 'Void certificate';
+  }
+
   if (isCorruptedCertificateRecord(record)) {
     return 'Corrupted certificate';
   }
@@ -129,6 +182,9 @@ function stripCertificateOutcomeFields(
     delete next[key];
   }
   delete next.certificateQuality;
+  delete next.certificateVoidedAt;
+  delete next.certificateVoidedByUid;
+  delete next.certificateVoidReason;
   delete next.resubmittedFromId;
   delete next.resubmissionRootId;
   delete next.resubmissionOrdinal;
@@ -185,4 +241,33 @@ export async function resubmitVerificationForDoca(
   });
 
   return { newRecordId: newRef.id, applicationNumber };
+}
+
+/**
+ * Voids every other certificate for this serial, then queues one DOCA resubmission
+ * from the preferred (or latest) eligible record.
+ */
+export async function resubmitSerialGroupForDoca(
+  firestore: Firestore,
+  group: SiteCalibration[],
+  resubmittedByUid: string,
+  preferred?: SiteCalibration,
+): Promise<ResubmitVerificationResult> {
+  if (hasPendingResubmissionInGroup(group)) {
+    throw new Error('A resubmission for this serial is already in progress.');
+  }
+
+  const source = pickResubmitSourceForSerialGroup(group, preferred);
+  if (!source) {
+    throw new Error('No eligible certificate to resubmit from.');
+  }
+
+  for (const record of group) {
+    if (record.id === source.id) continue;
+    if (canVoidVerificationCertificate(record)) {
+      await voidVerificationCertificate(firestore, record, resubmittedByUid, 'admin');
+    }
+  }
+
+  return resubmitVerificationForDoca(firestore, source, resubmittedByUid);
 }

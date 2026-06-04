@@ -24,6 +24,7 @@ internal static class SiteCalibrationMapper
             ApprovedAt = ReadOptionalString(snapshot, "approvedAt"),
             CertifiedAt = ReadOptionalString(snapshot, "certifiedAt"),
             CertificatePdfUrl = ReadOptionalString(snapshot, "certificatePdfUrl"),
+            ResubmittedFromId = ReadOptionalString(snapshot, "resubmittedFromId"),
             SealIdentificationNumber = ReadOptionalString(snapshot, "sealIdentificationNumber"),
         };
     }
@@ -48,6 +49,7 @@ internal static class SiteCalibrationMapper
             ApprovedAt = FirestoreFieldReader.ReadString(fields, "approvedAt"),
             CertifiedAt = FirestoreFieldReader.ReadString(fields, "certifiedAt"),
             CertificatePdfUrl = FirestoreFieldReader.ReadString(fields, "certificatePdfUrl"),
+            ResubmittedFromId = FirestoreFieldReader.ReadString(fields, "resubmittedFromId"),
             SealIdentificationNumber = FirestoreFieldReader.ReadString(fields, "sealIdentificationNumber"),
         };
     }

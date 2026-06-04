@@ -1,12 +1,18 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { db } from '../firebase';
 import { useAuth } from '../context/useAuth';
 import { useConfirm } from '../context/ConfirmContext';
 import {
-  canResubmitVerification,
+  isVerificationCertificateVoided,
+  syncVoidSupersededResubmitSources,
+} from '../lib/verificationCertificateVoid';
+import {
+  canResubmitSerialGroup,
+  countVoidableCertificatesInGroup,
   getVerificationSerialGroup,
-  resubmitVerificationForDoca,
+  pickResubmitSourceForSerialGroup,
+  resubmitSerialGroupForDoca,
   verificationVersionSubtitle,
   verificationVersionTitle,
 } from '../lib/verificationResubmit';
@@ -28,6 +34,7 @@ type VerificationSerialGroupViewProps = {
 
 function versionTone(record: SiteCalibration, group: SiteCalibration[]): string {
   const title = verificationVersionTitle(record, group);
+  if (title === 'Void certificate') return 'void';
   if (title === 'Corrupted certificate') return 'corrupted';
   if (title === 'Correct certificate') return 'correct';
   if (title === 'Resubmission in progress') return 'pending';
@@ -44,7 +51,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
 }) => {
   const { user } = useAuth();
   const confirm = useConfirm();
-  const [resubmittingId, setResubmittingId] = useState<string | null>(null);
+  const [resubmitting, setResubmitting] = useState(false);
   const [error, setError] = useState('');
 
   const group = useMemo(
@@ -53,30 +60,67 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
   );
 
   const isSuperAdmin = user?.role === 'super_admin';
+  const resubmitSource = useMemo(
+    () => pickResubmitSourceForSerialGroup(group, record),
+    [group, record],
+  );
+  const showSerialResubmit = isSuperAdmin && canResubmitSerialGroup(group, record);
+  const voidOthersCount = resubmitSource
+    ? countVoidableCertificatesInGroup(group, resubmitSource.id)
+    : 0;
+
+  const groupSyncKey = useMemo(
+    () =>
+      group
+        .map(
+          r =>
+            `${r.id}:${r.certificateVoidedAt ?? ''}:${r.status ?? ''}:${r.resubmittedFromId ?? ''}`,
+        )
+        .join('|'),
+    [group],
+  );
+
+  useEffect(() => {
+    if (!isSuperAdmin || !user?.uid) return;
+    void syncVoidSupersededResubmitSources(db, group, user.uid)
+      .then(() => onResubmitted?.(record.id))
+      .catch(() => {
+        /* worker may have already voided the source */
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when void/cert state changes
+  }, [groupSyncKey, isSuperAdmin, user?.uid]);
+
   const showGroupHeading = group.length > 1;
 
-  const handleResubmit = async (source: SiteCalibration) => {
-    if (!user?.uid || !isSuperAdmin) return;
+  const handleSerialResubmit = async () => {
+    if (!user?.uid || !isSuperAdmin || !resubmitSource) return;
+
+    const voidLine =
+      voidOthersCount > 0
+        ? `${voidOthersCount} other certificate${voidOthersCount === 1 ? '' : 's'} for this serial will be marked void.\n\n`
+        : '';
 
     const ok = await confirm({
       title: 'Resubmit on DOCA?',
       message:
-        `Queue a new submitted verification for serial ${source.serialNumber?.trim() || '—'}?\n\n` +
-        'The current certificate will be marked as corrupted. A duplicate record is created for the certificate server.',
+        `Queue a new verification for serial ${record.serialNumber?.trim() || '—'}?\n\n` +
+        voidLine +
+        `Resubmit uses app ${resubmitSource.applicationNumber?.trim() || '—'} as the source. ` +
+        'When the new certificate is issued, that source is voided automatically.',
       confirmLabel: 'Resubmit',
       destructive: true,
     });
     if (!ok) return;
 
     setError('');
-    setResubmittingId(source.id);
+    setResubmitting(true);
     try {
-      const result = await resubmitVerificationForDoca(db, source, user.uid);
+      const result = await resubmitSerialGroupForDoca(db, group, user.uid, record);
       await onResubmitted?.(result.newRecordId);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to resubmit verification.');
     } finally {
-      setResubmittingId(null);
+      setResubmitting(false);
     }
   };
 
@@ -104,19 +148,42 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
         </p>
       )}
 
+      {showSerialResubmit && (
+        <div className="verification-serial-group-resubmit">
+          <button
+            type="button"
+            className="verification-form-btn verification-form-btn--resubmit"
+            disabled={resubmitting || closeDisabled}
+            onClick={() => void handleSerialResubmit()}
+          >
+            {resubmitting ? (
+              <span className="spinner-inline" aria-hidden />
+            ) : (
+              <RefreshCw size={16} aria-hidden />
+            )}
+            <span>Resubmit on DOCA</span>
+          </button>
+          {voidOthersCount > 0 && (
+            <p className="verification-serial-group-resubmit-hint mb-0">
+              Marks {voidOthersCount} other certificate{voidOthersCount === 1 ? '' : 's'} as void,
+              then queues one new run.
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="verification-serial-group-versions">
         {group.map(version => {
           const tone = versionTone(version, group);
           const showActions = canShowVerificationCertifiedActions(version);
-          const showResubmit =
-            isSuperAdmin && canResubmitVerification(version, group);
+          const isVoided = isVerificationCertificateVoided(version);
 
           return (
             <article
               key={version.id}
               className={`verification-version-card verification-version-card--${tone}${
-                showActions ? ' verification-version-card--has-preview' : ''
-              }`}
+                isVoided ? ' verification-version-card--voided' : ''
+              }${showActions ? ' verification-version-card--has-preview' : ''}`}
             >
               <div className="verification-version-card-layout">
                 <div className="verification-version-card-main">
@@ -137,22 +204,6 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
                   )}
 
                   <VerificationDetailsCard record={version} />
-
-                  {showResubmit && (
-                    <button
-                      type="button"
-                      className="verification-form-btn verification-form-btn--resubmit"
-                      disabled={Boolean(resubmittingId) || closeDisabled}
-                      onClick={() => void handleResubmit(version)}
-                    >
-                      {resubmittingId === version.id ? (
-                        <span className="spinner-inline" aria-hidden />
-                      ) : (
-                        <RefreshCw size={16} aria-hidden />
-                      )}
-                      <span>Resubmit on DOCA</span>
-                    </button>
-                  )}
                 </div>
 
                 {showActions && (
@@ -174,7 +225,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
               type="button"
               className="verification-form-btn verification-form-btn--cancel"
               onClick={onClose}
-              disabled={closeDisabled || Boolean(resubmittingId)}
+              disabled={closeDisabled || resubmitting}
             >
               Close
             </button>

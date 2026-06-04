@@ -14,6 +14,7 @@ public sealed class SiteCalibrationRecord
     public string? ApprovedAt { get; init; }
     public string? CertifiedAt { get; init; }
     public string? CertificatePdfUrl { get; init; }
+    public string? ResubmittedFromId { get; init; }
     public string? SealIdentificationNumber { get; init; }
 
     public bool IsDraft => string.Equals(Status, VerificationStatuses.Draft, StringComparison.OrdinalIgnoreCase);

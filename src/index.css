@@ -7953,6 +7953,73 @@ body.verification-mobile-wizard-active {
   background: rgba(15, 23, 42, 0.55);
 }
 
+.verification-summary-details-card {
+  position: relative;
+}
+
+.verification-summary-details-card--voided .verification-summary-details-grid {
+  opacity: 0.42;
+  filter: grayscale(0.35);
+  pointer-events: none;
+  user-select: none;
+}
+
+.verification-summary-details-void-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 1rem;
+  text-align: center;
+  border-radius: inherit;
+  background: rgba(15, 23, 42, 0.55);
+  color: #fecaca;
+  pointer-events: none;
+}
+
+.verification-summary-details-void-label {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.verification-summary-details-void-hint {
+  max-width: 14rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: rgba(254, 202, 202, 0.88);
+}
+
+.verification-version-card--voided {
+  border-color: rgba(127, 29, 29, 0.55);
+}
+
+.verification-serial-group-resubmit {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+}
+
+.verification-serial-group-resubmit .verification-form-btn--resubmit {
+  width: 100%;
+}
+
+.verification-serial-group-resubmit-hint {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(148, 163, 184, 0.92);
+  text-align: center;
+}
+
 .verification-version-card--corrupted {
   border-color: rgba(251, 146, 60, 0.45);
   background: rgba(124, 45, 18, 0.22);
@@ -8107,6 +8174,11 @@ body.verification-mobile-wizard-active {
     height: 100%;
     border: none;
     background: #fff;
+  }
+
+  .verification-certificate-preview--voided .verification-certificate-preview-frame {
+    opacity: 0.35;
+    filter: grayscale(0.5);
   }
 }
 

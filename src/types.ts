@@ -331,6 +331,10 @@ export interface SiteCalibration {
   /** Set on the original when a resubmission was queued. */
   certificateQuality?: 'corrupted_qr';
   supersededByResubmissionId?: string;
+  /** Admin void or auto-void when a resubmission certifies — invalidates this certificate in the app. */
+  certificateVoidedAt?: string;
+  certificateVoidedByUid?: string;
+  certificateVoidReason?: 'admin' | 'resubmit_superseded';
   /** Set by certificate worker when DOCA pipeline fails at a known phase. */
   pipelineFailedPhase?: 'submit' | 'certification';
   pipelineFailureMessage?: string;

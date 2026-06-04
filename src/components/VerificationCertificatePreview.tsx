@@ -1,5 +1,6 @@
 import React from 'react';
 import { ExternalLink } from 'lucide-react';
+import { isVerificationCertificateVoided } from '../lib/verificationCertificateVoid';
 import { resolveCertificatePreviewUrl } from '../lib/verificationCertifiedActions';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
@@ -20,9 +21,13 @@ export const VerificationCertificatePreview: React.FC<VerificationCertificatePre
 
   const isPdf = /\.pdf(\?|$)/i.test(url) || url.includes('firebasestorage');
 
+  const isVoided = isVerificationCertificateVoided(record);
+
   return (
     <aside
-      className={`verification-certificate-preview${className ? ` ${className}` : ''}`}
+      className={`verification-certificate-preview${isVoided ? ' verification-certificate-preview--voided' : ''}${
+        className ? ` ${className}` : ''
+      }`}
       aria-label="Certificate preview"
     >
       <div className="verification-certificate-preview-head">
