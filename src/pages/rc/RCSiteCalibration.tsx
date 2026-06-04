@@ -10,6 +10,7 @@ import { useRcScope } from '../../lib/roleScope';
 import { resolveVerificationDraftActorMeta } from '../../lib/verificationRequest';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
+import { VerificationCertifiedActions } from '../../components/VerificationCertifiedActions';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
 import { TablePagination } from '../../components/TablePagination';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
@@ -32,7 +33,6 @@ import {
   buildVerificationSubmitPatch,
   buildVerificationStatusFilterOptions,
   canDeleteVerification,
-  canDownloadVerificationCertificate,
   canSubmitVerification,
   isVerificationEditable,
   isVerificationViewable,
@@ -65,7 +65,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import {
-  Pencil, Plus, Save, Send, Download, Eye, X,
+  Pencil, Plus, Save, Send, Eye, X,
 } from 'lucide-react';
 
 import {
@@ -1288,17 +1288,18 @@ export const RCSiteCalibration: React.FC = () => {
                         Cert {editingRecord.certificateNumber.trim()}
                       </span>
                     )}
-                    {canDownloadVerificationCertificate(editingRecord) && (
-                      <a
-                        href={editingRecord.certificatePdfUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-secondary btn-sm flex items-center gap-1"
-                      >
-                        <Download size={14} /> Download certificate
-                      </a>
-                    )}
                   </div>
+                )}
+                {isViewMode && editingRecord && (
+                  <VerificationCertifiedActions
+                    record={editingRecord}
+                    customerPhone={
+                      editingRecord.customerId
+                        ? customers.find(c => c.id === editingRecord.customerId)?.phone
+                        : undefined
+                    }
+                    className="mt-3"
+                  />
                 )}
                 <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
                   {error || '\u00a0'}

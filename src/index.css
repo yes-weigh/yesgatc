@@ -7707,6 +7707,129 @@ body.verification-mobile-wizard-active {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.verification-certified-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.verification-certified-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0.55rem 0.35rem 0.5rem;
+  border-radius: 12px;
+  border: 1px solid rgba(71, 85, 105, 0.45);
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.verification-certified-action:hover:not(:disabled),
+.verification-certified-action:focus-visible:not(:disabled) {
+  border-color: rgba(148, 163, 184, 0.55);
+  background: rgba(30, 41, 59, 0.88);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.verification-certified-action--placeholder {
+  cursor: not-allowed;
+  opacity: 0.92;
+}
+
+.verification-certified-action--placeholder:disabled {
+  color: inherit;
+}
+
+.verification-certified-action-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+
+.verification-certified-action-icon svg,
+.verification-certified-action-mark {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: block;
+}
+
+.verification-certified-action-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.verification-certified-action--certificate .verification-certified-action-icon {
+  color: #4ade80;
+  border-color: rgba(74, 222, 128, 0.35);
+  background: rgba(22, 101, 52, 0.35);
+  box-shadow: 0 0 18px rgba(74, 222, 128, 0.22);
+}
+
+.verification-certified-action--label .verification-certified-action-icon {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(120, 53, 15, 0.35);
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.2);
+}
+
+.verification-certified-action--test-report .verification-certified-action-icon {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(30, 64, 175, 0.35);
+  box-shadow: 0 0 18px rgba(96, 165, 250, 0.2);
+}
+
+.verification-certified-action--receipt .verification-certified-action-icon {
+  color: #f472b6;
+  border-color: rgba(244, 114, 182, 0.35);
+  background: rgba(131, 24, 67, 0.32);
+  box-shadow: 0 0 18px rgba(244, 114, 182, 0.2);
+}
+
+.verification-certified-action--whatsapp-share .verification-certified-action-icon {
+  color: #25d366;
+  border-color: rgba(37, 211, 102, 0.35);
+  background: rgba(6, 78, 59, 0.35);
+  box-shadow: 0 0 18px rgba(37, 211, 102, 0.2);
+}
+
+.verification-certified-actions--progress {
+  margin: 0.35rem 0 0.15rem;
+}
+
+@media (max-width: 520px) {
+  .verification-certified-actions {
+    gap: 0.35rem;
+  }
+
+  .verification-certified-action {
+    padding: 0.5rem 0.2rem 0.45rem;
+  }
+
+  .verification-certified-action-icon {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+
+  .verification-certified-action-label {
+    font-size: 0.58rem;
+  }
+}
+
 .data-table--site-calibration .site-calibration-col-serial {
   width: 2.5rem;
 }

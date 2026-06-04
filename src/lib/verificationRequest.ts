@@ -99,6 +99,12 @@ export function isVerificationFullyCertified(record: SiteCalibration): boolean {
   );
 }
 
+/** Completed verification with a certificate number — show document action tiles. */
+export function canShowVerificationCertifiedActions(record: SiteCalibration): boolean {
+  if (!record.certificateNumber?.trim()) return false;
+  return isVerificationFullyCertified(record) || canDownloadVerificationCertificate(record);
+}
+
 export function isVerificationFailedAtSubmit(record: SiteCalibration): boolean {
   if (normalizeVerificationStatus(record) !== 'submitted') return false;
   return record.pipelineFailedPhase === 'submit';

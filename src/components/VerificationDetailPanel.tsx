@@ -1,14 +1,11 @@
 import React from 'react';
-import { Download, Eye, X } from 'lucide-react';
+import { Eye, X } from 'lucide-react';
 import { InlineFormPanel } from './InlineFormPanel';
 import { StorageImage } from './StorageImage';
 import { VERIFICATION_LOCATION_OPTIONS } from '../lib/siteCalibrationProfileFields';
+import { VerificationCertifiedActions } from './VerificationCertifiedActions';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
-import {
-  canDownloadVerificationCertificate,
-  formatVerificationCapAcc,
-  verificationVctLabel,
-} from '../lib/verificationRequest';
+import { formatVerificationCapAcc, verificationVctLabel } from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
 
 interface VerificationDetailPanelProps {
@@ -93,17 +90,8 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               {record.certificateNumber?.trim() && (
                 <span className="text-mono text-xs">Cert {record.certificateNumber.trim()}</span>
               )}
-              {canDownloadVerificationCertificate(record) && (
-                <a
-                  href={record.certificatePdfUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-secondary btn-sm flex items-center gap-1"
-                >
-                  <Download size={14} /> Download certificate
-                </a>
-              )}
             </div>
+            <VerificationCertifiedActions record={record} className="mt-3" />
           </div>
           <button
             type="button"

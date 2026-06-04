@@ -29,6 +29,7 @@ import {
   verificationSubmitProgressStageIndex,
   type VerificationSubmitProgressStage,
 } from '../lib/verificationSubmitProgressStages';
+import { VerificationCertifiedActions } from './VerificationCertifiedActions';
 import { VerificationSubmitProgressCountdown } from './VerificationSubmitProgressCountdown';
 import type { Customer, SiteCalibration } from '../types';
 
@@ -275,12 +276,17 @@ export const VerificationSubmitProgressOverlay: React.FC<
           <VerificationProgressDetails rows={detailRows} />
         )}
 
-        {stage === 'certified' && (
+        {stage === 'certified' && primaryRecord && (
           <div className="verification-submit-progress-certified-footer">
             {footerMessage && (
               <p className="verification-submit-progress-success-label mb-0">{footerMessage}</p>
             )}
-            <VerificationProgressQr certificateNumber={primaryRecord?.certificateNumber} />
+            <VerificationCertifiedActions
+              record={primaryRecord}
+              customerPhone={customer?.phone}
+              className="verification-certified-actions--progress"
+            />
+            <VerificationProgressQr certificateNumber={primaryRecord.certificateNumber} />
             <p className="verification-submit-progress-signatory mb-0">Authorised Signatory</p>
           </div>
         )}
