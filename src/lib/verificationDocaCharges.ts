@@ -7,6 +7,7 @@ import type {
   VerificationLocation,
 } from '../types';
 
+/** Fields read by the certificate worker for DOCA verification & charges. */
 export type VerificationDocaChargeFields = {
   verificationFeeBase: number;
   verificationFeeGst: number;
@@ -15,10 +16,23 @@ export type VerificationDocaChargeFields = {
   totalDeposited: number;
 };
 
-export function parseCarriageConveyanceFeeInput(value: string): number {
+function parseRupeeFeeInput(value: string): number {
   const digits = value.replace(/\D/g, '');
   if (!digits) return 0;
   return Math.min(Number.parseInt(digits, 10), 999_999);
+}
+
+export function parseCarriageConveyanceFeeInput(value: string): number {
+  return parseRupeeFeeInput(value);
+}
+
+/** App-only RV fees — stored on Firebase, not sent to DOCA automation. */
+export function parseServiceFeeInput(value: string): number {
+  return parseRupeeFeeInput(value);
+}
+
+export function parseAdditionalFeeInput(value: string): number {
+  return parseRupeeFeeInput(value);
 }
 
 /** Only RV verifications store fee breakdown on the record; OV leaves fields empty for DOCA automation. */
@@ -32,7 +46,6 @@ export function computeVerificationDocaCharges(
   verificationLocation: VerificationLocation | '',
   verificationSubject: 'self' | 'customer' | '',
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
-  carriageConveyanceFeeInput = '0',
 ): VerificationDocaChargeFields | null {
   if (!shouldPersistVerificationDocaCharges(verificationType)) {
     return null;
@@ -48,14 +61,13 @@ export function computeVerificationDocaCharges(
   if (quote.amount == null) return null;
 
   const { base, gst, total } = verificationFeeWithGst(quote.amount);
-  const carriageConveyanceFee = parseCarriageConveyanceFeeInput(carriageConveyanceFeeInput);
 
   return {
     verificationFeeBase: base,
     verificationFeeGst: gst,
     verificationFeeTotal: total,
-    carriageConveyanceFee,
-    /** DOCA total deposited matches verification fee (excludes carriage until automation uses it). */
+    carriageConveyanceFee: 0,
+    /** Matches verification fee — excludes app-only service fee. */
     totalDeposited: total,
   };
 }

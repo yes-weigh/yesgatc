@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { focusMobileTextInput, getVerificationSerialInput } from '../../lib/focusMobileInput';
 import { FileText, IndianRupee, Plus, Receipt, Scale, Trash2 } from 'lucide-react';
 import { ProductSelect } from '../../components/ProductSelect';
@@ -8,16 +8,14 @@ import { UploadField } from '../admin/productFormUi';
 import { useAppContext } from '../../context/AppContext';
 import {
   DEFAULT_RC_FEES_STRUCTURE,
-  formatRcFeeAmount,
+  defaultRvServiceFee,
   rcVerificationFeeQuote,
-  sumRcVerificationFees,
-  verificationFeeWithGst,
+  rvGatewayFee,
+  rvTdsFee,
 } from '../../lib/rcProfileFields';
-import { parseCarriageConveyanceFeeInput } from '../../lib/verificationDocaCharges';
 import { VerificationFeeBreakdown } from '../../components/VerificationFeeBreakdown';
 import {
   mpeStringFromProduct,
-  verificationLocationLabel,
   type DeviceRvDocumentsState,
   type DeviceVerificationImagesState,
   type VerificationDeviceRowValues,
@@ -204,42 +202,29 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   const selectAllRef = useRef<HTMLInputElement>(null);
   const locked = submitting || readOnly;
   const isRv = verificationType === 'RV';
-  const useSelfFees = verificationSubject === 'self';
   const fees = feesStructure ?? DEFAULT_RC_FEES_STRUCTURE;
 
-  const includedDevices = useMemo(
-    () => devices.filter(device => device.included),
-    [devices],
-  );
+  const buildServiceFeeProps = (row: VerificationDeviceRowValues) => ({
+    value: row.serviceFee,
+    readOnly: locked || !row.included,
+    onChange: locked || !row.included
+      ? undefined
+      : (value: string) => onDeviceChange(row.localId, { serviceFee: value }),
+    inputId: `verification-service-fee-${row.localId}`,
+    ariaLabel: 'Service fee',
+  });
 
-  const deviceFeeLines = useMemo(() => {
-    if (!isRv) return [];
-    return includedDevices.map((row, index) => {
-      const product = selectedProduct(products, row);
-      const quote = rcVerificationFeeQuote(
-        fees,
-        verificationLocation,
-        product,
-        verificationSubject,
-        verificationType,
-      );
-      return {
-        localId: row.localId,
-        label: row.productName.trim() || row.serialNumber.trim() || `Device ${index + 1}`,
-        serialNumber: row.serialNumber.trim(),
-        ...quote,
-      };
-    });
-  }, [fees, includedDevices, isRv, products, verificationLocation, verificationSubject]);
+  const buildAdditionalFeeProps = (row: VerificationDeviceRowValues) => ({
+    value: row.additionalFee,
+    readOnly: locked || !row.included,
+    onChange: locked || !row.included
+      ? undefined
+      : (value: string) => onDeviceChange(row.localId, { additionalFee: value }),
+    inputId: `verification-additional-fee-${row.localId}`,
+    ariaLabel: 'Additional fee',
+  });
 
-  const feeTotals = useMemo(() => {
-    const base = sumRcVerificationFees(deviceFeeLines);
-    return verificationFeeWithGst(base);
-  }, [deviceFeeLines]);
-
-  const showFeesSummary = isRv && includedDevices.length > 0;
   const showFeeColumn = isRv;
-  const canCalculateFees = isRv || Boolean(verificationLocation) || useSelfFees;
 
   const sealLabelForRow = (row: VerificationDeviceRowValues) =>
     readOnly
@@ -314,6 +299,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
       productId: next.productId,
       productName: next.productName,
       maximumPermissibleError: mpeStringFromProduct(product),
+      ...(isRv ? { serviceFee: defaultRvServiceFee(product) } : {}),
     });
   };
 
@@ -602,7 +588,14 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       {!row.included ? (
                         <span className="text-muted text-sm">—</span>
                       ) : feeQuote?.amount != null ? (
-                        <VerificationFeeBreakdown baseAmount={feeQuote.amount} variant="cell" />
+                        <VerificationFeeBreakdown
+                          baseAmount={feeQuote.amount}
+                          variant="cell"
+                          tdsAmount={rvTdsFee(product)}
+                          gatewayFeeAmount={rvGatewayFee(product)}
+                          serviceFee={buildServiceFeeProps(row)}
+                          additionalFee={buildAdditionalFeeProps(row)}
+                        />
                       ) : (
                         <span className="text-muted text-xs">{feeQuote?.incompleteReason ?? '—'}</span>
                       )}
@@ -778,10 +771,16 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                 )}
 
                 {isRv && row.included && (
-                  <div className="verification-device-fee-inline verification-device-fee-inline--compact">
-                    <span className="verification-device-fee-inline-label">Fee (incl. GST)</span>
+                  <div className="verification-device-fee-tile">
                     {feeQuote?.amount != null ? (
-                      <VerificationFeeBreakdown baseAmount={feeQuote.amount} variant="cell" />
+                      <VerificationFeeBreakdown
+                        baseAmount={feeQuote.amount}
+                        variant="cell"
+                        tdsAmount={rvTdsFee(product)}
+                        gatewayFeeAmount={rvGatewayFee(product)}
+                        serviceFee={buildServiceFeeProps(row)}
+                        additionalFee={buildAdditionalFeeProps(row)}
+                      />
                     ) : (
                       <span className="text-muted text-xs">{feeQuote?.incompleteReason ?? '—'}</span>
                     )}
@@ -835,117 +834,6 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           );
         })}
       </div>
-
-      {showFeesSummary && (
-        <div className={`verification-fees-summary${compact ? ' verification-fees-summary--compact' : ''}`}>
-          <div className="verification-fees-summary-head">
-            <div className="verification-fees-summary-head-main">
-              <IndianRupee size={compact ? 14 : 16} aria-hidden />
-              <p className="verification-fees-summary-title mb-0">Verification fees</p>
-            </div>
-            {canCalculateFees ? (
-              <span className="verification-fees-summary-location">
-                {isRv ? 'Re-verification rate' : useSelfFees ? 'Self' : verificationLocationLabel(verificationLocation)}
-              </span>
-            ) : (
-              <span className="text-muted text-xs">Select location to calculate fees</span>
-            )}
-          </div>
-
-          {canCalculateFees && (
-            <>
-              {!compact && (
-                <div className="table-scroll-wrap">
-                  <table className="data-table verification-fees-table">
-                    <thead>
-                      <tr>
-                        <th>Device</th>
-                        <th>Max capacity</th>
-                        <th>Fee tier</th>
-                        <th className="text-right">Fee (incl. GST)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {deviceFeeLines.map(line => (
-                        <tr key={line.localId}>
-                          <td className="font-medium">{line.label}</td>
-                          <td>{line.capacityDisplay}</td>
-                          <td>{line.tierLabel}</td>
-                          <td className="text-right">
-                            {line.amount != null ? (
-                              <VerificationFeeBreakdown baseAmount={line.amount} variant="cell" />
-                            ) : (
-                              <span className="text-muted text-xs">{line.incompleteReason ?? '—'}</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {compact && (
-                <ul className="verification-fees-compact-list mb-0">
-                  {deviceFeeLines.map(line => (
-                    <li key={line.localId} className="verification-fees-compact-item">
-                      <span className="verification-fees-compact-item-name">{line.label}</span>
-                      <span className="verification-fees-compact-item-fee">
-                        {line.amount != null ? (
-                          <VerificationFeeBreakdown baseAmount={line.amount} variant="inline" />
-                        ) : (
-                          line.incompleteReason ?? '—'
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              <div className="verification-fees-carriage-block">
-                <p className="verification-fees-carriage-title mb-0">Carriage / Conveyance (per device)</p>
-                <p className="verification-fees-carriage-hint mb-0">
-                  Stored on the record for DOCA. Automation submits ₹0 until this is enabled on the worker.
-                </p>
-                <ul className="verification-fees-carriage-list mb-0">
-                  {includedDevices.map(device => (
-                    <li key={device.localId} className="verification-fees-carriage-item">
-                      <span className="verification-fees-carriage-item-name">
-                        {device.productName.trim() || device.serialNumber.trim() || 'Device'}
-                      </span>
-                      {!readOnly && !locked ? (
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          className="input-field verification-fees-carriage-input"
-                          value={device.carriageConveyanceFee}
-                          onChange={e =>
-                            onDeviceChange(device.localId, {
-                              carriageConveyanceFee: e.target.value,
-                            })
-                          }
-                          aria-label={`Carriage / conveyance for ${device.serialNumber || 'device'}`}
-                        />
-                      ) : (
-                        <span className="verification-fees-carriage-value">
-                          {formatRcFeeAmount(parseCarriageConveyanceFeeInput(device.carriageConveyanceFee))}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <VerificationFeeBreakdown
-                baseAmount={feeTotals.base}
-                variant="total-footer"
-                className="verification-fees-total"
-              />
-            </>
-          )}
-        </div>
-      )}
 
       {!readOnly && allowAddDevice && (
         <div className="verification-devices-footer">

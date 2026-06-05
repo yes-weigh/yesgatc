@@ -328,6 +328,15 @@ export interface SiteCalibration {
   verificationFeeGst?: number;
   /** Verification fee incl. 18% GST — filled on DOCA as Verification Fee and Total deposited. */
   verificationFeeTotal?: number;
+  /** RV service fee (INR) — app-only; stored on Firebase, not used by certificate worker / DOCA. */
+  serviceFee?: number;
+  /** RV additional fee (INR) — app-only; stored on Firebase, not used by certificate worker / DOCA. */
+  additionalFee?: number;
+  /** RV Razorpay payment for administrative fees + GST. */
+  rvPaymentStatus?: 'not_required' | 'pending' | 'paid';
+  rvPaymentId?: string;
+  rvPaymentAmount?: number;
+  rvPaidAt?: string;
   /** Stored for future DOCA automation; worker currently submits 0. */
   carriageConveyanceFee?: number;
   totalDeposited?: number;

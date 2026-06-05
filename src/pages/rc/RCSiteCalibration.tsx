@@ -102,6 +102,12 @@ import {
   resolveLaboratorySealIdentification,
 } from '../../lib/rcLaboratoryFields';
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
+import { RvPaymentPanel } from '../../components/RvPaymentPanel';
+import {
+  buildRvPaymentFirestorePatch,
+  computeRvPaymentAmount,
+  isRvPaymentSatisfied,
+} from '../../lib/rvPaymentAmount';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
 import {
@@ -120,13 +126,14 @@ function verificationDocaFirestorePatch(
   verificationLocation: VerificationLocation | '',
   verificationSubject: 'self' | 'customer' | '',
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
-  carriageConveyanceFeeInput = '0',
 ): Record<string, unknown> {
   if (!shouldPersistVerificationDocaCharges(verificationType)) {
     return {
       verificationFeeBase: deleteField(),
       verificationFeeGst: deleteField(),
       verificationFeeTotal: deleteField(),
+      serviceFee: deleteField(),
+      additionalFee: deleteField(),
       carriageConveyanceFee: deleteField(),
       totalDeposited: deleteField(),
     };
@@ -138,7 +145,6 @@ function verificationDocaFirestorePatch(
     verificationLocation,
     verificationSubject,
     product,
-    carriageConveyanceFeeInput,
   );
   return charges ?? {};
 }
@@ -163,6 +169,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   const [submitProgressRecordIds, setSubmitProgressRecordIds] = useState<string[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [rvPaymentOpen, setRvPaymentOpen] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
@@ -795,7 +802,23 @@ export const RCSiteCalibration: React.FC = () => {
     return err instanceof Error ? err.message : fallback;
   };
 
-  const handleCreate = async (submitAfterSave = false) => {
+  const rvPaymentBreakdown = useMemo(
+    () =>
+      computeRvPaymentAmount(
+        sessionValues.devices,
+        products,
+        resolveRcFeesStructure(rcProfile),
+        sessionValues.verificationLocation,
+        sessionValues.verificationSubject,
+        sessionValues.verificationType,
+      ),
+    [sessionValues, products, rcProfile],
+  );
+
+  const handleCreate = async (
+    submitAfterSave = false,
+    rvPayment?: { paymentId: string; amountInr: number },
+  ) => {
     setError('');
     const validationError = validateVerificationDraft(
       sessionValues,
@@ -849,8 +872,14 @@ export const RCSiteCalibration: React.FC = () => {
           sessionForSave.verificationLocation,
           sessionForSave.verificationSubject,
           product,
-          row.carriageConveyanceFee,
         );
+
+        const rvPaymentPatch =
+          sessionForSave.verificationType === 'RV' && rvPayment
+            ? buildRvPaymentFirestorePatch(rvPayment.paymentId, rvPayment.amountInr)
+            : sessionForSave.verificationType === 'RV'
+              ? { rvPaymentStatus: 'pending' as const }
+              : { rvPaymentStatus: 'not_required' as const };
 
         const record: Omit<SiteCalibration, 'id'> = {
           rcId: rcUid!,
@@ -865,10 +894,14 @@ export const RCSiteCalibration: React.FC = () => {
             docaCharges,
           ),
           ...imageFields,
+          ...rvPaymentPatch,
         };
         await setDoc(ref, record);
         if (submitAfterSave) {
-          await updateDoc(ref, buildVerificationSubmitPatch());
+          await updateDoc(ref, {
+            ...buildVerificationSubmitPatch(),
+            ...rvPaymentPatch,
+          });
           submittedRecordIds.push(recordId);
         }
       }
@@ -926,7 +959,6 @@ export const RCSiteCalibration: React.FC = () => {
         sessionForSave.verificationLocation,
         sessionForSave.verificationSubject,
         product,
-        row.carriageConveyanceFee,
       );
       const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
@@ -998,21 +1030,10 @@ export const RCSiteCalibration: React.FC = () => {
     }
   };
 
-  const handleSubmitFromForm = async () => {
-    const validationError = validateVerificationForSubmit(
-      sessionValues,
-      deviceImages,
-      deviceRvImages,
-      validationOptions,
-    );
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-
+  const executeSubmitFromForm = async (rvPayment?: { paymentId: string; amountInr: number }) => {
     if (showAddForm) {
       unlockVerificationSuccessAudio();
-      await handleCreate(true);
+      await handleCreate(true, rvPayment);
       return;
     }
 
@@ -1045,14 +1066,18 @@ export const RCSiteCalibration: React.FC = () => {
         sessionForSave.verificationLocation,
         sessionForSave.verificationSubject,
         product,
-        row.carriageConveyanceFee,
       );
       const imageFields = await uploadRowImages(editingId, row.localId, sessionForSave.verificationType === 'RV');
+      const rvPaymentPatch =
+        sessionForSave.verificationType === 'RV' && rvPayment
+          ? buildRvPaymentFirestorePatch(rvPayment.paymentId, rvPayment.amountInr)
+          : {};
       await updateDoc(doc(db, 'siteCalibrations', editingId), {
         ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
         ...docaPatch,
         ...imageFields,
         ...buildVerificationSubmitPatch(),
+        ...rvPaymentPatch,
       });
       handleCloseForm();
       await fetchRecords();
@@ -1062,6 +1087,55 @@ export const RCSiteCalibration: React.FC = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmitFromForm = async () => {
+    const validationError = validateVerificationForSubmit(
+      sessionValues,
+      deviceImages,
+      deviceRvImages,
+      validationOptions,
+    );
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const isRv = sessionValues.verificationType === 'RV';
+    if (isRv) {
+      if (!rvPaymentBreakdown || rvPaymentBreakdown.total <= 0) {
+        setError('Could not calculate RV payment amount. Check device fees and try again.');
+        return;
+      }
+      if (!rcUid) {
+        setError('RC scope is missing.');
+        return;
+      }
+
+      const existing = editingId ? records.find(r => r.id === editingId) ?? null : null;
+      if (isRvPaymentSatisfied(existing, rvPaymentBreakdown.total)) {
+        await executeSubmitFromForm(
+          existing?.rvPaymentId && existing.rvPaymentAmount != null
+            ? { paymentId: existing.rvPaymentId, amountInr: existing.rvPaymentAmount }
+            : undefined,
+        );
+        return;
+      }
+
+      setRvPaymentOpen(true);
+      return;
+    }
+
+    await executeSubmitFromForm();
+  };
+
+  const handleRvPaymentComplete = async (paymentId: string) => {
+    if (!rvPaymentBreakdown) return;
+    setRvPaymentOpen(false);
+    await executeSubmitFromForm({
+      paymentId,
+      amountInr: rvPaymentBreakdown.total,
+    });
   };
 
   const openNewVerificationSession = useCallback(
@@ -1161,8 +1235,12 @@ export const RCSiteCalibration: React.FC = () => {
     showAddForm && includedDeviceCount > 1
       ? `Save ${includedDeviceCount} drafts`
       : 'Save draft';
-  const submitLabel =
-    showAddForm && includedDeviceCount > 1
+  const isRvSession = sessionValues.verificationType === 'RV';
+  const submitLabel = isRvSession
+    ? showAddForm && includedDeviceCount > 1
+      ? `Pay & submit ${includedDeviceCount} for certification`
+      : 'Pay & submit for certification'
+    : showAddForm && includedDeviceCount > 1
       ? `Submit ${includedDeviceCount} for certification`
       : 'Submit for certification';
   const editingRecord = editingId ? records.find(r => r.id === editingId) ?? null : null;
@@ -1399,11 +1477,6 @@ export const RCSiteCalibration: React.FC = () => {
               <VerificationSerialGroupView
                 record={editingRecord}
                 allRecords={records}
-                customerPhone={
-                  editingRecord.customerId
-                    ? customers.find(c => c.id === editingRecord.customerId)?.phone
-                    : undefined
-                }
                 onClose={handleCloseForm}
                 closeDisabled={formBusy}
                 onResubmitted={async () => {
@@ -1615,6 +1688,16 @@ export const RCSiteCalibration: React.FC = () => {
             </>
           )}
         </div>
+      )}
+
+      {rvPaymentOpen && rvPaymentBreakdown && rcUid && (
+        <RvPaymentPanel
+          breakdown={rvPaymentBreakdown}
+          rcId={rcUid}
+          recordIds={editingId ? [editingId] : undefined}
+          onPaid={handleRvPaymentComplete}
+          onClose={() => setRvPaymentOpen(false)}
+        />
       )}
 
       {submitProgressRecordIds && submitProgressRecordIds.length > 0 && (

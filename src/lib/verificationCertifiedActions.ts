@@ -1,8 +1,4 @@
 import { buildDocaCertificateViewUrl } from './docaCertificateUrl';
-import {
-  buildVerificationWhatsAppShareMessage,
-  buildWhatsAppShareUrl,
-} from './verificationWhatsAppShare';
 import { canDownloadVerificationCertificate } from './verificationRequest';
 import type { SiteCalibration } from '../types';
 
@@ -11,13 +7,17 @@ export type VerificationCertifiedActionId =
   | 'label'
   | 'test-report'
   | 'receipt'
-  | 'whatsapp-share';
+  | 'gst-bill';
 
-export type VerificationCertifiedPrintPlaceholderId = 'label' | 'test-report' | 'receipt';
+export type VerificationCertifiedPrintPlaceholderId =
+  | 'label'
+  | 'test-report'
+  | 'receipt'
+  | 'gst-bill';
 
 export type VerificationCertifiedAction =
   | {
-      id: 'certificate' | 'whatsapp-share';
+      id: 'certificate';
       label: string;
       kind: 'link';
       href: string;
@@ -32,6 +32,7 @@ const PRINT_PLACEHOLDER_ACTIONS: VerificationCertifiedAction[] = [
   { id: 'label', label: 'Label', kind: 'print-placeholder' },
   { id: 'test-report', label: 'Test report', kind: 'print-placeholder' },
   { id: 'receipt', label: 'Receipt', kind: 'print-placeholder' },
+  { id: 'gst-bill', label: 'GST bill', kind: 'print-placeholder' },
 ];
 
 /** Fixed toolbar order — matches product mockup. */
@@ -40,7 +41,7 @@ export const VERIFICATION_CERTIFIED_ACTION_ORDER: VerificationCertifiedActionId[
   'label',
   'test-report',
   'receipt',
-  'whatsapp-share',
+  'gst-bill',
 ];
 
 /** URL for certificate preview / download — stored PDF preferred, else public DOCA page. */
@@ -55,7 +56,6 @@ export function resolveCertificatePreviewUrl(record: SiteCalibration): string | 
 
 export function buildVerificationCertifiedActions(
   record: SiteCalibration,
-  options?: { customerPhone?: string | null },
 ): VerificationCertifiedAction[] {
   const certificateHref = resolveCertificatePreviewUrl(record);
 
@@ -72,16 +72,6 @@ export function buildVerificationCertifiedActions(
 
   for (const placeholder of PRINT_PLACEHOLDER_ACTIONS) {
     byId.set(placeholder.id, placeholder);
-  }
-
-  const shareText = buildVerificationWhatsAppShareMessage(record);
-  if (shareText.trim()) {
-    byId.set('whatsapp-share', {
-      id: 'whatsapp-share',
-      label: 'WhatsApp share',
-      kind: 'link',
-      href: buildWhatsAppShareUrl(shareText, options?.customerPhone),
-    });
   }
 
   return VERIFICATION_CERTIFIED_ACTION_ORDER.map(id => byId.get(id)).filter(

@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   /** Google Maps Geocoding API — best match for Google Maps place names on photo stamps. */
   readonly VITE_GOOGLE_MAPS_API_KEY?: string;
   readonly VITE_GEOCODING_API_KEY?: string;
+  /** Razorpay publishable key — required for UPI checkout on the same device. */
+  readonly VITE_RAZORPAY_KEY_ID?: string;
 }
 
 interface ImportMeta {

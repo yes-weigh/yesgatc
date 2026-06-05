@@ -28,7 +28,6 @@ import type { SiteCalibration } from '../types';
 type VerificationSerialGroupViewProps = {
   record: SiteCalibration;
   allRecords: SiteCalibration[];
-  customerPhone?: string | null;
   onClose: () => void;
   onResubmitted?: (newRecordId: string) => void | Promise<void>;
   closeDisabled?: boolean;
@@ -46,7 +45,6 @@ function versionTone(record: SiteCalibration, group: SiteCalibration[]): string 
 export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewProps> = ({
   record,
   allRecords,
-  customerPhone,
   onClose,
   onResubmitted,
   closeDisabled = false,
@@ -175,7 +173,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
                   />
 
                   {showActions && (
-                    <VerificationCertifiedActions record={version} customerPhone={customerPhone} />
+                    <VerificationCertifiedActions record={version} />
                   )}
 
                   <VerificationDetailsCard record={version} />

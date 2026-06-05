@@ -196,6 +196,60 @@ export function sumRcVerificationFees(quotes: Array<{ amount: number | null }>):
   return quotes.reduce((sum, quote) => sum + (quote.amount ?? 0), 0);
 }
 
+/** Default RV service fee (INR) by maximum capacity tier. */
+export const RV_SERVICE_FEE_UPTO_20_KG = 723;
+export const RV_SERVICE_FEE_ABOVE_20_KG = 705;
+
+/** RV TDS (INR) by maximum capacity tier. */
+export const RV_TDS_UPTO_20_KG = 15;
+export const RV_TDS_ABOVE_20_KG = 25;
+
+/** RV gateway fee (INR) by maximum capacity tier. */
+export const RV_GATEWAY_FEE_UPTO_20_KG = 1;
+export const RV_GATEWAY_FEE_ABOVE_20_KG = 2;
+
+function rvCapacityTierAmount(
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+  upto20Kg: number,
+  above20Kg: number,
+): number {
+  const capacityKg = productMaximumCapacityKg(product);
+  if (capacityKg == null) return 0;
+  return capacityKg <= 20 ? upto20Kg : above20Kg;
+}
+
+export function defaultRvServiceFee(
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+): string {
+  const amount = rvCapacityTierAmount(product, RV_SERVICE_FEE_UPTO_20_KG, RV_SERVICE_FEE_ABOVE_20_KG);
+  return amount ? String(amount) : '';
+}
+
+export function rvTdsFee(
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+): number {
+  return rvCapacityTierAmount(product, RV_TDS_UPTO_20_KG, RV_TDS_ABOVE_20_KG);
+}
+
+export function rvGatewayFee(
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+): number {
+  return rvCapacityTierAmount(product, RV_GATEWAY_FEE_UPTO_20_KG, RV_GATEWAY_FEE_ABOVE_20_KG);
+}
+
+/** Split quoted RV base into verification fee, TDS, and gateway (three lines sum to quoted base). */
+export function rvQuotedBaseSplit(
+  quotedBase: number,
+  tds: number,
+  gateway: number,
+): { verificationFee: number; tds: number; gateway: number } {
+  return {
+    verificationFee: Math.max(0, quotedBase - tds - gateway),
+    tds,
+    gateway,
+  };
+}
+
 export function standardWeightsCertExpiryFromDate(certDate: string): string {
   if (!certDate.trim()) return '';
   const d = new Date(`${certDate.trim()}T12:00:00`);

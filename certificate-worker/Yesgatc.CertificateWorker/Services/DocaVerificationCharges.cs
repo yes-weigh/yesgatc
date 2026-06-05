@@ -82,15 +82,16 @@ internal static class DocaVerificationCharges
 
         var baseFee = FirestoreFieldReader.ReadDouble(fields, "verificationFeeBase") ?? 0;
         var gst = FirestoreFieldReader.ReadDouble(fields, "verificationFeeGst") ?? 0;
-        var carriage = FirestoreFieldReader.ReadDouble(fields, "carriageConveyanceFee") ?? 0;
-        var deposited = FirestoreFieldReader.ReadDouble(fields, "totalDeposited") ?? total.Value;
+        // serviceFee is app-only — never read here. totalDeposited on the record may include it;
+        // automation always uses verification fee total for DOCA "Total deposited".
+        var verificationTotal = (int)Math.Round(total.Value, MidpointRounding.AwayFromZero);
 
         amounts = new DocaChargeAmounts(
             (int)Math.Round(baseFee, MidpointRounding.AwayFromZero),
             (int)Math.Round(gst, MidpointRounding.AwayFromZero),
-            (int)Math.Round(total.Value, MidpointRounding.AwayFromZero),
-            (int)Math.Round(carriage, MidpointRounding.AwayFromZero),
-            (int)Math.Round(deposited, MidpointRounding.AwayFromZero));
+            verificationTotal,
+            CarriageConveyance: 0,
+            verificationTotal);
 
         return true;
     }

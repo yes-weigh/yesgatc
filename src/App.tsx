@@ -18,7 +18,7 @@ import { AdminQualityManagement, AdminNotifications } from './pages/admin/AdminM
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
-import { RCJobQueue } from './pages/rc/RCJobQueue';
+import { NewJobComingSoon } from './pages/rc/RCMenuPages';
 import { RCVehicles } from './pages/rc/RCVehicles';
 import { RCCustomers } from './pages/rc/RCCustomers';
 import { RCProducts } from './pages/rc/RCProducts';
@@ -67,7 +67,7 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute allowedRoles={['rc_admin']} />}>
               <Route path="/rc" element={<Layout />}>
                 <Route index element={<RCDashboard />} />
-                <Route path="new-job" element={<RCJobQueue />} />
+                <Route path="new-job" element={<NewJobComingSoon />} />
                 <Route path="verification" element={<RCSiteCalibration />} />
                 <Route path="site-calibration" element={<Navigate to="/rc/verification" replace />} />
                 <Route path="queue" element={<Navigate to="/rc/new-job" replace />} />
@@ -89,7 +89,7 @@ const App: React.FC = () => {
               <Route path="/vct" element={<Layout />}>
                 <Route index element={<RCDashboard />} />
                 <Route path="leads" element={<RCLeads />} />
-                <Route path="new-job" element={<RCJobQueue />} />
+                <Route path="new-job" element={<NewJobComingSoon />} />
                 <Route path="verification" element={<RCSiteCalibration />} />
                 <Route path="customers" element={<RCCustomers />} />
                 <Route path="products" element={<RCProducts />} />

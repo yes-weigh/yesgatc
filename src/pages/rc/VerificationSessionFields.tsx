@@ -32,7 +32,7 @@ import {
   type VerificationImageKind,
 } from '../../lib/verificationDeviceImages';
 import type { RvDocumentKind } from '../../lib/verificationRvDeviceImages';
-import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
+import { defaultRvServiceFee, resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import { lookupWeatherByPincode } from '../../lib/pincodeWeatherLookup';
 import { isValidPincode, normalizePincode } from '../../lib/contactFields';
 import {
@@ -616,7 +616,15 @@ export const VerificationSessionFields = forwardRef<
     }
     onChange({
       verificationType,
-      devices: values.devices.map(device => ({ ...device, manufacturingYear: '' })),
+      devices: values.devices.map(device => {
+        const product = products.find(item => item.id === device.productId) ?? null;
+        return {
+          ...device,
+          manufacturingYear: '',
+          serviceFee: verificationType === 'RV' ? defaultRvServiceFee(product) : '',
+          additionalFee: verificationType === 'RV' ? '0' : '',
+        };
+      }),
     });
   };
 
@@ -901,9 +909,13 @@ export const VerificationSessionFields = forwardRef<
           {currentStep.id === 'evidence' && showDevices && includedDeviceEntries.length > 0 && (
             <VerificationDeviceEvidenceFields
               device={includedDeviceEntries[evidenceDeviceIndex].row}
+              devices={values.devices}
               deviceIndex={evidenceDeviceIndex}
               totalDevices={includedDeviceEntries.length}
               verificationType={values.verificationType}
+              verificationLocation={values.verificationLocation || 'in_situ'}
+              verificationSubject={values.verificationSubject}
+              feesStructure={resolveRcFeesStructure(rcProfile)}
               images={
                 deviceImages[includedDeviceEntries[evidenceDeviceIndex].row.localId] ??
                 emptyDeviceVerificationImagesState()

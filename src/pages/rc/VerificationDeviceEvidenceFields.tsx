@@ -31,14 +31,19 @@ import {
   type DeviceRvDocumentsState,
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
-import type { JobType } from '../../types';
+import { VerificationFeesTotalSummary } from '../../components/VerificationFeesTotalSummary';
+import type { JobType, RcFeesStructure, VerificationLocation } from '../../types';
 import type { VerificationDeviceRowValues } from '../../lib/siteCalibrationProfileFields';
 
 type VerificationDeviceEvidenceFieldsProps = {
   device: VerificationDeviceRowValues;
+  devices: VerificationDeviceRowValues[];
   deviceIndex: number;
   totalDevices: number;
   verificationType?: JobType | '';
+  verificationLocation?: VerificationLocation | '';
+  verificationSubject?: 'self' | 'customer';
+  feesStructure?: RcFeesStructure;
   images: DeviceVerificationImagesState;
   rvDocuments?: DeviceRvDocumentsState;
   onImageSelect: (kind: VerificationImageKind, file: File) => void;
@@ -60,9 +65,13 @@ type VerificationDeviceEvidenceFieldsProps = {
 
 export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEvidenceFieldsProps> = ({
   device,
+  devices,
   deviceIndex,
   totalDevices,
   verificationType = 'OV',
+  verificationLocation = '',
+  verificationSubject = 'customer',
+  feesStructure,
   images,
   rvDocuments = emptyDeviceRvDocumentsState(),
   onImageSelect,
@@ -230,6 +239,14 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
             dateTime={summaryDateTime}
             remarks={DEFAULT_VERIFICATION_SUMMARY_REMARKS}
             infoMessage={DEFAULT_VERIFICATION_SUMMARY_INFO}
+          />
+          <VerificationFeesTotalSummary
+            devices={devices}
+            verificationType={verificationType}
+            verificationLocation={verificationLocation}
+            verificationSubject={verificationSubject}
+            feesStructure={feesStructure}
+            compact
           />
           <VerificationDeclarationPanel
             checked={declarationAccepted}

@@ -283,7 +283,6 @@ export const VerificationSubmitProgressOverlay: React.FC<
             )}
             <VerificationCertifiedActions
               record={primaryRecord}
-              customerPhone={customer?.phone}
               className="verification-certified-actions--progress"
             />
             <VerificationProgressQr certificateNumber={primaryRecord.certificateNumber} />

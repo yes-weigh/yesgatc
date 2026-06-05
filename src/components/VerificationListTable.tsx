@@ -251,8 +251,18 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                     {showVctColumn && (
                       <div className="verification-list-card-metric verification-list-card-metric--vct">
                         <span className="verification-list-card-metric-label">VCT</span>
-                        <span className="verification-list-card-metric-value">
+                        <span className="verification-list-card-metric-value verification-list-card-metric-text">
                           {verificationVctLabel(record)}
+                        </span>
+                        <span className="verification-list-card-metric-label verification-list-card-metric-label--type">
+                          Type
+                        </span>
+                        <span
+                          className={`verification-list-card-type-badge role-badge ${
+                            record.verificationType === 'RV' ? 'badge-vct' : 'badge-rc'
+                          }`}
+                        >
+                          {record.verificationType === 'RV' ? 'RV' : 'OV'}
                         </span>
                       </div>
                     )}
