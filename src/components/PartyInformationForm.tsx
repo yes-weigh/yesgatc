@@ -15,12 +15,14 @@ import {
   X,
 } from 'lucide-react';
 import {
+  buildTelUrl,
+  buildWhatsAppContactUrl,
   isValidPincode,
   normalizePhone,
   normalizePincode,
 } from '../lib/contactFields';
 import { filterCustomersForLookup, formatPhoneDisplay } from '../lib/customerLookup';
-import type { CustomerFormValues } from '../lib/customerProfileFields';
+import { customerFormMapsUrl, type CustomerFormValues } from '../lib/customerProfileFields';
 import { lookupPincode } from '../lib/pincodeLookup';
 import type { Customer } from '../types';
 
@@ -92,29 +94,82 @@ function PartyInfoRow({
   );
 }
 
-function HeroDisplayValue({
-  value,
-  placeholder,
-  className,
-}: {
-  value: string;
-  placeholder: string;
-  className?: string;
-}) {
-  const trimmed = value.trim();
-  const empty = !trimmed;
+function HeroWhatsAppIcon() {
   return (
-    <p
-      className={[
-        'customer-form-hero-display',
-        empty ? 'customer-form-hero-display--empty' : '',
-        className ?? '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+    <svg className="customer-form-hero-contact-icon" viewBox="0 0 24 24" aria-hidden>
+      <path
+        fill="currentColor"
+        d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"
+      />
+    </svg>
+  );
+}
+
+function HeroPhoneContactActions({ phone }: { phone: string }) {
+  const telUrl = buildTelUrl(phone);
+  const whatsAppUrl = buildWhatsAppContactUrl(phone);
+
+  return (
+    <div className="customer-form-hero-contact-actions">
+      {telUrl ? (
+        <a
+          href={telUrl}
+          className="customer-form-hero-contact-btn customer-form-hero-contact-btn--call"
+        >
+          <Phone size={13} strokeWidth={2.25} aria-hidden />
+          Call
+        </a>
+      ) : (
+        <span className="customer-form-hero-contact-btn customer-form-hero-contact-btn--disabled" aria-disabled>
+          <Phone size={13} strokeWidth={2.25} aria-hidden />
+          Call
+        </span>
+      )}
+      {whatsAppUrl ? (
+        <a
+          href={whatsAppUrl}
+          className="customer-form-hero-contact-btn customer-form-hero-contact-btn--whatsapp"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <HeroWhatsAppIcon />
+          WhatsApp
+        </a>
+      ) : (
+        <span className="customer-form-hero-contact-btn customer-form-hero-contact-btn--disabled" aria-disabled>
+          <HeroWhatsAppIcon />
+          WhatsApp
+        </span>
+      )}
+    </div>
+  );
+}
+
+function HeroMapAction({ mapsUrl }: { mapsUrl: string | null }) {
+  if (mapsUrl) {
+    return (
+      <a
+        href={mapsUrl}
+        className="customer-form-hero-contact-btn customer-form-hero-contact-btn--map"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Open in Google Maps"
+      >
+        <MapPin size={13} strokeWidth={2.25} aria-hidden />
+        Map
+      </a>
+    );
+  }
+
+  return (
+    <span
+      className="customer-form-hero-contact-btn customer-form-hero-contact-btn--disabled"
+      aria-disabled
+      title="No GPS location set"
     >
-      {empty ? placeholder : trimmed}
-    </p>
+      <MapPin size={13} strokeWidth={2.25} aria-hidden />
+      Map
+    </span>
   );
 }
 
@@ -416,14 +471,14 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
 
   const identityInHero = Boolean(heroPhoto);
   const showSectionHeader = !hideHeader && !identityInHero;
-  const editing = identityInHero && !readOnly;
-  const heroInputClass = editing
+  const showFieldChrome = identityInHero;
+  const fieldsLocked = identityInHero && readOnly;
+  const heroFieldChromeClass = showFieldChrome ? 'customer-form-hero-field--editable' : undefined;
+  const heroInputClass = showFieldChrome
     ? 'customer-form-hero-input customer-form-hero-input--editable'
-    : identityInHero
-      ? 'customer-form-hero-input'
-      : 'party-info-row-input';
-  const heroReadonlyClass = identityInHero
-    ? 'customer-form-hero-input customer-form-hero-input--readonly'
+    : 'party-info-row-input';
+  const heroReadonlyClass = showFieldChrome
+    ? 'customer-form-hero-input customer-form-hero-input--editable customer-form-hero-input--readonly'
     : 'party-info-row-input party-info-row-input--readonly';
 
   const phoneInput = (
@@ -454,9 +509,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
       type="text"
       className={
         identityInHero
-          ? `customer-form-hero-input customer-form-hero-input--name${
-              editing ? ' customer-form-hero-input--editable' : ''
-            }`
+          ? 'customer-form-hero-input customer-form-hero-input--name customer-form-hero-input--editable'
           : 'party-info-row-input'
       }
       placeholder={compact ? 'Name' : 'Search or enter name'}
@@ -493,13 +546,15 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
     </span>
   ) : null;
 
+  const mapsUrl = fieldsLocked ? customerFormMapsUrl(values) : null;
+
   return (
     <section
       className={`party-information-form party-information-form--rows${
         compact ? ' party-information-form--compact' : ''
       }${identityInHero ? ' party-information-form--hero' : ''}${
-        editing ? ' party-information-form--editing' : ''
-      }${readOnly && identityInHero ? ' party-information-form--readonly' : ''}`}
+        showFieldChrome ? ' party-information-form--editing' : ''
+      }${fieldsLocked ? ' party-information-form--locked' : ''}`}
     >
       {showSectionHeader && (
         <header className="party-information-form-head">
@@ -516,26 +571,18 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
           <div className="customer-form-hero-identity">
             <div
               className={`customer-form-hero-field customer-form-hero-field--name${
-                editing ? ' customer-form-hero-field--editable' : ''
+                heroFieldChromeClass ? ` ${heroFieldChromeClass}` : ''
               }`}
               ref={nameWrapRef}
             >
               <label htmlFor="party-info-name" className="sr-only">
                 {resolvedNameLabel}
               </label>
-              {readOnly ? (
-                <HeroDisplayValue
-                  value={values.name}
-                  placeholder="No name"
-                  className="customer-form-hero-display--name"
-                />
-              ) : (
-                nameInput
-              )}
+              {nameInput}
             </div>
             <div
               className={`customer-form-hero-field customer-form-hero-field--phone customer-form-hero-field--mono${
-                editing ? ' customer-form-hero-field--editable' : ''
+                heroFieldChromeClass ? ` ${heroFieldChromeClass}` : ''
               }`}
               ref={phoneWrapRef}
             >
@@ -545,21 +592,19 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
               <label htmlFor="party-info-phone" className="sr-only">
                 {mobileLabel}
               </label>
-              {readOnly ? (
-                <HeroDisplayValue
-                  value={formatPhoneDisplay(values.phone)}
-                  placeholder="No phone"
-                  className="customer-form-hero-display--mono"
-                />
+              {phoneInput}
+              {fieldsLocked ? (
+                <div className="customer-form-hero-field-actions">
+                  <HeroPhoneContactActions phone={values.phone} />
+                </div>
               ) : (
-                phoneInput
+                lookupChevron
               )}
-              {!readOnly && lookupChevron}
             </div>
-            {showEmail && (readOnly || emailInput) && (
+            {showEmail && emailInput && (
               <div
                 className={`customer-form-hero-field customer-form-hero-field--email customer-form-hero-field--mono${
-                  editing ? ' customer-form-hero-field--editable' : ''
+                  heroFieldChromeClass ? ` ${heroFieldChromeClass}` : ''
                 }`}
               >
                 <span className="customer-form-hero-field-icon customer-form-hero-field-icon--email" aria-hidden>
@@ -568,15 +613,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
                 <label htmlFor="party-info-email" className="sr-only">
                   Email
                 </label>
-                {readOnly ? (
-                  <HeroDisplayValue
-                    value={values.email}
-                    placeholder="No email"
-                    className="customer-form-hero-display--mono"
-                  />
-                ) : (
-                  emailInput
-                )}
+                {emailInput}
               </div>
             )}
             {footer}
@@ -627,22 +664,19 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
             icon={<MapPin size={14} strokeWidth={2.25} />}
             label="Address"
             htmlFor="party-info-address"
-            className={editing ? 'customer-form-hero-field--editable' : undefined}
+            className={heroFieldChromeClass}
+            action={fieldsLocked ? <HeroMapAction mapsUrl={mapsUrl} /> : undefined}
           >
-            {readOnly ? (
-              <HeroDisplayValue value={values.address} placeholder="No address" />
-            ) : (
-              <input
-                id="party-info-address"
-                type="text"
-                className={heroInputClass}
-                placeholder="Street, locality"
-                value={values.address}
-                onChange={e => onChange({ address: e.target.value })}
-                disabled={disabled}
-                required
-              />
-            )}
+            <input
+              id="party-info-address"
+              type="text"
+              className={heroInputClass}
+              placeholder="Street, locality"
+              value={values.address}
+              onChange={e => onChange({ address: e.target.value })}
+              disabled={disabled}
+              required
+            />
           </CustomerHeroField>
         ) : (
           <PartyInfoRow tone="sky" icon={<MapPin strokeWidth={2} />}>
@@ -673,34 +707,21 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
             }
             label={pinLabel}
             htmlFor="party-info-pincode"
-            className={[
-              'customer-form-hero-field--mono',
-              editing ? 'customer-form-hero-field--editable' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
+            className={['customer-form-hero-field--mono', heroFieldChromeClass].filter(Boolean).join(' ')}
           >
-            {readOnly ? (
-              <HeroDisplayValue
-                value={values.pincode}
-                placeholder="No PIN"
-                className="customer-form-hero-display--mono"
-              />
-            ) : (
-              <input
-                id="party-info-pincode"
-                type="text"
-                inputMode="numeric"
-                className={heroInputClass}
-                placeholder="6-digit PIN"
-                value={values.pincode}
-                onChange={e => handlePincodeChange(e.target.value)}
-                disabled={disabled}
-                maxLength={6}
-                required={pincodeRequired}
-                aria-describedby={pincodeLookupError ? 'party-info-pincode-error' : undefined}
-              />
-            )}
+            <input
+              id="party-info-pincode"
+              type="text"
+              inputMode="numeric"
+              className={heroInputClass}
+              placeholder="6-digit PIN"
+              value={values.pincode}
+              onChange={e => handlePincodeChange(e.target.value)}
+              disabled={disabled}
+              maxLength={6}
+              required={pincodeRequired}
+              aria-describedby={pincodeLookupError ? 'party-info-pincode-error' : undefined}
+            />
           </CustomerHeroField>
         ) : (
           <PartyInfoRow
@@ -746,22 +767,18 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
             icon={<Building2 size={14} strokeWidth={2.25} />}
             label={districtLabel}
             htmlFor="party-info-district"
-            className={editing ? 'customer-form-hero-field--editable' : undefined}
+            className={heroFieldChromeClass}
           >
-            {readOnly ? (
-              <HeroDisplayValue value={values.district} placeholder="—" />
-            ) : (
-              <input
-                id="party-info-district"
-                type="text"
-                className={heroReadonlyClass}
-                value={values.district}
-                readOnly
-                tabIndex={-1}
-                placeholder="Auto from PIN"
-                aria-label={`${districtLabel} from postal code`}
-              />
-            )}
+            <input
+              id="party-info-district"
+              type="text"
+              className={heroReadonlyClass}
+              value={values.district}
+              readOnly
+              tabIndex={-1}
+              placeholder="Auto from PIN"
+              aria-label={`${districtLabel} from postal code`}
+            />
           </CustomerHeroField>
         ) : (
           <PartyInfoRow tone="violet" icon={<Building2 strokeWidth={2} />}>
@@ -786,22 +803,18 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
             icon={<Map size={14} strokeWidth={2.25} />}
             label="State"
             htmlFor="party-info-state"
-            className={editing ? 'customer-form-hero-field--editable' : undefined}
+            className={heroFieldChromeClass}
           >
-            {readOnly ? (
-              <HeroDisplayValue value={values.state} placeholder="—" />
-            ) : (
-              <input
-                id="party-info-state"
-                type="text"
-                className={heroReadonlyClass}
-                value={values.state}
-                readOnly
-                tabIndex={-1}
-                placeholder="Auto from PIN"
-                aria-label="State from postal code"
-              />
-            )}
+            <input
+              id="party-info-state"
+              type="text"
+              className={heroReadonlyClass}
+              value={values.state}
+              readOnly
+              tabIndex={-1}
+              placeholder="Auto from PIN"
+              aria-label="State from postal code"
+            />
           </CustomerHeroField>
         ) : (
           <PartyInfoRow
@@ -835,14 +848,11 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
               <CustomerHeroField
                 icon={<Crosshair size={14} strokeWidth={2.25} />}
                 label="GPS coordinates"
-                className={[
-                  'customer-form-hero-field--mono',
-                  editing ? 'customer-form-hero-field--editable' : '',
-                ]
+                className={['customer-form-hero-field--mono', heroFieldChromeClass]
                   .filter(Boolean)
                   .join(' ')}
                 action={
-                  readOnly ? undefined : (
+                  fieldsLocked ? undefined : (
                     <>
                       <button
                         type="button"
@@ -874,19 +884,17 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
                   )
                 }
               >
-                {readOnly ? (
-                  <HeroDisplayValue
-                    value={gpsDisplay}
-                    placeholder="No GPS captured"
-                    className="customer-form-hero-display--mono"
-                  />
-                ) : hasLocation ? (
-                  <p className="customer-form-hero-value" aria-live="polite">
-                    {gpsDisplay}
-                  </p>
-                ) : (
-                  <p className="customer-form-hero-placeholder">Tap refresh to capture GPS</p>
-                )}
+                <input
+                  id="party-info-gps"
+                  type="text"
+                  className={heroInputClass}
+                  value={hasLocation ? gpsDisplay : ''}
+                  readOnly
+                  tabIndex={-1}
+                  placeholder={fieldsLocked ? 'No GPS captured' : 'Tap refresh to capture GPS'}
+                  aria-label="GPS coordinates"
+                  aria-live="polite"
+                />
               </CustomerHeroField>
               {locationError && (
                 <p className="party-info-rows-error" role="alert">

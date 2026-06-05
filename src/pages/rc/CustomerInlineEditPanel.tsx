@@ -4,43 +4,40 @@ import { db } from '../../firebase';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import {
   buildCustomerProfileFields,
+  customerDeviceCount,
   customerFormFromRecord,
-  deviceToFormRow,
   parseCustomerLocation,
   shopPhotoFieldsFromMeta,
   shopPhotoFromRecord,
   validateCustomerProfile,
   type CustomerFormValues,
 } from '../../lib/customerProfileFields';
+import type { CustomerTileStats } from '../../lib/customerTileStats';
 import type { Customer } from '../../types';
 import {
   CustomerFormFields,
   EMPTY_CUSTOMER_FORM,
   EMPTY_IMAGE_UPLOAD_STATE,
-  type CustomerDeviceRowState,
   type ImageUploadState,
 } from './CustomerFormFields';
-
-function devicesStateFromRecord(record: Customer): CustomerDeviceRowState[] {
-  return (record.devices || []).map(device => ({ row: deviceToFormRow(device) }));
-}
 
 type CustomerInlineEditPanelProps = {
   customer: Customer;
   onSaved: (customer: Customer) => void;
   onClose: () => void;
+  tileStats?: CustomerTileStats;
 };
 
 export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = ({
   customer,
   onSaved,
   onClose,
+  tileStats = { verificationCount: 0, dueCount: 0 },
 }) => {
   const [formValues, setFormValues] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
   const [shopPhoto, setShopPhoto] = useState<ImageUploadState>({ ...EMPTY_IMAGE_UPLOAD_STATE });
   const [pendingShopPhoto, setPendingShopPhoto] = useState<File | null>(null);
   const [shopPhotoRemoved, setShopPhotoRemoved] = useState(false);
-  const [devices, setDevices] = useState<CustomerDeviceRowState[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [formEditing, setFormEditing] = useState(false);
   const [error, setError] = useState('');
@@ -53,7 +50,6 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
     });
     setPendingShopPhoto(null);
     setShopPhotoRemoved(false);
-    setDevices(devicesStateFromRecord(record));
     setError('');
   };
 
@@ -190,13 +186,13 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
             shopPhoto={shopPhoto}
             onShopPhotoSelect={handleShopPhotoSelect}
             onShopPhotoRemove={handleShopPhotoRemove}
-            devices={devices}
             submitting={submitting}
             editing={formEditing}
             onStartEdit={() => setFormEditing(true)}
             onCancelEdit={handleCancelEdit}
             onSave={() => void handleSave()}
-            customerId={customer.id}
+            tileStats={tileStats}
+            deviceCount={customerDeviceCount(customer)}
           />
         </div>
       </div>

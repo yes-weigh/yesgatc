@@ -14,8 +14,8 @@ import { buildCustomerTileStatsMap } from '../../lib/customerTileStats';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import {
   buildCustomerProfileFields,
+  customerDeviceCount,
   customerFormFromRecord,
-  deviceToFormRow,
   parseCustomerLocation,
   shopPhotoFieldsFromMeta,
   shopPhotoFromRecord,
@@ -35,13 +35,8 @@ import {
   EMPTY_CUSTOMER_FORM,
   EMPTY_IMAGE_UPLOAD_STATE,
   CustomerFormFields,
-  type CustomerDeviceRowState,
   type ImageUploadState,
 } from './CustomerFormFields';
-
-function devicesStateFromRecord(record: Customer): CustomerDeviceRowState[] {
-  return (record.devices || []).map(device => ({ row: deviceToFormRow(device) }));
-}
 
 export const RCCustomers: React.FC = () => {
   const { rcUid, actorUid, isVct } = useRcScope();
@@ -56,8 +51,6 @@ export const RCCustomers: React.FC = () => {
   const [shopPhoto, setShopPhoto] = useState<ImageUploadState>({ ...EMPTY_IMAGE_UPLOAD_STATE });
   const [pendingShopPhoto, setPendingShopPhoto] = useState<File | null>(null);
   const [shopPhotoRemoved, setShopPhotoRemoved] = useState(false);
-
-  const [devices, setDevices] = useState<CustomerDeviceRowState[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [formEditing, setFormEditing] = useState(false);
@@ -147,10 +140,6 @@ export const RCCustomers: React.FC = () => {
   const showForm = showAddForm || editingId !== null;
   const formBusy = submitting;
 
-  const resetDevices = () => {
-    setDevices([]);
-  };
-
   const resetShopPhoto = () => {
     setShopPhoto({ ...EMPTY_IMAGE_UPLOAD_STATE });
     setPendingShopPhoto(null);
@@ -160,7 +149,6 @@ export const RCCustomers: React.FC = () => {
   const resetForm = () => {
     setFormValues(EMPTY_CUSTOMER_FORM);
     resetShopPhoto();
-    resetDevices();
     setError('');
   };
 
@@ -172,7 +160,6 @@ export const RCCustomers: React.FC = () => {
     });
     setPendingShopPhoto(null);
     setShopPhotoRemoved(false);
-    setDevices(devicesStateFromRecord(record));
     setError('');
   };
 
@@ -362,6 +349,8 @@ export const RCCustomers: React.FC = () => {
     restoreFormFromCustomer(c);
   };
 
+  const editingCustomer = editingId ? customers.find(c => c.id === editingId) ?? null : null;
+
   return (
     <div className="fade-in page-content">
       {showForm && (
@@ -385,9 +374,9 @@ export const RCCustomers: React.FC = () => {
                   shopPhoto={shopPhoto}
                   onShopPhotoSelect={handleShopPhotoSelect}
                   onShopPhotoRemove={handleShopPhotoRemove}
-                  devices={devices}
                   submitting={formBusy}
-                  customerId={editingId ?? undefined}
+                  tileStats={editingId ? customerStatsMap.get(editingId) : undefined}
+                  deviceCount={editingCustomer ? customerDeviceCount(editingCustomer) : 0}
                   editing={showAddForm ? true : formEditing}
                   onStartEdit={() => setFormEditing(true)}
                   onCancelEdit={handleCancelFormEdit}

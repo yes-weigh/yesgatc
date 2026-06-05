@@ -6190,8 +6190,103 @@ body.verification-mobile-wizard-active {
   gap: 0.45rem;
 }
 
-.customer-form-party-layout--readonly .customer-form-hero-photo .product-upload-field--compact {
+.customer-form-stats-tiles {
+  margin-top: 0.15rem;
+}
+
+.customer-form-party-layout--locked .customer-form-hero-photo .product-upload-field--compact {
   pointer-events: none;
+}
+
+.party-information-form--locked .customer-form-hero-input:disabled,
+.party-information-form--locked .customer-form-hero-input[readonly] {
+  opacity: 1;
+  color: #f8fafc;
+  -webkit-text-fill-color: #f8fafc;
+  cursor: default;
+}
+
+.party-information-form--locked .customer-form-hero-input--readonly::placeholder {
+  color: rgba(148, 163, 184, 0.62);
+}
+
+.customer-form-hero-contact-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.customer-form-hero-contact-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  min-height: 1.65rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  background: rgba(15, 23, 42, 0.88);
+  color: #6ee7b7;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.customer-form-hero-contact-btn:hover,
+.customer-form-hero-contact-btn:focus-visible {
+  background: rgba(6, 78, 59, 0.45);
+  border-color: rgba(110, 231, 183, 0.65);
+  color: #a7f3d0;
+}
+
+.customer-form-hero-contact-btn--whatsapp {
+  color: #86efac;
+  border-color: rgba(74, 222, 128, 0.38);
+}
+
+.customer-form-hero-contact-btn--map {
+  color: #93c5fd;
+  border-color: rgba(96, 165, 250, 0.38);
+}
+
+.customer-form-hero-contact-btn--map:hover,
+.customer-form-hero-contact-btn--map:focus-visible {
+  background: rgba(30, 58, 138, 0.35);
+  border-color: rgba(147, 197, 253, 0.55);
+  color: #dbeafe;
+}
+
+.customer-form-hero-contact-btn--disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.customer-form-hero-contact-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex-shrink: 0;
+}
+
+.customer-form-hero-field--phone .customer-form-hero-field-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 9.5rem;
+}
+
+.customer-form-hero-field--phone.customer-form-hero-field--editable {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.customer-form-hero-field--phone.customer-form-hero-field--editable .customer-form-hero-field-body {
+  flex: 1 1 5.5rem;
+  min-width: 0;
 }
 
 .product-upload-readonly-empty {

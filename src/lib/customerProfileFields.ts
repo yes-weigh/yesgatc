@@ -193,6 +193,12 @@ export function customerMapsUrl(record: Customer): string | null {
   return `https://www.google.com/maps?q=${record.location.lat},${record.location.lng}`;
 }
 
+export function customerFormMapsUrl(values: CustomerFormValues): string | null {
+  const location = parseCustomerLocation(values);
+  if (!location) return null;
+  return `https://www.google.com/maps?q=${location.lat},${location.lng}`;
+}
+
 export function customerDeviceCount(record: Customer): number {
   return record.devices?.length ?? 0;
 }
