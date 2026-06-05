@@ -4,6 +4,7 @@ import { ShieldCheck, XCircle, AlertTriangle, Clock, Users, Building2 } from 'lu
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { tallyVerificationStatusFilters } from '../../lib/verificationRequest';
+import { RvRazorpaySettingsCard } from '../../components/RvRazorpaySettingsCard';
 import type { FirestoreUserDoc, Role, SiteCalibration } from '../../types';
 
 interface UserCounts { super_admin: number; rc_admin: number; vct: number; }
@@ -124,6 +125,8 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <RvRazorpaySettingsCard />
 
       {/* ── Recent Activity ── */}
       <div className="panel glass mt-6">

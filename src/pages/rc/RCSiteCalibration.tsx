@@ -103,6 +103,8 @@ import {
 } from '../../lib/rcLaboratoryFields';
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
 import { RvPaymentPanel } from '../../components/RvPaymentPanel';
+import { useAppSettings } from '../../hooks/useAppSettings';
+import { isRvRazorpayPaymentRequired } from '../../lib/appSettings';
 import {
   buildRvPaymentFirestorePatch,
   computeRvPaymentAmount,
@@ -154,6 +156,7 @@ export const RCSiteCalibration: React.FC = () => {
   const { rcUid, actorUid, isVct } = useRcScope();
   const { user } = useAuth();
   const { products } = useAppContext();
+  const { appSettings } = useAppSettings();
   const confirm = useConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
   const [records, setRecords] = useState<SiteCalibration[]>([]);
@@ -1106,7 +1109,12 @@ export const RCSiteCalibration: React.FC = () => {
     }
 
     const isRv = sessionValues.verificationType === 'RV';
-    if (isRv) {
+    const rvPaymentRequired = isRvRazorpayPaymentRequired(
+      sessionValues.verificationType,
+      appSettings,
+    );
+
+    if (isRv && rvPaymentRequired) {
       if (!rvPaymentBreakdown || rvPaymentBreakdown.total <= 0) {
         setError('Could not calculate RV payment amount. Check device fees and try again.');
         return;
@@ -1247,8 +1255,11 @@ export const RCSiteCalibration: React.FC = () => {
     showAddForm && includedDeviceCount > 1
       ? `Save ${includedDeviceCount} drafts`
       : 'Save draft';
-  const isRvSession = sessionValues.verificationType === 'RV';
-  const submitLabel = isRvSession
+  const rvPaymentRequired = isRvRazorpayPaymentRequired(
+    sessionValues.verificationType,
+    appSettings,
+  );
+  const submitLabel = rvPaymentRequired
     ? showAddForm && includedDeviceCount > 1
       ? `Pay & submit ${includedDeviceCount} for certification`
       : 'Pay & submit for certification'
@@ -1702,7 +1713,7 @@ export const RCSiteCalibration: React.FC = () => {
         </div>
       )}
 
-      {rvPaymentOpen && rvPaymentBreakdown && rcUid && (
+      {rvPaymentRequired && rvPaymentOpen && rvPaymentBreakdown && rcUid && (
         <RvPaymentPanel
           breakdown={rvPaymentBreakdown}
           rcId={rcUid}

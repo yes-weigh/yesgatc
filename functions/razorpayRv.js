@@ -180,6 +180,12 @@ async function assertRvPaymentCaller(request, db, rcId) {
   throw new HttpsError('permission-denied', 'RC or VCT access required.');
 }
 
+async function isRvRazorpayEnabled(db) {
+  const snap = await db.doc('appSettings/global').get();
+  if (!snap.exists) return false;
+  return snap.data()?.rvRazorpayEnabled === true;
+}
+
 async function loadRvPaymentForCaller(request, db, paymentId) {
   const paymentSnap = await db.doc(`rvPayments/${paymentId}`).get();
   if (!paymentSnap.exists) {
@@ -193,6 +199,10 @@ async function loadRvPaymentForCaller(request, db, paymentId) {
 async function createRvPaymentOrderHandler(request, db) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  if (!(await isRvRazorpayEnabled(db))) {
+    throw new HttpsError('failed-precondition', 'RV Razorpay payments are disabled.');
   }
 
   try {
