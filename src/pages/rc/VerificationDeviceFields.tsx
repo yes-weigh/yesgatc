@@ -256,21 +256,31 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
     }
   }, [someIncluded, allIncluded, devices.length]);
 
+  const devicesRef = useRef(devices);
+  devicesRef.current = devices;
+  const lastHandledSerialFocusRef = useRef(0);
+
   useLayoutEffect(() => {
     if (!focusSerialRequest || locked) return;
-
-    const targetRow = devices.find(d => d.included) ?? devices[0];
-    if (!targetRow) return;
+    if (lastHandledSerialFocusRef.current === focusSerialRequest) return;
+    lastHandledSerialFocusRef.current = focusSerialRequest;
 
     const tryFocus = () => {
+      const rows = devicesRef.current;
+      const targetRow = rows.find(d => d.included) ?? rows[0];
+      if (!targetRow) return;
       const input = getVerificationSerialInput(targetRow.localId);
       if (input) focusMobileTextInput(input);
     };
 
     tryFocus();
-    const retryId = window.setTimeout(tryFocus, 120);
-    return () => window.clearTimeout(retryId);
-  }, [focusSerialRequest, devices, locked]);
+    const retrySoonId = window.setTimeout(tryFocus, 120);
+    const retryLateId = window.setTimeout(tryFocus, 280);
+    return () => {
+      window.clearTimeout(retrySoonId);
+      window.clearTimeout(retryLateId);
+    };
+  }, [focusSerialRequest, locked]);
 
   const setAllIncluded = (included: boolean) => {
     for (const device of devices) {
