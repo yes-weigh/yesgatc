@@ -5145,6 +5145,16 @@ body.verification-mobile-wizard-active {
   background: linear-gradient(145deg, rgba(30, 58, 138, 0.35) 0%, rgba(15, 23, 42, 0.85) 100%);
 }
 
+.rc-list-card--product .rc-list-card-photo {
+  background: #fff;
+  border-color: rgba(148, 163, 184, 0.5);
+}
+
+.rc-list-card--product .rc-list-card-photo-placeholder {
+  color: rgba(100, 116, 139, 0.9);
+  background: #fff;
+}
+
 .rc-list-card-photo-badge,
 .rc-vct-card-photo-badge {
   position: absolute;
@@ -13859,6 +13869,335 @@ body.verification-photo-viewer-open {
 .verification-list-error {
   margin: 0;
   padding: 0.65rem 1rem 0;
+}
+
+.verification-list-cards-wrap {
+  width: 100%;
+  min-width: 0;
+}
+
+.verification-list-card-select-all {
+  display: flex;
+  align-items: center;
+  padding: 0 0 0.65rem;
+}
+
+.verification-list-card-select-all .verification-device-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.verification-list-cards-empty {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  margin: 0;
+}
+
+.verification-list-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 56rem;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.verification-list-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.85rem 1rem;
+  align-items: stretch;
+  padding: 1rem 1rem 1rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(71, 85, 105, 0.48);
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0.92) 0%, rgba(10, 16, 30, 0.96) 100%);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.28);
+}
+
+.verification-list-card-leading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 5.25rem;
+}
+
+.verification-list-card-select {
+  margin-bottom: 0.15rem;
+}
+
+.verification-list-card-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+
+.verification-list-card-status:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.65);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+.verification-list-card-status-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.35rem;
+  height: 4.35rem;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.verification-list-card-status-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.verification-list-card--draft .verification-list-card-status-ring {
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #fbbf24;
+  box-shadow: 0 0 18px rgba(251, 191, 36, 0.12);
+}
+
+.verification-list-card--draft .verification-list-card-status-label {
+  color: #fbbf24;
+}
+
+.verification-list-card--submitted .verification-list-card-status-ring {
+  border-color: rgba(59, 130, 246, 0.55);
+  color: #60a5fa;
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.12);
+}
+
+.verification-list-card--submitted .verification-list-card-status-label {
+  color: #60a5fa;
+}
+
+.verification-list-card--approved .verification-list-card-status-ring,
+.verification-list-card--certified .verification-list-card-status-ring {
+  border-color: rgba(52, 211, 153, 0.55);
+  color: #34d399;
+  box-shadow: 0 0 18px rgba(52, 211, 153, 0.12);
+}
+
+.verification-list-card--approved .verification-list-card-status-label,
+.verification-list-card--certified .verification-list-card-status-label {
+  color: #34d399;
+}
+
+.verification-list-card--failed_submit .verification-list-card-status-ring,
+.verification-list-card--failed_certification .verification-list-card-status-ring {
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #f87171;
+}
+
+.verification-list-card--failed_submit .verification-list-card-status-label,
+.verification-list-card--failed_certification .verification-list-card-status-label {
+  color: #f87171;
+}
+
+.verification-list-card-body {
+  display: block;
+  min-width: 0;
+  padding: 0.15rem 0 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.verification-list-card-body:hover .verification-list-card-title,
+.verification-list-card-body:focus-visible .verification-list-card-title {
+  color: #93c5fd;
+}
+
+.verification-list-card-body:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.65);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.verification-list-card-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.3;
+  color: #f8fafc;
+  transition: color 0.15s ease;
+  overflow-wrap: anywhere;
+}
+
+.verification-list-card-meta {
+  margin: 0.3rem 0 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.verification-list-card-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem 0.85rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(71, 85, 105, 0.4);
+}
+
+.verification-list-card-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.verification-list-card-metric-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #64748b;
+}
+
+.verification-list-card-metric-value {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.verification-list-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 4.75rem;
+  padding-right: 0.15rem;
+}
+
+.verification-list-card-download {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  text-decoration: none;
+  color: #34d399;
+}
+
+.verification-list-card-download-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  border: 2px solid rgba(52, 211, 153, 0.5);
+  background: rgba(6, 78, 59, 0.2);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.verification-list-card-download:hover .verification-list-card-download-ring,
+.verification-list-card-download:focus-visible .verification-list-card-download-ring {
+  background: rgba(6, 78, 59, 0.38);
+  border-color: rgba(110, 231, 183, 0.65);
+}
+
+.verification-list-card-download-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #34d399;
+}
+
+.verification-list-card-draft-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.verification-list-card-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #fbbf24;
+  cursor: pointer;
+}
+
+.verification-list-card-icon-btn--submit {
+  color: #60a5fa;
+}
+
+.verification-list-card-icon-btn--delete {
+  color: #f87171;
+}
+
+.verification-list-card-icon-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.verification-list-card--last-viewed {
+  background: linear-gradient(160deg, rgba(6, 78, 59, 0.28) 0%, rgba(10, 16, 30, 0.96) 100%);
+  box-shadow: inset 3px 0 0 rgba(74, 222, 128, 0.9);
+}
+
+.verification-list-card--flash {
+  animation: verification-list-card-flash 1.35s ease-out;
+}
+
+@keyframes verification-list-card-flash {
+  0% {
+    background: rgba(34, 197, 94, 0.28);
+  }
+  100% {
+    background: linear-gradient(160deg, rgba(6, 78, 59, 0.28) 0%, rgba(10, 16, 30, 0.96) 100%);
+  }
+}
+
+@media (max-width: 720px) {
+  .verification-list-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+
+  .verification-list-card-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    justify-content: flex-end;
+    min-width: 0;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(71, 85, 105, 0.35);
+  }
+
+  .verification-list-card-metrics {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+  }
+
+  .verification-list-card-metric-value {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 .verification-list-toolbar-ref {

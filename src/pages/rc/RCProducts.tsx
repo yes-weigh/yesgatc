@@ -128,7 +128,7 @@ export const RCProducts: React.FC = () => {
                 const hasApproval = Boolean(p.modelApprovalNo || p.modelApprovalDocUrl);
 
                 return (
-                  <article key={p.id} className="rc-list-card">
+                  <article key={p.id} className="rc-list-card rc-list-card--product">
                     <div className="rc-list-card-top">
                       <button
                         type="button"
