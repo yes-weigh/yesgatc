@@ -214,17 +214,16 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   title={detailTitle}
                 >
                   <h3 className="verification-list-card-title">{record.customerName || '—'}</h3>
-                  {(showRcCentre && record.rcCenterName) || showVctColumn ? (
-                    <p className="verification-list-card-meta">
-                      {showRcCentre && record.rcCenterName ? record.rcCenterName : null}
-                      {showRcCentre && record.rcCenterName && showVctColumn ? ' · ' : null}
-                      {showVctColumn ? `VCT ${verificationVctLabel(record)}` : null}
-                    </p>
-                  ) : null}
+                  <p className="verification-list-card-cert text-mono" title={certNo}>
+                    {certNo}
+                  </p>
                   <div className="verification-list-card-metrics">
-                    <div className="verification-list-card-metric">
+                    <div className="verification-list-card-metric verification-list-card-metric--serial">
                       <span className="verification-list-card-metric-label">Serial No.</span>
-                      <span className="verification-list-card-metric-value text-mono">
+                      <span
+                        className="verification-list-card-metric-value text-mono"
+                        title={serial}
+                      >
                         {serial}
                         {record.serialVersionCount != null && record.serialVersionCount > 1 && (
                           <span className="verification-list-version-badge verification-list-version-badge--inline">
@@ -234,14 +233,29 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                         )}
                       </span>
                     </div>
-                    <div className="verification-list-card-metric">
-                      <span className="verification-list-card-metric-label">Certificate No.</span>
-                      <span className="verification-list-card-metric-value text-mono">{certNo}</span>
-                    </div>
-                    <div className="verification-list-card-metric">
+                    <div className="verification-list-card-metric verification-list-card-metric--date">
                       <span className="verification-list-card-metric-label">Date</span>
                       <span className="verification-list-card-metric-value">{displayDate}</span>
                     </div>
+                    {showRcCentre && (
+                      <div className="verification-list-card-metric verification-list-card-metric--rc">
+                        <span className="verification-list-card-metric-label">RC centre</span>
+                        <span
+                          className="verification-list-card-metric-value"
+                          title={record.rcCenterName || undefined}
+                        >
+                          {record.rcCenterName || '—'}
+                        </span>
+                      </div>
+                    )}
+                    {showVctColumn && (
+                      <div className="verification-list-card-metric verification-list-card-metric--vct">
+                        <span className="verification-list-card-metric-label">VCT</span>
+                        <span className="verification-list-card-metric-value">
+                          {verificationVctLabel(record)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </button>
 
