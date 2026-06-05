@@ -143,6 +143,53 @@ function razorpayErrorMessage(err) {
   return 'Razorpay request failed.';
 }
 
+async function assertRvPaymentCaller(request, db, rcId) {
+  const callerSnap = await db.doc(`users/${request.auth.uid}`).get();
+  if (!callerSnap.exists) {
+    throw new HttpsError('permission-denied', 'User profile not found.');
+  }
+
+  const caller = callerSnap.data();
+  const role = caller.role;
+
+  if (role === 'super_admin') {
+    return caller;
+  }
+
+  if (role === 'rc_admin') {
+    if (request.auth.uid !== rcId) {
+      throw new HttpsError('permission-denied', 'Cannot create payment for another RC.');
+    }
+    return caller;
+  }
+
+  if (role === 'vct') {
+    if (caller.rcId !== rcId) {
+      throw new HttpsError('permission-denied', 'Cannot create payment for another RC.');
+    }
+    const approvalStatus = caller.approvalStatus ?? 'approved';
+    if (approvalStatus !== 'approved') {
+      throw new HttpsError('permission-denied', 'VCT approval required before taking payments.');
+    }
+    if (caller.active === false) {
+      throw new HttpsError('permission-denied', 'VCT account is inactive.');
+    }
+    return caller;
+  }
+
+  throw new HttpsError('permission-denied', 'RC or VCT access required.');
+}
+
+async function loadRvPaymentForCaller(request, db, paymentId) {
+  const paymentSnap = await db.doc(`rvPayments/${paymentId}`).get();
+  if (!paymentSnap.exists) {
+    throw new HttpsError('not-found', 'Payment session not found.');
+  }
+  const payment = paymentSnap.data();
+  await assertRvPaymentCaller(request, db, payment.rcId);
+  return payment;
+}
+
 async function createRvPaymentOrderHandler(request, db) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Sign in required.');
@@ -163,13 +210,7 @@ async function createRvPaymentOrderHandler(request, db) {
     throw new HttpsError('invalid-argument', 'rcId is required.');
   }
 
-  const callerRole = (await db.doc(`users/${request.auth.uid}`).get()).data()?.role;
-  if (callerRole !== 'rc_admin' && callerRole !== 'super_admin') {
-    throw new HttpsError('permission-denied', 'RC admin access required.');
-  }
-  if (callerRole === 'rc_admin' && request.auth.uid !== rcId) {
-    throw new HttpsError('permission-denied', 'Cannot create payment for another RC.');
-  }
+  await assertRvPaymentCaller(request, db, rcId);
 
   if (!razorpayConfigured()) {
     return {
@@ -263,6 +304,8 @@ async function getRvPaymentStatusHandler(request, db) {
     throw new HttpsError('invalid-argument', 'paymentId is required.');
   }
 
+  await loadRvPaymentForCaller(request, db, paymentId);
+
   if (!razorpayConfigured()) {
     return { status: 'unknown' };
   }
@@ -290,11 +333,8 @@ async function verifyRvPaymentHandler(request, db) {
     throw new HttpsError('invalid-argument', 'Payment verification payload is incomplete.');
   }
 
-  const paymentSnap = await db.doc(`rvPayments/${paymentId}`).get();
-  if (!paymentSnap.exists) {
-    throw new HttpsError('not-found', 'Payment session not found.');
-  }
-  if (paymentSnap.data().orderId !== razorpayOrderId) {
+  const payment = await loadRvPaymentForCaller(request, db, paymentId);
+  if (payment.orderId !== razorpayOrderId) {
     throw new HttpsError('invalid-argument', 'Order mismatch.');
   }
 
