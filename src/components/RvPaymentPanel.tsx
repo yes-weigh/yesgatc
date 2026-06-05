@@ -6,7 +6,6 @@ import type { RvPaymentBreakdown } from '../lib/rvPaymentAmount';
 import {
   createRvPaymentOrder,
   getRvPaymentStatus,
-  isRazorpayConfigured,
   openRazorpayCheckout,
   verifyRvPayment,
   type RvPaymentSession,
@@ -230,14 +229,14 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
                 type="button"
                 className="btn btn-primary rv-payment-upi-btn"
                 onClick={() => void handleUpiCheckout()}
-                disabled={phase === 'verifying' || phase === 'paid' || !isRazorpayConfigured()}
+                disabled={phase === 'verifying' || phase === 'paid' || !session.keyId}
               >
                 <CreditCard size={16} aria-hidden />
                 Pay {formatRcFeeAmount(breakdown.total)} with UPI
               </button>
-              {!isRazorpayConfigured() && (
+              {!session.keyId && (
                 <p className="rv-payment-config-hint mb-0">
-                  Add <code>VITE_RAZORPAY_KEY_ID</code> to your Vite env for checkout on this device.
+                  UPI checkout is unavailable — check Razorpay keys on the server.
                 </p>
               )}
             </div>

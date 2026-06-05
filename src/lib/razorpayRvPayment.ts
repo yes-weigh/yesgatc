@@ -26,14 +26,6 @@ export type RvPaymentStatusResult = {
 
 let razorpayScriptPromise: Promise<void> | null = null;
 
-export function razorpayPublicKeyId(): string {
-  return import.meta.env.VITE_RAZORPAY_KEY_ID?.trim() ?? '';
-}
-
-export function isRazorpayConfigured(): boolean {
-  return Boolean(razorpayPublicKeyId());
-}
-
 export function loadRazorpayCheckoutScript(): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve();
   if (window.Razorpay) return Promise.resolve();
@@ -124,6 +116,10 @@ declare global {
 }
 
 export async function openRazorpayCheckout(session: RvPaymentSession): Promise<RazorpayCheckoutResponse> {
+  if (!session.keyId?.trim()) {
+    throw new Error('Razorpay checkout key is missing from the payment session.');
+  }
+
   await loadRazorpayCheckoutScript();
   if (!window.Razorpay) {
     throw new Error('Razorpay checkout is unavailable.');
@@ -131,7 +127,7 @@ export async function openRazorpayCheckout(session: RvPaymentSession): Promise<R
 
   return new Promise((resolve, reject) => {
     const checkout = new window.Razorpay!({
-      key: session.keyId,
+      key: session.keyId.trim(),
       amount: session.amountPaise,
       currency: 'INR',
       name: 'YesGATC',
