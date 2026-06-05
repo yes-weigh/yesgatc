@@ -1,29 +1,22 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  collection, getDocs, doc, setDoc, updateDoc, query, where, deleteField,
+  collection, getDocs, doc, setDoc, updateDoc, query, where, deleteField, getDoc,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useRcScope } from '../../lib/roleScope';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import {
-  RcListEditHint,
-  RcListMetaChip,
-  RcListPhoneChip,
-  RcListPhoto,
-  RcListStatusBadge,
-} from '../../components/RcListCard';
+import { CustomerListTile } from '../../components/CustomerListTile';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import { normalizePhone, isValidPhone } from '../../lib/contactFields';
 import { filterCustomersBySearch } from '../../lib/customerLookup';
+import { buildCustomerTileStatsMap } from '../../lib/customerTileStats';
+import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import {
   buildCustomerDevice,
   buildCustomerProfileFields,
   createEmptyDeviceRow,
-  customerDeviceCount,
   customerFormFromRecord,
-  customerMapsUrl,
   deviceToFormRow,
-  formatCustomerLocation,
   parseCustomerLocation,
   shopPhotoFieldsFromMeta,
   shopPhotoFromRecord,
@@ -39,14 +32,9 @@ import {
   X,
   Plus,
   Save,
-  ImageIcon,
-  MapPin,
-  ExternalLink,
   Search,
-  Package,
-  Check,
 } from 'lucide-react';
-import type { Customer, CustomerDevice } from '../../types';
+import type { Customer, CustomerDevice, CustomerLocation, FirestoreUserDoc, SiteCalibration } from '../../types';
 import {
   EMPTY_CUSTOMER_FORM,
   EMPTY_IMAGE_UPLOAD_STATE,
@@ -60,8 +48,10 @@ function devicesStateFromRecord(record: Customer): CustomerDeviceRowState[] {
 }
 
 export const RCCustomers: React.FC = () => {
-  const { rcUid, actorUid } = useRcScope();
+  const { rcUid, actorUid, isVct } = useRcScope();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
+  const [distanceFrom, setDistanceFrom] = useState<CustomerLocation | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [showAddForm, setShowAddForm] = useState(false);
@@ -87,6 +77,11 @@ export const RCCustomers: React.FC = () => {
     [customers, searchQuery],
   );
 
+  const customerStatsMap = useMemo(
+    () => buildCustomerTileStatsMap(customers, verifications),
+    [customers, verifications],
+  );
+
   const showCreateWithPhone =
     phoneSearchComplete && !loading && displayedCustomers.length === 0;
 
@@ -107,12 +102,27 @@ export const RCCustomers: React.FC = () => {
     setLoading(true);
     setListError('');
     try {
-      const q = query(collection(db, 'customers'), where('rcId', '==', rcUid));
-      const snap = await getDocs(q);
-      const rows = snap.docs
+      const [customerSnap, verificationSnap, rcProfileSnap] = await Promise.all([
+        getDocs(query(collection(db, 'customers'), where('rcId', '==', rcUid))),
+        getDocs(verificationRecordsQuery(db, rcUid, { isVct, actorUid })),
+        getDoc(doc(db, 'users', rcUid)),
+      ]);
+
+      const rows = customerSnap.docs
         .map(d => ({ id: d.id, ...(d.data() as Omit<Customer, 'id'>) }))
         .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+      const verificationRows = verificationSnap.docs.map(
+        d => ({ id: d.id, ...d.data() } as SiteCalibration),
+      );
+
+      const rcProfile = rcProfileSnap.exists()
+        ? (rcProfileSnap.data() as FirestoreUserDoc)
+        : null;
+
       setCustomers(rows);
+      setVerifications(verificationRows);
+      setDistanceFrom(rcProfile?.location ?? null);
     } catch (err: unknown) {
       const code =
         typeof err === 'object' && err !== null && 'code' in err
@@ -126,10 +136,12 @@ export const RCCustomers: React.FC = () => {
         setListError(err instanceof Error ? err.message : 'Failed to load customers.');
       }
       setCustomers([]);
+      setVerifications([]);
+      setDistanceFrom(null);
     } finally {
       setLoading(false);
     }
-  }, [rcUid]);
+  }, [rcUid, isVct, actorUid]);
 
   useEffect(() => {
     Promise.resolve().then(() => fetchCustomers());
@@ -338,9 +350,6 @@ export const RCCustomers: React.FC = () => {
     setError('');
   };
 
-  const shopPhotoUrl = (c: Customer) => c.shopPhotoUrl || c.customerPhotoUrl;
-  const shopPhotoPath = (c: Customer) => c.shopPhotoPath || c.customerPhotoPath;
-
   return (
     <div className="fade-in page-content">
       {showForm && (
@@ -533,72 +542,16 @@ export const RCCustomers: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="rc-list-cards">
-              {displayedCustomers.map(c => {
-                const mapsUrl = customerMapsUrl(c);
-                const photo = shopPhotoUrl(c);
-                const photoPath = shopPhotoPath(c);
-                const deviceCount = customerDeviceCount(c);
-                const displayName = (c.name || '—').trim().toUpperCase();
-
-                return (
-                  <article key={c.id} className="rc-list-card">
-                    <div className="rc-list-card-top">
-                      <button
-                        type="button"
-                        className="rc-list-card-main"
-                        onClick={() => startEdit(c)}
-                        aria-label={`Edit ${displayName}`}
-                      >
-                        <RcListPhoto
-                          url={photo}
-                          path={photoPath}
-                          placeholder={<ImageIcon size={28} strokeWidth={1.5} />}
-                        />
-                        <span className="rc-list-card-info">
-                          <span className="rc-list-card-name-row">
-                            <span className="rc-list-card-name">{displayName}</span>
-                            <RcListEditHint />
-                          </span>
-                          <span className="rc-list-meta-chips">
-                            {c.phone?.trim() && <RcListPhoneChip phone={c.phone} />}
-                            {mapsUrl && (
-                              <RcListMetaChip icon={<MapPin size={13} strokeWidth={2} />}>
-                                {formatCustomerLocation(c)}
-                                <a
-                                  href={mapsUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="rc-list-meta-chip-link"
-                                  title="Open in maps"
-                                  aria-label="Open location in maps"
-                                  onClick={e => e.stopPropagation()}
-                                >
-                                  <ExternalLink size={11} />
-                                </a>
-                              </RcListMetaChip>
-                            )}
-                          </span>
-                          <span className="rc-list-card-badges">
-                            <RcListStatusBadge
-                              tone="info"
-                              label={`${deviceCount} device${deviceCount !== 1 ? 's' : ''}`}
-                              icon={<Package size={12} strokeWidth={2.5} aria-hidden />}
-                            />
-                            {c.address?.trim() && (
-                              <RcListStatusBadge
-                                tone="ok"
-                                label={c.address}
-                                icon={<Check size={12} strokeWidth={2.5} aria-hidden />}
-                              />
-                            )}
-                          </span>
-                        </span>
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
+            <div className="rc-list-cards rc-customer-tiles">
+              {displayedCustomers.map(c => (
+                <CustomerListTile
+                  key={c.id}
+                  customer={c}
+                  stats={customerStatsMap.get(c.id) ?? { verificationCount: 0, dueCount: 0 }}
+                  distanceFrom={distanceFrom}
+                  onEdit={() => startEdit(c)}
+                />
+              ))}
             </div>
           )}
         </div>

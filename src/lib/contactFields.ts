@@ -20,6 +20,18 @@ export function isValidPhone(phone: string): boolean {
   return PHONE_REGEX.test(normalizePhone(phone));
 }
 
+export function buildTelUrl(phone: string): string | null {
+  const digits = normalizePhone(phone);
+  if (digits.length !== 10) return null;
+  return `tel:+91${digits}`;
+}
+
+export function buildWhatsAppContactUrl(phone: string): string | null {
+  const digits = normalizePhone(phone);
+  if (digits.length !== 10) return null;
+  return `https://wa.me/91${digits}`;
+}
+
 export function isValidEmail(email: string): boolean {
   const trimmed = email.trim();
   if (!trimmed) return true; // optional when empty

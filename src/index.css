@@ -5434,6 +5434,281 @@ body.verification-mobile-wizard-active {
   }
 }
 
+/* ── RC Customer list tiles ───────────────────────────────────── */
+.rc-customer-tiles {
+  gap: 1rem;
+}
+
+.rc-customer-tile {
+  border-radius: 16px;
+  border: 1px solid rgba(71, 85, 105, 0.5);
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0.92) 0%, rgba(10, 16, 30, 0.96) 100%);
+  overflow: hidden;
+  box-shadow: 0 10px 28px rgba(2, 6, 23, 0.35);
+}
+
+.rc-customer-tile-body {
+  display: block;
+  width: 100%;
+  padding: 1rem 1rem 0.85rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rc-customer-tile-body:hover .rc-customer-tile-name,
+.rc-customer-tile-body:focus-visible .rc-customer-tile-name {
+  color: #93c5fd;
+}
+
+.rc-customer-tile-body:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.65);
+  outline-offset: -2px;
+}
+
+.rc-customer-tile-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem 0.85rem;
+  align-items: start;
+}
+
+.rc-customer-tile-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.35rem;
+  height: 3.35rem;
+  border-radius: 999px;
+  background: linear-gradient(145deg, #2563eb 0%, #1d4ed8 100%);
+  color: #eff6ff;
+  flex-shrink: 0;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+}
+
+.rc-customer-tile-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.rc-customer-tile-head-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rc-customer-tile-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.rc-customer-tile-name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #f8fafc;
+  transition: color 0.15s ease;
+  overflow-wrap: anywhere;
+}
+
+.rc-customer-tile-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #6ee7b7;
+  background: rgba(6, 78, 59, 0.55);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+}
+
+.rc-customer-tile-status-dot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.75);
+}
+
+.rc-customer-tile-contact {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  min-width: 0;
+}
+
+.rc-customer-tile-contact svg {
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.rc-customer-tile-contact span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-customer-tile-distance {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #93c5fd;
+  white-space: nowrap;
+}
+
+.rc-customer-tile-distance svg {
+  color: #60a5fa;
+}
+
+.rc-customer-tile-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.95rem;
+}
+
+.rc-customer-tile-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  min-height: 4.6rem;
+  padding: 0.55rem 0.35rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.rc-customer-tile-stat svg {
+  flex-shrink: 0;
+}
+
+.rc-customer-tile-stat-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1;
+  color: #f8fafc;
+}
+
+.rc-customer-tile-stat-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #94a3b8;
+}
+
+.rc-customer-tile-stat--devices {
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(6, 78, 59, 0.28);
+}
+
+.rc-customer-tile-stat--devices svg {
+  color: #34d399;
+}
+
+.rc-customer-tile-stat--verifications {
+  border-color: rgba(167, 139, 250, 0.35);
+  background: rgba(76, 29, 149, 0.22);
+}
+
+.rc-customer-tile-stat--verifications svg {
+  color: #a78bfa;
+}
+
+.rc-customer-tile-stat--due {
+  border-color: rgba(251, 146, 60, 0.35);
+  background: rgba(120, 53, 15, 0.28);
+}
+
+.rc-customer-tile-stat--due svg {
+  color: #fb923c;
+}
+
+.rc-customer-tile-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding: 0.85rem 1rem 1rem;
+  border-top: 1px solid rgba(71, 85, 105, 0.45);
+}
+
+.rc-customer-tile-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.65rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, 0.45);
+  background: rgba(15, 23, 42, 0.85);
+  color: #6ee7b7;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.rc-customer-tile-action:hover,
+.rc-customer-tile-action:focus-visible {
+  background: rgba(6, 78, 59, 0.45);
+  border-color: rgba(110, 231, 183, 0.65);
+  color: #a7f3d0;
+}
+
+.rc-customer-tile-action--whatsapp {
+  color: #86efac;
+}
+
+.rc-customer-tile-action-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.rc-customer-tile-action--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+@media (max-width: 420px) {
+  .rc-customer-tile-head {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .rc-customer-tile-distance {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .rc-customer-tile-title-row {
+    flex-wrap: wrap;
+  }
+}
+
 /* ── RC Customer form & table ──────────────────────────────────── */
 .inline-form-panel--customer .product-form-panel,
 .inline-form-panel--customer .product-form {
