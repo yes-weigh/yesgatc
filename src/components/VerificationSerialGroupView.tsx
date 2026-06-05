@@ -22,6 +22,7 @@ import { VerificationCertifiedActions } from './VerificationCertifiedActions';
 import { VerificationCertificatePreview } from './VerificationCertificatePreview';
 import { VerificationDetailsCard } from './VerificationDetailsCard';
 import { VerificationSummaryChrome } from './VerificationSummaryChrome';
+import { VerificationViewBackBar } from './VerificationViewBackBar';
 import type { SiteCalibration } from '../types';
 
 type VerificationSerialGroupViewProps = {
@@ -31,7 +32,6 @@ type VerificationSerialGroupViewProps = {
   onClose: () => void;
   onResubmitted?: (newRecordId: string) => void | Promise<void>;
   closeDisabled?: boolean;
-  showHeaderClose?: boolean;
 };
 
 function versionTone(record: SiteCalibration, group: SiteCalibration[]): string {
@@ -50,7 +50,6 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
   onClose,
   onResubmitted,
   closeDisabled = false,
-  showHeaderClose = false,
 }) => {
   const { user } = useAuth();
   const confirm = useConfirm();
@@ -134,6 +133,11 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
 
   return (
     <div className="verification-certified-summary verification-serial-group">
+      <VerificationViewBackBar
+        onBack={onClose}
+        disabled={closeDisabled || resubmitting}
+      />
+
       {showGroupHeading && (
         <p className="verification-serial-group-hint verification-serial-group-hint--top mb-0">
           {group.length} records for this serial
@@ -163,9 +167,6 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
                 <div className="verification-version-card-main">
                   <VerificationSummaryChrome
                     record={version}
-                    onClose={onClose}
-                    closeDisabled={closeDisabled || resubmitting}
-                    showClose={showHeaderClose && version.id === record.id}
                     versionHint={
                       showGroupHeading
                         ? `${verificationVersionTitle(version, group)} · ${verificationVersionSubtitle(version)}`

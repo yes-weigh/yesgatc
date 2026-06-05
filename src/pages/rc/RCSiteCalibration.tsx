@@ -12,6 +12,7 @@ import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
+import { VerificationViewBackBar } from '../../components/VerificationViewBackBar';
 import { TablePagination } from '../../components/TablePagination';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
 import {
@@ -1093,7 +1094,9 @@ export const RCSiteCalibration: React.FC = () => {
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
   const canSaveDraftFromFooter =
     !isViewMode && !isCertifiedActionsView && (!showAddForm || wizardOnLastStep);
-  const showFormFooter = isCertifiedActionsView || isViewMode || !showAddForm || wizardOnLastStep;
+  const showVerificationBackBar = isCertifiedActionsView || isViewMode;
+  const showFormFooter =
+    !showVerificationBackBar && (!showAddForm || wizardOnLastStep);
   const mobileFloatingChrome = useVerificationMobileLayout(showAddForm);
 
   const draftBlockReason = useMemo(
@@ -1330,6 +1333,12 @@ export const RCSiteCalibration: React.FC = () => {
               />
             ) : (
               <>
+                {isViewMode && (
+                  <VerificationViewBackBar
+                    onBack={handleCloseForm}
+                    disabled={formBusy}
+                  />
+                )}
                 <div className={`product-form-topbar${showAddForm ? ' product-form-topbar--new-mobile' : ''}`}>
                   <div className="product-form-topbar-text">
                     <h2 id="site-calibration-form-title">

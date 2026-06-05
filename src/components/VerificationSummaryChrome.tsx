@@ -1,5 +1,5 @@
 import React from 'react';
-import { Barcode, ShieldCheck, UserRound, X } from 'lucide-react';
+import { Barcode, ShieldCheck, UserRound } from 'lucide-react';
 import {
   getVerificationDisplayStatus,
   verificationDisplayStatusLabel,
@@ -8,9 +8,6 @@ import type { SiteCalibration } from '../types';
 
 type VerificationSummaryChromeProps = {
   record: SiteCalibration;
-  onClose?: () => void;
-  closeDisabled?: boolean;
-  showClose?: boolean;
   versionHint?: string;
 };
 
@@ -25,9 +22,6 @@ function headerSubtitle(record: SiteCalibration): string {
 
 export const VerificationSummaryChrome: React.FC<VerificationSummaryChromeProps> = ({
   record,
-  onClose,
-  closeDisabled = false,
-  showClose = false,
   versionHint,
 }) => {
   const statusKey = getVerificationDisplayStatus(record);
@@ -54,17 +48,6 @@ export const VerificationSummaryChrome: React.FC<VerificationSummaryChromeProps>
             {versionHint && <p className="verification-ref-version-hint mb-0">{versionHint}</p>}
           </div>
         </div>
-        {showClose && onClose && (
-          <button
-            type="button"
-            className="verification-ref-close"
-            onClick={onClose}
-            disabled={closeDisabled}
-            aria-label="Close"
-          >
-            <X size={18} strokeWidth={2.25} />
-          </button>
-        )}
       </header>
 
       <div className="verification-ref-identity" aria-label="Serial and customer">

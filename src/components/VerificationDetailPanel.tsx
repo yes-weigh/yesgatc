@@ -3,6 +3,7 @@ import { Eye, X } from 'lucide-react';
 import { InlineFormPanel } from './InlineFormPanel';
 import { StorageImage } from './StorageImage';
 import { VerificationSerialGroupView } from './VerificationSerialGroupView';
+import { VerificationViewBackBar } from './VerificationViewBackBar';
 import { getVerificationSerialGroup } from '../lib/verificationResubmit';
 import { VERIFICATION_LOCATION_OPTIONS } from '../lib/siteCalibrationProfileFields';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
@@ -98,7 +99,6 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             allRecords={allRecords.length ? allRecords : [record]}
             onClose={onClose}
             onResubmitted={onRecordsChanged}
-            showHeaderClose
           />
         </div>
       </InlineFormPanel>
@@ -108,6 +108,7 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
   return (
     <InlineFormPanel id="verification-detail-panel" className="mb-6 inline-form-panel--wide">
       <div className="product-form-panel">
+        <VerificationViewBackBar onBack={onClose} />
         <div className="product-form-topbar">
           <div className="product-form-topbar-text">
             <h2>
