@@ -76,8 +76,17 @@ export function isRvPaymentSatisfied(
   record: Pick<SiteCalibration, 'verificationType' | 'rvPaymentStatus' | 'rvPaymentAmount'> | null | undefined,
   expectedAmount: number | null,
 ): boolean {
-  if (!record || record.verificationType !== 'RV') return true;
+  if (!record) return false;
+  if (record.verificationType !== 'RV') return true;
   if (record.rvPaymentStatus !== 'paid') return false;
   if (expectedAmount == null) return true;
   return record.rvPaymentAmount === expectedAmount;
+}
+
+export function isRvSessionPaymentSatisfied(
+  sessionPayment: { paymentId: string; amountInr: number } | null | undefined,
+  expectedAmount: number | null,
+): boolean {
+  if (!sessionPayment || expectedAmount == null) return false;
+  return sessionPayment.amountInr === expectedAmount && Boolean(sessionPayment.paymentId);
 }

@@ -107,6 +107,7 @@ import {
   buildRvPaymentFirestorePatch,
   computeRvPaymentAmount,
   isRvPaymentSatisfied,
+  isRvSessionPaymentSatisfied,
 } from '../../lib/rvPaymentAmount';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
@@ -170,6 +171,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [submitProgressRecordIds, setSubmitProgressRecordIds] = useState<string[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [rvPaymentOpen, setRvPaymentOpen] = useState(false);
+  const [rvSessionPayment, setRvSessionPayment] = useState<{ paymentId: string; amountInr: number } | null>(null);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
@@ -358,6 +360,8 @@ export const RCSiteCalibration: React.FC = () => {
     setShowAddForm(false);
     setEditingId(null);
     setWizardOnLastStep(false);
+    setRvPaymentOpen(false);
+    setRvSessionPayment(null);
     resetForm();
   };
 
@@ -1113,6 +1117,12 @@ export const RCSiteCalibration: React.FC = () => {
       }
 
       const existing = editingId ? records.find(r => r.id === editingId) ?? null : null;
+
+      if (isRvSessionPaymentSatisfied(rvSessionPayment, rvPaymentBreakdown.total)) {
+        await executeSubmitFromForm(rvSessionPayment!);
+        return;
+      }
+
       if (isRvPaymentSatisfied(existing, rvPaymentBreakdown.total)) {
         await executeSubmitFromForm(
           existing?.rvPaymentId && existing.rvPaymentAmount != null
@@ -1122,6 +1132,7 @@ export const RCSiteCalibration: React.FC = () => {
         return;
       }
 
+      setError('');
       setRvPaymentOpen(true);
       return;
     }
@@ -1131,17 +1142,18 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleRvPaymentComplete = async (paymentId: string) => {
     if (!rvPaymentBreakdown) return;
+    const payment = { paymentId, amountInr: rvPaymentBreakdown.total };
+    setRvSessionPayment(payment);
     setRvPaymentOpen(false);
-    await executeSubmitFromForm({
-      paymentId,
-      amountInr: rvPaymentBreakdown.total,
-    });
+    await executeSubmitFromForm(payment);
   };
 
   const openNewVerificationSession = useCallback(
     (session: VerificationSessionValues) => {
       setEditingId(null);
       setError('');
+      setRvPaymentOpen(false);
+      setRvSessionPayment(null);
       setSessionValues(session);
       const firstDeviceId = session.devices[0]?.localId;
       setDeviceImages(
