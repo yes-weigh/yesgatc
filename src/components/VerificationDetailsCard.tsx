@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
+import { ZoomIn } from 'lucide-react';
+import { StorageImage } from './StorageImage';
 import { isVerificationCertificateVoided } from '../lib/verificationCertificateVoid';
-import { VerificationInstrumentPhotoCorner } from './VerificationInstrumentPhotoCorner';
+import { listVerificationAttachmentsFromRecord } from '../lib/verificationAttachments';
+import { VerificationPhotoViewer } from './VerificationPhotoViewer';
 import { VerificationVoidWatermark } from './VerificationVoidWatermark';
 import { VERIFICATION_LOCATION_OPTIONS, verificationTypeLabel } from '../lib/siteCalibrationProfileFields';
 import { formatVerificationListDate } from '../lib/verificationListFormat';
@@ -41,6 +44,9 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
   const mpe =
     record.maximumPermissibleError != null ? `${record.maximumPermissibleError} g` : null;
   const isVoided = isVerificationCertificateVoided(record);
+  const attachments = useMemo(() => listVerificationAttachmentsFromRecord(record), [record]);
+  const [viewerAttachmentId, setViewerAttachmentId] = useState<string | null>(null);
+  const viewerAttachment = attachments.find(item => item.id === viewerAttachmentId) ?? null;
 
   return (
     <section
@@ -82,7 +88,51 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
         <DetailRow label="Certified" value={formatVerificationListDate(record.certifiedAt)} />
         <DetailRow label="Verified on" value={formatVerificationListDate(verifiedOn)} />
       </div>
-      <VerificationInstrumentPhotoCorner record={record} />
+
+      {attachments.length > 0 && (
+        <div className="verification-summary-photos">
+          <div className="verification-summary-photos-head">
+            <span className="verification-summary-photos-title">Evidence photos</span>
+            <span className="verification-summary-photos-count">{attachments.length}</span>
+          </div>
+          <div className="verification-summary-photos-strip" role="group" aria-label="Attached photos">
+            {attachments.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                className={`verification-summary-photo-tile verification-summary-photo-tile--${item.id}`}
+                onClick={() => setViewerAttachmentId(item.id)}
+                aria-label={`View ${item.label}`}
+              >
+                <span className="verification-summary-photo-tile-frame">
+                  <StorageImage
+                    url={item.url}
+                    path={item.path}
+                    alt=""
+                    className="verification-summary-photo-tile-img"
+                  />
+                  <span className="verification-summary-photo-tile-overlay" aria-hidden />
+                  <span className="verification-summary-photo-tile-zoom" aria-hidden>
+                    <ZoomIn size={16} strokeWidth={2.25} />
+                  </span>
+                </span>
+                <span className="verification-summary-photo-tile-label">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {viewerAttachment && (
+        <VerificationPhotoViewer
+          open
+          label={viewerAttachment.label}
+          imageUrl={viewerAttachment.url}
+          storagePath={viewerAttachment.path}
+          onClose={() => setViewerAttachmentId(null)}
+        />
+      )}
+
       {isVoided && <VerificationVoidWatermark variant="details" />}
     </section>
   );

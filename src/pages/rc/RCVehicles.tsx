@@ -6,12 +6,13 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import { tableEditCellProps } from '../../lib/tableEditCell';
+import { StorageImage } from '../../components/StorageImage';
+import { VehicleLogoMark } from '../../components/VehicleLogoMark';
 import { uploadVehicleDocument, type VehicleDocKind } from '../../lib/vehicleDocumentUpload';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
   buildVehicleProfileFields,
-  formatValidityDate,
+  formatVehicleDisplayDate,
   requireVehicleDocuments,
   validateVehicleProfile,
   validityStatus,
@@ -23,7 +24,16 @@ import {
   type VehicleDocKey,
 } from '../../lib/vehicleProfileFields';
 import {
-  Truck, RefreshCw, Pencil, X, Plus, Save, ImageIcon, UserX, UserCheck,
+  Calendar,
+  Check,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Save,
+  ShieldCheck,
+  UserCheck,
+  UserX,
+  X,
 } from 'lucide-react';
 import { isVehicleActive, vehicleActiveLabel } from '../../lib/vehicleApproval';
 import type { Vehicle } from '../../types';
@@ -72,12 +82,67 @@ function vehicleFormFromRecord(record: Vehicle): VehicleFormValues {
   };
 }
 
-const VALIDITY_BADGE: Record<ReturnType<typeof validityStatus>, string> = {
-  ok: 'vehicle-validity-ok',
-  due: 'vehicle-validity-due',
-  expired: 'vehicle-validity-expired',
-  missing: 'vehicle-validity-missing',
+const VALIDITY_LABEL: Record<ReturnType<typeof validityStatus>, string> = {
+  ok: 'Valid',
+  due: 'Due soon',
+  expired: 'Expired',
+  missing: 'Incomplete',
 };
+
+function vehicleTitle(record: Vehicle): string {
+  return `${record.brand} ${record.model}`.trim().toUpperCase() || 'VEHICLE';
+}
+
+function VehiclePlate({ regNumber }: { regNumber?: string }) {
+  const plate = regNumber?.trim();
+  if (!plate) return <span className="rc-vehicle-plate rc-vehicle-plate--empty">—</span>;
+  return (
+    <span className="rc-vehicle-plate">
+      <span className="rc-vehicle-plate-ind" aria-hidden>
+        IND
+      </span>
+      <span className="rc-vehicle-plate-number text-mono">{plate}</span>
+    </span>
+  );
+}
+
+function VehicleStatusBadge({
+  tone,
+  label,
+}: {
+  tone: 'active' | 'inactive' | ReturnType<typeof validityStatus>;
+  label: string;
+}) {
+  return (
+    <span className={`rc-vehicle-status-badge rc-vehicle-status-badge--${tone}`}>
+      <Check size={12} strokeWidth={2.75} aria-hidden />
+      {label}
+    </span>
+  );
+}
+
+function VehicleDateStat({
+  icon,
+  label,
+  value,
+  status,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  status: ReturnType<typeof validityStatus>;
+}) {
+  return (
+    <div className="rc-vehicle-date-stat">
+      <span className="rc-vehicle-date-stat-icon" aria-hidden>
+        {icon}
+      </span>
+      <span className="rc-vehicle-date-stat-label">{label}</span>
+      <span className="rc-vehicle-date-stat-value">{value}</span>
+      <span className={`rc-vehicle-date-stat-line rc-vehicle-date-stat-line--${status}`} aria-hidden />
+    </div>
+  );
+}
 
 export const RCVehicles: React.FC = () => {
   const { user } = useAuth();
@@ -483,157 +548,143 @@ export const RCVehicles: React.FC = () => {
       )}
 
       {!showForm && (
-        <div className="panel glass panel--table mb-6">
-          <div className="panel-header justify-between">
-            <div>
-              <h2>
-                <Truck className="inline-icon" /> Vehicles
-              </h2>
-            <p className="text-muted text-sm mt-1">
-              {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''} registered
-            </p>
-            {listError && (
-              <p className="rc-form-topbar-error text-sm mt-1" role="alert">
-                {listError}
+        <div className="rc-vehicles-page">
+          <section className="rc-vehicles-summary-card">
+            <VehicleLogoMark size="md" />
+            <div className="rc-vehicles-summary-copy">
+              <h2 className="rc-vehicles-summary-title">Vehicles</h2>
+              <p className="rc-vehicles-summary-sub">
+                {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''} registered
               </p>
-            )}
+              {listError && (
+                <p className="rc-form-topbar-error text-sm mt-1 mb-0" role="alert">
+                  {listError}
+                </p>
+              )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="rc-vehicles-summary-actions">
               <button
                 type="button"
-                className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
+                className="rc-vehicles-add-btn"
                 onClick={handleStartAdd}
               >
-                <Plus size={16} /> Add Vehicle
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                Add Vehicle
               </button>
-              <button className="btn-icon" onClick={fetchVehicles} title="Refresh" type="button">
-                <RefreshCw size={18} />
+              <button
+                type="button"
+                className="rc-vehicles-refresh-btn"
+                onClick={() => void fetchVehicles()}
+                title="Refresh"
+                aria-label="Refresh vehicles"
+                disabled={loading}
+              >
+                <RefreshCw size={18} className={loading ? 'spinner-inline' : undefined} />
               </button>
             </div>
-          </div>
-          <div className="panel-body p-0">
-            {loading ? (
-              <div className="flex justify-center py-16">
-                <span className="spinner-inline large"></span>
-              </div>
-            ) : (
-              <div className="table-scroll-wrap">
-                <table className="data-table data-table--vehicles-rc data-table--mobile-cards">
-                  <thead>
-                    <tr>
-                      <th className="vehicle-rc-col-serial">#</th>
-                      <th>Vehicle</th>
-                      <th>Reg number</th>
-                      <th>Year</th>
-                      <th>RC validity</th>
-                      <th>Insurance</th>
-                      <th>Pollution</th>
-                      <th>F2 weight</th>
-                      <th>Active</th>
-                      <th>Docs</th>
-                      <th className="text-right vehicle-rc-col-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vehicles.map((v, index) => {
-                      const status = earliestValidity(v);
-                      const openEdit = () => startEdit(v);
-                      const editCell = tableEditCellProps(openEdit, 'Edit vehicle');
-                      const active = isVehicleActive(v);
+          </section>
 
-                      return (
-                        <tr key={v.id} className="table-mobile-row table-mobile-row--actions">
-                          <td className="vehicle-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
-                          <td {...editCell} className="font-medium table-mobile-col-primary table-col-editable">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {v.vehiclePhotoUrl ? (
-                                <img src={v.vehiclePhotoUrl} alt="" className="vct-table-avatar shrink-0" />
-                              ) : (
-                                <span className="vct-table-avatar vct-table-avatar--placeholder shrink-0">
-                                  <ImageIcon size={18} />
-                                </span>
-                              )}
-                              <div className="min-w-0">
-                                <span className="table-mobile-primary-text">
-                                  {v.brand} {v.model}
-                                </span>
-                                <div className="table-mobile-summary">
-                                  <span className="text-mono">{v.regNumber || '—'} · {v.year || '—'}</span>
-                                  <span className="table-mobile-summary-badges">
-                                    <span className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}>
-                                      {vehicleActiveLabel(v.active)}
-                                    </span>
-                                    <span className={`status-badge ${VALIDITY_BADGE[status]}`}>
-                                      {status === 'ok' && 'Valid'}
-                                      {status === 'due' && 'Due soon'}
-                                      {status === 'expired' && 'Expired'}
-                                      {status === 'missing' && 'Incomplete'}
-                                    </span>
-                                  </span>
-                                  <span className="table-mobile-summary-meta text-sm">
-                                    RC {formatValidityDate(v.rcValidity)} · Ins {formatValidityDate(v.insuranceValidity)}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td {...editCell} className="text-sm text-mono table-mobile-col-hide table-col-editable">
-                            {v.regNumber || '—'}
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">{v.year || '—'}</td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {formatValidityDate(v.rcValidity)}
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {formatValidityDate(v.insuranceValidity)}
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {formatValidityDate(v.pollutionValidity)}
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {formatValidityDate(v.f2WeightValidity)}
-                          </td>
-                          <td {...editCell} className="table-mobile-col-hide table-col-editable">
-                            <span
-                              className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
-                            >
-                              {vehicleActiveLabel(v.active)}
+          {loading ? (
+            <div className="rc-vehicles-loading">
+              <span className="spinner-inline large" />
+            </div>
+          ) : vehicles.length === 0 ? (
+            <div className="rc-vehicles-empty">
+              <VehicleLogoMark size="lg" />
+              <p>No vehicles yet.</p>
+              <button type="button" className="rc-vehicles-add-btn" onClick={handleStartAdd}>
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                Add Vehicle
+              </button>
+            </div>
+          ) : (
+            <div className="rc-vehicles-list">
+              {vehicles.map(v => {
+                const active = isVehicleActive(v);
+                const overallValidity = earliestValidity(v);
+                const rcStatus = validityStatus(v.rcValidity);
+                const insuranceStatus = validityStatus(v.insuranceValidity);
+                const photo = vehiclePhotoFromRecord(v);
+                const disableLabel = v.regNumber || `${v.brand} ${v.model}`.trim() || 'vehicle';
+
+                return (
+                  <article key={v.id} className="rc-vehicle-card">
+                    <div className="rc-vehicle-card-top">
+                      <button
+                        type="button"
+                        className="rc-vehicle-card-main"
+                        onClick={() => startEdit(v)}
+                        aria-label={`Edit ${disableLabel}`}
+                      >
+                        <span className="rc-vehicle-card-photo">
+                          {photo ? (
+                            <StorageImage
+                              url={photo.url}
+                              path={photo.path}
+                              alt=""
+                              className="rc-vehicle-card-photo-img"
+                            />
+                          ) : (
+                            <span className="rc-vehicle-card-photo-placeholder" aria-hidden>
+                              <VehicleLogoMark size="sm" variant="plain" />
                             </span>
-                          </td>
-                          <td {...editCell} className="table-mobile-col-hide table-col-editable">
-                            <span className={`status-badge ${VALIDITY_BADGE[status]}`}>
-                              {status === 'ok' && 'Valid'}
-                              {status === 'due' && 'Due soon'}
-                              {status === 'expired' && 'Expired'}
-                              {status === 'missing' && 'Incomplete'}
-                            </span>
-                          </td>
-                          <td className="text-right vehicle-rc-col-actions table-mobile-col-actions">
-                            <button
-                              type="button"
-                              className={`btn-icon ${active ? 'text-amber' : 'text-green'}`}
-                              onClick={() => handleToggleActive(v)}
-                              title={active ? 'Disable vehicle' : 'Enable vehicle'}
-                              aria-label={active ? `Disable ${v.regNumber || `${v.brand} ${v.model}`.trim()}` : `Enable ${v.regNumber || `${v.brand} ${v.model}`.trim()}`}
-                            >
-                              {active ? <UserX size={18} /> : <UserCheck size={18} />}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {vehicles.length === 0 && (
-                      <tr>
-                        <td colSpan={11} className="text-center py-10 text-muted">
-                          No vehicles yet. Click &quot;Add Vehicle&quot; to register one.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                          )}
+                        </span>
+                        <span className="rc-vehicle-card-info">
+                          <span className="rc-vehicle-card-name">{vehicleTitle(v)}</span>
+                          <span className="rc-vehicle-card-meta">
+                            <VehiclePlate regNumber={v.regNumber} />
+                            {v.year?.trim() && (
+                              <span className="rc-vehicle-card-year">
+                                <Calendar size={13} strokeWidth={2} aria-hidden />
+                                {v.year}
+                              </span>
+                            )}
+                          </span>
+                          <span className="rc-vehicle-card-badges">
+                            <VehicleStatusBadge
+                              tone={active ? 'active' : 'inactive'}
+                              label={vehicleActiveLabel(v.active)}
+                            />
+                            <VehicleStatusBadge
+                              tone={overallValidity}
+                              label={VALIDITY_LABEL[overallValidity]}
+                            />
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`rc-vehicle-card-toggle${active ? '' : ' rc-vehicle-card-toggle--enable'}`}
+                        onClick={() => void handleToggleActive(v)}
+                        title={active ? 'Disable vehicle' : 'Enable vehicle'}
+                        aria-label={active ? `Disable ${disableLabel}` : `Enable ${disableLabel}`}
+                      >
+                        {active ? <UserX size={20} strokeWidth={1.75} /> : <UserCheck size={20} strokeWidth={1.75} />}
+                      </button>
+                    </div>
+
+                    <div className="rc-vehicle-card-divider" aria-hidden />
+
+                    <div className="rc-vehicle-card-dates">
+                      <VehicleDateStat
+                        icon={<Calendar size={16} strokeWidth={1.75} />}
+                        label="Registration Date"
+                        value={formatVehicleDisplayDate(v.rcValidity)}
+                        status={rcStatus}
+                      />
+                      <VehicleDateStat
+                        icon={<ShieldCheck size={16} strokeWidth={1.75} />}
+                        label="Insurance Valid Till"
+                        value={formatVehicleDisplayDate(v.insuranceValidity)}
+                        status={insuranceStatus}
+                      />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

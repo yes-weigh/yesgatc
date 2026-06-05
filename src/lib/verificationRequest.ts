@@ -1,4 +1,5 @@
 import type {
+  JobType,
   Product,
   SiteCalibration,
   VerificationPerformedBy,
@@ -81,6 +82,14 @@ export type VerificationFilterStatus =
 
 export type VerificationStatusFilter = VerificationFilterStatus | 'all';
 
+export type VerificationTypeFilter = 'all' | JobType;
+
+export interface VerificationTypeFilterCounts {
+  all: number;
+  OV: number;
+  RV: number;
+}
+
 export interface VerificationStatusFilterCounts {
   all: number;
   draft: number;
@@ -136,7 +145,7 @@ export function getVerificationDisplayStatus(record: SiteCalibration): Verificat
 }
 
 export function verificationFilterLabel(filter: VerificationStatusFilter): string {
-  if (filter === 'all') return 'All';
+  if (filter === 'all') return 'All stages';
   if (filter === 'failed_submit') return 'Failed at submit';
   if (filter === 'failed_certification') return 'Failed at certification';
   return verificationStatusLabel(filter);
@@ -179,6 +188,38 @@ export function matchesVerificationStatusFilter(
   return normalizeVerificationStatus(record) === filter;
 }
 
+export function matchesVerificationTypeFilter(
+  record: SiteCalibration,
+  filter: VerificationTypeFilter,
+): boolean {
+  if (filter === 'all') return true;
+  return record.verificationType === filter;
+}
+
+export function tallyVerificationTypeFilters(
+  records: SiteCalibration[],
+): VerificationTypeFilterCounts {
+  const tally: VerificationTypeFilterCounts = { all: records.length, OV: 0, RV: 0 };
+  for (const record of records) {
+    if (record.verificationType === 'RV') {
+      tally.RV += 1;
+    } else {
+      tally.OV += 1;
+    }
+  }
+  return tally;
+}
+
+export function buildVerificationTypeFilterOptions(
+  counts: VerificationTypeFilterCounts,
+): { value: VerificationTypeFilter; label: string; count: number }[] {
+  return [
+    { value: 'all', label: 'OV+RV', count: counts.all },
+    { value: 'OV', label: 'OV', count: counts.OV },
+    { value: 'RV', label: 'RV', count: counts.RV },
+  ];
+}
+
 export function tallyVerificationStatusFilters(
   records: SiteCalibration[],
 ): VerificationStatusFilterCounts {
@@ -216,7 +257,7 @@ export function buildVerificationStatusFilterOptions(
   counts: VerificationStatusFilterCounts,
 ): { value: VerificationStatusFilter; label: string; count: number }[] {
   return [
-    { value: 'all', label: 'All', count: counts.all },
+    { value: 'all', label: 'All stages', count: counts.all },
     { value: 'draft', label: 'Draft', count: counts.draft },
     { value: 'submitted', label: 'Submitted', count: counts.submitted },
     { value: 'approved', label: 'Approved', count: counts.approved },

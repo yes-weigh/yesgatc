@@ -90,11 +90,12 @@ export function rvDocumentMetaFromRecord(
   kind: RvDocumentKind,
 ): ProductFileMeta | null {
   const keys = DOCUMENT_FIELD_KEYS[kind];
-  const url = record[keys.url] as string | undefined;
-  if (!url) return null;
+  const url = (record[keys.url] as string | undefined)?.trim() ?? '';
+  const path = (record[keys.path] as string | undefined)?.trim() ?? '';
+  if (!url && !path) return null;
   return {
     url,
-    path: (record[keys.path] as string) || '',
+    path,
     name: (record[keys.name] as string) || RV_DOCUMENT_CONFIG[kind].defaultName,
     contentType: (record[keys.contentType] as string) || 'image/jpeg',
   };

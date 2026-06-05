@@ -1,0 +1,30 @@
+﻿# Dependencies & build output (indexing these burns background tokens)
+node_modules/
+dist/
+dist-ssr/
+dev-dist/
+
+# Certificate worker (.NET)
+certificate-worker/**/bin/
+certificate-worker/**/obj/
+certificate-worker/publish/
+
+# Large binaries / OCR data
+certificate-worker/**/tessdata/
+
+# Logs
+logs/
+*.log
+
+# Secrets & local overrides (never index)
+*.local
+.env
+.env.*
+*service-account*.json
+*firebase-adminsdk*.json
+certificate-worker/**/appsettings.local.json
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store

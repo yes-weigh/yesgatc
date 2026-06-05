@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, LayoutGrid, Plus, RefreshCw, Search } from 'lucide-react';
-import type { VerificationStatusFilter } from '../lib/verificationRequest';
+import type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
 
-export type { VerificationStatusFilter } from '../lib/verificationRequest';
+export type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
 
 export interface VerificationStatusFilterOption {
   value: VerificationStatusFilter;
@@ -13,6 +13,12 @@ export interface VerificationStatusFilterOption {
 
 export interface VerificationRcFilterOption {
   value: string;
+  label: string;
+  count: number;
+}
+
+export interface VerificationTypeFilterOption {
+  value: VerificationTypeFilter;
   label: string;
   count: number;
 }
@@ -191,6 +197,9 @@ interface VerificationListFiltersProps {
   statusFilter: VerificationStatusFilter;
   onStatusFilterChange: (value: VerificationStatusFilter) => void;
   statusOptions: VerificationStatusFilterOption[];
+  typeFilter?: VerificationTypeFilter;
+  onTypeFilterChange?: (value: VerificationTypeFilter) => void;
+  typeOptions?: VerificationTypeFilterOption[];
   rcFilter?: string;
   onRcFilterChange?: (value: string) => void;
   rcOptions?: VerificationRcFilterOption[];
@@ -206,6 +215,9 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
   statusFilter,
   onStatusFilterChange,
   statusOptions,
+  typeFilter = 'all',
+  onTypeFilterChange,
+  typeOptions,
   rcFilter,
   onRcFilterChange,
   rcOptions,
@@ -221,9 +233,11 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
 
   const rcSelectOptions: FilterSelectOption[] = (rcOptions ?? []).map(opt => ({
     value: opt.value,
-    label: opt.value === 'all' ? 'All centres' : opt.label,
+    label: opt.value === 'all' ? 'All RC' : opt.label,
     count: opt.count,
   }));
+
+  const showTypeBadges = Boolean(typeOptions?.length && onTypeFilterChange);
 
   const statusSelectOptions: FilterSelectOption[] = statusOptions.map(opt => ({
     value: opt.value,
@@ -251,6 +265,25 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
           onChange={onRcFilterChange!}
           variant="secondary"
         />
+      )}
+
+      {showTypeBadges && (
+        <div className="verification-type-badges" role="group" aria-label="Verification type">
+          {typeOptions!.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              className={`verification-type-badge${
+                typeFilter === opt.value ? ' verification-type-badge--active' : ''
+              }`}
+              aria-pressed={typeFilter === opt.value}
+              onClick={() => onTypeFilterChange!(opt.value)}
+            >
+              {opt.label}
+              <span className="badge-count">{opt.count}</span>
+            </button>
+          ))}
+        </div>
       )}
 
       <div className="verification-list-actions-row">

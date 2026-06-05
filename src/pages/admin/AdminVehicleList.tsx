@@ -13,8 +13,9 @@ import {
   VEHICLE_DOC_LABELS,
 } from '../../lib/vehicleProfileFields';
 import {
-  Truck, Building2, RefreshCw, Trash2, Eye, X, ExternalLink, ImageIcon, UserX, UserCheck,
+  Building2, RefreshCw, Trash2, Eye, X, ExternalLink, ImageIcon, UserX, UserCheck,
 } from 'lucide-react';
+import { VehicleLogoMark } from '../../components/VehicleLogoMark';
 import type { FirestoreUserDoc, Vehicle } from '../../types';
 
 interface VehicleRecord extends Vehicle {
@@ -150,7 +151,7 @@ export const AdminVehicleList: React.FC = () => {
     <div className="fade-in page-content">
       <div className="stats-grid mb-6">
         <div className="stat-card glass">
-          <div className="stat-icon text-green"><Truck /></div>
+          <div className="stat-icon text-green"><VehicleLogoMark size="sm" /></div>
           <div className="stat-content">
             <h3>Vehicles</h3>
             <p className="stat-value">{vehicles.length}</p>
@@ -266,7 +267,7 @@ export const AdminVehicleList: React.FC = () => {
           <div className="panel-header justify-between">
             <div>
               <h2>
-                <Truck className="inline-icon" /> Vehicles
+                <VehicleLogoMark size="sm" variant="plain" className="inline-icon" /> Vehicles
               </h2>
               <p className="text-muted text-sm mt-1">
                 Vehicles registered by regional centers. Enable or disable as needed.

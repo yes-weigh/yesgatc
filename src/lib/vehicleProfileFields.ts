@@ -175,6 +175,14 @@ export function formatValidityDate(value?: string): string {
   return d.toLocaleDateString('en-IN');
 }
 
+/** Card display: e.g. 31 Oct 2031 */
+export function formatVehicleDisplayDate(value?: string): string {
+  if (!value?.trim()) return '—';
+  const d = new Date(`${value.trim()}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export function validityStatus(value?: string): 'ok' | 'due' | 'expired' | 'missing' {
   if (!value?.trim()) return 'missing';
   const today = new Date();

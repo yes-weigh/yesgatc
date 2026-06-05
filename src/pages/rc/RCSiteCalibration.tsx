@@ -32,14 +32,17 @@ import {
 import {
   buildVerificationSubmitPatch,
   buildVerificationStatusFilterOptions,
+  buildVerificationTypeFilterOptions,
   canDeleteVerification,
   canShowVerificationCertifiedActions,
   canSubmitVerification,
   isVerificationEditable,
   isVerificationViewable,
   matchesVerificationStatusFilter,
+  matchesVerificationTypeFilter,
   normalizeVerificationStatus,
   tallyVerificationStatusFilters,
+  tallyVerificationTypeFilters,
   verificationFilterLabel,
   verificationStatusDescription,
 } from '../../lib/verificationRequest';
@@ -72,6 +75,7 @@ import {
 import {
   VerificationListFilters,
   type VerificationStatusFilter,
+  type VerificationTypeFilter,
 } from '../../components/VerificationListFilters';
 import { collapseVerificationsForListDisplay } from '../../lib/verificationListGrouping';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
@@ -118,6 +122,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
@@ -1128,10 +1133,11 @@ export const RCSiteCalibration: React.FC = () => {
   const filteredRecords = useMemo(() => {
     const filtered = records.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
-      return matchesVerificationStatusFilter(record, statusFilter);
+      if (!matchesVerificationStatusFilter(record, statusFilter)) return false;
+      return matchesVerificationTypeFilter(record, typeFilter);
     });
     return collapseVerificationsForListDisplay(filtered, records);
-  }, [records, statusFilter, searchTerm]);
+  }, [records, statusFilter, typeFilter, searchTerm]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -1153,8 +1159,10 @@ export const RCSiteCalibration: React.FC = () => {
   );
 
   const statusCounts = useMemo(() => tallyVerificationStatusFilters(records), [records]);
+  const typeCounts = useMemo(() => tallyVerificationTypeFilters(records), [records]);
 
   const statusFilterOptions = buildVerificationStatusFilterOptions(statusCounts);
+  const typeFilterOptions = buildVerificationTypeFilterOptions(typeCounts);
 
   const draftSubmitMeta = useMemo(() => {
     const meta = new Map<string, { submittable: boolean; blockReason: string | null }>();
@@ -1181,7 +1189,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, searchTerm]);
+  }, [statusFilter, typeFilter, searchTerm]);
 
   useEffect(() => {
     if (showForm || !rowHighlightFlashId) return;
@@ -1438,6 +1446,9 @@ export const RCSiteCalibration: React.FC = () => {
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}
             statusOptions={statusFilterOptions}
+            typeFilter={typeFilter}
+            onTypeFilterChange={setTypeFilter}
+            typeOptions={typeFilterOptions}
             onNewClick={handleStartAdd}
             onRefresh={() => void fetchRecords()}
             refreshing={loading}

@@ -4,9 +4,12 @@ import { db } from '../../firebase';
 import { useConfirm } from '../../context/ConfirmContext';
 import {
   buildVerificationStatusFilterOptions,
+  buildVerificationTypeFilterOptions,
   canDeleteVerification,
   matchesVerificationStatusFilter,
+  matchesVerificationTypeFilter,
   tallyVerificationStatusFilters,
+  tallyVerificationTypeFilters,
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
@@ -15,6 +18,7 @@ import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagi
 import {
   VerificationListFilters,
   type VerificationStatusFilter,
+  type VerificationTypeFilter,
 } from '../../components/VerificationListFilters';
 import { TablePagination } from '../../components/TablePagination';
 import { VerificationDetailPanel } from '../../components/VerificationDetailPanel';
@@ -35,6 +39,7 @@ export const AdminVerificationList: React.FC = () => {
   >(() => new Map());
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
   const [rcFilter, setRcFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
@@ -113,13 +118,16 @@ export const AdminVerificationList: React.FC = () => {
       if (!matchesVerificationStatusFilter(record, statusFilter)) {
         return false;
       }
+      if (!matchesVerificationTypeFilter(record, typeFilter)) {
+        return false;
+      }
       if (rcFilter !== 'all' && (record.rcId || '') !== rcFilter) {
         return false;
       }
       return true;
     });
     return collapseVerificationsForListDisplay(filtered, records);
-  }, [records, statusFilter, rcFilter, searchTerm]);
+  }, [records, statusFilter, typeFilter, rcFilter, searchTerm]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -137,7 +145,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, rcFilter, searchTerm]);
+  }, [statusFilter, typeFilter, rcFilter, searchTerm]);
 
   useEffect(() => {
     if (viewingRecord || !rowHighlightFlashId) return;
@@ -161,6 +169,8 @@ export const AdminVerificationList: React.FC = () => {
   };
 
   const counts = useMemo(() => tallyVerificationStatusFilters(records), [records]);
+  const typeCounts = useMemo(() => tallyVerificationTypeFilters(records), [records]);
+  const typeFilterOptions = buildVerificationTypeFilterOptions(typeCounts);
 
   const rcFilterOptions = useMemo(() => {
     const byRc = new Map<string, { label: string; count: number }>();
@@ -180,7 +190,7 @@ export const AdminVerificationList: React.FC = () => {
       .sort((a, b) => a.label.localeCompare(b.label));
 
     return [
-      { value: 'all', label: 'All', count: records.length },
+      { value: 'all', label: 'All RC', count: records.length },
       ...centres,
     ];
   }, [records]);
@@ -245,6 +255,9 @@ export const AdminVerificationList: React.FC = () => {
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}
             statusOptions={filterOptions}
+            typeFilter={typeFilter}
+            onTypeFilterChange={setTypeFilter}
+            typeOptions={typeFilterOptions}
             rcFilter={rcFilter}
             onRcFilterChange={setRcFilter}
             rcOptions={rcFilterOptions}

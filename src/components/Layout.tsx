@@ -8,6 +8,7 @@ import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
 import { vctProfilePhotoFromUser } from '../lib/vctProfileFields';
 import { MobileAppBarBrandIcon } from './MobileAppBarBrandIcon';
 import { StorageImage } from './StorageImage';
+import { VehicleLogoMark } from './VehicleLogoMark';
 import {
   LayoutDashboard,
   Building2,
@@ -19,7 +20,6 @@ import {
   UserCircle,
   ShieldCheck,
   Settings,
-  Truck,
   UserRound,
   Wrench,
   Scale,
@@ -115,7 +115,7 @@ export const Layout: React.FC = () => {
             label: 'Technician',
             pageTitle: 'Verification and Calibration Technician',
           },
-          { path: '/admin/vehicles', icon: <Truck size={20} />, label: 'Vehicle' },
+          { path: '/admin/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Vehicle' },
           { path: '/admin/verifications', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
           { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
           { path: '/admin/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
@@ -137,7 +137,7 @@ export const Layout: React.FC = () => {
             label: 'Technician',
             pageTitle: 'Verification and Calibration Technician',
           },
-          { path: '/rc/vehicles', icon: <Truck size={20} />, label: 'Vehicle' },
+          { path: '/rc/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Vehicle' },
           { path: '/rc/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
           { path: '/rc/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
           { path: '/rc/notifications', icon: <Bell size={20} />, label: 'Notifications' },
