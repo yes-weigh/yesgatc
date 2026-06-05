@@ -4,6 +4,7 @@ const { HttpsError } = require('firebase-functions/v2/https');
 function razorpayKeys() {
   const keyId = process.env.RAZORPAY_KEY_ID?.trim();
   const keySecret = process.env.RAZORPAY_KEY_SECRET?.trim();
+  /** From Razorpay Dashboard → Webhooks (only after you create a webhook). Falls back to API secret. */
   const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim() || keySecret;
   return { keyId, keySecret, webhookSecret };
 }

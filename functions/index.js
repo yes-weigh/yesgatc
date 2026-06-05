@@ -1,5 +1,9 @@
 const { onDocumentDeleted } = require('firebase-functions/v2/firestore');
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
+
+const razorpayKeyId = defineSecret('RAZORPAY_KEY_ID');
+const razorpayKeySecret = defineSecret('RAZORPAY_KEY_SECRET');
 const {
   createRvPaymentOrderHandler,
   getRvPaymentStatusHandler,
@@ -134,21 +138,30 @@ exports.cleanupGhostAuthUsers = onCall({ region: CALLABLE_REGION }, async (reque
 });
 
 /** Creates a Razorpay order + dynamic UPI QR for RV administrative fees + GST. */
-exports.createRvPaymentOrder = onCall({ region: CALLABLE_REGION }, async (request) => {
-  return createRvPaymentOrderHandler(request, adminDb());
-});
+exports.createRvPaymentOrder = onCall(
+  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  async (request) => createRvPaymentOrderHandler(request, adminDb()),
+);
 
 /** Polls Razorpay / Firestore for RV payment completion (QR scan or checkout). */
-exports.getRvPaymentStatus = onCall({ region: CALLABLE_REGION }, async (request) => {
-  return getRvPaymentStatusHandler(request, adminDb());
-});
+exports.getRvPaymentStatus = onCall(
+  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  async (request) => getRvPaymentStatusHandler(request, adminDb()),
+);
 
 /** Verifies Razorpay Checkout signature after UPI payment on the same device. */
-exports.verifyRvPayment = onCall({ region: CALLABLE_REGION }, async (request) => {
-  return verifyRvPaymentHandler(request, adminDb());
-});
+exports.verifyRvPayment = onCall(
+  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  async (request) => verifyRvPaymentHandler(request, adminDb()),
+);
 
-/** Razorpay webhook — enable payment.captured and qr_code.credited in the dashboard. */
-exports.razorpayWebhook = onRequest({ region: CALLABLE_REGION }, async (req, res) => {
-  await razorpayWebhookHandler(req, res, adminDb());
-});
+/**
+ * Razorpay webhook — optional. Polling + checkout verify work without it.
+ * When you add a webhook in Razorpay Dashboard, copy its secret and run:
+ *   firebase functions:secrets:set RAZORPAY_WEBHOOK_SECRET
+ * then redeploy this function.
+ */
+exports.razorpayWebhook = onRequest(
+  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  async (req, res) => razorpayWebhookHandler(req, res, adminDb()),
+);
