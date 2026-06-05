@@ -6273,20 +6273,25 @@ body.verification-mobile-wizard-active {
   flex-shrink: 0;
 }
 
-.customer-form-hero-field--phone .customer-form-hero-field-actions {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 9.5rem;
+.customer-form-hero-contact-row {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: stretch;
+  width: 100%;
+  padding-top: 0.15rem;
 }
 
-.customer-form-hero-field--phone.customer-form-hero-field--editable {
-  flex-wrap: wrap;
-  align-items: center;
+.customer-form-hero-contact-row .customer-form-hero-contact-actions {
+  width: 100%;
+  justify-content: stretch;
+  gap: 0.45rem;
 }
 
-.customer-form-hero-field--phone.customer-form-hero-field--editable .customer-form-hero-field-body {
-  flex: 1 1 5.5rem;
-  min-width: 0;
+.customer-form-hero-contact-row .customer-form-hero-contact-btn {
+  flex: 1;
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.72rem;
 }
 
 .product-upload-readonly-empty {

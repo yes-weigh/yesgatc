@@ -593,13 +593,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
                 {mobileLabel}
               </label>
               {phoneInput}
-              {fieldsLocked ? (
-                <div className="customer-form-hero-field-actions">
-                  <HeroPhoneContactActions phone={values.phone} />
-                </div>
-              ) : (
-                lookupChevron
-              )}
+              {!fieldsLocked && lookupChevron}
             </div>
             {showEmail && emailInput && (
               <div
@@ -618,6 +612,11 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
             )}
             {footer}
           </div>
+          {fieldsLocked && (
+            <div className="customer-form-hero-contact-row">
+              <HeroPhoneContactActions phone={values.phone} />
+            </div>
+          )}
         </div>
       )}
 
