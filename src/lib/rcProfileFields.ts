@@ -204,10 +204,37 @@ export function standardWeightsCertExpiryFromDate(certDate: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+export const RC_CODE_LENGTH = 3;
+
+export function normalizeRcCode(input: string): string {
+  return input.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, RC_CODE_LENGTH);
+}
+
+export function validateRcCodeInput(code: string): string | null {
+  const normalized = normalizeRcCode(code);
+  if (normalized.length !== RC_CODE_LENGTH) {
+    return `RC code must be exactly ${RC_CODE_LENGTH} characters (letters or digits).`;
+  }
+  return null;
+}
+
+export function buildVerificationRemarks(
+  verificationType: JobType | '',
+  rcCode?: string | null,
+): string {
+  const code = normalizeRcCode(rcCode ?? '');
+  const isRv = verificationType === 'RV';
+  if (code.length === RC_CODE_LENGTH) {
+    return isRv ? `Re verification by ${code}` : `Original verification by ${code}`;
+  }
+  return isRv ? 'Re verification' : 'Original verification';
+}
+
 export type RcFormValues = {
   companyName: string;
   contactPerson: string;
   place: string;
+  rcCode: string;
   pincode: string;
   address: string;
   aadhar: string;
@@ -223,6 +250,7 @@ export const EMPTY_RC_FORM: RcFormValues = {
   companyName: '',
   contactPerson: '',
   place: '',
+  rcCode: '',
   pincode: '',
   address: '',
   aadhar: '',
@@ -247,6 +275,7 @@ export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
     companyName: doc.companyName || doc.username || '',
     contactPerson: doc.contactPerson || '',
     place: doc.place || '',
+    rcCode: doc.rcCode || '',
     pincode: doc.pincode || '',
     address: doc.address || '',
     aadhar: doc.aadhar || '',
@@ -300,6 +329,7 @@ export function buildRcFirestoreFields(
     username: values.companyName.trim(),
     contactPerson: values.contactPerson.trim(),
     place: values.place.trim(),
+    rcCode: normalizeRcCode(values.rcCode),
     pincode,
     address: values.address.trim(),
     gstNumber: values.gstNumber.trim(),

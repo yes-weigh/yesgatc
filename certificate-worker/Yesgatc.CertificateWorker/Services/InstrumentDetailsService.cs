@@ -193,6 +193,7 @@ public sealed class InstrumentDetailsService
             verificationType,
             verificationLocation,
             verificationSubject);
+        var isOv = string.Equals(verificationType, "OV", StringComparison.OrdinalIgnoreCase);
 
         var submittedAt = FirestoreFieldReader.ReadString(calibrationFields, "submittedAt");
         var moneyReceiptDated = DocaVerificationCharges.FormatMoneyReceiptDate(
@@ -231,10 +232,13 @@ public sealed class InstrumentDetailsService
             TypeOfInstrument = "Electronic",
             Manufacturer = manufacturer,
             YearOfManufacture = yearOfManufacture,
-            MoneyReceiptNumber = applicationNumber,
-            MoneyReceiptDated = moneyReceiptDated,
-            VerificationFeeTotal = charges.VerificationFeeTotalText,
-            TotalDeposited = charges.TotalDepositedText,
+            MoneyReceiptNumber = isOv ? string.Empty : applicationNumber,
+            MoneyReceiptDated = isOv ? string.Empty : moneyReceiptDated,
+            VerificationFeeTotal = isOv ? string.Empty : charges.VerificationFeeTotalText,
+            TotalDeposited = isOv ? string.Empty : charges.TotalDepositedText,
+            Remarks = ResolveRemarks(
+                verificationType,
+                FirestoreFieldReader.ReadString(rcFields, "rcCode")),
             AccuracyClass = "III",
             MaximumCapacity = DocaMetrologicalFormatter.FormatMaximumCapacity(maxCapacity.Value),
             MinimumCapacity = DocaMetrologicalFormatter.FormatGrams(minCapacity.Value),
@@ -258,6 +262,34 @@ public sealed class InstrumentDetailsService
             ScaleImageContentType = scaleImageContentType,
             ScaleImageUsesStampingFallback = scaleImageUsesStampingFallback,
         };
+    }
+
+    private static string ResolveRemarks(string verificationType, string? rcCode)
+    {
+        var code = NormalizeRcCode(rcCode);
+        var isRv = string.Equals(verificationType, "RV", StringComparison.OrdinalIgnoreCase);
+        if (code.Length == 3)
+        {
+            return isRv
+                ? $"Re verification by {code}"
+                : $"Original verification by {code}";
+        }
+
+        return isRv ? "Re verification" : "Original verification";
+    }
+
+    private static string NormalizeRcCode(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return string.Empty;
+        }
+
+        return new string(input
+            .Where(char.IsLetterOrDigit)
+            .Take(3)
+            .Select(char.ToUpperInvariant)
+            .ToArray());
     }
 
     private static string ResolveYearOfManufacture(string verificationType, double? manufacturingYear)

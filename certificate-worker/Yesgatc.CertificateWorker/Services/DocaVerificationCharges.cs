@@ -15,6 +15,12 @@ internal static class DocaVerificationCharges
         string verificationLocation,
         string verificationSubject)
     {
+        /** OV certificates have no verification fees — leave DOCA charge fields empty. */
+        if (string.Equals(verificationType, "OV", StringComparison.OrdinalIgnoreCase))
+        {
+            return new DocaChargeAmounts(0, 0, 0, 0, 0);
+        }
+
         if (TryReadStoredCharges(calibrationFields, out var stored))
         {
             return stored;

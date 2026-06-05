@@ -22,7 +22,7 @@ public sealed class InstrumentDetails
     public string SoftwareIdentification { get; init; } = "Nill";
     public string InstrumentConformsToOiml { get; init; } = "Yes";
     public string VerifiedAndStamped { get; init; } = "Yes";
-    public string Remarks { get; init; } = "tested ok";
+    public string Remarks { get; init; } = string.Empty;
     public string ModelApprovalNo { get; init; } = string.Empty;
     public string MoneyReceiptNumber { get; init; } = string.Empty;
     /// <summary>DOCA money receipt date (dd-MM-yy).</summary>

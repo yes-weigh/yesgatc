@@ -917,8 +917,12 @@ select.input-field option {
   width: 28%;
 }
 
+.data-table--rc col.rc-col-code {
+  width: 4.25rem;
+}
+
 .data-table--rc col.rc-col-place {
-  width: 16%;
+  width: 14%;
 }
 
 .data-table--rc col.rc-col-vcts {
@@ -941,11 +945,17 @@ select.input-field option {
   text-align: center;
 }
 
+.data-table--rc .rc-col-code,
 .data-table--rc .rc-col-vcts,
 .data-table--rc .rc-col-jobs,
 .data-table--rc .rc-col-due,
 .data-table--rc .rc-col-status {
   text-align: center;
+}
+
+.rc-form-code-input {
+  max-width: 6.5rem;
+  letter-spacing: 0.12em;
 }
 
 .data-table--rc .rc-col-due {

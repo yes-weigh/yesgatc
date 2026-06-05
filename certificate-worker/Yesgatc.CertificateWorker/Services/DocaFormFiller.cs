@@ -118,11 +118,25 @@ public static class DocaFormFiller
     {
         await ScrollToLabelAsync(page, "Verification & Charges");
 
-        await FillPlainFieldAsync(page, ["Money Receipt"], instrument.MoneyReceiptNumber, inputIndex: 0);
-        await FillDateFieldAsync(page, ["Dated", "Money Receipt Dated"], instrument.MoneyReceiptDated);
-        await FillPlainFieldAsync(page, ["Verification Fee"], instrument.VerificationFeeTotal);
-        await FillPlainFieldAsync(page, ["Carriage", "Conveyance"], "0");
-        await FillPlainFieldAsync(page, ["Total deposited"], instrument.TotalDeposited);
+        if (!string.IsNullOrWhiteSpace(instrument.MoneyReceiptNumber))
+        {
+            await FillPlainFieldAsync(page, ["Money Receipt"], instrument.MoneyReceiptNumber, inputIndex: 0);
+        }
+
+        if (!string.IsNullOrWhiteSpace(instrument.MoneyReceiptDated))
+        {
+            await FillDateFieldAsync(page, ["Dated", "Money Receipt Dated"], instrument.MoneyReceiptDated);
+        }
+        if (!string.IsNullOrWhiteSpace(instrument.VerificationFeeTotal))
+        {
+            await FillPlainFieldAsync(page, ["Verification Fee"], instrument.VerificationFeeTotal);
+        }
+
+        if (!string.IsNullOrWhiteSpace(instrument.VerificationFeeTotal))
+        {
+            await FillPlainFieldAsync(page, ["Carriage", "Conveyance"], "0");
+            await FillPlainFieldAsync(page, ["Total deposited"], instrument.TotalDeposited);
+        }
         await FillPlainFieldAsync(page, ["Model Approval"], instrument.ModelApprovalNo);
 
         var placeLabels = instrument.VerificationLocation == "in_premises"

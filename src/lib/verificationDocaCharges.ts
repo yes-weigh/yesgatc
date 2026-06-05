@@ -21,6 +21,11 @@ export function parseCarriageConveyanceFeeInput(value: string): number {
   return Math.min(Number.parseInt(digits, 10), 999_999);
 }
 
+/** Only RV verifications store fee breakdown on the record; OV leaves fields empty for DOCA automation. */
+export function shouldPersistVerificationDocaCharges(verificationType: JobType | ''): boolean {
+  return verificationType === 'RV';
+}
+
 export function computeVerificationDocaCharges(
   fees: RcFeesStructure,
   verificationType: JobType | '',
@@ -29,6 +34,10 @@ export function computeVerificationDocaCharges(
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
   carriageConveyanceFeeInput = '0',
 ): VerificationDocaChargeFields | null {
+  if (!shouldPersistVerificationDocaCharges(verificationType)) {
+    return null;
+  }
+
   const quote = rcVerificationFeeQuote(
     fees,
     verificationLocation,

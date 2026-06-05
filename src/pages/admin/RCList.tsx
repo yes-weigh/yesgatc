@@ -23,6 +23,8 @@ import {
   rcFormFromUser,
   standardWeightsCertExpiryFromDate,
   validateRcPincodeInput,
+  validateRcCodeInput,
+  normalizeRcCode,
   type RcFormValues,
 } from '../../lib/rcProfileFields';
 import {
@@ -165,6 +167,8 @@ export const RCList: React.FC = () => {
     if (!formValues.companyName.trim()) return 'Company / Center Name is required.';
     if (!formValues.contactPerson.trim()) return 'Contact Person is required.';
     if (!formValues.place.trim()) return 'Place is required.';
+    const rcCodeError = validateRcCodeInput(formValues.rcCode);
+    if (rcCodeError) return rcCodeError;
     if (!formValues.address.trim()) return 'Address is required.';
     const pincodeError = validateRcPincodeInput(formValues.pincode);
     if (pincodeError) return pincodeError;
@@ -584,6 +588,7 @@ export const RCList: React.FC = () => {
               <colgroup>
                 <col className="rc-col-serial" />
                 <col className="rc-col-company" />
+                <col className="rc-col-code" />
                 <col className="rc-col-place" />
                 <col className="rc-col-vcts" />
                 <col className="rc-col-jobs" />
@@ -595,6 +600,7 @@ export const RCList: React.FC = () => {
                 <tr>
                   <th className="rc-col-serial">#</th>
                   <th className="rc-col-company">Company</th>
+                  <th className="rc-col-code">RC code</th>
                   <th className="rc-col-place">Place</th>
                   <th className="rc-col-vcts">VCTs</th>
                   <th className="rc-col-jobs">Jobs</th>
@@ -608,6 +614,8 @@ export const RCList: React.FC = () => {
                   const completionRate =
                     rc.totalJobs > 0 ? Math.round((rc.completedJobs / rc.totalJobs) * 100) : 0;
                   const company = rc.companyName || rc.username || '—';
+                  const rcCode = normalizeRcCode(rc.rcCode || '');
+                  const rcCodeLabel = rcCode || '—';
                   const isActive = isRcActive(rc);
                   const certDue = formatRcCertDueDate(rc);
                   const openEdit = () => startEdit(rc);
@@ -621,7 +629,13 @@ export const RCList: React.FC = () => {
                           {company}
                         </span>
                         <div className="table-mobile-summary">
-                          <span className="table-mobile-summary-meta">{rc.place || '—'}</span>
+                          <span className="table-mobile-summary-meta">
+                            {rcCodeLabel !== '—' && (
+                              <span className="text-mono">{rcCodeLabel}</span>
+                            )}
+                            {rcCodeLabel !== '—' && rc.place ? ' · ' : null}
+                            {rc.place || (rcCodeLabel === '—' ? '—' : '')}
+                          </span>
                           <span>
                             {rc.vctCount} VCT{rc.vctCount !== 1 ? 's' : ''} · {rc.totalJobs} job{rc.totalJobs !== 1 ? 's' : ''}
                             {rc.totalJobs > 0 && (
@@ -637,6 +651,13 @@ export const RCList: React.FC = () => {
                             </span>
                           </span>
                         </div>
+                      </td>
+                      <td
+                        {...editCell}
+                        className="rc-col-code text-sm table-mobile-col-hide table-col-editable text-mono font-semibold"
+                        title={rcCodeLabel !== '—' ? `RC code ${rcCodeLabel}` : 'RC code not set'}
+                      >
+                        {rcCodeLabel}
                       </td>
                       <td {...editCell} className="rc-col-place text-sm table-mobile-col-hide table-col-editable">
                         <span className="rc-cell-ellipsis" title={rc.place || undefined}>
@@ -690,7 +711,7 @@ export const RCList: React.FC = () => {
                 })}
                 {rcList.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="text-center py-10 text-muted">
+                    <td colSpan={9} className="text-center py-10 text-muted">
                       No regional centers yet. Click &quot;Register Center&quot; to add one.
                     </td>
                   </tr>

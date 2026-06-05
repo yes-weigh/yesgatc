@@ -2,7 +2,11 @@ import React, { useRef } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { normalizePhone, normalizePincode } from '../../lib/contactFields';
-import { standardWeightsCertExpiryFromDate } from '../../lib/rcProfileFields';
+import {
+  normalizeRcCode,
+  RC_CODE_LENGTH,
+  standardWeightsCertExpiryFromDate,
+} from '../../lib/rcProfileFields';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import type { RcFormValues } from '../../lib/rcProfileFields';
 import { UploadField } from './productFormUi';
@@ -95,6 +99,25 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
               onChange={e => onChange({ place: e.target.value })}
               required
             />
+          </div>
+          <div className="form-group mb-0">
+            <label htmlFor="rc-code">RC code *</label>
+            <input
+              id="rc-code"
+              type="text"
+              className="input-field text-mono rc-form-code-input"
+              placeholder="3 letters or digits"
+              value={values.rcCode}
+              onChange={e => onChange({ rcCode: normalizeRcCode(e.target.value) })}
+              required
+              maxLength={RC_CODE_LENGTH}
+              autoCapitalize="characters"
+              spellCheck={false}
+              aria-describedby="rc-code-hint"
+            />
+            <p id="rc-code-hint" className="text-muted text-xs mt-1 mb-0">
+              Used in DOCA remarks — e.g. Original verification by {values.rcCode || 'ABC'}
+            </p>
           </div>
           {mode === 'create' ? (
             <div className="form-group mb-0">

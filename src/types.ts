@@ -184,6 +184,8 @@ export interface FirestoreUserDoc {
   laboratorySealIdentification?: string;
   /** RC verification fee amounts by weight tier and location (in premise / in situ). */
   feesStructure?: RcFeesStructure;
+  /** Super Admin only — 3-letter code used in DOCA remarks (e.g. Original verification by ABC). */
+  rcCode?: string;
 }
 
 /** Verification fees for a weight tier (amounts in INR). */

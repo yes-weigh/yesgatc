@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, getDoc,
+  collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, getDoc, deleteField,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -80,7 +80,15 @@ import {
 } from '../../components/VerificationListFilters';
 import { collapseVerificationsForListDisplay } from '../../lib/verificationListGrouping';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
-import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
+import type {
+  Customer,
+  FirestoreUserDoc,
+  JobType,
+  Product,
+  RcFeesStructure,
+  SiteCalibration,
+  VerificationLocation,
+} from '../../types';
 import {
   VerificationSessionFields,
   type VerificationSessionFieldsHandle,
@@ -95,11 +103,43 @@ import {
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
-import { computeVerificationDocaCharges } from '../../lib/verificationDocaCharges';
+import {
+  computeVerificationDocaCharges,
+  shouldPersistVerificationDocaCharges,
+} from '../../lib/verificationDocaCharges';
 import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
 import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
+
+function verificationDocaFirestorePatch(
+  fees: RcFeesStructure,
+  verificationType: JobType | '',
+  verificationLocation: VerificationLocation | '',
+  verificationSubject: 'self' | 'customer' | '',
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+  carriageConveyanceFeeInput = '0',
+): Record<string, unknown> {
+  if (!shouldPersistVerificationDocaCharges(verificationType)) {
+    return {
+      verificationFeeBase: deleteField(),
+      verificationFeeGst: deleteField(),
+      verificationFeeTotal: deleteField(),
+      carriageConveyanceFee: deleteField(),
+      totalDeposited: deleteField(),
+    };
+  }
+
+  const charges = computeVerificationDocaCharges(
+    fees,
+    verificationType,
+    verificationLocation,
+    verificationSubject,
+    product,
+    carriageConveyanceFeeInput,
+  );
+  return charges ?? {};
+}
 
 export const RCSiteCalibration: React.FC = () => {
   const { rcUid, actorUid, isVct } = useRcScope();
@@ -877,7 +917,7 @@ export const RCSiteCalibration: React.FC = () => {
         await syncCustomerDevices([row], sessionForSave.customerId, applied.customer);
       }
       const product = products.find(p => p.id === row.productId) ?? null;
-      const docaCharges = computeVerificationDocaCharges(
+      const docaPatch = verificationDocaFirestorePatch(
         resolveRcFeesStructure(rcProfile),
         sessionForSave.verificationType,
         sessionForSave.verificationLocation,
@@ -887,7 +927,8 @@ export const RCSiteCalibration: React.FC = () => {
       );
       const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
-        ...buildSiteCalibrationFromRow(sessionForSave, row, { product, docaCharges }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
+        ...docaPatch,
         ...imageFields,
         updatedAt: new Date().toISOString(),
       });
@@ -995,7 +1036,7 @@ export const RCSiteCalibration: React.FC = () => {
         await syncCustomerDevices([row], sessionForSave.customerId, applied.customer);
       }
       const product = products.find(p => p.id === row.productId) ?? null;
-      const docaCharges = computeVerificationDocaCharges(
+      const docaPatch = verificationDocaFirestorePatch(
         resolveRcFeesStructure(rcProfile),
         sessionForSave.verificationType,
         sessionForSave.verificationLocation,
@@ -1005,7 +1046,8 @@ export const RCSiteCalibration: React.FC = () => {
       );
       const imageFields = await uploadRowImages(editingId, row.localId, sessionForSave.verificationType === 'RV');
       await updateDoc(doc(db, 'siteCalibrations', editingId), {
-        ...buildSiteCalibrationFromRow(sessionForSave, row, { product, docaCharges }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
+        ...docaPatch,
         ...imageFields,
         ...buildVerificationSubmitPatch(),
       });
