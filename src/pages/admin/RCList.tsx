@@ -5,6 +5,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { tableEditCellProps } from '../../lib/tableEditCell';
 import {
   assertAadharAvailable,
@@ -36,7 +37,7 @@ import { isRcActive, rcActivationLabel } from '../../lib/rcActivation';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
   Building2, Users, Briefcase, RefreshCw,
-  Plus, Pencil, Trash2, Save, X,
+  Plus, Pencil, Trash2, Save,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
 import { RCFormFields } from './RCFormFields';
@@ -475,6 +476,7 @@ export const RCList: React.FC = () => {
       {showForm && (
         <InlineFormPanel id="rc-form" className="mb-6 inline-form-panel--wide inline-form-panel--rc">
           <div className="product-form-panel">
+            <ListViewBackBar onBack={handleCloseModal} disabled={formBusy} />
             <div className="product-form-topbar">
               <div className="product-form-topbar-text">
                 <h2 id="rc-form-title">
@@ -492,15 +494,6 @@ export const RCList: React.FC = () => {
                   {error || '\u00a0'}
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                onClick={handleCloseModal}
-                disabled={formBusy}
-                aria-label="Close"
-              >
-                <X size={15} /> Close
-              </button>
             </div>
 
             <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>

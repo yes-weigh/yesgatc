@@ -6,6 +6,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import {
   RcListCardToggle,
   RcListEditHint,
@@ -48,7 +49,6 @@ import {
   RefreshCw,
   Users,
   Pencil,
-  X,
   Plus,
   Save,
   Zap,
@@ -514,6 +514,7 @@ export const VCTManagement: React.FC = () => {
       {showForm && (
         <InlineFormPanel id="vct-form" className="mb-6 inline-form-panel--wide inline-form-panel--vct">
           <div className="product-form-panel">
+            <ListViewBackBar onBack={handleCloseModal} disabled={formBusy} />
             <div className="product-form-topbar">
               <div className="product-form-topbar-text">
                 <h2 id="vct-form-title">
@@ -531,15 +532,6 @@ export const VCTManagement: React.FC = () => {
                   {error || (showAddForm ? 'Super Admin approval required before sign-in.' : '\u00a0')}
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                onClick={handleCloseModal}
-                disabled={formBusy}
-                aria-label="Close"
-              >
-                <X size={15} /> Close
-              </button>
             </div>
 
             <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>

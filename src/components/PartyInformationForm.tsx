@@ -4,8 +4,11 @@ import {
   Building2,
   ChevronDown,
   Crosshair,
+  Hash,
+  Mail,
   Map,
   MapPin,
+  Phone,
   RefreshCw,
   User,
   UserRound,
@@ -40,6 +43,16 @@ type PartyInformationFormProps = {
   };
   /** Show GPS capture on the party step. */
   locationCapture?: boolean;
+  /** Optional email row (customer profile only). */
+  showEmail?: boolean;
+  /** When false, PIN is optional (customer page save still allows empty PIN). */
+  pincodeRequired?: boolean;
+  footer?: React.ReactNode;
+  /** Square shop photo slot — identity fields render beside it (customer form). */
+  heroPhoto?: React.ReactNode;
+  hideHeader?: boolean;
+  /** View-only display — no inputs (customer profile view mode). */
+  readOnly?: boolean;
 };
 
 function WhatsAppIcon() {
@@ -79,6 +92,70 @@ function PartyInfoRow({
   );
 }
 
+function HeroDisplayValue({
+  value,
+  placeholder,
+  className,
+}: {
+  value: string;
+  placeholder: string;
+  className?: string;
+}) {
+  const trimmed = value.trim();
+  const empty = !trimmed;
+  return (
+    <p
+      className={[
+        'customer-form-hero-display',
+        empty ? 'customer-form-hero-display--empty' : '',
+        className ?? '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {empty ? placeholder : trimmed}
+    </p>
+  );
+}
+
+function CustomerHeroField({
+  icon,
+  label,
+  htmlFor,
+  children,
+  action,
+  className,
+  fieldRef,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+  action?: React.ReactNode;
+  className?: string;
+  fieldRef?: React.Ref<HTMLDivElement>;
+}) {
+  return (
+    <div
+      className={`customer-form-hero-field${className ? ` ${className}` : ''}`}
+      ref={fieldRef}
+    >
+      <span className="customer-form-hero-field-icon" aria-hidden>
+        {icon}
+      </span>
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className="sr-only">
+          {label}
+        </label>
+      ) : (
+        <span className="sr-only">{label}</span>
+      )}
+      <div className="customer-form-hero-field-body">{children}</div>
+      {action ? <div className="customer-form-hero-field-actions">{action}</div> : null}
+    </div>
+  );
+}
+
 export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
   title,
   values,
@@ -89,6 +166,12 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
   districtLabel = 'District',
   lookup,
   locationCapture = false,
+  showEmail = false,
+  pincodeRequired = true,
+  footer,
+  heroPhoto,
+  hideHeader = false,
+  readOnly = false,
 }) => {
   const listId = useId();
   const nameWrapRef = useRef<HTMLDivElement>(null);
@@ -331,133 +414,323 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
     ? `${values.latitude}, ${values.longitude}`
     : '';
 
+  const identityInHero = Boolean(heroPhoto);
+  const showSectionHeader = !hideHeader && !identityInHero;
+  const editing = identityInHero && !readOnly;
+  const heroInputClass = editing
+    ? 'customer-form-hero-input customer-form-hero-input--editable'
+    : identityInHero
+      ? 'customer-form-hero-input'
+      : 'party-info-row-input';
+  const heroReadonlyClass = identityInHero
+    ? 'customer-form-hero-input customer-form-hero-input--readonly'
+    : 'party-info-row-input party-info-row-input--readonly';
+
+  const phoneInput = (
+    <input
+      id="party-info-phone"
+      type="text"
+      inputMode="numeric"
+      className={heroInputClass}
+      placeholder={compact ? '10-digit mobile' : 'Search or enter mobile'}
+      value={values.phone}
+      onChange={e => {
+        const next = normalizePhone(e.target.value);
+        onChange({ phone: next });
+        openLookup('phone', next);
+      }}
+      onFocus={() => openLookup('phone', values.phone)}
+      onKeyDown={e => handleLookupKeyDown(e, 'phone')}
+      disabled={disabled}
+      required
+      maxLength={10}
+      autoComplete="off"
+    />
+  );
+
+  const nameInput = (
+    <input
+      id="party-info-name"
+      type="text"
+      className={
+        identityInHero
+          ? `customer-form-hero-input customer-form-hero-input--name${
+              editing ? ' customer-form-hero-input--editable' : ''
+            }`
+          : 'party-info-row-input'
+      }
+      placeholder={compact ? 'Name' : 'Search or enter name'}
+      value={values.name}
+      onChange={e => {
+        const next = e.target.value;
+        onChange({ name: next });
+        openLookup('name', next);
+      }}
+      onFocus={() => openLookup('name', values.name)}
+      onKeyDown={e => handleLookupKeyDown(e, 'name')}
+      disabled={disabled}
+      required
+      autoComplete="off"
+    />
+  );
+
+  const emailInput = showEmail ? (
+    <input
+      id="party-info-email"
+      type="email"
+      className={heroInputClass}
+      placeholder="Email (optional)"
+      value={values.email}
+      onChange={e => onChange({ email: e.target.value })}
+      disabled={disabled}
+      autoComplete="off"
+    />
+  ) : null;
+
+  const lookupChevron = lookupEnabled ? (
+    <span className="party-info-row-chevron" aria-hidden>
+      <ChevronDown size={16} />
+    </span>
+  ) : null;
+
   return (
     <section
       className={`party-information-form party-information-form--rows${
         compact ? ' party-information-form--compact' : ''
-      }`}
+      }${identityInHero ? ' party-information-form--hero' : ''}${
+        editing ? ' party-information-form--editing' : ''
+      }${readOnly && identityInHero ? ' party-information-form--readonly' : ''}`}
     >
-      <header className="party-information-form-head">
-        <span className="party-information-form-head-icon" aria-hidden>
-          <UserRound size={18} />
-        </span>
-        <h3 className="party-information-form-title">{title}</h3>
-      </header>
+      {showSectionHeader && (
+        <header className="party-information-form-head">
+          <span className="party-information-form-head-icon" aria-hidden>
+            <UserRound size={18} />
+          </span>
+          <h3 className="party-information-form-title">{title}</h3>
+        </header>
+      )}
+
+      {identityInHero && (
+        <div className="customer-form-hero">
+          <div className="customer-form-hero-photo">{heroPhoto}</div>
+          <div className="customer-form-hero-identity">
+            <div
+              className={`customer-form-hero-field customer-form-hero-field--name${
+                editing ? ' customer-form-hero-field--editable' : ''
+              }`}
+              ref={nameWrapRef}
+            >
+              <label htmlFor="party-info-name" className="sr-only">
+                {resolvedNameLabel}
+              </label>
+              {readOnly ? (
+                <HeroDisplayValue
+                  value={values.name}
+                  placeholder="No name"
+                  className="customer-form-hero-display--name"
+                />
+              ) : (
+                nameInput
+              )}
+            </div>
+            <div
+              className={`customer-form-hero-field customer-form-hero-field--phone customer-form-hero-field--mono${
+                editing ? ' customer-form-hero-field--editable' : ''
+              }`}
+              ref={phoneWrapRef}
+            >
+              <span className="customer-form-hero-field-icon customer-form-hero-field-icon--phone" aria-hidden>
+                <Phone size={14} strokeWidth={2.25} />
+              </span>
+              <label htmlFor="party-info-phone" className="sr-only">
+                {mobileLabel}
+              </label>
+              {readOnly ? (
+                <HeroDisplayValue
+                  value={formatPhoneDisplay(values.phone)}
+                  placeholder="No phone"
+                  className="customer-form-hero-display--mono"
+                />
+              ) : (
+                phoneInput
+              )}
+              {!readOnly && lookupChevron}
+            </div>
+            {showEmail && (readOnly || emailInput) && (
+              <div
+                className={`customer-form-hero-field customer-form-hero-field--email customer-form-hero-field--mono${
+                  editing ? ' customer-form-hero-field--editable' : ''
+                }`}
+              >
+                <span className="customer-form-hero-field-icon customer-form-hero-field-icon--email" aria-hidden>
+                  <Mail size={14} strokeWidth={2.25} />
+                </span>
+                <label htmlFor="party-info-email" className="sr-only">
+                  Email
+                </label>
+                {readOnly ? (
+                  <HeroDisplayValue
+                    value={values.email}
+                    placeholder="No email"
+                    className="customer-form-hero-display--mono"
+                  />
+                ) : (
+                  emailInput
+                )}
+              </div>
+            )}
+            {footer}
+          </div>
+        </div>
+      )}
 
       <div className="party-information-form-rows">
-        <PartyInfoRow
-          tone="emerald"
-          icon={<WhatsAppIcon />}
-          fieldRef={phoneWrapRef}
-          action={
-            lookupEnabled ? (
-              <span className="party-info-row-chevron" aria-hidden>
-                <ChevronDown size={16} />
-              </span>
-            ) : undefined
-          }
-        >
-          <label htmlFor="party-info-phone" className="sr-only">
-            {mobileLabel}
-          </label>
-          <input
-            id="party-info-phone"
-            type="text"
-            inputMode="numeric"
-            className="party-info-row-input"
-            placeholder={compact ? '10-digit mobile' : 'Search or enter mobile'}
-            value={values.phone}
-            onChange={e => {
-              const next = normalizePhone(e.target.value);
-              onChange({ phone: next });
-              openLookup('phone', next);
-            }}
-            onFocus={() => openLookup('phone', values.phone)}
-            onKeyDown={e => handleLookupKeyDown(e, 'phone')}
-            disabled={disabled}
-            required
-            maxLength={10}
-            autoComplete="off"
-          />
-        </PartyInfoRow>
+        {!identityInHero && (
+          <PartyInfoRow
+            tone="emerald"
+            icon={<WhatsAppIcon />}
+            fieldRef={phoneWrapRef}
+            action={lookupChevron}
+          >
+            <label htmlFor="party-info-phone" className="sr-only">
+              {mobileLabel}
+            </label>
+            {phoneInput}
+          </PartyInfoRow>
+        )}
 
-        <PartyInfoRow
-          tone="emerald"
-          icon={<User strokeWidth={2} />}
-          fieldRef={nameWrapRef}
-          action={
-            lookupEnabled ? (
-              <span className="party-info-row-chevron" aria-hidden>
-                <ChevronDown size={16} />
-              </span>
-            ) : undefined
-          }
-        >
-          <label htmlFor="party-info-name" className="sr-only">
-            {resolvedNameLabel}
-          </label>
-          <input
-            id="party-info-name"
-            type="text"
-            className="party-info-row-input"
-            placeholder={compact ? 'Name' : 'Search or enter name'}
-            value={values.name}
-            onChange={e => {
-              const next = e.target.value;
-              onChange({ name: next });
-              openLookup('name', next);
-            }}
-            onFocus={() => openLookup('name', values.name)}
-            onKeyDown={e => handleLookupKeyDown(e, 'name')}
-            disabled={disabled}
-            required
-            autoComplete="off"
-          />
-        </PartyInfoRow>
+        {!identityInHero && (
+          <PartyInfoRow
+            tone="emerald"
+            icon={<User strokeWidth={2} />}
+            fieldRef={nameWrapRef}
+            action={lookupChevron}
+          >
+            <label htmlFor="party-info-name" className="sr-only">
+              {resolvedNameLabel}
+            </label>
+            {nameInput}
+          </PartyInfoRow>
+        )}
 
-        <PartyInfoRow tone="sky" icon={<MapPin strokeWidth={2} />}>
-          <label htmlFor="party-info-address" className="sr-only">
-            Address
-          </label>
-          <input
-            id="party-info-address"
-            type="text"
-            className="party-info-row-input"
-            placeholder="Street, locality"
-            value={values.address}
-            onChange={e => onChange({ address: e.target.value })}
-            disabled={disabled}
-            required
-          />
-        </PartyInfoRow>
+        {!identityInHero && showEmail && emailInput && (
+          <PartyInfoRow tone="sky" icon={<Mail strokeWidth={2} />}>
+            <label htmlFor="party-info-email" className="sr-only">
+              Email
+            </label>
+            {emailInput}
+          </PartyInfoRow>
+        )}
 
-        <PartyInfoRow
-          tone="violet"
-          icon={
-            pincodeLookupLoading ? (
-              <span className="party-info-pin-spinner" aria-label="Looking up location" />
+        {identityInHero ? (
+          <CustomerHeroField
+            icon={<MapPin size={14} strokeWidth={2.25} />}
+            label="Address"
+            htmlFor="party-info-address"
+            className={editing ? 'customer-form-hero-field--editable' : undefined}
+          >
+            {readOnly ? (
+              <HeroDisplayValue value={values.address} placeholder="No address" />
             ) : (
-              <MapPin strokeWidth={2} />
-            )
-          }
-        >
-          <label htmlFor="party-info-pincode" className="sr-only">
-            {pinLabel}
-          </label>
-          <input
-            id="party-info-pincode"
-            type="text"
-            inputMode="numeric"
-            className="party-info-row-input"
-            placeholder="6-digit PIN"
-            value={values.pincode}
-            onChange={e => handlePincodeChange(e.target.value)}
-            disabled={disabled}
-            maxLength={6}
-            required
-            aria-describedby={pincodeLookupError ? 'party-info-pincode-error' : undefined}
-          />
-        </PartyInfoRow>
+              <input
+                id="party-info-address"
+                type="text"
+                className={heroInputClass}
+                placeholder="Street, locality"
+                value={values.address}
+                onChange={e => onChange({ address: e.target.value })}
+                disabled={disabled}
+                required
+              />
+            )}
+          </CustomerHeroField>
+        ) : (
+          <PartyInfoRow tone="sky" icon={<MapPin strokeWidth={2} />}>
+            <label htmlFor="party-info-address" className="sr-only">
+              Address
+            </label>
+            <input
+              id="party-info-address"
+              type="text"
+              className="party-info-row-input"
+              placeholder="Street, locality"
+              value={values.address}
+              onChange={e => onChange({ address: e.target.value })}
+              disabled={disabled}
+              required
+            />
+          </PartyInfoRow>
+        )}
+
+        {identityInHero ? (
+          <CustomerHeroField
+            icon={
+              !readOnly && pincodeLookupLoading ? (
+                <span className="customer-form-hero-pin-spinner" aria-label="Looking up location" />
+              ) : (
+                <Hash size={14} strokeWidth={2.25} />
+              )
+            }
+            label={pinLabel}
+            htmlFor="party-info-pincode"
+            className={[
+              'customer-form-hero-field--mono',
+              editing ? 'customer-form-hero-field--editable' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          >
+            {readOnly ? (
+              <HeroDisplayValue
+                value={values.pincode}
+                placeholder="No PIN"
+                className="customer-form-hero-display--mono"
+              />
+            ) : (
+              <input
+                id="party-info-pincode"
+                type="text"
+                inputMode="numeric"
+                className={heroInputClass}
+                placeholder="6-digit PIN"
+                value={values.pincode}
+                onChange={e => handlePincodeChange(e.target.value)}
+                disabled={disabled}
+                maxLength={6}
+                required={pincodeRequired}
+                aria-describedby={pincodeLookupError ? 'party-info-pincode-error' : undefined}
+              />
+            )}
+          </CustomerHeroField>
+        ) : (
+          <PartyInfoRow
+            tone="violet"
+            icon={
+              pincodeLookupLoading ? (
+                <span className="party-info-pin-spinner" aria-label="Looking up location" />
+              ) : (
+                <MapPin strokeWidth={2} />
+              )
+            }
+          >
+            <label htmlFor="party-info-pincode" className="sr-only">
+              {pinLabel}
+            </label>
+            <input
+              id="party-info-pincode"
+              type="text"
+              inputMode="numeric"
+              className="party-info-row-input"
+              placeholder="6-digit PIN"
+              value={values.pincode}
+              onChange={e => handlePincodeChange(e.target.value)}
+              disabled={disabled}
+              maxLength={6}
+              required={pincodeRequired}
+              aria-describedby={pincodeLookupError ? 'party-info-pincode-error' : undefined}
+            />
+          </PartyInfoRow>
+        )}
         {!pincodeLookupLoading && pincodeLookupError && (
           <p
             id="party-info-pincode-error"
@@ -468,100 +741,214 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
           </p>
         )}
 
-        <PartyInfoRow tone="violet" icon={<Building2 strokeWidth={2} />}>
-          <label htmlFor="party-info-district" className="sr-only">
-            {districtLabel}
-          </label>
-          <input
-            id="party-info-district"
-            type="text"
-            className="party-info-row-input party-info-row-input--readonly"
-            value={values.district}
-            readOnly
-            tabIndex={-1}
-            placeholder="Auto from PIN"
-            aria-label={`${districtLabel} from postal code`}
-          />
-        </PartyInfoRow>
+        {identityInHero ? (
+          <CustomerHeroField
+            icon={<Building2 size={14} strokeWidth={2.25} />}
+            label={districtLabel}
+            htmlFor="party-info-district"
+            className={editing ? 'customer-form-hero-field--editable' : undefined}
+          >
+            {readOnly ? (
+              <HeroDisplayValue value={values.district} placeholder="—" />
+            ) : (
+              <input
+                id="party-info-district"
+                type="text"
+                className={heroReadonlyClass}
+                value={values.district}
+                readOnly
+                tabIndex={-1}
+                placeholder="Auto from PIN"
+                aria-label={`${districtLabel} from postal code`}
+              />
+            )}
+          </CustomerHeroField>
+        ) : (
+          <PartyInfoRow tone="violet" icon={<Building2 strokeWidth={2} />}>
+            <label htmlFor="party-info-district" className="sr-only">
+              {districtLabel}
+            </label>
+            <input
+              id="party-info-district"
+              type="text"
+              className="party-info-row-input party-info-row-input--readonly"
+              value={values.district}
+              readOnly
+              tabIndex={-1}
+              placeholder="Auto from PIN"
+              aria-label={`${districtLabel} from postal code`}
+            />
+          </PartyInfoRow>
+        )}
 
-        <PartyInfoRow
-          tone="violet"
-          icon={<Map strokeWidth={2} />}
-          action={
-            <span className="party-info-row-chevron" aria-hidden>
-              <ChevronDown size={16} />
-            </span>
-          }
-        >
-          <label htmlFor="party-info-state" className="sr-only">
-            State
-          </label>
-          <input
-            id="party-info-state"
-            type="text"
-            className="party-info-row-input party-info-row-input--readonly"
-            value={values.state}
-            readOnly
-            tabIndex={-1}
-            placeholder="Auto from PIN"
-            aria-label="State from postal code"
-          />
-        </PartyInfoRow>
+        {identityInHero ? (
+          <CustomerHeroField
+            icon={<Map size={14} strokeWidth={2.25} />}
+            label="State"
+            htmlFor="party-info-state"
+            className={editing ? 'customer-form-hero-field--editable' : undefined}
+          >
+            {readOnly ? (
+              <HeroDisplayValue value={values.state} placeholder="—" />
+            ) : (
+              <input
+                id="party-info-state"
+                type="text"
+                className={heroReadonlyClass}
+                value={values.state}
+                readOnly
+                tabIndex={-1}
+                placeholder="Auto from PIN"
+                aria-label="State from postal code"
+              />
+            )}
+          </CustomerHeroField>
+        ) : (
+          <PartyInfoRow
+            tone="violet"
+            icon={<Map strokeWidth={2} />}
+            action={
+              <span className="party-info-row-chevron" aria-hidden>
+                <ChevronDown size={16} />
+              </span>
+            }
+          >
+            <label htmlFor="party-info-state" className="sr-only">
+              State
+            </label>
+            <input
+              id="party-info-state"
+              type="text"
+              className="party-info-row-input party-info-row-input--readonly"
+              value={values.state}
+              readOnly
+              tabIndex={-1}
+              placeholder="Auto from PIN"
+              aria-label="State from postal code"
+            />
+          </PartyInfoRow>
+        )}
 
-        {showLocationCapture && (
-          <>
-            <PartyInfoRow
-              tone="cyan"
-              icon={<Crosshair strokeWidth={2} />}
-              action={
-                <>
-                  <button
-                    type="button"
-                    className="party-info-row-action-btn"
-                    onClick={handleDetectLocation}
-                    disabled={locating || disabled}
-                    title="Update GPS location"
-                    aria-label="Update GPS location"
-                  >
-                    {locating ? (
-                      <span className="party-info-pin-spinner" aria-label="Detecting location" />
-                    ) : (
-                      <RefreshCw strokeWidth={2} />
-                    )}
-                  </button>
-                  {hasLocation && (
+        {showLocationCapture &&
+          (identityInHero ? (
+            <>
+              <CustomerHeroField
+                icon={<Crosshair size={14} strokeWidth={2.25} />}
+                label="GPS coordinates"
+                className={[
+                  'customer-form-hero-field--mono',
+                  editing ? 'customer-form-hero-field--editable' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                action={
+                  readOnly ? undefined : (
+                    <>
+                      <button
+                        type="button"
+                        className="customer-form-hero-action-btn"
+                        onClick={handleDetectLocation}
+                        disabled={locating || disabled}
+                        title="Update GPS location"
+                        aria-label="Update GPS location"
+                      >
+                        {locating ? (
+                          <span className="customer-form-hero-pin-spinner" aria-label="Detecting location" />
+                        ) : (
+                          <RefreshCw size={14} strokeWidth={2.25} />
+                        )}
+                      </button>
+                      {hasLocation && (
+                        <button
+                          type="button"
+                          className="customer-form-hero-action-btn customer-form-hero-action-btn--muted"
+                          onClick={handleClearLocation}
+                          disabled={locating || disabled}
+                          title="Clear location"
+                          aria-label="Clear location"
+                        >
+                          <X size={14} strokeWidth={2.25} />
+                        </button>
+                      )}
+                    </>
+                  )
+                }
+              >
+                {readOnly ? (
+                  <HeroDisplayValue
+                    value={gpsDisplay}
+                    placeholder="No GPS captured"
+                    className="customer-form-hero-display--mono"
+                  />
+                ) : hasLocation ? (
+                  <p className="customer-form-hero-value" aria-live="polite">
+                    {gpsDisplay}
+                  </p>
+                ) : (
+                  <p className="customer-form-hero-placeholder">Tap refresh to capture GPS</p>
+                )}
+              </CustomerHeroField>
+              {locationError && (
+                <p className="party-info-rows-error" role="alert">
+                  {locationError}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <PartyInfoRow
+                tone="cyan"
+                icon={<Crosshair strokeWidth={2} />}
+                action={
+                  <>
                     <button
                       type="button"
-                      className="party-info-row-action-btn party-info-row-action-btn--muted"
-                      onClick={handleClearLocation}
+                      className="party-info-row-action-btn"
+                      onClick={handleDetectLocation}
                       disabled={locating || disabled}
-                      title="Clear location"
-                      aria-label="Clear location"
+                      title="Update GPS location"
+                      aria-label="Update GPS location"
                     >
-                      <X strokeWidth={2} />
+                      {locating ? (
+                        <span className="party-info-pin-spinner" aria-label="Detecting location" />
+                      ) : (
+                        <RefreshCw strokeWidth={2} />
+                      )}
                     </button>
-                  )}
-                </>
-              }
-            >
-              <span className="sr-only">GPS coordinates</span>
-              {hasLocation ? (
-                <p className="party-info-row-value party-info-row-value--mono" aria-live="polite">
-                  {gpsDisplay}
+                    {hasLocation && (
+                      <button
+                        type="button"
+                        className="party-info-row-action-btn party-info-row-action-btn--muted"
+                        onClick={handleClearLocation}
+                        disabled={locating || disabled}
+                        title="Clear location"
+                        aria-label="Clear location"
+                      >
+                        <X strokeWidth={2} />
+                      </button>
+                    )}
+                  </>
+                }
+              >
+                <span className="sr-only">GPS coordinates</span>
+                {hasLocation ? (
+                  <p className="party-info-row-value party-info-row-value--mono" aria-live="polite">
+                    {gpsDisplay}
+                  </p>
+                ) : (
+                  <p className="party-info-row-placeholder">Tap refresh to capture GPS</p>
+                )}
+              </PartyInfoRow>
+              {locationError && (
+                <p className="party-info-rows-error" role="alert">
+                  {locationError}
                 </p>
-              ) : (
-                <p className="party-info-row-placeholder">Tap refresh to capture GPS</p>
               )}
-            </PartyInfoRow>
-            {locationError && (
-              <p className="party-info-rows-error" role="alert">
-                {locationError}
-              </p>
-            )}
-          </>
-        )}
+            </>
+          ))}
       </div>
 
+      {!identityInHero && footer}
       {lookupMenu}
     </section>
   );

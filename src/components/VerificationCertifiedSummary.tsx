@@ -2,7 +2,7 @@ import React from 'react';
 import { VerificationCertifiedActions } from './VerificationCertifiedActions';
 import { VerificationDetailsCard } from './VerificationDetailsCard';
 import { VerificationSummaryChrome } from './VerificationSummaryChrome';
-import { VerificationViewBackBar } from './VerificationViewBackBar';
+import { ListViewBackBar } from './ListViewBackBar';
 import type { SiteCalibration } from '../types';
 
 type VerificationCertifiedSummaryProps = {
@@ -19,7 +19,7 @@ export const VerificationCertifiedSummary: React.FC<VerificationCertifiedSummary
   closeDisabled = false,
 }) => (
   <div className="verification-certified-summary">
-    <VerificationViewBackBar onBack={onClose} disabled={closeDisabled} />
+    <ListViewBackBar onBack={onClose} disabled={closeDisabled} />
     <VerificationSummaryChrome record={record} />
     <VerificationCertifiedActions record={record} customerPhone={customerPhone} />
     <VerificationDetailsCard record={record} />

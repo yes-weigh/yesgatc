@@ -5,6 +5,7 @@ import {
 import { db } from '../../firebase';
 import { useRcScope } from '../../lib/roleScope';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { CustomerListTile } from '../../components/CustomerListTile';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import { normalizePhone, isValidPhone } from '../../lib/contactFields';
@@ -12,29 +13,24 @@ import { filterCustomersBySearch } from '../../lib/customerLookup';
 import { buildCustomerTileStatsMap } from '../../lib/customerTileStats';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import {
-  buildCustomerDevice,
   buildCustomerProfileFields,
-  createEmptyDeviceRow,
   customerFormFromRecord,
   deviceToFormRow,
   parseCustomerLocation,
   shopPhotoFieldsFromMeta,
   shopPhotoFromRecord,
-  validateCustomerDevices,
   validateCustomerProfile,
-  type CustomerDeviceFormValues,
   type CustomerFormValues,
 } from '../../lib/customerProfileFields';
 import {
   UserRound,
   RefreshCw,
   Pencil,
-  X,
   Plus,
   Save,
   Search,
 } from 'lucide-react';
-import type { Customer, CustomerDevice, CustomerLocation, FirestoreUserDoc, SiteCalibration } from '../../types';
+import type { Customer, CustomerLocation, FirestoreUserDoc, SiteCalibration } from '../../types';
 import {
   EMPTY_CUSTOMER_FORM,
   EMPTY_IMAGE_UPLOAD_STATE,
@@ -64,6 +60,7 @@ export const RCCustomers: React.FC = () => {
   const [devices, setDevices] = useState<CustomerDeviceRowState[]>([]);
 
   const [submitting, setSubmitting] = useState(false);
+  const [formEditing, setFormEditing] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -167,21 +164,51 @@ export const RCCustomers: React.FC = () => {
     setError('');
   };
 
+  const restoreFormFromCustomer = (record: Customer) => {
+    setFormValues(customerFormFromRecord(record));
+    setShopPhoto({
+      ...EMPTY_IMAGE_UPLOAD_STATE,
+      file: shopPhotoFromRecord(record),
+    });
+    setPendingShopPhoto(null);
+    setShopPhotoRemoved(false);
+    setDevices(devicesStateFromRecord(record));
+    setError('');
+  };
+
   const handleCloseForm = () => {
     if (formBusy) return;
     setShowAddForm(false);
     setEditingId(null);
+    setFormEditing(false);
     resetForm();
+  };
+
+  const handleCancelFormEdit = () => {
+    if (formBusy) return;
+    if (editingId) {
+      const record = customers.find(c => c.id === editingId);
+      if (record) restoreFormFromCustomer(record);
+      setFormEditing(false);
+      setError('');
+      return;
+    }
+    handleCloseForm();
   };
 
   useEffect(() => {
     if (!showForm) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !formBusy) handleCloseForm();
+      if (e.key !== 'Escape' || formBusy) return;
+      if (formEditing && editingId) {
+        handleCancelFormEdit();
+        return;
+      }
+      handleCloseForm();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showForm, formBusy]);
+  }, [showForm, formBusy, formEditing, editingId, customers]);
 
   const patchForm = (patch: Partial<CustomerFormValues>) => {
     setFormValues(prev => ({ ...prev, ...patch }));
@@ -202,20 +229,6 @@ export const RCCustomers: React.FC = () => {
     setPendingShopPhoto(null);
     setShopPhotoRemoved(true);
     setShopPhoto({ ...EMPTY_IMAGE_UPLOAD_STATE });
-  };
-
-  const handleDeviceAdd = () => {
-    setDevices(prev => [...prev, { row: createEmptyDeviceRow() }]);
-  };
-
-  const handleDeviceRemove = (localId: string) => {
-    setDevices(prev => prev.filter(d => d.row.localId !== localId));
-  };
-
-  const handleDeviceChange = (localId: string, patch: Partial<CustomerDeviceFormValues>) => {
-    setDevices(prev =>
-      prev.map(d => (d.row.localId === localId ? { ...d, row: { ...d.row, ...patch } } : d)),
-    );
   };
 
   const uploadShopPhoto = async (customerId: string): Promise<Partial<Customer>> => {
@@ -240,14 +253,7 @@ export const RCCustomers: React.FC = () => {
     }
   };
 
-  const uploadAllDevices = (): CustomerDevice[] =>
-    devices.map(device => buildCustomerDevice(device.row));
-
-  const validateForm = (): string | null => {
-    const profileError = validateCustomerProfile(formValues);
-    if (profileError) return profileError;
-    return validateCustomerDevices(devices.map(d => d.row));
-  };
+  const validateForm = (): string | null => validateCustomerProfile(formValues);
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -268,7 +274,6 @@ export const RCCustomers: React.FC = () => {
       const ref = doc(collection(db, 'customers'));
       const customerId = ref.id;
       const photoFields = await uploadShopPhoto(customerId);
-      const deviceRecords = uploadAllDevices();
 
       const record: Omit<Customer, 'id'> = {
         rcId: rcUid!,
@@ -276,7 +281,7 @@ export const RCCustomers: React.FC = () => {
         createdByUid: actorUid ?? undefined,
         ...buildCustomerProfileFields(formValues),
         ...photoFields,
-        devices: deviceRecords,
+        devices: [],
       };
       await setDoc(ref, record);
 
@@ -300,13 +305,11 @@ export const RCCustomers: React.FC = () => {
     setError('');
     try {
       const photoFields = await uploadShopPhoto(customerId);
-      const deviceRecords = uploadAllDevices();
 
       const profile = buildCustomerProfileFields(formValues);
       const updates: Record<string, unknown> = {
         ...profile,
         ...photoFields,
-        devices: deviceRecords,
         updatedAt: new Date().toISOString(),
       };
       if (!parseCustomerLocation(formValues)) {
@@ -314,7 +317,21 @@ export const RCCustomers: React.FC = () => {
       }
 
       await updateDoc(doc(db, 'customers', customerId), updates);
-      handleCloseForm();
+
+      const existing = customers.find(c => c.id === customerId);
+      const updated: Customer = {
+        ...(existing ?? { id: customerId, rcId: rcUid ?? '', createdAt: '', devices: [] }),
+        ...profile,
+        ...photoFields,
+        devices: existing?.devices ?? [],
+        updatedAt: updates.updatedAt as string,
+      };
+      if (!parseCustomerLocation(formValues)) {
+        delete updated.location;
+      }
+
+      restoreFormFromCustomer(updated);
+      setFormEditing(false);
       await fetchCustomers();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to update customer.');
@@ -325,29 +342,24 @@ export const RCCustomers: React.FC = () => {
 
   const handleStartAdd = () => {
     setEditingId(null);
+    setFormEditing(true);
     resetForm();
     setShowAddForm(true);
   };
 
   const handleStartAddWithPhone = (phone: string) => {
     setEditingId(null);
+    setFormEditing(true);
     resetForm();
     setFormValues({ ...EMPTY_CUSTOMER_FORM, phone: normalizePhone(phone) });
     setShowAddForm(true);
   };
 
-  const startEdit = (c: Customer) => {
+  const startEdit = (c: Customer, openForEditing = false) => {
     setShowAddForm(false);
     setEditingId(c.id);
-    setFormValues(customerFormFromRecord(c));
-    setShopPhoto({
-      ...EMPTY_IMAGE_UPLOAD_STATE,
-      file: shopPhotoFromRecord(c),
-    });
-    setPendingShopPhoto(null);
-    setShopPhotoRemoved(false);
-    setDevices(devicesStateFromRecord(c));
-    setError('');
+    setFormEditing(openForEditing);
+    restoreFormFromCustomer(c);
   };
 
   return (
@@ -355,33 +367,14 @@ export const RCCustomers: React.FC = () => {
       {showForm && (
         <InlineFormPanel id="customer-form" className="mb-6 inline-form-panel--wide inline-form-panel--customer">
           <div className="product-form-panel">
-            <div className="product-form-topbar">
-              <div className="product-form-topbar-text">
-                <h2 id="customer-form-title">
-                  {showAddForm ? (
-                    <>
-                      <Plus className="inline-icon" /> Add Customer
-                    </>
-                  ) : (
-                    <>
-                      <Pencil className="inline-icon" /> Edit Customer
-                    </>
-                  )}
-                </h2>
-                <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
-                  {error || '\u00a0'}
+            <ListViewBackBar onBack={handleCloseForm} disabled={formBusy} />
+            {error && (
+              <div className="product-form-topbar product-form-topbar--alert-only">
+                <p className="rc-form-topbar-error" role="alert">
+                  {error}
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary customer-form-close-btn text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                onClick={handleCloseForm}
-                disabled={formBusy}
-                aria-label="Close"
-              >
-                <X size={16} /> Close
-              </button>
-            </div>
+            )}
 
             <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
               <div className="product-form-body">
@@ -393,54 +386,64 @@ export const RCCustomers: React.FC = () => {
                   onShopPhotoSelect={handleShopPhotoSelect}
                   onShopPhotoRemove={handleShopPhotoRemove}
                   devices={devices}
-                  onDeviceChange={handleDeviceChange}
-                  onDeviceAdd={handleDeviceAdd}
-                  onDeviceRemove={handleDeviceRemove}
                   submitting={formBusy}
+                  customerId={editingId ?? undefined}
+                  editing={showAddForm ? true : formEditing}
+                  onStartEdit={() => setFormEditing(true)}
+                  onCancelEdit={handleCancelFormEdit}
+                  onSave={() => {
+                    if (editingId) void handleSaveEdit(editingId);
+                  }}
                   existingCustomerWithPhone={
                     showAddForm && duplicateCustomer
                       ? { name: duplicateCustomer.name }
                       : null
                   }
+                  lookup={
+                    showAddForm
+                      ? {
+                          customers,
+                          onSelectCustomer: customer => startEdit(customer, true),
+                        }
+                      : undefined
+                  }
                 />
               </div>
-              <div className="product-form-footer">
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={handleCloseForm}
-                  disabled={formBusy}
-                >
-                  Cancel
-                </button>
-                {phoneDuplicateBlocksSave && duplicateCustomer && (
+              {showAddForm && (
+                <div className="product-form-footer">
                   <button
                     type="button"
-                    className="btn btn-primary flex items-center gap-2"
-                    onClick={() => startEdit(duplicateCustomer)}
+                    className="btn btn-secondary"
+                    onClick={handleCloseForm}
                     disabled={formBusy}
                   >
-                    <Pencil size={16} /> Load customer and edit
+                    Cancel
                   </button>
-                )}
-                <button
-                  type="submit"
-                  className="btn btn-primary flex items-center gap-2"
-                  disabled={formBusy || phoneDuplicateBlocksSave}
-                >
-                  {formBusy ? (
-                    <span className="spinner-inline"></span>
-                  ) : showAddForm ? (
-                    <>
-                      <Save size={18} /> Save
-                    </>
-                  ) : (
-                    <>
-                      <Save size={18} /> Save Changes
-                    </>
+                  {phoneDuplicateBlocksSave && duplicateCustomer && (
+                    <button
+                      type="button"
+                      className="btn btn-primary flex items-center gap-2"
+                      onClick={() => startEdit(duplicateCustomer, true)}
+                      disabled={formBusy}
+                    >
+                      <Pencil size={16} /> Load customer and edit
+                    </button>
                   )}
-                </button>
-              </div>
+                  <button
+                    type="submit"
+                    className="btn btn-primary flex items-center gap-2"
+                    disabled={formBusy || phoneDuplicateBlocksSave}
+                  >
+                    {formBusy ? (
+                      <span className="spinner-inline"></span>
+                    ) : (
+                      <>
+                        <Save size={18} /> Save
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </InlineFormPanel>

@@ -22,7 +22,7 @@ import { VerificationCertifiedActions } from './VerificationCertifiedActions';
 import { VerificationCertificatePreview } from './VerificationCertificatePreview';
 import { VerificationDetailsCard } from './VerificationDetailsCard';
 import { VerificationSummaryChrome } from './VerificationSummaryChrome';
-import { VerificationViewBackBar } from './VerificationViewBackBar';
+import { ListViewBackBar } from './ListViewBackBar';
 import type { SiteCalibration } from '../types';
 
 type VerificationSerialGroupViewProps = {
@@ -133,7 +133,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
 
   return (
     <div className="verification-certified-summary verification-serial-group">
-      <VerificationViewBackBar
+      <ListViewBackBar
         onBack={onClose}
         disabled={closeDisabled || resubmitting}
       />

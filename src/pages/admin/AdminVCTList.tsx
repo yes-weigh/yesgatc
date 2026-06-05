@@ -4,6 +4,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { StorageImage } from '../../components/StorageImage';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { releaseAadharIndex } from '../../lib/aadharIndex';
@@ -12,7 +13,7 @@ import { buildRcVctMemberDoc, rcVctMemberRef } from '../../lib/rcVctMembers';
 import { vctApprovalLabel } from '../../lib/vctApproval';
 import { vctDocMetaFromUser, VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
 import {
-  Users, Building2, RefreshCw, Trash2, Zap, ClipboardList, CheckCircle2, Eye, X, ExternalLink, UserCircle,
+  Users, Building2, RefreshCw, Trash2, Zap, ClipboardList, CheckCircle2, Eye, ExternalLink, UserCircle,
   ShieldCheck, Calendar,
 } from 'lucide-react';
 import {
@@ -173,6 +174,10 @@ export const AdminVCTList: React.FC = () => {
       {reviewing && (
         <InlineFormPanel id="vct-review" className="mb-6 inline-form-panel--wide inline-form-panel--vct">
           <div className="product-form-panel">
+            <ListViewBackBar
+              onBack={() => setReviewing(null)}
+              disabled={approving}
+            />
             <div className="product-form-topbar">
               <div className="product-form-topbar-text">
                 <h2 id="vct-review-title">
@@ -180,14 +185,6 @@ export const AdminVCTList: React.FC = () => {
                 </h2>
                 <p className="text-muted text-sm mb-0">{reviewing.username}</p>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                onClick={() => setReviewing(null)}
-                disabled={approving}
-              >
-                <X size={15} /> Close
-              </button>
             </div>
 
             <div className="product-form-body vct-review-body">

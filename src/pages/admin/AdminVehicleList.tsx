@@ -4,6 +4,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { isVehicleActive, vehicleActiveLabel } from '../../lib/vehicleApproval';
 import {
   formatValidityDate,
@@ -15,7 +16,7 @@ import {
   VEHICLE_DOC_LABELS,
 } from '../../lib/vehicleProfileFields';
 import {
-  Building2, RefreshCw, Trash2, Eye, X, ExternalLink, ImageIcon, UserX, UserCheck,
+  Building2, RefreshCw, Trash2, Eye, ExternalLink, ImageIcon, UserX, UserCheck,
   Calendar, ShieldCheck, Check,
 } from 'lucide-react';
 import { VehicleLogoMark } from '../../components/VehicleLogoMark';
@@ -216,6 +217,10 @@ export const AdminVehicleList: React.FC = () => {
       {reviewing && (
         <InlineFormPanel id="vehicle-review" className="mb-6 inline-form-panel--wide inline-form-panel--vehicle">
           <div className="product-form-panel">
+            <ListViewBackBar
+              onBack={() => setReviewing(null)}
+              disabled={toggling}
+            />
             <div className="product-form-topbar">
               <div className="product-form-topbar-text">
                 <h2 id="vehicle-review-title">
@@ -225,14 +230,6 @@ export const AdminVehicleList: React.FC = () => {
                   {reviewing.brand} {reviewing.model} · {reviewing.regNumber || '—'}
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                onClick={() => setReviewing(null)}
-                disabled={toggling}
-              >
-                <X size={15} /> Close
-              </button>
             </div>
 
             <div className="product-form-body vct-review-body">

@@ -3,13 +3,13 @@ import {
   ExternalLink,
   Image as ImageIcon,
   Package,
-  X,
   Pencil,
   Scale,
   Ruler,
   ShieldCheck,
 } from 'lucide-react';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
 import {
   RcListCardToggle,
@@ -67,6 +67,7 @@ export const RCProducts: React.FC = () => {
           className="mb-6 inline-form-panel--wide inline-form-panel--rc-product"
         >
           <div className="product-form-panel">
+            <ListViewBackBar onBack={handleCloseView} />
             <div className="product-form-topbar">
               <div className="product-form-topbar-text">
                 <h2 id="rc-product-detail-title">
@@ -77,14 +78,6 @@ export const RCProducts: React.FC = () => {
                   {viewingProduct.modelNo ? ` · ${viewingProduct.modelNo}` : ''}
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                onClick={handleCloseView}
-                aria-label="Close product details"
-              >
-                <X size={15} /> Close
-              </button>
             </div>
             <div className="product-form-body rc-product-detail-body">
               <ProductDetailsSpecs product={viewingProduct} className="rc-product-detail-specs" />

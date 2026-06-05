@@ -69,6 +69,8 @@ export const UploadField: React.FC<{
   placeholderSrc?: string;
   /** Hide label row — use column headers or aria-label instead. */
   hideLabel?: boolean;
+  /** View-only — image preview without upload controls. */
+  readOnly?: boolean;
 }> = ({
   label,
   hint,
@@ -90,9 +92,43 @@ export const UploadField: React.FC<{
   uploadDisabled = false,
   placeholderSrc,
   hideLabel = false,
+  readOnly = false,
 }) => {
   const useIconActions = avatar || iconActions;
   const showImagePreview = variant === 'image' || (file != null && !isPdfContentType(file.contentType));
+
+  if (readOnly) {
+    return (
+      <div
+        className={`product-upload-field product-upload-field--${variant}${
+          compact ? ' product-upload-field--compact' : ''
+        }${avatar ? ' product-upload-field--avatar' : ''}${
+          iconActions ? ' product-upload-field--icon-actions' : ''
+        }${hideLabel ? ' product-upload-field--no-label' : ''} product-upload-field--readonly`}
+        aria-label={label}
+      >
+        <div className="product-upload-field-body">
+          {file && showImagePreview ? (
+            <StorageImage
+              url={file.url}
+              path={file.path}
+              alt=""
+              className="product-upload-preview-img product-upload-preview-img--readonly"
+            />
+          ) : (
+            <div
+              className={`product-upload-readonly-empty${
+                compact ? ' product-upload-readonly-empty--compact' : ''
+              }`}
+              aria-hidden
+            >
+              <ImageIcon size={compact ? 22 : 28} className="text-muted" />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const forwardFileSelect = (file: File) => {
     const fileList = {

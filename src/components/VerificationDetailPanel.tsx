@@ -1,9 +1,9 @@
 import React from 'react';
-import { Eye, X } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { InlineFormPanel } from './InlineFormPanel';
 import { StorageImage } from './StorageImage';
 import { VerificationSerialGroupView } from './VerificationSerialGroupView';
-import { VerificationViewBackBar } from './VerificationViewBackBar';
+import { ListViewBackBar } from './ListViewBackBar';
 import { getVerificationSerialGroup } from '../lib/verificationResubmit';
 import { VERIFICATION_LOCATION_OPTIONS } from '../lib/siteCalibrationProfileFields';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
@@ -108,7 +108,7 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
   return (
     <InlineFormPanel id="verification-detail-panel" className="mb-6 inline-form-panel--wide">
       <div className="product-form-panel">
-        <VerificationViewBackBar onBack={onClose} />
+        <ListViewBackBar onBack={onClose} />
         <div className="product-form-topbar">
           <div className="product-form-topbar-text">
             <h2>
@@ -130,14 +130,6 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               )}
             </div>
           </div>
-          <button
-            type="button"
-            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-            onClick={onClose}
-            aria-label="Close verification details"
-          >
-            <X size={15} /> Close
-          </button>
         </div>
 
         <div className="verification-detail-body">

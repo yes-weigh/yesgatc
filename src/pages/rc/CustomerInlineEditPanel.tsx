@@ -1,23 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { doc, updateDoc, deleteField } from 'firebase/firestore';
-import { Pencil, Save, X } from 'lucide-react';
 import { db } from '../../firebase';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import {
-  buildCustomerDevice,
   buildCustomerProfileFields,
-  createEmptyDeviceRow,
   customerFormFromRecord,
   deviceToFormRow,
   parseCustomerLocation,
   shopPhotoFieldsFromMeta,
   shopPhotoFromRecord,
-  validateCustomerDevices,
   validateCustomerProfile,
-  type CustomerDeviceFormValues,
   type CustomerFormValues,
 } from '../../lib/customerProfileFields';
-import type { Customer, CustomerDevice } from '../../types';
+import type { Customer } from '../../types';
 import {
   CustomerFormFields,
   EMPTY_CUSTOMER_FORM,
@@ -47,27 +42,40 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
   const [shopPhotoRemoved, setShopPhotoRemoved] = useState(false);
   const [devices, setDevices] = useState<CustomerDeviceRowState[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [formEditing, setFormEditing] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    setFormValues(customerFormFromRecord(customer));
+  const restoreFormFromCustomer = (record: Customer) => {
+    setFormValues(customerFormFromRecord(record));
     setShopPhoto({
       ...EMPTY_IMAGE_UPLOAD_STATE,
-      file: shopPhotoFromRecord(customer),
+      file: shopPhotoFromRecord(record),
     });
     setPendingShopPhoto(null);
     setShopPhotoRemoved(false);
-    setDevices(devicesStateFromRecord(customer));
+    setDevices(devicesStateFromRecord(record));
     setError('');
+  };
+
+  useEffect(() => {
+    restoreFormFromCustomer(customer);
+    setFormEditing(false);
   }, [customer]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !submitting) onClose();
+      if (e.key !== 'Escape' || submitting) return;
+      if (formEditing) {
+        restoreFormFromCustomer(customer);
+        setFormEditing(false);
+        setError('');
+        return;
+      }
+      onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, submitting]);
+  }, [onClose, submitting, formEditing, customer]);
 
   const patchForm = (patch: Partial<CustomerFormValues>) => {
     setFormValues(prev => ({ ...prev, ...patch }));
@@ -88,20 +96,6 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
     setPendingShopPhoto(null);
     setShopPhotoRemoved(true);
     setShopPhoto({ ...EMPTY_IMAGE_UPLOAD_STATE });
-  };
-
-  const handleDeviceAdd = () => {
-    setDevices(prev => [...prev, { row: createEmptyDeviceRow() }]);
-  };
-
-  const handleDeviceRemove = (localId: string) => {
-    setDevices(prev => prev.filter(d => d.row.localId !== localId));
-  };
-
-  const handleDeviceChange = (localId: string, patch: Partial<CustomerDeviceFormValues>) => {
-    setDevices(prev =>
-      prev.map(d => (d.row.localId === localId ? { ...d, row: { ...d.row, ...patch } } : d)),
-    );
   };
 
   const uploadShopPhoto = async (customerId: string): Promise<Partial<Customer>> => {
@@ -126,14 +120,8 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
     }
   };
 
-  const validateForm = (): string | null => {
-    const profileError = validateCustomerProfile(formValues);
-    if (profileError) return profileError;
-    return validateCustomerDevices(devices.map(d => d.row));
-  };
-
   const handleSave = async () => {
-    const validationError = validateForm();
+    const validationError = validateCustomerProfile(formValues);
     if (validationError) {
       setError(validationError);
       return;
@@ -143,13 +131,11 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
     setError('');
     try {
       const photoFields = await uploadShopPhoto(customer.id);
-      const deviceRecords: CustomerDevice[] = devices.map(device => buildCustomerDevice(device.row));
 
       const profile = buildCustomerProfileFields(formValues);
       const updates: Record<string, unknown> = {
         ...profile,
         ...photoFields,
-        devices: deviceRecords,
         updatedAt: new Date().toISOString(),
       };
       if (!parseCustomerLocation(formValues)) {
@@ -162,13 +148,14 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
         ...customer,
         ...profile,
         ...photoFields,
-        devices: deviceRecords,
         updatedAt: updates.updatedAt as string,
       };
       if (!parseCustomerLocation(formValues)) {
         delete updated.location;
       }
 
+      restoreFormFromCustomer(updated);
+      setFormEditing(false);
       onSaved(updated);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to update customer.');
@@ -177,28 +164,23 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
     }
   };
 
+  const handleCancelEdit = () => {
+    if (submitting) return;
+    restoreFormFromCustomer(customer);
+    setFormEditing(false);
+    setError('');
+  };
+
   return (
     <div className="verification-customer-edit inline-form-panel--customer site-calibration-form-span-full">
       <div className="product-form-panel verification-customer-edit-panel">
-        <div className="product-form-topbar">
-          <div className="product-form-topbar-text">
-            <h2>
-              <Pencil className="inline-icon" /> Edit Customer
-            </h2>
-            <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
-              {error || '\u00a0'}
+        {error && (
+          <div className="product-form-topbar product-form-topbar--alert-only">
+            <p className="rc-form-topbar-error" role="alert">
+              {error}
             </p>
           </div>
-          <button
-            type="button"
-            className="btn btn-secondary customer-form-close-btn text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-            onClick={onClose}
-            disabled={submitting}
-            aria-label="Close customer edit"
-          >
-            <X size={16} /> Close
-          </button>
-        </div>
+        )}
 
         <div className="product-form-body">
           <CustomerFormFields
@@ -209,36 +191,13 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
             onShopPhotoSelect={handleShopPhotoSelect}
             onShopPhotoRemove={handleShopPhotoRemove}
             devices={devices}
-            onDeviceChange={handleDeviceChange}
-            onDeviceAdd={handleDeviceAdd}
-            onDeviceRemove={handleDeviceRemove}
             submitting={submitting}
+            editing={formEditing}
+            onStartEdit={() => setFormEditing(true)}
+            onCancelEdit={handleCancelEdit}
+            onSave={() => void handleSave()}
+            customerId={customer.id}
           />
-        </div>
-
-        <div className="product-form-footer">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onClose}
-            disabled={submitting}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary flex items-center gap-2"
-            onClick={() => void handleSave()}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <span className="spinner-inline"></span>
-            ) : (
-              <>
-                <Save size={18} /> Save Changes
-              </>
-            )}
-          </button>
         </div>
       </div>
     </div>

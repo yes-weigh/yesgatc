@@ -3,6 +3,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import {
   RcListCardActions,
   RcListCardToggle,
@@ -13,7 +14,7 @@ import {
 } from '../../components/RcListCard';
 import { adminProductMeta } from '../../lib/productAccess';
 import {
-  PackagePlus, Trash2, X, Image as ImageIcon, Plus, Save, ExternalLink, Info,
+  PackagePlus, Trash2, Image as ImageIcon, Plus, Save, ExternalLink, Info,
   Package, Scale, Ruler, ShieldCheck, Pencil,
 } from 'lucide-react';
 import { CalcLabel, DefaultsStrip, UploadField } from './productFormUi';
@@ -454,6 +455,7 @@ export const Products: React.FC = () => {
       {showForm && (
         <InlineFormPanel id="product-form" className="mb-6 inline-form-panel--wide">
           <div className="product-form-panel">
+            <ListViewBackBar onBack={handleCancelEdit} disabled={formBusy} />
             <div className="product-form-topbar">
               <div className="product-form-topbar-text">
                 <h2 id="product-form-title">
@@ -467,15 +469,6 @@ export const Products: React.FC = () => {
                 </p>
                 {error && <p className="rc-form-topbar-error" role="alert">{error}</p>}
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                onClick={handleCancelEdit}
-                disabled={formBusy}
-                aria-label="Close"
-              >
-                <X size={15} /> Close
-              </button>
             </div>
 
             <form onSubmit={handleSubmit} className="product-form">

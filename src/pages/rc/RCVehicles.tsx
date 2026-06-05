@@ -6,6 +6,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { VehicleLogoMark } from '../../components/VehicleLogoMark';
 import {
   RcListCardToggle,
@@ -39,7 +40,6 @@ import {
   ShieldCheck,
   UserCheck,
   UserX,
-  X,
 } from 'lucide-react';
 import { isVehicleActive, vehicleActiveLabel } from '../../lib/vehicleApproval';
 import type { Vehicle } from '../../types';
@@ -454,6 +454,7 @@ export const RCVehicles: React.FC = () => {
       {showForm && (
         <InlineFormPanel id="vehicle-form" className="mb-6 inline-form-panel--wide inline-form-panel--vehicle">
           <div className="product-form-panel">
+            <ListViewBackBar onBack={handleCloseForm} disabled={formBusy} />
             <div className="product-form-topbar">
               <div className="product-form-topbar-text">
                 <h2 id="vehicle-form-title">
@@ -471,15 +472,6 @@ export const RCVehicles: React.FC = () => {
                   {error || (showAddForm ? 'Vehicle is active immediately after registration.' : '\u00a0')}
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1 shrink-0"
-                onClick={handleCloseForm}
-                disabled={formBusy}
-                aria-label="Close"
-              >
-                <X size={15} /> Close
-              </button>
             </div>
 
             <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>

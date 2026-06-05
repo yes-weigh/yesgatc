@@ -1,14 +1,20 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Crosshair, MapPin, Plus, Trash2, X } from 'lucide-react';
+import React, { useRef } from 'react';
+import { ClipboardList, Package } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { CustomerFormEditToolbar } from '../../components/CustomerFormEditToolbar';
+import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
-import { ProductSelect } from '../../components/ProductSelect';
+import { StorageImage } from '../../components/StorageImage';
 import { useAppContext } from '../../context/AppContext';
+import type { CustomerDeviceFormValues, CustomerFormValues } from '../../lib/customerProfileFields';
+import {
+  resolveAppBasePath,
+  verificationUrlForCustomer,
+} from '../../lib/verificationCustomerEntry';
 import { UploadField } from '../admin/productFormUi';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
-import { isValidPincode, isValidPhone, normalizePhone, normalizePincode } from '../../lib/contactFields';
-import type { CustomerDeviceFormValues, CustomerFormValues } from '../../lib/customerProfileFields';
-import { lookupPincode } from '../../lib/pincodeLookup';
-import type { Product } from '../../types';
+import { isValidPhone } from '../../lib/contactFields';
+import type { Customer, Product } from '../../types';
 
 export type ImageUploadState = {
   file: ProductFileMeta | null;
@@ -38,63 +44,68 @@ export type CustomerDeviceRowState = {
   row: CustomerDeviceFormValues;
 };
 
-const DeviceRow: React.FC<{
+const DeviceDisplayRow: React.FC<{
   index: number;
-  device: CustomerDeviceRowState;
+  device: CustomerDeviceFormValues;
   products: Product[];
-  submitting: boolean;
-  onChange: (localId: string, patch: Partial<CustomerDeviceFormValues>) => void;
-  onRemove: (localId: string) => void;
-}> = ({ index, device, products, submitting, onChange, onRemove }) => {
-  const selectedProduct = products.find(p => p.id === device.row.productId) ?? null;
+}> = ({ index, device, products }) => {
+  const selectedProduct = products.find(p => p.id === device.productId) ?? null;
+  const productName = device.productName.trim() || '—';
+  const serialNumber = device.serialNumber.trim() || '—';
 
   return (
     <div className="customer-device-row">
       <div className="customer-device-row-head">
         <span className="customer-device-index">Device {index + 1}</span>
-        <button
-          type="button"
-          className="btn-icon text-red customer-device-remove"
-          onClick={() => onRemove(device.row.localId)}
-          disabled={submitting}
-          title="Remove device"
-          aria-label={`Remove device ${index + 1}`}
-        >
-          <Trash2 size={16} />
-        </button>
       </div>
       <div className="customer-device-fields">
-        <div className="form-group mb-0 customer-device-product-field">
-          <label htmlFor={`device-product-${device.row.localId}`}>Product *</label>
-          <ProductSelect
-            products={products}
-            inputId={`device-product-${device.row.localId}`}
-            value={{
-              productId: device.row.productId,
-              productName: device.row.productName,
-            }}
-            onChange={next =>
-              onChange(device.row.localId, {
-                productId: next.productId,
-                productName: next.productName,
-              })
-            }
-            disabled={submitting}
-            required
-          />
-        </div>
-        {selectedProduct && <ProductDetailsSpecs product={selectedProduct} />}
-        <div className="form-group mb-0 customer-device-serial-field">
-          <label htmlFor={`device-serial-${device.row.localId}`}>Serial number *</label>
-          <input
-            id={`device-serial-${device.row.localId}`}
-            type="text"
-            className="input-field"
-            placeholder="e.g. SN-12345"
-            value={device.row.serialNumber}
-            onChange={e => onChange(device.row.localId, { serialNumber: e.target.value })}
-            required
-          />
+        <div className="customer-device-product-specs">
+          <div className="customer-device-product-specs-grid">
+            <div className="customer-device-thumb">
+              <div
+                className={`customer-device-thumb-box${
+                  !selectedProduct?.productImageUrl && !selectedProduct?.productImagePath
+                    ? ' customer-device-thumb-box--placeholder'
+                    : ''
+                }`}
+              >
+                {selectedProduct?.productImageUrl || selectedProduct?.productImagePath ? (
+                  <StorageImage
+                    url={selectedProduct.productImageUrl}
+                    path={selectedProduct.productImagePath}
+                    alt=""
+                    className="customer-device-thumb-img"
+                  />
+                ) : (
+                  <Package size={22} className="text-muted" aria-hidden />
+                )}
+              </div>
+            </div>
+
+            <div className="customer-device-spec-item">
+              <span className="customer-device-spec-label">Product</span>
+              <span className="customer-device-spec-value">{productName}</span>
+            </div>
+
+            <div className="customer-device-spec-item">
+              <span className="customer-device-spec-label">Serial number</span>
+              <span className="customer-device-spec-value customer-device-spec-value--mono">
+                {serialNumber}
+              </span>
+            </div>
+
+            {selectedProduct ? (
+              <ProductDetailsSpecs
+                product={selectedProduct}
+                embedded
+                className="customer-device-product-details"
+              />
+            ) : (
+              <p className="customer-form-devices-empty text-muted text-sm m-0">
+                Product details unavailable — catalogue entry not found.
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -109,11 +120,20 @@ type CustomerFormFieldsProps = {
   onShopPhotoSelect: (file: File) => void;
   onShopPhotoRemove: () => void;
   devices: CustomerDeviceRowState[];
-  onDeviceChange: (localId: string, patch: Partial<CustomerDeviceFormValues>) => void;
-  onDeviceAdd: () => void;
-  onDeviceRemove: (localId: string) => void;
   submitting: boolean;
   existingCustomerWithPhone?: { name: string } | null;
+  lookup?: {
+    customers: Customer[];
+    selectedCustomerId?: string;
+    onSelectCustomer: (customer: Customer) => void;
+  };
+  /** When false on an existing customer, the form shows read-only values until edit is enabled. */
+  editing?: boolean;
+  onStartEdit?: () => void;
+  onCancelEdit?: () => void;
+  onSave?: () => void;
+  /** Opens verification flow with this customer pre-selected. */
+  customerId?: string;
 };
 
 export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
@@ -124,88 +144,21 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
   onShopPhotoSelect,
   onShopPhotoRemove,
   devices,
-  onDeviceChange,
-  onDeviceAdd,
-  onDeviceRemove,
   submitting,
   existingCustomerWithPhone = null,
+  lookup,
+  editing = mode === 'create',
+  onStartEdit,
+  onCancelEdit,
+  onSave,
+  customerId,
 }) => {
   const { products } = useAppContext();
   const shopPhotoRef = useRef<HTMLInputElement>(null);
-  const [locating, setLocating] = useState(false);
-  const [locationError, setLocationError] = useState('');
-  const [pincodeLookupLoading, setPincodeLookupLoading] = useState(false);
-  const [pincodeLookupError, setPincodeLookupError] = useState('');
-  const lastPincodeLookupRef = useRef('');
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
-
-  useEffect(() => {
-    const pin = normalizePincode(values.pincode);
-
-    if (!isValidPincode(pin)) {
-      lastPincodeLookupRef.current = '';
-      setPincodeLookupLoading(false);
-      setPincodeLookupError('');
-      if (values.state || values.district) {
-        onChangeRef.current({ state: '', district: '' });
-      }
-      return;
-    }
-
-    if (values.state.trim() && values.district.trim()) {
-      lastPincodeLookupRef.current = pin;
-      setPincodeLookupLoading(false);
-      return;
-    }
-
-    if (lastPincodeLookupRef.current === pin) return;
-
-    let cancelled = false;
-    setPincodeLookupLoading(true);
-    setPincodeLookupError('');
-
-    lookupPincode(pin)
-      .then(result => {
-        if (cancelled) return;
-        if (result) {
-          lastPincodeLookupRef.current = pin;
-          onChangeRef.current({ state: result.state, district: result.district });
-          setPincodeLookupError('');
-        } else {
-          lastPincodeLookupRef.current = '';
-          onChangeRef.current({ state: '', district: '' });
-          setPincodeLookupError('No location found for this postal code.');
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        lastPincodeLookupRef.current = '';
-        onChangeRef.current({ state: '', district: '' });
-        setPincodeLookupError('Could not look up postal code.');
-      })
-      .finally(() => {
-        if (!cancelled) setPincodeLookupLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-      setPincodeLookupLoading(false);
-    };
-  }, [values.pincode, values.state, values.district]);
-
-  const handlePincodeChange = (raw: string) => {
-    const next = normalizePincode(raw);
-    const prev = normalizePincode(values.pincode);
-    const patch: Partial<CustomerFormValues> = { pincode: next };
-    if (next !== prev) {
-      patch.state = '';
-      patch.district = '';
-      lastPincodeLookupRef.current = '';
-      setPincodeLookupError('');
-    }
-    onChange(patch);
-  };
+  const navigate = useNavigate();
+  const location = useLocation();
+  const showEditToolbar = mode === 'edit' && onStartEdit && onCancelEdit && onSave;
+  const isViewMode = mode === 'edit' && !editing;
 
   const handleShopPhotoInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -213,40 +166,55 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
     if (file) onShopPhotoSelect(file);
   };
 
-  const handleDetectLocation = () => {
-    setLocationError('');
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported in this browser.');
-      return;
-    }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        onChange({
-          latitude: pos.coords.latitude.toFixed(6),
-          longitude: pos.coords.longitude.toFixed(6),
-        });
-        setLocating(false);
-      },
-      err => {
-        setLocating(false);
-        setLocationError(err.message || 'Could not detect location.');
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-    );
+  const handleOpenVerification = () => {
+    if (!customerId) return;
+    const base = resolveAppBasePath(location.pathname);
+    navigate(verificationUrlForCustomer(customerId, base));
   };
 
-  const handleClearLocation = () => {
-    setLocationError('');
-    onChange({ latitude: '', longitude: '' });
-  };
-
-  const hasLocation = Boolean(values.latitude.trim() && values.longitude.trim());
+  const duplicateNotice =
+    mode === 'create' && isValidPhone(values.phone) && existingCustomerWithPhone ? (
+      <p className="customer-phone-duplicate-notice text-sm m-0 mt-1 px-1" role="alert">
+        A customer with this phone number already exists
+        {existingCustomerWithPhone.name.trim()
+          ? ` (${existingCustomerWithPhone.name.trim()}).`
+          : '.'}
+      </p>
+    ) : null;
 
   return (
-    <div className="product-form-flat customer-form-flat">
-      <div className="product-form-flat-row customer-form-hero">
-        <div className="customer-form-hero-shop">
+    <div
+      className={`customer-form-flat customer-form-party-layout${
+        isViewMode ? ' customer-form-party-layout--readonly' : ''
+      }${editing ? ' customer-form-party-layout--editing' : ''}`}
+    >
+      {showEditToolbar && (
+        <div className="customer-form-toolbar-row">
+          <CustomerFormEditToolbar
+            editing={editing}
+            onStartEdit={onStartEdit}
+            onSave={onSave}
+            onCancelEdit={onCancelEdit}
+            saving={submitting}
+            disabled={submitting}
+          />
+        </div>
+      )}
+
+      <PartyInformationForm
+        title="Customer information"
+        values={values}
+        onChange={onChange}
+        disabled={submitting || isViewMode}
+        readOnly={isViewMode}
+        compact
+        hideHeader
+        locationCapture
+        showEmail
+        pincodeRequired={false}
+        lookup={isViewMode ? undefined : lookup}
+        footer={isViewMode ? null : duplicateNotice}
+        heroPhoto={
           <UploadField
             label="Shop photo"
             hint="Optional"
@@ -263,223 +231,49 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
             variant="image"
             compact
             iconActions
+            hideLabel
+            readOnly={isViewMode}
           />
-        </div>
+        }
+      />
 
-        <div className="customer-form-hero-fields">
-          <div className="customer-form-grid customer-form-grid--identity">
-            <div className="form-group mb-0">
-              <label htmlFor="customer-phone">Mobile *</label>
-              <input
-                id="customer-phone"
-                type="text"
-                inputMode="numeric"
-                className="input-field"
-                placeholder="10-digit"
-                value={values.phone}
-                onChange={e => onChange({ phone: normalizePhone(e.target.value) })}
-                required
-                maxLength={10}
-                autoFocus={mode === 'create'}
-              />
-              {mode === 'create' && isValidPhone(values.phone) && existingCustomerWithPhone && (
-                <p className="customer-phone-duplicate-notice text-sm m-0 mt-1" role="alert">
-                  A customer with this phone number already exists
-                  {existingCustomerWithPhone.name.trim()
-                    ? ` (${existingCustomerWithPhone.name.trim()}).`
-                    : '.'}
-                </p>
-              )}
+      {mode === 'edit' && customerId && (
+        <div className="customer-form-row-devices">
+          <div className="customer-form-devices-head">
+            <div>
+              <h3 className="customer-form-devices-title">Devices</h3>
+              <p className="customer-form-devices-hint text-muted text-sm m-0">
+                Registered at this site — manage devices through verification
+              </p>
             </div>
-            <div className="form-group mb-0">
-              <label htmlFor="customer-name">Name *</label>
-              <input
-                id="customer-name"
-                type="text"
-                className="input-field"
-                placeholder="Customer or business name"
-                value={values.name}
-                onChange={e => onChange({ name: e.target.value })}
-                required
-              />
-            </div>
-            <div className="form-group mb-0">
-              <label htmlFor="customer-email">Email</label>
-              <input
-                id="customer-email"
-                type="email"
-                className="input-field"
-                placeholder="Optional"
-                value={values.email}
-                onChange={e => onChange({ email: e.target.value })}
-              />
-            </div>
-            <div className="form-group mb-0 customer-form-pincode-field">
-              <label htmlFor="customer-pincode">Postal code</label>
-              <input
-                id="customer-pincode"
-                type="text"
-                inputMode="numeric"
-                className="input-field"
-                placeholder="6 digits"
-                value={values.pincode}
-                onChange={e => handlePincodeChange(e.target.value)}
-                maxLength={6}
-              />
-              {pincodeLookupLoading && (
-                <p className="customer-pincode-meta text-muted text-sm m-0 mt-1 flex items-center gap-1.5">
-                  <span className="spinner-inline"></span> Looking up location…
-                </p>
-              )}
-              {!pincodeLookupLoading && pincodeLookupError && (
-                <p className="customer-pincode-meta customer-pincode-meta--error text-sm m-0 mt-1" role="alert">
-                  {pincodeLookupError}
-                </p>
-              )}
-            </div>
-            <div className="form-group mb-0">
-              <label htmlFor="customer-district">District</label>
-              <input
-                id="customer-district"
-                type="text"
-                className="input-field input-readonly customer-form-derived-field"
-                value={values.district}
-                readOnly
-                tabIndex={-1}
-                placeholder="Auto from postal code"
-                aria-label="District from postal code"
-              />
-            </div>
-            <div className="form-group mb-0">
-              <label htmlFor="customer-state">State</label>
-              <input
-                id="customer-state"
-                type="text"
-                className="input-field input-readonly customer-form-derived-field"
-                value={values.state}
-                readOnly
-                tabIndex={-1}
-                placeholder="Auto from postal code"
-                aria-label="State from postal code"
-              />
-            </div>
+            <button
+              type="button"
+              className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0 customer-form-verification-btn"
+              onClick={handleOpenVerification}
+              disabled={submitting}
+            >
+              <ClipboardList size={14} /> New verification
+            </button>
           </div>
 
-          <div className="customer-form-address-row">
-            <div className="form-group mb-0 customer-form-address-field">
-              <label htmlFor="customer-address">Address *</label>
-              <textarea
-                id="customer-address"
-                className="input-field customer-form-address-input"
-                rows={3}
-                placeholder="Street, locality, city"
-                value={values.address}
-                onChange={e => onChange({ address: e.target.value })}
-                required
-              />
-            </div>
-
-            <div className="customer-form-location-side">
-              <label className="customer-form-location-side-label">
-                <MapPin size={14} className="inline-icon-sm" /> GPS
-                <span className="text-muted text-sm font-normal">Optional</span>
-              </label>
-              <div className="customer-form-location-controls">
-                <button
-                  type="button"
-                  className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
-                  onClick={handleDetectLocation}
-                  disabled={submitting || locating}
-                >
-                  {locating ? <span className="spinner-inline"></span> : <Crosshair size={14} />}
-                  Use my location
-                </button>
-                {hasLocation && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
-                    onClick={handleClearLocation}
-                    disabled={submitting || locating}
-                    title="Clear location"
-                    aria-label="Clear location"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-                <div className="customer-form-location-coords">
-                  <input
-                    id="customer-latitude"
-                    type="text"
-                    className="input-field input-field--coords"
-                    placeholder="Lat"
-                    value={values.latitude}
-                    readOnly
-                    tabIndex={-1}
-                    aria-label="Latitude"
-                  />
-                  <input
-                    id="customer-longitude"
-                    type="text"
-                    className="input-field input-field--coords"
-                    placeholder="Lng"
-                    value={values.longitude}
-                    readOnly
-                    tabIndex={-1}
-                    aria-label="Longitude"
-                  />
-                </div>
-              </div>
-              {locationError && (
-                <p className="customer-form-location-error text-sm" role="alert">
-                  {locationError}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="product-form-flat-row customer-form-row-devices">
-        <div className="customer-form-devices-head">
-          <div>
-            <h3 className="customer-form-devices-title">Devices</h3>
-            <p className="customer-form-devices-hint text-muted text-sm m-0">
-              Optional — add weighing instruments at this customer site
+          {devices.length === 0 ? (
+            <p className="customer-form-devices-empty text-muted text-sm m-0">
+              No devices on file yet. Start a verification to register instruments at this customer site.
             </p>
-          </div>
+          ) : (
+            <div className="customer-form-devices-list">
+              {devices.map((device, index) => (
+                <DeviceDisplayRow
+                  key={device.row.localId}
+                  index={index}
+                  device={device.row}
+                  products={products}
+                />
+              ))}
+            </div>
+          )}
         </div>
-
-        {devices.length === 0 ? (
-          <p className="customer-form-devices-empty text-muted text-sm m-0">
-            No devices added yet.
-          </p>
-        ) : (
-          <div className="customer-form-devices-list">
-            {devices.map((device, index) => (
-              <DeviceRow
-                key={device.row.localId}
-                index={index}
-                device={device}
-                products={products}
-                submitting={submitting}
-                onChange={onDeviceChange}
-                onRemove={onDeviceRemove}
-              />
-            ))}
-          </div>
-        )}
-
-        <div className="customer-form-devices-footer">
-          <button
-            type="button"
-            className="btn btn-secondary text-sm py-1.5 px-3 flex items-center gap-1.5 shrink-0"
-            onClick={onDeviceAdd}
-            disabled={submitting}
-          >
-            <Plus size={14} /> Add device
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

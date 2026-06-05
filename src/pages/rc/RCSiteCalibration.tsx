@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import {
   collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where, getDoc, deleteField,
@@ -12,7 +13,7 @@ import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
-import { VerificationViewBackBar } from '../../components/VerificationViewBackBar';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { TablePagination } from '../../components/TablePagination';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
 import {
@@ -109,6 +110,7 @@ import {
 } from '../../lib/verificationDocaCharges';
 import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
+import { buildCustomerVerificationSession } from '../../lib/verificationCustomerEntry';
 import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
 import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
 
@@ -146,6 +148,7 @@ export const RCSiteCalibration: React.FC = () => {
   const { user } = useAuth();
   const { products } = useAppContext();
   const confirm = useConfirm();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [records, setRecords] = useState<SiteCalibration[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1061,23 +1064,57 @@ export const RCSiteCalibration: React.FC = () => {
     }
   };
 
+  const openNewVerificationSession = useCallback(
+    (session: VerificationSessionValues) => {
+      setEditingId(null);
+      setError('');
+      setSessionValues(session);
+      const firstDeviceId = session.devices[0]?.localId;
+      setDeviceImages(
+        firstDeviceId ? { [firstDeviceId]: emptyDeviceVerificationImagesState() } : {},
+      );
+      setDeviceRvImages(
+        firstDeviceId ? { [firstDeviceId]: emptyDeviceRvDocumentsState() } : {},
+      );
+      setWizardOnLastStep(false);
+      setVerificationDeclarationAccepted(false);
+      setShowAddForm(true);
+    },
+    [],
+  );
+
   const handleStartAdd = () => {
+    if (rcUid && rcProfile) {
+      openNewVerificationSession(
+        buildSelfVerificationSession(rcProfile, rcUid, laboratorySealId),
+      );
+      return;
+    }
     setEditingId(null);
     setError('');
-    if (rcUid && rcProfile) {
-      const session = buildSelfVerificationSession(rcProfile, rcUid, laboratorySealId);
-      setSessionValues(session);
-      setDeviceImages({
-        [session.devices[0]?.localId]: emptyDeviceVerificationImagesState(),
-      });
-      setDeviceRvImages({
-        [session.devices[0]?.localId]: emptyDeviceRvDocumentsState(),
-      });
-    } else {
-      resetForm();
-    }
+    resetForm();
     setShowAddForm(true);
   };
+
+  const pendingCustomerId = searchParams.get('customerId');
+
+  useEffect(() => {
+    if (!pendingCustomerId || loading) return;
+    const customer = customers.find(c => c.id === pendingCustomerId);
+    if (!customer) return;
+
+    const session = buildCustomerVerificationSession(customer, products, laboratorySealId);
+    openNewVerificationSession(session);
+    setSearchParams({}, { replace: true });
+  }, [
+    pendingCustomerId,
+    loading,
+    customers,
+    products,
+    laboratorySealId,
+    openNewVerificationSession,
+    setSearchParams,
+  ]);
 
   const openRecord = (record: SiteCalibration) => {
     if (!isVerificationViewable(record)) return;
@@ -1375,12 +1412,7 @@ export const RCSiteCalibration: React.FC = () => {
               />
             ) : (
               <>
-                {isViewMode && (
-                  <VerificationViewBackBar
-                    onBack={handleCloseForm}
-                    disabled={formBusy}
-                  />
-                )}
+                <ListViewBackBar onBack={handleCloseForm} disabled={formBusy} />
                 <div className={`product-form-topbar${showAddForm ? ' product-form-topbar--new-mobile' : ''}`}>
                   <div className="product-form-topbar-text">
                     <h2 id="site-calibration-form-title">
