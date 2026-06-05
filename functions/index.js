@@ -19,13 +19,15 @@ const CALLABLE_REGION = 'us-central1';
 /** Firestore database region — must match Eventarc trigger location. */
 const FIRESTORE_REGION = 'asia-south1';
 
+if (!getApps().length) {
+  initializeApp();
+}
+
 function adminAuth() {
-  if (!getApps().length) initializeApp();
   return getAuth();
 }
 
 function adminDb() {
-  if (!getApps().length) initializeApp();
   return getFirestore();
 }
 

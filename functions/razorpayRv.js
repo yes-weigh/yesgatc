@@ -137,11 +137,18 @@ function verifyWebhookSignature(rawBody, signature) {
   return expected === signature;
 }
 
+function razorpayErrorMessage(err) {
+  if (err?.error?.description) return String(err.error.description);
+  if (err?.message) return String(err.message);
+  return 'Razorpay request failed.';
+}
+
 async function createRvPaymentOrderHandler(request, db) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Sign in required.');
   }
 
+  try {
   const amountInr = Number(request.data?.amountInr);
   const rcId = typeof request.data?.rcId === 'string' ? request.data.rcId.trim() : '';
   const recordIds = Array.isArray(request.data?.recordIds)
@@ -239,6 +246,11 @@ async function createRvPaymentOrderHandler(request, db) {
     keyId,
     qrImageUrl,
   };
+  } catch (err) {
+    console.error('createRvPaymentOrder failed', err);
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError('internal', razorpayErrorMessage(err));
+  }
 }
 
 async function getRvPaymentStatusHandler(request, db) {

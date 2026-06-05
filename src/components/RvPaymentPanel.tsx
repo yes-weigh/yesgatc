@@ -22,6 +22,16 @@ type RvPaymentPanelProps = {
 
 type PanelPhase = 'loading' | 'awaiting' | 'verifying' | 'paid' | 'error';
 
+function callableErrorMessage(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const record = err as { message?: string; details?: unknown };
+    if (typeof record.message === 'string' && record.message.trim()) {
+      return record.message;
+    }
+  }
+  return 'Could not start payment.';
+}
+
 function useIsMobileViewport(): boolean {
   const [mobile, setMobile] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
@@ -80,7 +90,7 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
         setPhase('awaiting');
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Could not start payment.');
+        setError(callableErrorMessage(err));
         setPhase('error');
       }
     })();
