@@ -151,6 +151,7 @@ export const VerificationSessionFields = forwardRef<
   const [rcPartyForm, setRcPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
   const [focusSerialRequest, setFocusSerialRequest] = useState(0);
+  const hasFocusedSerialOnceRef = useRef(false);
 
   const stepContext = useMemo<VerificationFormStepContext>(
     () => ({ customerForm: customerPartyForm }),
@@ -268,9 +269,6 @@ export const VerificationSessionFields = forwardRef<
       }
       setActiveStep(index);
       setStepError('');
-      if (VERIFICATION_FORM_STEPS[index]?.id === 'devices') {
-        setFocusSerialRequest(n => n + 1);
-      }
     }
   };
 
@@ -302,7 +300,12 @@ export const VerificationSessionFields = forwardRef<
     } else if (currentStep.id === 'setup') {
       setEvidenceDeviceIndex(0);
       setPendingEvidenceDeviceIndex(null);
-      if (VERIFICATION_FORM_STEPS[nextStep]?.id === 'devices') {
+      if (
+        wizardNavIncludesCancel &&
+        !hasFocusedSerialOnceRef.current &&
+        VERIFICATION_FORM_STEPS[nextStep]?.id === 'devices'
+      ) {
+        hasFocusedSerialOnceRef.current = true;
         setFocusSerialRequest(n => n + 1);
       }
     }
@@ -316,7 +319,6 @@ export const VerificationSessionFields = forwardRef<
     setStepError('');
     setActiveStep(devicesStepIndex);
     setFurthestStep(prev => Math.max(prev, devicesStepIndex));
-    setFocusSerialRequest(n => n + 1);
   };
 
   const handleBack = () => {
