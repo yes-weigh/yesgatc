@@ -7,27 +7,65 @@ import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { isVehicleActive, vehicleActiveLabel } from '../../lib/vehicleApproval';
 import {
   formatValidityDate,
+  formatVehicleDisplayDate,
   validityStatus,
   vehicleDocMetaFromRecord,
+  vehiclePhotoFromRecord,
   VEHICLE_DOC_KEYS,
   VEHICLE_DOC_LABELS,
 } from '../../lib/vehicleProfileFields';
 import {
   Building2, RefreshCw, Trash2, Eye, X, ExternalLink, ImageIcon, UserX, UserCheck,
+  Calendar, ShieldCheck, Check,
 } from 'lucide-react';
 import { VehicleLogoMark } from '../../components/VehicleLogoMark';
+import {
+  RcListCardActions,
+  RcListCardToggle,
+  RcListEditHint,
+  RcListMetaChip,
+  RcListPhoto,
+  RcListStatusBadge,
+} from '../../components/RcListCard';
 import type { FirestoreUserDoc, Vehicle } from '../../types';
 
 interface VehicleRecord extends Vehicle {
   rcCenterName: string;
 }
 
-const VALIDITY_BADGE: Record<ReturnType<typeof validityStatus>, string> = {
-  ok: 'vehicle-validity-ok',
-  due: 'vehicle-validity-due',
-  expired: 'vehicle-validity-expired',
-  missing: 'vehicle-validity-missing',
+const VALIDITY_LABEL: Record<ReturnType<typeof validityStatus>, string> = {
+  ok: 'Valid',
+  due: 'Due soon',
+  expired: 'Expired',
+  missing: 'Incomplete',
 };
+
+function vehicleTitle(record: Vehicle): string {
+  return `${record.brand} ${record.model}`.trim().toUpperCase() || 'VEHICLE';
+}
+
+function VehicleDateStat({
+  icon,
+  label,
+  value,
+  status,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  status: ReturnType<typeof validityStatus>;
+}) {
+  return (
+    <div className="rc-vehicle-date-stat">
+      <span className="rc-vehicle-date-stat-icon" aria-hidden>
+        {icon}
+      </span>
+      <span className="rc-vehicle-date-stat-label">{label}</span>
+      <span className="rc-vehicle-date-stat-value">{value}</span>
+      <span className={`rc-vehicle-date-stat-line rc-vehicle-date-stat-line--${status}`} aria-hidden />
+    </div>
+  );
+}
 
 function earliestValidity(v: Vehicle) {
   const dates = [v.rcValidity, v.insuranceValidity, v.pollutionValidity, v.f2WeightValidity];
@@ -263,153 +301,146 @@ export const AdminVehicleList: React.FC = () => {
       )}
 
       {!reviewing && (
-        <div className="panel glass panel--table mb-6">
-          <div className="panel-header justify-between">
-            <div>
-              <h2>
-                <VehicleLogoMark size="sm" variant="plain" className="inline-icon" /> Vehicles
-              </h2>
-              <p className="text-muted text-sm mt-1">
-                Vehicles registered by regional centers. Enable or disable as needed.
+        <div className="rc-list-page">
+          <section className="rc-vehicles-summary-card">
+            <div className="rc-vehicles-summary-leading">
+              <VehicleLogoMark size="md" />
+              <h2 className="rc-vehicles-summary-title">Vehicles</h2>
+              <p className="rc-vehicles-summary-sub">
+                {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''} · {inactiveCount} inactive
               </p>
             </div>
-            <button className="btn-icon" onClick={fetchVehicles} title="Refresh" type="button">
-              <RefreshCw size={18} />
-            </button>
-          </div>
-          <div className="panel-body p-0">
-            {loading ? (
-              <div className="flex justify-center py-16">
-                <span className="spinner-inline large"></span>
-              </div>
-            ) : (
-              <div className="table-scroll-wrap">
-                <table className="data-table data-table--vehicles-rc data-table--vehicles-admin data-table--mobile-cards">
-                  <thead>
-                    <tr>
-                      <th className="vehicle-rc-col-serial">#</th>
-                      <th>Vehicle</th>
-                      <th className="vehicle-admin-col-rc">Regional Center</th>
-                      <th>Reg number</th>
-                      <th>Year</th>
-                      <th>RC validity</th>
-                      <th>Insurance</th>
-                      <th>Pollution</th>
-                      <th>F2 weight</th>
-                      <th>Active</th>
-                      <th>Docs</th>
-                      <th className="text-right vehicle-rc-col-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {vehicles.map((v, index) => {
-                      const docStatus = earliestValidity(v);
-                      const active = isVehicleActive(v);
+            <div className="rc-vehicles-summary-actions">
+              <button
+                type="button"
+                className="rc-vehicles-refresh-btn"
+                onClick={() => void fetchVehicles()}
+                title="Refresh"
+                aria-label="Refresh vehicles"
+                disabled={loading}
+              >
+                <RefreshCw size={18} className={loading ? 'spinner-inline' : undefined} />
+              </button>
+            </div>
+          </section>
 
-                      return (
-                        <tr key={v.id} className="table-mobile-row table-mobile-row--actions">
-                          <td className="vehicle-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
-                          <td className="font-medium table-mobile-col-primary">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {v.vehiclePhotoUrl ? (
-                                <img src={v.vehiclePhotoUrl} alt="" className="vct-table-avatar shrink-0" />
-                              ) : (
-                                <span className="vct-table-avatar vct-table-avatar--placeholder shrink-0">
-                                  <ImageIcon size={18} />
-                                </span>
-                              )}
-                              <div className="min-w-0">
-                                <span className="table-mobile-primary-text">
-                                  {v.brand} {v.model}
-                                </span>
-                                <div className="table-mobile-summary">
-                                  <span className="table-mobile-summary-meta">{v.rcCenterName}</span>
-                                  <span className="text-mono">{v.regNumber || '—'} · {v.year || '—'}</span>
-                                  <span className="table-mobile-summary-badges">
-                                    <span
-                                      className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
-                                    >
-                                      {vehicleActiveLabel(v.active)}
-                                    </span>
-                                    <span className={`status-badge ${VALIDITY_BADGE[docStatus]}`}>
-                                      {docStatus === 'ok' && 'Valid'}
-                                      {docStatus === 'due' && 'Due soon'}
-                                      {docStatus === 'expired' && 'Expired'}
-                                      {docStatus === 'missing' && 'Incomplete'}
-                                    </span>
-                                  </span>
-                                  <span className="table-mobile-summary-meta text-sm">
-                                    RC {formatValidityDate(v.rcValidity)} · Ins {formatValidityDate(v.insuranceValidity)}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="vehicle-admin-col-rc table-cell-truncate table-mobile-col-hide" title={v.rcCenterName}>
-                            {v.rcCenterName}
-                          </td>
-                          <td className="text-sm text-mono table-mobile-col-hide">{v.regNumber || '—'}</td>
-                          <td className="text-sm table-mobile-col-hide">{v.year || '—'}</td>
-                          <td className="text-sm table-mobile-col-hide">{formatValidityDate(v.rcValidity)}</td>
-                          <td className="text-sm table-mobile-col-hide">{formatValidityDate(v.insuranceValidity)}</td>
-                          <td className="text-sm table-mobile-col-hide">{formatValidityDate(v.pollutionValidity)}</td>
-                          <td className="text-sm table-mobile-col-hide">{formatValidityDate(v.f2WeightValidity)}</td>
-                          <td className="table-mobile-col-hide">
-                            <span
-                              className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
-                            >
-                              {vehicleActiveLabel(v.active)}
-                            </span>
-                          </td>
-                          <td className="table-mobile-col-hide">
-                            <span className={`status-badge ${VALIDITY_BADGE[docStatus]}`}>
-                              {docStatus === 'ok' && 'Valid'}
-                              {docStatus === 'due' && 'Due soon'}
-                              {docStatus === 'expired' && 'Expired'}
-                              {docStatus === 'missing' && 'Incomplete'}
-                            </span>
-                          </td>
-                          <td className="text-right vehicle-rc-col-actions table-mobile-col-actions">
-                            <button
-                              type="button"
-                              className="btn-icon text-blue mr-2"
-                              onClick={() => setReviewing(v)}
-                              title="View vehicle"
-                            >
-                              <Eye size={18} />
-                            </button>
-                            <button
-                              type="button"
-                              className={`btn-icon mr-2 ${active ? 'text-amber' : 'text-green'}`}
-                              onClick={() => handleToggleActive(v)}
-                              title={active ? 'Disable vehicle' : 'Enable vehicle'}
-                            >
-                              {active ? <UserX size={18} /> : <UserCheck size={18} />}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-icon text-red"
-                              onClick={() => handleDelete(v.id, v.regNumber || `${v.brand} ${v.model}`)}
-                              title="Remove"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {vehicles.length === 0 && (
-                      <tr>
-                        <td colSpan={12} className="text-center py-10 text-muted">
-                          No vehicles registered yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          {loading ? (
+            <div className="rc-vehicles-loading">
+              <span className="spinner-inline large" />
+            </div>
+          ) : vehicles.length === 0 ? (
+            <div className="rc-vehicles-empty">
+              <VehicleLogoMark size="lg" />
+              <p>No vehicles registered yet.</p>
+            </div>
+          ) : (
+            <div className="rc-list-cards">
+              {vehicles.map(v => {
+                const docStatus = earliestValidity(v);
+                const active = isVehicleActive(v);
+                const rcStatus = validityStatus(v.rcValidity);
+                const insuranceStatus = validityStatus(v.insuranceValidity);
+                const photo = vehiclePhotoFromRecord(v);
+                const label = v.regNumber || `${v.brand} ${v.model}`.trim() || 'vehicle';
+                const plate = v.regNumber?.trim();
+
+                return (
+                  <article key={v.id} className="rc-list-card">
+                    <div className="rc-list-card-top">
+                      <button
+                        type="button"
+                        className="rc-list-card-main"
+                        onClick={() => setReviewing(v)}
+                        aria-label={`View ${label}`}
+                      >
+                        <RcListPhoto
+                          url={photo?.url}
+                          path={photo?.path}
+                          placeholder={<VehicleLogoMark size="sm" variant="plain" />}
+                        />
+                        <span className="rc-list-card-info">
+                          <span className="rc-list-card-name-row">
+                            <span className="rc-list-card-name">{vehicleTitle(v)}</span>
+                            <RcListEditHint />
+                          </span>
+                          <span className="rc-list-meta-chips">
+                            <RcListMetaChip icon={<Building2 size={13} strokeWidth={2} />}>
+                              {v.rcCenterName}
+                            </RcListMetaChip>
+                            {plate ? (
+                              <RcListMetaChip icon={<span className="rc-vehicle-plate-ind">IND</span>}>
+                                {plate}
+                              </RcListMetaChip>
+                            ) : null}
+                            {v.year?.trim() && (
+                              <RcListMetaChip icon={<Calendar size={13} strokeWidth={2} />}>
+                                {v.year}
+                              </RcListMetaChip>
+                            )}
+                          </span>
+                          <span className="rc-list-card-badges">
+                            <RcListStatusBadge
+                              tone={active ? 'active' : 'inactive'}
+                              label={vehicleActiveLabel(v.active)}
+                              icon={<Check size={12} strokeWidth={2.75} aria-hidden />}
+                            />
+                            <RcListStatusBadge
+                              tone={docStatus}
+                              label={VALIDITY_LABEL[docStatus]}
+                              icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
+                            />
+                          </span>
+                        </span>
+                      </button>
+                      <RcListCardActions>
+                        <RcListCardToggle
+                          className="rc-list-card-toggle--view"
+                          onClick={() => setReviewing(v)}
+                          title="View vehicle"
+                          ariaLabel={`View ${label}`}
+                        >
+                          <Eye size={18} strokeWidth={1.75} />
+                        </RcListCardToggle>
+                        <RcListCardToggle
+                          className={active ? '' : 'rc-list-card-toggle--enable'}
+                          onClick={() => void handleToggleActive(v)}
+                          title={active ? 'Disable vehicle' : 'Enable vehicle'}
+                          ariaLabel={active ? `Disable ${label}` : `Enable ${label}`}
+                        >
+                          {active ? <UserX size={18} strokeWidth={1.75} /> : <UserCheck size={18} strokeWidth={1.75} />}
+                        </RcListCardToggle>
+                        <RcListCardToggle
+                          className="rc-list-card-toggle--delete"
+                          onClick={() => void handleDelete(v.id, label)}
+                          title="Remove vehicle"
+                          ariaLabel={`Remove ${label}`}
+                        >
+                          <Trash2 size={18} strokeWidth={1.85} />
+                        </RcListCardToggle>
+                      </RcListCardActions>
+                    </div>
+
+                    <div className="rc-vehicle-card-divider" aria-hidden />
+
+                    <div className="rc-vehicle-card-dates">
+                      <VehicleDateStat
+                        icon={<Calendar size={16} strokeWidth={1.75} />}
+                        label="RC Validity"
+                        value={formatVehicleDisplayDate(v.rcValidity)}
+                        status={rcStatus}
+                      />
+                      <VehicleDateStat
+                        icon={<ShieldCheck size={16} strokeWidth={1.75} />}
+                        label="Insurance Valid Till"
+                        value={formatVehicleDisplayDate(v.insuranceValidity)}
+                        status={insuranceStatus}
+                      />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

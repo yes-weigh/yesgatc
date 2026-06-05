@@ -98,6 +98,7 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             allRecords={allRecords.length ? allRecords : [record]}
             onClose={onClose}
             onResubmitted={onRecordsChanged}
+            showHeaderClose
           />
         </div>
       </InlineFormPanel>

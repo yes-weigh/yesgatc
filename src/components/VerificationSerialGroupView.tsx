@@ -21,7 +21,7 @@ import { canShowVerificationCertifiedActions } from '../lib/verificationRequest'
 import { VerificationCertifiedActions } from './VerificationCertifiedActions';
 import { VerificationCertificatePreview } from './VerificationCertificatePreview';
 import { VerificationDetailsCard } from './VerificationDetailsCard';
-import { VerificationStatusBadge } from './VerificationStatusBadge';
+import { VerificationSummaryChrome } from './VerificationSummaryChrome';
 import type { SiteCalibration } from '../types';
 
 type VerificationSerialGroupViewProps = {
@@ -31,6 +31,7 @@ type VerificationSerialGroupViewProps = {
   onClose: () => void;
   onResubmitted?: (newRecordId: string) => void | Promise<void>;
   closeDisabled?: boolean;
+  showHeaderClose?: boolean;
 };
 
 function versionTone(record: SiteCalibration, group: SiteCalibration[]): string {
@@ -49,6 +50,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
   onClose,
   onResubmitted,
   closeDisabled = false,
+  showHeaderClose = false,
 }) => {
   const { user } = useAuth();
   const confirm = useConfirm();
@@ -132,31 +134,11 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
 
   return (
     <div className="verification-certified-summary verification-serial-group">
-      <div className="verification-serial-group-topbar">
-        <div className="verification-certified-summary-head">
-          <h2 id="site-calibration-form-title" className="verification-certified-summary-title">
-            {record.customerName || 'Verification'}
-          </h2>
-          {record.serialNumber?.trim() && (
-            <p className="verification-certified-summary-cert text-mono mb-0">
-              Serial {record.serialNumber.trim()}
-            </p>
-          )}
-          {showGroupHeading && (
-            <p className="verification-serial-group-hint mb-0">
-              {group.length} records for this serial
-            </p>
-          )}
-        </div>
-        <button
-          type="button"
-          className="verification-form-btn verification-form-btn--cancel verification-serial-group-close"
-          onClick={onClose}
-          disabled={closeDisabled || resubmitting}
-        >
-          Close
-        </button>
-      </div>
+      {showGroupHeading && (
+        <p className="verification-serial-group-hint verification-serial-group-hint--top mb-0">
+          {group.length} records for this serial
+        </p>
+      )}
 
       {error && (
         <p className="verification-serial-group-error mb-0" role="alert">
@@ -179,17 +161,17 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
             >
               <div className="verification-version-card-layout">
                 <div className="verification-version-card-main">
-                  <header className="verification-version-card-head">
-                    <div className="verification-version-card-head-text">
-                      <h3 className="verification-version-card-title">
-                        {verificationVersionTitle(version, group)}
-                      </h3>
-                      <p className="verification-version-card-subtitle mb-0">
-                        {verificationVersionSubtitle(version)}
-                      </p>
-                    </div>
-                    <VerificationStatusBadge record={version} />
-                  </header>
+                  <VerificationSummaryChrome
+                    record={version}
+                    onClose={onClose}
+                    closeDisabled={closeDisabled || resubmitting}
+                    showClose={showHeaderClose && version.id === record.id}
+                    versionHint={
+                      showGroupHeading
+                        ? `${verificationVersionTitle(version, group)} · ${verificationVersionSubtitle(version)}`
+                        : undefined
+                    }
+                  />
 
                   {showActions && (
                     <VerificationCertifiedActions record={version} customerPhone={customerPhone} />

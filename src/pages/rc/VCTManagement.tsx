@@ -6,8 +6,13 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import { StorageImage } from '../../components/StorageImage';
-import { tableEditCellProps } from '../../lib/tableEditCell';
+import {
+  RcListCardToggle,
+  RcListEditHint,
+  RcListPhoneChip,
+  RcListPhoto,
+  RcListStatusBadge,
+} from '../../components/RcListCard';
 import {
   buildRcVctMemberDoc,
   fetchRcVctUsers,
@@ -17,7 +22,6 @@ import {
   assertAadharAvailable,
   authErrorMessage,
   createAuthUserForAadhar,
-  formatAadharDisplay,
   isValidAadhar,
   normalizeAadhar,
   syncAuthPassword,
@@ -39,7 +43,21 @@ import {
   type VctDocKey,
 } from '../../lib/vctProfileFields';
 import {
-  UserPlus, Trash2, Eye, EyeOff, RefreshCw, Users, Pencil, X, Plus, Save, Zap, ClipboardList, UserCircle, UserX, UserCheck,
+  UserPlus,
+  Trash2,
+  RefreshCw,
+  Users,
+  Pencil,
+  X,
+  Plus,
+  Save,
+  Zap,
+  ClipboardList,
+  UserCircle,
+  UserX,
+  UserCheck,
+  ShieldCheck,
+  Check,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
 import {
@@ -78,6 +96,10 @@ function docUploadsFromUser(doc: FirestoreUserDoc): Record<VctDocKey, VctDocUplo
   };
 }
 
+function vctDisplayName(record: VCTRecord): string {
+  return (record.username || '—').trim().toUpperCase();
+}
+
 function vctFormFromUser(doc: FirestoreUserDoc): VctFormValues {
   return {
     username: doc.username || '',
@@ -113,18 +135,19 @@ export const VCTManagement: React.FC = () => {
   const [showPw, setShowPw] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [revealedUids, setRevealedUids] = useState<Set<string>>(new Set());
+  const [listError, setListError] = useState('');
 
   const fetchVCTs = useCallback(async () => {
     if (!user?.uid) return;
     setLoading(true);
+    setListError('');
     try {
       const records = await fetchRcVctUsers(user.uid);
       setVcts(records);
     } catch (err: unknown) {
       console.error('Failed to load technicians', err);
       setVcts([]);
-      setError(
+      setListError(
         err instanceof Error && err.message.includes('permission')
           ? 'Could not load technicians. Deploy Firestore rules: firebase deploy --only firestore:rules'
           : 'Could not load technicians.',
@@ -486,15 +509,6 @@ export const VCTManagement: React.FC = () => {
     await fetchVCTs();
   };
 
-  const toggleReveal = (uid: string) => {
-    setRevealedUids(prev => {
-      const n = new Set(prev);
-      if (n.has(uid)) n.delete(uid);
-      else n.add(uid);
-      return n;
-    });
-  };
-
   return (
     <div className="fade-in page-content">
       {showForm && (
@@ -575,213 +589,168 @@ export const VCTManagement: React.FC = () => {
       )}
 
       {!showForm && (
-      <div className="panel glass panel--table mb-6">
-        <div className="panel-header justify-between">
-          <div>
-            <h2>
-              <Users className="inline-icon" /> Technicians
-            </h2>
-            <p className="text-muted text-sm mt-1">
-              {vcts.length} verification and calibration technician{vcts.length !== 1 ? 's' : ''}
+        <div className="rc-vct-page">
+          <section className="rc-vehicles-summary-card">
+            <div className="rc-vehicles-summary-leading">
+              <span className="rc-vct-summary-icon" aria-hidden>
+                <Users size={20} strokeWidth={1.85} />
+              </span>
+              <h2 className="rc-vehicles-summary-title">Technicians</h2>
+              <p className="rc-vehicles-summary-sub">
+                {vcts.length} verification and calibration technician{vcts.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <div className="rc-vehicles-summary-actions">
+              <button
+                type="button"
+                className="rc-vehicles-add-btn"
+                onClick={handleStartAdd}
+                aria-label="Add Technician"
+              >
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                <span className="rc-vehicles-add-btn-label">Add Technician</span>
+              </button>
+              <button
+                type="button"
+                className="rc-vehicles-refresh-btn"
+                onClick={() => void fetchVCTs()}
+                title="Refresh"
+                aria-label="Refresh technicians"
+                disabled={loading}
+              >
+                <RefreshCw size={18} className={loading ? 'spinner-inline' : undefined} />
+              </button>
+            </div>
+          </section>
+          {listError && (
+            <p className="rc-vehicles-summary-error" role="alert">
+              {listError}
             </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
-              onClick={handleStartAdd}
-            >
-              <Plus size={16} /> Add Technician
-            </button>
-            <button className="btn-icon" onClick={fetchVCTs} title="Refresh" type="button">
-              <RefreshCw size={18} />
-            </button>
-          </div>
-        </div>
-        <div className="panel-body p-0">
+          )}
+
           {loading ? (
-            <div className="flex justify-center py-16">
-              <span className="spinner-inline large"></span>
+            <div className="rc-vehicles-loading">
+              <span className="spinner-inline large" />
+            </div>
+          ) : vcts.length === 0 ? (
+            <div className="rc-vehicles-empty">
+              <span className="rc-vct-summary-icon rc-vct-summary-icon--lg" aria-hidden>
+                <Users size={24} strokeWidth={1.85} />
+              </span>
+              <p>No technicians yet.</p>
+              <button
+                type="button"
+                className="rc-vehicles-add-btn"
+                onClick={handleStartAdd}
+                aria-label="Add Technician"
+              >
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                <span className="rc-vehicles-add-btn-label">Add Technician</span>
+              </button>
             </div>
           ) : (
-            <div className="table-scroll-wrap">
-              <table className="data-table data-table--vct-rc data-table--mobile-cards">
-                <thead>
-                  <tr>
-                    <th className="vct-rc-col-serial">#</th>
-                    <th>Name</th>
-                    <th>Phone</th>
-                    <th>Aadhar</th>
-                    <th>Status</th>
-                    <th>Enabled</th>
-                    <th>Job Mode</th>
-                    <th>Password</th>
-                    <th>Created</th>
-                    <th className="text-right vct-rc-col-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vcts.map((v, index) => {
-                    const openEdit = () => startEdit(v);
-                    const editCell = tableEditCellProps(openEdit, 'Edit technician');
-                    const approved = isVctApproved(v);
-                    const active = isVctActive(v);
+            <div className="rc-list-cards">
+              {vcts.map(v => {
+                const approved = isVctApproved(v);
+                const active = isVctActive(v);
+                const photo = vctProfilePhotoFromUser(v);
+                const displayName = vctDisplayName(v);
+                const phones = [v.phone, v.secondaryContactPhone].filter(
+                  (value): value is string => Boolean(value?.trim()),
+                );
 
-                    return (
-                    <tr key={v.uid} className="table-mobile-row table-mobile-row--actions">
-                      <td className="vct-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
-                      <td {...editCell} className="font-medium table-mobile-col-primary table-col-editable">
-                        <div className="flex items-center gap-2 min-w-0">
-                          {v.profilePhotoUrl || v.profilePhotoPath ? (
-                            <StorageImage
-                              url={v.profilePhotoUrl}
-                              path={v.profilePhotoPath}
-                              alt=""
-                              className="vct-table-avatar shrink-0"
-                            />
-                          ) : (
-                            <span className="vct-table-avatar vct-table-avatar--placeholder shrink-0">
-                              <UserCircle size={18} />
+                return (
+                  <article key={v.uid} className="rc-list-card">
+                    <div className="rc-list-card-top">
+                      <button
+                        type="button"
+                        className="rc-list-card-main"
+                        onClick={() => startEdit(v)}
+                        aria-label={`Edit ${displayName}`}
+                      >
+                        <RcListPhoto
+                          url={photo?.url}
+                          path={photo?.path}
+                          placeholder={<UserCircle size={28} strokeWidth={1.5} />}
+                          badge={
+                            approved ? (
+                              <span className="rc-list-card-photo-badge" aria-hidden>
+                                <ShieldCheck size={11} strokeWidth={2.75} />
+                              </span>
+                            ) : undefined
+                          }
+                        />
+                        <span className="rc-list-card-info">
+                          <span className="rc-list-card-name-row">
+                            <span className="rc-list-card-name">{displayName}</span>
+                            <RcListEditHint />
+                          </span>
+                          {phones.length > 0 && (
+                            <span className="rc-list-meta-chips">
+                              {phones.map(phone => (
+                                <RcListPhoneChip key={`${v.uid}-${phone}`} phone={phone} />
+                              ))}
                             </span>
                           )}
-                          <div className="min-w-0">
-                            <span className="table-mobile-primary-text">{v.username || '—'}</span>
-                            <div className="table-mobile-summary">
-                              <span>{v.phone || '—'} · {formatAadharDisplay(v.aadhar)}</span>
-                              <span className="table-mobile-summary-badges">
-                                <span
-                                  className={`status-badge ${
-                                    v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
-                                  }`}
-                                >
-                                  {vctApprovalLabel(v.approvalStatus)}
-                                </span>
-                                {approved && (
-                                  <span
-                                    className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
-                                  >
-                                    {vctActiveLabel(v.active)}
-                                  </span>
-                                )}
-                                <span className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
-                                  {v.workflowMode === 'auto' ? (
-                                    <>
-                                      <Zap size={12} /> Auto
-                                    </>
-                                  ) : (
-                                    <>
-                                      <ClipboardList size={12} /> Manual
-                                    </>
-                                  )}
-                                </span>
-                              </span>
-                              {v.createdAt && (
-                                <span className="table-mobile-summary-meta">
-                                  Added {new Date(v.createdAt).toLocaleDateString('en-IN')}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">{v.phone || '—'}</td>
-                      <td {...editCell} className="text-muted text-sm table-mobile-col-hide table-col-editable">
-                        {formatAadharDisplay(v.aadhar)}
-                      </td>
-                      <td {...editCell} className="table-mobile-col-hide table-col-editable">
-                        <span
-                          className={`status-badge ${
-                            v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
-                          }`}
+                          <span className="rc-list-card-badges">
+                            <RcListStatusBadge
+                              tone={approved ? 'approved' : 'pending'}
+                              label={vctApprovalLabel(v.approvalStatus)}
+                              icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
+                            />
+                            {approved && (
+                              <RcListStatusBadge
+                                tone={active ? 'active' : 'inactive'}
+                                label={vctActiveLabel(v.active)}
+                                icon={<Check size={12} strokeWidth={2.75} aria-hidden />}
+                              />
+                            )}
+                            <RcListStatusBadge
+                              tone={v.workflowMode === 'auto' ? 'auto' : 'manual'}
+                              label={v.workflowMode === 'auto' ? 'Auto' : 'Manual'}
+                              icon={
+                                v.workflowMode === 'auto' ? (
+                                  <Zap size={12} strokeWidth={2.5} aria-hidden />
+                                ) : (
+                                  <ClipboardList size={12} strokeWidth={2.5} aria-hidden />
+                                )
+                              }
+                            />
+                          </span>
+                        </span>
+                      </button>
+                      {approved ? (
+                        <RcListCardToggle
+                          className={active ? '' : 'rc-list-card-toggle--enable'}
+                          onClick={() => void handleToggleActive(v)}
+                          title={active ? 'Disable technician' : 'Enable technician'}
+                          ariaLabel={
+                            active ? `Disable ${displayName}` : `Enable ${displayName}`
+                          }
                         >
-                          {vctApprovalLabel(v.approvalStatus)}
-                        </span>
-                      </td>
-                      <td {...editCell} className="table-mobile-col-hide table-col-editable">
-                        {approved ? (
-                          <span
-                            className={`status-badge ${active ? 'vct-status-active' : 'vct-status-inactive'}`}
-                          >
-                            {vctActiveLabel(v.active)}
-                          </span>
-                        ) : (
-                          <span className="text-muted text-sm">—</span>
-                        )}
-                      </td>
-                      <td {...editCell} className="table-mobile-col-hide table-col-editable">
-                        <span className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}>
-                          {v.workflowMode === 'auto' ? (
-                            <>
-                              <Zap size={12} /> Auto
-                            </>
+                          {active ? (
+                            <UserX size={20} strokeWidth={1.75} />
                           ) : (
-                            <>
-                              <ClipboardList size={12} /> Manual
-                            </>
+                            <UserCheck size={20} strokeWidth={1.75} />
                           )}
-                        </span>
-                      </td>
-                      <td {...editCell} className="table-mobile-col-hide">
-                        <div className="flex items-center gap-2">
-                          <span className="text-mono text-sm">
-                            {revealedUids.has(v.uid) ? (v.clearTextPassword ?? '—') : '••••••••'}
-                          </span>
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            onClick={e => {
-                              e.stopPropagation();
-                              toggleReveal(v.uid);
-                            }}
-                            title={revealedUids.has(v.uid) ? 'Hide password' : 'Show password'}
-                            aria-label={revealedUids.has(v.uid) ? 'Hide password' : 'Show password'}
-                          >
-                            {revealedUids.has(v.uid) ? <EyeOff size={14} /> : <Eye size={14} />}
-                          </button>
-                        </div>
-                      </td>
-                      <td {...editCell} className="text-muted text-xs-soft table-mobile-col-hide table-col-editable">
-                        {v.createdAt ? new Date(v.createdAt).toLocaleDateString('en-IN') : '—'}
-                      </td>
-                      <td className="text-right vct-rc-col-actions table-mobile-col-actions">
-                        {approved ? (
-                          <button
-                            type="button"
-                            className={`btn-icon ${active ? 'text-amber' : 'text-green'}`}
-                            onClick={() => handleToggleActive(v)}
-                            title={active ? 'Disable technician' : 'Enable technician'}
-                            aria-label={active ? `Disable ${v.username || v.aadhar}` : `Enable ${v.username || v.aadhar}`}
-                          >
-                            {active ? <UserX size={18} /> : <UserCheck size={18} />}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn-icon text-red"
-                            onClick={() => handleDelete(v.uid, v.username || v.aadhar)}
-                            title="Remove"
-                            aria-label={`Remove ${v.username || v.aadhar || 'technician'}`}
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                  })}
-                  {vcts.length === 0 && (
-                    <tr>
-                      <td colSpan={10} className="text-center py-10 text-muted">
-                        No technicians yet. Click &quot;Add Technician&quot; to create one.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                        </RcListCardToggle>
+                      ) : (
+                        <RcListCardToggle
+                          className="rc-list-card-toggle--delete"
+                          onClick={() => void handleDelete(v.uid, v.username || v.aadhar)}
+                          title="Remove technician"
+                          ariaLabel={`Remove ${displayName}`}
+                        >
+                          <Trash2 size={18} strokeWidth={1.85} />
+                        </RcListCardToggle>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </div>
-      </div>
       )}
     </div>
   );

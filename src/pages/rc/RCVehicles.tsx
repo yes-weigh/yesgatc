@@ -6,8 +6,14 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import { StorageImage } from '../../components/StorageImage';
 import { VehicleLogoMark } from '../../components/VehicleLogoMark';
+import {
+  RcListCardToggle,
+  RcListEditHint,
+  RcListMetaChip,
+  RcListPhoto,
+  RcListStatusBadge,
+} from '../../components/RcListCard';
 import { uploadVehicleDocument, type VehicleDocKind } from '../../lib/vehicleDocumentUpload';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import {
@@ -91,34 +97,6 @@ const VALIDITY_LABEL: Record<ReturnType<typeof validityStatus>, string> = {
 
 function vehicleTitle(record: Vehicle): string {
   return `${record.brand} ${record.model}`.trim().toUpperCase() || 'VEHICLE';
-}
-
-function VehiclePlate({ regNumber }: { regNumber?: string }) {
-  const plate = regNumber?.trim();
-  if (!plate) return <span className="rc-vehicle-plate rc-vehicle-plate--empty">—</span>;
-  return (
-    <span className="rc-vehicle-plate">
-      <span className="rc-vehicle-plate-ind" aria-hidden>
-        IND
-      </span>
-      <span className="rc-vehicle-plate-number text-mono">{plate}</span>
-    </span>
-  );
-}
-
-function VehicleStatusBadge({
-  tone,
-  label,
-}: {
-  tone: 'active' | 'inactive' | ReturnType<typeof validityStatus>;
-  label: string;
-}) {
-  return (
-    <span className={`rc-vehicle-status-badge rc-vehicle-status-badge--${tone}`}>
-      <Check size={12} strokeWidth={2.75} aria-hidden />
-      {label}
-    </span>
-  );
 }
 
 function VehicleDateStat({
@@ -550,26 +528,22 @@ export const RCVehicles: React.FC = () => {
       {!showForm && (
         <div className="rc-vehicles-page">
           <section className="rc-vehicles-summary-card">
-            <VehicleLogoMark size="md" />
-            <div className="rc-vehicles-summary-copy">
+            <div className="rc-vehicles-summary-leading">
+              <VehicleLogoMark size="md" />
               <h2 className="rc-vehicles-summary-title">Vehicles</h2>
               <p className="rc-vehicles-summary-sub">
                 {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''} registered
               </p>
-              {listError && (
-                <p className="rc-form-topbar-error text-sm mt-1 mb-0" role="alert">
-                  {listError}
-                </p>
-              )}
             </div>
             <div className="rc-vehicles-summary-actions">
               <button
                 type="button"
                 className="rc-vehicles-add-btn"
                 onClick={handleStartAdd}
+                aria-label="Add Vehicle"
               >
                 <Plus size={16} strokeWidth={2.5} aria-hidden />
-                Add Vehicle
+                <span className="rc-vehicles-add-btn-label">Add Vehicle</span>
               </button>
               <button
                 type="button"
@@ -583,6 +557,11 @@ export const RCVehicles: React.FC = () => {
               </button>
             </div>
           </section>
+          {listError && (
+            <p className="rc-vehicles-summary-error" role="alert">
+              {listError}
+            </p>
+          )}
 
           {loading ? (
             <div className="rc-vehicles-loading">
@@ -592,13 +571,18 @@ export const RCVehicles: React.FC = () => {
             <div className="rc-vehicles-empty">
               <VehicleLogoMark size="lg" />
               <p>No vehicles yet.</p>
-              <button type="button" className="rc-vehicles-add-btn" onClick={handleStartAdd}>
+              <button
+                type="button"
+                className="rc-vehicles-add-btn"
+                onClick={handleStartAdd}
+                aria-label="Add Vehicle"
+              >
                 <Plus size={16} strokeWidth={2.5} aria-hidden />
-                Add Vehicle
+                <span className="rc-vehicles-add-btn-label">Add Vehicle</span>
               </button>
             </div>
           ) : (
-            <div className="rc-vehicles-list">
+            <div className="rc-list-cards">
               {vehicles.map(v => {
                 const active = isVehicleActive(v);
                 const overallValidity = earliestValidity(v);
@@ -606,62 +590,63 @@ export const RCVehicles: React.FC = () => {
                 const insuranceStatus = validityStatus(v.insuranceValidity);
                 const photo = vehiclePhotoFromRecord(v);
                 const disableLabel = v.regNumber || `${v.brand} ${v.model}`.trim() || 'vehicle';
+                const plate = v.regNumber?.trim();
 
                 return (
-                  <article key={v.id} className="rc-vehicle-card">
-                    <div className="rc-vehicle-card-top">
+                  <article key={v.id} className="rc-list-card">
+                    <div className="rc-list-card-top">
                       <button
                         type="button"
-                        className="rc-vehicle-card-main"
+                        className="rc-list-card-main"
                         onClick={() => startEdit(v)}
                         aria-label={`Edit ${disableLabel}`}
                       >
-                        <span className="rc-vehicle-card-photo">
-                          {photo ? (
-                            <StorageImage
-                              url={photo.url}
-                              path={photo.path}
-                              alt=""
-                              className="rc-vehicle-card-photo-img"
-                            />
-                          ) : (
-                            <span className="rc-vehicle-card-photo-placeholder" aria-hidden>
-                              <VehicleLogoMark size="sm" variant="plain" />
-                            </span>
-                          )}
-                        </span>
-                        <span className="rc-vehicle-card-info">
-                          <span className="rc-vehicle-card-name">{vehicleTitle(v)}</span>
-                          <span className="rc-vehicle-card-meta">
-                            <VehiclePlate regNumber={v.regNumber} />
+                        <RcListPhoto
+                          url={photo?.url}
+                          path={photo?.path}
+                          placeholder={<VehicleLogoMark size="sm" variant="plain" />}
+                        />
+                        <span className="rc-list-card-info">
+                          <span className="rc-list-card-name-row">
+                            <span className="rc-list-card-name">{vehicleTitle(v)}</span>
+                            <RcListEditHint />
+                          </span>
+                          <span className="rc-list-meta-chips">
+                            {plate ? (
+                              <RcListMetaChip icon={<span className="rc-vehicle-plate-ind">IND</span>}>
+                                {plate}
+                              </RcListMetaChip>
+                            ) : (
+                              <RcListMetaChip icon={<Calendar size={13} strokeWidth={2} />}>No plate</RcListMetaChip>
+                            )}
                             {v.year?.trim() && (
-                              <span className="rc-vehicle-card-year">
-                                <Calendar size={13} strokeWidth={2} aria-hidden />
+                              <RcListMetaChip icon={<Calendar size={13} strokeWidth={2} />}>
                                 {v.year}
-                              </span>
+                              </RcListMetaChip>
                             )}
                           </span>
-                          <span className="rc-vehicle-card-badges">
-                            <VehicleStatusBadge
+                          <span className="rc-list-card-badges">
+                            <RcListStatusBadge
                               tone={active ? 'active' : 'inactive'}
                               label={vehicleActiveLabel(v.active)}
+                              icon={<Check size={12} strokeWidth={2.75} aria-hidden />}
                             />
-                            <VehicleStatusBadge
+                            <RcListStatusBadge
                               tone={overallValidity}
                               label={VALIDITY_LABEL[overallValidity]}
+                              icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
                             />
                           </span>
                         </span>
                       </button>
-                      <button
-                        type="button"
-                        className={`rc-vehicle-card-toggle${active ? '' : ' rc-vehicle-card-toggle--enable'}`}
+                      <RcListCardToggle
+                        className={active ? '' : 'rc-list-card-toggle--enable'}
                         onClick={() => void handleToggleActive(v)}
                         title={active ? 'Disable vehicle' : 'Enable vehicle'}
-                        aria-label={active ? `Disable ${disableLabel}` : `Enable ${disableLabel}`}
+                        ariaLabel={active ? `Disable ${disableLabel}` : `Enable ${disableLabel}`}
                       >
                         {active ? <UserX size={20} strokeWidth={1.75} /> : <UserCheck size={20} strokeWidth={1.75} />}
-                      </button>
+                      </RcListCardToggle>
                     </div>
 
                     <div className="rc-vehicle-card-divider" aria-hidden />

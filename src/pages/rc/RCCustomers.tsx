@@ -5,10 +5,16 @@ import {
 import { db } from '../../firebase';
 import { useRcScope } from '../../lib/roleScope';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import { StorageImage } from '../../components/StorageImage';
+import {
+  RcListEditHint,
+  RcListMetaChip,
+  RcListPhoneChip,
+  RcListPhoto,
+  RcListStatusBadge,
+} from '../../components/RcListCard';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import { normalizePhone, isValidPhone } from '../../lib/contactFields';
-import { tableEditCellProps } from '../../lib/tableEditCell';
+import { filterCustomersBySearch } from '../../lib/customerLookup';
 import {
   buildCustomerDevice,
   buildCustomerProfileFields,
@@ -27,7 +33,18 @@ import {
   type CustomerFormValues,
 } from '../../lib/customerProfileFields';
 import {
-  UserRound, RefreshCw, Pencil, X, Plus, Save, ImageIcon, MapPin, ExternalLink, Search,
+  UserRound,
+  RefreshCw,
+  Pencil,
+  X,
+  Plus,
+  Save,
+  ImageIcon,
+  MapPin,
+  ExternalLink,
+  Search,
+  Package,
+  Check,
 } from 'lucide-react';
 import type { Customer, CustomerDevice } from '../../types';
 import {
@@ -59,15 +76,16 @@ export const RCCustomers: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
-  const [phoneSearch, setPhoneSearch] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const normalizedPhoneSearch = normalizePhone(phoneSearch);
-  const phoneSearchComplete = normalizedPhoneSearch.length === 10;
+  const normalizedPhoneSearch = normalizePhone(searchQuery);
+  const phoneSearchComplete = isValidPhone(searchQuery);
+  const hasSearchQuery = searchQuery.trim().length > 0;
 
-  const displayedCustomers = useMemo(() => {
-    if (!phoneSearchComplete) return customers;
-    return customers.filter(c => normalizePhone(c.phone) === normalizedPhoneSearch);
-  }, [customers, normalizedPhoneSearch, phoneSearchComplete]);
+  const displayedCustomers = useMemo(
+    () => filterCustomersBySearch(customers, searchQuery),
+    [customers, searchQuery],
+  );
 
   const showCreateWithPhone =
     phoneSearchComplete && !loading && displayedCustomers.length === 0;
@@ -420,55 +438,59 @@ export const RCCustomers: React.FC = () => {
       )}
 
       {!showForm && (
-        <div className="panel glass panel--table mb-6">
-          <div className="panel-header customer-panel-header justify-between">
-            <div className="customer-panel-head-meta">
-              <h2>
-                <UserRound className="inline-icon" /> Customers
-              </h2>
-              <p className="text-muted text-sm mt-1">
-                {customers.length} customer{customers.length !== 1 ? 's' : ''} registered
-              </p>
-              {listError && (
-                <p className="rc-form-topbar-error text-sm mt-1" role="alert">
-                  {listError}
+        <div className="rc-list-page">
+          <section className="rc-vehicles-summary-card rc-vehicles-summary-card--with-search">
+            <div className="rc-vehicles-summary-head">
+              <div className="rc-vehicles-summary-leading">
+                <span className="rc-list-summary-icon" aria-hidden>
+                  <UserRound size={20} strokeWidth={1.85} />
+                </span>
+                <h2 className="rc-vehicles-summary-title">Customers</h2>
+                <p className="rc-vehicles-summary-sub">
+                  {customers.length} customer{customers.length !== 1 ? 's' : ''} registered
                 </p>
-              )}
+              </div>
+              <div className="rc-vehicles-summary-actions">
+                <button
+                  type="button"
+                  className="rc-vehicles-add-btn"
+                  onClick={handleStartAdd}
+                  aria-label="Add customer"
+                >
+                  <Plus size={16} strokeWidth={2.5} aria-hidden />
+                  <span className="rc-vehicles-add-btn-label">Add Customer</span>
+                </button>
+                <button
+                  type="button"
+                  className="rc-vehicles-refresh-btn"
+                  onClick={() => void fetchCustomers()}
+                  title="Refresh"
+                  aria-label="Refresh customers"
+                  disabled={loading}
+                >
+                  <RefreshCw size={18} className={loading ? 'spinner-inline' : undefined} />
+                </button>
+              </div>
             </div>
-            <div className="customer-list-toolbar flex items-center gap-2">
-              <div className="search-wrap customer-phone-search">
+            <div className="rc-vehicles-summary-search-row">
+              <div className="search-wrap customer-phone-search rc-list-summary-search">
                 <Search size={16} className="search-icon" aria-hidden />
                 <input
-                  type="tel"
-                  inputMode="numeric"
+                  type="search"
                   className="search-input"
-                  placeholder="Search by phone"
-                  value={phoneSearch}
-                  onChange={e => setPhoneSearch(normalizePhone(e.target.value))}
-                  maxLength={10}
-                  aria-label="Search customers by phone number"
+                  placeholder="Search name or phone"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  aria-label="Search customers by name or phone number"
                 />
               </div>
-              <button
-                type="button"
-                className="btn-icon customer-list-toolbar-btn customer-list-toolbar-btn--add"
-                onClick={handleStartAdd}
-                title="Add customer"
-                aria-label="Add customer"
-              >
-                <Plus size={18} />
-              </button>
-              <button
-                className="btn-icon customer-list-toolbar-btn"
-                onClick={fetchCustomers}
-                title="Refresh"
-                type="button"
-                aria-label="Refresh customers"
-              >
-                <RefreshCw size={18} />
-              </button>
             </div>
-          </div>
+          </section>
+          {listError && (
+            <p className="rc-vehicles-summary-error" role="alert">
+              {listError}
+            </p>
+          )}
           {showCreateWithPhone && (
             <div className="customer-phone-search-actions">
               <p className="text-muted text-sm m-0">
@@ -483,131 +505,102 @@ export const RCCustomers: React.FC = () => {
               </button>
             </div>
           )}
-          <div className="panel-body p-0">
-            {loading ? (
-              <div className="flex justify-center py-16">
-                <span className="spinner-inline large"></span>
-              </div>
-            ) : (
-              <div className="table-scroll-wrap">
-                <table className="data-table data-table--customers-rc data-table--mobile-cards">
-                  <thead>
-                    <tr>
-                      <th className="customer-rc-col-serial">#</th>
-                      <th className="customer-rc-col-customer">Customer</th>
-                      <th>Phone</th>
-                      <th>Devices</th>
-                      <th>Address</th>
-                      <th>Location</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayedCustomers.map((c, index) => {
-                      const mapsUrl = customerMapsUrl(c);
-                      const photo = shopPhotoUrl(c);
-                      const photoPath = shopPhotoPath(c);
-                      const openEdit = () => startEdit(c);
-                      const editCell = tableEditCellProps(openEdit, 'Edit customer');
 
-                      return (
-                        <tr key={c.id} className="table-mobile-row">
-                          <td className="customer-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
-                          <td {...editCell} className="customer-rc-col-customer font-medium table-mobile-col-primary table-col-editable">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {photo || photoPath ? (
-                                <StorageImage
-                                  url={photo}
-                                  path={photoPath}
-                                  alt=""
-                                  className="customer-table-shop-thumb shrink-0"
-                                />
-                              ) : (
-                                <span className="customer-table-shop-thumb customer-table-shop-thumb--placeholder shrink-0">
-                                  <ImageIcon size={18} />
-                                </span>
-                              )}
-                              <div className="min-w-0">
-                                <span className="table-mobile-primary-text">{c.name || '—'}</span>
-                                <div className="table-mobile-summary">
-                                  <span>{c.phone || '—'}</span>
-                                  <span className="table-mobile-summary-meta">
-                                    {customerDeviceCount(c)} device{customerDeviceCount(c) !== 1 ? 's' : ''}
-                                  </span>
-                                  {c.address && (
-                                    <span className="table-mobile-summary-meta">{c.address}</span>
-                                  )}
-                                  {mapsUrl && (
-                                    <span className="customer-map-link flex items-center gap-1">
-                                      <MapPin size={13} aria-hidden />
-                                      <span>{formatCustomerLocation(c)}</span>
-                                      <a
-                                        href={mapsUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="customer-map-link-icon"
-                                        title="Open in maps"
-                                        aria-label="Open location in maps"
-                                        onClick={e => e.stopPropagation()}
-                                      >
-                                        <ExternalLink size={11} />
-                                      </a>
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {c.phone || '—'}
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {customerDeviceCount(c)}
-                          </td>
-                          <td
-                            {...editCell}
-                            className="text-sm text-muted max-w-[14rem] truncate table-mobile-col-hide table-col-editable"
-                            title={c.address || 'Edit customer'}
-                          >
-                            {c.address || '—'}
-                          </td>
-                          <td {...editCell} className="text-sm table-mobile-col-hide table-col-editable">
-                            {mapsUrl ? (
-                              <span className="customer-map-link flex items-center gap-1">
-                                <MapPin size={13} aria-hidden />
-                                <span className="truncate max-w-[8rem]">{formatCustomerLocation(c)}</span>
+          {loading ? (
+            <div className="rc-vehicles-loading">
+              <span className="spinner-inline large" />
+            </div>
+          ) : displayedCustomers.length === 0 ? (
+            <div className="rc-vehicles-empty">
+              <span className="rc-list-summary-icon rc-list-summary-icon--lg" aria-hidden>
+                <UserRound size={24} strokeWidth={1.85} />
+              </span>
+              <p>
+                {phoneSearchComplete
+                  ? `No customer found with phone ${normalizedPhoneSearch}.`
+                  : hasSearchQuery
+                    ? 'No customers match your search.'
+                    : 'No customers yet.'}
+              </p>
+              <button
+                type="button"
+                className="rc-vehicles-add-btn"
+                onClick={handleStartAdd}
+                aria-label="Add customer"
+              >
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                <span className="rc-vehicles-add-btn-label">Add Customer</span>
+              </button>
+            </div>
+          ) : (
+            <div className="rc-list-cards">
+              {displayedCustomers.map(c => {
+                const mapsUrl = customerMapsUrl(c);
+                const photo = shopPhotoUrl(c);
+                const photoPath = shopPhotoPath(c);
+                const deviceCount = customerDeviceCount(c);
+                const displayName = (c.name || '—').trim().toUpperCase();
+
+                return (
+                  <article key={c.id} className="rc-list-card">
+                    <div className="rc-list-card-top">
+                      <button
+                        type="button"
+                        className="rc-list-card-main"
+                        onClick={() => startEdit(c)}
+                        aria-label={`Edit ${displayName}`}
+                      >
+                        <RcListPhoto
+                          url={photo}
+                          path={photoPath}
+                          placeholder={<ImageIcon size={28} strokeWidth={1.5} />}
+                        />
+                        <span className="rc-list-card-info">
+                          <span className="rc-list-card-name-row">
+                            <span className="rc-list-card-name">{displayName}</span>
+                            <RcListEditHint />
+                          </span>
+                          <span className="rc-list-meta-chips">
+                            {c.phone?.trim() && <RcListPhoneChip phone={c.phone} />}
+                            {mapsUrl && (
+                              <RcListMetaChip icon={<MapPin size={13} strokeWidth={2} />}>
+                                {formatCustomerLocation(c)}
                                 <a
                                   href={mapsUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="customer-map-link-icon"
+                                  className="rc-list-meta-chip-link"
                                   title="Open in maps"
                                   aria-label="Open location in maps"
                                   onClick={e => e.stopPropagation()}
                                 >
                                   <ExternalLink size={11} />
                                 </a>
-                              </span>
-                            ) : (
-                              <span className="text-muted">—</span>
+                              </RcListMetaChip>
                             )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {displayedCustomers.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="text-center py-10 text-muted">
-                          {phoneSearchComplete
-                            ? `No customer found with phone ${normalizedPhoneSearch}.`
-                            : 'No customers yet. Use + to register one.'}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                          </span>
+                          <span className="rc-list-card-badges">
+                            <RcListStatusBadge
+                              tone="info"
+                              label={`${deviceCount} device${deviceCount !== 1 ? 's' : ''}`}
+                              icon={<Package size={12} strokeWidth={2.5} aria-hidden />}
+                            />
+                            {c.address?.trim() && (
+                              <RcListStatusBadge
+                                tone="ok"
+                                label={c.address}
+                                icon={<Check size={12} strokeWidth={2.5} aria-hidden />}
+                              />
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

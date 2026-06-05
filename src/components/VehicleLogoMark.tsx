@@ -6,23 +6,20 @@ type VehicleLogoMarkProps = {
   className?: string;
 };
 
-/** Front-facing car silhouette (reference UI). */
-export function VehicleFrontIcon({ className }: { className?: string }) {
+/** Front car icon traced from image.png, polished for UI use. */
+function VehicleFrontIcon({ className }: { className?: string }) {
   return (
     <svg
       className={className}
-      viewBox="0 0 24 24"
-      fill="none"
+      viewBox="0 0 267 222"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
     >
       <path
         fill="currentColor"
-        d="M5.25 13.75V12a6.75 6.75 0 0 1 13.5 0v1.75c0 .97-.79 1.75-1.76 1.75H7.01c-.97 0-1.76-.78-1.76-1.75ZM8.6 9.15l1.65-2.95h3.5l1.65 2.95H8.6Z"
+        fillRule="evenodd"
+        d="M102.5 29h59l1 1h13l1 1h5l3 1 7.5 5.5 12 17 6 12 2 7.5q3 .8 4-1.5v-3l3.5-4.5 2-1h9l5.5 4.5 1 3-1 3-3.5 3.5-2 1h-10l-2-1-2.5 2.5 1 1 9 13 4 9q-1 4 1 5v34l-4 12 2 .5v18.5l-2.5 3.5h-22l-2.5-2.5v-10l1.5-1.5 1.5-.5-144.5-.5v1l1.5.5v12l-1.5 1.5h-23l-2.5-3.5V155q2.7 1.1 2-1.5l-2-3-1-8-1-1v-31l1-1v-6l1-3 12-18 1-3.5-3.5-1-5 2q-1.2-2.2-6-1L29 75.5q-1.7-1.8-1-6l2.5-3.5 4-2h8l5.5 4.5Q47 73 49.5 74q3.3 1.1 2.5-1.5l2-3 1-5 7-13 6-9 9.5-9.5 5-2h6l1-1h12zm13.5 5-1 1H97l-1 1h-7l-9 3-8 9-6 9-5 9-1 4 3 2h7l1 1h123l1-1q6 1 9-1l-1-5-3-6-11-16-5-6-7-1-1-1h-7l-1-1h-17l-1-1zM46 98q-5 2-3 10l7 5 18 6h9l1-1v-4l-2-4-5-6-10-5q-4 1-4-1zm162 0-14 6-7 8q-2 2-1 6l3 1h8q0-2 5-1l17-7 3-6q-2-1-1-4l-3-3zM89 109l-3 5q2 0 1 4l7 5h77l2-1 4-4 1-3-1-4-1-2z"
       />
-      <rect x="7.35" y="14.1" width="2.1" height="1.05" rx="0.35" fill="currentColor" opacity="0.55" />
-      <rect x="14.55" y="14.1" width="2.1" height="1.05" rx="0.35" fill="currentColor" opacity="0.55" />
-      <rect x="10.65" y="13.55" width="2.7" height="0.85" rx="0.25" fill="currentColor" opacity="0.4" />
     </svg>
   );
 }

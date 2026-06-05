@@ -52,6 +52,7 @@ export const Layout: React.FC = () => {
   const [suppressSidebarOverlayHistory, setSuppressSidebarOverlayHistory] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [profilePhoto, setProfilePhoto] = useState<{ url?: string; path?: string } | null>(null);
+  const [pageRefreshKey, setPageRefreshKey] = useState(0);
 
   const profilePath =
     user?.role === 'rc_admin' ? '/rc/profile' : user?.role === 'vct' ? '/vct/profile' : null;
@@ -101,6 +102,16 @@ export const Layout: React.FC = () => {
   const handleLogout = async () => {
     await logout();
     navigate('/login', { replace: true });
+  };
+
+  const handleNavClick = (path: string) => {
+    if (location.pathname === path) {
+      setPageRefreshKey(key => key + 1);
+    } else {
+      navigate(path);
+    }
+    setSuppressSidebarOverlayHistory(true);
+    setMobileOpen(false);
   };
 
   const getNavItems = (): NavItem[] => {
@@ -218,7 +229,7 @@ export const Layout: React.FC = () => {
           <div
             key={item.path}
             className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
-            onClick={() => navigate(item.path)}
+            onClick={() => handleNavClick(item.path)}
             title={!mobile && collapsed ? item.label : undefined}
           >
             <div className="nav-icon">{item.icon}</div>
@@ -380,7 +391,7 @@ export const Layout: React.FC = () => {
           </header>
         )}
         <div className="content-area">
-          <Outlet />
+          <Outlet key={`${location.pathname}-${pageRefreshKey}`} />
         </div>
       </main>
     </div>

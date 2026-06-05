@@ -3,10 +3,19 @@ import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
-import { StorageImage } from '../../components/StorageImage';
+import {
+  RcListCardActions,
+  RcListCardToggle,
+  RcListEditHint,
+  RcListMetaChip,
+  RcListPhoto,
+  RcListStatusBadge,
+} from '../../components/RcListCard';
 import { adminProductMeta } from '../../lib/productAccess';
-import { tableEditCellProps } from '../../lib/tableEditCell';
-import { PackagePlus, Trash2, X, Image as ImageIcon, Plus, Save, ExternalLink, Info } from 'lucide-react';
+import {
+  PackagePlus, Trash2, X, Image as ImageIcon, Plus, Save, ExternalLink, Info,
+  Package, Scale, Ruler, ShieldCheck, Pencil,
+} from 'lucide-react';
 import { CalcLabel, DefaultsStrip, UploadField } from './productFormUi';
 import type { Product } from '../../types';
 import {
@@ -21,6 +30,22 @@ import {
   uploadProductImage,
   type ProductFileMeta,
 } from '../../lib/productApprovalUpload';
+
+function formatProductCapacity(product: Product): string {
+  return product.maximumCapacity
+    ? `${product.maximumCapacity} ${product.unitOfMeasurement || 'kg'}`
+    : '—';
+}
+
+function formatProductInterval(product: Product): string {
+  if (product.actualScaleInterval != null && Number.isFinite(product.actualScaleInterval)) {
+    return `${product.actualScaleInterval} g`;
+  }
+  if (product.verificationScaleInterval) {
+    return `${product.verificationScaleInterval} g`;
+  }
+  return '—';
+}
 
 const INITIAL_STATE = {
   modelid: '',
@@ -690,149 +715,134 @@ export const Products: React.FC = () => {
       )}
 
       {!showForm && (
-      <div className="panel glass mb-6">
-        <div className="panel-header justify-between">
-          <h2>Configured Products</h2>
-          <button
-            type="button"
-            className="btn btn-primary flex items-center gap-1.5 text-sm py-1.5 px-3"
-            onClick={handleStartAdd}
-          >
-            <Plus size={16} /> Add Product
-          </button>
-        </div>
-        <div className="panel-body p-0 overflow-x-auto">
-          <div className="table-scroll-wrap">
-          <table className="data-table data-table--admin-products data-table--mobile-cards">
-            <thead>
-              <tr>
-                <th className="product-table-image-col">Image</th>
-                <th>Model ID</th>
-                <th>Model No</th>
-                <th>Product Name</th>
-                <th>Maximum Capacity</th>
-                <th>Actual Scale Interval (d)</th>
-                <th>Model Approval</th>
-                <th className="text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rc-list-page">
+          <section className="rc-vehicles-summary-card">
+            <div className="rc-vehicles-summary-leading">
+              <span className="rc-list-summary-icon" aria-hidden>
+                <Package size={20} strokeWidth={1.85} />
+              </span>
+              <h2 className="rc-vehicles-summary-title">Products</h2>
+              <p className="rc-vehicles-summary-sub">
+                {products.length} product{products.length !== 1 ? 's' : ''} configured
+              </p>
+            </div>
+            <div className="rc-vehicles-summary-actions">
+              <button
+                type="button"
+                className="rc-vehicles-add-btn"
+                onClick={handleStartAdd}
+                aria-label="Add product"
+              >
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                <span className="rc-vehicles-add-btn-label">Add Product</span>
+              </button>
+            </div>
+          </section>
+
+          {products.length === 0 ? (
+            <div className="rc-vehicles-empty">
+              <span className="rc-list-summary-icon rc-list-summary-icon--lg" aria-hidden>
+                <Package size={24} strokeWidth={1.85} />
+              </span>
+              <p>No products configured yet.</p>
+              <button
+                type="button"
+                className="rc-vehicles-add-btn"
+                onClick={handleStartAdd}
+                aria-label="Add product"
+              >
+                <Plus size={16} strokeWidth={2.5} aria-hidden />
+                <span className="rc-vehicles-add-btn-label">Add Product</span>
+              </button>
+            </div>
+          ) : (
+            <div className="rc-list-cards">
               {products.map(p => {
-                const openEdit = () => handleEditClick(p);
-                const editCell = tableEditCellProps(openEdit, 'Edit product');
-                const capacity = p.maximumCapacity
-                  ? `${p.maximumCapacity} ${p.unitOfMeasurement || 'kg'}`
-                  : '—';
-                const interval =
-                  p.actualScaleInterval != null && Number.isFinite(p.actualScaleInterval)
-                    ? `${p.actualScaleInterval} g`
-                    : p.verificationScaleInterval
-                      ? `${p.verificationScaleInterval} g`
-                      : '—';
+                const capacity = formatProductCapacity(p);
+                const interval = formatProductInterval(p);
                 const modelLine = [p.modelid, p.modelNo].filter(Boolean).join(' · ') || '—';
+                const displayName = (p.name || '—').trim().toUpperCase();
                 const hasApproval = Boolean(p.modelApprovalNo || p.modelApprovalDocUrl);
 
                 return (
-                <tr key={p.id} className="table-mobile-row table-mobile-row--media-actions">
-                  <td {...editCell} className="product-table-image-col table-mobile-col-media table-col-editable">
-                    {p.productImageUrl || p.productImagePath ? (
-                      <a
-                        href={p.productImageUrl || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="View product image"
-                        onClick={e => e.stopPropagation()}
+                  <article key={p.id} className="rc-list-card">
+                    <div className="rc-list-card-top">
+                      <button
+                        type="button"
+                        className="rc-list-card-main"
+                        onClick={() => handleEditClick(p)}
+                        aria-label={`Edit ${displayName}`}
                       >
-                        <StorageImage
+                        <RcListPhoto
                           url={p.productImageUrl}
                           path={p.productImagePath}
-                          alt={p.name}
-                          className="product-table-thumb"
+                          placeholder={<ImageIcon size={28} strokeWidth={1.5} />}
                         />
-                      </a>
-                    ) : (
-                      <span className="product-table-thumb-placeholder" title="No image">
-                        <ImageIcon size={18} />
-                      </span>
-                    )}
-                  </td>
-                  <td {...editCell} className="font-medium text-mono table-mobile-col-hide table-col-editable">{p.modelid}</td>
-                  <td {...editCell} className="text-mono table-mobile-col-hide table-col-editable">{p.modelNo || '—'}</td>
-                  <td {...editCell} className="font-medium table-mobile-col-primary table-col-editable">
-                    <span className="table-mobile-primary-text">{p.name}</span>
-                    <div className="table-mobile-summary">
-                      <span className="table-mobile-summary-meta text-mono">{modelLine}</span>
-                      <span className="table-mobile-summary-meta">{capacity} · d {interval}</span>
-                      {hasApproval && (
-                        <span className="table-mobile-summary-meta text-mono">
-                          {p.modelApprovalNo || 'Approval doc'}
-                          {p.modelApprovalDocUrl && (
-                            <a
-                              href={p.modelApprovalDocUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm text-blue"
-                              onClick={e => e.stopPropagation()}
-                            >
-                              <ExternalLink size={12} /> Doc
-                            </a>
-                          )}
+                        <span className="rc-list-card-info">
+                          <span className="rc-list-card-name-row">
+                            <span className="rc-list-card-name">{displayName}</span>
+                            <RcListEditHint />
+                          </span>
+                          <span className="rc-list-meta-chips">
+                            <RcListMetaChip icon={<Package size={13} strokeWidth={2} />}>
+                              {modelLine}
+                            </RcListMetaChip>
+                            <RcListMetaChip icon={<Scale size={13} strokeWidth={2} />}>
+                              {capacity}
+                            </RcListMetaChip>
+                            <RcListMetaChip icon={<Ruler size={13} strokeWidth={2} />}>
+                              d {interval}
+                            </RcListMetaChip>
+                          </span>
+                          <span className="rc-list-card-badges">
+                            {hasApproval ? (
+                              <RcListStatusBadge
+                                tone="approved"
+                                label={p.modelApprovalNo || 'Model approval'}
+                                icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
+                              />
+                            ) : (
+                              <RcListStatusBadge
+                                tone="pending"
+                                label="Approval pending"
+                                icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
+                              />
+                            )}
+                            {p.modelApprovalDocUrl && (
+                              <RcListStatusBadge
+                                tone="info"
+                                label="Approval doc"
+                                icon={<ExternalLink size={12} strokeWidth={2.5} aria-hidden />}
+                              />
+                            )}
+                          </span>
                         </span>
-                      )}
+                      </button>
+                      <RcListCardActions>
+                        <RcListCardToggle
+                          className="rc-list-card-toggle--view"
+                          onClick={() => handleEditClick(p)}
+                          title="Edit product"
+                          ariaLabel={`Edit ${displayName}`}
+                        >
+                          <Pencil size={18} strokeWidth={1.75} />
+                        </RcListCardToggle>
+                        <RcListCardToggle
+                          className="rc-list-card-toggle--delete"
+                          onClick={() => void handleDeleteProduct(p)}
+                          title="Delete product"
+                          ariaLabel={`Delete ${displayName}`}
+                        >
+                          <Trash2 size={18} strokeWidth={1.85} />
+                        </RcListCardToggle>
+                      </RcListCardActions>
                     </div>
-                  </td>
-                  <td {...editCell} className="table-mobile-col-hide table-col-editable">
-                    {capacity}
-                  </td>
-                  <td {...editCell} className="table-mobile-col-hide table-col-editable">
-                    {interval}
-                  </td>
-                  <td {...editCell} className="table-mobile-col-hide table-col-editable">
-                    {!p.modelApprovalNo && !p.modelApprovalDocUrl ? (
-                      <span className="text-muted">—</span>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        <span className="text-mono">{p.modelApprovalNo || '—'}</span>
-                        {p.modelApprovalDocUrl && (
-                          <a
-                            href={p.modelApprovalDocUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-blue flex items-center gap-1"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <ExternalLink size={14} /> View doc
-                          </a>
-                        )}
-                      </div>
-                    )}
-                  </td>
-                  <td className="text-right table-mobile-col-actions">
-                    <button
-                      type="button"
-                      className="btn-icon text-red"
-                      onClick={() => handleDeleteProduct(p)}
-                      title="Delete"
-                      aria-label={`Delete ${p.name || p.modelid}`}
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </td>
-                </tr>
-              );
+                  </article>
+                );
               })}
-              {products.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="text-center py-6 text-muted">
-                    No products configured yet. Click &quot;Add Product&quot; to create one.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
+            </div>
+          )}
         </div>
-      </div>
       )}
     </div>
   );

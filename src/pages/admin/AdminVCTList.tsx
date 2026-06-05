@@ -13,12 +13,27 @@ import { vctApprovalLabel } from '../../lib/vctApproval';
 import { vctDocMetaFromUser, VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
 import {
   Users, Building2, RefreshCw, Trash2, Zap, ClipboardList, CheckCircle2, Eye, X, ExternalLink, UserCircle,
+  ShieldCheck, Calendar,
 } from 'lucide-react';
+import {
+  RcListCardActions,
+  RcListCardToggle,
+  RcListEditHint,
+  RcListMetaChip,
+  RcListPhoneChip,
+  RcListPhoto,
+  RcListStatusBadge,
+} from '../../components/RcListCard';
+import { vctProfilePhotoFromUser } from '../../lib/vctProfileFields';
 import type { FirestoreUserDoc } from '../../types';
 
 interface VCTRecord extends FirestoreUserDoc {
   uid: string;
   rcCenterName: string;
+}
+
+function vctDisplayName(record: VCTRecord): string {
+  return (record.username || '—').trim().toUpperCase();
 }
 
 export const AdminVCTList: React.FC = () => {
@@ -246,172 +261,144 @@ export const AdminVCTList: React.FC = () => {
       )}
 
       {!reviewing && (
-      <div className="panel glass panel--table mb-6">
-        <div className="panel-header justify-between">
-          <div>
-            <h2>
-              <Users className="inline-icon" /> Technicians
-            </h2>
-            <p className="text-muted text-sm mt-1">
-              Review profiles and approve technicians before they can sign in.
-            </p>
-          </div>
-          <button className="btn-icon" onClick={fetchVCTs} title="Refresh" type="button">
-            <RefreshCw size={18} />
-          </button>
-        </div>
-        <div className="panel-body p-0">
+        <div className="rc-list-page">
+          <section className="rc-vehicles-summary-card">
+            <div className="rc-vehicles-summary-leading">
+              <span className="rc-list-summary-icon" aria-hidden>
+                <Users size={20} strokeWidth={1.85} />
+              </span>
+              <h2 className="rc-vehicles-summary-title">Technicians</h2>
+              <p className="rc-vehicles-summary-sub">
+                {vctList.length} technician{vctList.length !== 1 ? 's' : ''} · {pendingCount} pending
+              </p>
+            </div>
+            <div className="rc-vehicles-summary-actions">
+              <button
+                type="button"
+                className="rc-vehicles-refresh-btn"
+                onClick={() => void fetchVCTs()}
+                title="Refresh"
+                aria-label="Refresh technicians"
+                disabled={loading}
+              >
+                <RefreshCw size={18} className={loading ? 'spinner-inline' : undefined} />
+              </button>
+            </div>
+          </section>
+
           {loading ? (
-            <div className="flex justify-center py-16">
-              <span className="spinner-inline large"></span>
+            <div className="rc-vehicles-loading">
+              <span className="spinner-inline large" />
+            </div>
+          ) : vctList.length === 0 ? (
+            <div className="rc-vehicles-empty">
+              <span className="rc-list-summary-icon rc-list-summary-icon--lg" aria-hidden>
+                <Users size={24} strokeWidth={1.85} />
+              </span>
+              <p>No technicians registered yet.</p>
             </div>
           ) : (
-            <div className="table-scroll-wrap">
-              <table className="data-table data-table--vct-rc data-table--vct-admin data-table--mobile-cards">
-                <thead>
-                  <tr>
-                    <th className="vct-rc-col-serial">#</th>
-                    <th>Name</th>
-                    <th className="vct-admin-col-rc">Regional Center</th>
-                    <th>Phone</th>
-                    <th>Aadhar</th>
-                    <th>Status</th>
-                    <th>Job Mode</th>
-                    <th>Created</th>
-                    <th className="text-right vct-rc-col-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vctList.map((v, index) => (
-                    <tr key={v.uid} className="table-mobile-row table-mobile-row--actions">
-                      <td className="vct-rc-col-serial text-muted text-sm table-mobile-col-hide">{index + 1}</td>
-                      <td className="font-medium table-mobile-col-primary">
-                        <div className="flex items-center gap-2 min-w-0">
-                          {v.profilePhotoUrl || v.profilePhotoPath ? (
-                            <StorageImage
-                              url={v.profilePhotoUrl}
-                              path={v.profilePhotoPath}
-                              alt=""
-                              className="vct-table-avatar shrink-0"
-                            />
-                          ) : (
-                            <span className="vct-table-avatar vct-table-avatar--placeholder shrink-0">
-                              <UserCircle size={18} />
-                            </span>
-                          )}
-                          <div className="min-w-0">
-                            <span className="table-mobile-primary-text table-cell-truncate" title={v.username}>
-                              {v.username || '—'}
-                            </span>
-                            <div className="table-mobile-summary">
-                              <span className="table-mobile-summary-meta">{v.rcCenterName}</span>
-                              <span>{v.phone || '—'} · {formatAadharDisplay(v.aadhar)}</span>
-                              <span className="table-mobile-summary-badges">
-                                <span
-                                  className={`status-badge ${
-                                    v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
-                                  }`}
-                                >
-                                  {vctApprovalLabel(v.approvalStatus)}
-                                </span>
-                                <span
-                                  className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}
-                                >
-                                  {v.workflowMode === 'auto' ? (
-                                    <>
-                                      <Zap size={12} /> Auto
-                                    </>
-                                  ) : (
-                                    <>
-                                      <ClipboardList size={12} /> Manual
-                                    </>
-                                  )}
-                                </span>
+            <div className="rc-list-cards">
+              {vctList.map(v => {
+                const displayName = vctDisplayName(v);
+                const photo = vctProfilePhotoFromUser(v);
+                const pending = v.approvalStatus === 'pending';
+
+                return (
+                  <article key={v.uid} className="rc-list-card">
+                    <div className="rc-list-card-top">
+                      <button
+                        type="button"
+                        className="rc-list-card-main"
+                        onClick={() => setReviewing(v)}
+                        aria-label={`Review ${displayName}`}
+                      >
+                        <RcListPhoto
+                          url={photo?.url}
+                          path={photo?.path}
+                          placeholder={<UserCircle size={28} strokeWidth={1.5} />}
+                          badge={
+                            !pending ? (
+                              <span className="rc-list-card-photo-badge" aria-hidden>
+                                <ShieldCheck size={11} strokeWidth={2.75} />
                               </span>
-                              {v.createdAt && (
-                                <span className="table-mobile-summary-meta">
-                                  {new Date(v.createdAt).toLocaleDateString('en-IN')}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="vct-admin-col-rc table-cell-truncate table-mobile-col-hide" title={v.rcCenterName}>
-                        {v.rcCenterName}
-                      </td>
-                      <td className="text-sm table-mobile-col-hide">{v.phone || '—'}</td>
-                      <td className="text-muted text-sm table-mobile-col-hide">{formatAadharDisplay(v.aadhar)}</td>
-                      <td className="vct-col-status table-mobile-col-hide">
-                        <span
-                          className={`status-badge ${
-                            v.approvalStatus === 'pending' ? 'vct-status-pending' : 'vct-status-approved'
-                          }`}
-                        >
-                          {vctApprovalLabel(v.approvalStatus)}
+                            ) : undefined
+                          }
+                        />
+                        <span className="rc-list-card-info">
+                          <span className="rc-list-card-name-row">
+                            <span className="rc-list-card-name">{displayName}</span>
+                            <RcListEditHint />
+                          </span>
+                          <span className="rc-list-meta-chips">
+                            <RcListMetaChip icon={<Building2 size={13} strokeWidth={2} />}>
+                              {v.rcCenterName}
+                            </RcListMetaChip>
+                            {v.phone?.trim() && <RcListPhoneChip phone={v.phone} />}
+                            <RcListMetaChip icon={<UserCircle size={13} strokeWidth={2} />}>
+                              {formatAadharDisplay(v.aadhar)}
+                            </RcListMetaChip>
+                            {v.createdAt && (
+                              <RcListMetaChip icon={<Calendar size={13} strokeWidth={2} />}>
+                                {new Date(v.createdAt).toLocaleDateString('en-IN')}
+                              </RcListMetaChip>
+                            )}
+                          </span>
+                          <span className="rc-list-card-badges">
+                            <RcListStatusBadge
+                              tone={pending ? 'pending' : 'approved'}
+                              label={vctApprovalLabel(v.approvalStatus)}
+                              icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
+                            />
+                            <RcListStatusBadge
+                              tone={v.workflowMode === 'auto' ? 'auto' : 'manual'}
+                              label={v.workflowMode === 'auto' ? 'Auto' : 'Manual'}
+                              icon={
+                                v.workflowMode === 'auto' ? (
+                                  <Zap size={12} strokeWidth={2.5} aria-hidden />
+                                ) : (
+                                  <ClipboardList size={12} strokeWidth={2.5} aria-hidden />
+                                )
+                              }
+                            />
+                          </span>
                         </span>
-                      </td>
-                      <td className="vct-col-mode table-mobile-col-hide">
-                        <span
-                          className={`mode-badge ${v.workflowMode === 'auto' ? 'mode-auto' : 'mode-manual'}`}
-                        >
-                          {v.workflowMode === 'auto' ? (
-                            <>
-                              <Zap size={12} /> Auto
-                            </>
-                          ) : (
-                            <>
-                              <ClipboardList size={12} /> Manual
-                            </>
-                          )}
-                        </span>
-                      </td>
-                      <td className="text-muted text-xs-soft table-mobile-col-hide">
-                        {v.createdAt ? new Date(v.createdAt).toLocaleDateString('en-IN') : '—'}
-                      </td>
-                      <td className="text-right vct-rc-col-actions table-mobile-col-actions">
-                        <button
-                          type="button"
-                          className="btn-icon text-blue mr-2"
+                      </button>
+                      <RcListCardActions>
+                        <RcListCardToggle
+                          className="rc-list-card-toggle--view"
                           onClick={() => setReviewing(v)}
                           title="Review profile"
+                          ariaLabel={`Review ${displayName}`}
                         >
-                          <Eye size={18} />
-                        </button>
-                        {v.approvalStatus === 'pending' && (
-                          <button
-                            type="button"
-                            className="btn-icon text-green mr-2"
-                            onClick={() => handleApprove(v)}
-                            title="Approve"
+                          <Eye size={18} strokeWidth={1.75} />
+                        </RcListCardToggle>
+                        {pending && (
+                          <RcListCardToggle
+                            className="rc-list-card-toggle--approve"
+                            onClick={() => void handleApprove(v)}
+                            title="Approve technician"
+                            ariaLabel={`Approve ${displayName}`}
                           >
-                            <CheckCircle2 size={18} />
-                          </button>
+                            <CheckCircle2 size={18} strokeWidth={1.75} />
+                          </RcListCardToggle>
                         )}
-                        <button
-                          type="button"
-                          className="btn-icon text-red"
-                          onClick={() => handleDelete(v.uid, v.username || v.aadhar)}
-                          title="Remove"
+                        <RcListCardToggle
+                          className="rc-list-card-toggle--delete"
+                          onClick={() => void handleDelete(v.uid, v.username || v.aadhar)}
+                          title="Remove technician"
+                          ariaLabel={`Remove ${displayName}`}
                         >
-                          <Trash2 size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {vctList.length === 0 && (
-                    <tr>
-                      <td colSpan={9} className="text-center py-10 text-muted">
-                        No technicians registered yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                          <Trash2 size={18} strokeWidth={1.85} />
+                        </RcListCardToggle>
+                      </RcListCardActions>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </div>
-      </div>
       )}
     </div>
   );
