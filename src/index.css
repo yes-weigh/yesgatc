@@ -921,6 +921,10 @@ select.input-field option {
   width: 4.25rem;
 }
 
+.data-table--rc col.rc-col-zoho {
+  width: 9rem;
+}
+
 .data-table--rc col.rc-col-place {
   width: 14%;
 }
@@ -946,6 +950,7 @@ select.input-field option {
 }
 
 .data-table--rc .rc-col-code,
+.data-table--rc .rc-col-zoho,
 .data-table--rc .rc-col-vcts,
 .data-table--rc .rc-col-jobs,
 .data-table--rc .rc-col-due,

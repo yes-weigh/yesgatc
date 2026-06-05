@@ -4,6 +4,7 @@ import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { normalizePhone, normalizePincode } from '../../lib/contactFields';
 import {
   normalizeRcCode,
+  normalizeZohoId,
   RC_CODE_LENGTH,
   standardWeightsCertExpiryFromDate,
 } from '../../lib/rcProfileFields';
@@ -117,6 +118,23 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
             />
             <p id="rc-code-hint" className="text-muted text-xs mt-1 mb-0">
               Used in DOCA remarks — e.g. Original verification by {values.rcCode || 'ABC'}
+            </p>
+          </div>
+          <div className="form-group mb-0">
+            <label htmlFor="rc-zoho-id">Zoho customer ID</label>
+            <input
+              id="rc-zoho-id"
+              type="text"
+              inputMode="numeric"
+              className="input-field text-mono"
+              placeholder="Zoho Books contact ID"
+              value={values.zohoId}
+              onChange={e => onChange({ zohoId: normalizeZohoId(e.target.value) })}
+              spellCheck={false}
+              aria-describedby="rc-zoho-id-hint"
+            />
+            <p id="rc-zoho-id-hint" className="text-muted text-xs mt-1 mb-0">
+              Zoho Books customer ID for RV invoicing (optional).
             </p>
           </div>
           {mode === 'create' ? (

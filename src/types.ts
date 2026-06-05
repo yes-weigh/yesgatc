@@ -186,6 +186,8 @@ export interface FirestoreUserDoc {
   feesStructure?: RcFeesStructure;
   /** Super Admin only — 3-letter code used in DOCA remarks (e.g. Original verification by ABC). */
   rcCode?: string;
+  /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
+  zohoId?: string;
 }
 
 /** Verification fees for a weight tier (amounts in INR). */

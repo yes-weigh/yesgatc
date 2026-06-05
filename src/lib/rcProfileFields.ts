@@ -272,6 +272,19 @@ export function validateRcCodeInput(code: string): string | null {
   return null;
 }
 
+export function normalizeZohoId(input: string): string {
+  return input.replace(/\D/g, '');
+}
+
+export function validateZohoIdInput(zohoId: string): string | null {
+  const normalized = normalizeZohoId(zohoId);
+  if (!normalized) return null;
+  if (normalized.length < 10) {
+    return 'Zoho customer ID must be at least 10 digits.';
+  }
+  return null;
+}
+
 export function buildVerificationRemarks(
   verificationType: JobType | '',
   rcCode?: string | null,
@@ -289,6 +302,7 @@ export type RcFormValues = {
   contactPerson: string;
   place: string;
   rcCode: string;
+  zohoId: string;
   pincode: string;
   address: string;
   aadhar: string;
@@ -305,6 +319,7 @@ export const EMPTY_RC_FORM: RcFormValues = {
   contactPerson: '',
   place: '',
   rcCode: '',
+  zohoId: '',
   pincode: '',
   address: '',
   aadhar: '',
@@ -330,6 +345,7 @@ export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
     contactPerson: doc.contactPerson || '',
     place: doc.place || '',
     rcCode: doc.rcCode || '',
+    zohoId: doc.zohoId || '',
     pincode: doc.pincode || '',
     address: doc.address || '',
     aadhar: doc.aadhar || '',
@@ -384,6 +400,7 @@ export function buildRcFirestoreFields(
     contactPerson: values.contactPerson.trim(),
     place: values.place.trim(),
     rcCode: normalizeRcCode(values.rcCode),
+    zohoId: normalizeZohoId(values.zohoId),
     pincode,
     address: values.address.trim(),
     gstNumber: values.gstNumber.trim(),

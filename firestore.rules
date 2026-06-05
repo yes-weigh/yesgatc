@@ -82,7 +82,8 @@ service cloud.firestore {
         && request.resource.data.role == 'rc_admin'
         && request.resource.data.aadhar == resource.data.aadhar
         && validAadhar(request.resource.data)
-        && request.resource.data.get('rcCode', null) == resource.data.get('rcCode', null);
+        && request.resource.data.get('rcCode', null) == resource.data.get('rcCode', null)
+        && request.resource.data.get('zohoId', null) == resource.data.get('zohoId', null);
 
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'
