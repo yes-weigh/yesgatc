@@ -868,19 +868,49 @@ export const RCSiteCalibration: React.FC = () => {
       submitAfterSave && rvPayment && isWalletPaymentId(rvPayment.paymentId)
         ? rvPayment.paymentId
         : null;
+
+    const refundWalletPaymentIfNeeded = async (reason: string) => {
+      if (!walletPaymentId) return true;
+      try {
+        await refundRvWalletPayment({ paymentId: walletPaymentId, reason });
+        setRvSessionPayment(null);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const draftRecordIds: string[] = [];
     setSubmitting(true);
     try {
       const applied = await persistPartyBeforeSave(sessionValues);
-      if (!applied.ok) return;
+      if (!applied.ok) {
+        if (walletPaymentId) {
+          const refunded = await refundWalletPaymentIfNeeded(
+            'Verification submit failed after wallet payment',
+          );
+          if (!refunded) {
+            setError(
+              `Could not save customer details. Wallet refund failed — contact support with payment id ${walletPaymentId}.`,
+            );
+          }
+        }
+        return;
+      }
 
       const sessionForSave = { ...sessionValues, ...applied.sessionPatch };
       const rowsToSync = includedRows.filter(
         row => row.productId.trim() && row.serialNumber.trim(),
       );
       await syncCustomerDevices(rowsToSync, sessionForSave.customerId, applied.customer);
-
-      const submittedRecordIds: string[] = [];
       const applicationNumbers = await allocateVerificationApplicationNumbers(db, includedRows.length);
+
+      const rvPaymentPatch =
+        sessionForSave.verificationType === 'RV' && rvPayment
+          ? buildRvPaymentFirestorePatch(rvPayment.paymentId, rvPayment.amountInr)
+          : sessionForSave.verificationType === 'RV'
+            ? { rvPaymentStatus: 'pending' as const }
+            : { rvPaymentStatus: 'not_required' as const };
 
       for (let rowIndex = 0; rowIndex < includedRows.length; rowIndex += 1) {
         const row = includedRows[rowIndex];
@@ -896,13 +926,6 @@ export const RCSiteCalibration: React.FC = () => {
           sessionForSave.verificationSubject,
           product,
         );
-
-        const rvPaymentPatch =
-          sessionForSave.verificationType === 'RV' && rvPayment
-            ? buildRvPaymentFirestorePatch(rvPayment.paymentId, rvPayment.amountInr)
-            : sessionForSave.verificationType === 'RV'
-              ? { rvPaymentStatus: 'pending' as const }
-              : { rvPaymentStatus: 'not_required' as const };
 
         const record: Omit<SiteCalibration, 'id'> = {
           rcId: rcUid!,
@@ -920,21 +943,23 @@ export const RCSiteCalibration: React.FC = () => {
           ...rvPaymentPatch,
         };
         await setDoc(ref, record);
-        if (submitAfterSave) {
-          await updateDoc(ref, {
-            ...buildVerificationSubmitPatch(),
-            ...rvPaymentPatch,
-          });
-          submittedRecordIds.push(recordId);
+        draftRecordIds.push(recordId);
+      }
+
+      if (walletPaymentId && draftRecordIds.length > 0) {
+        await linkWalletPaymentToRecords({
+          paymentId: walletPaymentId,
+          recordIds: draftRecordIds,
+        });
+      }
+
+      if (submitAfterSave) {
+        for (const recordId of draftRecordIds) {
+          await updateDoc(doc(db, 'siteCalibrations', recordId), buildVerificationSubmitPatch());
         }
       }
 
-      if (walletPaymentId && submittedRecordIds.length > 0) {
-        await linkWalletPaymentToRecords({
-          paymentId: walletPaymentId,
-          recordIds: submittedRecordIds,
-        });
-      }
+      const submittedRecordIds = submitAfterSave ? draftRecordIds : [];
 
       handleCloseForm();
       await fetchRecords();
@@ -943,18 +968,26 @@ export const RCSiteCalibration: React.FC = () => {
       }
     } catch (err: unknown) {
       if (walletPaymentId) {
-        try {
-          await refundRvWalletPayment({
-            paymentId: walletPaymentId,
-            reason: 'Verification submit failed after wallet payment',
-          });
-          setRvSessionPayment(null);
-        } catch {
+        const refunded = await refundWalletPaymentIfNeeded(
+          'Verification submit failed after wallet payment',
+        );
+        if (!refunded) {
           setError(
             `${formatSaveError(err, 'Failed to save verification records.')} Wallet refund could not be completed automatically — contact support with payment id ${walletPaymentId}.`,
           );
           return;
         }
+      }
+      if (draftRecordIds.length > 0) {
+        await Promise.all(
+          draftRecordIds.map(async recordId => {
+            try {
+              await deleteDoc(doc(db, 'siteCalibrations', recordId));
+            } catch {
+              /* best effort */
+            }
+          }),
+        );
       }
       setError(formatSaveError(err, 'Failed to save verification records.'));
     } finally {
@@ -1074,7 +1107,10 @@ export const RCSiteCalibration: React.FC = () => {
     }
   };
 
-  const executeSubmitFromForm = async (rvPayment?: { paymentId: string; amountInr: number }) => {
+  const executeSubmitFromForm = async (
+    rvPayment?: { paymentId: string; amountInr: number },
+    options?: { partyPersisted?: boolean },
+  ) => {
     if (showAddForm) {
       unlockVerificationSuccessAudio();
       await handleCreate(true, rvPayment);
@@ -1094,17 +1130,45 @@ export const RCSiteCalibration: React.FC = () => {
     const walletPaymentId =
       rvPayment && isWalletPaymentId(rvPayment.paymentId) ? rvPayment.paymentId : null;
 
+    const refundWalletPaymentIfNeeded = async (reason: string) => {
+      if (!walletPaymentId) return true;
+      try {
+        await refundRvWalletPayment({ paymentId: walletPaymentId, reason });
+        setRvSessionPayment(null);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
     unlockVerificationSuccessAudio();
     setSubmitting(true);
     setError('');
     try {
-      const applied = await persistPartyBeforeSave(sessionValues);
-      if (!applied.ok) return;
+      let sessionForSave = sessionValues;
+      let appliedCustomer: Customer | undefined;
 
-      const sessionForSave = { ...sessionValues, ...applied.sessionPatch };
+      if (!options?.partyPersisted) {
+        const applied = await persistPartyBeforeSave(sessionValues);
+        if (!applied.ok) {
+          if (walletPaymentId) {
+            const refunded = await refundWalletPaymentIfNeeded(
+              'Verification submit failed after wallet payment',
+            );
+            if (!refunded) {
+              setError(
+                `Could not save customer details. Wallet refund failed — contact support with payment id ${walletPaymentId}.`,
+              );
+            }
+          }
+          return;
+        }
+        sessionForSave = { ...sessionValues, ...applied.sessionPatch };
+        appliedCustomer = applied.customer;
+      }
 
       if (row.productId.trim() && row.serialNumber.trim()) {
-        await syncCustomerDevices([row], sessionForSave.customerId, applied.customer);
+        await syncCustomerDevices([row], sessionForSave.customerId, appliedCustomer);
       }
       const product = products.find(p => p.id === row.productId) ?? null;
       const docaPatch = verificationDocaFirestorePatch(
@@ -1123,7 +1187,6 @@ export const RCSiteCalibration: React.FC = () => {
         ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
         ...docaPatch,
         ...imageFields,
-        ...buildVerificationSubmitPatch(),
         ...rvPaymentPatch,
       });
 
@@ -1134,25 +1197,34 @@ export const RCSiteCalibration: React.FC = () => {
         });
       }
 
+      await updateDoc(doc(db, 'siteCalibrations', editingId), buildVerificationSubmitPatch());
+
       handleCloseForm();
       await fetchRecords();
       beginSubmitProgress([editingId]);
     } catch (err: unknown) {
       if (walletPaymentId) {
-        try {
-          await refundRvWalletPayment({
-            paymentId: walletPaymentId,
-            reason: 'Verification submit failed after wallet payment',
-          });
-          setRvSessionPayment(null);
-        } catch {
+        const refunded = await refundWalletPaymentIfNeeded(
+          'Verification submit failed after wallet payment',
+        );
+        if (!refunded) {
           setError(
-            `${err instanceof Error ? err.message : 'Failed to submit verification.'} Wallet refund could not be completed automatically — contact support with payment id ${walletPaymentId}.`,
+            `${formatSaveError(err, 'Failed to submit verification.')} Wallet refund could not be completed automatically — contact support with payment id ${walletPaymentId}.`,
           );
           return;
         }
+        try {
+          await updateDoc(doc(db, 'siteCalibrations', editingId), {
+            rvPaymentStatus: 'pending',
+            rvPaymentId: deleteField(),
+            rvPaymentAmount: deleteField(),
+            rvPaidAt: deleteField(),
+          });
+        } catch {
+          /* best effort */
+        }
       }
-      setError(err instanceof Error ? err.message : 'Failed to submit verification.');
+      setError(formatSaveError(err, 'Failed to submit verification.'));
     } finally {
       setSubmitting(false);
     }
@@ -1170,41 +1242,55 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
-    const isRv = sessionValues.verificationType === 'RV';
-    const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType, appSettings);
-
-    if (isRv && rvPaymentRequired) {
-      if (!rvPaymentBreakdown || rvPaymentBreakdown.total <= 0) {
-        setError('Could not calculate RV payment amount. Check device fees and try again.');
-        return;
-      }
-      if (!rcUid) {
-        setError('RC scope is missing.');
-        return;
-      }
-
-      const existing = editingId ? records.find(r => r.id === editingId) ?? null : null;
-
-      if (isRvSessionPaymentSatisfied(rvSessionPayment, rvPaymentBreakdown.total)) {
-        await executeSubmitFromForm(rvSessionPayment!);
-        return;
-      }
-
-      if (isRvPaymentSatisfied(existing, rvPaymentBreakdown.total)) {
-        await executeSubmitFromForm(
-          existing?.rvPaymentId && existing.rvPaymentAmount != null
-            ? { paymentId: existing.rvPaymentId, amountInr: existing.rvPaymentAmount }
-            : undefined,
-        );
-        return;
-      }
-
-      setError('');
-      setRvPaymentOpen(true);
+    if (showAddForm && wizardOnLastStep && !verificationDeclarationAccepted) {
+      setError('Accept the declaration before submitting for certification.');
       return;
     }
 
-    await executeSubmitFromForm();
+    setSubmitting(true);
+    setError('');
+    try {
+      const applied = await persistPartyBeforeSave(sessionValues);
+      if (!applied.ok) return;
+
+      const isRv = sessionValues.verificationType === 'RV';
+      const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType, appSettings);
+
+      if (isRv && rvPaymentRequired) {
+        if (!rvPaymentBreakdown || rvPaymentBreakdown.total <= 0) {
+          setError('Could not calculate RV payment amount. Check device fees and try again.');
+          return;
+        }
+        if (!rcUid) {
+          setError('RC scope is missing.');
+          return;
+        }
+
+        const existing = editingId ? records.find(r => r.id === editingId) ?? null : null;
+
+        if (isRvSessionPaymentSatisfied(rvSessionPayment, rvPaymentBreakdown.total)) {
+          await executeSubmitFromForm(rvSessionPayment!, { partyPersisted: true });
+          return;
+        }
+
+        if (isRvPaymentSatisfied(existing, rvPaymentBreakdown.total)) {
+          await executeSubmitFromForm(
+            existing?.rvPaymentId && existing.rvPaymentAmount != null
+              ? { paymentId: existing.rvPaymentId, amountInr: existing.rvPaymentAmount }
+              : undefined,
+            { partyPersisted: true },
+          );
+          return;
+        }
+
+        setRvPaymentOpen(true);
+        return;
+      }
+
+      await executeSubmitFromForm(undefined, { partyPersisted: true });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleRvPaymentComplete = async (paymentId: string) => {
@@ -1213,7 +1299,8 @@ export const RCSiteCalibration: React.FC = () => {
 
     const payment = { paymentId, amountInr: rvPaymentBreakdown.total };
     setRvSessionPayment(payment);
-    await executeSubmitFromForm(payment);
+    setError('');
+    await executeSubmitFromForm(payment, { partyPersisted: true });
   };
 
   const openNewVerificationSession = useCallback(
