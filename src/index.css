@@ -17701,6 +17701,60 @@ body.verification-photo-viewer-open {
   flex-wrap: wrap;
 }
 
+.data-table--admin-wallet {
+  min-width: 52rem;
+}
+
+.data-table--admin-wallet th:first-child,
+.data-table--admin-wallet td.table-mobile-col-media {
+  width: 3.25rem;
+}
+
+.data-table--admin-wallet .admin-wallet-table-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-wallet-table-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  font-weight: 700;
+}
+
+@media (max-width: 768px) {
+  .data-table--admin-wallet {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .data-table--admin-wallet tbody tr.table-mobile-row--media-actions {
+    grid-template-columns: 2.75rem minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    cursor: default;
+  }
+
+  .data-table--admin-wallet tbody tr.table-mobile-row--media-actions .table-mobile-col-media {
+    grid-row: 1;
+  }
+
+  .data-table--admin-wallet tbody tr.table-mobile-row--media-actions .table-mobile-col-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    text-align: left;
+    margin-top: 0.55rem;
+    padding-top: 0.55rem;
+    border-top: 1px solid var(--border-glass);
+  }
+
+  .data-table--admin-wallet .admin-wallet-table-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}
+
 .admin-wallet-ledger-list {
   display: grid;
   gap: 0.65rem;

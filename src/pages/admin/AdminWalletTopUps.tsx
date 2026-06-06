@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { collection, getDocs } from 'firebase/firestore';
 import { useConfirm } from '../../context/ConfirmContext';
 import { StorageImage } from '../../components/StorageImage';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
+import { db } from '../../firebase';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import {
   deleteWalletLedgerEntry,
@@ -14,8 +16,45 @@ import {
   walletLedgerTypeLabel,
   walletTopUpStatusLabel,
 } from '../../lib/rcWallet';
-import type { WalletLedgerEntry, WalletTopUp } from '../../types';
+import type { FirestoreUserDoc, WalletLedgerEntry, WalletTopUp } from '../../types';
 import { CheckCircle2, IndianRupee, RefreshCw, Trash2, Wallet, X, XCircle } from 'lucide-react';
+
+function splitWalletTimestamp(iso: string): { date: string; time: string } {
+  const value = new Date(iso);
+  return {
+    date: value.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }),
+    time: value.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    }),
+  };
+}
+
+function WalletScreenshotThumb({
+  url,
+  path,
+}: {
+  url?: string | null;
+  path?: string | null;
+}) {
+  if (!url && !path) {
+    return <span className="product-table-thumb-placeholder" aria-hidden>—</span>;
+  }
+
+  return (
+    <StorageImage
+      url={url}
+      path={path}
+      alt="Payment screenshot"
+      className="product-table-thumb"
+    />
+  );
+}
 
 export const AdminWalletTopUps: React.FC = () => {
   const navigate = useNavigate();
@@ -30,6 +69,33 @@ export const AdminWalletTopUps: React.FC = () => {
   const [rejectTarget, setRejectTarget] = useState<WalletTopUp | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [topUpById, setTopUpById] = useState<Map<string, WalletTopUp>>(new Map());
+  const [rcNamesById, setRcNamesById] = useState<Record<string, string>>({});
+
+  const refreshLookup = useCallback(async () => {
+    const [allTopUps, userSnap] = await Promise.all([
+      fetchWalletTopUps({}),
+      getDocs(collection(db, 'users')),
+    ]);
+
+    const names: Record<string, string> = {};
+    userSnap.docs.forEach(docSnap => {
+      const data = docSnap.data() as FirestoreUserDoc;
+      if (data.role === 'rc_admin') {
+        names[docSnap.id] =
+          data.companyName?.trim() || data.username?.trim() || docSnap.id;
+      }
+    });
+
+    setTopUpById(new Map(allTopUps.map(row => [row.id, row])));
+    setRcNamesById(names);
+  }, []);
+
+  const resolveRcName = useCallback(
+    (rcId: string, topUp?: WalletTopUp | null) =>
+      topUp?.rcCompanyName?.trim() || rcNamesById[rcId] || 'Regional Center',
+    [rcNamesById],
+  );
 
   const refreshTopUps = useCallback(async () => {
     setLoading(true);
@@ -58,8 +124,12 @@ export const AdminWalletTopUps: React.FC = () => {
   }, []);
 
   const refresh = useCallback(async () => {
-    await Promise.all([refreshTopUps(), refreshLedger()]);
-  }, [refreshTopUps, refreshLedger]);
+    await Promise.all([refreshTopUps(), refreshLedger(), refreshLookup()]);
+  }, [refreshTopUps, refreshLedger, refreshLookup]);
+
+  useEffect(() => {
+    void refreshLookup();
+  }, [refreshLookup]);
 
   useEffect(() => {
     void refreshTopUps();
@@ -208,84 +278,106 @@ export const AdminWalletTopUps: React.FC = () => {
           ) : topUps.length === 0 ? (
             <p className="text-muted text-center py-10 mb-0">No wallet top-ups found.</p>
           ) : (
-            <div className="admin-wallet-list">
-              {topUps.map(item => (
-                <article key={item.id} className="admin-wallet-card">
-                  <div className="admin-wallet-card__head">
-                    <div>
-                      <h3 className="admin-wallet-card__title">
-                        {item.rcCompanyName?.trim() || 'Regional Center'}
-                      </h3>
-                      <p className="text-sm text-muted mb-0">
-                        {new Date(item.submittedAt).toLocaleString()}
-                        {item.reviewedAt
-                          ? ` · reviewed ${new Date(item.reviewedAt).toLocaleString()}`
-                          : ''}
-                      </p>
-                    </div>
-                    <div className="admin-wallet-card__meta">
-                      <span className="admin-wallet-card__amount">
-                        <IndianRupee size={14} aria-hidden />
-                        {formatRcFeeAmount(item.amountInr).replace('₹', '').trim()}
-                      </span>
-                      <span className={`rc-wallet-status rc-wallet-status--${item.status}`}>
-                        {walletTopUpStatusLabel(item.status)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {item.note && <p className="text-sm mb-3">{item.note}</p>}
-
-                  {(item.screenshotUrl || item.screenshotPath) && (
-                    <div className="admin-wallet-card__screenshot">
-                      <StorageImage
-                        url={item.screenshotUrl}
-                        path={item.screenshotPath}
-                        alt="Payment screenshot"
-                        className="admin-wallet-card__screenshot-img"
-                      />
-                    </div>
-                  )}
-
-                  {item.status === 'rejected' && item.rejectionReason && (
-                    <p className="form-error mt-2 mb-0">{item.rejectionReason}</p>
-                  )}
-
-                  <div className="admin-wallet-card__actions">
-                    {item.status === 'pending' && (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={reviewingId === item.id || deletingId === item.id}
-                          onClick={() => void handleApprove(item)}
-                        >
-                          <CheckCircle2 size={14} aria-hidden />
-                          {reviewingId === item.id ? 'Processing…' : 'Approve'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          disabled={reviewingId === item.id || deletingId === item.id}
-                          onClick={() => openRejectModal(item)}
-                        >
-                          <XCircle size={14} aria-hidden />
-                          Reject
-                        </button>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm admin-wallet-delete-btn"
-                      disabled={deletingId === item.id || reviewingId === item.id}
-                      onClick={() => void handleDeleteTopUp(item)}
-                    >
-                      <Trash2 size={14} aria-hidden />
-                      {deletingId === item.id ? 'Deleting…' : 'Delete'}
-                    </button>
-                  </div>
-                </article>
-              ))}
+            <div className="table-scroll-wrap">
+              <table className="data-table data-table--admin-wallet data-table--mobile-cards">
+                <thead>
+                  <tr>
+                    <th>Screenshot</th>
+                    <th>RC</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topUps.map(item => {
+                    const { date, time } = splitWalletTimestamp(item.submittedAt);
+                    const rcName = resolveRcName(item.rcId, item);
+                    return (
+                      <tr key={item.id} className="table-mobile-row table-mobile-row--media-actions">
+                        <td className="table-mobile-col-media">
+                          <WalletScreenshotThumb
+                            url={item.screenshotUrl}
+                            path={item.screenshotPath}
+                          />
+                        </td>
+                        <td className="table-mobile-col-primary font-medium">
+                          <span className="table-mobile-primary-text">{rcName}</span>
+                          <div className="table-mobile-summary">
+                            <span className="table-mobile-summary-meta">
+                              {date} · {time}
+                            </span>
+                            <span className="table-mobile-summary-badges">
+                              <span className="admin-wallet-table-amount">
+                                <IndianRupee size={12} aria-hidden />
+                                {formatRcFeeAmount(item.amountInr).replace('₹', '').trim()}
+                              </span>
+                              <span className={`rc-wallet-status rc-wallet-status--${item.status}`}>
+                                {walletTopUpStatusLabel(item.status)}
+                              </span>
+                            </span>
+                            {item.note ? (
+                              <span className="table-mobile-summary-meta">{item.note}</span>
+                            ) : null}
+                            {item.status === 'rejected' && item.rejectionReason ? (
+                              <span className="form-error table-mobile-summary-meta">
+                                {item.rejectionReason}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="table-mobile-col-hide text-muted text-sm">{date}</td>
+                        <td className="table-mobile-col-hide text-muted text-sm">{time}</td>
+                        <td className="table-mobile-col-hide font-medium">
+                          {formatRcFeeAmount(item.amountInr)}
+                        </td>
+                        <td className="table-mobile-col-hide">
+                          <span className={`rc-wallet-status rc-wallet-status--${item.status}`}>
+                            {walletTopUpStatusLabel(item.status)}
+                          </span>
+                        </td>
+                        <td className="table-mobile-col-actions text-right">
+                          <div className="admin-wallet-table-actions">
+                            {item.status === 'pending' && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={reviewingId === item.id || deletingId === item.id}
+                                  onClick={() => void handleApprove(item)}
+                                >
+                                  <CheckCircle2 size={14} aria-hidden />
+                                  {reviewingId === item.id ? 'Processing…' : 'Approve'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  disabled={reviewingId === item.id || deletingId === item.id}
+                                  onClick={() => openRejectModal(item)}
+                                >
+                                  <XCircle size={14} aria-hidden />
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm admin-wallet-delete-btn"
+                              disabled={deletingId === item.id || reviewingId === item.id}
+                              onClick={() => void handleDeleteTopUp(item)}
+                            >
+                              <Trash2 size={14} aria-hidden />
+                              {deletingId === item.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -304,49 +396,103 @@ export const AdminWalletTopUps: React.FC = () => {
           ) : ledger.length === 0 ? (
             <p className="text-muted text-center py-8 mb-0">No ledger entries yet.</p>
           ) : (
-            <div className="admin-wallet-ledger-list">
-              {ledger.map(entry => (
-                <article key={entry.id} className="admin-wallet-ledger-item">
-                  <div className="admin-wallet-ledger-item__head">
-                    <div>
-                      <p className="admin-wallet-ledger-item__type">{walletLedgerTypeLabel(entry.type)}</p>
-                      <p className="text-sm text-muted mb-0">
-                        {entry.rcId}
-                        {entry.recordIds?.length ? ` · ${entry.recordIds.length} record(s)` : ''}
-                      </p>
-                    </div>
-                    <div className="admin-wallet-ledger-item__meta">
-                      <span
-                        className={`admin-wallet-ledger-item__amount ${
-                          entry.amountInr >= 0 ? 'admin-wallet-ledger-item__amount--credit' : 'admin-wallet-ledger-item__amount--debit'
-                        }`}
-                      >
-                        {entry.amountInr >= 0 ? '+' : '−'}
-                        {formatRcFeeAmount(Math.abs(entry.amountInr)).replace('₹', '').trim()}
-                      </span>
-                      <span className="text-sm text-muted">
-                        Balance {formatRcFeeAmount(entry.balanceAfterInr)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="admin-wallet-ledger-item__foot">
-                    <p className="text-sm text-muted mb-0">
-                      {new Date(entry.createdAt).toLocaleString()}
-                      {entry.status === 'refunded' ? ' · refunded' : ''}
-                      {entry.refundReason ? ` · ${entry.refundReason}` : ''}
-                    </p>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm admin-wallet-delete-btn"
-                      disabled={deletingId === entry.id}
-                      onClick={() => void handleDeleteLedgerEntry(entry)}
-                    >
-                      <Trash2 size={14} aria-hidden />
-                      {deletingId === entry.id ? 'Deleting…' : 'Delete'}
-                    </button>
-                  </div>
-                </article>
-              ))}
+            <div className="table-scroll-wrap">
+              <table className="data-table data-table--admin-wallet data-table--mobile-cards">
+                <thead>
+                  <tr>
+                    <th>Screenshot</th>
+                    <th>RC</th>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Balance</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledger.map(entry => {
+                    const linkedTopUp = entry.topUpId ? topUpById.get(entry.topUpId) : undefined;
+                    const { date, time } = splitWalletTimestamp(entry.createdAt);
+                    const rcName = resolveRcName(entry.rcId, linkedTopUp);
+                    const isCredit = entry.amountInr >= 0;
+                    return (
+                      <tr key={entry.id} className="table-mobile-row table-mobile-row--media-actions">
+                        <td className="table-mobile-col-media">
+                          <WalletScreenshotThumb
+                            url={linkedTopUp?.screenshotUrl}
+                            path={linkedTopUp?.screenshotPath}
+                          />
+                        </td>
+                        <td className="table-mobile-col-primary font-medium">
+                          <span className="table-mobile-primary-text">{rcName}</span>
+                          <div className="table-mobile-summary">
+                            <span className="table-mobile-summary-meta">
+                              {date} · {time}
+                            </span>
+                            <span className="table-mobile-summary-meta">
+                              {walletLedgerTypeLabel(entry.type)}
+                              {entry.recordIds?.length
+                                ? ` · ${entry.recordIds.length} record(s)`
+                                : ''}
+                            </span>
+                            <span className="table-mobile-summary-badges">
+                              <span
+                                className={`admin-wallet-table-amount ${
+                                  isCredit
+                                    ? 'admin-wallet-ledger-item__amount--credit'
+                                    : 'admin-wallet-ledger-item__amount--debit'
+                                }`}
+                              >
+                                {isCredit ? '+' : '−'}
+                                {formatRcFeeAmount(Math.abs(entry.amountInr)).replace('₹', '').trim()}
+                              </span>
+                              <span className="table-mobile-summary-meta">
+                                Balance {formatRcFeeAmount(entry.balanceAfterInr)}
+                              </span>
+                            </span>
+                            {entry.status === 'refunded' || entry.refundReason ? (
+                              <span className="table-mobile-summary-meta">
+                                {entry.status === 'refunded' ? 'Refunded' : ''}
+                                {entry.refundReason ? ` · ${entry.refundReason}` : ''}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="table-mobile-col-hide text-muted text-sm">{date}</td>
+                        <td className="table-mobile-col-hide text-muted text-sm">{time}</td>
+                        <td className="table-mobile-col-hide">{walletLedgerTypeLabel(entry.type)}</td>
+                        <td
+                          className={`table-mobile-col-hide font-medium ${
+                            isCredit
+                              ? 'admin-wallet-ledger-item__amount--credit'
+                              : 'admin-wallet-ledger-item__amount--debit'
+                          }`}
+                        >
+                          {isCredit ? '+' : '−'}
+                          {formatRcFeeAmount(Math.abs(entry.amountInr))}
+                        </td>
+                        <td className="table-mobile-col-hide text-muted text-sm">
+                          {formatRcFeeAmount(entry.balanceAfterInr)}
+                        </td>
+                        <td className="table-mobile-col-actions text-right">
+                          <div className="admin-wallet-table-actions">
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm admin-wallet-delete-btn"
+                              disabled={deletingId === entry.id}
+                              onClick={() => void handleDeleteLedgerEntry(entry)}
+                            >
+                              <Trash2 size={14} aria-hidden />
+                              {deletingId === entry.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
