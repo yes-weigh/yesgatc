@@ -17780,6 +17780,59 @@ body.verification-photo-viewer-open {
   margin-top: 0.85rem;
 }
 
+.admin-wallet-balances-panel .panel-header {
+  padding: 0.55rem 0.85rem;
+}
+
+.admin-wallet-balances-panel .panel-header h2 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.admin-wallet-balances-panel .panel-body {
+  padding: 0 0.85rem 0.55rem;
+}
+
+.admin-wallet-balances-empty {
+  text-align: center;
+  padding: 0.65rem 0;
+  font-size: 0.82rem;
+}
+
+.admin-wallet-balances-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.admin-wallet-balances-table tr + tr {
+  border-top: 1px solid color-mix(in srgb, var(--glass-border) 65%, transparent);
+}
+
+.admin-wallet-balances-table td {
+  padding: 0.3rem 0;
+  vertical-align: middle;
+}
+
+.admin-wallet-balances-table__name {
+  color: var(--text-muted);
+  padding-right: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 0;
+  width: 72%;
+}
+
+.admin-wallet-balances-table__amount {
+  text-align: right;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .admin-wallet-filters {
   display: flex;
   gap: 0.45rem;

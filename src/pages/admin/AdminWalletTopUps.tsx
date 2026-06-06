@@ -8,8 +8,8 @@ import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { db } from '../../firebase';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import {
-  deleteWalletLedgerEntry,
   deleteWalletTopUp,
+  fetchAllRcWallets,
   fetchWalletLedger,
   fetchWalletTopUps,
   reviewWalletTopUp,
@@ -83,11 +83,13 @@ export const AdminWalletTopUps: React.FC = () => {
   const [pushingZohoTopUpId, setPushingZohoTopUpId] = useState<string | null>(null);
   const [topUpById, setTopUpById] = useState<Map<string, WalletTopUp>>(new Map());
   const [rcNamesById, setRcNamesById] = useState<Record<string, string>>({});
+  const [walletBalancesByRcId, setWalletBalancesByRcId] = useState<Record<string, number>>({});
 
   const refreshLookup = useCallback(async () => {
-    const [allTopUps, userSnap] = await Promise.all([
+    const [allTopUps, userSnap, wallets] = await Promise.all([
       fetchWalletTopUps({}),
       getDocs(collection(db, 'users')),
+      fetchAllRcWallets(),
     ]);
 
     const names: Record<string, string> = {};
@@ -99,8 +101,14 @@ export const AdminWalletTopUps: React.FC = () => {
       }
     });
 
+    const balances: Record<string, number> = {};
+    wallets.forEach(wallet => {
+      balances[wallet.rcId] = wallet.balanceInr;
+    });
+
     setTopUpById(new Map(allTopUps.map(row => [row.id, row])));
     setRcNamesById(names);
+    setWalletBalancesByRcId(balances);
   }, []);
 
   const resolveRcName = useCallback(
@@ -252,25 +260,13 @@ export const AdminWalletTopUps: React.FC = () => {
     }
   };
 
-  const handleDeleteLedgerEntry = async (entry: WalletLedgerEntry) => {
-    const ok = await confirm({
-      title: 'Delete ledger entry?',
-      message: `Remove this ${walletLedgerTypeLabel(entry.type).toLowerCase()} and reverse its effect on ${entry.rcId}'s wallet balance?`,
-      confirmLabel: 'Delete',
-    });
-    if (!ok) return;
-
-    setDeletingId(entry.id);
-    setError('');
-    try {
-      await deleteWalletLedgerEntry(entry.id);
-      await refresh();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Delete failed.');
-    } finally {
-      setDeletingId(null);
-    }
-  };
+  const rcWalletBalances = Object.entries(rcNamesById)
+    .map(([rcId, name]) => ({
+      rcId,
+      name,
+      balanceInr: walletBalancesByRcId[rcId] ?? 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const handleRejectConfirm = async () => {
     if (!rejectTarget) return;
@@ -302,7 +298,36 @@ export const AdminWalletTopUps: React.FC = () => {
     <div className="fade-in">
       <ListViewBackBar onBack={() => navigate('/admin')} label="Back to dashboard" />
 
-      <div className="panel glass">
+      <div className="panel glass admin-wallet-balances-panel">
+        <div className="panel-header">
+          <h2><IndianRupee className="inline-icon" /> RC wallet balances</h2>
+          {!loading && rcWalletBalances.length > 0 && (
+            <span className="text-muted text-sm">{rcWalletBalances.length} centres</span>
+          )}
+        </div>
+        <div className="panel-body">
+          {loading ? (
+            <div className="admin-wallet-balances-empty"><span className="spinner-inline" /></div>
+          ) : rcWalletBalances.length === 0 ? (
+            <p className="admin-wallet-balances-empty text-muted mb-0">No RC centres found.</p>
+          ) : (
+            <table className="admin-wallet-balances-table">
+              <tbody>
+                {rcWalletBalances.map(row => (
+                  <tr key={row.rcId}>
+                    <td className="admin-wallet-balances-table__name">{row.name}</td>
+                    <td className="admin-wallet-balances-table__amount">
+                      {formatRcFeeAmount(row.balanceInr)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <div className="panel glass mt-4">
         <div className="panel-header">
           <h2><Wallet className="inline-icon" /> Wallet top-ups</h2>
           <div className="flex items-center gap-2 flex-wrap">
@@ -580,25 +605,13 @@ export const AdminWalletTopUps: React.FC = () => {
                               <button
                                 type="button"
                                 className="btn btn-secondary btn-sm"
-                                disabled={
-                                  pushingZohoTopUpId === linkedTopUp.id
-                                  || deletingId === entry.id
-                                }
+                                disabled={pushingZohoTopUpId === linkedTopUp.id}
                                 onClick={() => void handlePushZohoTopUp(linkedTopUp, rcName)}
                               >
                                 <FileText size={14} aria-hidden />
                                 {pushingZohoTopUpId === linkedTopUp.id ? 'Pushing…' : 'Push to Zoho'}
                               </button>
                             )}
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm admin-wallet-delete-btn"
-                              disabled={deletingId === entry.id || pushingZohoTopUpId === entry.topUpId}
-                              onClick={() => void handleDeleteLedgerEntry(entry)}
-                            >
-                              <Trash2 size={14} aria-hidden />
-                              {deletingId === entry.id ? 'Deleting…' : 'Delete'}
-                            </button>
                           </div>
                         </td>
                       </tr>

@@ -292,6 +292,18 @@ export async function fetchRcWalletBalance(rcId: string): Promise<number> {
   return Number.isFinite(data.balanceInr) ? data.balanceInr : 0;
 }
 
+export async function fetchAllRcWallets(): Promise<RcWallet[]> {
+  const snap = await getDocs(collection(db, RC_WALLETS_COLLECTION));
+  return snap.docs.map(docSnap => {
+    const data = docSnap.data() as RcWallet;
+    return {
+      rcId: data.rcId || docSnap.id,
+      balanceInr: Number.isFinite(data.balanceInr) ? data.balanceInr : 0,
+      updatedAt: data.updatedAt || '',
+    };
+  });
+}
+
 export function subscribeRcWalletBalance(
   rcId: string,
   onChange: (balance: number) => void,
