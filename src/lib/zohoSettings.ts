@@ -89,14 +89,7 @@ export function normalizeZohoRvSettings(
   };
 }
 
-export type ZohoRvSettingsFormValues = {
-  zohoRvInvoicingEnabled: boolean;
-  zohoOrganizationId: string;
-  zohoSalespersonId: string;
-  zohoItemIdUpto20Kg: string;
-  zohoItemIdAbove20Kg: string;
-  zohoModeOfTransport: string;
-};
+export type ZohoRvSettingsFormValues = ZohoRvSettings;
 
 export function zohoRvSettingsToFormValues(settings: ZohoRvSettings): ZohoRvSettingsFormValues {
   return { ...settings };

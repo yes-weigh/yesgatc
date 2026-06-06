@@ -18,7 +18,7 @@ function modeFromSettings(settings: AppGlobalSettings): RvPaymentMode {
   return 'off';
 }
 
-function settingsFromMode(mode: RvPaymentMode): AppGlobalSettings {
+function paymentPatchFromMode(mode: RvPaymentMode): Pick<AppGlobalSettings, 'rvRazorpayEnabled' | 'rvWalletEnabled'> {
   return {
     rvRazorpayEnabled: mode === 'razorpay',
     rvWalletEnabled: mode === 'wallet',
@@ -38,7 +38,7 @@ export const RvPaymentSettingsCard: React.FC<RvPaymentSettingsCardProps> = ({ cl
     setSaving(true);
     setError('');
     try {
-      const patch = settingsFromMode(mode);
+      const patch = paymentPatchFromMode(mode);
       await setDoc(
         doc(db, APP_SETTINGS_COLLECTION, APP_SETTINGS_GLOBAL_DOC),
         {
