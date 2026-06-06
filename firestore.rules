@@ -309,5 +309,46 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }
+
+    // ── RC wallet balance (mutations via Cloud Functions only) ────
+    match /rcWallets/{rcId} {
+      allow read: if isSuperAdmin()
+        || (isRCAdmin() && request.auth.uid == rcId);
+      allow write: if false;
+    }
+
+    match /walletTopUps/{topUpId} {
+      allow read: if isSuperAdmin()
+        || (isRCAdmin() && resource.data.rcId == request.auth.uid);
+
+      allow create: if isRCAdmin()
+        && request.resource.data.rcId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.amountInr is number
+        && request.resource.data.amountInr > 0
+        && request.resource.data.submittedByUid == request.auth.uid
+        && request.resource.data.submittedAt is string
+        && request.resource.data.keys().hasOnly([
+          'rcId',
+          'rcCompanyName',
+          'amountInr',
+          'status',
+          'screenshotUrl',
+          'screenshotPath',
+          'screenshotName',
+          'screenshotContentType',
+          'note',
+          'submittedAt',
+          'submittedByUid',
+        ]);
+
+      allow update, delete: if false;
+    }
+
+    match /walletLedger/{entryId} {
+      allow read: if isSuperAdmin()
+        || (isRCAdmin() && resource.data.rcId == request.auth.uid);
+      allow write: if false;
+    }
   }
 }

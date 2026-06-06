@@ -10,6 +10,10 @@ const {
   verifyRvPaymentHandler,
   razorpayWebhookHandler,
 } = require('./razorpayRv');
+const {
+  reviewWalletTopUpHandler,
+  payRvFromWalletHandler,
+} = require('./rcWallet');
 const { initializeApp, getApps } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
@@ -166,4 +170,14 @@ exports.verifyRvPayment = onCall(
 exports.razorpayWebhook = onRequest(
   { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
   async (req, res) => razorpayWebhookHandler(req, res, adminDb()),
+);
+
+/** Super Admin approves or rejects RC wallet top-up requests. */
+exports.reviewWalletTopUp = onCall({ region: CALLABLE_REGION }, async request =>
+  reviewWalletTopUpHandler(request, adminDb()),
+);
+
+/** RC Admin debits wallet for RV verification payment. */
+exports.payRvFromWallet = onCall({ region: CALLABLE_REGION }, async request =>
+  payRvFromWalletHandler(request, adminDb()),
 );

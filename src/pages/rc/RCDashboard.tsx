@@ -13,6 +13,7 @@ import {
   ArrowUpRight,
   Scale,
 } from 'lucide-react';
+import { RcWalletDashboardCard } from '../../components/RcWalletDashboardCard';
 import { db } from '../../firebase';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
@@ -150,6 +151,7 @@ export const RCDashboard: React.FC = () => {
   return (
     <div className="fade-in rc-dashboard">
       <section className="rc-kpi-grid" aria-label="Dashboard overview">
+        <RcWalletDashboardCard />
         <KpiCard
           to={`${basePath}/new-job`}
           label="New Job"

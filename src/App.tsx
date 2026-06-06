@@ -14,10 +14,12 @@ import { AdminVCTList } from './pages/admin/AdminVCTList';
 import { AdminVehicleList } from './pages/admin/AdminVehicleList';
 import { AdminVerificationList } from './pages/admin/AdminVerificationList';
 import { AdminLaboratory } from './pages/admin/AdminLaboratory';
+import { AdminWalletTopUps } from './pages/admin/AdminWalletTopUps';
 import { AdminQualityManagement, AdminNotifications } from './pages/admin/AdminMenuPages';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
+import { RCWallet } from './pages/rc/RCWallet';
 import { NewJobComingSoon } from './pages/rc/RCMenuPages';
 import { RCVehicles } from './pages/rc/RCVehicles';
 import { RCCustomers } from './pages/rc/RCCustomers';
@@ -60,6 +62,7 @@ const App: React.FC = () => {
                 <Route path="quality-management" element={<AdminQualityManagement />} />
                 <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="wallet" element={<AdminWalletTopUps />} />
               </Route>
             </Route>
 
@@ -81,6 +84,7 @@ const App: React.FC = () => {
                 <Route path="notifications" element={<RCNotifications />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<RCProfile />} />
+                <Route path="wallet" element={<RCWallet />} />
               </Route>
             </Route>
 

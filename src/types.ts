@@ -71,6 +71,33 @@ export type VerificationRequestSource = 'rc_direct' | 'vct_manual' | 'vct_auto';
 
 export type JobStatus = 'assigned' | 'pending_review' | 'completed';
 export type PaymentStatus = 'not_required' | 'pending' | 'paid';
+export type WalletTopUpStatus = 'pending' | 'approved' | 'rejected';
+
+/** RC prepaid balance — topped up via manual payment screenshots approved by Super Admin. */
+export interface RcWallet {
+  rcId: string;
+  balanceInr: number;
+  updatedAt: string;
+}
+
+export interface WalletTopUp {
+  id: string;
+  rcId: string;
+  rcCompanyName?: string;
+  amountInr: number;
+  status: WalletTopUpStatus;
+  screenshotUrl?: string;
+  screenshotPath?: string;
+  screenshotName?: string;
+  screenshotContentType?: string;
+  note?: string;
+  submittedAt: string;
+  submittedByUid: string;
+  reviewedAt?: string;
+  reviewedByUid?: string;
+  rejectionReason?: string;
+}
+
 export type WorkflowMode = 'auto' | 'manual';
 export type VctApprovalStatus = 'pending' | 'approved';
 

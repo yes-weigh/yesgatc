@@ -17137,3 +17137,160 @@ body.verification-photo-viewer-open {
   }
 }
 
+/* ── RC wallet ─────────────────────────────────────────────── */
+.rc-wallet-page .rc-wallet-hero {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem;
+}
+
+.rc-wallet-hero__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 12px;
+  background: rgba(139, 92, 246, 0.16);
+  color: #c4b5fd;
+}
+
+.rc-wallet-hero__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(148, 163, 184, 0.95);
+  margin: 0 0 0.15rem;
+}
+
+.rc-wallet-hero__value {
+  font-size: 1.65rem;
+  font-weight: 800;
+  margin: 0 0 0.2rem;
+}
+
+.rc-wallet-grid {
+  align-items: start;
+}
+
+.rc-wallet-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rc-wallet-status--pending {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+}
+
+.rc-wallet-status--approved {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+}
+
+.rc-wallet-status--rejected {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+}
+
+.rc-wallet-history-img,
+.admin-wallet-card__screenshot-img {
+  display: block;
+  width: 100%;
+  max-width: 220px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.admin-wallet-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.admin-wallet-card {
+  padding: 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-wallet-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.admin-wallet-card__title {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+
+.admin-wallet-card__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+
+.admin-wallet-card__amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-weight: 700;
+}
+
+.admin-wallet-card__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.85rem;
+}
+
+.admin-wallet-filters {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.rv-wallet-payment-summary {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.rv-wallet-payment-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.86rem;
+}
+
+.rv-wallet-payment-row--total {
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  font-weight: 700;
+}
+
+.rv-payment-panel-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+@media (max-width: 768px) {
+  .rc-wallet-page .rc-wallet-hero {
+    flex-wrap: wrap;
+  }
+}
+

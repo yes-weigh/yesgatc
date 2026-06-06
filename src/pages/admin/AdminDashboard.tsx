@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../../context/AppContext';
-import { ShieldCheck, XCircle, AlertTriangle, Clock, Users, Building2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ShieldCheck, XCircle, AlertTriangle, Clock, Users, Building2, Wallet } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { tallyVerificationStatusFilters } from '../../lib/verificationRequest';
-import { RvRazorpaySettingsCard } from '../../components/RvRazorpaySettingsCard';
+import { RvPaymentSettingsCard } from '../../components/RvPaymentSettingsCard';
+import { fetchWalletTopUps } from '../../lib/rcWallet';
 import type { FirestoreUserDoc, Role, SiteCalibration } from '../../types';
 
 interface UserCounts { super_admin: number; rc_admin: number; vct: number; }
@@ -15,6 +17,7 @@ export const AdminDashboard: React.FC = () => {
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingVerifications, setLoadingVerifications] = useState(true);
+  const [pendingWalletTopUps, setPendingWalletTopUps] = useState(0);
 
   useEffect(() => {
     const fetchCounts = async () => {
@@ -37,6 +40,9 @@ export const AdminDashboard: React.FC = () => {
       }));
       setVerifications(records);
       setLoadingVerifications(false);
+
+      const pendingTopUps = await fetchWalletTopUps({ status: 'pending' });
+      setPendingWalletTopUps(pendingTopUps.length);
     };
     void fetchCounts();
   }, []);
@@ -126,7 +132,24 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      <RvRazorpaySettingsCard />
+      <div className="panel glass mt-6">
+        <div className="panel-header">
+          <h2><Wallet className="inline-icon" /> Wallet approvals</h2>
+          {pendingWalletTopUps > 0 && <span className="badge-count">{pendingWalletTopUps}</span>}
+        </div>
+        <div className="panel-body flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-muted text-sm mb-0">
+            Review RC payment screenshots and credit wallet balances.
+          </p>
+          <Link to="/admin/wallet" className="btn btn-primary btn-sm">
+            {pendingWalletTopUps > 0
+              ? `Review ${pendingWalletTopUps} pending`
+              : 'View all top-ups'}
+          </Link>
+        </div>
+      </div>
+
+      <RvPaymentSettingsCard />
 
       {/* ── Recent Activity ── */}
       <div className="panel glass mt-6">

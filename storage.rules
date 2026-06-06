@@ -113,5 +113,10 @@ service firebase.storage {
       allow read: if true;
       allow write: if isAuthenticated();
     }
+
+    match /walletTopUps/{topUpId}/screenshot/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
   }
 }

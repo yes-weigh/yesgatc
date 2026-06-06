@@ -103,8 +103,13 @@ import {
 } from '../../lib/rcLaboratoryFields';
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
 import { RvPaymentPanel } from '../../components/RvPaymentPanel';
+import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
-import { isRvRazorpayPaymentRequired } from '../../lib/appSettings';
+import {
+  isRvPaymentRequired,
+  isRvRazorpayPaymentRequired,
+  isRvWalletPaymentRequired,
+} from '../../lib/appSettings';
 import {
   buildRvPaymentFirestorePatch,
   computeRvPaymentAmount,
@@ -1109,10 +1114,7 @@ export const RCSiteCalibration: React.FC = () => {
     }
 
     const isRv = sessionValues.verificationType === 'RV';
-    const rvPaymentRequired = isRvRazorpayPaymentRequired(
-      sessionValues.verificationType,
-      appSettings,
-    );
+    const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType, appSettings);
 
     if (isRv && rvPaymentRequired) {
       if (!rvPaymentBreakdown || rvPaymentBreakdown.total <= 0) {
@@ -1255,7 +1257,12 @@ export const RCSiteCalibration: React.FC = () => {
     showAddForm && includedDeviceCount > 1
       ? `Save ${includedDeviceCount} drafts`
       : 'Save draft';
-  const rvPaymentRequired = isRvRazorpayPaymentRequired(
+  const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType, appSettings);
+  const rvRazorpayPaymentRequired = isRvRazorpayPaymentRequired(
+    sessionValues.verificationType,
+    appSettings,
+  );
+  const rvWalletPaymentRequired = isRvWalletPaymentRequired(
     sessionValues.verificationType,
     appSettings,
   );
@@ -1713,7 +1720,17 @@ export const RCSiteCalibration: React.FC = () => {
         </div>
       )}
 
-      {rvPaymentRequired && rvPaymentOpen && rvPaymentBreakdown && rcUid && (
+      {rvWalletPaymentRequired && rvPaymentOpen && rvPaymentBreakdown && rcUid && (
+        <RvWalletPaymentPanel
+          breakdown={rvPaymentBreakdown}
+          rcId={rcUid}
+          recordIds={editingId ? [editingId] : undefined}
+          onPaid={handleRvPaymentComplete}
+          onClose={() => setRvPaymentOpen(false)}
+        />
+      )}
+
+      {rvRazorpayPaymentRequired && rvPaymentOpen && rvPaymentBreakdown && rcUid && (
         <RvPaymentPanel
           breakdown={rvPaymentBreakdown}
           rcId={rcUid}
