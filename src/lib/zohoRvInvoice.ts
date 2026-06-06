@@ -84,6 +84,7 @@ export async function pushLegacyRvZohoSettlement(
 export type ReconcileZohoOutstandingInput = {
   rvLimit?: number;
   rvSettlementLimit?: number;
+  rvInvoiceRefLimit?: number;
   walletLimit?: number;
 };
 
