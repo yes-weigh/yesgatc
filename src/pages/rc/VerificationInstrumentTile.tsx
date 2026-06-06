@@ -236,7 +236,7 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
           {photosComplete && !readOnly && (
             <button
               type="button"
-              className="verification-instrument-tile-advance-btn"
+              className="verification-form-btn verification-form-btn--continue verification-instrument-tile-advance-btn"
               onClick={() => scrollToStage('details')}
             >
               Enter details <ChevronRight size={16} aria-hidden />

@@ -17,6 +17,8 @@ type RvPaymentPanelProps = {
   recordIds?: string[];
   onPaid: (paymentId: string) => void | Promise<void>;
   onClose: () => void;
+  /** Super Admin gateway test — ₹1 order, no verification side effects. */
+  testMode?: boolean;
 };
 
 type PanelPhase = 'loading' | 'awaiting' | 'verifying' | 'paid' | 'error';
@@ -52,6 +54,7 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
   recordIds,
   onPaid,
   onClose,
+  testMode = false,
 }) => {
   const isMobile = useIsMobileViewport();
   const [phase, setPhase] = useState<PanelPhase>('loading');
@@ -64,9 +67,11 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
     if (paidRef.current) return;
     paidRef.current = true;
     setPhase('paid');
-    setStatusHint('Payment received. Submitting verification…');
+    setStatusHint(
+      testMode ? 'Test payment received. Integration OK.' : 'Payment received. Submitting verification…',
+    );
     await onPaid(paymentId);
-  }, [onPaid]);
+  }, [onPaid, testMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +83,7 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
           rcId,
           recordIds,
           breakdown,
+          testMode,
         });
         if (cancelled) return;
         if (!created.configured) {
@@ -97,7 +103,7 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [breakdown, rcId, recordIds]);
+  }, [breakdown, rcId, recordIds, testMode]);
 
   useEffect(() => {
     if (!session || phase !== 'awaiting') return;
@@ -122,7 +128,9 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
     setError('');
     setStatusHint('Complete payment in your UPI app…');
     try {
-      const response = await openRazorpayCheckout(session);
+      const response = await openRazorpayCheckout(session, {
+        description: testMode ? 'Razorpay integration test (₹1)' : undefined,
+      });
       setPhase('verifying');
       const status = await verifyRvPayment({
         paymentId: session.paymentId,
@@ -157,7 +165,9 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
         <div className="rv-payment-panel-head">
           <div className="rv-payment-panel-head-main">
             <IndianRupee size={18} aria-hidden />
-            <h2 id="rv-payment-title" className="rv-payment-panel-title mb-0">RV payment</h2>
+            <h2 id="rv-payment-title" className="rv-payment-panel-title mb-0">
+              {testMode ? 'Test Razorpay gateway' : 'RV payment'}
+            </h2>
           </div>
           <button type="button" className="btn-icon rv-payment-panel-close" onClick={onClose} aria-label="Close">
             <X size={18} />
@@ -165,7 +175,9 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
         </div>
 
         <p className="rv-payment-panel-lead mb-0">
-          Pay administrative fees and GST before submitting for certification.
+          {testMode
+            ? 'Run a ₹1 test order to confirm Razorpay keys, checkout, and site whitelist before enabling RV payments.'
+            : 'Pay administrative fees and GST before submitting for certification.'}
         </p>
 
         <div className="rv-payment-breakdown">
@@ -194,7 +206,7 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
         {phase === 'loading' && (
           <div className="rv-payment-status">
             <span className="spinner-inline" aria-hidden />
-            <span>Preparing Razorpay payment…</span>
+            <span>{testMode ? 'Preparing test payment…' : 'Preparing Razorpay payment…'}</span>
           </div>
         )}
 

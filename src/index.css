@@ -8230,6 +8230,13 @@ body.verification-mobile-wizard-active {
   box-shadow: 0 3px 12px rgba(37, 99, 235, 0.38);
 }
 
+.verification-form-btn--continue:disabled {
+  background: rgba(30, 58, 138, 0.35);
+  border-color: rgba(96, 165, 250, 0.14);
+  color: rgba(255, 255, 255, 0.38);
+  opacity: 1;
+}
+
 .verification-wizard-bottom-bar-actions .verification-form-btn--cancel {
   flex: 1;
   min-width: 0;
@@ -11450,22 +11457,8 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-instrument-tile-advance-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
   width: 100%;
-  margin-top: 0.65rem;
-  min-height: 2.35rem;
-  padding: 0.45rem 0.75rem;
-  border-radius: 9px;
-  border: 1px solid rgba(96, 165, 250, 0.38);
-  background: rgba(59, 130, 246, 0.12);
-  color: #93c5fd;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
+  margin-top: 0.75rem;
 }
 
 .verification-instrument-tile-lock-hint {
@@ -13600,6 +13593,71 @@ body.verification-photo-viewer-open {
 .rv-payment-error {
   font-size: 0.76rem;
   color: #fca5a5;
+}
+
+.admin-razorpay-test-whitelist {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(96, 165, 250, 0.2);
+  background: rgba(8, 15, 30, 0.4);
+}
+
+.admin-razorpay-test-whitelist-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #60a5fa;
+}
+
+.admin-razorpay-test-whitelist-host {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.admin-razorpay-test-whitelist-host code,
+.admin-razorpay-test-whitelist .text-muted code {
+  font-size: 0.86em;
+}
+
+.admin-razorpay-test-dashboard-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.admin-razorpay-test-dashboard-link:hover {
+  color: #bfdbfe;
+  text-decoration: underline;
+}
+
+.admin-razorpay-test-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(74, 222, 128, 0.28);
+  background: rgba(16, 185, 129, 0.1);
+  color: #6ee7b7;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.admin-razorpay-test-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .rv-payment-config-hint {
@@ -17138,40 +17196,127 @@ body.verification-photo-viewer-open {
 }
 
 /* ── RC wallet ─────────────────────────────────────────────── */
-.rc-wallet-page .rc-wallet-hero {
-  display: flex;
-  align-items: center;
+.rc-wallet-page .rc-wallet-balance {
+  max-width: 28rem;
+  text-decoration: none;
+  cursor: default;
+}
+
+.rc-wallet-page .rc-wallet-balance:hover {
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.rc-wallet-refresh {
+  flex-shrink: 0;
+}
+
+.rc-wallet-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   gap: 1rem;
-  padding: 1.1rem 1.2rem;
-}
-
-.rc-wallet-hero__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 3rem;
-  height: 3rem;
-  border-radius: 12px;
-  background: rgba(139, 92, 246, 0.16);
-  color: #c4b5fd;
-}
-
-.rc-wallet-hero__label {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(148, 163, 184, 0.95);
-  margin: 0 0 0.15rem;
-}
-
-.rc-wallet-hero__value {
-  font-size: 1.65rem;
-  font-weight: 800;
-  margin: 0 0 0.2rem;
-}
-
-.rc-wallet-grid {
   align-items: start;
+  margin-top: 1.5rem;
+}
+
+.rc-wallet-form-fields {
+  margin-bottom: 0.65rem;
+}
+
+.rc-wallet-form-fields .form-group {
+  margin-bottom: 0.75rem;
+}
+
+.rc-wallet-form-fields .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.rc-wallet-form-feedback {
+  margin: 0.65rem 0 0;
+  font-size: 0.78rem;
+}
+
+.rc-wallet-form-feedback.form-error {
+  color: #f87171;
+}
+
+.rc-wallet-form-success {
+  color: #6ee7b7;
+}
+
+.rc-wallet-form-actions {
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(96, 165, 250, 0.14);
+}
+
+.rc-wallet-form-actions .btn {
+  width: 100%;
+}
+
+.rc-wallet-history-loading {
+  display: flex;
+  justify-content: center;
+  padding: 2rem 0;
+}
+
+.rc-wallet-history-empty {
+  margin: 0;
+  padding: 1.5rem 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: rgba(148, 163, 184, 0.88);
+}
+
+.rc-wallet-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.rc-wallet-history-item {
+  padding: 0.55rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid rgba(96, 165, 250, 0.12);
+  background: rgba(8, 15, 30, 0.35);
+}
+
+.rc-wallet-history-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.rc-wallet-history-amount {
+  margin: 0 0 0.15rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.rc-wallet-history-date {
+  margin: 0;
+  font-size: 0.68rem;
+  color: rgba(148, 163, 184, 0.88);
+}
+
+.rc-wallet-history-note {
+  margin: 0.25rem 0 0;
+  font-size: 0.72rem;
+  color: rgba(203, 213, 225, 0.92);
+}
+
+.rc-wallet-history-reject {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  color: #f87171;
+}
+
+.rc-wallet-history-thumb {
+  margin-top: 0.55rem;
 }
 
 .rc-wallet-status {
@@ -17288,9 +17433,9 @@ body.verification-photo-viewer-open {
   gap: 0.45rem;
 }
 
-@media (max-width: 768px) {
-  .rc-wallet-page .rc-wallet-hero {
-    flex-wrap: wrap;
+@media (max-width: 900px) {
+  .rc-wallet-layout {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -13,6 +13,7 @@ const {
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
+  submitWalletTopUpHttpHandler,
 } = require('./rcWallet');
 const { initializeApp, getApps } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
@@ -24,7 +25,7 @@ const CALLABLE_REGION = 'us-central1';
 const FIRESTORE_REGION = 'asia-south1';
 
 if (!getApps().length) {
-  initializeApp();
+  initializeApp({ storageBucket: 'yesgatc.firebasestorage.app' });
 }
 
 function adminAuth() {
@@ -180,4 +181,9 @@ exports.reviewWalletTopUp = onCall({ region: CALLABLE_REGION }, async request =>
 /** RC Admin debits wallet for RV verification payment. */
 exports.payRvFromWallet = onCall({ region: CALLABLE_REGION }, async request =>
   payRvFromWalletHandler(request, adminDb()),
+);
+
+/** RC Admin submits wallet top-up with payment screenshot (server-side Storage upload). */
+exports.submitWalletTopUp = onRequest({ region: CALLABLE_REGION, cors: true }, async (req, res) =>
+  submitWalletTopUpHttpHandler(req, res, adminDb(), adminAuth()),
 );

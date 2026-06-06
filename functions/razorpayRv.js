@@ -143,6 +143,14 @@ function razorpayErrorMessage(err) {
   return 'Razorpay request failed.';
 }
 
+async function assertSuperAdmin(db, uid) {
+  const callerSnap = await db.doc(`users/${uid}`).get();
+  if (!callerSnap.exists || callerSnap.data().role !== 'super_admin') {
+    throw new HttpsError('permission-denied', 'Super Admin only.');
+  }
+  return callerSnap.data();
+}
+
 async function assertRvPaymentCaller(request, db, rcId) {
   const callerSnap = await db.doc(`users/${request.auth.uid}`).get();
   if (!callerSnap.exists) {
@@ -201,13 +209,20 @@ async function createRvPaymentOrderHandler(request, db) {
     throw new HttpsError('unauthenticated', 'Sign in required.');
   }
 
-  if (!(await isRvRazorpayEnabled(db))) {
+  const testMode = request.data?.testMode === true;
+
+  if (testMode) {
+    await assertSuperAdmin(db, request.auth.uid);
+  } else if (!(await isRvRazorpayEnabled(db))) {
     throw new HttpsError('failed-precondition', 'RV Razorpay payments are disabled.');
   }
 
   try {
-  const amountInr = Number(request.data?.amountInr);
-  const rcId = typeof request.data?.rcId === 'string' ? request.data.rcId.trim() : '';
+  const amountInr = testMode ? 1 : Number(request.data?.amountInr);
+  let rcId = typeof request.data?.rcId === 'string' ? request.data.rcId.trim() : '';
+  if (testMode && !rcId) {
+    rcId = request.auth.uid;
+  }
   const recordIds = Array.isArray(request.data?.recordIds)
     ? request.data.recordIds.filter(id => typeof id === 'string' && id.trim())
     : [];
@@ -237,7 +252,9 @@ async function createRvPaymentOrderHandler(request, db) {
   const { keyId } = razorpayKeys();
   const razorpay = getRazorpayClient();
   const amountPaise = amountInr * 100;
-  const receipt = `rv_${rcId.slice(0, 8)}_${Date.now()}`;
+  const receipt = testMode
+    ? `test_${request.auth.uid.slice(0, 8)}_${Date.now()}`
+    : `rv_${rcId.slice(0, 8)}_${Date.now()}`;
 
   const order = await razorpay.orders.create({
     amount: amountPaise,
@@ -246,7 +263,7 @@ async function createRvPaymentOrderHandler(request, db) {
     notes: {
       rcId,
       recordIds: JSON.stringify(recordIds),
-      paymentType: 'rv_admin_gst',
+      paymentType: testMode ? 'admin_gateway_test' : 'rv_admin_gst',
     },
   });
 
@@ -259,7 +276,7 @@ async function createRvPaymentOrderHandler(request, db) {
       usage: 'single_use',
       fixed_amount: true,
       payment_amount: amountPaise,
-      description: 'RV verification payment',
+      description: testMode ? 'Razorpay gateway test' : 'RV verification payment',
       notes: {
         orderId: order.id,
         rcId,
@@ -281,8 +298,9 @@ async function createRvPaymentOrderHandler(request, db) {
     amountPaise,
     status: 'created',
     rcId,
-    recordIds,
+    recordIds: testMode ? [] : recordIds,
     breakdown,
+    test: testMode,
     createdBy: request.auth.uid,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

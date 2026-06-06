@@ -11,7 +11,9 @@ function mapStorageError(err: unknown): Error {
       ? String((err as { code: string }).code)
       : '';
   if (code === 'storage/unauthorized' || code === 'storage/unauthenticated') {
-    return new Error('Upload denied. Sign out and sign in again, then retry.');
+    return new Error(
+      'Upload denied. Deploy storage rules (firebase deploy --only storage) and sign in again, then retry.',
+    );
   }
   return err instanceof Error ? err : new Error('Upload failed');
 }

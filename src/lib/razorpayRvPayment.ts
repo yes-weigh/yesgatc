@@ -56,6 +56,8 @@ export async function createRvPaymentOrder(input: {
   rcId: string;
   recordIds?: string[];
   breakdown: RvPaymentBreakdown;
+  /** Super Admin only — ₹1 test order; ignores RV Razorpay toggle. */
+  testMode?: boolean;
 }): Promise<RvPaymentSession> {
   const fn = httpsCallable<typeof input, RvPaymentSession>(
     functionsClient(),
@@ -115,7 +117,10 @@ declare global {
   }
 }
 
-export async function openRazorpayCheckout(session: RvPaymentSession): Promise<RazorpayCheckoutResponse> {
+export async function openRazorpayCheckout(
+  session: RvPaymentSession,
+  options?: { description?: string },
+): Promise<RazorpayCheckoutResponse> {
   if (!session.keyId?.trim()) {
     throw new Error('Razorpay checkout key is missing from the payment session.');
   }
@@ -131,7 +136,7 @@ export async function openRazorpayCheckout(session: RvPaymentSession): Promise<R
       amount: session.amountPaise,
       currency: 'INR',
       name: 'YesGATC',
-      description: 'RV administrative fees + GST',
+      description: options?.description ?? 'RV administrative fees + GST',
       order_id: session.orderId,
       theme: { color: '#22c55e' },
       handler: response => resolve(response),

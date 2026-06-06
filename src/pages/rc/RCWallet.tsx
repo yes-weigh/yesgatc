@@ -1,20 +1,20 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { IndianRupee, Loader2, RefreshCw, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StorageImage } from '../../components/StorageImage';
-import { UploadField } from '../admin/productFormUi';
 import {
-  createWalletTopUpRequest,
+  VerificationPhotoUploadSection,
+  VerificationPhotoUploadSlot,
+} from '../../components/VerificationPhotoUploadSlot';
+import {
   fetchRcWalletBalance,
   fetchWalletTopUps,
+  submitWalletTopUpWithScreenshot,
   walletTopUpStatusLabel,
 } from '../../lib/rcWallet';
-import { uploadWalletTopUpScreenshot } from '../../lib/walletTopUpUpload';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import { useRcScope } from '../../lib/roleScope';
 import type { WalletTopUp } from '../../types';
-import { IndianRupee, RefreshCw, Wallet } from 'lucide-react';
 
 export const RCWallet: React.FC = () => {
   const { user } = useAuth();
@@ -31,7 +31,6 @@ export const RCWallet: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     if (!rcUid) return;
@@ -52,13 +51,23 @@ export const RCWallet: React.FC = () => {
     void refresh();
   }, [refresh]);
 
-  const handleScreenshotSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const screenshotMeta = useMemo(
+    () =>
+      screenshotPreview
+        ? {
+            url: screenshotPreview,
+            path: '',
+            name: screenshotFile?.name || 'screenshot',
+            contentType: screenshotFile?.type || 'image/jpeg',
+          }
+        : null,
+    [screenshotPreview, screenshotFile],
+  );
+
+  const handleScreenshotSelect = (file: File) => {
     if (screenshotPreview) URL.revokeObjectURL(screenshotPreview);
     setScreenshotFile(file);
     setScreenshotPreview(URL.createObjectURL(file));
-    e.target.value = '';
   };
 
   const handleScreenshotRemove = () => {
@@ -86,28 +95,14 @@ export const RCWallet: React.FC = () => {
     setError('');
     setSuccess('');
 
-    const topUpId = crypto.randomUUID();
-
     try {
-      const screenshot = await uploadWalletTopUpScreenshot(
-        topUpId,
-        screenshotFile,
-        pct => setUploadProgress(pct),
-      );
-      setUploading(false);
-
-      const profileSnap = await getDoc(doc(db, 'users', rcUid));
-      const profile = profileSnap.data() as { companyName?: string; username?: string } | undefined;
-
-      await createWalletTopUpRequest({
-        id: topUpId,
-        rcId: rcUid,
-        rcCompanyName: profile?.companyName || profile?.username,
+      await submitWalletTopUpWithScreenshot({
         amountInr,
-        screenshot,
         note,
-        submittedByUid: user.uid,
+        file: screenshotFile,
+        onProgress: pct => setUploadProgress(pct),
       });
+      setUploading(false);
 
       setAmount('');
       setNote('');
@@ -125,35 +120,57 @@ export const RCWallet: React.FC = () => {
 
   return (
     <div className="fade-in rc-wallet-page">
-      <section className="rc-wallet-hero panel glass">
-        <div className="rc-wallet-hero__icon" aria-hidden>
-          <Wallet size={28} />
+      <section className="rc-wallet-balance rc-kpi-card rc-kpi-card--violet" aria-label="Wallet balance">
+        <div className="rc-kpi-card__glow" aria-hidden="true" />
+        <div className="rc-kpi-card__top">
+          <div className="rc-kpi-card__icon">
+            <Wallet size={22} />
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm rc-wallet-refresh"
+            onClick={() => void refresh()}
+            disabled={loading}
+          >
+            <RefreshCw size={14} aria-hidden />
+            Refresh
+          </button>
         </div>
-        <div>
-          <p className="rc-wallet-hero__label">Available balance</p>
-          <p className="rc-wallet-hero__value">
-            {loading ? '…' : formatRcFeeAmount(balance)}
-          </p>
-          <p className="text-muted text-sm mb-0">
+        <div className="rc-kpi-card__body">
+          <p className="rc-kpi-card__label">Available balance</p>
+          {loading ? (
+            <span className="rc-kpi-card__skeleton" aria-hidden="true" />
+          ) : (
+            <p className="rc-kpi-card__value">
+              <IndianRupee size={18} className="inline-icon" aria-hidden />
+              {formatRcFeeAmount(balance).replace('₹', '').trim()}
+            </p>
+          )}
+          <p className="rc-kpi-card__sub">
             Use wallet balance for RV verification fees when wallet payments are enabled.
           </p>
         </div>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => void refresh()}>
-          <RefreshCw size={14} aria-hidden /> Refresh
-        </button>
       </section>
 
-      <div className="grid-2 mt-6 rc-wallet-grid">
-        <form className="panel glass" onSubmit={e => void handleSubmit(e)}>
-          <div className="panel-header">
-            <h2><IndianRupee className="inline-icon" /> Add payment</h2>
-          </div>
-          <div className="panel-body">
-            <p className="text-muted text-sm mb-4">
-              Transfer fees to the designated account, then upload the payment screenshot here.
-              Super Admin will approve it and credit your wallet.
-            </p>
+      <div className="rc-wallet-layout">
+        <form
+          className="rc-wallet-form verification-evidence-panel"
+          onSubmit={e => void handleSubmit(e)}
+        >
+          <header className="verification-evidence-panel-head">
+            <span className="verification-evidence-panel-head-icon" aria-hidden>
+              <IndianRupee size={14} strokeWidth={2.25} />
+            </span>
+            <div className="verification-evidence-panel-head-text">
+              <h2 className="verification-evidence-panel-title">Add payment</h2>
+              <p className="verification-evidence-panel-meta">
+                Transfer fees to the designated account, then upload the payment screenshot here.
+                Super Admin will approve it and credit your wallet.
+              </p>
+            </div>
+          </header>
 
+          <div className="rc-wallet-form-fields product-form-flat">
             <div className="form-group">
               <label htmlFor="wallet-amount">Amount paid (INR)</label>
               <input
@@ -161,7 +178,7 @@ export const RCWallet: React.FC = () => {
                 type="number"
                 min="1"
                 step="0.01"
-                className="form-input"
+                className="input-field"
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 placeholder="e.g. 5000"
@@ -175,88 +192,99 @@ export const RCWallet: React.FC = () => {
               <input
                 id="wallet-note"
                 type="text"
-                className="form-input"
+                className="input-field"
                 value={note}
                 onChange={e => setNote(e.target.value)}
                 placeholder="UPI ref, bank transfer ID, etc."
                 disabled={submitting}
               />
             </div>
+          </div>
 
-            <UploadField
+          <VerificationPhotoUploadSection title="Payment screenshot" columns={2}>
+            <VerificationPhotoUploadSlot
+              slotKey="payment-screenshot"
               label="Payment screenshot"
-              hint="Required — bank/UPI confirmation screenshot"
-              file={
-                screenshotPreview
-                  ? { url: screenshotPreview, path: '', name: screenshotFile?.name || 'screenshot', contentType: screenshotFile?.type || 'image/jpeg' }
-                  : null
-              }
+              required
+              file={screenshotMeta}
               uploading={uploading}
               progress={uploadProgress}
               accept="image/jpeg,image/png,image/webp"
-              uploadLabel="Upload screenshot"
-              formats="JPEG, PNG or WebP · max 15 MB"
-              inputRef={inputRef}
+              disabled={submitting}
+              icon="document"
+              allowCamera={false}
               onSelect={handleScreenshotSelect}
               onRemove={handleScreenshotRemove}
-              submitting={submitting}
-              variant="image"
-              compact
             />
+          </VerificationPhotoUploadSection>
 
-            {error && <p className="form-error mt-3">{error}</p>}
-            {success && <p className="text-green text-sm mt-3 mb-0">{success}</p>}
+          {error ? <p className="form-error rc-wallet-form-feedback">{error}</p> : null}
+          {success ? <p className="rc-wallet-form-success rc-wallet-form-feedback">{success}</p> : null}
 
-            <button type="submit" className="btn btn-primary mt-4" disabled={submitting}>
-              {submitting ? 'Submitting…' : 'Submit for approval'}
+          <div className="rc-wallet-form-actions">
+            <button type="submit" className="btn btn-primary" disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 size={18} className="spin" aria-hidden />
+                  Submitting…
+                </>
+              ) : (
+                'Submit for approval'
+              )}
             </button>
           </div>
         </form>
 
-        <div className="panel glass">
-          <div className="panel-header">
-            <h2>Top-up history</h2>
-          </div>
-          <div className="panel-body p-0">
-            {loading ? (
-              <div className="text-center py-8"><span className="spinner-inline" /></div>
-            ) : topUps.length === 0 ? (
-              <p className="text-muted text-center py-8 mb-0">No top-ups yet.</p>
-            ) : (
-              <ul className="list-group rc-wallet-history">
-                {topUps.map(item => (
-                  <li key={item.id} className="list-item p-4 border-b rc-wallet-history-item">
-                    <div className="flex justify-between items-start gap-3">
-                      <div>
-                        <p className="font-medium mb-1">{formatRcFeeAmount(item.amountInr)}</p>
-                        <p className="text-sm text-muted mb-1">
-                          {new Date(item.submittedAt).toLocaleString()}
-                        </p>
-                        {item.note && <p className="text-sm mb-0">{item.note}</p>}
-                        {item.status === 'rejected' && item.rejectionReason && (
-                          <p className="text-sm text-red mt-1 mb-0">{item.rejectionReason}</p>
-                        )}
-                      </div>
-                      <span className={`rc-wallet-status rc-wallet-status--${item.status}`}>
-                        {walletTopUpStatusLabel(item.status)}
-                      </span>
+        <aside className="rc-wallet-history verification-evidence-panel">
+          <header className="verification-evidence-panel-head">
+            <div className="verification-evidence-panel-head-text">
+              <h2 className="verification-evidence-panel-title">Top-up history</h2>
+              <p className="verification-evidence-panel-meta">
+                Pending requests until Super Admin approves or rejects.
+              </p>
+            </div>
+          </header>
+
+          {loading ? (
+            <div className="rc-wallet-history-loading">
+              <span className="spinner-inline" aria-label="Loading" />
+            </div>
+          ) : topUps.length === 0 ? (
+            <p className="rc-wallet-history-empty">No top-ups yet.</p>
+          ) : (
+            <ul className="rc-wallet-history-list">
+              {topUps.map(item => (
+                <li key={item.id} className="rc-wallet-history-item">
+                  <div className="rc-wallet-history-item-head">
+                    <div>
+                      <p className="rc-wallet-history-amount">{formatRcFeeAmount(item.amountInr)}</p>
+                      <p className="rc-wallet-history-date">
+                        {new Date(item.submittedAt).toLocaleString()}
+                      </p>
+                      {item.note ? <p className="rc-wallet-history-note">{item.note}</p> : null}
+                      {item.status === 'rejected' && item.rejectionReason ? (
+                        <p className="rc-wallet-history-reject">{item.rejectionReason}</p>
+                      ) : null}
                     </div>
-                    {item.screenshotUrl || item.screenshotPath ? (
-                      <div className="rc-wallet-history-thumb mt-3">
-                        <StorageImage
-                          url={item.screenshotUrl}
-                          path={item.screenshotPath}
-                          alt="Payment screenshot"
-                          className="rc-wallet-history-img"
-                        />
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
+                    <span className={`rc-wallet-status rc-wallet-status--${item.status}`}>
+                      {walletTopUpStatusLabel(item.status)}
+                    </span>
+                  </div>
+                  {item.screenshotUrl || item.screenshotPath ? (
+                    <div className="rc-wallet-history-thumb">
+                      <StorageImage
+                        url={item.screenshotUrl}
+                        path={item.screenshotPath}
+                        alt="Payment screenshot"
+                        className="rc-wallet-history-img"
+                      />
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </aside>
       </div>
     </div>
   );

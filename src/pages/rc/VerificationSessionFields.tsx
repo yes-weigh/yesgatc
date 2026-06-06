@@ -193,6 +193,13 @@ export const VerificationSessionFields = forwardRef<
   const continueLabel =
     isOnInstrumentsStep && includedDeviceEntries.length > 0 ? 'Review' : 'Proceed';
 
+  const canContinueCurrentStep = useMemo(() => {
+    if (readOnly) return true;
+    return (
+      verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext) === null
+    );
+  }, [readOnly, currentStep.id, values, rcProfile, stepContext]);
+
   const showWizardCancel =
     Boolean(wizardNavIncludesCancel && onCancel && currentStep.id !== 'review');
   const canAddInstrument = !readOnly && !lockCustomer && isOnInstrumentsStep;
@@ -719,7 +726,8 @@ export const VerificationSessionFields = forwardRef<
             type="button"
             className="verification-form-btn verification-form-btn--continue"
             onClick={handleContinue}
-            disabled={locked}
+            disabled={locked || !canContinueCurrentStep}
+            aria-disabled={locked || !canContinueCurrentStep}
           >
             {continueLabel} <ChevronRight size={16} aria-hidden />
           </button>

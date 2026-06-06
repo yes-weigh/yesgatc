@@ -5,6 +5,7 @@ import { ShieldCheck, XCircle, AlertTriangle, Clock, Users, Building2, Wallet } 
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { tallyVerificationStatusFilters } from '../../lib/verificationRequest';
+import { AdminRazorpayTestCard } from '../../components/AdminRazorpayTestCard';
 import { RvPaymentSettingsCard } from '../../components/RvPaymentSettingsCard';
 import { fetchWalletTopUps } from '../../lib/rcWallet';
 import type { FirestoreUserDoc, Role, SiteCalibration } from '../../types';
@@ -150,6 +151,8 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       <RvPaymentSettingsCard />
+
+      <AdminRazorpayTestCard />
 
       {/* ── Recent Activity ── */}
       <div className="panel glass mt-6">

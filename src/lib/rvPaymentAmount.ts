@@ -16,6 +16,15 @@ export type RvPaymentBreakdown = {
   gatewayTotal: number;
 };
 
+/** ₹1 test order for Super Admin Razorpay / site-whitelist checks. */
+export const RV_PAYMENT_TEST_BREAKDOWN: RvPaymentBreakdown = {
+  administrativeFees: 1,
+  gst: 0,
+  total: 1,
+  tdsTotal: 0,
+  gatewayTotal: 1,
+};
+
 export function computeRvPaymentAmount(
   devices: VerificationDeviceRowValues[],
   products: Product[],
