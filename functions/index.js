@@ -1,4 +1,4 @@
-const { onDocumentDeleted } = require('firebase-functions/v2/firestore');
+const { onDocumentDeleted, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 
@@ -10,6 +10,13 @@ const {
   verifyRvPaymentHandler,
   razorpayWebhookHandler,
 } = require('./razorpayRv');
+const {
+  zohoClientId,
+  zohoClientSecret,
+  zohoRefreshToken,
+  onSiteCalibrationZohoRvHandler,
+  pushLegacyRvZohoInvoiceHandler,
+} = require('./zohoRv');
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -76,6 +83,29 @@ async function deleteAuthUserSafe(uid) {
     throw err;
   }
 }
+
+/** Creates a Zoho Books invoice when an RV verification is submitted (skips resubmits). */
+exports.onSiteCalibrationRvZohoInvoice = onDocumentUpdated(
+  {
+    document: 'siteCalibrations/{recordId}',
+    region: FIRESTORE_REGION,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async event => onSiteCalibrationZohoRvHandler(event, adminDb()),
+);
+
+/** Super Admin manually pushes a legacy RV verification to Zoho Books. */
+exports.pushLegacyRvZohoInvoice = onCall(
+  {
+    region: CALLABLE_REGION,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async request => pushLegacyRvZohoInvoiceHandler(request, adminDb()),
+);
 
 /** Deletes Firebase Auth when a Firestore user profile is removed (backup if app delete misses Auth). */
 exports.onUserProfileDeleted = onDocumentDeleted(

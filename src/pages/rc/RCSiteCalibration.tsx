@@ -8,7 +8,6 @@ import { db } from '../../firebase';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
 import { useRcScope } from '../../lib/roleScope';
-import { resolveVerificationDraftActorMeta } from '../../lib/verificationRequest';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
@@ -32,6 +31,7 @@ import {
   type VerificationSessionValues,
 } from '../../lib/siteCalibrationProfileFields';
 import {
+  buildVerificationDraftMeta,
   buildVerificationSubmitPatch,
   buildVerificationStatusFilterOptions,
   buildVerificationTypeFilterOptions,
@@ -43,11 +43,16 @@ import {
   matchesVerificationStatusFilter,
   matchesVerificationTypeFilter,
   normalizeVerificationStatus,
+  resolveVerificationDraftActorForSession,
+  shouldClearVerificationVctFields,
   tallyVerificationStatusFilters,
   tallyVerificationTypeFilters,
   verificationFilterLabel,
+  verificationPerformerCreatedByUid,
   verificationStatusDescription,
+  type AssignableVctOption,
 } from '../../lib/verificationRequest';
+import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
@@ -104,6 +109,7 @@ import {
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
 import { RvPaymentPanel } from '../../components/RvPaymentPanel';
 import { RvOutstandingWalletPaymentBanner } from '../../components/RvOutstandingWalletPaymentBanner';
+import { RvLegacyZohoInvoiceSection } from '../../components/RvLegacyZohoInvoiceSection';
 import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import {
@@ -123,6 +129,12 @@ import {
   linkWalletPaymentToRecords,
   refundRvWalletPayment,
 } from '../../lib/rcWallet';
+import {
+  isRvZohoInvoiceOutstanding,
+  isZohoRvInvoicingEnabled,
+  rcZohoIdReady,
+  RV_ZOHO_SUBMIT_BLOCK_MESSAGE,
+} from '../../lib/zohoRvSubmit';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
 import {
@@ -204,21 +216,69 @@ export const RCSiteCalibration: React.FC = () => {
   const [partyContext, setPartyContext] = useState<VerificationFormStepContext>({
     customerForm: EMPTY_CUSTOMER_FORM,
   });
+  const [assignableVcts, setAssignableVcts] = useState<AssignableVctOption[]>([]);
 
   const validationOptions = useMemo(
-    () => ({ customerForm: partyContext.customerForm }),
-    [partyContext.customerForm],
+    () => ({
+      customerForm: partyContext.customerForm,
+      rcZohoId: rcProfile?.zohoId,
+      zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
+    }),
+    [partyContext.customerForm, rcProfile?.zohoId, appSettings],
   );
+
+  const rvZohoSubmitBlocked =
+    sessionValues.verificationType === 'RV'
+    && isZohoRvInvoicingEnabled(appSettings)
+    && !rcZohoIdReady(rcProfile?.zohoId);
 
   const verificationDraftActor = useMemo(
     () =>
-      resolveVerificationDraftActorMeta({
+      resolveVerificationDraftActorForSession(sessionValues.assignedVctId, {
         isVct,
         actorUid,
         actorUsername: actorProfile?.username ?? user?.username,
         actorWorkflowMode: actorProfile?.workflowMode,
+        assignableVcts,
       }),
-    [isVct, actorUid, actorProfile?.username, actorProfile?.workflowMode, user?.username],
+    [
+      sessionValues.assignedVctId,
+      isVct,
+      actorUid,
+      actorProfile?.username,
+      actorProfile?.workflowMode,
+      user?.username,
+      assignableVcts,
+    ],
+  );
+
+  const buildPerformerPatch = useCallback(
+    (session: VerificationSessionValues, previousRecord?: SiteCalibration | null) => {
+      const actor = resolveVerificationDraftActorForSession(session.assignedVctId, {
+        isVct,
+        actorUid,
+        actorUsername: actorProfile?.username ?? user?.username,
+        actorWorkflowMode: actorProfile?.workflowMode,
+        assignableVcts,
+      });
+      const patch: Record<string, unknown> = {
+        ...buildVerificationDraftMeta(actor),
+        createdByUid: verificationPerformerCreatedByUid(actor, actorUid),
+      };
+      if (shouldClearVerificationVctFields(actor, previousRecord)) {
+        patch.vctId = deleteField();
+        patch.vctName = deleteField();
+      }
+      return patch;
+    },
+    [
+      isVct,
+      actorUid,
+      actorProfile?.username,
+      actorProfile?.workflowMode,
+      user?.username,
+      assignableVcts,
+    ],
   );
 
   const handlePartyContextChange = useCallback((context: VerificationFormStepContext) => {
@@ -290,6 +350,40 @@ export const RCSiteCalibration: React.FC = () => {
       setCustomers([]);
     }
   }, [rcUid]);
+
+  useEffect(() => {
+    if (!rcUid || isVct) {
+      setAssignableVcts([]);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const members = await fetchRcVctUsers(rcUid);
+        if (cancelled) return;
+        setAssignableVcts(
+          members
+            .filter(
+              member =>
+                (member.approvalStatus ?? 'approved') === 'approved' && member.active !== false,
+            )
+            .map(member => ({
+              uid: member.uid,
+              username: member.username?.trim() || member.companyName?.trim() || 'VCT',
+              workflowMode: member.workflowMode,
+            }))
+            .sort((a, b) => a.username.localeCompare(b.username)),
+        );
+      } catch {
+        if (!cancelled) setAssignableVcts([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rcUid, isVct]);
 
   useEffect(() => {
     if (!isVct || !actorUid) {
@@ -930,7 +1024,7 @@ export const RCSiteCalibration: React.FC = () => {
         const record: Omit<SiteCalibration, 'id'> = {
           rcId: rcUid!,
           createdAt: new Date().toISOString(),
-          createdByUid: actorUid ?? undefined,
+          createdByUid: verificationPerformerCreatedByUid(verificationDraftActor, actorUid),
           applicationNumber: applicationNumbers[rowIndex],
           ...buildNewSiteCalibrationRecord(
             sessionForSave,
@@ -1042,6 +1136,7 @@ export const RCSiteCalibration: React.FC = () => {
         ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
         ...docaPatch,
         ...imageFields,
+        ...buildPerformerPatch(sessionForSave, existing),
         updatedAt: new Date().toISOString(),
       });
       handleCloseForm();
@@ -1056,7 +1151,7 @@ export const RCSiteCalibration: React.FC = () => {
   const handleSubmitRecord = async (record: SiteCalibration) => {
     if (!canSubmitVerification(record)) return;
 
-    const validationError = siteCalibrationSubmitBlockReason(record);
+    const validationError = siteCalibrationSubmitBlockReason(record, validationOptions);
     if (validationError) {
       setListError(validationError);
       return;
@@ -1079,7 +1174,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleBulkSubmitRecords = async () => {
     const selectedRecords = filteredRecords.filter(
-      r => selectedDraftIds.has(r.id) && isSiteCalibrationSubmittable(r),
+      r => selectedDraftIds.has(r.id) && isSiteCalibrationSubmittable(r, validationOptions),
     );
 
     if (selectedRecords.length === 0) {
@@ -1188,6 +1283,7 @@ export const RCSiteCalibration: React.FC = () => {
         ...docaPatch,
         ...imageFields,
         ...rvPaymentPatch,
+        ...buildPerformerPatch(sessionForSave, existing),
       });
 
       if (walletPaymentId) {
@@ -1436,6 +1532,15 @@ export const RCSiteCalibration: React.FC = () => {
         .map(record => record.id),
     );
   }, [records, appSettings]);
+  const zohoInvoiceDueRecordIds = useMemo(
+    () =>
+      new Set(
+        records
+          .filter(record => isRvZohoInvoiceOutstanding(record, appSettings))
+          .map(record => record.id),
+      ),
+    [records, appSettings],
+  );
   const isCertifiedActionsView =
     isViewMode && editingRecord !== null && canShowVerificationCertifiedActions(editingRecord);
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
@@ -1518,11 +1623,11 @@ export const RCSiteCalibration: React.FC = () => {
     const meta = new Map<string, { submittable: boolean; blockReason: string | null }>();
     for (const record of filteredRecords) {
       if (normalizeVerificationStatus(record) !== 'draft') continue;
-      const blockReason = siteCalibrationSubmitBlockReason(record);
+      const blockReason = siteCalibrationSubmitBlockReason(record, validationOptions);
       meta.set(record.id, { submittable: !blockReason, blockReason });
     }
     return meta;
-  }, [filteredRecords]);
+  }, [filteredRecords, validationOptions]);
 
   const selectableDraftIds = useMemo(
     () => [...draftSubmitMeta.entries()].filter(([, value]) => value.submittable).map(([id]) => id),
@@ -1723,6 +1828,18 @@ export const RCSiteCalibration: React.FC = () => {
                     {showRetroactiveRvPayment && rvPaymentBreakdown && (
                       <RvOutstandingWalletPaymentBanner breakdown={rvPaymentBreakdown} />
                     )}
+                    {isViewMode && editingRecord && (
+                      <RvLegacyZohoInvoiceSection
+                        record={editingRecord}
+                        rcCenterName={rcProfile?.companyName || rcProfile?.username}
+                        onInvoicePushed={() => void fetchRecords()}
+                      />
+                    )}
+                    {rvZohoSubmitBlocked && (
+                      <p className="verification-zoho-block-banner text-sm mt-2 mb-0" role="status">
+                        {RV_ZOHO_SUBMIT_BLOCK_MESSAGE}
+                      </p>
+                    )}
                     <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
                       {error || '\u00a0'}
                     </p>
@@ -1757,6 +1874,8 @@ export const RCSiteCalibration: React.FC = () => {
                       submitting={formBusy}
                       lockCustomer={isEditMode}
                       readOnly={isViewMode}
+                      allowPerformerAssignment={!isVct && !isViewMode}
+                      assignableVcts={assignableVcts}
                       laboratorySealIdentification={laboratorySealId}
                       onWizardStepChange={handleWizardStepChange}
                       onDeclarationAcceptedChange={setVerificationDeclarationAccepted}
@@ -1859,6 +1978,7 @@ export const RCSiteCalibration: React.FC = () => {
                 lastViewedRecordId={lastViewedVerificationId}
                 flashRecordId={rowHighlightFlashId}
                 walletPaymentDueRecordIds={walletPaymentDueRecordIds}
+                zohoInvoiceDueRecordIds={zohoInvoiceDueRecordIds}
                 onEdit={startEdit}
                 onSubmit={handleSubmitRecord}
                 onDelete={handleDelete}

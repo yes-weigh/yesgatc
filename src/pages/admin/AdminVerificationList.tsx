@@ -27,6 +27,7 @@ import { enrichVerificationListRecords } from '../../lib/verificationListPartyPh
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { isRvWalletPaymentOutstanding } from '../../lib/rvPaymentAmount';
 import { isRvWalletPaymentRequired } from '../../lib/appSettings';
+import { isRvZohoInvoiceOutstanding } from '../../lib/zohoRvSubmit';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 interface VerificationRow extends SiteCalibration {
@@ -239,6 +240,15 @@ export const AdminVerificationList: React.FC = () => {
         .map(record => record.id),
     );
   }, [records, appSettings]);
+  const zohoInvoiceDueRecordIds = useMemo(
+    () =>
+      new Set(
+        records
+          .filter(record => isRvZohoInvoiceOutstanding(record, appSettings))
+          .map(record => record.id),
+      ),
+    [records, appSettings],
+  );
 
   return (
     <div className="fade-in page-content">
@@ -303,6 +313,7 @@ export const AdminVerificationList: React.FC = () => {
                 lastViewedRecordId={lastViewedVerificationId}
                 flashRecordId={rowHighlightFlashId}
                 walletPaymentDueRecordIds={walletPaymentDueRecordIds}
+                zohoInvoiceDueRecordIds={zohoInvoiceDueRecordIds}
                 onDelete={record => void handleDelete(record as VerificationRow)}
                 deletingId={deletingId}
               />

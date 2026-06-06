@@ -1,3 +1,5 @@
+import { normalizeZohoRvSettings, type ZohoRvSettings } from './zohoSettings';
+
 export const APP_SETTINGS_COLLECTION = 'appSettings';
 export const APP_SETTINGS_GLOBAL_DOC = 'global';
 
@@ -6,11 +8,12 @@ export type AppGlobalSettings = {
   rvRazorpayEnabled: boolean;
   /** When true, RV submit debits RC wallet balance (alternative to Razorpay). */
   rvWalletEnabled: boolean;
-};
+} & ZohoRvSettings;
 
 export const DEFAULT_APP_SETTINGS: AppGlobalSettings = {
   rvRazorpayEnabled: false,
   rvWalletEnabled: false,
+  ...normalizeZohoRvSettings(undefined),
 };
 
 export function normalizeAppSettings(
@@ -19,6 +22,7 @@ export function normalizeAppSettings(
   return {
     rvRazorpayEnabled: data?.rvRazorpayEnabled === true,
     rvWalletEnabled: data?.rvWalletEnabled === true,
+    ...normalizeZohoRvSettings(data),
   };
 }
 

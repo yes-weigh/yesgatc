@@ -8107,6 +8107,10 @@ body.verification-mobile-wizard-active {
   margin-bottom: 1rem;
 }
 
+.verification-performer-field {
+  margin-bottom: 1rem;
+}
+
 .verification-setup-toggle-field {
   display: flex;
   flex-direction: column;
@@ -9725,6 +9729,23 @@ body.verification-mobile-wizard-active {
   color: #fde68a;
   background: rgba(251, 191, 36, 0.15);
   border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.verification-list-zoho-due-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.2rem;
+  margin-bottom: 0.35rem;
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.35);
 }
 
 .verification-certified-actions {
@@ -13753,6 +13774,44 @@ body.verification-photo-viewer-open {
 
 .admin-settings-page .panel.admin-settings-section:first-of-type {
   margin-top: 0;
+}
+
+.admin-zoho-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.admin-zoho-settings-grid__full {
+  grid-column: 1 / -1;
+}
+
+.verification-zoho-block-banner {
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  background: rgba(120, 53, 15, 0.28);
+  color: #fde68a;
+}
+
+.verification-zoho-status--sent {
+  color: #86efac;
+}
+
+.verification-zoho-status--failed {
+  color: #fca5a5;
+}
+
+.verification-zoho-status--pending {
+  color: #fde68a;
+}
+
+.verification-zoho-status--skipped {
+  color: #cbd5e1;
+}
+
+.verification-detail-field--full {
+  grid-column: 1 / -1;
 }
 
 .admin-razorpay-test-whitelist {

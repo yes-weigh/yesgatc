@@ -383,6 +383,12 @@ export interface SiteCalibration {
   rvPaymentId?: string;
   rvPaymentAmount?: number;
   rvPaidAt?: string;
+  /** Zoho Books invoice — written by Cloud Function on RV submit. */
+  zohoInvoiceId?: string;
+  zohoInvoiceNumber?: string;
+  zohoPushStatus?: 'pending' | 'sent' | 'failed' | 'skipped';
+  zohoPushedAt?: string;
+  zohoPushError?: string;
   /** Stored for future DOCA automation; worker currently submits 0. */
   carriageConveyanceFee?: number;
   totalDeposited?: number;

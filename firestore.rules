@@ -47,6 +47,29 @@ service cloud.firestore {
         == resource.data.get('applicationNumber', null);
     }
 
+    function zohoRvInvoicingEnabled() {
+      return get(/databases/$(database)/documents/appSettings/global).data.get('zohoRvInvoicingEnabled', true) != false;
+    }
+
+    function rvSubmitRequiresZohoCustomer(data) {
+      return data.get('verificationType', '') == 'RV'
+        && verificationRecordStatus(data) == 'submitted'
+        && zohoRvInvoicingEnabled();
+    }
+
+    function rcHasZohoCustomerId(rcId) {
+      let zohoId = get(/databases/$(database)/documents/users/$(rcId)).data.get('zohoId', '');
+      return zohoId is string && zohoId.size() >= 10;
+    }
+
+    function verificationZohoFieldsUnchanged() {
+      return request.resource.data.get('zohoInvoiceId', null) == resource.data.get('zohoInvoiceId', null)
+        && request.resource.data.get('zohoInvoiceNumber', null) == resource.data.get('zohoInvoiceNumber', null)
+        && request.resource.data.get('zohoPushStatus', null) == resource.data.get('zohoPushStatus', null)
+        && request.resource.data.get('zohoPushedAt', null) == resource.data.get('zohoPushedAt', null)
+        && request.resource.data.get('zohoPushError', null) == resource.data.get('zohoPushError', null);
+    }
+
     // ── users ─────────────────────────────────────────────────────
     match /users/{uid} {
 
@@ -241,7 +264,9 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) != 'approved'
         && verificationRecordStatus(resource.data) == 'draft'
         && verificationRecordStatus(request.resource.data) in ['draft', 'submitted']
-        && verificationApplicationNumberUnchanged();
+        && verificationApplicationNumberUnchanged()
+        && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
+        && verificationZohoFieldsUnchanged();
 
       allow update: if isOperationalVct()
         && resource.data.rcId == vctRcId()
@@ -250,7 +275,9 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) != 'approved'
         && verificationRecordStatus(resource.data) == 'draft'
         && verificationRecordStatus(request.resource.data) in ['draft', 'submitted']
-        && verificationApplicationNumberUnchanged();
+        && verificationApplicationNumberUnchanged()
+        && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
+        && verificationZohoFieldsUnchanged();
 
       // Certificate worker — RC approves own submitted verification after DOCA success.
       allow update: if isRCAdmin()

@@ -57,6 +57,8 @@ export interface VerificationListTableProps {
   flashRecordId?: string | null;
   /** RV records submitted before wallet payment that still owe administrative fees. */
   walletPaymentDueRecordIds?: Set<string>;
+  /** RV records submitted before Zoho automation that still need a Zoho invoice. */
+  zohoInvoiceDueRecordIds?: Set<string>;
 }
 
 type VerificationListStatusTone =
@@ -116,6 +118,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   lastViewedRecordId = null,
   flashRecordId = null,
   walletPaymentDueRecordIds,
+  zohoInvoiceDueRecordIds,
 }) => {
   const showBulkSelect = mode === 'rc' && bulkSelect;
   const showRcCentre = mode === 'admin';
@@ -162,6 +165,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const certNo = record.certificateNumber?.trim() || '—';
             const serial = record.serialNumber?.trim() || '—';
             const walletPaymentDue = walletPaymentDueRecordIds?.has(record.id) ?? false;
+            const zohoInvoiceDue = zohoInvoiceDueRecordIds?.has(record.id) ?? false;
 
             return (
               <article
@@ -220,6 +224,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   <h3 className="verification-list-card-title">{record.customerName || '—'}</h3>
                   {walletPaymentDue && (
                     <span className="verification-list-wallet-due-badge">Payment due</span>
+                  )}
+                  {zohoInvoiceDue && (
+                    <span className="verification-list-zoho-due-badge">Zoho due</span>
                   )}
                   <p className="verification-list-card-cert text-mono" title={certNo}>
                     {certNo}

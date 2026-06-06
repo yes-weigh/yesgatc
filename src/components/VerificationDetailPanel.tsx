@@ -5,6 +5,8 @@ import { StorageImage } from './StorageImage';
 import { VerificationSerialGroupView } from './VerificationSerialGroupView';
 import { ListViewBackBar } from './ListViewBackBar';
 import { RvLegacyWalletPaymentSection } from './RvLegacyWalletPaymentSection';
+import { RvLegacyZohoInvoiceSection } from './RvLegacyZohoInvoiceSection';
+import { VerificationZohoInvoiceSection } from './VerificationZohoInvoiceSection';
 import { getVerificationSerialGroup } from '../lib/verificationResubmit';
 import { VERIFICATION_LOCATION_OPTIONS } from '../lib/siteCalibrationProfileFields';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
@@ -138,6 +140,11 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               rcCenterName={rcCenterName}
               onPaymentRecorded={onRecordsChanged}
             />
+            <RvLegacyZohoInvoiceSection
+              record={record}
+              rcCenterName={rcCenterName}
+              onInvoicePushed={onRecordsChanged}
+            />
           </div>
         </div>
 
@@ -191,6 +198,8 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               )}
             </div>
           </section>
+
+          <VerificationZohoInvoiceSection record={record} />
 
           <section className="verification-detail-section">
             <h3 className="verification-detail-section-title">Timeline</h3>

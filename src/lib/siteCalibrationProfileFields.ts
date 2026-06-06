@@ -21,6 +21,7 @@ import {
   verificationImagesFromRecord,
   type DeviceVerificationImagesState,
 } from './verificationDeviceImages';
+import { validateRvZohoSubmitReady } from './zohoRvSubmit';
 import {
   deviceRvDocumentsFromRows,
   emptyDeviceRvDocumentsState,
@@ -73,6 +74,8 @@ export type VerificationDeviceRowValues = {
 export type VerificationSessionValues = {
   verificationType: JobType | '';
   verificationSubject: VerificationSubject;
+  /** RC admin: empty = RC centre (Self); otherwise assigned VCT uid. */
+  assignedVctId?: string;
   customerId: string;
   customerName: string;
   ambientTemperature: string;
@@ -99,6 +102,7 @@ export const EMPTY_SITE_CALIBRATION_FORM: SiteCalibrationFormValues = {
 export const EMPTY_VERIFICATION_SESSION: VerificationSessionValues = {
   verificationType: 'OV',
   verificationSubject: 'self',
+  assignedVctId: '',
   customerId: '',
   customerName: '',
   ambientTemperature: '',
@@ -264,6 +268,7 @@ export function verificationSessionFromRecord(
   return {
     verificationType: record.verificationType,
     verificationSubject: subject,
+    assignedVctId: record.performedBy === 'vct' && record.vctId ? record.vctId : '',
     customerId: record.customerId || '',
     customerName: record.customerName || '',
     ambientTemperature: record.ambientTemperature || '',
@@ -424,6 +429,8 @@ export function buildSiteCalibrationFields(
 
 export type VerificationValidationOptions = {
   customerForm?: CustomerFormValues;
+  rcZohoId?: string | null;
+  zohoRvInvoicingEnabled?: boolean;
 };
 
 function validatePendingCustomerParty(
@@ -591,24 +598,50 @@ export function validateVerificationForSubmit(
   deviceRvImages: Record<string, DeviceRvDocumentsState> = {},
   options?: VerificationValidationOptions,
 ): string | null {
-  return validateVerificationSession(session, deviceImages, deviceRvImages, options);
+  const sessionError = validateVerificationSession(session, deviceImages, deviceRvImages, options);
+  if (sessionError) return sessionError;
+  return validateRvZohoSubmitReady(
+    session.verificationType,
+    options?.rcZohoId,
+    { zohoRvInvoicingEnabled: options?.zohoRvInvoicingEnabled !== false },
+  );
 }
 
-export function validateSiteCalibrationRecord(record: SiteCalibration): string | null {
+export function validateSiteCalibrationRecord(
+  record: SiteCalibration,
+  options?: VerificationValidationOptions,
+): string | null {
   const session = verificationSessionFromRecord(record);
   const localId = session.devices[0]?.localId || record.id;
   const images = verificationImagesFromRecord(record);
   const rvDocuments = session.verificationType === 'RV' ? rvDocumentsFromRecord(record) : undefined;
-  return validateVerificationSession(session, { [localId]: images }, rvDocuments ? { [localId]: rvDocuments } : {});
+  const sessionError = validateVerificationSession(
+    session,
+    { [localId]: images },
+    rvDocuments ? { [localId]: rvDocuments } : {},
+    options,
+  );
+  if (sessionError) return sessionError;
+  return validateRvZohoSubmitReady(
+    record.verificationType,
+    options?.rcZohoId,
+    { zohoRvInvoicingEnabled: options?.zohoRvInvoicingEnabled !== false },
+  );
 }
 
-export function siteCalibrationSubmitBlockReason(record: SiteCalibration): string | null {
-  return validateSiteCalibrationRecord(record);
+export function siteCalibrationSubmitBlockReason(
+  record: SiteCalibration,
+  options?: VerificationValidationOptions,
+): string | null {
+  return validateSiteCalibrationRecord(record, options);
 }
 
-export function isSiteCalibrationSubmittable(record: SiteCalibration): boolean {
+export function isSiteCalibrationSubmittable(
+  record: SiteCalibration,
+  options?: VerificationValidationOptions,
+): boolean {
   if (normalizeVerificationStatus(record) !== 'draft') return false;
-  return validateSiteCalibrationRecord(record) === null;
+  return validateSiteCalibrationRecord(record, options) === null;
 }
 
 export function validateVerificationSession(

@@ -361,6 +361,62 @@ export function resolveVerificationDraftActorMeta(params: {
   };
 }
 
+export type AssignableVctOption = {
+  uid: string;
+  username: string;
+  workflowMode?: WorkflowMode;
+};
+
+/** RC admin may assign a draft to a VCT; VCT sessions always use the signed-in technician. */
+export function resolveVerificationDraftActorForSession(
+  assignedVctId: string | undefined,
+  params: {
+    isVct: boolean;
+    actorUid: string | null;
+    actorUsername?: string;
+    actorWorkflowMode?: WorkflowMode;
+    assignableVcts?: AssignableVctOption[];
+  },
+): VerificationDraftActorMeta {
+  if (params.isVct) {
+    return resolveVerificationDraftActorMeta({
+      isVct: true,
+      actorUid: params.actorUid,
+      actorUsername: params.actorUsername,
+      actorWorkflowMode: params.actorWorkflowMode,
+    });
+  }
+
+  const vctId = assignedVctId?.trim();
+  if (vctId && params.assignableVcts?.length) {
+    const vct = params.assignableVcts.find(entry => entry.uid === vctId);
+    if (vct) {
+      return {
+        actor: 'vct',
+        vctId: vct.uid,
+        vctName: vct.username.trim() || 'VCT',
+        workflowMode: vct.workflowMode,
+      };
+    }
+  }
+
+  return { actor: 'rc' };
+}
+
+export function verificationPerformerCreatedByUid(
+  actor: VerificationDraftActorMeta,
+  rcAdminUid: string | null,
+): string | undefined {
+  return actor.actor === 'vct' ? actor.vctId : rcAdminUid ?? undefined;
+}
+
+export function shouldClearVerificationVctFields(
+  actor: VerificationDraftActorMeta,
+  previousRecord?: Pick<SiteCalibration, 'vctId' | 'performedBy'> | null,
+): boolean {
+  return actor.actor === 'rc' && Boolean(previousRecord?.vctId || previousRecord?.performedBy === 'vct');
+}
+
 export function buildVerificationSubmitPatch(now = new Date().toISOString()): {
   status: VerificationRequestStatus;
   submittedAt: string;

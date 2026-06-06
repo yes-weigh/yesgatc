@@ -14,6 +14,7 @@ import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
 import { VerificationInstrumentMultistage } from './VerificationInstrumentMultistage';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
+import type { AssignableVctOption } from '../../lib/verificationRequest';
 import { customerFormFromRecord, isPendingNewCustomerParty } from '../../lib/customerProfileFields';
 import {
   buildInitialSelfDeviceRows,
@@ -89,6 +90,9 @@ type VerificationSessionFieldsProps = {
   submitting: boolean;
   lockCustomer?: boolean;
   readOnly?: boolean;
+  /** RC admin can assign draft verifications to a linked VCT. */
+  allowPerformerAssignment?: boolean;
+  assignableVcts?: AssignableVctOption[];
   laboratorySealIdentification?: string;
   onWizardStepChange?: (stepId: VerificationFormStepId, isLastStep: boolean) => void;
   onDeclarationAcceptedChange?: (accepted: boolean) => void;
@@ -138,6 +142,8 @@ export const VerificationSessionFields = forwardRef<
   submitting,
   lockCustomer = false,
   readOnly = false,
+  allowPerformerAssignment = false,
+  assignableVcts = [],
   laboratorySealIdentification = '',
   onWizardStepChange,
   onDeclarationAcceptedChange,
@@ -800,6 +806,31 @@ export const VerificationSessionFields = forwardRef<
                   />
                 </div>
               </div>
+
+              {allowPerformerAssignment && (
+                <div className="verification-performer-field form-group">
+                  <label htmlFor="verification-performer-select">Performed by</label>
+                  <select
+                    id="verification-performer-select"
+                    className="input-field"
+                    value={values.assignedVctId?.trim() || ''}
+                    disabled={locked}
+                    onChange={event => onChange({ assignedVctId: event.target.value })}
+                  >
+                    <option value="">Self (RC centre)</option>
+                    {assignableVcts.map(vct => (
+                      <option key={vct.uid} value={vct.uid}>
+                        {vct.username}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-muted text-sm mb-0 mt-2">
+                    {assignableVcts.length === 0
+                      ? 'Add and approve VCT technicians under VCT Management to assign verifications.'
+                      : 'Assign this draft to a VCT technician, or leave as Self to keep it with the RC centre.'}
+                  </p>
+                </div>
+              )}
 
               <div className="verification-party-site-step">
                 {isSelf ? (
