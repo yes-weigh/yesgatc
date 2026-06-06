@@ -32,7 +32,6 @@ import {
 } from '../../lib/siteCalibrationProfileFields';
 import {
   buildVerificationDraftMeta,
-  buildVerificationSubmitPatch,
   buildVerificationStatusFilterOptions,
   buildVerificationTypeFilterOptions,
   canDeleteVerification,
@@ -88,7 +87,7 @@ import {
   collapseVerificationsForListDisplay,
   verificationListRecordsForFilterCounts,
 } from '../../lib/verificationListGrouping';
-import { queueRvZohoInvoicesAfterSubmit } from '../../lib/zohoRvInvoice';
+import { submitVerificationRecord, submitVerificationRecords } from '../../lib/verificationSubmit';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import type {
   Customer,
@@ -1053,12 +1052,12 @@ export const RCSiteCalibration: React.FC = () => {
       }
 
       if (submitAfterSave) {
-        for (const recordId of draftRecordIds) {
-          await updateDoc(doc(db, 'siteCalibrations', recordId), buildVerificationSubmitPatch());
-        }
-        if (sessionForSave.verificationType === 'RV') {
-          queueRvZohoInvoicesAfterSubmit(draftRecordIds);
-        }
+        await submitVerificationRecords(
+          draftRecordIds.map(recordId => ({
+            id: recordId,
+            verificationType: sessionForSave.verificationType,
+          })),
+        );
       }
 
       const submittedRecordIds = submitAfterSave ? draftRecordIds : [];
@@ -1169,10 +1168,10 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await updateDoc(doc(db, 'siteCalibrations', record.id), buildVerificationSubmitPatch());
-      if (record.verificationType === 'RV') {
-        queueRvZohoInvoicesAfterSubmit([record.id]);
-      }
+      await submitVerificationRecord({
+        id: record.id,
+        verificationType: record.verificationType,
+      });
       if (editingId === record.id) handleCloseForm();
       await fetchRecords();
       beginSubmitProgress([record.id]);
@@ -1197,13 +1196,11 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await Promise.all(
-        selectedRecords.map(record =>
-          updateDoc(doc(db, 'siteCalibrations', record.id), buildVerificationSubmitPatch()),
-        ),
-      );
-      queueRvZohoInvoicesAfterSubmit(
-        selectedRecords.filter(record => record.verificationType === 'RV').map(record => record.id),
+      await submitVerificationRecords(
+        selectedRecords.map(record => ({
+          id: record.id,
+          verificationType: record.verificationType,
+        })),
       );
       setSelectedDraftIds(new Set());
       if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
@@ -1307,10 +1304,10 @@ export const RCSiteCalibration: React.FC = () => {
         });
       }
 
-      await updateDoc(doc(db, 'siteCalibrations', editingId), buildVerificationSubmitPatch());
-      if (sessionForSave.verificationType === 'RV') {
-        queueRvZohoInvoicesAfterSubmit([editingId]);
-      }
+      await submitVerificationRecord({
+        id: editingId,
+        verificationType: sessionForSave.verificationType,
+      });
 
       handleCloseForm();
       await fetchRecords();

@@ -372,7 +372,11 @@ async function processRvZohoInvoice(db, recordId, record, { allowLegacyPush = fa
       zohoPushError: null,
       zohoPushedAt: new Date().toISOString(),
     });
-    console.log(`Zoho invoice sent for ${recordId}: ${invoice.zohoInvoiceNumber || invoice.zohoInvoiceId}`);
+    console.log(
+      `Zoho invoice sent for ${recordId} (RC ${record.rcId || '—'}, ` +
+      `performer ${record.performedBy === 'vct' || record.vctId ? 'vct' : 'rc'}): ` +
+      `${invoice.zohoInvoiceNumber || invoice.zohoInvoiceId}`,
+    );
     return {
       recordId,
       ...invoice,

@@ -42,7 +42,7 @@ export const RvOutstandingZohoInvoiceBanner: React.FC<RvOutstandingZohoInvoiceBa
             ? ` Push to Zoho Books for ${centreLabel}.`
             : pushBlockedReason
               ? ` ${pushBlockedReason}`
-              : ` Super Admin will push this invoice to Zoho for ${centreLabel}.`}
+              : ` Invoice is queued automatically on RV submit; contact Super Admin if it stays unsent.`}
         </p>
       </div>
       {canPush && onPush && !pushBlockedReason && (

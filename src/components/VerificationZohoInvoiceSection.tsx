@@ -2,6 +2,7 @@ import React from 'react';
 import { FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
+  canViewZohoPushDiagnostics,
   resolveZohoPushStatus,
   zohoPushStatusLabel,
 } from '../lib/zohoRvSubmit';
@@ -18,7 +19,8 @@ export const VerificationZohoInvoiceSection: React.FC<VerificationZohoInvoiceSec
   const status = resolveZohoPushStatus(record);
   if (!status) return null;
 
-  const showError = user?.role === 'super_admin' && record.zohoPushError?.trim();
+  const showError =
+    canViewZohoPushDiagnostics(user?.role) && record.zohoPushError?.trim();
 
   return (
     <section className="verification-detail-section">

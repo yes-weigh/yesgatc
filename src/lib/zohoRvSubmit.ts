@@ -14,6 +14,12 @@ export function rcZohoIdReady(zohoId: string | null | undefined): boolean {
   return normalizeZohoId(zohoId ?? '').length >= 10;
 }
 
+export function canViewZohoPushDiagnostics(
+  role: string | null | undefined,
+): boolean {
+  return role === 'super_admin' || role === 'rc_admin' || role === 'vct';
+}
+
 export function validateRvZohoSubmitReady(
   verificationType: JobType | '',
   rcZohoId: string | null | undefined,
