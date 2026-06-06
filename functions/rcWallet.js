@@ -437,11 +437,25 @@ function setWalletTopUpCors(res) {
   res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 }
 
-function parseMultipart(req) {
+function readRequestBody(req) {
+  if (req.rawBody) {
+    return Promise.resolve(Buffer.isBuffer(req.rawBody) ? req.rawBody : Buffer.from(req.rawBody));
+  }
+
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+function parseMultipartBuffer(buffer, headers) {
   return new Promise((resolve, reject) => {
     const fields = {};
     const files = {};
-    const busboy = new Busboy({ headers: req.headers });
+    const pendingFiles = [];
+    const busboy = new Busboy({ headers });
 
     busboy.on('field', (fieldname, value) => {
       fields[fieldname] = value;
@@ -449,27 +463,39 @@ function parseMultipart(req) {
 
     busboy.on('file', (fieldname, file, info) => {
       const { filename, mimeType } = info;
-      const chunks = [];
-      file.on('data', chunk => chunks.push(chunk));
-      file.on('end', () => {
-        files[fieldname] = {
-          buffer: Buffer.concat(chunks),
-          filename,
-          mimeType,
-        };
+      const fileDone = new Promise((res, rej) => {
+        const chunks = [];
+        file.on('data', chunk => chunks.push(chunk));
+        file.on('end', () => {
+          files[fieldname] = {
+            buffer: Buffer.concat(chunks),
+            filename,
+            mimeType,
+          };
+          res();
+        });
+        file.on('error', rej);
       });
-      file.on('error', reject);
+      pendingFiles.push(fileDone);
     });
 
-    busboy.on('close', () => resolve({ fields, files }));
+    busboy.on('close', () => {
+      Promise.all(pendingFiles)
+        .then(() => resolve({ fields, files }))
+        .catch(reject);
+    });
     busboy.on('error', reject);
 
-    if (req.rawBody) {
-      busboy.end(req.rawBody);
-    } else {
-      req.pipe(busboy);
-    }
+    busboy.end(buffer);
   });
+}
+
+async function parseMultipart(req) {
+  const buffer = await readRequestBody(req);
+  if (!buffer.length) {
+    throw httpError(400, 'Request body is empty.');
+  }
+  return parseMultipartBuffer(buffer, req.headers);
 }
 
 async function verifyBearerToken(req, auth) {

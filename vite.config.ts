@@ -52,9 +52,22 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         globPatterns: ['**/*.{js,css,html,ico,png,webp,svg,woff2}'],
         cleanupOutdatedCaches: true,
+        // Pass Firebase / Google API traffic straight to the network (never cache or block).
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) =>
+              url.origin.includes('googleapis.com')
+              || url.origin.includes('google.com')
+              || url.origin.includes('cloudfunctions.net')
+              || url.origin.includes('.run.app')
+              || url.origin.includes('gstatic.com'),
+            handler: 'NetworkOnly',
+          },
+        ],
       },
       devOptions: {
-        enabled: true,
+        // Service worker in Vite dev causes noisy workbox logs and can intercept API calls.
+        enabled: false,
         type: 'module',
       },
     }),

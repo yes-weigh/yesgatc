@@ -202,6 +202,7 @@ exports.getWalletApiConfig = onCall({ region: CALLABLE_REGION }, async request =
 );
 
 /** RC Admin submits wallet top-up with payment screenshot (server-side Storage upload). */
-exports.submitWalletTopUp = onRequest({ region: CALLABLE_REGION, cors: true }, async (req, res) =>
-  submitWalletTopUpHttpHandler(req, res, adminDb(), adminAuth()),
+exports.submitWalletTopUp = onRequest(
+  { region: CALLABLE_REGION, cors: true, timeoutSeconds: 120, memory: '512MiB' },
+  async (req, res) => submitWalletTopUpHttpHandler(req, res, adminDb(), adminAuth()),
 );

@@ -123,6 +123,9 @@ export const RCWallet: React.FC = () => {
         setError(
           'You already have a pending top-up for this amount. Wait for Super Admin review or submit a different amount.',
         );
+        setSubmitting(false);
+        setUploading(false);
+        setUploadProgress(0);
         return;
       }
 

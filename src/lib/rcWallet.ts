@@ -20,6 +20,8 @@ export const WALLET_TOP_UPS_COLLECTION = 'walletTopUps';
 export const WALLET_LEDGER_COLLECTION = 'walletLedger';
 
 const FUNCTIONS_REGION = 'us-central1';
+const DEFAULT_SUBMIT_WALLET_TOP_UP_URL =
+  'https://us-central1-yesgatc.cloudfunctions.net/submitWalletTopUp';
 
 let cachedSubmitTopUpUrl: string | null = null;
 
@@ -45,18 +47,23 @@ async function resolveSubmitWalletTopUpUrl(): Promise<string> {
     throw new Error('You must be signed in to submit a top-up.');
   }
 
-  const fn = httpsCallable<Record<string, never>, { submitTopUpUrl: string }>(
-    functionsClient(),
-    'getWalletApiConfig',
-  );
-  const result = await fn({});
-  const url = result.data.submitTopUpUrl?.trim();
-  if (!url) {
-    throw new Error('Wallet upload endpoint is not configured.');
+  try {
+    const fn = httpsCallable<Record<string, never>, { submitTopUpUrl: string }>(
+      functionsClient(),
+      'getWalletApiConfig',
+    );
+    const result = await fn({});
+    const url = result.data.submitTopUpUrl?.trim();
+    if (url) {
+      cachedSubmitTopUpUrl = url;
+      return url;
+    }
+  } catch {
+    // Fall back to the deployed HTTP endpoint if the config callable is unavailable.
   }
 
-  cachedSubmitTopUpUrl = url;
-  return url;
+  cachedSubmitTopUpUrl = DEFAULT_SUBMIT_WALLET_TOP_UP_URL;
+  return cachedSubmitTopUpUrl;
 }
 
 export async function submitWalletTopUpWithScreenshot(input: {
@@ -83,8 +90,11 @@ export async function submitWalletTopUpWithScreenshot(input: {
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
+    const timeoutMs = 120_000;
+
     xhr.open('POST', url);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.timeout = timeoutMs;
 
     xhr.upload.onprogress = event => {
       if (event.lengthComputable) {
@@ -110,6 +120,8 @@ export async function submitWalletTopUpWithScreenshot(input: {
     };
 
     xhr.onerror = () => reject(new Error('Network error while submitting top-up.'));
+    xhr.ontimeout = () =>
+      reject(new Error('Top-up submit timed out. Check your connection and try again.'));
     xhr.send(formData);
   });
 }
