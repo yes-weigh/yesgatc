@@ -15,6 +15,14 @@ function topUpRef(db, topUpId) {
   return db.doc(`walletTopUps/${topUpId}`);
 }
 
+function ledgerRef(db, ledgerId) {
+  return db.doc(`walletLedger/${ledgerId}`);
+}
+
+function roundInr(value) {
+  return Math.round(Number(value) * 100) / 100;
+}
+
 async function assertSuperAdmin(db, uid) {
   const snap = await db.doc(`users/${uid}`).get();
   if (!snap.exists || snap.data().role !== 'super_admin') {
@@ -27,6 +35,62 @@ async function assertRcAdmin(db, uid, rcId) {
   if (!snap.exists || snap.data().role !== 'rc_admin' || uid !== rcId) {
     throw new HttpsError('permission-denied', 'RC Admin only.');
   }
+}
+
+async function isRvWalletEnabled(db) {
+  const snap = await db.doc('appSettings/global').get();
+  if (!snap.exists) return false;
+  return snap.data()?.rvWalletEnabled === true;
+}
+
+function validatePaymentBreakdown(breakdown, amountInr) {
+  if (!breakdown || typeof breakdown !== 'object') {
+    throw new HttpsError('invalid-argument', 'Payment breakdown is required.');
+  }
+
+  const administrativeFees = Number(breakdown.administrativeFees);
+  const gst = Number(breakdown.gst);
+  const total = Number(breakdown.total);
+
+  if (!Number.isFinite(administrativeFees) || administrativeFees < 0) {
+    throw new HttpsError('invalid-argument', 'Invalid administrative fees in breakdown.');
+  }
+  if (!Number.isFinite(gst) || gst < 0) {
+    throw new HttpsError('invalid-argument', 'Invalid GST in breakdown.');
+  }
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new HttpsError('invalid-argument', 'Invalid payment total in breakdown.');
+  }
+
+  const expectedTotal = roundInr(administrativeFees + gst);
+  if (roundInr(total) !== expectedTotal) {
+    throw new HttpsError('invalid-argument', 'Payment breakdown total does not match fees + GST.');
+  }
+
+  const normalizedAmount = roundInr(amountInr);
+  if (normalizedAmount !== roundInr(total)) {
+    throw new HttpsError('invalid-argument', 'Payment amount does not match breakdown total.');
+  }
+
+  return normalizedAmount;
+}
+
+function sanitizeIdempotencyKey(value) {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 128) return '';
+  return trimmed.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+function ledgerIdFromPaymentId(paymentId) {
+  if (typeof paymentId !== 'string' || !paymentId.startsWith('wallet:')) {
+    throw new HttpsError('invalid-argument', 'Invalid wallet payment id.');
+  }
+  const ledgerId = paymentId.slice('wallet:'.length).trim();
+  if (!ledgerId) {
+    throw new HttpsError('invalid-argument', 'Invalid wallet payment id.');
+  }
+  return ledgerId;
 }
 
 /**
@@ -92,7 +156,7 @@ async function reviewWalletTopUpHandler(request, db) {
       };
     }
 
-    const nextBalance = Math.round((currentBalance + amountInr) * 100) / 100;
+    const nextBalance = roundInr(currentBalance + amountInr);
     transaction.set(
       walletRef(db, rcId),
       {
@@ -107,6 +171,16 @@ async function reviewWalletTopUpHandler(request, db) {
       reviewedAt,
       reviewedByUid,
       rejectionReason: FieldValue.delete(),
+    });
+    transaction.set(ledgerRef(db, `topup-${topUpId}`), {
+      rcId,
+      type: 'top_up_credit',
+      topUpId,
+      amountInr: roundInr(amountInr),
+      balanceAfterInr: nextBalance,
+      status: 'completed',
+      createdAt: reviewedAt,
+      createdByUid: reviewedByUid,
     });
 
     return {
@@ -125,21 +199,46 @@ async function payRvFromWalletHandler(request, db) {
     throw new HttpsError('unauthenticated', 'Sign in required.');
   }
 
+  if (!(await isRvWalletEnabled(db))) {
+    throw new HttpsError('failed-precondition', 'RV wallet payments are disabled.');
+  }
+
   const rcId = request.data?.rcId;
-  const amountInr = Number(request.data?.amountInr);
+  const amountInr = validatePaymentBreakdown(request.data?.breakdown, Number(request.data?.amountInr));
+  const idempotencyKey = sanitizeIdempotencyKey(request.data?.idempotencyKey);
+  const recordIds = Array.isArray(request.data?.recordIds)
+    ? request.data.recordIds.filter(id => typeof id === 'string' && id.trim())
+    : [];
 
   if (!rcId || typeof rcId !== 'string') {
     throw new HttpsError('invalid-argument', 'rcId is required.');
   }
-  if (!Number.isFinite(amountInr) || amountInr <= 0) {
-    throw new HttpsError('invalid-argument', 'amountInr must be a positive number.');
-  }
 
   await assertRcAdmin(db, request.auth.uid, rcId);
 
+  const ledgerId = idempotencyKey
+    ? `rv-${idempotencyKey}`
+    : `rv-${Date.now()}-${request.auth.uid.slice(0, 6)}`;
+  const paymentId = `wallet:${ledgerId}`;
   const paidAt = new Date().toISOString();
 
   return db.runTransaction(async transaction => {
+    const existingLedgerSnap = await transaction.get(ledgerRef(db, ledgerId));
+    if (existingLedgerSnap.exists) {
+      const existing = existingLedgerSnap.data();
+      if (existing.status === 'completed' && existing.type === 'rv_payment') {
+        return {
+          paymentId,
+          amountInr: Number(existing.amountInr) || amountInr,
+          balanceInr: Number(existing.balanceAfterInr) || 0,
+          reused: true,
+        };
+      }
+      if (existing.status === 'refunded') {
+        throw new HttpsError('failed-precondition', 'This payment was refunded. Start a new payment.');
+      }
+    }
+
     const walletSnap = await transaction.get(walletRef(db, rcId));
     const currentBalance = walletSnap.exists ? Number(walletSnap.data().balanceInr) || 0 : 0;
 
@@ -150,8 +249,7 @@ async function payRvFromWalletHandler(request, db) {
       );
     }
 
-    const nextBalance = Math.round((currentBalance - amountInr) * 100) / 100;
-    const ledgerId = `rv-${Date.now()}-${request.auth.uid.slice(0, 6)}`;
+    const nextBalance = roundInr(currentBalance - amountInr);
 
     transaction.set(
       walletRef(db, rcId),
@@ -163,22 +261,168 @@ async function payRvFromWalletHandler(request, db) {
       { merge: true },
     );
 
-    transaction.set(db.doc(`walletLedger/${ledgerId}`), {
+    transaction.set(ledgerRef(db, ledgerId), {
       rcId,
       type: 'rv_payment',
       amountInr: -amountInr,
       balanceAfterInr: nextBalance,
-      recordIds: Array.isArray(request.data?.recordIds) ? request.data.recordIds : [],
+      recordIds,
+      status: 'completed',
+      idempotencyKey: idempotencyKey || null,
       createdAt: paidAt,
       createdByUid: request.auth.uid,
     });
 
     return {
-      paymentId: `wallet:${ledgerId}`,
+      paymentId,
       amountInr,
       balanceInr: nextBalance,
+      reused: false,
     };
   });
+}
+
+/**
+ * Refunds a wallet RV payment if verification submit fails after debit.
+ */
+async function refundRvWalletPaymentHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const paymentId = request.data?.paymentId;
+  const reason =
+    typeof request.data?.reason === 'string' && request.data.reason.trim()
+      ? request.data.reason.trim()
+      : 'Verification submit failed';
+
+  const ledgerId = ledgerIdFromPaymentId(paymentId);
+  const refundedAt = new Date().toISOString();
+
+  const ledgerSnap = await ledgerRef(db, ledgerId).get();
+  if (!ledgerSnap.exists) {
+    throw new HttpsError('not-found', 'Wallet payment not found.');
+  }
+
+  const ledger = ledgerSnap.data();
+  if (ledger.type !== 'rv_payment') {
+    throw new HttpsError('failed-precondition', 'Only RV wallet payments can be refunded.');
+  }
+
+  await assertRcAdmin(db, request.auth.uid, ledger.rcId);
+
+  return db.runTransaction(async transaction => {
+    const freshLedgerSnap = await transaction.get(ledgerRef(db, ledgerId));
+    if (!freshLedgerSnap.exists) {
+      throw new HttpsError('not-found', 'Wallet payment not found.');
+    }
+
+    const freshLedger = freshLedgerSnap.data();
+    if (freshLedger.status === 'refunded') {
+      const walletSnap = await transaction.get(walletRef(db, freshLedger.rcId));
+      const balanceInr = walletSnap.exists ? Number(walletSnap.data().balanceInr) || 0 : 0;
+      return {
+        paymentId,
+        balanceInr,
+        refunded: true,
+        reused: true,
+      };
+    }
+
+    const debitAmount = Math.abs(Number(freshLedger.amountInr) || 0);
+    if (debitAmount <= 0) {
+      throw new HttpsError('failed-precondition', 'Invalid ledger amount.');
+    }
+
+    const walletSnap = await transaction.get(walletRef(db, freshLedger.rcId));
+    const currentBalance = walletSnap.exists ? Number(walletSnap.data().balanceInr) || 0 : 0;
+    const nextBalance = roundInr(currentBalance + debitAmount);
+
+    transaction.set(
+      walletRef(db, freshLedger.rcId),
+      {
+        rcId: freshLedger.rcId,
+        balanceInr: nextBalance,
+        updatedAt: refundedAt,
+      },
+      { merge: true },
+    );
+
+    transaction.set(
+      ledgerRef(db, ledgerId),
+      {
+        status: 'refunded',
+        refundedAt,
+        refundReason: reason,
+        refundedByUid: request.auth.uid,
+      },
+      { merge: true },
+    );
+
+    transaction.set(ledgerRef(db, `${ledgerId}-refund`), {
+      rcId: freshLedger.rcId,
+      type: 'rv_refund',
+      amountInr: debitAmount,
+      balanceAfterInr: nextBalance,
+      relatedPaymentId: paymentId,
+      status: 'completed',
+      refundReason: reason,
+      createdAt: refundedAt,
+      createdByUid: request.auth.uid,
+    });
+
+    return {
+      paymentId,
+      balanceInr: nextBalance,
+      refunded: true,
+      reused: false,
+    };
+  });
+}
+
+/**
+ * Attach created verification record ids to a wallet payment ledger entry.
+ */
+async function linkWalletPaymentToRecordsHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const paymentId = request.data?.paymentId;
+  const recordIds = Array.isArray(request.data?.recordIds)
+    ? request.data.recordIds.filter(id => typeof id === 'string' && id.trim())
+    : [];
+
+  if (!recordIds.length) {
+    throw new HttpsError('invalid-argument', 'recordIds is required.');
+  }
+
+  const ledgerId = ledgerIdFromPaymentId(paymentId);
+
+  const ledgerSnap = await ledgerRef(db, ledgerId).get();
+  if (!ledgerSnap.exists) {
+    throw new HttpsError('not-found', 'Wallet payment not found.');
+  }
+
+  const ledger = ledgerSnap.data();
+  await assertRcAdmin(db, request.auth.uid, ledger.rcId);
+
+  await ledgerRef(db, ledgerId).set({ recordIds }, { merge: true });
+  return { paymentId, recordIds };
+}
+
+async function getWalletApiConfigHandler(request) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || 'yesgatc';
+  const region = process.env.FUNCTION_REGION || 'us-central1';
+  const submitTopUpUrl =
+    process.env.SUBMIT_WALLET_TOP_UP_URL?.trim()
+    || `https://${region}-${projectId}.cloudfunctions.net/submitWalletTopUp`;
+
+  return { submitTopUpUrl };
 }
 
 function httpError(statusCode, message) {
@@ -264,6 +508,33 @@ async function uploadWalletScreenshot(buffer, contentType, topUpId, originalName
   };
 }
 
+async function deleteWalletScreenshot(storagePath) {
+  if (!storagePath) return;
+  try {
+    await getStorage().bucket().file(storagePath).delete({ ignoreNotFound: true });
+  } catch (err) {
+    console.warn('Failed to delete orphan wallet screenshot', storagePath, err);
+  }
+}
+
+async function assertNoDuplicatePendingTopUp(db, rcId, amountInr) {
+  const pendingSnap = await db
+    .collection('walletTopUps')
+    .where('rcId', '==', rcId)
+    .where('status', '==', 'pending')
+    .limit(20)
+    .get();
+
+  const normalized = roundInr(amountInr);
+  const duplicate = pendingSnap.docs.find(doc => roundInr(doc.data().amountInr) === normalized);
+  if (duplicate) {
+    throw httpError(
+      409,
+      'You already have a pending top-up for this amount. Wait for Super Admin approval or use a different amount.',
+    );
+  }
+}
+
 /**
  * RC Admin submits a wallet top-up with payment screenshot (multipart HTTP).
  * Uploads via Admin SDK so client Storage rules are not required.
@@ -280,6 +551,8 @@ async function submitWalletTopUpHttpHandler(req, res, db, auth) {
     res.status(405).json({ error: 'Method not allowed' });
     return;
   }
+
+  let screenshotPath = '';
 
   try {
     const uid = await verifyBearerToken(req, auth);
@@ -305,6 +578,9 @@ async function submitWalletTopUpHttpHandler(req, res, db, auth) {
       throw httpError(400, 'Screenshot must be JPEG, PNG, or WebP.');
     }
 
+    const normalizedAmount = roundInr(amountInr);
+    await assertNoDuplicatePendingTopUp(db, uid, normalizedAmount);
+
     const topUpId = crypto.randomUUID();
     const profileSnap = await db.doc(`users/${uid}`).get();
     const profile = profileSnap.exists ? profileSnap.data() : {};
@@ -315,11 +591,12 @@ async function submitWalletTopUpHttpHandler(req, res, db, auth) {
       topUpId,
       screenshot.filename || 'screenshot.jpg',
     );
+    screenshotPath = screenshotMeta.path;
 
     await db.doc(`walletTopUps/${topUpId}`).set({
       rcId: uid,
       rcCompanyName: profile.companyName?.trim() || profile.username?.trim() || '',
-      amountInr: Math.round(amountInr * 100) / 100,
+      amountInr: normalizedAmount,
       status: 'pending',
       screenshotUrl: screenshotMeta.url,
       screenshotPath: screenshotMeta.path,
@@ -332,6 +609,7 @@ async function submitWalletTopUpHttpHandler(req, res, db, auth) {
 
     res.status(200).json({ topUpId });
   } catch (err) {
+    await deleteWalletScreenshot(screenshotPath);
     const status = err.statusCode || (err instanceof HttpsError ? 403 : 500);
     const message =
       err instanceof HttpsError
@@ -346,5 +624,8 @@ async function submitWalletTopUpHttpHandler(req, res, db, auth) {
 module.exports = {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
+  refundRvWalletPaymentHandler,
+  linkWalletPaymentToRecordsHandler,
+  getWalletApiConfigHandler,
   submitWalletTopUpHttpHandler,
 };

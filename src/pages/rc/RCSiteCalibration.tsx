@@ -116,6 +116,11 @@ import {
   isRvPaymentSatisfied,
   isRvSessionPaymentSatisfied,
 } from '../../lib/rvPaymentAmount';
+import {
+  isWalletPaymentId,
+  linkWalletPaymentToRecords,
+  refundRvWalletPayment,
+} from '../../lib/rcWallet';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
 import {
@@ -857,6 +862,10 @@ export const RCSiteCalibration: React.FC = () => {
     }
 
     const includedRows = sessionValues.devices.filter(row => row.included);
+    const walletPaymentId =
+      submitAfterSave && rvPayment && isWalletPaymentId(rvPayment.paymentId)
+        ? rvPayment.paymentId
+        : null;
     setSubmitting(true);
     try {
       const applied = await persistPartyBeforeSave(sessionValues);
@@ -918,12 +927,33 @@ export const RCSiteCalibration: React.FC = () => {
         }
       }
 
+      if (walletPaymentId && submittedRecordIds.length > 0) {
+        await linkWalletPaymentToRecords({
+          paymentId: walletPaymentId,
+          recordIds: submittedRecordIds,
+        });
+      }
+
       handleCloseForm();
       await fetchRecords();
       if (submitAfterSave) {
         beginSubmitProgress(submittedRecordIds);
       }
     } catch (err: unknown) {
+      if (walletPaymentId) {
+        try {
+          await refundRvWalletPayment({
+            paymentId: walletPaymentId,
+            reason: 'Verification submit failed after wallet payment',
+          });
+          setRvSessionPayment(null);
+        } catch {
+          setError(
+            `${formatSaveError(err, 'Failed to save verification records.')} Wallet refund could not be completed automatically — contact support with payment id ${walletPaymentId}.`,
+          );
+          return;
+        }
+      }
       setError(formatSaveError(err, 'Failed to save verification records.'));
     } finally {
       setSubmitting(false);
@@ -1059,6 +1089,9 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
+    const walletPaymentId =
+      rvPayment && isWalletPaymentId(rvPayment.paymentId) ? rvPayment.paymentId : null;
+
     unlockVerificationSuccessAudio();
     setSubmitting(true);
     setError('');
@@ -1091,10 +1124,32 @@ export const RCSiteCalibration: React.FC = () => {
         ...buildVerificationSubmitPatch(),
         ...rvPaymentPatch,
       });
+
+      if (walletPaymentId) {
+        await linkWalletPaymentToRecords({
+          paymentId: walletPaymentId,
+          recordIds: [editingId],
+        });
+      }
+
       handleCloseForm();
       await fetchRecords();
       beginSubmitProgress([editingId]);
     } catch (err: unknown) {
+      if (walletPaymentId) {
+        try {
+          await refundRvWalletPayment({
+            paymentId: walletPaymentId,
+            reason: 'Verification submit failed after wallet payment',
+          });
+          setRvSessionPayment(null);
+        } catch {
+          setError(
+            `${err instanceof Error ? err.message : 'Failed to submit verification.'} Wallet refund could not be completed automatically — contact support with payment id ${walletPaymentId}.`,
+          );
+          return;
+        }
+      }
       setError(err instanceof Error ? err.message : 'Failed to submit verification.');
     } finally {
       setSubmitting(false);

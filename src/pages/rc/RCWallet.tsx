@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { IndianRupee, Loader2, RefreshCw, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StorageImage } from '../../components/StorageImage';
@@ -7,8 +7,9 @@ import {
   VerificationPhotoUploadSlot,
 } from '../../components/VerificationPhotoUploadSlot';
 import {
-  fetchRcWalletBalance,
-  fetchWalletTopUps,
+  hasPendingWalletTopUpDuplicate,
+  subscribeRcWalletBalance,
+  subscribeWalletTopUps,
   submitWalletTopUpWithScreenshot,
   walletTopUpStatusLabel,
 } from '../../lib/rcWallet';
@@ -32,24 +33,45 @@ export const RCWallet: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const refresh = useCallback(async () => {
-    if (!rcUid) return;
-    setLoading(true);
-    try {
-      const [walletBalance, rows] = await Promise.all([
-        fetchRcWalletBalance(rcUid),
-        fetchWalletTopUps({ rcId: rcUid }),
-      ]);
-      setBalance(walletBalance);
-      setTopUps(rows);
-    } finally {
-      setLoading(false);
-    }
-  }, [rcUid]);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!rcUid) {
+      setBalance(0);
+      setTopUps([]);
+      setLoading(false);
+      setInitialLoadDone(false);
+      return;
+    }
+
+    setLoading(true);
+    setInitialLoadDone(false);
+
+    const unsubBalance = subscribeRcWalletBalance(
+      rcUid,
+      value => {
+        setBalance(value);
+        setInitialLoadDone(true);
+        setLoading(false);
+      },
+      err => setError(err.message),
+    );
+
+    const unsubTopUps = subscribeWalletTopUps(
+      { rcId: rcUid },
+      rows => {
+        setTopUps(rows);
+        setInitialLoadDone(true);
+        setLoading(false);
+      },
+      err => setError(err.message),
+    );
+
+    return () => {
+      unsubBalance();
+      unsubTopUps();
+    };
+  }, [rcUid]);
 
   const screenshotMeta = useMemo(
     () =>
@@ -96,6 +118,14 @@ export const RCWallet: React.FC = () => {
     setSuccess('');
 
     try {
+      const duplicatePending = await hasPendingWalletTopUpDuplicate(rcUid, amountInr);
+      if (duplicatePending) {
+        setError(
+          'You already have a pending top-up for this amount. Wait for Super Admin review or submit a different amount.',
+        );
+        return;
+      }
+
       await submitWalletTopUpWithScreenshot({
         amountInr,
         note,
@@ -108,7 +138,6 @@ export const RCWallet: React.FC = () => {
       setNote('');
       handleScreenshotRemove();
       setSuccess('Top-up submitted. Super Admin will review your payment screenshot.');
-      await refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not submit top-up.');
     } finally {
@@ -126,19 +155,14 @@ export const RCWallet: React.FC = () => {
           <div className="rc-kpi-card__icon">
             <Wallet size={22} />
           </div>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm rc-wallet-refresh"
-            onClick={() => void refresh()}
-            disabled={loading}
-          >
-            <RefreshCw size={14} aria-hidden />
-            Refresh
-          </button>
+          <span className="rc-wallet-live-badge" title="Balance and history update automatically">
+            <RefreshCw size={12} aria-hidden />
+            Live
+          </span>
         </div>
         <div className="rc-kpi-card__body">
           <p className="rc-kpi-card__label">Available balance</p>
-          {loading ? (
+          {loading && !initialLoadDone ? (
             <span className="rc-kpi-card__skeleton" aria-hidden="true" />
           ) : (
             <p className="rc-kpi-card__value">
@@ -245,7 +269,7 @@ export const RCWallet: React.FC = () => {
             </div>
           </header>
 
-          {loading ? (
+          {loading && !initialLoadDone ? (
             <div className="rc-wallet-history-loading">
               <span className="spinner-inline" aria-label="Loading" />
             </div>

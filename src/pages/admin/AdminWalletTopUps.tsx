@@ -1,32 +1,37 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useConfirm } from '../../context/ConfirmContext';
 import { StorageImage } from '../../components/StorageImage';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import {
+  fetchWalletLedger,
   fetchWalletTopUps,
   reviewWalletTopUp,
+  walletLedgerTypeLabel,
   walletTopUpStatusLabel,
 } from '../../lib/rcWallet';
-import type { WalletTopUp } from '../../types';
-import { CheckCircle2, IndianRupee, RefreshCw, Wallet, XCircle } from 'lucide-react';
+import type { WalletLedgerEntry, WalletTopUp } from '../../types';
+import { CheckCircle2, IndianRupee, RefreshCw, Wallet, X, XCircle } from 'lucide-react';
 
 export const AdminWalletTopUps: React.FC = () => {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const [topUps, setTopUps] = useState<WalletTopUp[]>([]);
+  const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ledgerLoading, setLedgerLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [error, setError] = useState('');
+  const [rejectTarget, setRejectTarget] = useState<WalletTopUp | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
-  const refresh = useCallback(async () => {
+  const refreshTopUps = useCallback(async () => {
     setLoading(true);
     try {
-      const rows = await fetchWalletTopUps(
-        filter === 'all' ? {} : { status: filter },
-      );
+      const rows = await fetchWalletTopUps(filter === 'all' ? {} : { status: filter });
       rows.sort((a, b) => {
         const aPending = a.status === 'pending' ? 0 : 1;
         const bPending = b.status === 'pending' ? 0 : 1;
@@ -39,9 +44,27 @@ export const AdminWalletTopUps: React.FC = () => {
     }
   }, [filter]);
 
+  const refreshLedger = useCallback(async () => {
+    setLedgerLoading(true);
+    try {
+      const rows = await fetchWalletLedger({ limit: 50 });
+      setLedger(rows);
+    } finally {
+      setLedgerLoading(false);
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    await Promise.all([refreshTopUps(), refreshLedger()]);
+  }, [refreshTopUps, refreshLedger]);
+
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refreshTopUps();
+  }, [refreshTopUps]);
+
+  useEffect(() => {
+    void refreshLedger();
+  }, [refreshLedger]);
 
   const pendingCount = topUps.filter(item => item.status === 'pending').length;
 
@@ -65,18 +88,36 @@ export const AdminWalletTopUps: React.FC = () => {
     }
   };
 
-  const handleReject = async (item: WalletTopUp) => {
-    const reason = window.prompt('Reason for rejection (shown to RC Admin):');
-    if (!reason?.trim()) return;
+  const openRejectModal = (item: WalletTopUp) => {
+    setRejectTarget(item);
+    setRejectReason('');
+    setError('');
+  };
 
-    setReviewingId(item.id);
+  const closeRejectModal = () => {
+    if (reviewingId) return;
+    setRejectTarget(null);
+    setRejectReason('');
+  };
+
+  const handleRejectConfirm = async () => {
+    if (!rejectTarget) return;
+    const reason = rejectReason.trim();
+    if (!reason) {
+      setError('Enter a rejection reason for the RC Admin.');
+      return;
+    }
+
+    setReviewingId(rejectTarget.id);
     setError('');
     try {
       await reviewWalletTopUp({
-        topUpId: item.id,
+        topUpId: rejectTarget.id,
         action: 'reject',
-        rejectionReason: reason.trim(),
+        rejectionReason: reason,
       });
+      setRejectTarget(null);
+      setRejectReason('');
       await refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Rejection failed.');
@@ -179,7 +220,7 @@ export const AdminWalletTopUps: React.FC = () => {
                         type="button"
                         className="btn btn-secondary btn-sm"
                         disabled={reviewingId === item.id}
-                        onClick={() => void handleReject(item)}
+                        onClick={() => openRejectModal(item)}
                       >
                         <XCircle size={14} aria-hidden />
                         Reject
@@ -192,6 +233,119 @@ export const AdminWalletTopUps: React.FC = () => {
           )}
         </div>
       </div>
+
+      <div className="panel glass mt-4">
+        <div className="panel-header">
+          <h2>Wallet ledger</h2>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void refreshLedger()}>
+            <RefreshCw size={14} aria-hidden /> Refresh
+          </button>
+        </div>
+        <div className="panel-body">
+          {ledgerLoading ? (
+            <div className="text-center py-8"><span className="spinner-inline" /></div>
+          ) : ledger.length === 0 ? (
+            <p className="text-muted text-center py-8 mb-0">No ledger entries yet.</p>
+          ) : (
+            <div className="admin-wallet-ledger-list">
+              {ledger.map(entry => (
+                <article key={entry.id} className="admin-wallet-ledger-item">
+                  <div className="admin-wallet-ledger-item__head">
+                    <div>
+                      <p className="admin-wallet-ledger-item__type">{walletLedgerTypeLabel(entry.type)}</p>
+                      <p className="text-sm text-muted mb-0">
+                        {entry.rcId}
+                        {entry.recordIds?.length ? ` · ${entry.recordIds.length} record(s)` : ''}
+                      </p>
+                    </div>
+                    <div className="admin-wallet-ledger-item__meta">
+                      <span
+                        className={`admin-wallet-ledger-item__amount ${
+                          entry.amountInr >= 0 ? 'admin-wallet-ledger-item__amount--credit' : 'admin-wallet-ledger-item__amount--debit'
+                        }`}
+                      >
+                        {entry.amountInr >= 0 ? '+' : '−'}
+                        {formatRcFeeAmount(Math.abs(entry.amountInr)).replace('₹', '').trim()}
+                      </span>
+                      <span className="text-sm text-muted">
+                        Balance {formatRcFeeAmount(entry.balanceAfterInr)}
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted mb-0">
+                    {new Date(entry.createdAt).toLocaleString()}
+                    {entry.status === 'refunded' ? ' · refunded' : ''}
+                    {entry.refundReason ? ` · ${entry.refundReason}` : ''}
+                  </p>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {rejectTarget &&
+        createPortal(
+          <div className="rv-payment-overlay" role="dialog" aria-modal="true" aria-label="Reject wallet top-up">
+            <div className="rv-payment-panel glass admin-wallet-reject-modal">
+              <header className="rv-payment-panel-head">
+                <div className="rv-payment-panel-title-wrap">
+                  <XCircle size={20} aria-hidden />
+                  <h2 className="rv-payment-panel-title">Reject top-up</h2>
+                </div>
+                <button
+                  type="button"
+                  className="rv-payment-panel-close"
+                  onClick={closeRejectModal}
+                  disabled={Boolean(reviewingId)}
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </header>
+
+              <div className="rv-payment-panel-body">
+                <p className="text-muted text-sm mb-3">
+                  Reject {formatRcFeeAmount(rejectTarget.amountInr)} from{' '}
+                  {rejectTarget.rcCompanyName || rejectTarget.rcId}. The reason is shown to the RC Admin.
+                </p>
+
+                <div className="form-group">
+                  <label htmlFor="wallet-reject-reason">Rejection reason</label>
+                  <textarea
+                    id="wallet-reject-reason"
+                    className="input-field"
+                    rows={4}
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    placeholder="e.g. Screenshot does not match amount or reference"
+                    disabled={Boolean(reviewingId)}
+                  />
+                </div>
+
+                <div className="rv-payment-panel-actions mt-4">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={closeRejectModal}
+                    disabled={Boolean(reviewingId)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => void handleRejectConfirm()}
+                    disabled={Boolean(reviewingId) || !rejectReason.trim()}
+                  >
+                    {reviewingId ? 'Rejecting…' : 'Reject top-up'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

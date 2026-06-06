@@ -3,30 +3,60 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
-  setDoc,
   where,
   type QueryConstraint,
+  type Unsubscribe,
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app, auth, db } from '../firebase';
-import type { RcWallet, WalletTopUp, WalletTopUpStatus } from '../types';
+import type { RcWallet, WalletLedgerEntry, WalletTopUp, WalletTopUpStatus } from '../types';
+import type { RvPaymentBreakdown } from './rvPaymentAmount';
 
 export const RC_WALLETS_COLLECTION = 'rcWallets';
 export const WALLET_TOP_UPS_COLLECTION = 'walletTopUps';
+export const WALLET_LEDGER_COLLECTION = 'walletLedger';
 
 const FUNCTIONS_REGION = 'us-central1';
+
+let cachedSubmitTopUpUrl: string | null = null;
 
 function functionsClient() {
   return getFunctions(app, FUNCTIONS_REGION);
 }
 
-function submitWalletTopUpUrl(): string {
+export function isWalletPaymentId(paymentId: string | undefined | null): boolean {
+  return typeof paymentId === 'string' && paymentId.startsWith('wallet:');
+}
+
+async function resolveSubmitWalletTopUpUrl(): Promise<string> {
+  if (cachedSubmitTopUpUrl) return cachedSubmitTopUpUrl;
+
   const fromEnv = import.meta.env.VITE_SUBMIT_WALLET_TOP_UP_URL;
-  if (typeof fromEnv === 'string' && fromEnv.trim()) return fromEnv.trim();
-  const projectId = app.options.projectId ?? 'yesgatc';
-  return `https://us-central1-${projectId}.cloudfunctions.net/submitWalletTopUp`;
+  if (typeof fromEnv === 'string' && fromEnv.trim()) {
+    cachedSubmitTopUpUrl = fromEnv.trim();
+    return cachedSubmitTopUpUrl;
+  }
+
+  await auth.authStateReady();
+  if (!auth.currentUser) {
+    throw new Error('You must be signed in to submit a top-up.');
+  }
+
+  const fn = httpsCallable<Record<string, never>, { submitTopUpUrl: string }>(
+    functionsClient(),
+    'getWalletApiConfig',
+  );
+  const result = await fn({});
+  const url = result.data.submitTopUpUrl?.trim();
+  if (!url) {
+    throw new Error('Wallet upload endpoint is not configured.');
+  }
+
+  cachedSubmitTopUpUrl = url;
+  return url;
 }
 
 export async function submitWalletTopUpWithScreenshot(input: {
@@ -49,7 +79,7 @@ export async function submitWalletTopUpWithScreenshot(input: {
   formData.append('note', input.note?.trim() ?? '');
   formData.append('screenshot', input.file, input.file.name);
 
-  const url = submitWalletTopUpUrl();
+  const url = await resolveSubmitWalletTopUpUrl();
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -95,6 +125,25 @@ export async function fetchRcWalletBalance(rcId: string): Promise<number> {
   return Number.isFinite(data.balanceInr) ? data.balanceInr : 0;
 }
 
+export function subscribeRcWalletBalance(
+  rcId: string,
+  onChange: (balance: number) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    rcWalletRef(rcId),
+    snap => {
+      if (!snap.exists()) {
+        onChange(0);
+        return;
+      }
+      const data = snap.data() as RcWallet;
+      onChange(Number.isFinite(data.balanceInr) ? data.balanceInr : 0);
+    },
+    err => onError?.(err instanceof Error ? err : new Error('Failed to load wallet balance.')),
+  );
+}
+
 export async function fetchWalletTopUps(filters: {
   rcId?: string;
   status?: WalletTopUpStatus;
@@ -109,37 +158,43 @@ export async function fetchWalletTopUps(filters: {
   return filters.limit ? rows.slice(0, filters.limit) : rows;
 }
 
-export async function createWalletTopUpRequest(input: {
-  id: string;
-  rcId: string;
-  rcCompanyName?: string;
-  amountInr: number;
-  screenshot: {
-    url: string;
-    path: string;
-    name: string;
-    contentType: string;
-  };
-  note?: string;
-  submittedByUid: string;
-}): Promise<void> {
-  if (!Number.isFinite(input.amountInr) || input.amountInr <= 0) {
-    throw new Error('Enter a valid payment amount.');
-  }
+export function subscribeWalletTopUps(
+  filters: { rcId?: string; status?: WalletTopUpStatus },
+  onChange: (rows: WalletTopUp[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const constraints: QueryConstraint[] = [orderBy('submittedAt', 'desc')];
+  if (filters.rcId) constraints.unshift(where('rcId', '==', filters.rcId));
+  if (filters.status) constraints.unshift(where('status', '==', filters.status));
 
-  await setDoc(doc(db, WALLET_TOP_UPS_COLLECTION, input.id), {
-    rcId: input.rcId,
-    rcCompanyName: input.rcCompanyName?.trim() || '',
-    amountInr: Math.round(input.amountInr * 100) / 100,
-    status: 'pending' as const,
-    screenshotUrl: input.screenshot.url,
-    screenshotPath: input.screenshot.path,
-    screenshotName: input.screenshot.name,
-    screenshotContentType: input.screenshot.contentType,
-    note: input.note?.trim() || '',
-    submittedAt: new Date().toISOString(),
-    submittedByUid: input.submittedByUid,
-  });
+  return onSnapshot(
+    query(collection(db, WALLET_TOP_UPS_COLLECTION), ...constraints),
+    snap => {
+      onChange(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<WalletTopUp, 'id'>) })));
+    },
+    err => onError?.(err instanceof Error ? err : new Error('Failed to load top-up history.')),
+  );
+}
+
+export async function hasPendingWalletTopUpDuplicate(
+  rcId: string,
+  amountInr: number,
+): Promise<boolean> {
+  const pending = await fetchWalletTopUps({ rcId, status: 'pending' });
+  const normalized = Math.round(amountInr * 100) / 100;
+  return pending.some(item => Math.round(item.amountInr * 100) / 100 === normalized);
+}
+
+export async function fetchWalletLedger(filters: {
+  rcId?: string;
+  limit?: number;
+}): Promise<WalletLedgerEntry[]> {
+  const constraints: QueryConstraint[] = [orderBy('createdAt', 'desc')];
+  if (filters.rcId) constraints.unshift(where('rcId', '==', filters.rcId));
+
+  const snap = await getDocs(query(collection(db, WALLET_LEDGER_COLLECTION), ...constraints));
+  const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<WalletLedgerEntry, 'id'>) }));
+  return filters.limit ? rows.slice(0, filters.limit) : rows;
 }
 
 export type ReviewWalletTopUpResult = {
@@ -165,11 +220,14 @@ export type PayRvFromWalletResult = {
   paymentId: string;
   amountInr: number;
   balanceInr: number;
+  reused?: boolean;
 };
 
 export async function payRvFromWallet(input: {
   rcId: string;
   amountInr: number;
+  breakdown: RvPaymentBreakdown;
+  idempotencyKey: string;
   recordIds?: string[];
 }): Promise<PayRvFromWalletResult> {
   const fn = httpsCallable<typeof input, PayRvFromWalletResult>(
@@ -180,8 +238,45 @@ export async function payRvFromWallet(input: {
   return result.data;
 }
 
+export type RefundRvWalletPaymentResult = {
+  paymentId: string;
+  balanceInr: number;
+  refunded: boolean;
+  reused?: boolean;
+};
+
+export async function refundRvWalletPayment(input: {
+  paymentId: string;
+  reason?: string;
+}): Promise<RefundRvWalletPaymentResult> {
+  const fn = httpsCallable<typeof input, RefundRvWalletPaymentResult>(
+    functionsClient(),
+    'refundRvWalletPayment',
+  );
+  const result = await fn(input);
+  return result.data;
+}
+
+export async function linkWalletPaymentToRecords(input: {
+  paymentId: string;
+  recordIds: string[];
+}): Promise<{ paymentId: string; recordIds: string[] }> {
+  const fn = httpsCallable<typeof input, { paymentId: string; recordIds: string[] }>(
+    functionsClient(),
+    'linkWalletPaymentToRecords',
+  );
+  const result = await fn(input);
+  return result.data;
+}
+
 export function walletTopUpStatusLabel(status: WalletTopUpStatus): string {
   if (status === 'approved') return 'Approved';
   if (status === 'rejected') return 'Rejected';
   return 'Pending';
+}
+
+export function walletLedgerTypeLabel(type: WalletLedgerEntry['type']): string {
+  if (type === 'top_up_credit') return 'Top-up credit';
+  if (type === 'rv_refund') return 'RV refund';
+  return 'RV payment';
 }

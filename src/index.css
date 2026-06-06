@@ -17280,8 +17280,19 @@ body.verification-photo-viewer-open {
   box-shadow: none;
 }
 
-.rc-wallet-refresh {
+.rc-wallet-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   flex-shrink: 0;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(167, 243, 208, 0.95);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.22);
 }
 
 .rc-wallet-layout {
@@ -17475,6 +17486,55 @@ body.verification-photo-viewer-open {
   display: flex;
   gap: 0.45rem;
   flex-wrap: wrap;
+}
+
+.admin-wallet-ledger-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.admin-wallet-ledger-item {
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.admin-wallet-ledger-item__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin-bottom: 0.35rem;
+}
+
+.admin-wallet-ledger-item__type {
+  margin: 0 0 0.15rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.admin-wallet-ledger-item__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+}
+
+.admin-wallet-ledger-item__amount {
+  font-weight: 700;
+}
+
+.admin-wallet-ledger-item__amount--credit {
+  color: rgba(110, 231, 183, 0.95);
+}
+
+.admin-wallet-ledger-item__amount--debit {
+  color: rgba(252, 165, 165, 0.95);
+}
+
+.admin-wallet-reject-modal {
+  max-width: 28rem;
 }
 
 .rv-wallet-payment-summary {

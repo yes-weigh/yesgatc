@@ -98,6 +98,23 @@ export interface WalletTopUp {
   rejectionReason?: string;
 }
 
+export type WalletLedgerEntryType = 'top_up_credit' | 'rv_payment' | 'rv_refund';
+
+export interface WalletLedgerEntry {
+  id: string;
+  rcId: string;
+  type: WalletLedgerEntryType;
+  amountInr: number;
+  balanceAfterInr: number;
+  status?: 'completed' | 'refunded';
+  topUpId?: string;
+  recordIds?: string[];
+  relatedPaymentId?: string;
+  refundReason?: string;
+  createdAt: string;
+  createdByUid?: string;
+}
+
 export type WorkflowMode = 'auto' | 'manual';
 export type VctApprovalStatus = 'pending' | 'approved';
 

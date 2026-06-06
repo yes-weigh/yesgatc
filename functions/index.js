@@ -13,6 +13,9 @@ const {
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
+  refundRvWalletPaymentHandler,
+  linkWalletPaymentToRecordsHandler,
+  getWalletApiConfigHandler,
   submitWalletTopUpHttpHandler,
 } = require('./rcWallet');
 const { initializeApp, getApps } = require('firebase-admin/app');
@@ -181,6 +184,21 @@ exports.reviewWalletTopUp = onCall({ region: CALLABLE_REGION }, async request =>
 /** RC Admin debits wallet for RV verification payment. */
 exports.payRvFromWallet = onCall({ region: CALLABLE_REGION }, async request =>
   payRvFromWalletHandler(request, adminDb()),
+);
+
+/** RC Admin refunds a wallet RV payment after failed verification submit. */
+exports.refundRvWalletPayment = onCall({ region: CALLABLE_REGION }, async request =>
+  refundRvWalletPaymentHandler(request, adminDb()),
+);
+
+/** RC Admin links wallet payment ledger rows to created verification records. */
+exports.linkWalletPaymentToRecords = onCall({ region: CALLABLE_REGION }, async request =>
+  linkWalletPaymentToRecordsHandler(request, adminDb()),
+);
+
+/** Returns wallet HTTP endpoint configuration for the signed-in user. */
+exports.getWalletApiConfig = onCall({ region: CALLABLE_REGION }, async request =>
+  getWalletApiConfigHandler(request),
 );
 
 /** RC Admin submits wallet top-up with payment screenshot (server-side Storage upload). */

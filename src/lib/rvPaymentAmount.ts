@@ -81,6 +81,11 @@ export function buildRvPaymentFirestorePatch(paymentId: string, amountInr: numbe
   };
 }
 
+function inrAmountsMatch(a: number | null | undefined, b: number | null | undefined): boolean {
+  if (a == null || b == null) return false;
+  return Math.round(a * 100) === Math.round(b * 100);
+}
+
 export function isRvPaymentSatisfied(
   record: Pick<SiteCalibration, 'verificationType' | 'rvPaymentStatus' | 'rvPaymentAmount'> | null | undefined,
   expectedAmount: number | null,
@@ -89,7 +94,7 @@ export function isRvPaymentSatisfied(
   if (record.verificationType !== 'RV') return true;
   if (record.rvPaymentStatus !== 'paid') return false;
   if (expectedAmount == null) return true;
-  return record.rvPaymentAmount === expectedAmount;
+  return inrAmountsMatch(record.rvPaymentAmount, expectedAmount);
 }
 
 export function isRvSessionPaymentSatisfied(
@@ -97,5 +102,5 @@ export function isRvSessionPaymentSatisfied(
   expectedAmount: number | null,
 ): boolean {
   if (!sessionPayment || expectedAmount == null) return false;
-  return sessionPayment.amountInr === expectedAmount && Boolean(sessionPayment.paymentId);
+  return inrAmountsMatch(sessionPayment.amountInr, expectedAmount) && Boolean(sessionPayment.paymentId);
 }

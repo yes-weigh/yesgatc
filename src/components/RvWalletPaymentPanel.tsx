@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IndianRupee, Wallet, X } from 'lucide-react';
 import { formatRcFeeAmount } from '../lib/rcProfileFields';
@@ -20,6 +20,11 @@ export const RvWalletPaymentPanel: React.FC<RvWalletPaymentPanelProps> = ({
   onPaid,
   onClose,
 }) => {
+  const idempotencyKeyRef = useRef(
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `wallet-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
@@ -53,6 +58,8 @@ export const RvWalletPaymentPanel: React.FC<RvWalletPaymentPanelProps> = ({
       const result = await payRvFromWallet({
         rcId,
         amountInr: breakdown.total,
+        breakdown,
+        idempotencyKey: idempotencyKeyRef.current,
         recordIds,
       });
       setBalance(result.balanceInr);
