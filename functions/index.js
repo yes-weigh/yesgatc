@@ -16,6 +16,7 @@ const {
   refundRvWalletPaymentHandler,
   linkWalletPaymentToRecordsHandler,
   getWalletApiConfigHandler,
+  submitWalletTopUpCallableHandler,
   submitWalletTopUpHttpHandler,
 } = require('./rcWallet');
 const { initializeApp, getApps } = require('firebase-admin/app');
@@ -199,6 +200,12 @@ exports.linkWalletPaymentToRecords = onCall({ region: CALLABLE_REGION }, async r
 /** Returns wallet HTTP endpoint configuration for the signed-in user. */
 exports.getWalletApiConfig = onCall({ region: CALLABLE_REGION }, async request =>
   getWalletApiConfigHandler(request),
+);
+
+/** RC Admin submits wallet top-up with base64 screenshot (preferred). */
+exports.submitWalletTopUpCallable = onCall(
+  { region: CALLABLE_REGION, timeoutSeconds: 120, memory: '512MiB' },
+  async request => submitWalletTopUpCallableHandler(request, adminDb()),
 );
 
 /** RC Admin submits wallet top-up with payment screenshot (server-side Storage upload). */

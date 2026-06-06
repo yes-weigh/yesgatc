@@ -554,11 +554,117 @@ async function assertNoDuplicatePendingTopUp(db, rcId, amountInr) {
   const normalized = roundInr(amountInr);
   const duplicate = pendingSnap.docs.find(doc => roundInr(doc.data().amountInr) === normalized);
   if (duplicate) {
-    throw httpError(
-      409,
+    throw new HttpsError(
+      'already-exists',
       'You already have a pending top-up for this amount. Wait for Super Admin approval or use a different amount.',
     );
   }
+}
+
+function validateWalletScreenshotBuffer(buffer, contentType) {
+  if (!buffer?.length) {
+    throw new HttpsError('invalid-argument', 'Payment screenshot is required.');
+  }
+  if (buffer.length > MAX_SCREENSHOT_BYTES) {
+    throw new HttpsError('invalid-argument', 'File must be 15 MB or smaller.');
+  }
+  const normalizedType = contentType || 'application/octet-stream';
+  if (!ALLOWED_SCREENSHOT_TYPES.has(normalizedType)) {
+    throw new HttpsError('invalid-argument', 'Screenshot must be JPEG, PNG, or WebP.');
+  }
+  return normalizedType;
+}
+
+async function processWalletTopUpSubmission(
+  db,
+  uid,
+  { amountInr, note, screenshotBuffer, screenshotContentType, screenshotName },
+) {
+  if (!Number.isFinite(amountInr) || amountInr <= 0) {
+    throw new HttpsError('invalid-argument', 'Enter a valid payment amount.');
+  }
+
+  const normalizedAmount = roundInr(amountInr);
+  await assertNoDuplicatePendingTopUp(db, uid, normalizedAmount);
+
+  const contentType = validateWalletScreenshotBuffer(screenshotBuffer, screenshotContentType);
+  const topUpId = crypto.randomUUID();
+  const profileSnap = await db.doc(`users/${uid}`).get();
+  const profile = profileSnap.exists ? profileSnap.data() : {};
+
+  const screenshotMeta = await uploadWalletScreenshot(
+    screenshotBuffer,
+    contentType,
+    topUpId,
+    screenshotName || 'screenshot.jpg',
+  );
+
+  try {
+    await db.doc(`walletTopUps/${topUpId}`).set({
+      rcId: uid,
+      rcCompanyName: profile.companyName?.trim() || profile.username?.trim() || '',
+      amountInr: normalizedAmount,
+      status: 'pending',
+      screenshotUrl: screenshotMeta.url,
+      screenshotPath: screenshotMeta.path,
+      screenshotName: screenshotMeta.name,
+      screenshotContentType: screenshotMeta.contentType,
+      note: typeof note === 'string' ? note.trim() : '',
+      submittedAt: new Date().toISOString(),
+      submittedByUid: uid,
+    });
+  } catch (err) {
+    await deleteWalletScreenshot(screenshotMeta.path);
+    throw err;
+  }
+
+  return { topUpId };
+}
+
+/**
+ * Callable wallet top-up submit (base64 screenshot). Preferred over HTTP multipart on Gen2.
+ */
+async function submitWalletTopUpCallableHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const uid = request.auth.uid;
+  await assertRcAdmin(db, uid, uid);
+
+  const amountInr = Number(request.data?.amountInr);
+  const note = typeof request.data?.note === 'string' ? request.data.note : '';
+  const screenshotBase64 =
+    typeof request.data?.screenshotBase64 === 'string' ? request.data.screenshotBase64.trim() : '';
+  const screenshotContentType =
+    typeof request.data?.screenshotContentType === 'string'
+      ? request.data.screenshotContentType.trim()
+      : 'image/jpeg';
+  const screenshotName =
+    typeof request.data?.screenshotName === 'string' ? request.data.screenshotName.trim() : 'screenshot.jpg';
+
+  if (!screenshotBase64) {
+    throw new HttpsError('invalid-argument', 'Payment screenshot is required.');
+  }
+
+  let screenshotBuffer;
+  try {
+    screenshotBuffer = Buffer.from(screenshotBase64, 'base64');
+  } catch {
+    throw new HttpsError('invalid-argument', 'Payment screenshot is invalid.');
+  }
+
+  if (!screenshotBuffer.length) {
+    throw new HttpsError('invalid-argument', 'Payment screenshot is required.');
+  }
+
+  return processWalletTopUpSubmission(db, uid, {
+    amountInr,
+    note,
+    screenshotBuffer,
+    screenshotContentType,
+    screenshotName,
+  });
 }
 
 /**
@@ -589,54 +695,28 @@ async function submitWalletTopUpHttpHandler(req, res, db, auth) {
     const note = typeof fields.note === 'string' ? fields.note.trim() : '';
     const screenshot = files.screenshot;
 
-    if (!screenshot?.buffer?.length) {
-      throw httpError(400, 'Payment screenshot is required.');
-    }
-    if (!Number.isFinite(amountInr) || amountInr <= 0) {
-      throw httpError(400, 'Enter a valid payment amount.');
-    }
-    if (screenshot.buffer.length > MAX_SCREENSHOT_BYTES) {
-      throw httpError(400, 'File must be 15 MB or smaller.');
-    }
-
-    const contentType = screenshot.mimeType || 'application/octet-stream';
-    if (!ALLOWED_SCREENSHOT_TYPES.has(contentType)) {
-      throw httpError(400, 'Screenshot must be JPEG, PNG, or WebP.');
-    }
-
-    const normalizedAmount = roundInr(amountInr);
-    await assertNoDuplicatePendingTopUp(db, uid, normalizedAmount);
-
-    const topUpId = crypto.randomUUID();
-    const profileSnap = await db.doc(`users/${uid}`).get();
-    const profile = profileSnap.exists ? profileSnap.data() : {};
-
-    const screenshotMeta = await uploadWalletScreenshot(
-      screenshot.buffer,
-      contentType,
-      topUpId,
-      screenshot.filename || 'screenshot.jpg',
-    );
-    screenshotPath = screenshotMeta.path;
-
-    await db.doc(`walletTopUps/${topUpId}`).set({
-      rcId: uid,
-      rcCompanyName: profile.companyName?.trim() || profile.username?.trim() || '',
-      amountInr: normalizedAmount,
-      status: 'pending',
-      screenshotUrl: screenshotMeta.url,
-      screenshotPath: screenshotMeta.path,
-      screenshotName: screenshotMeta.name,
-      screenshotContentType: screenshotMeta.contentType,
+    const result = await processWalletTopUpSubmission(db, uid, {
+      amountInr,
       note,
-      submittedAt: new Date().toISOString(),
-      submittedByUid: uid,
+      screenshotBuffer: screenshot?.buffer,
+      screenshotContentType: screenshot?.mimeType,
+      screenshotName: screenshot?.filename,
     });
 
-    res.status(200).json({ topUpId });
+    res.status(200).json(result);
   } catch (err) {
     await deleteWalletScreenshot(screenshotPath);
-    const status = err.statusCode || (err instanceof HttpsError ? 403 : 500);
+    const status =
+      err.statusCode
+      || (err instanceof HttpsError
+        ? err.code === 'already-exists'
+          ? 409
+          : err.code === 'invalid-argument'
+            ? 400
+            : err.code === 'unauthenticated'
+              ? 401
+              : 403
+        : 500);
     const message =
       err instanceof HttpsError
         ? err.message
@@ -653,5 +733,6 @@ module.exports = {
   refundRvWalletPaymentHandler,
   linkWalletPaymentToRecordsHandler,
   getWalletApiConfigHandler,
+  submitWalletTopUpCallableHandler,
   submitWalletTopUpHttpHandler,
 };

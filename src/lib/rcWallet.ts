@@ -22,8 +22,91 @@ export const WALLET_LEDGER_COLLECTION = 'walletLedger';
 const FUNCTIONS_REGION = 'us-central1';
 const DEFAULT_SUBMIT_WALLET_TOP_UP_URL =
   'https://us-central1-yesgatc.cloudfunctions.net/submitWalletTopUp';
+const WALLET_SCREENSHOT_MAX_BYTES = 4 * 1024 * 1024;
+const WALLET_SCREENSHOT_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 let cachedSubmitTopUpUrl: string | null = null;
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(new Error('Could not read screenshot.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Could not load screenshot.'));
+    image.src = dataUrl;
+  });
+}
+
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      blob => (blob ? resolve(blob) : reject(new Error('Could not compress screenshot.'))),
+      'image/jpeg',
+      quality,
+    );
+  });
+}
+
+async function prepareWalletScreenshotPayload(file: File): Promise<{
+  screenshotBase64: string;
+  screenshotContentType: string;
+  screenshotName: string;
+}> {
+  if (!WALLET_SCREENSHOT_TYPES.has(file.type)) {
+    throw new Error('Screenshot must be JPEG, PNG, or WebP.');
+  }
+
+  if (file.size <= WALLET_SCREENSHOT_MAX_BYTES) {
+    const dataUrl = await readFileAsDataUrl(file);
+    const base64 = dataUrl.split(',')[1] || '';
+    if (!base64) throw new Error('Could not read screenshot.');
+    return {
+      screenshotBase64: base64,
+      screenshotContentType: file.type,
+      screenshotName: file.name,
+    };
+  }
+
+  const dataUrl = await readFileAsDataUrl(file);
+  const image = await loadImageFromDataUrl(dataUrl);
+  const maxEdge = 2200;
+  const scale = Math.min(1, maxEdge / Math.max(image.width, image.height));
+  const width = Math.max(1, Math.round(image.width * scale));
+  const height = Math.max(1, Math.round(image.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Could not prepare screenshot.');
+  ctx.drawImage(image, 0, 0, width, height);
+
+  for (let quality = 0.88; quality >= 0.45; quality -= 0.08) {
+    const blob = await canvasToJpegBlob(canvas, quality);
+    if (blob.size <= WALLET_SCREENSHOT_MAX_BYTES) {
+      const compressedDataUrl = await readFileAsDataUrl(
+        new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }),
+      );
+      const base64 = compressedDataUrl.split(',')[1] || '';
+      if (!base64) throw new Error('Could not compress screenshot.');
+      return {
+        screenshotBase64: base64,
+        screenshotContentType: 'image/jpeg',
+        screenshotName: file.name.replace(/\.\w+$/, '.jpg'),
+      };
+    }
+  }
+
+  throw new Error('Screenshot is too large. Use a smaller image.');
+}
 
 function functionsClient() {
   return getFunctions(app, FUNCTIONS_REGION);
@@ -66,21 +149,48 @@ async function resolveSubmitWalletTopUpUrl(): Promise<string> {
   return cachedSubmitTopUpUrl;
 }
 
-export async function submitWalletTopUpWithScreenshot(input: {
+async function submitWalletTopUpViaCallable(input: {
   amountInr: number;
   note?: string;
   file: File;
   onProgress?: (percent: number) => void;
 }): Promise<{ topUpId: string }> {
-  if (!Number.isFinite(input.amountInr) || input.amountInr <= 0) {
-    throw new Error('Enter a valid payment amount.');
+  input.onProgress?.(15);
+  const screenshot = await prepareWalletScreenshotPayload(input.file);
+  input.onProgress?.(55);
+
+  const fn = httpsCallable<
+    {
+      amountInr: number;
+      note?: string;
+      screenshotBase64: string;
+      screenshotContentType: string;
+      screenshotName: string;
+    },
+    { topUpId: string }
+  >(functionsClient(), 'submitWalletTopUpCallable');
+
+  input.onProgress?.(75);
+  const result = await fn({
+    amountInr: input.amountInr,
+    note: input.note?.trim() ?? '',
+    ...screenshot,
+  });
+  input.onProgress?.(100);
+
+  if (!result.data.topUpId) {
+    throw new Error('Could not submit top-up.');
   }
+  return { topUpId: result.data.topUpId };
+}
 
-  await auth.authStateReady();
-  const user = auth.currentUser;
-  if (!user) throw new Error('You must be signed in to submit a top-up.');
-
-  const token = await user.getIdToken(true);
+async function submitWalletTopUpViaHttp(input: {
+  amountInr: number;
+  note?: string;
+  file: File;
+  onProgress?: (percent: number) => void;
+}): Promise<{ topUpId: string }> {
+  const token = await auth.currentUser!.getIdToken(true);
   const formData = new FormData();
   formData.append('amountInr', String(input.amountInr));
   formData.append('note', input.note?.trim() ?? '');
@@ -124,6 +234,51 @@ export async function submitWalletTopUpWithScreenshot(input: {
       reject(new Error('Top-up submit timed out. Check your connection and try again.'));
     xhr.send(formData);
   });
+}
+
+export async function submitWalletTopUpWithScreenshot(input: {
+  amountInr: number;
+  note?: string;
+  file: File;
+  onProgress?: (percent: number) => void;
+}): Promise<{ topUpId: string }> {
+  if (!Number.isFinite(input.amountInr) || input.amountInr <= 0) {
+    throw new Error('Enter a valid payment amount.');
+  }
+
+  await auth.authStateReady();
+  if (!auth.currentUser) throw new Error('You must be signed in to submit a top-up.');
+
+  input.onProgress?.(5);
+
+  try {
+    return await submitWalletTopUpViaCallable(input);
+  } catch (callableErr: unknown) {
+    const callableCode =
+      typeof callableErr === 'object'
+      && callableErr
+      && 'code' in callableErr
+      && typeof callableErr.code === 'string'
+        ? callableErr.code
+        : '';
+    const isUserFacingCallableError =
+      callableCode === 'functions/already-exists'
+      || callableCode === 'functions/invalid-argument'
+      || callableCode === 'functions/permission-denied'
+      || callableCode === 'functions/unauthenticated';
+
+    if (isUserFacingCallableError) {
+      throw callableErr instanceof Error ? callableErr : new Error('Could not submit top-up.');
+    }
+
+    try {
+      return await submitWalletTopUpViaHttp(input);
+    } catch (httpErr: unknown) {
+      if (httpErr instanceof Error && httpErr.message) throw httpErr;
+      if (callableErr instanceof Error && callableErr.message) throw callableErr;
+      throw new Error('Could not submit top-up.');
+    }
+  }
 }
 
 export function rcWalletRef(rcId: string) {
