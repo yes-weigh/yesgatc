@@ -9731,12 +9731,16 @@ body.verification-mobile-wizard-active {
   border: 1px solid rgba(251, 191, 36, 0.35);
 }
 
+.verification-list-card-type-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .verification-list-zoho-due-badge {
   display: inline-flex;
   align-items: center;
-  margin-top: 0.2rem;
-  margin-bottom: 0.35rem;
-  margin-left: 0.35rem;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
   font-size: 0.68rem;

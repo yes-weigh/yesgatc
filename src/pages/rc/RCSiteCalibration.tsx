@@ -1532,15 +1532,6 @@ export const RCSiteCalibration: React.FC = () => {
         .map(record => record.id),
     );
   }, [records, appSettings]);
-  const zohoInvoiceDueRecordIds = useMemo(
-    () =>
-      new Set(
-        records
-          .filter(record => isRvZohoInvoiceOutstanding(record, appSettings))
-          .map(record => record.id),
-      ),
-    [records, appSettings],
-  );
   const isCertifiedActionsView =
     isViewMode && editingRecord !== null && canShowVerificationCertifiedActions(editingRecord);
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
@@ -1593,6 +1584,16 @@ export const RCSiteCalibration: React.FC = () => {
     });
     return collapseVerificationsForListDisplay(filtered, records);
   }, [records, statusFilter, typeFilter, searchTerm]);
+
+  const zohoInvoiceDueRecordIds = useMemo(
+    () =>
+      new Set(
+        filteredRecords
+          .filter(record => isRvZohoInvoiceOutstanding(record))
+          .map(record => record.id),
+      ),
+    [filteredRecords],
+  );
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),

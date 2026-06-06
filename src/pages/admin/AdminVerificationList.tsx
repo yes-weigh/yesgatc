@@ -243,11 +243,11 @@ export const AdminVerificationList: React.FC = () => {
   const zohoInvoiceDueRecordIds = useMemo(
     () =>
       new Set(
-        records
-          .filter(record => isRvZohoInvoiceOutstanding(record, appSettings))
+        filteredRecords
+          .filter(record => isRvZohoInvoiceOutstanding(record))
           .map(record => record.id),
       ),
-    [records, appSettings],
+    [filteredRecords],
   );
 
   return (

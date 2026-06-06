@@ -225,9 +225,6 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   {walletPaymentDue && (
                     <span className="verification-list-wallet-due-badge">Payment due</span>
                   )}
-                  {zohoInvoiceDue && (
-                    <span className="verification-list-zoho-due-badge">Zoho due</span>
-                  )}
                   <p className="verification-list-card-cert text-mono" title={certNo}>
                     {certNo}
                   </p>
@@ -271,12 +268,17 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                         <span className="verification-list-card-metric-label verification-list-card-metric-label--type">
                           Type
                         </span>
-                        <span
-                          className={`verification-list-card-type-badge role-badge ${
-                            record.verificationType === 'RV' ? 'badge-vct' : 'badge-rc'
-                          }`}
-                        >
-                          {record.verificationType === 'RV' ? 'RV' : 'OV'}
+                        <span className="verification-list-card-type-row">
+                          <span
+                            className={`verification-list-card-type-badge role-badge ${
+                              record.verificationType === 'RV' ? 'badge-vct' : 'badge-rc'
+                            }`}
+                          >
+                            {record.verificationType === 'RV' ? 'RV' : 'OV'}
+                          </span>
+                          {zohoInvoiceDue && record.verificationType === 'RV' && (
+                            <span className="verification-list-zoho-due-badge">Zoho due</span>
+                          )}
                         </span>
                       </div>
                     )}

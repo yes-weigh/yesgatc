@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAppSettings } from '../hooks/useAppSettings';
 import {
   isRvZohoInvoiceOutstanding,
+  isZohoRvInvoicingEnabled,
   rcZohoIdReady,
   rvZohoInvoiceSummary,
 } from '../lib/zohoRvSubmit';
@@ -58,10 +59,13 @@ export const RvLegacyZohoInvoiceSection: React.FC<RvLegacyZohoInvoiceSectionProp
   const invoiceSummary = useMemo(() => rvZohoInvoiceSummary(record), [record]);
 
   const showLegacyZohoBanner =
-    isRvZohoInvoiceOutstanding(record, appSettings)
+    isRvZohoInvoiceOutstanding(record)
     && invoiceSummary != null;
 
   const pushBlockedReason = useMemo(() => {
+    if (!isZohoRvInvoicingEnabled(appSettings)) {
+      return 'Enable Zoho RV invoicing in Admin Settings before pushing.';
+    }
     if (!rcZohoIdReady(rcProfile?.zohoId)) {
       return 'Set the RC Zoho customer ID on the RC profile before pushing.';
     }
@@ -72,7 +76,7 @@ export const RvLegacyZohoInvoiceSection: React.FC<RvLegacyZohoInvoiceSectionProp
       return 'Maximum capacity is missing — cannot select the Zoho product.';
     }
     return null;
-  }, [rcProfile?.zohoId, record.applicationNumber, record.maximumCapacity]);
+  }, [appSettings, rcProfile?.zohoId, record.applicationNumber, record.maximumCapacity]);
 
   const handlePush = async () => {
     if (pushBlockedReason) return;

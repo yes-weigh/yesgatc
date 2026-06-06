@@ -1,6 +1,5 @@
 import { normalizeVerificationStatus } from './verificationRequest';
 import { formatRcFeeAmount, normalizeZohoId, verificationFeeWithGst } from './rcProfileFields';
-import type { AppGlobalSettings } from './appSettings';
 import type { ZohoRvSettings } from './zohoSettings';
 import type { JobType, SiteCalibration } from '../types';
 
@@ -70,25 +69,40 @@ export function zohoPushStatusLabel(status: ZohoPushStatus): string {
   }
 }
 
+/** True once an RV has left the draft stage (includes legacy rows missing `status`). */
+export function isRvVerificationSubmittedOrBeyond(
+  record: Pick<SiteCalibration, 'status' | 'certificateNumber' | 'submittedAt' | 'approvedAt' | 'certifiedAt'>,
+): boolean {
+  if (normalizeVerificationStatus(record) !== 'draft') return true;
+  return Boolean(
+    record.certificateNumber?.trim()
+    || record.submittedAt?.trim()
+    || record.approvedAt?.trim()
+    || record.certifiedAt?.trim(),
+  );
+}
+
 /** Submitted RV records that still need a Zoho invoice (e.g. before automation existed). */
 export function isRvZohoInvoiceOutstanding(
   record: Pick<
     SiteCalibration,
     | 'verificationType'
     | 'status'
+    | 'certificateNumber'
+    | 'submittedAt'
+    | 'approvedAt'
+    | 'certifiedAt'
     | 'zohoInvoiceId'
     | 'zohoPushStatus'
     | 'resubmittedFromId'
   > | null
   | undefined,
-  settings: Pick<AppGlobalSettings, 'zohoRvInvoicingEnabled'>,
 ): boolean {
   if (!record || record.verificationType !== 'RV') return false;
-  if (!isZohoRvInvoicingEnabled(settings)) return false;
   if (record.resubmittedFromId?.trim()) return false;
   if (record.zohoInvoiceId?.trim()) return false;
   if (record.zohoPushStatus === 'sent') return false;
-  return normalizeVerificationStatus(record as SiteCalibration) !== 'draft';
+  return isRvVerificationSubmittedOrBeyond(record);
 }
 
 export type RvZohoInvoiceSummary = {
