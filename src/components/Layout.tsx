@@ -134,6 +134,7 @@ export const Layout: React.FC = () => {
           { path: '/admin/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
           { path: '/admin/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/admin/settings', icon: <Settings size={20} />, label: 'Settings' },
           { path: '/admin/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
         ];
       case 'rc_admin':

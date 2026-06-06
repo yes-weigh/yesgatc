@@ -4,7 +4,11 @@ import { useAuth } from '../context/AuthContext';
 import { RvPaymentPanel } from './RvPaymentPanel';
 import { RV_PAYMENT_TEST_BREAKDOWN } from '../lib/rvPaymentAmount';
 
-export const AdminRazorpayTestCard: React.FC = () => {
+type AdminRazorpayTestCardProps = {
+  className?: string;
+};
+
+export const AdminRazorpayTestCard: React.FC<AdminRazorpayTestCardProps> = ({ className = '' }) => {
   const { user } = useAuth();
   const [testOpen, setTestOpen] = useState(false);
   const [lastSuccess, setLastSuccess] = useState<string | null>(null);
@@ -22,7 +26,7 @@ export const AdminRazorpayTestCard: React.FC = () => {
 
   return (
     <>
-      <div className="panel glass mt-6 admin-razorpay-test-card">
+      <div className={`panel glass mt-6 admin-razorpay-test-card${className ? ` ${className}` : ''}`}>
         <div className="panel-header">
           <h2>
             <CreditCard className="inline-icon" /> Razorpay integration test

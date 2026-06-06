@@ -25,7 +25,11 @@ function settingsFromMode(mode: RvPaymentMode): AppGlobalSettings {
   };
 }
 
-export const RvPaymentSettingsCard: React.FC = () => {
+type RvPaymentSettingsCardProps = {
+  className?: string;
+};
+
+export const RvPaymentSettingsCard: React.FC<RvPaymentSettingsCardProps> = ({ className = '' }) => {
   const { appSettings, appSettingsLoading } = useAppSettings();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -51,7 +55,7 @@ export const RvPaymentSettingsCard: React.FC = () => {
   };
 
   return (
-    <div className="panel glass mt-6">
+    <div className={`panel glass mt-6${className ? ` ${className}` : ''}`}>
       <div className="panel-header">
         <h2><CreditCard className="inline-icon" /> RV payment method</h2>
       </div>

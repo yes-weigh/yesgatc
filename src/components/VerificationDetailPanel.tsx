@@ -1,36 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import React from 'react';
 import { Eye } from 'lucide-react';
-import { db } from '../firebase';
-import { useAppContext } from '../context/AppContext';
-import { useAuth } from '../context/AuthContext';
-import { useAppSettings } from '../hooks/useAppSettings';
 import { InlineFormPanel } from './InlineFormPanel';
 import { StorageImage } from './StorageImage';
 import { VerificationSerialGroupView } from './VerificationSerialGroupView';
 import { ListViewBackBar } from './ListViewBackBar';
-import { RvOutstandingWalletPaymentBanner } from './RvOutstandingWalletPaymentBanner';
-import { RvWalletPaymentPanel } from './RvWalletPaymentPanel';
+import { RvLegacyWalletPaymentSection } from './RvLegacyWalletPaymentSection';
 import { getVerificationSerialGroup } from '../lib/verificationResubmit';
 import { VERIFICATION_LOCATION_OPTIONS } from '../lib/siteCalibrationProfileFields';
-import { resolveRcFeesStructure } from '../lib/rcProfileFields';
-import {
-  buildRvPaymentFirestorePatch,
-  computeRvPaymentBreakdownForRecord,
-  isRvWalletPaymentOutstanding,
-} from '../lib/rvPaymentAmount';
-import {
-  isWalletPaymentId,
-  linkWalletPaymentToRecords,
-  refundRvWalletPayment,
-} from '../lib/rcWallet';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
 import {
   canShowVerificationCertifiedActions,
   formatVerificationCapAcc,
   verificationVctLabel,
 } from '../lib/verificationRequest';
-import type { FirestoreUserDoc, SiteCalibration } from '../types';
+import type { SiteCalibration } from '../types';
 
 interface VerificationDetailPanelProps {
   record: SiteCalibration;
@@ -96,92 +79,6 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
   onClose,
   onRecordsChanged,
 }) => {
-  const { user } = useAuth();
-  const { products } = useAppContext();
-  const { appSettings } = useAppSettings();
-  const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
-  const [legacyPaymentOpen, setLegacyPaymentOpen] = useState(false);
-  const [legacyPaying, setLegacyPaying] = useState(false);
-  const [legacyPaymentError, setLegacyPaymentError] = useState('');
-
-  const isSuperAdmin = user?.role === 'super_admin';
-
-  useEffect(() => {
-    const rcId = record.rcId?.trim();
-    if (!rcId) {
-      setRcProfile(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const snap = await getDoc(doc(db, 'users', rcId));
-        if (!cancelled) {
-          setRcProfile(snap.exists() ? (snap.data() as FirestoreUserDoc) : null);
-        }
-      } catch {
-        if (!cancelled) setRcProfile(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [record.rcId]);
-
-  const legacyPaymentBreakdown = useMemo(
-    () =>
-      computeRvPaymentBreakdownForRecord(
-        record,
-        products,
-        resolveRcFeesStructure(rcProfile),
-      ),
-    [record, products, rcProfile],
-  );
-
-  const showLegacyPaymentBanner =
-    isRvWalletPaymentOutstanding(record, appSettings)
-    && legacyPaymentBreakdown != null
-    && legacyPaymentBreakdown.total > 0;
-
-  const handleLegacyPaymentComplete = async (paymentId: string) => {
-    if (!legacyPaymentBreakdown || !record.rcId) return;
-    setLegacyPaymentOpen(false);
-    const walletPaymentId = isWalletPaymentId(paymentId) ? paymentId : null;
-    setLegacyPaying(true);
-    setLegacyPaymentError('');
-    try {
-      await updateDoc(doc(db, 'siteCalibrations', record.id), {
-        ...buildRvPaymentFirestorePatch(paymentId, legacyPaymentBreakdown.total),
-      });
-      if (walletPaymentId) {
-        await linkWalletPaymentToRecords({
-          paymentId: walletPaymentId,
-          recordIds: [record.id],
-        });
-      }
-      await onRecordsChanged?.();
-    } catch (err: unknown) {
-      if (walletPaymentId) {
-        try {
-          await refundRvWalletPayment({
-            paymentId: walletPaymentId,
-            reason: 'Failed to record legacy wallet payment on verification',
-          });
-        } catch {
-          setLegacyPaymentError(
-            `${err instanceof Error ? err.message : 'Failed to record payment.'} Wallet refund could not be completed automatically — contact support with payment id ${walletPaymentId}.`,
-          );
-          return;
-        }
-      }
-      setLegacyPaymentError(
-        err instanceof Error ? err.message : 'Failed to record payment on verification.',
-      );
-    } finally {
-      setLegacyPaying(false);
-    }
-  };
-
   const serialGroup = getVerificationSerialGroup(
     allRecords.length ? allRecords : [record],
     record,
@@ -201,8 +98,10 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
           <VerificationSerialGroupView
             record={record}
             allRecords={allRecords.length ? allRecords : [record]}
+            rcCenterName={rcCenterName}
             onClose={onClose}
             onResubmitted={onRecordsChanged}
+            onPaymentRecorded={onRecordsChanged}
           />
         </div>
       </InlineFormPanel>
@@ -234,23 +133,11 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
                 <span className="text-mono text-xs">Cert {record.certificateNumber.trim()}</span>
               )}
             </div>
-            {showLegacyPaymentBanner && legacyPaymentBreakdown && (
-              <RvOutstandingWalletPaymentBanner
-                breakdown={legacyPaymentBreakdown}
-                canPay={isSuperAdmin}
-                rcCenterName={rcCenterName}
-                onPay={() => {
-                  setLegacyPaymentError('');
-                  setLegacyPaymentOpen(true);
-                }}
-                paying={legacyPaying}
-              />
-            )}
-            {legacyPaymentError && (
-              <p className="rc-form-topbar-error text-sm mt-2" role="alert">
-                {legacyPaymentError}
-              </p>
-            )}
+            <RvLegacyWalletPaymentSection
+              record={record}
+              rcCenterName={rcCenterName}
+              onPaymentRecorded={onRecordsChanged}
+            />
           </div>
         </div>
 
@@ -398,17 +285,6 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
       </div>
     </InlineFormPanel>
 
-    {legacyPaymentOpen && legacyPaymentBreakdown && record.rcId && (
-      <RvWalletPaymentPanel
-        breakdown={legacyPaymentBreakdown}
-        rcId={record.rcId}
-        recordIds={[record.id]}
-        onPaid={handleLegacyPaymentComplete}
-        onClose={() => setLegacyPaymentOpen(false)}
-        walletOwnerLabel={rcCenterName?.trim() ? `${rcCenterName.trim()}'s` : "this RC centre's"}
-        paymentContext="legacy-admin"
-      />
-    )}
     </>
   );
 };

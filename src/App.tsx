@@ -15,6 +15,7 @@ import { AdminVehicleList } from './pages/admin/AdminVehicleList';
 import { AdminVerificationList } from './pages/admin/AdminVerificationList';
 import { AdminLaboratory } from './pages/admin/AdminLaboratory';
 import { AdminWalletTopUps } from './pages/admin/AdminWalletTopUps';
+import { AdminSettings } from './pages/admin/AdminSettings';
 import { AdminQualityManagement, AdminNotifications } from './pages/admin/AdminMenuPages';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
@@ -62,6 +63,7 @@ const App: React.FC = () => {
                 <Route path="quality-management" element={<AdminQualityManagement />} />
                 <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="settings" element={<AdminSettings />} />
                 <Route path="wallet" element={<AdminWalletTopUps />} />
               </Route>
             </Route>

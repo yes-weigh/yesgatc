@@ -9699,6 +9699,10 @@ body.verification-mobile-wizard-active {
   gap: 0.4rem;
 }
 
+.verification-serial-group-payment-banner {
+  margin-bottom: 1rem;
+}
+
 .verification-list-wallet-due-badge {
   display: inline-flex;
   align-items: center;
@@ -13724,6 +13728,23 @@ body.verification-photo-viewer-open {
 .rv-payment-error {
   font-size: 0.76rem;
   color: #fca5a5;
+}
+
+.admin-settings-header {
+  margin-bottom: 1.25rem;
+}
+
+.admin-settings-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.admin-settings-page .panel.admin-settings-section:first-of-type {
+  margin-top: 0;
 }
 
 .admin-razorpay-test-whitelist {

@@ -22,14 +22,17 @@ import { VerificationCertifiedActions } from './VerificationCertifiedActions';
 import { VerificationCertificatePreview } from './VerificationCertificatePreview';
 import { VerificationDetailsCard } from './VerificationDetailsCard';
 import { VerificationSummaryChrome } from './VerificationSummaryChrome';
+import { RvLegacyWalletPaymentSection } from './RvLegacyWalletPaymentSection';
 import { ListViewBackBar } from './ListViewBackBar';
 import type { SiteCalibration } from '../types';
 
 type VerificationSerialGroupViewProps = {
   record: SiteCalibration;
   allRecords: SiteCalibration[];
+  rcCenterName?: string;
   onClose: () => void;
   onResubmitted?: (newRecordId: string) => void | Promise<void>;
+  onPaymentRecorded?: () => void | Promise<void>;
   closeDisabled?: boolean;
 };
 
@@ -45,8 +48,10 @@ function versionTone(record: SiteCalibration, group: SiteCalibration[]): string 
 export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewProps> = ({
   record,
   allRecords,
+  rcCenterName,
   onClose,
   onResubmitted,
+  onPaymentRecorded,
   closeDisabled = false,
 }) => {
   const { user } = useAuth();
@@ -147,6 +152,16 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
           {error}
         </p>
       )}
+
+      <RvLegacyWalletPaymentSection
+        record={record}
+        rcCenterName={rcCenterName}
+        onPaymentRecorded={async () => {
+          await onPaymentRecorded?.();
+          await onResubmitted?.(record.id);
+        }}
+        className="verification-serial-group-payment-banner"
+      />
 
       <div className="verification-serial-group-versions">
         {sortedGroup.map(version => {
