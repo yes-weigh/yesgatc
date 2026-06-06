@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { IndianRupee, Loader2, RefreshCw, Wallet } from 'lucide-react';
+import { ExternalLink, IndianRupee, Loader2, RefreshCw, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StorageImage } from '../../components/StorageImage';
 import {
@@ -14,6 +14,7 @@ import {
   walletTopUpStatusLabel,
 } from '../../lib/rcWallet';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
+import { buildWalletUpiPayUrl, parseWalletTopUpAmountInput } from '../../lib/walletUpiPay';
 import { useRcScope } from '../../lib/roleScope';
 import type { WalletTopUp } from '../../types';
 
@@ -72,6 +73,13 @@ export const RCWallet: React.FC = () => {
       unsubTopUps();
     };
   }, [rcUid]);
+
+  const amountInr = useMemo(() => parseWalletTopUpAmountInput(amount), [amount]);
+
+  const upiPayUrl = useMemo(
+    () => (amountInr != null ? buildWalletUpiPayUrl(amountInr, note) : null),
+    [amountInr, note],
+  );
 
   const screenshotMeta = useMemo(
     () =>
@@ -191,8 +199,8 @@ export const RCWallet: React.FC = () => {
             <div className="verification-evidence-panel-head-text">
               <h2 className="verification-evidence-panel-title">Add payment</h2>
               <p className="verification-evidence-panel-meta">
-                Transfer fees to the designated account, then upload the payment screenshot here.
-                Super Admin will approve it and credit your wallet.
+                Enter the amount, pay via UPI to Interweighing Pvt Ltd, then upload the payment
+                screenshot here. Super Admin will approve it and credit your wallet.
               </p>
             </div>
           </header>
@@ -226,6 +234,32 @@ export const RCWallet: React.FC = () => {
                 disabled={submitting}
               />
             </div>
+          </div>
+
+          <div className="rc-wallet-upi-step">
+            <div className="rc-wallet-upi-step__copy">
+              <p className="rc-wallet-upi-step__title">Step 1 — Pay via UPI</p>
+              <p className="rc-wallet-upi-step__meta">
+                Opens your UPI app with{' '}
+                {amountInr != null ? formatRcFeeAmount(amountInr) : 'the amount above'} pre-filled for
+                Interweighing Pvt Ltd.
+              </p>
+            </div>
+            {upiPayUrl ? (
+              <a
+                href={upiPayUrl}
+                className="btn btn-primary rc-wallet-upi-btn"
+                onClick={() => setError('')}
+              >
+                <ExternalLink size={16} aria-hidden />
+                Pay via UPI app
+              </a>
+            ) : (
+              <button type="button" className="btn btn-primary rc-wallet-upi-btn" disabled>
+                <ExternalLink size={16} aria-hidden />
+                Pay via UPI app
+              </button>
+            )}
           </div>
 
           <VerificationPhotoUploadSection title="Payment screenshot" columns={2}>

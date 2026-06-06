@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -6,14 +6,17 @@ import { StorageImage } from '../../components/StorageImage';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import {
+  deleteWalletLedgerEntry,
+  deleteWalletTopUp,
   fetchWalletLedger,
   fetchWalletTopUps,
+  resetRcWallet,
   reviewWalletTopUp,
   walletLedgerTypeLabel,
   walletTopUpStatusLabel,
 } from '../../lib/rcWallet';
 import type { WalletLedgerEntry, WalletTopUp } from '../../types';
-import { CheckCircle2, IndianRupee, RefreshCw, Wallet, X, XCircle } from 'lucide-react';
+import { CheckCircle2, IndianRupee, RefreshCw, Trash2, Wallet, X, XCircle } from 'lucide-react';
 
 export const AdminWalletTopUps: React.FC = () => {
   const navigate = useNavigate();
@@ -23,10 +26,12 @@ export const AdminWalletTopUps: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [ledgerLoading, setLedgerLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
   const [error, setError] = useState('');
   const [rejectTarget, setRejectTarget] = useState<WalletTopUp | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [resettingRcId, setResettingRcId] = useState<string | null>(null);
 
   const refreshTopUps = useCallback(async () => {
     setLoading(true);
@@ -68,6 +73,21 @@ export const AdminWalletTopUps: React.FC = () => {
 
   const pendingCount = topUps.filter(item => item.status === 'pending').length;
 
+  const rcWipeTargets = useMemo(() => {
+    const map = new Map<string, string>();
+    topUps.forEach(item => {
+      if (!map.has(item.rcId)) {
+        map.set(item.rcId, item.rcCompanyName?.trim() || item.rcId);
+      }
+    });
+    ledger.forEach(item => {
+      if (!map.has(item.rcId)) {
+        map.set(item.rcId, item.rcId);
+      }
+    });
+    return [...map.entries()].map(([rcId, label]) => ({ rcId, label }));
+  }, [topUps, ledger]);
+
   const handleApprove = async (item: WalletTopUp) => {
     const ok = await confirm({
       title: 'Approve wallet top-up?',
@@ -98,6 +118,69 @@ export const AdminWalletTopUps: React.FC = () => {
     if (reviewingId) return;
     setRejectTarget(null);
     setRejectReason('');
+  };
+
+  const handleDeleteTopUp = async (item: WalletTopUp) => {
+    const ok = await confirm({
+      title: 'Delete wallet top-up?',
+      message:
+        item.status === 'approved'
+          ? `Permanently delete this approved top-up and remove ${formatRcFeeAmount(item.amountInr)} from ${item.rcCompanyName || item.rcId}'s wallet balance?`
+          : `Permanently delete this ${item.status} top-up from ${item.rcCompanyName || item.rcId}?`,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
+
+    setDeletingId(item.id);
+    setError('');
+    try {
+      await deleteWalletTopUp(item.id);
+      await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Delete failed.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleDeleteLedgerEntry = async (entry: WalletLedgerEntry) => {
+    const ok = await confirm({
+      title: 'Delete ledger entry?',
+      message: `Remove this ${walletLedgerTypeLabel(entry.type).toLowerCase()} and reverse its effect on ${entry.rcId}'s wallet balance?`,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
+
+    setDeletingId(entry.id);
+    setError('');
+    try {
+      await deleteWalletLedgerEntry(entry.id);
+      await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Delete failed.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleResetRcWallet = async (rcId: string, label: string) => {
+    const ok = await confirm({
+      title: 'Reset RC wallet?',
+      message: `Delete ALL top-ups, ledger entries, and screenshots for ${label}, and set wallet balance to ₹0? This cannot be undone.`,
+      confirmLabel: 'Reset wallet',
+    });
+    if (!ok) return;
+
+    setResettingRcId(rcId);
+    setError('');
+    try {
+      await resetRcWallet(rcId);
+      await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Wallet reset failed.');
+    } finally {
+      setResettingRcId(null);
+    }
   };
 
   const handleRejectConfirm = async () => {
@@ -157,6 +240,31 @@ export const AdminWalletTopUps: React.FC = () => {
 
           {error && <p className="form-error mb-3">{error}</p>}
 
+          {rcWipeTargets.length > 0 && (
+            <div className="admin-wallet-wipe-panel mb-4">
+              <p className="admin-wallet-wipe-panel__title">Pre-production wipe</p>
+              <p className="text-sm text-muted mb-3">
+                Reset an RC wallet to ₹0 and delete all of its top-ups and ledger history.
+              </p>
+              <div className="admin-wallet-wipe-panel__actions">
+                {rcWipeTargets.map(target => (
+                  <button
+                    key={target.rcId}
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={resettingRcId === target.rcId}
+                    onClick={() => void handleResetRcWallet(target.rcId, target.label)}
+                  >
+                    <Trash2 size={14} aria-hidden />
+                    {resettingRcId === target.rcId
+                      ? 'Resetting…'
+                      : `Reset ${target.label}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <div className="text-center py-10"><span className="spinner-inline" /></div>
           ) : topUps.length === 0 ? (
@@ -205,28 +313,39 @@ export const AdminWalletTopUps: React.FC = () => {
                     <p className="form-error mt-2 mb-0">{item.rejectionReason}</p>
                   )}
 
-                  {item.status === 'pending' && (
-                    <div className="admin-wallet-card__actions">
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        disabled={reviewingId === item.id}
-                        onClick={() => void handleApprove(item)}
-                      >
-                        <CheckCircle2 size={14} aria-hidden />
-                        {reviewingId === item.id ? 'Processing…' : 'Approve'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        disabled={reviewingId === item.id}
-                        onClick={() => openRejectModal(item)}
-                      >
-                        <XCircle size={14} aria-hidden />
-                        Reject
-                      </button>
-                    </div>
-                  )}
+                  <div className="admin-wallet-card__actions">
+                    {item.status === 'pending' && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          disabled={reviewingId === item.id || deletingId === item.id}
+                          onClick={() => void handleApprove(item)}
+                        >
+                          <CheckCircle2 size={14} aria-hidden />
+                          {reviewingId === item.id ? 'Processing…' : 'Approve'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          disabled={reviewingId === item.id || deletingId === item.id}
+                          onClick={() => openRejectModal(item)}
+                        >
+                          <XCircle size={14} aria-hidden />
+                          Reject
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm admin-wallet-delete-btn"
+                      disabled={deletingId === item.id || reviewingId === item.id}
+                      onClick={() => void handleDeleteTopUp(item)}
+                    >
+                      <Trash2 size={14} aria-hidden />
+                      {deletingId === item.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -272,11 +391,22 @@ export const AdminWalletTopUps: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  <p className="text-sm text-muted mb-0">
-                    {new Date(entry.createdAt).toLocaleString()}
-                    {entry.status === 'refunded' ? ' · refunded' : ''}
-                    {entry.refundReason ? ` · ${entry.refundReason}` : ''}
-                  </p>
+                  <div className="admin-wallet-ledger-item__foot">
+                    <p className="text-sm text-muted mb-0">
+                      {new Date(entry.createdAt).toLocaleString()}
+                      {entry.status === 'refunded' ? ' · refunded' : ''}
+                      {entry.refundReason ? ` · ${entry.refundReason}` : ''}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm admin-wallet-delete-btn"
+                      disabled={deletingId === entry.id}
+                      onClick={() => void handleDeleteLedgerEntry(entry)}
+                    >
+                      <Trash2 size={14} aria-hidden />
+                      {deletingId === entry.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>

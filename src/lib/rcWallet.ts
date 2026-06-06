@@ -436,6 +436,56 @@ export async function linkWalletPaymentToRecords(input: {
   return result.data;
 }
 
+export async function deleteWalletTopUp(topUpId: string): Promise<{
+  topUpId: string;
+  rcId: string;
+  balanceInr: number;
+  deleted: boolean;
+}> {
+  const fn = httpsCallable<{ topUpId: string }, {
+    topUpId: string;
+    rcId: string;
+    balanceInr: number;
+    deleted: boolean;
+  }>(functionsClient(), 'deleteWalletTopUp');
+  const result = await fn({ topUpId });
+  return result.data;
+}
+
+export async function deleteWalletLedgerEntry(ledgerId: string): Promise<{
+  ledgerId: string;
+  rcId: string;
+  balanceInr: number;
+  deleted: boolean;
+}> {
+  const fn = httpsCallable<{ ledgerId: string }, {
+    ledgerId: string;
+    rcId: string;
+    balanceInr: number;
+    deleted: boolean;
+  }>(functionsClient(), 'deleteWalletLedgerEntry');
+  const result = await fn({ ledgerId });
+  return result.data;
+}
+
+export async function resetRcWallet(rcId: string): Promise<{
+  rcId: string;
+  balanceInr: number;
+  deletedTopUps: number;
+  deletedLedgerEntries: number;
+  reset: boolean;
+}> {
+  const fn = httpsCallable<{ rcId: string }, {
+    rcId: string;
+    balanceInr: number;
+    deletedTopUps: number;
+    deletedLedgerEntries: number;
+    reset: boolean;
+  }>(functionsClient(), 'resetRcWallet');
+  const result = await fn({ rcId });
+  return result.data;
+}
+
 export function walletTopUpStatusLabel(status: WalletTopUpStatus): string {
   if (status === 'approved') return 'Approved';
   if (status === 'rejected') return 'Rejected';

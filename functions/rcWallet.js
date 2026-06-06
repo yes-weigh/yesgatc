@@ -727,6 +727,224 @@ async function submitWalletTopUpHttpHandler(req, res, db, auth) {
   }
 }
 
+async function deleteWalletTopUpStorage(topUpId, screenshotPath) {
+  if (screenshotPath) {
+    await deleteWalletScreenshot(screenshotPath);
+    return;
+  }
+
+  try {
+    await getStorage().bucket().deleteFiles({ prefix: `walletTopUps/${topUpId}/` });
+  } catch (err) {
+    console.warn('Failed to delete wallet top-up storage', topUpId, err);
+  }
+}
+
+/**
+ * Super Admin deletes a wallet top-up (any status) and reverses balance if approved.
+ * Pre-production wipe helper.
+ */
+async function deleteWalletTopUpHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  await assertSuperAdmin(db, request.auth.uid);
+
+  const topUpId = request.data?.topUpId;
+  if (!topUpId || typeof topUpId !== 'string') {
+    throw new HttpsError('invalid-argument', 'topUpId is required.');
+  }
+
+  const topUpSnap = await topUpRef(db, topUpId).get();
+  if (!topUpSnap.exists) {
+    throw new HttpsError('not-found', 'Top-up request not found.');
+  }
+
+  const topUp = topUpSnap.data();
+  const screenshotPath = topUp.screenshotPath;
+  const deletedAt = new Date().toISOString();
+
+  const result = await db.runTransaction(async transaction => {
+    const freshTopUpSnap = await transaction.get(topUpRef(db, topUpId));
+    if (!freshTopUpSnap.exists) {
+      throw new HttpsError('not-found', 'Top-up request not found.');
+    }
+
+    const freshTopUp = freshTopUpSnap.data();
+    const rcId = freshTopUp.rcId;
+    if (!rcId) {
+      throw new HttpsError('failed-precondition', 'Top-up is missing RC scope.');
+    }
+
+    const walletSnap = await transaction.get(walletRef(db, rcId));
+    const currentBalance = walletSnap.exists ? Number(walletSnap.data().balanceInr) || 0 : 0;
+    let nextBalance = currentBalance;
+
+    if (freshTopUp.status === 'approved') {
+      const amountInr = Number(freshTopUp.amountInr) || 0;
+      nextBalance = roundInr(Math.max(0, currentBalance - amountInr));
+      transaction.set(
+        walletRef(db, rcId),
+        {
+          rcId,
+          balanceInr: nextBalance,
+          updatedAt: deletedAt,
+        },
+        { merge: true },
+      );
+      transaction.delete(ledgerRef(db, `topup-${topUpId}`));
+    }
+
+    transaction.delete(topUpRef(db, topUpId));
+
+    return {
+      topUpId,
+      rcId,
+      balanceInr: nextBalance,
+      deleted: true,
+    };
+  });
+
+  await deleteWalletTopUpStorage(topUpId, screenshotPath);
+  return result;
+}
+
+/**
+ * Super Admin deletes a wallet ledger entry and reverses its balance effect.
+ * Pre-production wipe helper.
+ */
+async function deleteWalletLedgerEntryHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  await assertSuperAdmin(db, request.auth.uid);
+
+  const ledgerId = request.data?.ledgerId;
+  if (!ledgerId || typeof ledgerId !== 'string') {
+    throw new HttpsError('invalid-argument', 'ledgerId is required.');
+  }
+
+  const deletedAt = new Date().toISOString();
+
+  return db.runTransaction(async transaction => {
+    const ledgerSnap = await transaction.get(ledgerRef(db, ledgerId));
+    if (!ledgerSnap.exists) {
+      throw new HttpsError('not-found', 'Ledger entry not found.');
+    }
+
+    const entry = ledgerSnap.data();
+    const rcId = entry.rcId;
+    if (!rcId) {
+      throw new HttpsError('failed-precondition', 'Ledger entry is missing RC scope.');
+    }
+
+    const walletSnap = await transaction.get(walletRef(db, rcId));
+    const currentBalance = walletSnap.exists ? Number(walletSnap.data().balanceInr) || 0 : 0;
+
+    if (entry.type === 'rv_payment' && entry.status === 'refunded') {
+      transaction.delete(ledgerRef(db, `${ledgerId}-refund`));
+      transaction.delete(ledgerRef(db, ledgerId));
+      return {
+        ledgerId,
+        rcId,
+        balanceInr: currentBalance,
+        deleted: true,
+      };
+    }
+
+    const nextBalance = roundInr(Math.max(0, currentBalance - (Number(entry.amountInr) || 0)));
+    transaction.set(
+      walletRef(db, rcId),
+      {
+        rcId,
+        balanceInr: nextBalance,
+        updatedAt: deletedAt,
+      },
+      { merge: true },
+    );
+    transaction.delete(ledgerRef(db, ledgerId));
+
+    return {
+      ledgerId,
+      rcId,
+      balanceInr: nextBalance,
+      deleted: true,
+    };
+  });
+}
+
+/**
+ * Super Admin wipes all wallet top-ups, ledger rows, and screenshots for an RC.
+ * Resets rcWallets/{rcId}.balanceInr to 0.
+ */
+async function resetRcWalletHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  await assertSuperAdmin(db, request.auth.uid);
+
+  const rcId = request.data?.rcId;
+  if (!rcId || typeof rcId !== 'string') {
+    throw new HttpsError('invalid-argument', 'rcId is required.');
+  }
+
+  const [topUpsSnap, ledgerSnap] = await Promise.all([
+    db.collection('walletTopUps').where('rcId', '==', rcId).get(),
+    db.collection('walletLedger').where('rcId', '==', rcId).get(),
+  ]);
+
+  const deletedAt = new Date().toISOString();
+  const refsToDelete = [
+    ...topUpsSnap.docs.map(doc => doc.ref),
+    ...ledgerSnap.docs.map(doc => doc.ref),
+  ];
+
+  for (let index = 0; index < refsToDelete.length; index += 450) {
+    const batch = db.batch();
+    refsToDelete.slice(index, index + 450).forEach(ref => batch.delete(ref));
+    if (index + 450 >= refsToDelete.length) {
+      batch.set(
+        walletRef(db, rcId),
+        {
+          rcId,
+          balanceInr: 0,
+          updatedAt: deletedAt,
+        },
+        { merge: true },
+      );
+    }
+    await batch.commit();
+  }
+
+  if (refsToDelete.length === 0) {
+    await walletRef(db, rcId).set(
+      {
+        rcId,
+        balanceInr: 0,
+        updatedAt: deletedAt,
+      },
+      { merge: true },
+    );
+  }
+
+  await Promise.all(
+    topUpsSnap.docs.map(doc =>
+      deleteWalletTopUpStorage(doc.id, doc.data().screenshotPath),
+    ),
+  );
+
+  return {
+    rcId,
+    balanceInr: 0,
+    deletedTopUps: topUpsSnap.size,
+    deletedLedgerEntries: ledgerSnap.size,
+    reset: true,
+  };
+}
+
 module.exports = {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -735,4 +953,7 @@ module.exports = {
   getWalletApiConfigHandler,
   submitWalletTopUpCallableHandler,
   submitWalletTopUpHttpHandler,
+  deleteWalletTopUpHandler,
+  deleteWalletLedgerEntryHandler,
+  resetRcWalletHandler,
 };

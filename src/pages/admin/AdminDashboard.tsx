@@ -56,8 +56,25 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="fade-in">
 
+      <div className="panel glass admin-dashboard-wallet-panel">
+        <div className="panel-header">
+          <h2><Wallet className="inline-icon" /> Wallet approvals</h2>
+          {pendingWalletTopUps > 0 && <span className="badge-count">{pendingWalletTopUps}</span>}
+        </div>
+        <div className="panel-body flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-muted text-sm mb-0">
+            Review RC payment screenshots and credit wallet balances.
+          </p>
+          <Link to="/admin/wallet" className="btn btn-primary btn-sm">
+            {pendingWalletTopUps > 0
+              ? `Review ${pendingWalletTopUps} pending`
+              : 'View pending top-ups'}
+          </Link>
+        </div>
+      </div>
+
       {/* ── Top KPI Row ── */}
-      <div className="stats-grid">
+      <div className="stats-grid mt-6">
         <div className="stat-card glass">
           <div className="stat-icon text-blue"><ShieldCheck /></div>
           <div className="stat-content">
@@ -130,23 +147,6 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
-      </div>
-
-      <div className="panel glass mt-6">
-        <div className="panel-header">
-          <h2><Wallet className="inline-icon" /> Wallet approvals</h2>
-          {pendingWalletTopUps > 0 && <span className="badge-count">{pendingWalletTopUps}</span>}
-        </div>
-        <div className="panel-body flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-muted text-sm mb-0">
-            Review RC payment screenshots and credit wallet balances.
-          </p>
-          <Link to="/admin/wallet" className="btn btn-primary btn-sm">
-            {pendingWalletTopUps > 0
-              ? `Review ${pendingWalletTopUps} pending`
-              : 'View all top-ups'}
-          </Link>
         </div>
       </div>
 

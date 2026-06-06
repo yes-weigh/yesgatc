@@ -18,6 +18,9 @@ const {
   getWalletApiConfigHandler,
   submitWalletTopUpCallableHandler,
   submitWalletTopUpHttpHandler,
+  deleteWalletTopUpHandler,
+  deleteWalletLedgerEntryHandler,
+  resetRcWalletHandler,
 } = require('./rcWallet');
 const { initializeApp, getApps } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
@@ -212,4 +215,19 @@ exports.submitWalletTopUpCallable = onCall(
 exports.submitWalletTopUp = onRequest(
   { region: CALLABLE_REGION, cors: true, timeoutSeconds: 120, memory: '512MiB' },
   async (req, res) => submitWalletTopUpHttpHandler(req, res, adminDb(), adminAuth()),
+);
+
+/** Super Admin deletes a wallet top-up and reverses balance when approved. */
+exports.deleteWalletTopUp = onCall({ region: CALLABLE_REGION }, async request =>
+  deleteWalletTopUpHandler(request, adminDb()),
+);
+
+/** Super Admin deletes a wallet ledger entry and reverses its balance effect. */
+exports.deleteWalletLedgerEntry = onCall({ region: CALLABLE_REGION }, async request =>
+  deleteWalletLedgerEntryHandler(request, adminDb()),
+);
+
+/** Super Admin wipes all wallet data for an RC and resets balance to zero. */
+exports.resetRcWallet = onCall({ region: CALLABLE_REGION }, async request =>
+  resetRcWalletHandler(request, adminDb()),
 );
