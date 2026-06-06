@@ -57,7 +57,7 @@ import {
   emptyDeviceImageSlot,
   emptyDeviceVerificationImagesState,
   imageFieldsFromMeta,
-  VERIFICATION_IMAGE_KINDS,
+  ALL_STORED_VERIFICATION_IMAGE_KINDS,
   verificationImagesFromRecord,
   type DeviceVerificationImagesState,
   type VerificationImageKind,
@@ -710,7 +710,7 @@ export const RCSiteCalibration: React.FC = () => {
     includeRvDocuments: boolean,
   ): Promise<Partial<SiteCalibration>> => {
     let fields: Partial<SiteCalibration> = {};
-    for (const kind of VERIFICATION_IMAGE_KINDS) {
+    for (const kind of ALL_STORED_VERIFICATION_IMAGE_KINDS) {
       fields = { ...fields, ...(await uploadDeviceImageSlot(recordId, localId, kind)) };
     }
     if (includeRvDocuments) {

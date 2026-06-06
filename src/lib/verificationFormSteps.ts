@@ -4,8 +4,20 @@ import {
   validateVerificationDeviceDetails,
   type VerificationSessionValues,
 } from './siteCalibrationProfileFields';
+import {
+  emptyDeviceVerificationImagesState,
+  validateDeviceVerificationImages,
+  type DeviceVerificationImagesState,
+} from './verificationDeviceImages';
+import {
+  emptyDeviceRvDocumentsState,
+  validateDeviceRvDocuments,
+  type DeviceRvDocumentsState,
+} from './verificationRvDeviceImages';
 
-export type VerificationFormStepId = 'setup' | 'devices' | 'evidence';
+export type VerificationFormStepId = 'setup' | 'instruments' | 'review';
+
+export type VerificationInstrumentSubStage = 'photos' | 'details';
 
 export type VerificationFormStepDef = {
   id: VerificationFormStepId;
@@ -22,21 +34,23 @@ export const VERIFICATION_FORM_STEPS: VerificationFormStepDef[] = [
     description: 'Choose who this verification belongs to and confirm site conditions.',
   },
   {
-    id: 'devices',
+    id: 'instruments',
     label: 'Instruments',
     shortLabel: 'Instruments',
-    description: 'Select instruments and enter serial numbers, MPE, and seal details.',
+    description: 'Each instrument is a tile — complete photos, swipe right for details, then scroll between tiles to update anytime.',
   },
   {
-    id: 'evidence',
-    label: 'Evidence',
-    shortLabel: 'Photos',
-    description: 'Attach verification photos and documents for each selected instrument.',
+    id: 'review',
+    label: 'Review',
+    shortLabel: 'Review',
+    description: 'Confirm the verification summary, fees, and declaration before submitting.',
   },
 ];
 
 export type VerificationFormStepContext = {
   customerForm?: CustomerFormValues;
+  deviceImages?: Record<string, DeviceVerificationImagesState>;
+  deviceRvImages?: Record<string, DeviceRvDocumentsState>;
 };
 
 function partyStepBlockReason(
@@ -75,17 +89,60 @@ function siteStepBlockReason(values: VerificationSessionValues): string | null {
   return null;
 }
 
-function devicesStepBlockReason(values: VerificationSessionValues): string | null {
+export function verificationDevicePhotosBlockReason(
+  row: VerificationSessionValues['devices'][number],
+  index: number,
+  images: DeviceVerificationImagesState,
+  rvDocuments: DeviceRvDocumentsState | undefined,
+  verificationType: VerificationSessionValues['verificationType'],
+): string | null {
+  const label = `Instrument ${index + 1}`;
+  const imageError = validateDeviceVerificationImages(images, label, verificationType);
+  if (imageError) return imageError;
+
+  if (verificationType === 'RV') {
+    return validateDeviceRvDocuments(rvDocuments ?? emptyDeviceRvDocumentsState(), label);
+  }
+
+  return null;
+}
+
+/** @deprecated Use verificationDevicePhotosBlockReason */
+export const verificationEvidenceDeviceBlockReason = verificationDevicePhotosBlockReason;
+
+export function verificationDeviceDetailsBlockReason(
+  row: VerificationSessionValues['devices'][number],
+  index: number,
+  verificationType: VerificationSessionValues['verificationType'],
+): string | null {
+  return validateVerificationDeviceDetails(row, index, { verificationType });
+}
+
+function instrumentsStepBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
   const included = values.devices.filter(row => row.included);
-  if (included.length === 0) return 'Select at least one device.';
+  if (included.length === 0) return 'Add at least one instrument.';
+
+  const deviceImages = context?.deviceImages ?? {};
+  const deviceRvImages = context?.deviceRvImages ?? {};
 
   for (let i = 0; i < values.devices.length; i++) {
     const row = values.devices[i];
     if (!row.included) continue;
-    const rowError = validateVerificationDeviceDetails(row, i, {
-      verificationType: values.verificationType,
-    });
-    if (rowError) return rowError;
+
+    const photoError = verificationDevicePhotosBlockReason(
+      row,
+      i,
+      deviceImages[row.localId] ?? emptyDeviceVerificationImagesState(),
+      deviceRvImages[row.localId],
+      values.verificationType,
+    );
+    if (photoError) return photoError;
+
+    const detailsError = verificationDeviceDetailsBlockReason(row, i, values.verificationType);
+    if (detailsError) return detailsError;
   }
 
   return null;
@@ -118,15 +175,12 @@ export function verificationFormStepBlockReason(
     return siteStepBlockReason(values);
   }
 
-  if (stepId === 'devices') {
-    return devicesStepBlockReason(values);
+  if (stepId === 'instruments') {
+    return instrumentsStepBlockReason(values, context);
   }
 
-  if (stepId === 'evidence') {
-    if (values.devices.filter(row => row.included).length === 0) {
-      return 'Select at least one device on the previous step.';
-    }
-    return null;
+  if (stepId === 'review') {
+    return instrumentsStepBlockReason(values, context);
   }
 
   return null;

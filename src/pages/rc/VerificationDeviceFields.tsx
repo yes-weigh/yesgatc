@@ -25,7 +25,7 @@ import {
   emptyDeviceVerificationImagesState,
   isVerificationImageRequired,
   VERIFICATION_IMAGE_CONFIG,
-  VERIFICATION_IMAGE_KINDS,
+  verificationImageKindsForSession,
   verificationImageHint,
   type DeviceImageSlotState,
   type VerificationImageKind,
@@ -154,10 +154,14 @@ type VerificationDeviceFieldsProps = {
   createMode?: boolean;
   /** Compact layout for the verification wizard (mobile-first). */
   compact?: boolean;
-  /** When false, device details only — photos/docs are on the evidence step. */
+  /** When false, device details only — photos are captured on the photos sub-stage. */
   includeEvidence?: boolean;
-  /** Hide add-device controls (wizard adds devices from the evidence step). */
+  /** Hide add-device controls (wizard adds devices from the instruments step). */
   allowAddDevice?: boolean;
+  /** Show only one device row/card (per-device wizard sub-stage). */
+  visibleDeviceLocalId?: string;
+  /** Tile layout — hide outer panel chrome; parent provides section title. */
+  embedded?: boolean;
   /** Self verification — manual device entry only, no registered customer devices. */
   manualEntryOnly?: boolean;
   /** Increment to focus the first included device serial field (wizard navigation). */
@@ -190,6 +194,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   compact = false,
   includeEvidence = true,
   allowAddDevice = true,
+  visibleDeviceLocalId,
+  embedded = false,
   manualEntryOnly = false,
   focusSerialRequest = 0,
   readOnly = false,
@@ -203,6 +209,10 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   const locked = submitting || readOnly;
   const isRv = verificationType === 'RV';
   const fees = feesStructure ?? DEFAULT_RC_FEES_STRUCTURE;
+  const visibleDevices = visibleDeviceLocalId
+    ? devices.filter(row => row.localId === visibleDeviceLocalId)
+    : devices;
+  const singleDeviceMode = Boolean(visibleDeviceLocalId);
 
   const buildServiceFeeProps = (row: VerificationDeviceRowValues) => ({
     value: row.serviceFee,
@@ -231,15 +241,15 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
       ? row.sealIdentificationNumber
       : laboratorySealIdentification || row.sealIdentificationNumber;
 
-  const includedCount = devices.filter(d => d.included).length;
-  const allIncluded = devices.length > 0 && includedCount === devices.length;
+  const includedCount = visibleDevices.filter(d => d.included).length;
+  const allIncluded = visibleDevices.length > 0 && includedCount === visibleDevices.length;
   const someIncluded = includedCount > 0 && !allIncluded;
 
   useEffect(() => {
     if (selectAllRef.current) {
       selectAllRef.current.indeterminate = someIncluded;
     }
-  }, [someIncluded, allIncluded, devices.length]);
+  }, [someIncluded, allIncluded, visibleDevices.length]);
 
   const devicesRef = useRef(devices);
   devicesRef.current = devices;
@@ -303,17 +313,17 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
     });
   };
 
-  if (devices.length === 0) {
+  if (visibleDevices.length === 0) {
     return (
       <div className={`verification-devices-empty${compact ? ' verification-devices-empty--compact' : ''}`}>
         <p className="text-muted text-sm mb-0">
           {manualEntryOnly
             ? allowAddDevice
               ? 'Add a device to verify.'
-              : 'No device yet — complete the previous step to continue.'
+              : 'No instrument yet — capture photos on the previous step first.'
             : allowAddDevice
               ? 'This customer has no registered devices yet.'
-              : 'No devices selected yet.'}
+              : 'No instrument loaded — capture photos on the previous sub-step first.'}
         </p>
         {!readOnly && allowAddDevice && (
           <button
@@ -332,12 +342,14 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   const panelClassName = [
     'verification-devices-panel',
     compact ? 'verification-devices-panel--compact' : '',
+    embedded ? 'verification-devices-panel--embedded' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
   return (
     <div className={panelClassName}>
+      {!embedded && (
       <header className="verification-devices-panel-head">
         <span className="verification-devices-panel-head-icon" aria-hidden>
           <Scale size={18} />
@@ -347,10 +359,12 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
             {compact
               ? includeEvidence
                 ? 'Devices & evidence'
-                : 'Devices'
+                : singleDeviceMode
+                  ? 'Instrument details'
+                  : 'Instrument details'
               : 'Devices to verify'}
           </h3>
-          {compact && createMode && includedCount > 0 && (
+          {compact && createMode && includedCount > 0 && !singleDeviceMode && (
             <p className="verification-devices-panel-meta mb-0">
               {includedCount} selected · {includedCount} draft row{includedCount !== 1 ? 's' : ''}
             </p>
@@ -377,7 +391,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
             </p>
           )}
         </div>
-        {compact && createMode && devices.length > 1 && !readOnly && (
+        {compact && createMode && visibleDevices.length > 1 && !readOnly && !singleDeviceMode && (
           <div className="verification-devices-bulk-actions verification-devices-bulk-actions--compact">
             <button
               type="button"
@@ -398,8 +412,9 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           </div>
         )}
       </header>
+      )}
 
-      {!compact && createMode && devices.length > 1 && (
+      {!embedded && !compact && createMode && visibleDevices.length > 1 && !singleDeviceMode && (
         <div className="verification-devices-bulk-actions">
           <button
             type="button"
@@ -425,7 +440,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           <thead>
             <tr>
               <th className="verification-devices-col-check">
-                {createMode && devices.length > 1 ? (
+                {createMode && visibleDevices.length > 1 && !singleDeviceMode ? (
                   <label className="verification-device-check verification-device-check--header" title="Select all devices">
                     <input
                       ref={selectAllRef}
@@ -446,7 +461,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               {isRv && <th className="verification-devices-col-mfg-year">Mfg year</th>}
               <th>MPE</th>
               <th>Seal ID</th>
-              {includeEvidence && VERIFICATION_IMAGE_KINDS.map(kind => (
+              {includeEvidence && verificationImageKindsForSession(verificationType).map(kind => (
                 <th key={kind} className="verification-devices-col-image">
                   <VerificationImageColumnHead kind={kind} verificationType={verificationType} />
                 </th>
@@ -468,7 +483,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
             </tr>
           </thead>
           <tbody>
-            {devices.map((row, index) => {
+            {visibleDevices.map((row, index) => {
               const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
               const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
               const product = selectedProduct(products, row);
@@ -558,7 +573,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       title={readOnly ? 'Seal identification at submission' : 'Managed on Laboratory page'}
                     />
                   </td>
-                  {includeEvidence && VERIFICATION_IMAGE_KINDS.map(kind => (
+                  {includeEvidence && verificationImageKindsForSession(verificationType).map(kind => (
                     <td key={kind} className="verification-devices-col-image">
                       <DeviceVerificationUpload
                         kind={kind}
@@ -623,7 +638,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
       </div>
 
       <div className={`verification-devices-mobile${compact ? ' verification-devices-mobile--compact' : ''}`}>
-        {devices.map((row, index) => {
+        {visibleDevices.map((row, index) => {
           const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
           const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
           const product = selectedProduct(products, row);
@@ -643,15 +658,21 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               className={`verification-device-card${compact ? ' verification-device-card--compact' : ''}${row.included ? '' : ' verification-device-card--skipped'}`}
             >
               <div className="verification-device-card-head">
-                <label className="verification-device-check">
-                  <input
-                    type="checkbox"
-                    checked={row.included}
-                    onChange={e => onDeviceChange(row.localId, { included: e.target.checked })}
-                    disabled={locked}
-                  />
-                  <span>{compact ? `#${index + 1}` : `Device ${index + 1}`}</span>
-                </label>
+                {singleDeviceMode ? (
+                  <span className="verification-device-card-index">
+                    {compact ? `#${index + 1}` : `Device ${index + 1}`}
+                  </span>
+                ) : (
+                  <label className="verification-device-check">
+                    <input
+                      type="checkbox"
+                      checked={row.included}
+                      onChange={e => onDeviceChange(row.localId, { included: e.target.checked })}
+                      disabled={locked}
+                    />
+                    <span>{compact ? `#${index + 1}` : `Device ${index + 1}`}</span>
+                  </label>
+                )}
                 {row.isNewDevice && !readOnly && (
                   <button
                     type="button"
@@ -812,7 +833,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   <section className="verification-device-section">
                     <h4 className="verification-device-section-title">Verification photos</h4>
                     <div className={`verification-mobile-photo-list${compact ? ' verification-mobile-photo-grid' : ''}`}>
-                      {VERIFICATION_IMAGE_KINDS.map(kind => (
+                      {verificationImageKindsForSession(verificationType).map(kind => (
                         <div key={kind} className="verification-mobile-photo-item">
                           <VerificationImageColumnHead kind={kind} verificationType={verificationType} />
                           <DeviceVerificationUpload

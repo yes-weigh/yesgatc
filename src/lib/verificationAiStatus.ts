@@ -51,7 +51,7 @@ export function buildVerificationAiStatusItems(
     },
     {
       id: 'instrument-photo',
-      label: 'Instrument Photo',
+      label: 'Instrument Front Photo',
       statusLabel: input.hasInstrumentImage ? 'Captured' : 'Pending',
       success: input.hasInstrumentImage,
     },

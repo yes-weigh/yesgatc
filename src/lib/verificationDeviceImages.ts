@@ -5,6 +5,7 @@ import type { ProductFileMeta } from './productApprovalUpload';
 export type VerificationImageKind =
   | 'stamping'
   | 'scale'
+  | 'instrumentRear'
   | 'standardWeight'
   | 'verificationSeal'
   | 'installation';
@@ -20,12 +21,13 @@ export type DeviceImageSlotState = {
 export type DeviceVerificationImagesState = {
   stamping: DeviceImageSlotState;
   scale: DeviceImageSlotState;
+  instrumentRear: DeviceImageSlotState;
   standardWeight: DeviceImageSlotState;
   verificationSeal: DeviceImageSlotState;
   installation: DeviceImageSlotState;
 };
 
-/** Display order on the evidence step. */
+/** Display order for original verification (OV). */
 export const VERIFICATION_IMAGE_KINDS: VerificationImageKind[] = [
   'stamping',
   'scale',
@@ -33,6 +35,25 @@ export const VERIFICATION_IMAGE_KINDS: VerificationImageKind[] = [
   'verificationSeal',
   'installation',
 ];
+
+/** All image kinds persisted on a device record (includes RV-only slots). */
+export const ALL_STORED_VERIFICATION_IMAGE_KINDS: VerificationImageKind[] = [
+  ...VERIFICATION_IMAGE_KINDS,
+  'instrumentRear',
+];
+
+/** Photo slots shown on the evidence step for the given verification type. */
+export function verificationImageKindsForSession(
+  verificationType?: JobType | '' | undefined,
+): VerificationImageKind[] {
+  if (verificationType === 'RV') {
+    const kinds = [...VERIFICATION_IMAGE_KINDS];
+    const scaleIndex = kinds.indexOf('scale');
+    kinds.splice(scaleIndex + 1, 0, 'instrumentRear');
+    return kinds;
+  }
+  return [...VERIFICATION_IMAGE_KINDS];
+}
 
 export const VERIFICATION_IMAGE_CONFIG: Record<
   VerificationImageKind,
@@ -52,11 +73,18 @@ export const VERIFICATION_IMAGE_CONFIG: Record<
     defaultName: 'Stamping plate image',
   },
   scale: {
-    label: 'Instrument photo',
-    shortLabel: 'Instrument',
+    label: 'Instrument front photo',
+    shortLabel: 'Front',
     hint: 'Required for submit',
     storageFolder: 'scale-image',
     defaultName: 'Scale image',
+  },
+  instrumentRear: {
+    label: 'Instrument rear photo',
+    shortLabel: 'Rear',
+    hint: 'Required for re-verification submit',
+    storageFolder: 'instrument-rear-image',
+    defaultName: 'Instrument rear photo',
   },
   standardWeight: {
     label: 'Testing photos',
@@ -101,6 +129,12 @@ const IMAGE_FIELD_KEYS: Record<VerificationImageKind, ImageFieldKeys> = {
     name: 'scaleImageName',
     contentType: 'scaleImageContentType',
   },
+  instrumentRear: {
+    url: 'instrumentRearImageUrl',
+    path: 'instrumentRearImagePath',
+    name: 'instrumentRearImageName',
+    contentType: 'instrumentRearImageContentType',
+  },
   standardWeight: {
     url: 'standardWeightImageUrl',
     path: 'standardWeightImagePath',
@@ -135,6 +169,7 @@ export function emptyDeviceVerificationImagesState(): DeviceVerificationImagesSt
   return {
     stamping: emptyDeviceImageSlot(),
     scale: emptyDeviceImageSlot(),
+    instrumentRear: emptyDeviceImageSlot(),
     standardWeight: emptyDeviceImageSlot(),
     verificationSeal: emptyDeviceImageSlot(),
     installation: emptyDeviceImageSlot(),
@@ -165,7 +200,7 @@ export function imageMetaFromRecord(
 
 export function verificationImagesFromRecord(record: SiteCalibration): DeviceVerificationImagesState {
   const state = emptyDeviceVerificationImagesState();
-  for (const kind of VERIFICATION_IMAGE_KINDS) {
+  for (const kind of ALL_STORED_VERIFICATION_IMAGE_KINDS) {
     const meta = imageMetaFromRecord(record, kind);
     if (meta) state[kind].file = meta;
   }
@@ -193,10 +228,11 @@ export function imageFieldsFromMeta(
   };
 }
 
-/** Serial number plate and instrument photo are mandatory for submit. */
+/** Serial plate + instrument front photo; rear photo additionally required for RV. */
 export function requiredVerificationImageKinds(
-  _verificationType?: JobType | '' | undefined,
+  verificationType?: JobType | '' | undefined,
 ): VerificationImageKind[] {
+  if (verificationType === 'RV') return ['stamping', 'scale', 'instrumentRear'];
   return ['stamping', 'scale'];
 }
 
@@ -211,9 +247,12 @@ export function verificationImageHint(
   kind: VerificationImageKind,
   verificationType?: JobType | '' | undefined,
 ): string {
-  return isVerificationImageRequired(kind, verificationType)
-    ? 'Required for submit'
-    : 'Optional';
+  if (isVerificationImageRequired(kind, verificationType)) {
+    return kind === 'instrumentRear'
+      ? 'Required for re-verification submit'
+      : 'Required for submit';
+  }
+  return 'Optional';
 }
 
 export function validateDeviceImageSlot(

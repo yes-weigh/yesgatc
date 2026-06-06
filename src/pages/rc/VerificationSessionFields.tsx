@@ -12,6 +12,7 @@ import { ChevronLeft, ChevronRight, CloudSun, Droplets, Thermometer, X } from 'l
 import { SegmentToggle } from '../../components/SegmentToggle';
 import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
+import { VerificationInstrumentMultistage } from './VerificationInstrumentMultistage';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
 import { customerFormFromRecord, isPendingNewCustomerParty } from '../../lib/customerProfileFields';
 import {
@@ -28,6 +29,7 @@ import {
 import { rcProfileToFormValues } from '../../lib/rcProfileFormFields';
 import { applyLaboratorySealToDeviceRows } from '../../lib/rcLaboratoryFields';
 import {
+  emptyDeviceImageSlot,
   emptyDeviceVerificationImagesState,
   type VerificationImageKind,
 } from '../../lib/verificationDeviceImages';
@@ -39,6 +41,17 @@ import {
   persistVerificationPartyProfile,
   type PersistVerificationPartyResult,
 } from '../../lib/verificationPartyPersist';
+import { VerificationAiStatusPanel } from '../../components/VerificationAiStatusPanel';
+import { VerificationDeclarationPanel } from '../../components/VerificationDeclarationPanel';
+import { VerificationResultSummary } from '../../components/VerificationResultSummary';
+import { VerificationFeesTotalSummary } from '../../components/VerificationFeesTotalSummary';
+import { buildVerificationAiStatusItems } from '../../lib/verificationAiStatus';
+import {
+  buildDefaultVerificationTestSummary,
+  DEFAULT_VERIFICATION_SUMMARY_INFO,
+  DEFAULT_VERIFICATION_SUMMARY_REMARKS,
+  formatVerificationSummaryDateTime,
+} from '../../lib/verificationTestSummary';
 import {
   isVerificationFormStepComplete,
   VERIFICATION_FORM_STEPS,
@@ -47,8 +60,6 @@ import {
   type VerificationFormStepId,
 } from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
-import { VerificationDeviceFields } from './VerificationDeviceFields';
-import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFields';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 
@@ -142,20 +153,16 @@ export const VerificationSessionFields = forwardRef<
 
   const [activeStep, setActiveStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
-  const [evidenceDeviceIndex, setEvidenceDeviceIndex] = useState(0);
-  const [pendingEvidenceDeviceIndex, setPendingEvidenceDeviceIndex] = useState<number | null>(null);
   const [stepError, setStepError] = useState('');
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState('');
   const [customerPartyForm, setCustomerPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
   const [rcPartyForm, setRcPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
-  const [focusSerialRequest, setFocusSerialRequest] = useState(0);
-  const hasFocusedSerialOnceRef = useRef(false);
 
   const stepContext = useMemo<VerificationFormStepContext>(
-    () => ({ customerForm: customerPartyForm }),
-    [customerPartyForm],
+    () => ({ customerForm: customerPartyForm, deviceImages, deviceRvImages }),
+    [customerPartyForm, deviceImages, deviceRvImages],
   );
 
   useEffect(() => {
@@ -174,32 +181,23 @@ export const VerificationSessionFields = forwardRef<
     [values.devices],
   );
 
-  const isOnEvidenceStep = currentStep.id === 'evidence';
-  const isLastEvidenceDevice =
-    includedDeviceEntries.length === 0 ||
-    evidenceDeviceIndex >= includedDeviceEntries.length - 1;
-  const isLastStep = isOnEvidenceStep && isLastEvidenceDevice;
+  const isOnInstrumentsStep = currentStep.id === 'instruments';
+  const isOnReviewStep = currentStep.id === 'review';
+  const isLastStep = isOnReviewStep;
 
   const stepDescription =
-    isOnEvidenceStep && includedDeviceEntries.length > 0
-      ? includedDeviceEntries.length > 1
-        ? `Attach photos and documents for device ${evidenceDeviceIndex + 1} of ${includedDeviceEntries.length}. Use Next device to continue.`
-        : 'Attach verification photos and documents for the selected device.'
+    isOnInstrumentsStep && includedDeviceEntries.length > 0
+      ? 'Each instrument is a tile — complete photos, then swipe right within the tile to enter details.'
       : currentStep.description;
 
   const continueLabel =
-    isOnEvidenceStep && !isLastEvidenceDevice && includedDeviceEntries.length > 1
-      ? 'Next device'
-      : 'Proceed';
+    isOnInstrumentsStep && includedDeviceEntries.length > 0 ? 'Review' : 'Proceed';
 
-  const devicesStepIndex = VERIFICATION_FORM_STEPS.findIndex(step => step.id === 'devices');
   const showWizardCancel =
-    Boolean(wizardNavIncludesCancel && onCancel && currentStep.id !== 'devices');
-  const canAddDeviceFromEvidence =
-    !readOnly && !lockCustomer && isOnEvidenceStep && isLastEvidenceDevice;
+    Boolean(wizardNavIncludesCancel && onCancel && currentStep.id !== 'review');
+  const canAddInstrument = !readOnly && !lockCustomer && isOnInstrumentsStep;
 
-  const showBackNav =
-    activeStep > 0 || (isOnEvidenceStep && evidenceDeviceIndex > 0);
+  const showBackNav = activeStep > 0;
   const showWizardBottomBar = !readOnly && !isLastStep;
 
   const completedStepIds = useMemo(() => {
@@ -226,16 +224,6 @@ export const VerificationSessionFields = forwardRef<
   }, [readOnly]);
 
   useEffect(() => {
-    if (!isOnEvidenceStep) {
-      setEvidenceDeviceIndex(0);
-      return;
-    }
-    setEvidenceDeviceIndex(prev =>
-      Math.min(prev, Math.max(0, includedDeviceEntries.length - 1)),
-    );
-  }, [isOnEvidenceStep, includedDeviceEntries.length]);
-
-  useEffect(() => {
     onWizardStepChange?.(currentStep.id, isLastStep);
   }, [currentStep.id, isLastStep, onWizardStepChange]);
 
@@ -245,7 +233,7 @@ export const VerificationSessionFields = forwardRef<
 
   useEffect(() => {
     if (!wizardNavIncludesCancel) return;
-    if (currentStep.id === 'evidence') {
+    if (currentStep.id === 'review') {
       setDeclarationAccepted(true);
       onDeclarationAcceptedChange?.(true);
       return;
@@ -264,9 +252,6 @@ export const VerificationSessionFields = forwardRef<
 
   const handleStepSelect = (index: number) => {
     if (readOnly || index <= furthestStep) {
-      if (VERIFICATION_FORM_STEPS[index]?.id === 'evidence') {
-        setEvidenceDeviceIndex(0);
-      }
       setActiveStep(index);
       setStepError('');
     }
@@ -274,15 +259,29 @@ export const VerificationSessionFields = forwardRef<
 
   const handleContinue = () => {
     if (readOnly) return;
+    setStepError('');
+
+    if (isOnInstrumentsStep && showDevices) {
+      const instrumentsReason = verificationFormStepBlockReason(
+        'instruments',
+        values,
+        rcProfile,
+        stepContext,
+      );
+      if (instrumentsReason) {
+        setStepError(instrumentsReason);
+        return;
+      }
+
+      const nextStep = activeStep + 1;
+      setFurthestStep(prev => Math.max(prev, nextStep));
+      setActiveStep(nextStep);
+      return;
+    }
+
     const reason = verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext);
     if (reason) {
       setStepError(reason);
-      return;
-    }
-    setStepError('');
-
-    if (isOnEvidenceStep && !isLastEvidenceDevice) {
-      setEvidenceDeviceIndex(prev => prev + 1);
       return;
     }
 
@@ -294,55 +293,24 @@ export const VerificationSessionFields = forwardRef<
     setFurthestStep(prev => Math.max(prev, nextStep));
     setActiveStep(nextStep);
 
-    if (currentStep.id === 'devices') {
-      setEvidenceDeviceIndex(pendingEvidenceDeviceIndex ?? 0);
-      setPendingEvidenceDeviceIndex(null);
-    } else if (currentStep.id === 'setup') {
-      setEvidenceDeviceIndex(0);
-      setPendingEvidenceDeviceIndex(null);
-      if (
-        wizardNavIncludesCancel &&
-        !hasFocusedSerialOnceRef.current &&
-        VERIFICATION_FORM_STEPS[nextStep]?.id === 'devices'
-      ) {
-        hasFocusedSerialOnceRef.current = true;
-        setFocusSerialRequest(n => n + 1);
-      }
-    }
   };
 
-  const handleAddDeviceFromEvidence = () => {
-    if (!canAddDeviceFromEvidence) return;
-    const nextDeviceIndex = includedDeviceEntries.length;
+  const handleAddInstrument = () => {
+    if (!canAddInstrument) return;
     onDeviceAdd();
-    setPendingEvidenceDeviceIndex(nextDeviceIndex);
     setStepError('');
-    setActiveStep(devicesStepIndex);
-    setFurthestStep(prev => Math.max(prev, devicesStepIndex));
   };
 
   const handleBack = () => {
     setStepError('');
-    if (isOnEvidenceStep && evidenceDeviceIndex > 0) {
-      setEvidenceDeviceIndex(prev => prev - 1);
-      return;
-    }
     setActiveStep(prev => Math.max(prev - 1, 0));
   };
 
   const handleReadOnlyNext = () => {
-    if (isOnEvidenceStep && !isLastEvidenceDevice) {
-      setEvidenceDeviceIndex(prev => prev + 1);
-      return;
-    }
     setActiveStep(prev => Math.min(prev + 1, VERIFICATION_FORM_STEPS.length - 1));
   };
 
   const handleReadOnlyBack = () => {
-    if (isOnEvidenceStep && evidenceDeviceIndex > 0) {
-      setEvidenceDeviceIndex(prev => prev - 1);
-      return;
-    }
     setActiveStep(prev => Math.max(prev - 1, 0));
   };
 
@@ -368,6 +336,62 @@ export const VerificationSessionFields = forwardRef<
     [values, deviceImages, deviceRvImages, customerPartyForm],
   );
 
+  const submitSummaryDateTime = useMemo(() => formatVerificationSummaryDateTime(), [isOnReviewStep]);
+  const submitTestSummary = useMemo(() => buildDefaultVerificationTestSummary('PASS'), [isOnReviewStep]);
+
+  const submitAiStatusItems = useMemo(() => {
+    const firstIncluded = values.devices.find(row => row.included);
+    if (!firstIncluded) return [];
+
+    const images = deviceImages[firstIncluded.localId] ?? emptyDeviceVerificationImagesState();
+    const rvDocuments = deviceRvImages[firstIncluded.localId];
+    const product = products.find(entry => entry.id === firstIncluded.productId);
+    const stamping = images.stamping ?? emptyDeviceImageSlot();
+    const scale = images.scale ?? emptyDeviceImageSlot();
+    const oldCertificate = rvDocuments?.oldCertificate ?? emptyDeviceImageSlot();
+
+    return buildVerificationAiStatusItems({
+      verificationType: values.verificationType,
+      hasStampingImage:
+        !stamping.removed && Boolean(stamping.file?.url || stamping.file?.path || stamping.pendingFile),
+      hasInstrumentImage:
+        !scale.removed && Boolean(scale.file?.url || scale.file?.path || scale.pendingFile),
+      productModelApprovalNo: product?.modelApprovalNo ?? '',
+      hasOldCertificate:
+        !oldCertificate.removed &&
+        Boolean(oldCertificate.file?.url || oldCertificate.file?.path || oldCertificate.pendingFile),
+      hasGpsLocation,
+      ambientTemperature: values.ambientTemperature,
+      relativeHumidity: values.relativeHumidity,
+      mandatoryFieldsComplete,
+    });
+  }, [
+    values.devices,
+    values.verificationType,
+    values.ambientTemperature,
+    values.relativeHumidity,
+    deviceImages,
+    deviceRvImages,
+    products,
+    hasGpsLocation,
+    mandatoryFieldsComplete,
+    isOnReviewStep,
+  ]);
+
+  const submitInstrumentLabel = useMemo(() => {
+    const included = values.devices.filter(row => row.included);
+    if (included.length === 0) return 'Weighing Scale';
+    if (included.length === 1) {
+      const device = included[0];
+      const product = products.find(entry => entry.id === device.productId);
+      if (product?.typeOfInstrument?.trim()) {
+        return `${product.typeOfInstrument.trim()} Weighing Scale`;
+      }
+      if (device.productName.trim()) return device.productName.trim();
+    }
+    return `${included.length} instruments`;
+  }, [values.devices, products]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -388,8 +412,7 @@ export const VerificationSessionFields = forwardRef<
       },
       tryHistoryBack: () => {
         if (readOnly) return false;
-        const canBack = activeStep > 0 || (isOnEvidenceStep && evidenceDeviceIndex > 0);
-        if (!canBack) return false;
+        if (activeStep <= 0) return false;
         handleBack();
         return true;
       },
@@ -405,8 +428,6 @@ export const VerificationSessionFields = forwardRef<
       actorUid,
       customers,
       activeStep,
-      isOnEvidenceStep,
-      evidenceDeviceIndex,
     ],
   );
 
@@ -736,7 +757,10 @@ export const VerificationSessionFields = forwardRef<
           </p>
         </div>
 
-        <div key={currentStep.id} className="verification-wizard-panel fade-in">
+        <div
+          key={currentStep.id}
+          className="verification-wizard-panel fade-in"
+        >
           {currentStep.id === 'setup' && (
             <div className="verification-setup-step">
               <div className="verification-setup-toggles">
@@ -878,12 +902,15 @@ export const VerificationSessionFields = forwardRef<
             </div>
           )}
 
-          {currentStep.id === 'devices' && showDevices && (
-            <VerificationDeviceFields
+          {currentStep.id === 'instruments' && (
+            <VerificationInstrumentMultistage
+              entries={includedDeviceEntries}
               devices={values.devices}
               deviceImages={deviceImages}
               deviceRvImages={deviceRvImages}
               verificationType={values.verificationType}
+              verificationLocation={values.verificationLocation || 'in_situ'}
+              verificationSubject={values.verificationSubject}
               onDeviceChange={onDeviceChange}
               onDeviceAdd={onDeviceAdd}
               onDeviceRemove={onDeviceRemove}
@@ -891,95 +918,47 @@ export const VerificationSessionFields = forwardRef<
               onDeviceImageRemove={onDeviceImageRemove}
               onDeviceRvDocumentSelect={onDeviceRvDocumentSelect}
               onDeviceRvDocumentRemove={onDeviceRvDocumentRemove}
-              verificationLocation={values.verificationLocation || 'in_situ'}
-              verificationSubject={values.verificationSubject}
-              feesStructure={resolveRcFeesStructure(rcProfile)}
+              rcProfile={rcProfile}
               submitting={submitting}
               readOnly={readOnly}
+              lockCustomer={lockCustomer}
+              isSelf={isSelf}
               laboratorySealIdentification={laboratorySealIdentification}
-              manualEntryOnly={isSelf}
-              createMode={!lockCustomer && !readOnly && !isSelf}
-              compact
-              includeEvidence={false}
-              allowAddDevice={false}
-              focusSerialRequest={focusSerialRequest}
+              canAddInstrument={canAddInstrument}
+              onAddInstrument={handleAddInstrument}
+              showDevices={showDevices}
             />
           )}
 
-          {currentStep.id === 'evidence' && showDevices && includedDeviceEntries.length > 0 && (
-            <VerificationDeviceEvidenceFields
-              device={includedDeviceEntries[evidenceDeviceIndex].row}
-              devices={values.devices}
-              deviceIndex={evidenceDeviceIndex}
-              totalDevices={includedDeviceEntries.length}
-              verificationType={values.verificationType}
-              verificationLocation={values.verificationLocation || 'in_situ'}
-              verificationSubject={values.verificationSubject}
-              feesStructure={resolveRcFeesStructure(rcProfile)}
-              images={
-                deviceImages[includedDeviceEntries[evidenceDeviceIndex].row.localId] ??
-                emptyDeviceVerificationImagesState()
-              }
-              rvDocuments={
-                deviceRvImages[includedDeviceEntries[evidenceDeviceIndex].row.localId]
-              }
-              onImageSelect={(kind, file) =>
-                onDeviceImageSelect(
-                  includedDeviceEntries[evidenceDeviceIndex].row.localId,
-                  kind,
-                  file,
-                )
-              }
-              onImageRemove={kind =>
-                onDeviceImageRemove(
-                  includedDeviceEntries[evidenceDeviceIndex].row.localId,
-                  kind,
-                )
-              }
-              onRvDocumentSelect={
-                onDeviceRvDocumentSelect
-                  ? (kind, file) =>
-                      onDeviceRvDocumentSelect(
-                        includedDeviceEntries[evidenceDeviceIndex].row.localId,
-                        kind,
-                        file,
-                      )
-                  : undefined
-              }
-              onRvDocumentRemove={
-                onDeviceRvDocumentRemove
-                  ? kind =>
-                      onDeviceRvDocumentRemove(
-                        includedDeviceEntries[evidenceDeviceIndex].row.localId,
-                        kind,
-                      )
-                  : undefined
-              }
-              submitting={submitting}
-              readOnly={readOnly}
-              showAddDevice={canAddDeviceFromEvidence}
-              onAddDevice={handleAddDeviceFromEvidence}
-              showResultSummary={isLastEvidenceDevice}
-              ambientTemperature={values.ambientTemperature}
-              relativeHumidity={values.relativeHumidity}
-              hasGpsLocation={hasGpsLocation}
-              mandatoryFieldsComplete={mandatoryFieldsComplete}
-              declarationAccepted={readOnly ? true : declarationAccepted}
-              onDeclarationAcceptedChange={readOnly ? undefined : handleDeclarationAcceptedChange}
-            />
+          {currentStep.id === 'review' && showDevices && (
+            <>
+              <VerificationAiStatusPanel items={submitAiStatusItems} />
+              <VerificationResultSummary
+                instrumentLabel={submitInstrumentLabel}
+                tests={submitTestSummary}
+                overallResult="PASS"
+                dateTime={submitSummaryDateTime}
+                remarks={DEFAULT_VERIFICATION_SUMMARY_REMARKS}
+                infoMessage={DEFAULT_VERIFICATION_SUMMARY_INFO}
+              />
+              <VerificationFeesTotalSummary
+                devices={values.devices}
+                verificationType={values.verificationType}
+                verificationLocation={values.verificationLocation || 'in_situ'}
+                verificationSubject={values.verificationSubject}
+                feesStructure={resolveRcFeesStructure(rcProfile)}
+                compact
+              />
+              {!readOnly && (
+                <VerificationDeclarationPanel
+                  checked={declarationAccepted}
+                  onChange={accepted => handleDeclarationAcceptedChange(accepted)}
+                  disabled={locked}
+                />
+              )}
+            </>
           )}
 
-          {currentStep.id === 'evidence' && showDevices && includedDeviceEntries.length === 0 && (
-            <p className="text-muted text-sm mb-0">
-              Select at least one device on the previous step.
-            </p>
-          )}
-
-          {currentStep.id === 'devices' && !showDevices && (
-            <p className="text-muted text-sm mb-0">
-              Select a customer above to load instruments.
-            </p>
-          )}
         </div>
       </div>
       </div>

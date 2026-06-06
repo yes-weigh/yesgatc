@@ -19,7 +19,7 @@ import {
   emptyDeviceImageSlot,
   isVerificationImageRequired,
   VERIFICATION_IMAGE_CONFIG,
-  VERIFICATION_IMAGE_KINDS,
+  verificationImageKindsForSession,
   type DeviceVerificationImagesState,
   type VerificationImageKind,
 } from '../../lib/verificationDeviceImages';
@@ -52,6 +52,10 @@ type VerificationDeviceEvidenceFieldsProps = {
   onRvDocumentRemove?: (kind: RvDocumentKind) => void;
   submitting: boolean;
   readOnly?: boolean;
+  /** Hide instrument index line when parent shows sub-step progress. */
+  hideDeviceMeta?: boolean;
+  /** Tile layout — hide outer panel chrome; parent provides section title. */
+  embedded?: boolean;
   showAddDevice?: boolean;
   onAddDevice?: () => void;
   showResultSummary?: boolean;
@@ -80,6 +84,8 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
   onRvDocumentRemove,
   submitting,
   readOnly = false,
+  hideDeviceMeta = false,
+  embedded = false,
   showAddDevice = false,
   onAddDevice,
   showResultSummary = false,
@@ -145,29 +151,44 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
   ]);
 
   return (
-    <section className="verification-evidence-panel">
-      <header className="verification-evidence-panel-head">
-        <span className="verification-evidence-panel-head-icon" aria-hidden>
-          <Camera size={18} />
-        </span>
-        <div className="verification-evidence-panel-head-text">
-          <h3 className="verification-evidence-panel-title">Device evidence</h3>
-          <p className="verification-evidence-panel-meta mb-0">
-            Device {deviceIndex + 1} of {totalDevices}
-            {totalDevices > 1 && deviceIndex < totalDevices - 1 ? ' · use Next device to continue' : ''}
-          </p>
-        </div>
-      </header>
+    <section
+      className={[
+        'verification-evidence-panel',
+        embedded ? 'verification-evidence-panel--embedded' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {!embedded && (
+        <>
+          <header className="verification-evidence-panel-head">
+            <span className="verification-evidence-panel-head-icon" aria-hidden>
+              <Camera size={18} />
+            </span>
+            <div className="verification-evidence-panel-head-text">
+              <h3 className="verification-evidence-panel-title">Capture photos</h3>
+              {!hideDeviceMeta && (
+                <p className="verification-evidence-panel-meta mb-0">
+                  Instrument {deviceIndex + 1} of {totalDevices}
+                  {totalDevices > 1 && deviceIndex < totalDevices - 1 ? ' · use Next device after required photos' : ''}
+                </p>
+              )}
+            </div>
+          </header>
 
-      <div className="verification-evidence-device-summary">
-        <span className="verification-evidence-device-name">{deviceLabel}</span>
-        {device.serialNumber.trim() && (
-          <span className="verification-evidence-device-serial">{device.serialNumber.trim()}</span>
-        )}
-      </div>
+          {deviceLabel !== `Device ${deviceIndex + 1}` && (
+            <div className="verification-evidence-device-summary">
+              <span className="verification-evidence-device-name">{deviceLabel}</span>
+              {device.serialNumber.trim() && (
+                <span className="verification-evidence-device-serial">{device.serialNumber.trim()}</span>
+              )}
+            </div>
+          )}
+        </>
+      )}
 
       <VerificationPhotoUploadSection title="Upload verification photos">
-        {VERIFICATION_IMAGE_KINDS.map(kind => {
+        {verificationImageKindsForSession(verificationType).map(kind => {
           const config = VERIFICATION_IMAGE_CONFIG[kind];
           const slot = images[kind] ?? emptyDeviceImageSlot();
           return (
@@ -180,7 +201,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
               uploading={slot.uploading}
               progress={slot.progress}
               disabled={locked}
-              geoStamp={kind === 'stamping' || kind === 'scale'}
+              geoStamp={kind === 'stamping' || kind === 'scale' || kind === 'instrumentRear'}
               onSelect={file => onImageSelect(kind, file)}
               onRemove={() => onImageRemove(kind)}
             />
@@ -224,7 +245,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
             Add another device
           </button>
           <p className="verification-evidence-add-device-hint mb-0">
-            Opens the Devices step to enter details, then return here for photos.
+            Adds another instrument — you will photograph it next, then enter its details.
           </p>
         </div>
       )}

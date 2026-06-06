@@ -1,7 +1,7 @@
 import {
   imageMetaFromRecord,
   VERIFICATION_IMAGE_CONFIG,
-  VERIFICATION_IMAGE_KINDS,
+  ALL_STORED_VERIFICATION_IMAGE_KINDS,
   type VerificationImageKind,
 } from './verificationDeviceImages';
 import {
@@ -24,7 +24,8 @@ export function listVerificationAttachmentsFromRecord(
 ): VerificationAttachmentItem[] {
   const items: VerificationAttachmentItem[] = [];
 
-  for (const kind of VERIFICATION_IMAGE_KINDS) {
+  for (const kind of ALL_STORED_VERIFICATION_IMAGE_KINDS) {
+    if (kind === 'instrumentRear' && record.verificationType !== 'RV') continue;
     const meta = imageMetaFromRecord(record, kind);
     if (!meta) continue;
     items.push({

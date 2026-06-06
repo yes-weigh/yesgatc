@@ -375,6 +375,11 @@ export interface SiteCalibration {
   scaleImagePath?: string;
   scaleImageName?: string;
   scaleImageContentType?: string;
+  /** Re-verification only — rear view of the instrument. */
+  instrumentRearImageUrl?: string;
+  instrumentRearImagePath?: string;
+  instrumentRearImageName?: string;
+  instrumentRearImageContentType?: string;
   stampingImageUrl?: string;
   stampingImagePath?: string;
   stampingImageName?: string;
