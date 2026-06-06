@@ -377,6 +377,22 @@ async function processRvZohoInvoice(db, recordId, record, { allowLegacyPush = fa
       `performer ${record.performedBy === 'vct' || record.vctId ? 'vct' : 'rc'}): ` +
       `${invoice.zohoInvoiceNumber || invoice.zohoInvoiceId}`,
     );
+
+    const mergedRecord = {
+      ...record,
+      ...invoice,
+      zohoInvoiceId: invoice.zohoInvoiceId,
+      zohoInvoiceNumber: invoice.zohoInvoiceNumber,
+      zohoCustomerId: invoice.zohoCustomerId,
+      zohoInvoiceTotal: invoice.zohoInvoiceTotal,
+    };
+    try {
+      const { processRvZohoSettlement } = require('./zohoRvSettlement');
+      await processRvZohoSettlement(db, recordId, mergedRecord);
+    } catch (settlementErr) {
+      console.error(`Zoho RV settlement after invoice failed for ${recordId}`, settlementErr);
+    }
+
     return {
       recordId,
       ...invoice,

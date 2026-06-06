@@ -4,7 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import {
   canViewZohoPushDiagnostics,
   resolveZohoPushStatus,
+  resolveZohoSettlementStatus,
   zohoPushStatusLabel,
+  zohoSettlementStatusLabel,
 } from '../lib/zohoRvSubmit';
 import type { SiteCalibration } from '../types';
 
@@ -17,10 +19,13 @@ export const VerificationZohoInvoiceSection: React.FC<VerificationZohoInvoiceSec
 }) => {
   const { user } = useAuth();
   const status = resolveZohoPushStatus(record);
+  const settlementStatus = resolveZohoSettlementStatus(record);
   if (!status) return null;
 
   const showError =
     canViewZohoPushDiagnostics(user?.role) && record.zohoPushError?.trim();
+  const showSettlementError =
+    canViewZohoPushDiagnostics(user?.role) && record.zohoSettlementError?.trim();
 
   return (
     <section className="verification-detail-section">
@@ -77,6 +82,48 @@ export const VerificationZohoInvoiceSection: React.FC<VerificationZohoInvoiceSec
           <div className="verification-detail-field verification-detail-field--full">
             <span className="verification-detail-label">Error</span>
             <span className="verification-detail-value text-danger text-sm">{record.zohoPushError}</span>
+          </div>
+        )}
+        {settlementStatus && (
+          <div className="verification-detail-field">
+            <span className="verification-detail-label">Settlement</span>
+            <span className={`verification-detail-value verification-zoho-status verification-zoho-status--${settlementStatus}`}>
+              {zohoSettlementStatusLabel(settlementStatus)}
+            </span>
+          </div>
+        )}
+        {record.zohoCustomerPaymentStatus && (
+          <div className="verification-detail-field">
+            <span className="verification-detail-label">Customer payment</span>
+            <span className="verification-detail-value text-sm">
+              {record.zohoCustomerPaymentStatus === 'skipped_paid'
+                ? 'Already paid in Zoho'
+                : record.zohoCustomerPaymentAmountInr != null
+                  ? `₹${record.zohoCustomerPaymentAmountInr.toLocaleString('en-IN')}`
+                  : record.zohoCustomerPaymentStatus}
+            </span>
+          </div>
+        )}
+        {record.zohoExpenseAmountInr != null && (
+          <div className="verification-detail-field">
+            <span className="verification-detail-label">Labour expense</span>
+            <span className="verification-detail-value text-sm">
+              ₹{record.zohoExpenseAmountInr.toLocaleString('en-IN')}
+            </span>
+          </div>
+        )}
+        {record.zohoSettledAt && (
+          <div className="verification-detail-field">
+            <span className="verification-detail-label">Settled at</span>
+            <span className="verification-detail-value text-sm">
+              {new Date(record.zohoSettledAt).toLocaleString()}
+            </span>
+          </div>
+        )}
+        {showSettlementError && (
+          <div className="verification-detail-field verification-detail-field--full">
+            <span className="verification-detail-label">Settlement error</span>
+            <span className="verification-detail-value text-danger text-sm">{record.zohoSettlementError}</span>
           </div>
         )}
       </div>

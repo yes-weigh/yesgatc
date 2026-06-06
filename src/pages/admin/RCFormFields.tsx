@@ -329,19 +329,19 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
       </div>
 
       <div className="product-form-flat-row product-form-flat-row--scale rc-form-row-accounts">
-        <span className="product-form-flat-row-title">Zoho vendor &amp; PAN (Super Admin only)</span>
+        <span className="product-form-flat-row-title">Zoho labour expense &amp; PAN (Super Admin only)</span>
         <p className="text-muted text-xs mb-3 mt-0">
-          Not visible or editable on the RC profile. Zoho vendor fields are required; PAN is optional.
+          Not visible on the RC profile. Labour expense account is used for RV payout from GATC Wallet (chart of accounts ID, not a vendor contact). PAN is optional.
         </p>
         <div className="rc-form-grid rc-form-grid--main">
           <div className="form-group mb-0">
-            <label htmlFor="rc-zoho-vendor-id">Zoho vendor ID *</label>
+            <label htmlFor="rc-zoho-vendor-id">Zoho labour expense account ID *</label>
             <input
               id="rc-zoho-vendor-id"
               type="text"
               inputMode="numeric"
               className="input-field text-mono"
-              placeholder="Zoho Books vendor ID"
+              placeholder="Chart of accounts ID (e.g. Shiju GATC Labour Charges)"
               value={values.zohoVendorId}
               onChange={e => onChange({ zohoVendorId: normalizeZohoId(e.target.value) })}
               required
@@ -349,12 +349,12 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
             />
           </div>
           <div className="form-group mb-0">
-            <label htmlFor="rc-zoho-vendor-name">Zoho vendor name *</label>
+            <label htmlFor="rc-zoho-vendor-name">Labour expense account name *</label>
             <input
               id="rc-zoho-vendor-name"
               type="text"
               className="input-field"
-              placeholder="Vendor name in Zoho Books"
+              placeholder="Account name in Zoho Books"
               value={values.zohoVendorName}
               onChange={e => onChange({ zohoVendorName: e.target.value })}
               required

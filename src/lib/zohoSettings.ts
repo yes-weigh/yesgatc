@@ -14,6 +14,8 @@ export type ZohoRvSettings = {
   zohoWalletToAccountId: string;
   /** When true, a scheduled job every 30 minutes pushes outstanding RV invoices and wallet transfers. */
   zohoReconcileEnabled: boolean;
+  /** When true, after RV invoice: customer payment → GATC Wallet + labour expense payout. */
+  zohoRvSettlementEnabled: boolean;
 };
 
 /** Exact dropdown labels from Zoho Books `cf_mode_of_transport` (invoice custom field). */
@@ -58,6 +60,7 @@ export const DEFAULT_ZOHO_RV_SETTINGS: ZohoRvSettings = {
   zohoWalletFromAccountId: '99381000030412002',
   zohoWalletToAccountId: '99381000000006234',
   zohoReconcileEnabled: true,
+  zohoRvSettlementEnabled: true,
 };
 
 export function normalizeZohoNumericId(input: string): string {
@@ -90,6 +93,7 @@ export function normalizeZohoRvSettings(
       normalizeZohoNumericId(data?.zohoWalletToAccountId ?? '')
       || DEFAULT_ZOHO_RV_SETTINGS.zohoWalletToAccountId,
     zohoReconcileEnabled: data?.zohoReconcileEnabled !== false,
+    zohoRvSettlementEnabled: data?.zohoRvSettlementEnabled !== false,
   };
 }
 

@@ -56,3 +56,50 @@ export function queueRvZohoInvoicesAfterSubmit(recordIds: string[]): void {
     recordIds.map(recordId => triggerRvZohoInvoice({ recordId })),
   );
 }
+
+export type PushLegacyRvZohoSettlementInput = {
+  recordId: string;
+};
+
+export type PushLegacyRvZohoSettlementResult = {
+  recordId: string;
+  zohoSettlementStatus: 'completed';
+  zohoCustomerPaymentStatus?: 'completed' | 'skipped_paid';
+  zohoCustomerPaymentId?: string;
+  zohoExpenseId?: string;
+  zohoExpenseAmountInr?: number;
+};
+
+export async function pushLegacyRvZohoSettlement(
+  input: PushLegacyRvZohoSettlementInput,
+): Promise<PushLegacyRvZohoSettlementResult> {
+  const fn = httpsCallable<PushLegacyRvZohoSettlementInput, PushLegacyRvZohoSettlementResult>(
+    functionsClient(),
+    'pushLegacyRvZohoSettlement',
+  );
+  const result = await fn(input);
+  return result.data;
+}
+
+export type ReconcileZohoOutstandingInput = {
+  rvLimit?: number;
+  rvSettlementLimit?: number;
+  walletLimit?: number;
+};
+
+export type ReconcileZohoOutstandingResult = {
+  rv: { found: number; sent: number; failed: number };
+  rvSettlement: { found: number; sent: number; failed: number };
+  wallet: { found: number; sent: number; failed: number };
+};
+
+export async function reconcileZohoOutstanding(
+  input: ReconcileZohoOutstandingInput = {},
+): Promise<ReconcileZohoOutstandingResult> {
+  const fn = httpsCallable<ReconcileZohoOutstandingInput, ReconcileZohoOutstandingResult>(
+    functionsClient(),
+    'reconcileZohoOutstanding',
+  );
+  const result = await fn(input);
+  return result.data;
+}

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { FileText, Save } from 'lucide-react';
+import { FileText, RefreshCw, Save } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { reconcileZohoOutstanding } from '../lib/zohoRvInvoice';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAppSettings } from '../hooks/useAppSettings';
@@ -21,6 +23,7 @@ type ZohoSettingsCardProps = {
 };
 
 export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = '' }) => {
+  const { user } = useAuth();
   const { appSettings, appSettingsLoading } = useAppSettings();
   const [draft, setDraft] = useState<ZohoRvSettingsFormValues>(
     zohoRvSettingsToFormValues(DEFAULT_ZOHO_RV_SETTINGS),
@@ -28,6 +31,9 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [reconciling, setReconciling] = useState(false);
+  const [reconcileSummary, setReconcileSummary] = useState('');
+  const isSuperAdmin = user?.role === 'super_admin';
 
   useEffect(() => {
     if (appSettingsLoading) return;
@@ -88,6 +94,16 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
                 disabled={saving}
               />
               <span>Enable automatic Zoho invoice on RV submit</span>
+            </label>
+
+            <label className="flex items-center gap-2 mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={draft.zohoRvSettlementEnabled}
+                onChange={e => updateDraft({ zohoRvSettlementEnabled: e.target.checked })}
+                disabled={saving || !draft.zohoRvInvoicingEnabled}
+              />
+              <span>After invoice: customer payment to GATC Wallet + labour expense payout</span>
             </label>
 
             <div className="form-grid admin-zoho-settings-grid">
@@ -211,7 +227,37 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
               <span>Enable automatic 30-minute Zoho reconciliation</span>
             </label>
 
+            {reconcileSummary && (
+              <p className="text-sm text-muted mb-3">{reconcileSummary}</p>
+            )}
+
             <div className="flex items-center gap-3 mt-4 flex-wrap">
+              {isSuperAdmin && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={reconciling || saving}
+                  onClick={() => {
+                    setReconcileSummary('');
+                    setReconciling(true);
+                    void reconcileZohoOutstanding({ rvSettlementLimit: 50 })
+                      .then(summary => {
+                        setReconcileSummary(
+                          `Reconcile: ${summary.rv.sent}/${summary.rv.found} invoices, ` +
+                          `${summary.rvSettlement.sent}/${summary.rvSettlement.found} settlements, ` +
+                          `${summary.wallet.sent}/${summary.wallet.found} wallet transfers.`,
+                        );
+                      })
+                      .catch((err: unknown) => {
+                        setError(err instanceof Error ? err.message : 'Zoho reconcile failed.');
+                      })
+                      .finally(() => setReconciling(false));
+                  }}
+                >
+                  <RefreshCw size={16} aria-hidden />
+                  {reconciling ? 'Reconciling…' : 'Run Zoho reconcile now'}
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-primary"

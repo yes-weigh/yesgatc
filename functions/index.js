@@ -24,6 +24,7 @@ const {
   reconcileZohoOutstandingHandler,
   reconcileZohoOutstandingScheduledHandler,
 } = require('./zohoReconcile');
+const { pushLegacyRvZohoSettlementHandler } = require('./zohoRvSettlement');
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -122,6 +123,18 @@ exports.triggerRvZohoInvoice = onCall(
     memory: '256MiB',
   },
   async request => triggerRvZohoInvoiceHandler(request, adminDb()),
+);
+
+/** Super Admin records customer payment + labour expense for a legacy RV Zoho invoice. */
+exports.pushLegacyRvZohoSettlement = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async request => pushLegacyRvZohoSettlementHandler(request, adminDb()),
 );
 
 /** Super Admin manually pushes a legacy RV verification to Zoho Books. */

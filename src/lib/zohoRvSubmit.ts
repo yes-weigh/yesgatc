@@ -171,3 +171,59 @@ export function verificationZohoInvoiceNumber(
   const id = record.zohoInvoiceId?.trim();
   return id || null;
 }
+
+export type ZohoSettlementStatus = 'pending' | 'completed' | 'failed';
+
+export function isRvZohoSettlementOutstanding(
+  record: Pick<
+    SiteCalibration,
+    | 'verificationType'
+    | 'zohoInvoiceId'
+    | 'zohoSettlementStatus'
+    | 'resubmittedFromId'
+    | 'applicationNumber'
+  > | null
+  | undefined,
+): boolean {
+  if (!record || record.verificationType !== 'RV') return false;
+  if (record.resubmittedFromId?.trim()) return false;
+  if (!record.zohoInvoiceId?.trim()) return false;
+  if (!record.applicationNumber?.trim()) return false;
+  return record.zohoSettlementStatus !== 'completed';
+}
+
+export function resolveZohoSettlementStatus(
+  record: Pick<
+    SiteCalibration,
+    | 'verificationType'
+    | 'zohoInvoiceId'
+    | 'zohoSettlementStatus'
+    | 'resubmittedFromId'
+  >,
+): ZohoSettlementStatus | null {
+  if (record.verificationType !== 'RV') return null;
+  if (record.resubmittedFromId?.trim()) return null;
+  if (!record.zohoInvoiceId?.trim()) return null;
+  if (record.zohoSettlementStatus === 'completed') return 'completed';
+  if (record.zohoSettlementStatus === 'failed') return 'failed';
+  return 'pending';
+}
+
+export function zohoSettlementStatusLabel(status: ZohoSettlementStatus): string {
+  switch (status) {
+    case 'completed':
+      return 'Payment & expense recorded';
+    case 'failed':
+      return 'Settlement failed';
+    default:
+      return 'Settlement pending';
+  }
+}
+
+export function rvLabourPayoutInr(
+  record: Pick<SiteCalibration, 'maximumCapacity' | 'unitOfMeasurement'>,
+): number | null {
+  const capacityKg = maximumCapacityKgFromRecord(record);
+  if (capacityKg == null) return null;
+  return capacityKg <= 20 ? 135 : 225;
+}

@@ -72,7 +72,16 @@ service cloud.firestore {
         && request.resource.data.get('zohoOrganizationId', null) == resource.data.get('zohoOrganizationId', null)
         && request.resource.data.get('zohoPushStatus', null) == resource.data.get('zohoPushStatus', null)
         && request.resource.data.get('zohoPushedAt', null) == resource.data.get('zohoPushedAt', null)
-        && request.resource.data.get('zohoPushError', null) == resource.data.get('zohoPushError', null);
+        && request.resource.data.get('zohoPushError', null) == resource.data.get('zohoPushError', null)
+        && request.resource.data.get('zohoCustomerPaymentId', null) == resource.data.get('zohoCustomerPaymentId', null)
+        && request.resource.data.get('zohoCustomerPaymentStatus', null) == resource.data.get('zohoCustomerPaymentStatus', null)
+        && request.resource.data.get('zohoCustomerPaymentAmountInr', null) == resource.data.get('zohoCustomerPaymentAmountInr', null)
+        && request.resource.data.get('zohoExpenseId', null) == resource.data.get('zohoExpenseId', null)
+        && request.resource.data.get('zohoExpenseStatus', null) == resource.data.get('zohoExpenseStatus', null)
+        && request.resource.data.get('zohoExpenseAmountInr', null) == resource.data.get('zohoExpenseAmountInr', null)
+        && request.resource.data.get('zohoSettlementStatus', null) == resource.data.get('zohoSettlementStatus', null)
+        && request.resource.data.get('zohoSettlementError', null) == resource.data.get('zohoSettlementError', null)
+        && request.resource.data.get('zohoSettledAt', null) == resource.data.get('zohoSettledAt', null);
     }
 
     // ── users ─────────────────────────────────────────────────────

@@ -317,15 +317,15 @@ export function validatePanCardInput(panCard: string): string | null {
 
 export function validateZohoVendorIdInput(zohoVendorId: string): string | null {
   const normalized = normalizeZohoId(zohoVendorId);
-  if (!normalized) return 'Zoho vendor ID is required.';
+  if (!normalized) return 'Zoho labour expense account ID is required.';
   if (normalized.length < 10) {
-    return 'Zoho vendor ID must be at least 10 digits.';
+    return 'Zoho labour expense account ID must be at least 10 digits.';
   }
   return null;
 }
 
 export function validateZohoVendorNameInput(zohoVendorName: string): string | null {
-  if (!zohoVendorName.trim()) return 'Zoho vendor name is required.';
+  if (!zohoVendorName.trim()) return 'Labour expense account name is required.';
   return null;
 }
 

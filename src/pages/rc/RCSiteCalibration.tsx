@@ -113,6 +113,7 @@ import { VerificationSubmitProgressOverlay } from '../../components/Verification
 import { RvPaymentPanel } from '../../components/RvPaymentPanel';
 import { RvOutstandingWalletPaymentBanner } from '../../components/RvOutstandingWalletPaymentBanner';
 import { RvLegacyZohoInvoiceSection } from '../../components/RvLegacyZohoInvoiceSection';
+import { RvLegacyZohoSettlementSection } from '../../components/RvLegacyZohoSettlementSection';
 import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import {
@@ -1857,11 +1858,17 @@ export const RCSiteCalibration: React.FC = () => {
                       <RvOutstandingWalletPaymentBanner breakdown={rvPaymentBreakdown} />
                     )}
                     {isViewMode && editingRecord && (
-                      <RvLegacyZohoInvoiceSection
-                        record={editingRecord}
-                        rcCenterName={rcProfile?.companyName || rcProfile?.username}
-                        onInvoicePushed={() => void fetchRecords()}
-                      />
+                      <>
+                        <RvLegacyZohoInvoiceSection
+                          record={editingRecord}
+                          rcCenterName={rcProfile?.companyName || rcProfile?.username}
+                          onInvoicePushed={() => void fetchRecords()}
+                        />
+                        <RvLegacyZohoSettlementSection
+                          record={editingRecord}
+                          onSettled={() => void fetchRecords()}
+                        />
+                      </>
                     )}
                     {rvZohoSubmitBlocked && (
                       <p className="verification-zoho-block-banner text-sm mt-2 mb-0" role="status">

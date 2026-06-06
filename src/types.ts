@@ -416,6 +416,17 @@ export interface SiteCalibration {
   zohoPushStatus?: 'pending' | 'sent' | 'failed' | 'skipped';
   zohoPushedAt?: string;
   zohoPushError?: string;
+  /** Customer payment against Zoho invoice → GATC Wallet. */
+  zohoCustomerPaymentId?: string;
+  zohoCustomerPaymentStatus?: 'completed' | 'skipped_paid' | 'failed';
+  zohoCustomerPaymentAmountInr?: number;
+  /** Labour payout expense from GATC Wallet (RC zohoVendorId = expense account). */
+  zohoExpenseId?: string;
+  zohoExpenseStatus?: 'completed' | 'failed';
+  zohoExpenseAmountInr?: number;
+  zohoSettlementStatus?: 'completed' | 'failed';
+  zohoSettlementError?: string;
+  zohoSettledAt?: string;
   /** Stored for future DOCA automation; worker currently submits 0. */
   carriageConveyanceFee?: number;
   totalDeposited?: number;

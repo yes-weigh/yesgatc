@@ -24,6 +24,7 @@ import { VerificationDetailsCard } from './VerificationDetailsCard';
 import { VerificationSummaryChrome } from './VerificationSummaryChrome';
 import { RvLegacyWalletPaymentSection } from './RvLegacyWalletPaymentSection';
 import { RvLegacyZohoInvoiceSection } from './RvLegacyZohoInvoiceSection';
+import { RvLegacyZohoSettlementSection } from './RvLegacyZohoSettlementSection';
 import { ListViewBackBar } from './ListViewBackBar';
 import type { SiteCalibration } from '../types';
 
@@ -167,6 +168,14 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
         record={record}
         rcCenterName={rcCenterName}
         onInvoicePushed={async () => {
+          await onPaymentRecorded?.();
+          await onResubmitted?.(record.id);
+        }}
+        className="verification-serial-group-payment-banner"
+      />
+      <RvLegacyZohoSettlementSection
+        record={record}
+        onSettled={async () => {
           await onPaymentRecorded?.();
           await onResubmitted?.(record.id);
         }}
