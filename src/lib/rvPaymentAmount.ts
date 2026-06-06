@@ -6,7 +6,10 @@ import {
   sumRcVerificationFees,
   verificationFeeWithGst,
 } from './rcProfileFields';
-import type { VerificationDeviceRowValues } from './siteCalibrationProfileFields';
+import {
+  verificationSessionFromRecord,
+  type VerificationDeviceRowValues,
+} from './siteCalibrationProfileFields';
 import { normalizeVerificationStatus } from './verificationRequest';
 import type { JobType, Product, RcFeesStructure, SiteCalibration, VerificationLocation } from '../types';
 
@@ -105,6 +108,22 @@ export function isRvSessionPaymentSatisfied(
 ): boolean {
   if (!sessionPayment || expectedAmount == null) return false;
   return inrAmountsMatch(sessionPayment.amountInr, expectedAmount) && Boolean(sessionPayment.paymentId);
+}
+
+export function computeRvPaymentBreakdownForRecord(
+  record: SiteCalibration,
+  products: Product[],
+  fees: RcFeesStructure,
+): RvPaymentBreakdown | null {
+  const session = verificationSessionFromRecord(record);
+  return computeRvPaymentAmount(
+    session.devices,
+    products,
+    fees,
+    session.verificationLocation,
+    session.verificationSubject,
+    session.verificationType,
+  );
 }
 
 /** Submitted RV records that still owe wallet administrative fees (e.g. before pay-before-submit). */

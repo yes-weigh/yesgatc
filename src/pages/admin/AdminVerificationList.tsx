@@ -24,6 +24,9 @@ import { TablePagination } from '../../components/TablePagination';
 import { VerificationDetailPanel } from '../../components/VerificationDetailPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
+import { useAppSettings } from '../../hooks/useAppSettings';
+import { isRvWalletPaymentOutstanding } from '../../lib/rvPaymentAmount';
+import { isRvWalletPaymentRequired } from '../../lib/appSettings';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 interface VerificationRow extends SiteCalibration {
@@ -32,6 +35,7 @@ interface VerificationRow extends SiteCalibration {
 
 export const AdminVerificationList: React.FC = () => {
   const confirm = useConfirm();
+  const { appSettings } = useAppSettings();
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
   const [rcUsersById, setRcUsersById] = useState<
@@ -227,6 +231,14 @@ export const AdminVerificationList: React.FC = () => {
 
   const filterOptions = buildVerificationStatusFilterOptions(counts);
   const rowOffset = (page - 1) * VERIFICATION_TABLE_PAGE_SIZE;
+  const walletPaymentDueRecordIds = useMemo(() => {
+    if (!isRvWalletPaymentRequired('RV', appSettings)) return new Set<string>();
+    return new Set(
+      records
+        .filter(record => isRvWalletPaymentOutstanding(record, appSettings))
+        .map(record => record.id),
+    );
+  }, [records, appSettings]);
 
   return (
     <div className="fade-in page-content">
@@ -290,6 +302,7 @@ export const AdminVerificationList: React.FC = () => {
                 }}
                 lastViewedRecordId={lastViewedVerificationId}
                 flashRecordId={rowHighlightFlashId}
+                walletPaymentDueRecordIds={walletPaymentDueRecordIds}
                 onDelete={record => void handleDelete(record as VerificationRow)}
                 deletingId={deletingId}
               />

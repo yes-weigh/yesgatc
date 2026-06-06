@@ -11,6 +11,10 @@ type RvWalletPaymentPanelProps = {
   recordIds?: string[];
   onPaid: (paymentId: string) => void | Promise<void>;
   onClose: () => void;
+  /** Who owns the wallet being debited (shown in copy). */
+  walletOwnerLabel?: string;
+  /** submit = RC/VCT paying before submit; legacy-admin = Super Admin paying old RV. */
+  paymentContext?: 'submit' | 'legacy-admin';
 };
 
 export const RvWalletPaymentPanel: React.FC<RvWalletPaymentPanelProps> = ({
@@ -19,6 +23,8 @@ export const RvWalletPaymentPanel: React.FC<RvWalletPaymentPanelProps> = ({
   recordIds,
   onPaid,
   onClose,
+  walletOwnerLabel = 'your',
+  paymentContext = 'submit',
 }) => {
   const idempotencyKeyRef = useRef(
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -50,6 +56,16 @@ export const RvWalletPaymentPanel: React.FC<RvWalletPaymentPanelProps> = ({
   }, [rcId]);
 
   const sufficient = balance != null && balance >= breakdown.total;
+  const zeroBalance = balance != null && balance <= 0;
+
+  const insufficientMessage =
+    paymentContext === 'legacy-admin'
+      ? zeroBalance
+        ? `${walletOwnerLabel} wallet balance is ₹0. Approve a top-up for this RC centre before paying this verification.`
+        : `Insufficient ${walletOwnerLabel} wallet balance. Approve a top-up for this RC centre or add more funds before paying.`
+      : zeroBalance
+        ? `${walletOwnerLabel} wallet balance is ₹0. Add a payment from the Wallet page and wait for Super Admin approval before submitting.`
+        : `Insufficient balance. Add a top-up from the Wallet page and wait for Super Admin approval before paying.`;
 
   const handlePay = async () => {
     setPaying(true);
@@ -86,7 +102,7 @@ export const RvWalletPaymentPanel: React.FC<RvWalletPaymentPanelProps> = ({
 
         <div className="rv-payment-panel-body">
           <p className="text-muted text-sm mb-4">
-            RV administrative fees will be debited from your prepaid wallet balance.
+            RV administrative fees will be debited from {walletOwnerLabel} prepaid wallet balance.
           </p>
 
           <div className="rv-wallet-payment-summary">
@@ -111,9 +127,7 @@ export const RvWalletPaymentPanel: React.FC<RvWalletPaymentPanelProps> = ({
           </div>
 
           {!loading && balance != null && !sufficient && (
-            <p className="form-error mt-3">
-              Insufficient balance. Add a top-up from your dashboard wallet page and wait for Super Admin approval.
-            </p>
+            <p className="form-error mt-3">{insufficientMessage}</p>
           )}
 
           {error && <p className="form-error mt-3">{error}</p>}

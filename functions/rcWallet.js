@@ -41,6 +41,10 @@ async function assertRcWalletAccess(db, uid, rcId) {
   }
 
   const caller = callerSnap.data();
+  if (caller.role === 'super_admin') {
+    return caller;
+  }
+
   if (caller.role === 'rc_admin') {
     if (uid !== rcId) {
       throw new HttpsError('permission-denied', 'Cannot use wallet for another RC.');
