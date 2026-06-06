@@ -84,7 +84,10 @@ import {
   type VerificationStatusFilter,
   type VerificationTypeFilter,
 } from '../../components/VerificationListFilters';
-import { collapseVerificationsForListDisplay } from '../../lib/verificationListGrouping';
+import {
+  collapseVerificationsForListDisplay,
+  verificationListRecordsForFilterCounts,
+} from '../../lib/verificationListGrouping';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import type {
   Customer,
@@ -1615,8 +1618,27 @@ export const RCSiteCalibration: React.FC = () => {
     [paginatedRecords, rcProfile, customersById],
   );
 
-  const statusCounts = useMemo(() => tallyVerificationStatusFilters(records), [records]);
-  const typeCounts = useMemo(() => tallyVerificationTypeFilters(records), [records]);
+  const listFilters = useMemo(
+    () => ({ statusFilter, typeFilter, searchTerm }),
+    [statusFilter, typeFilter, searchTerm],
+  );
+  const recordsForStatusCounts = useMemo(
+    () => verificationListRecordsForFilterCounts(records, listFilters, 'status'),
+    [records, listFilters],
+  );
+  const recordsForTypeCounts = useMemo(
+    () => verificationListRecordsForFilterCounts(records, listFilters, 'type'),
+    [records, listFilters],
+  );
+
+  const statusCounts = useMemo(
+    () => tallyVerificationStatusFilters(recordsForStatusCounts),
+    [recordsForStatusCounts],
+  );
+  const typeCounts = useMemo(
+    () => tallyVerificationTypeFilters(recordsForTypeCounts),
+    [recordsForTypeCounts],
+  );
 
   const statusFilterOptions = buildVerificationStatusFilterOptions(statusCounts);
   const typeFilterOptions = buildVerificationTypeFilterOptions(typeCounts);

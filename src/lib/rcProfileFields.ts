@@ -293,7 +293,7 @@ const PAN_CARD_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
 export function validatePanCardInput(panCard: string): string | null {
   const normalized = normalizePanCard(panCard);
-  if (!normalized) return 'PAN card is required.';
+  if (!normalized) return null;
   if (!PAN_CARD_PATTERN.test(normalized)) {
     return 'PAN must be 10 characters (e.g. ABCDE1234F).';
   }

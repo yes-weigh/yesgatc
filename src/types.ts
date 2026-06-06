@@ -247,7 +247,7 @@ export interface FirestoreUserDoc {
   zohoVendorId?: string;
   /** Super Admin only — Zoho Books vendor display name (mandatory for RC). */
   zohoVendorName?: string;
-  /** Super Admin only — PAN card number (mandatory for RC). */
+  /** Super Admin only — PAN card number (optional). */
   panCard?: string;
   /** Super Admin only — optional PAN card scan / image. */
   panCardUrl?: string;

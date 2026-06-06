@@ -13,7 +13,10 @@ import {
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
-import { collapseVerificationsForListDisplay } from '../../lib/verificationListGrouping';
+import {
+  collapseVerificationsForListDisplay,
+  verificationListRecordsForFilterCounts,
+} from '../../lib/verificationListGrouping';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import {
   VerificationListFilters,
@@ -173,15 +176,58 @@ export const AdminVerificationList: React.FC = () => {
     setViewingRecord(null);
   };
 
-  const counts = useMemo(() => tallyVerificationStatusFilters(records), [records]);
-  const typeCounts = useMemo(() => tallyVerificationTypeFilters(records), [records]);
+  const rcCenterNameByRcId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const record of records) {
+      const rcId = record.rcId?.trim() || 'unknown';
+      if (!map.has(rcId)) {
+        map.set(rcId, record.rcCenterName?.trim() || 'Unknown RC');
+      }
+    }
+    return map;
+  }, [records]);
+
+  const listFilters = useMemo(
+    () => ({
+      statusFilter,
+      typeFilter,
+      rcFilter,
+      searchTerm,
+      searchExtras: (record: SiteCalibration) => ({
+        rcCenterName: rcCenterNameByRcId.get(record.rcId?.trim() || 'unknown'),
+      }),
+    }),
+    [statusFilter, typeFilter, rcFilter, searchTerm, rcCenterNameByRcId],
+  );
+
+  const recordsForStatusCounts = useMemo(
+    () => verificationListRecordsForFilterCounts(records, listFilters, 'status'),
+    [records, listFilters],
+  );
+  const recordsForTypeCounts = useMemo(
+    () => verificationListRecordsForFilterCounts(records, listFilters, 'type'),
+    [records, listFilters],
+  );
+  const recordsForRcCounts = useMemo(
+    () => verificationListRecordsForFilterCounts(records, listFilters, 'rc'),
+    [records, listFilters],
+  );
+
+  const counts = useMemo(
+    () => tallyVerificationStatusFilters(recordsForStatusCounts),
+    [recordsForStatusCounts],
+  );
+  const typeCounts = useMemo(
+    () => tallyVerificationTypeFilters(recordsForTypeCounts),
+    [recordsForTypeCounts],
+  );
   const typeFilterOptions = buildVerificationTypeFilterOptions(typeCounts);
 
   const rcFilterOptions = useMemo(() => {
     const byRc = new Map<string, { label: string; count: number }>();
-    for (const record of records) {
+    for (const record of recordsForRcCounts) {
       const rcId = record.rcId?.trim() || 'unknown';
-      const label = record.rcCenterName?.trim() || 'Unknown RC';
+      const label = rcCenterNameByRcId.get(rcId) || 'Unknown RC';
       const existing = byRc.get(rcId);
       if (existing) {
         existing.count += 1;
@@ -195,10 +241,10 @@ export const AdminVerificationList: React.FC = () => {
       .sort((a, b) => a.label.localeCompare(b.label));
 
     return [
-      { value: 'all', label: 'All RC', count: records.length },
+      { value: 'all', label: 'All RC', count: recordsForRcCounts.length },
       ...centres,
     ];
-  }, [records]);
+  }, [recordsForRcCounts, rcCenterNameByRcId]);
 
   const handleDelete = async (record: VerificationRow) => {
     if (!canDeleteVerification(record)) return;

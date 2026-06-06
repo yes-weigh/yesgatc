@@ -6,10 +6,58 @@ import {
 import {
   canShowVerificationCertifiedActions,
   isVerificationCertifiedOnDoca,
+  matchesVerificationStatusFilter,
+  matchesVerificationTypeFilter,
   normalizeVerificationStatus,
+  type VerificationStatusFilter,
+  type VerificationTypeFilter,
 } from './verificationRequest';
+import { matchesVerificationSearch, type VerificationSearchExtras } from './verificationListSearch';
 import { sortVerificationsByCertificateDesc } from './verificationListSort';
 import type { SiteCalibration } from '../types';
+
+export type VerificationListActiveFilters = {
+  statusFilter: VerificationStatusFilter;
+  typeFilter: VerificationTypeFilter;
+  rcFilter?: string;
+  searchTerm?: string;
+  searchExtras?: (record: SiteCalibration) => VerificationSearchExtras;
+};
+
+export type VerificationListCountOmitFilter = 'status' | 'type' | 'rc' | 'search';
+
+/** Records visible in the list after applying all filters except those omitted (for chip/dropdown counts). */
+export function verificationListRecordsForFilterCounts(
+  allRecords: SiteCalibration[],
+  filters: VerificationListActiveFilters,
+  omit: VerificationListCountOmitFilter | VerificationListCountOmitFilter[],
+): VerificationListDisplayRecord[] {
+  const omitted = new Set(Array.isArray(omit) ? omit : [omit]);
+  const filtered = allRecords.filter(record => {
+    if (!omitted.has('search')) {
+      const extras = filters.searchExtras?.(record) ?? {};
+      if (!matchesVerificationSearch(record, filters.searchTerm ?? '', extras)) {
+        return false;
+      }
+    }
+    if (!omitted.has('status') && !matchesVerificationStatusFilter(record, filters.statusFilter)) {
+      return false;
+    }
+    if (!omitted.has('type') && !matchesVerificationTypeFilter(record, filters.typeFilter)) {
+      return false;
+    }
+    if (
+      !omitted.has('rc') &&
+      filters.rcFilter &&
+      filters.rcFilter !== 'all' &&
+      (record.rcId || '') !== filters.rcFilter
+    ) {
+      return false;
+    }
+    return true;
+  });
+  return collapseVerificationsForListDisplay(filtered, allRecords);
+}
 
 export type VerificationListDisplayRecord = SiteCalibration & {
   /** Total Firestore records for this RC + serial (including hidden duplicates). */

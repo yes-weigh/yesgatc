@@ -331,7 +331,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
       <div className="product-form-flat-row product-form-flat-row--scale rc-form-row-accounts">
         <span className="product-form-flat-row-title">Zoho vendor &amp; PAN (Super Admin only)</span>
         <p className="text-muted text-xs mb-3 mt-0">
-          Not visible or editable on the RC profile. Required when registering or updating a regional center.
+          Not visible or editable on the RC profile. Zoho vendor fields are required; PAN is optional.
         </p>
         <div className="rc-form-grid rc-form-grid--main">
           <div className="form-group mb-0">
@@ -361,15 +361,14 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
             />
           </div>
           <div className="form-group mb-0">
-            <label htmlFor="rc-pan-card">PAN card *</label>
+            <label htmlFor="rc-pan-card">PAN card</label>
             <input
               id="rc-pan-card"
               type="text"
               className="input-field text-mono"
-              placeholder="ABCDE1234F"
+              placeholder="ABCDE1234F (optional)"
               value={values.panCard}
               onChange={e => onChange({ panCard: normalizePanCard(e.target.value).slice(0, 10) })}
-              required
               maxLength={10}
               autoCapitalize="characters"
               spellCheck={false}
