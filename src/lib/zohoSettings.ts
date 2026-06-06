@@ -6,11 +6,11 @@ export type ZohoRvSettings = {
   zohoItemIdUpto20Kg: string;
   zohoItemIdAbove20Kg: string;
   zohoModeOfTransport: string;
-  /** When true, wallet top-up approval posts Kotak → GATC Wallet transfer in Zoho Books. */
+  /** When true, wallet top-up approval posts GATC Wallet → Kotak transfer in Zoho Books. */
   zohoWalletTransferEnabled: boolean;
-  /** Source bank account (e.g. Kotak Current Account). */
+  /** Source bank account (e.g. GATC Wallet). */
   zohoWalletFromAccountId: string;
-  /** Destination bank account (e.g. GATC Wallet). */
+  /** Destination bank account (e.g. Kotak Current Account). */
   zohoWalletToAccountId: string;
 };
 
@@ -53,8 +53,8 @@ export const DEFAULT_ZOHO_RV_SETTINGS: ZohoRvSettings = {
   /** Closest Zoho option to “without machine” — `Without Machine` is not in the dropdown. */
   zohoModeOfTransport: 'CUSTOMER PICKUP',
   zohoWalletTransferEnabled: true,
-  zohoWalletFromAccountId: '99381000000006234',
-  zohoWalletToAccountId: '99381000030412002',
+  zohoWalletFromAccountId: '99381000030412002',
+  zohoWalletToAccountId: '99381000000006234',
 };
 
 export function normalizeZohoNumericId(input: string): string {
@@ -121,9 +121,9 @@ export function validateZohoRvSettingsForm(values: ZohoRvSettingsFormValues): st
   if (values.zohoWalletTransferEnabled) {
     const fromId = normalizeZohoNumericId(values.zohoWalletFromAccountId);
     const toId = normalizeZohoNumericId(values.zohoWalletToAccountId);
-    if (fromId.length < 10) return 'Zoho wallet source account ID (Kotak) is required.';
-    if (toId.length < 10) return 'Zoho wallet destination account ID (GATC Wallet) is required.';
-    if (fromId === toId) return 'Kotak and GATC Wallet account IDs must differ.';
+    if (fromId.length < 10) return 'Zoho wallet source account ID (GATC Wallet) is required.';
+    if (toId.length < 10) return 'Zoho wallet destination account ID (Kotak) is required.';
+    if (fromId === toId) return 'GATC Wallet and Kotak account IDs must differ.';
   }
 
   return null;

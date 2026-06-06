@@ -22,7 +22,7 @@ function functionsClient() {
   return getFunctions(app, FUNCTIONS_REGION);
 }
 
-/** Approved top-up not yet recorded as Kotak → GATC Wallet in Zoho Books. */
+/** Approved top-up not yet recorded as GATC Wallet → Kotak in Zoho Books. */
 export function isWalletTopUpZohoTransferOutstanding(
   topUp: Pick<WalletTopUp, 'status' | 'zohoTransferStatus' | 'zohoTransactionId'> | null | undefined,
 ): boolean {

@@ -40,6 +40,8 @@ const CALLABLE_REGION = 'us-central1';
 const FIRESTORE_REGION = 'asia-south1';
 /** Allow Vite dev server and production hosting to call HTTPS functions. */
 const CALLABLE_CORS = [
+  /^https:\/\/yesgatc\.in$/,
+  /^https:\/\/www\.yesgatc\.in$/,
   /^https:\/\/yesgatc\.web\.app$/,
   /^https:\/\/yesgatc\.firebaseapp\.com$/,
   /^http:\/\/localhost(:\d+)?$/,
@@ -233,7 +235,11 @@ exports.razorpayWebhook = onRequest(
 
 /** Super Admin approves or rejects RC wallet top-up requests. */
 exports.reviewWalletTopUp = onCall(
-  { region: CALLABLE_REGION, secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken] },
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+  },
   async request => reviewWalletTopUpHandler(request, adminDb()),
 );
 

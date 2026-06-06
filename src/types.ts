@@ -96,7 +96,7 @@ export interface WalletTopUp {
   reviewedAt?: string;
   reviewedByUid?: string;
   rejectionReason?: string;
-  /** Zoho Books transfer_fund Kotak → GATC Wallet on Super Admin approval. */
+  /** Zoho Books transfer_fund GATC Wallet → Kotak on Super Admin approval. */
   zohoTransferStatus?: 'completed' | 'failed';
   zohoTransactionId?: string;
   zohoFromAccountName?: string;

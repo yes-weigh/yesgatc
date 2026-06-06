@@ -173,7 +173,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
             <h3 className="text-base font-semibold mb-3">Wallet top-up transfer</h3>
             <p className="text-muted text-sm mb-4">
               When a Super Admin approves an RC wallet top-up, YesGATC records a{' '}
-              <span className="text-mono">transfer_fund</span> in Zoho Books (Kotak → GATC Wallet).
+              <span className="text-mono">transfer_fund</span> in Zoho Books (GATC Wallet → Kotak).
               The description includes the RC name.
             </p>
 
@@ -189,7 +189,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
 
             <div className="form-grid admin-zoho-settings-grid">
               <div className="form-group">
-                <label htmlFor="zoho-wallet-from">Source account ID (Kotak)</label>
+                <label htmlFor="zoho-wallet-from">Source account ID (GATC Wallet)</label>
                 <input
                   id="zoho-wallet-from"
                   className="input-field text-mono"
@@ -201,7 +201,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
               </div>
 
               <div className="form-group">
-                <label htmlFor="zoho-wallet-to">Destination account ID (GATC Wallet)</label>
+                <label htmlFor="zoho-wallet-to">Destination account ID (Kotak)</label>
                 <input
                   id="zoho-wallet-to"
                   className="input-field text-mono"
@@ -224,7 +224,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
                 {saving ? 'Saving…' : 'Save Zoho settings'}
               </button>
               <p className="text-muted text-sm mb-0">
-                RV submit creates one B2C invoice. Wallet approval moves funds Kotak → GATC Wallet in Books.
+                RV submit creates one B2C invoice. Wallet approval moves funds GATC Wallet → Kotak in Books.
               </p>
             </div>
           </>

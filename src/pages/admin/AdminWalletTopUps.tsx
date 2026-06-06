@@ -153,7 +153,7 @@ export const AdminWalletTopUps: React.FC = () => {
     const fromId = normalizeZohoNumericId(appSettings.zohoWalletFromAccountId);
     const toId = normalizeZohoNumericId(appSettings.zohoWalletToAccountId);
     if (fromId.length < 10 || toId.length < 10) {
-      return 'Configure Kotak and GATC Wallet account IDs in Admin Zoho settings.';
+      return 'Configure GATC Wallet and Kotak account IDs in Admin Zoho settings.';
     }
     return null;
   }, [appSettings.zohoWalletFromAccountId, appSettings.zohoWalletToAccountId]);
@@ -168,7 +168,7 @@ export const AdminWalletTopUps: React.FC = () => {
     const ok = await confirm({
       title: 'Push wallet top-up to Zoho?',
       message:
-        `Record Kotak → GATC Wallet transfer for ${formatRcFeeAmount(topUp.amountInr)} ` +
+        `Record GATC Wallet → Kotak transfer for ${formatRcFeeAmount(topUp.amountInr)} ` +
         `(${rcName}) in Zoho Books?`,
       confirmLabel: 'Push to Zoho',
     });

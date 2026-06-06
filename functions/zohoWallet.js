@@ -6,8 +6,8 @@ const APP_SETTINGS_GLOBAL_DOC = 'global';
 
 const DEFAULT_ZOHO_WALLET_SETTINGS = {
   zohoWalletTransferEnabled: true,
-  zohoWalletFromAccountId: '99381000000006234',
-  zohoWalletToAccountId: '99381000030412002',
+  zohoWalletFromAccountId: '99381000030412002',
+  zohoWalletToAccountId: '99381000000006234',
 };
 
 function normalizeZohoNumericId(value) {
@@ -118,7 +118,7 @@ async function writeTopUpZohoTransferResult(db, topUpId, patch) {
 }
 
 /**
- * After Super Admin approves a wallet top-up, record Kotak → GATC Wallet transfer in Zoho Books.
+ * After Super Admin approves a wallet top-up, record GATC Wallet → Kotak transfer in Zoho Books.
  * Failures are stored on the top-up doc; wallet approval is not rolled back.
  */
 async function processWalletTopUpZohoTransfer(db, topUpId, topUp, { allowLegacyPush = false } = {}) {
@@ -220,7 +220,7 @@ async function pushLegacyWalletTopUpZohoTransferHandler(request, db) {
   ) {
     throw new HttpsError(
       'failed-precondition',
-      'Configure Kotak and GATC Wallet account IDs in Admin Zoho settings.',
+      'Configure GATC Wallet and Kotak account IDs in Admin Zoho settings.',
     );
   }
 
