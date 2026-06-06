@@ -25,6 +25,10 @@ import { useAppSettings } from '../../hooks/useAppSettings';
 import type { FirestoreUserDoc, WalletLedgerEntry, WalletTopUp } from '../../types';
 import { CheckCircle2, FileText, IndianRupee, RefreshCw, Trash2, Wallet, X, XCircle } from 'lucide-react';
 
+function WalletZohoPushedBadge() {
+  return <span className="admin-wallet-zoho-pushed-badge">Zoho pushed</span>;
+}
+
 function splitWalletTimestamp(iso: string): { date: string; time: string } {
   const value = new Date(iso);
   return {
@@ -362,6 +366,7 @@ export const AdminWalletTopUps: React.FC = () => {
                               <span className={`rc-wallet-status rc-wallet-status--${item.status}`}>
                                 {walletTopUpStatusLabel(item.status)}
                               </span>
+                              {item.zohoTransferStatus === 'completed' && <WalletZohoPushedBadge />}
                             </span>
                             {item.note ? (
                               <span className="table-mobile-summary-meta">{item.note}</span>
@@ -371,11 +376,6 @@ export const AdminWalletTopUps: React.FC = () => {
                                 {item.rejectionReason}
                               </span>
                             ) : null}
-                            {item.zohoTransferStatus === 'completed' && (
-                              <span className="table-mobile-summary-meta text-mono text-xs">
-                                Zoho transfer · {item.zohoReferenceNumber || item.zohoTransactionId}
-                              </span>
-                            )}
                             {item.zohoTransferStatus === 'failed' && item.zohoTransferError ? (
                               <span className="form-error table-mobile-summary-meta text-xs">
                                 Zoho: {item.zohoTransferError}
@@ -392,6 +392,12 @@ export const AdminWalletTopUps: React.FC = () => {
                           <span className={`rc-wallet-status rc-wallet-status--${item.status}`}>
                             {walletTopUpStatusLabel(item.status)}
                           </span>
+                          {item.zohoTransferStatus === 'completed' && (
+                            <span className="admin-wallet-zoho-desktop-meta text-mono">
+                              Zoho · {item.zohoReferenceNumber || item.zohoTransactionId}
+                              {item.zohoTransferDate ? ` · ${item.zohoTransferDate}` : ''}
+                            </span>
+                          )}
                         </td>
                         <td className="table-mobile-col-actions text-right">
                           <div className="admin-wallet-table-actions">
@@ -520,6 +526,7 @@ export const AdminWalletTopUps: React.FC = () => {
                               <span className="table-mobile-summary-meta">
                                 Balance {formatRcFeeAmount(entry.balanceAfterInr)}
                               </span>
+                              {linkedTopUp?.zohoTransferStatus === 'completed' && <WalletZohoPushedBadge />}
                             </span>
                             {entry.status === 'refunded' || entry.refundReason ? (
                               <span className="table-mobile-summary-meta">
@@ -527,11 +534,6 @@ export const AdminWalletTopUps: React.FC = () => {
                                 {entry.refundReason ? ` · ${entry.refundReason}` : ''}
                               </span>
                             ) : null}
-                            {linkedTopUp?.zohoTransferStatus === 'completed' && (
-                              <span className="table-mobile-summary-meta text-mono text-xs">
-                                Zoho · {linkedTopUp.zohoReferenceNumber || linkedTopUp.zohoTransactionId}
-                              </span>
-                            )}
                             {linkedTopUp?.zohoTransferStatus === 'failed' && linkedTopUp.zohoTransferError ? (
                               <span className="form-error table-mobile-summary-meta text-xs">
                                 Zoho: {linkedTopUp.zohoTransferError}
@@ -541,7 +543,15 @@ export const AdminWalletTopUps: React.FC = () => {
                         </td>
                         <td className="table-mobile-col-hide text-muted text-sm">{date}</td>
                         <td className="table-mobile-col-hide text-muted text-sm">{time}</td>
-                        <td className="table-mobile-col-hide">{walletLedgerTypeLabel(entry.type)}</td>
+                        <td className="table-mobile-col-hide">
+                          {walletLedgerTypeLabel(entry.type)}
+                          {linkedTopUp?.zohoTransferStatus === 'completed' && (
+                            <span className="admin-wallet-zoho-desktop-meta text-mono">
+                              Zoho · {linkedTopUp.zohoReferenceNumber || linkedTopUp.zohoTransactionId}
+                              {linkedTopUp.zohoTransferDate ? ` · ${linkedTopUp.zohoTransferDate}` : ''}
+                            </span>
+                          )}
+                        </td>
                         <td
                           className={`table-mobile-col-hide font-medium ${
                             isCredit

@@ -40,6 +40,36 @@ function walletTopUpReference(topUpId) {
   return `WALLET-${safe || 'TOPUP'}`;
 }
 
+/** Zoho Books `date` field — wallet approval date in India (YYYY-MM-DD). */
+function walletTopUpZohoBooksDate(iso) {
+  const trimmed = String(iso ?? '').trim();
+  if (!trimmed) return null;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed.slice(0, 10) : null;
+  }
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(parsed);
+}
+
+async function resolveWalletTopUpApprovalDate(db, topUpId, topUp) {
+  const candidates = [topUp?.reviewedAt];
+  if (db && topUpId) {
+    const ledgerSnap = await db.doc(`walletLedger/topup-${topUpId}`).get();
+    if (ledgerSnap.exists) {
+      candidates.push(ledgerSnap.data()?.createdAt);
+    }
+  }
+  candidates.push(topUp?.submittedAt);
+
+  for (const iso of candidates) {
+    const date = walletTopUpZohoBooksDate(iso);
+    if (date) return date;
+  }
+
+  console.warn(`Wallet top-up ${topUpId}: no approval date found, using today (IST).`);
+  return walletTopUpZohoBooksDate(new Date().toISOString());
+}
+
 function buildWalletTopUpDescription(rcName, note, { legacy = false } = {}) {
   const parts = [
     legacy ? 'GATC wallet top-up approved (legacy push)' : 'GATC wallet top-up approved',
@@ -62,7 +92,7 @@ async function createWalletTopUpFundTransfer({
   amountInr,
   rcName,
   note,
-  reviewedAt,
+  transferDate,
   settings,
   legacy = false,
 }) {
@@ -82,7 +112,7 @@ async function createWalletTopUpFundTransfer({
     from_account_id: fromAccountId,
     to_account_id: toAccountId,
     amount,
-    date: String(reviewedAt || new Date().toISOString()).slice(0, 10),
+    date: transferDate,
     description: buildWalletTopUpDescription(rcName, note, { legacy }),
     reference_number: walletTopUpReference(topUpId),
     exchange_rate: 1,
@@ -104,6 +134,8 @@ async function createWalletTopUpFundTransfer({
     zohoToAccountName: txn.to_account_name ? String(txn.to_account_name) : undefined,
     zohoReferenceNumber: body.reference_number,
     zohoTransferDescription: body.description,
+    zohoTransferDate: transferDate,
+    zohoBooksDate: txn.date ? String(txn.date).slice(0, 10) : transferDate,
   };
 }
 
@@ -122,7 +154,10 @@ async function writeTopUpZohoTransferResult(db, topUpId, patch) {
  * Failures are stored on the top-up doc; wallet approval is not rolled back.
  */
 async function processWalletTopUpZohoTransfer(db, topUpId, topUp, { allowLegacyPush = false } = {}) {
-  if (topUp.zohoTransferStatus === 'completed' && topUp.zohoTransactionId) {
+  const freshSnap = await db.doc(`walletTopUps/${topUpId}`).get();
+  const record = freshSnap.exists ? freshSnap.data() : topUp;
+
+  if (record.zohoTransferStatus === 'completed' && record.zohoTransactionId) {
     if (allowLegacyPush) {
       throw new HttpsError('failed-precondition', 'This top-up already has a Zoho transfer.');
     }
@@ -130,7 +165,7 @@ async function processWalletTopUpZohoTransfer(db, topUpId, topUp, { allowLegacyP
     return null;
   }
 
-  if (topUp.status !== 'approved') {
+  if (record.status !== 'approved') {
     const message = 'Only approved wallet top-ups can be transferred in Zoho.';
     if (allowLegacyPush) {
       throw new HttpsError('failed-precondition', message);
@@ -145,26 +180,26 @@ async function processWalletTopUpZohoTransfer(db, topUpId, topUp, { allowLegacyP
     return null;
   }
 
-  let rcName = String(topUp.rcCompanyName || '').trim();
-  if (!rcName && topUp.rcId) {
-    const rcSnap = await db.doc(`users/${topUp.rcId}`).get();
+  let rcName = String(record.rcCompanyName || '').trim();
+  if (!rcName && record.rcId) {
+    const rcSnap = await db.doc(`users/${record.rcId}`).get();
     if (rcSnap.exists) {
       const rc = rcSnap.data();
       rcName = String(rc.companyName || rc.username || '').trim();
     }
   }
-  if (!rcName) rcName = String(topUp.rcId || 'RC');
+  if (!rcName) rcName = String(record.rcId || 'RC');
 
-  const reviewedAt = topUp.reviewedAt || new Date().toISOString();
+  const transferDate = await resolveWalletTopUpApprovalDate(db, topUpId, record);
   const pushedAt = new Date().toISOString();
 
   try {
     const result = await createWalletTopUpFundTransfer({
       topUpId,
-      amountInr: topUp.amountInr,
+      amountInr: record.amountInr,
       rcName,
-      note: topUp.note,
-      reviewedAt,
+      note: record.note,
+      transferDate,
       settings,
       legacy: allowLegacyPush,
     });
@@ -177,7 +212,8 @@ async function processWalletTopUpZohoTransfer(db, topUpId, topUp, { allowLegacyP
     });
 
     console.log(
-      `Zoho wallet transfer for top-up ${topUpId}: ${result.zohoTransactionId} (${rcName}, ₹${topUp.amountInr})`,
+      `Zoho wallet transfer for top-up ${topUpId}: ${result.zohoTransactionId} ` +
+      `(${rcName}, ₹${record.amountInr}, date ${transferDate})`,
     );
     return { topUpId, zohoTransferStatus: 'completed', ...result };
   } catch (err) {
@@ -239,4 +275,6 @@ module.exports = {
   normalizeZohoWalletSettings,
   walletTopUpReference,
   buildWalletTopUpDescription,
+  walletTopUpZohoBooksDate,
+  resolveWalletTopUpApprovalDate,
 };

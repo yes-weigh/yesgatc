@@ -105,6 +105,8 @@ export interface WalletTopUp {
   zohoTransferDescription?: string;
   zohoTransferError?: string;
   zohoTransferredAt?: string;
+  /** YYYY-MM-DD sent to Zoho — wallet approval date (IST). */
+  zohoTransferDate?: string;
 }
 
 export type WalletLedgerEntryType = 'top_up_credit' | 'rv_payment' | 'rv_refund';

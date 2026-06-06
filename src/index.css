@@ -17704,6 +17704,28 @@ body.verification-photo-viewer-open {
   color: #f87171;
 }
 
+.admin-wallet-zoho-pushed-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.admin-wallet-zoho-desktop-meta {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
 .rc-wallet-history-img,
 .admin-wallet-card__screenshot-img {
   display: block;

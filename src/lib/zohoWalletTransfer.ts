@@ -16,6 +16,7 @@ export type PushLegacyWalletTopUpZohoTransferResult = {
   zohoTransferDescription?: string;
   zohoFromAccountName?: string;
   zohoToAccountName?: string;
+  zohoTransferDate?: string;
 };
 
 function functionsClient() {
