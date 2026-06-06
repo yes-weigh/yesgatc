@@ -364,6 +364,24 @@ export async function fetchWalletLedger(filters: {
   return filters.limit ? rows.slice(0, filters.limit) : rows;
 }
 
+export function subscribeWalletLedger(
+  filters: { rcId?: string; limit?: number },
+  onChange: (rows: WalletLedgerEntry[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const constraints: QueryConstraint[] = [orderBy('createdAt', 'desc')];
+  if (filters.rcId) constraints.unshift(where('rcId', '==', filters.rcId));
+
+  return onSnapshot(
+    query(collection(db, WALLET_LEDGER_COLLECTION), ...constraints),
+    snap => {
+      const rows = snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<WalletLedgerEntry, 'id'>) }));
+      onChange(filters.limit ? rows.slice(0, filters.limit) : rows);
+    },
+    err => onError?.(err instanceof Error ? err : new Error('Failed to load wallet transactions.')),
+  );
+}
+
 export type ReviewWalletTopUpResult = {
   topUpId: string;
   status: WalletTopUpStatus;

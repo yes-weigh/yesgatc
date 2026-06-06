@@ -17326,11 +17326,104 @@ body.verification-photo-viewer-open {
   }
 }
 
+.rc-wallet-dashboard-card--readonly {
+  cursor: default;
+  text-decoration: none;
+}
+
+.rc-wallet-dashboard-card--readonly:hover {
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
 /* ── RC wallet ─────────────────────────────────────────────── */
 .rc-wallet-page .rc-wallet-balance {
-  max-width: 28rem;
+  max-width: 36rem;
   text-decoration: none;
   cursor: default;
+}
+
+.rc-wallet-balance__top {
+  align-items: flex-start;
+}
+
+.rc-wallet-balance__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.rc-wallet-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rc-wallet-page-success {
+  margin: 0.85rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  max-width: 36rem;
+}
+
+.rc-wallet-form--expanded,
+.rc-wallet-transactions {
+  margin-top: 1.25rem;
+}
+
+.rc-wallet-transactions-table-wrap {
+  overflow-x: auto;
+  margin-top: 0.35rem;
+}
+
+.rc-wallet-transactions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.rc-wallet-transactions-table th,
+.rc-wallet-transactions-table td {
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  vertical-align: top;
+}
+
+.rc-wallet-transactions-table th {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.rc-wallet-transactions-table__date {
+  white-space: nowrap;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.rc-wallet-transactions-table__amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rc-wallet-transactions-table__amount--credit {
+  color: #6ee7b7;
+  font-weight: 600;
+}
+
+.rc-wallet-transactions-table__amount--debit {
+  color: #fca5a5;
+  font-weight: 600;
 }
 
 .rc-wallet-page .rc-wallet-balance:hover {

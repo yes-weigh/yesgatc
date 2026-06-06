@@ -161,7 +161,6 @@ export const Layout: React.FC = () => {
       case 'vct':
         return [
           { path: '/vct', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/vct/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
           { path: '/vct/leads', icon: <UserPlus size={20} />, label: 'Leads' },
           { path: '/vct/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
           { path: '/vct/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },

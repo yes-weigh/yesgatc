@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, IndianRupee, Loader2, RefreshCw, Wallet } from 'lucide-react';
+import { ExternalLink, IndianRupee, Loader2, Plus, RefreshCw, Wallet, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { StorageImage } from '../../components/StorageImage';
 import {
   VerificationPhotoUploadSection,
   VerificationPhotoUploadSlot,
@@ -9,21 +8,38 @@ import {
 import {
   hasPendingWalletTopUpDuplicate,
   subscribeRcWalletBalance,
-  subscribeWalletTopUps,
+  subscribeWalletLedger,
   submitWalletTopUpWithScreenshot,
-  walletTopUpStatusLabel,
+  walletLedgerTypeLabel,
 } from '../../lib/rcWallet';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import { buildWalletUpiPayUrl, parseWalletTopUpAmountInput } from '../../lib/walletUpiPay';
 import { useRcScope } from '../../lib/roleScope';
-import type { WalletTopUp } from '../../types';
+import type { WalletLedgerEntry } from '../../types';
+
+const TRANSACTIONS_LIMIT = 25;
+
+function formatWalletTransactionDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
 
 export const RCWallet: React.FC = () => {
   const { user } = useAuth();
   const { rcUid, isVct } = useRcScope();
   const [balance, setBalance] = useState(0);
-  const [topUps, setTopUps] = useState<WalletTopUp[]>([]);
+  const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
@@ -39,7 +55,7 @@ export const RCWallet: React.FC = () => {
   useEffect(() => {
     if (!rcUid) {
       setBalance(0);
-      setTopUps([]);
+      setLedger([]);
       setLoading(false);
       setInitialLoadDone(false);
       return;
@@ -58,10 +74,10 @@ export const RCWallet: React.FC = () => {
       err => setError(err.message),
     );
 
-    const unsubTopUps = subscribeWalletTopUps(
-      { rcId: rcUid },
+    const unsubLedger = subscribeWalletLedger(
+      { rcId: rcUid, limit: TRANSACTIONS_LIMIT },
       rows => {
-        setTopUps(rows);
+        setLedger(rows);
         setInitialLoadDone(true);
         setLoading(false);
       },
@@ -70,7 +86,7 @@ export const RCWallet: React.FC = () => {
 
     return () => {
       unsubBalance();
-      unsubTopUps();
+      unsubLedger();
     };
   }, [rcUid]);
 
@@ -106,12 +122,32 @@ export const RCWallet: React.FC = () => {
     setScreenshotPreview(null);
   };
 
+  const resetAddForm = () => {
+    setAmount('');
+    setNote('');
+    handleScreenshotRemove();
+    setError('');
+    setSuccess('');
+    setUploadProgress(0);
+  };
+
+  const closeAddForm = () => {
+    if (submitting) return;
+    setShowAddForm(false);
+    resetAddForm();
+  };
+
+  const openAddForm = () => {
+    resetAddForm();
+    setShowAddForm(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rcUid || !user) return;
 
-    const amountInr = Number(amount.trim());
-    if (!Number.isFinite(amountInr) || amountInr <= 0) {
+    const parsedAmount = Number(amount.trim());
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       setError('Enter a valid payment amount.');
       return;
     }
@@ -126,7 +162,7 @@ export const RCWallet: React.FC = () => {
     setSuccess('');
 
     try {
-      const duplicatePending = await hasPendingWalletTopUpDuplicate(rcUid, amountInr);
+      const duplicatePending = await hasPendingWalletTopUpDuplicate(rcUid, parsedAmount);
       if (duplicatePending) {
         setError(
           'You already have a pending top-up for this amount. Wait for Super Admin review or submit a different amount.',
@@ -138,16 +174,14 @@ export const RCWallet: React.FC = () => {
       }
 
       await submitWalletTopUpWithScreenshot({
-        amountInr,
+        amountInr: parsedAmount,
         note,
         file: screenshotFile,
         onProgress: pct => setUploadProgress(pct),
       });
       setUploading(false);
-
-      setAmount('');
-      setNote('');
-      handleScreenshotRemove();
+      resetAddForm();
+      setShowAddForm(false);
       setSuccess('Top-up submitted. Super Admin will review your payment screenshot.');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not submit top-up.');
@@ -162,14 +196,36 @@ export const RCWallet: React.FC = () => {
     <div className="fade-in rc-wallet-page">
       <section className="rc-wallet-balance rc-kpi-card rc-kpi-card--violet" aria-label="Wallet balance">
         <div className="rc-kpi-card__glow" aria-hidden="true" />
-        <div className="rc-kpi-card__top">
+        <div className="rc-kpi-card__top rc-wallet-balance__top">
           <div className="rc-kpi-card__icon">
             <Wallet size={22} />
           </div>
-          <span className="rc-wallet-live-badge" title="Balance and history update automatically">
-            <RefreshCw size={12} aria-hidden />
-            Live
-          </span>
+          <div className="rc-wallet-balance__actions">
+            <span className="rc-wallet-live-badge" title="Balance and history update automatically">
+              <RefreshCw size={12} aria-hidden />
+              Live
+            </span>
+            {showAddForm ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm rc-wallet-add-btn"
+                onClick={closeAddForm}
+                disabled={submitting}
+              >
+                <X size={16} aria-hidden />
+                Cancel
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm rc-wallet-add-btn"
+                onClick={openAddForm}
+              >
+                <Plus size={16} aria-hidden />
+                Add to wallet
+              </button>
+            )}
+          </div>
         </div>
         <div className="rc-kpi-card__body">
           <p className="rc-kpi-card__label">Available balance</p>
@@ -189,9 +245,15 @@ export const RCWallet: React.FC = () => {
         </div>
       </section>
 
-      <div className="rc-wallet-layout">
+      {success && !showAddForm ? (
+        <p className="rc-wallet-page-success" role="status">
+          {success}
+        </p>
+      ) : null}
+
+      {showAddForm ? (
         <form
-          className="rc-wallet-form verification-evidence-panel"
+          className="rc-wallet-form verification-evidence-panel rc-wallet-form--expanded"
           onSubmit={e => void handleSubmit(e)}
         >
           <header className="verification-evidence-panel-head">
@@ -199,7 +261,7 @@ export const RCWallet: React.FC = () => {
               <IndianRupee size={14} strokeWidth={2.25} />
             </span>
             <div className="verification-evidence-panel-head-text">
-              <h2 className="verification-evidence-panel-title">Add payment</h2>
+              <h2 className="verification-evidence-panel-title">Add to wallet</h2>
               <p className="verification-evidence-panel-meta">
                 Enter the amount, pay via UPI to Interweighing Pvt Ltd, then upload the payment
                 screenshot here. Super Admin will approve it and credit your wallet.
@@ -282,7 +344,6 @@ export const RCWallet: React.FC = () => {
           </VerificationPhotoUploadSection>
 
           {error ? <p className="form-error rc-wallet-form-feedback">{error}</p> : null}
-          {success ? <p className="rc-wallet-form-success rc-wallet-form-feedback">{success}</p> : null}
 
           <div className="rc-wallet-form-actions">
             <button type="submit" className="btn btn-primary" disabled={submitting}>
@@ -297,13 +358,13 @@ export const RCWallet: React.FC = () => {
             </button>
           </div>
         </form>
-
-        <aside className="rc-wallet-history verification-evidence-panel">
+      ) : (
+        <section className="rc-wallet-transactions verification-evidence-panel" aria-label="Wallet transactions">
           <header className="verification-evidence-panel-head">
             <div className="verification-evidence-panel-head-text">
-              <h2 className="verification-evidence-panel-title">Top-up history</h2>
+              <h2 className="verification-evidence-panel-title">Latest transactions</h2>
               <p className="verification-evidence-panel-meta">
-                Pending requests until Super Admin approves or rejects.
+                Credits, RV payments, and refunds on your wallet (newest first).
               </p>
             </div>
           </header>
@@ -312,43 +373,50 @@ export const RCWallet: React.FC = () => {
             <div className="rc-wallet-history-loading">
               <span className="spinner-inline" aria-label="Loading" />
             </div>
-          ) : topUps.length === 0 ? (
-            <p className="rc-wallet-history-empty">No top-ups yet.</p>
+          ) : ledger.length === 0 ? (
+            <p className="rc-wallet-history-empty">No wallet transactions yet.</p>
           ) : (
-            <ul className="rc-wallet-history-list">
-              {topUps.map(item => (
-                <li key={item.id} className="rc-wallet-history-item">
-                  <div className="rc-wallet-history-item-head">
-                    <div>
-                      <p className="rc-wallet-history-amount">{formatRcFeeAmount(item.amountInr)}</p>
-                      <p className="rc-wallet-history-date">
-                        {new Date(item.submittedAt).toLocaleString()}
-                      </p>
-                      {item.note ? <p className="rc-wallet-history-note">{item.note}</p> : null}
-                      {item.status === 'rejected' && item.rejectionReason ? (
-                        <p className="rc-wallet-history-reject">{item.rejectionReason}</p>
-                      ) : null}
-                    </div>
-                    <span className={`rc-wallet-status rc-wallet-status--${item.status}`}>
-                      {walletTopUpStatusLabel(item.status)}
-                    </span>
-                  </div>
-                  {item.screenshotUrl || item.screenshotPath ? (
-                    <div className="rc-wallet-history-thumb">
-                      <StorageImage
-                        url={item.screenshotUrl}
-                        path={item.screenshotPath}
-                        alt="Payment screenshot"
-                        className="rc-wallet-history-img"
-                      />
-                    </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <div className="rc-wallet-transactions-table-wrap">
+              <table className="rc-wallet-transactions-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Type</th>
+                    <th scope="col" className="rc-wallet-transactions-table__amount">
+                      Amount
+                    </th>
+                    <th scope="col" className="rc-wallet-transactions-table__amount">
+                      Balance
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledger.map(entry => {
+                    const isCredit = entry.amountInr >= 0;
+                    return (
+                      <tr key={entry.id}>
+                        <td className="rc-wallet-transactions-table__date">
+                          {formatWalletTransactionDate(entry.createdAt)}
+                        </td>
+                        <td>{walletLedgerTypeLabel(entry.type)}</td>
+                        <td
+                          className={`rc-wallet-transactions-table__amount rc-wallet-transactions-table__amount--${isCredit ? 'credit' : 'debit'}`}
+                        >
+                          {isCredit ? '+' : '−'}
+                          {formatRcFeeAmount(Math.abs(entry.amountInr)).replace('₹', '').trim()}
+                        </td>
+                        <td className="rc-wallet-transactions-table__amount">
+                          {formatRcFeeAmount(entry.balanceAfterInr).replace('₹', '').trim()}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
-        </aside>
-      </div>
+        </section>
+      )}
     </div>
   );
 };

@@ -30,33 +30,40 @@ export const RcWalletDashboardCard: React.FC = () => {
       () => setLoading(false),
     );
 
-    const unsubTopUps = subscribeWalletTopUps(
-      { rcId: rcUid, status: 'pending' },
-      rows => {
-        setPendingCount(rows.length);
-        setLoading(false);
-      },
-      () => setLoading(false),
-    );
+    const unsubTopUps = isVct
+      ? () => {}
+      : subscribeWalletTopUps(
+          { rcId: rcUid, status: 'pending' },
+          rows => {
+            setPendingCount(rows.length);
+            setLoading(false);
+          },
+          () => setLoading(false),
+        );
 
     return () => {
       unsubBalance();
       unsubTopUps();
     };
-  }, [rcUid]);
+  }, [rcUid, isVct]);
 
   if (!rcUid) return null;
 
   const balanceLabel = isVct ? 'RC wallet balance' : 'Wallet balance';
+  const subLabel = isVct
+    ? 'Shared RC centre wallet — used for RV verification fees'
+    : pendingCount > 0
+      ? `${pendingCount} top-up${pendingCount === 1 ? '' : 's'} awaiting approval`
+      : 'Add payment screenshot to top up';
 
-  return (
-    <Link to={`${basePath}/wallet`} className="rc-kpi-card rc-kpi-card--violet rc-wallet-dashboard-card">
+  const cardBody = (
+    <>
       <div className="rc-kpi-card__glow" aria-hidden="true" />
       <div className="rc-kpi-card__top">
         <div className="rc-kpi-card__icon">
           <Wallet size={22} />
         </div>
-        <ArrowUpRight size={16} className="rc-kpi-card__arrow" aria-hidden="true" />
+        {!isVct && <ArrowUpRight size={16} className="rc-kpi-card__arrow" aria-hidden="true" />}
       </div>
       <div className="rc-kpi-card__body">
         <p className="rc-kpi-card__label">{balanceLabel}</p>
@@ -68,14 +75,25 @@ export const RcWalletDashboardCard: React.FC = () => {
             {formatRcFeeAmount(balance).replace('₹', '').trim()}
           </p>
         )}
-        <p className="rc-kpi-card__sub">
-          {pendingCount > 0
-            ? `${pendingCount} top-up${pendingCount === 1 ? '' : 's'} awaiting approval`
-            : isVct
-              ? 'Shared RC centre wallet — tap to top up or pay RV fees'
-              : 'Add payment screenshot to top up'}
-        </p>
+        <p className="rc-kpi-card__sub">{subLabel}</p>
       </div>
+    </>
+  );
+
+  if (isVct) {
+    return (
+      <div
+        className="rc-kpi-card rc-kpi-card--violet rc-wallet-dashboard-card rc-wallet-dashboard-card--readonly"
+        aria-label="RC wallet balance"
+      >
+        {cardBody}
+      </div>
+    );
+  }
+
+  return (
+    <Link to={`${basePath}/wallet`} className="rc-kpi-card rc-kpi-card--violet rc-wallet-dashboard-card">
+      {cardBody}
     </Link>
   );
 };
