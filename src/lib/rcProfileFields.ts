@@ -204,9 +204,13 @@ export const RV_SERVICE_FEE_ABOVE_20_KG = 705;
 export const RV_TDS_UPTO_20_KG = 15;
 export const RV_TDS_ABOVE_20_KG = 25;
 
-/** RV gateway fee (INR) by maximum capacity tier. */
-export const RV_GATEWAY_FEE_UPTO_20_KG = 1;
-export const RV_GATEWAY_FEE_ABOVE_20_KG = 2;
+/** @deprecated Gateway fees removed from RV administrative fees. Kept for historical backfill only. */
+export const RV_GATEWAY_FEE_UPTO_20_KG = 0;
+export const RV_GATEWAY_FEE_ABOVE_20_KG = 0;
+
+/** Historical gateway fees (INR) — used by backfill script only. */
+export const RV_LEGACY_GATEWAY_FEE_UPTO_20_KG = 1;
+export const RV_LEGACY_GATEWAY_FEE_ABOVE_20_KG = 2;
 
 function rvCapacityTierAmount(
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
@@ -235,6 +239,17 @@ export function rvGatewayFee(
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
 ): number {
   return rvCapacityTierAmount(product, RV_GATEWAY_FEE_UPTO_20_KG, RV_GATEWAY_FEE_ABOVE_20_KG);
+}
+
+/** Gateway fee before removal — for backfill scripts correcting historical payments. */
+export function rvLegacyGatewayFee(
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+): number {
+  return rvCapacityTierAmount(
+    product,
+    RV_LEGACY_GATEWAY_FEE_UPTO_20_KG,
+    RV_LEGACY_GATEWAY_FEE_ABOVE_20_KG,
+  );
 }
 
 /** Split quoted RV base into verification fee, TDS, and gateway (three lines sum to quoted base). */

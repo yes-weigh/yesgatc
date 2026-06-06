@@ -189,10 +189,12 @@ export const RvPaymentPanel: React.FC<RvPaymentPanelProps> = ({
             <span>TDS</span>
             <span>{formatRcFeeAmount(breakdown.tdsTotal)}</span>
           </div>
-          <div className="rv-payment-breakdown-line rv-payment-breakdown-line--detail">
-            <span>Gateway</span>
-            <span>{formatRcFeeAmount(breakdown.gatewayTotal)}</span>
-          </div>
+          {breakdown.gatewayTotal > 0 && (
+            <div className="rv-payment-breakdown-line rv-payment-breakdown-line--detail">
+              <span>Gateway</span>
+              <span>{formatRcFeeAmount(breakdown.gatewayTotal)}</span>
+            </div>
+          )}
           <div className="rv-payment-breakdown-line rv-payment-breakdown-line--section">
             <span>GST (18%)</span>
             <span>{formatRcFeeAmount(breakdown.gst)}</span>

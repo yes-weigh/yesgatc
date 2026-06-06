@@ -1,7 +1,6 @@
 import { isRvWalletPaymentRequired, type AppGlobalSettings } from './appSettings';
 import {
   rcVerificationFeeQuote,
-  rvGatewayFee,
   rvTdsFee,
   sumRcVerificationFees,
   verificationFeeWithGst,
@@ -27,7 +26,7 @@ export const RV_PAYMENT_TEST_BREAKDOWN: RvPaymentBreakdown = {
   gst: 0,
   total: 1,
   tdsTotal: 0,
-  gatewayTotal: 1,
+  gatewayTotal: 0,
 };
 
 export function computeRvPaymentAmount(
@@ -62,18 +61,14 @@ export function computeRvPaymentAmount(
     const product = products.find(entry => entry.id === row.productId) ?? null;
     return sum + rvTdsFee(product);
   }, 0);
-  const gatewayTotal = included.reduce((sum, row) => {
-    const product = products.find(entry => entry.id === row.productId) ?? null;
-    return sum + rvGatewayFee(product);
-  }, 0);
-  const administrativeFees = tdsTotal + gatewayTotal;
+  const administrativeFees = tdsTotal;
 
   return {
     administrativeFees,
     gst,
     total: administrativeFees + gst,
     tdsTotal,
-    gatewayTotal,
+    gatewayTotal: 0,
   };
 }
 

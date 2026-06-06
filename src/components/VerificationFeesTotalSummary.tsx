@@ -4,7 +4,6 @@ import { useAppContext } from '../context/AppContext';
 import {
   DEFAULT_RC_FEES_STRUCTURE,
   rcVerificationFeeQuote,
-  rvGatewayFee,
   rvTdsFee,
   sumRcVerificationFees,
   verificationFeeWithGst,
@@ -76,15 +75,6 @@ export const VerificationFeesTotalSummary: React.FC<VerificationFeesTotalSummary
     [includedDevices, products],
   );
 
-  const gatewayFeeTotal = useMemo(
-    () =>
-      includedDevices.reduce((sum, row) => {
-        const product = products.find(entry => entry.id === row.productId) ?? null;
-        return sum + rvGatewayFee(product);
-      }, 0),
-    [includedDevices, products],
-  );
-
   const feeTotals = useMemo(() => {
     const base = sumRcVerificationFees(deviceFeeLines);
     return verificationFeeWithGst(base);
@@ -119,7 +109,6 @@ export const VerificationFeesTotalSummary: React.FC<VerificationFeesTotalSummary
           variant="total-footer"
           className="verification-fees-summary-breakdown"
           tdsTotal={tdsTotal}
-          gatewayFeeTotal={gatewayFeeTotal}
           serviceFeeTotal={serviceFeeTotal}
           additionalFeeTotal={additionalFeeTotal}
         />

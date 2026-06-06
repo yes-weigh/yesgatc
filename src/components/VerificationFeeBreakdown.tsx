@@ -99,10 +99,12 @@ function QuotedBaseLines({
           <span>TDS</span>
           <span>{formatRcFeeAmount(tds)}</span>
         </div>
-        <div className="verification-fees-fee-chip-row">
-          <span>Gateway</span>
-          <span>{formatRcFeeAmount(gateway)}</span>
-        </div>
+        {gateway > 0 && (
+          <div className="verification-fees-fee-chip-row">
+            <span>Gateway</span>
+            <span>{formatRcFeeAmount(gateway)}</span>
+          </div>
+        )}
       </div>
     </>
   );
