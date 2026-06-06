@@ -74,6 +74,38 @@ export function validateRcSealFile(file: File): string | null {
   return null;
 }
 
+export async function uploadRcPanCard(
+  rcUid: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ProductFileMeta> {
+  const validation = validateApprovalFile(file);
+  if (validation) throw new Error(validation);
+  if (!rcUid.trim()) throw new Error('Save the regional center first to upload the PAN card image.');
+
+  await ensureUploadAuth();
+
+  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
+  const path = `users/${rcUid}/pan-card/${Date.now()}${ext}`;
+  const storageRef = ref(storage, path);
+  const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+
+  return new Promise((resolve, reject) => {
+    task.on(
+      'state_changed',
+      snapshot => {
+        const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+        onProgress?.(pct);
+      },
+      err => reject(mapStorageError(err)),
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref);
+        resolve({ url, path, name: file.name, contentType: file.type });
+      },
+    );
+  });
+}
+
 export async function uploadRcSeal(
   rcUid: string,
   file: File,

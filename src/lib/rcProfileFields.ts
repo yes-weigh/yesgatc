@@ -285,6 +285,35 @@ export function validateZohoIdInput(zohoId: string): string | null {
   return null;
 }
 
+export function normalizePanCard(input: string): string {
+  return input.replace(/\s/g, '').toUpperCase();
+}
+
+const PAN_CARD_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+
+export function validatePanCardInput(panCard: string): string | null {
+  const normalized = normalizePanCard(panCard);
+  if (!normalized) return 'PAN card is required.';
+  if (!PAN_CARD_PATTERN.test(normalized)) {
+    return 'PAN must be 10 characters (e.g. ABCDE1234F).';
+  }
+  return null;
+}
+
+export function validateZohoVendorIdInput(zohoVendorId: string): string | null {
+  const normalized = normalizeZohoId(zohoVendorId);
+  if (!normalized) return 'Zoho vendor ID is required.';
+  if (normalized.length < 10) {
+    return 'Zoho vendor ID must be at least 10 digits.';
+  }
+  return null;
+}
+
+export function validateZohoVendorNameInput(zohoVendorName: string): string | null {
+  if (!zohoVendorName.trim()) return 'Zoho vendor name is required.';
+  return null;
+}
+
 export function buildVerificationRemarks(
   verificationType: JobType | '',
   rcCode?: string | null,
@@ -303,6 +332,9 @@ export type RcFormValues = {
   place: string;
   rcCode: string;
   zohoId: string;
+  zohoVendorId: string;
+  zohoVendorName: string;
+  panCard: string;
   pincode: string;
   address: string;
   aadhar: string;
@@ -320,6 +352,9 @@ export const EMPTY_RC_FORM: RcFormValues = {
   place: '',
   rcCode: '',
   zohoId: '',
+  zohoVendorId: '',
+  zohoVendorName: '',
+  panCard: '',
   pincode: '',
   address: '',
   aadhar: '',
@@ -346,6 +381,9 @@ export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
     place: doc.place || '',
     rcCode: doc.rcCode || '',
     zohoId: doc.zohoId || '',
+    zohoVendorId: doc.zohoVendorId || '',
+    zohoVendorName: doc.zohoVendorName || '',
+    panCard: doc.panCard || '',
     pincode: doc.pincode || '',
     address: doc.address || '',
     aadhar: doc.aadhar || '',
@@ -361,11 +399,12 @@ export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
 export type RcFormUploads = {
   cert: ProductFileMeta | null;
   seal: ProductFileMeta | null;
+  panCard: ProductFileMeta | null;
 };
 
 function applyFileMeta(
   base: Partial<FirestoreUserDoc>,
-  prefix: 'standardWeightsCert' | 'seal',
+  prefix: 'standardWeightsCert' | 'seal' | 'panCard',
   file: ProductFileMeta | null,
   isCreate: boolean,
 ): void {
@@ -401,6 +440,9 @@ export function buildRcFirestoreFields(
     place: values.place.trim(),
     rcCode: normalizeRcCode(values.rcCode),
     zohoId: normalizeZohoId(values.zohoId),
+    zohoVendorId: normalizeZohoId(values.zohoVendorId),
+    zohoVendorName: values.zohoVendorName.trim(),
+    panCard: normalizePanCard(values.panCard),
     pincode,
     address: values.address.trim(),
     gstNumber: values.gstNumber.trim(),
@@ -418,6 +460,7 @@ export function buildRcFirestoreFields(
 
   applyFileMeta(base, 'standardWeightsCert', uploads.cert, Boolean(options.isCreate));
   applyFileMeta(base, 'seal', uploads.seal, Boolean(options.isCreate));
+  applyFileMeta(base, 'panCard', uploads.panCard, Boolean(options.isCreate));
 
   if (options.includePassword) {
     base.clearTextPassword = options.includePassword;

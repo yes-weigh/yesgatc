@@ -111,7 +111,14 @@ service cloud.firestore {
         && request.resource.data.aadhar == resource.data.aadhar
         && validAadhar(request.resource.data)
         && request.resource.data.get('rcCode', null) == resource.data.get('rcCode', null)
-        && request.resource.data.get('zohoId', null) == resource.data.get('zohoId', null);
+        && request.resource.data.get('zohoId', null) == resource.data.get('zohoId', null)
+        && request.resource.data.get('zohoVendorId', null) == resource.data.get('zohoVendorId', null)
+        && request.resource.data.get('zohoVendorName', null) == resource.data.get('zohoVendorName', null)
+        && request.resource.data.get('panCard', null) == resource.data.get('panCard', null)
+        && request.resource.data.get('panCardUrl', null) == resource.data.get('panCardUrl', null)
+        && request.resource.data.get('panCardPath', null) == resource.data.get('panCardPath', null)
+        && request.resource.data.get('panCardName', null) == resource.data.get('panCardName', null)
+        && request.resource.data.get('panCardContentType', null) == resource.data.get('panCardContentType', null);
 
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'

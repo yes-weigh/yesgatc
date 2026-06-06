@@ -243,6 +243,17 @@ export interface FirestoreUserDoc {
   rcCode?: string;
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
+  /** Super Admin only — Zoho Books vendor ID (mandatory for RC). */
+  zohoVendorId?: string;
+  /** Super Admin only — Zoho Books vendor display name (mandatory for RC). */
+  zohoVendorName?: string;
+  /** Super Admin only — PAN card number (mandatory for RC). */
+  panCard?: string;
+  /** Super Admin only — optional PAN card scan / image. */
+  panCardUrl?: string;
+  panCardPath?: string;
+  panCardName?: string;
+  panCardContentType?: string;
 }
 
 /** Verification fees for a weight tier (amounts in INR). */

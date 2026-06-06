@@ -3,6 +3,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { normalizePhone, normalizePincode } from '../../lib/contactFields';
 import {
+  normalizePanCard,
   normalizeRcCode,
   normalizeZohoId,
   RC_CODE_LENGTH,
@@ -26,6 +27,11 @@ type RCFormFieldsProps = {
   sealProgress: number;
   onSealSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onSealRemove: () => void;
+  panCardImage: ProductFileMeta | null;
+  panCardUploading: boolean;
+  panCardProgress: number;
+  onPanCardSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onPanCardRemove: () => void;
   submitting: boolean;
   showPassword: boolean;
   onTogglePassword: () => void;
@@ -46,6 +52,11 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
   sealProgress,
   onSealSelect,
   onSealRemove,
+  panCardImage,
+  panCardUploading,
+  panCardProgress,
+  onPanCardSelect,
+  onPanCardRemove,
   submitting,
   showPassword,
   onTogglePassword,
@@ -53,6 +64,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
 }) => {
   const certInputRef = useRef<HTMLInputElement>(null);
   const sealInputRef = useRef<HTMLInputElement>(null);
+  const panCardInputRef = useRef<HTMLInputElement>(null);
   const certDueDate = standardWeightsCertExpiryFromDate(values.standardWeightsCertDate);
   const canUploadFiles = mode === 'edit' ? Boolean(loginAadhar) : values.aadhar.trim().length === 12;
   const fileUploadTitle = !canUploadFiles
@@ -134,7 +146,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
               aria-describedby="rc-zoho-id-hint"
             />
             <p id="rc-zoho-id-hint" className="text-muted text-xs mt-1 mb-0">
-              Zoho Books customer ID for RV invoicing (optional).
+              Zoho Books customer ID for RV invoicing (optional). Super Admin only — not shown on RC profile.
             </p>
           </div>
           {mode === 'create' ? (
@@ -309,6 +321,74 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
             inputRef={certInputRef}
             onSelect={onCertSelect}
             onRemove={onCertRemove}
+            submitting={submitting}
+            variant="document"
+            compact
+          />
+        </div>
+      </div>
+
+      <div className="product-form-flat-row product-form-flat-row--scale rc-form-row-accounts">
+        <span className="product-form-flat-row-title">Zoho vendor &amp; PAN (Super Admin only)</span>
+        <p className="text-muted text-xs mb-3 mt-0">
+          Not visible or editable on the RC profile. Required when registering or updating a regional center.
+        </p>
+        <div className="rc-form-grid rc-form-grid--main">
+          <div className="form-group mb-0">
+            <label htmlFor="rc-zoho-vendor-id">Zoho vendor ID *</label>
+            <input
+              id="rc-zoho-vendor-id"
+              type="text"
+              inputMode="numeric"
+              className="input-field text-mono"
+              placeholder="Zoho Books vendor ID"
+              value={values.zohoVendorId}
+              onChange={e => onChange({ zohoVendorId: normalizeZohoId(e.target.value) })}
+              required
+              spellCheck={false}
+            />
+          </div>
+          <div className="form-group mb-0">
+            <label htmlFor="rc-zoho-vendor-name">Zoho vendor name *</label>
+            <input
+              id="rc-zoho-vendor-name"
+              type="text"
+              className="input-field"
+              placeholder="Vendor name in Zoho Books"
+              value={values.zohoVendorName}
+              onChange={e => onChange({ zohoVendorName: e.target.value })}
+              required
+            />
+          </div>
+          <div className="form-group mb-0">
+            <label htmlFor="rc-pan-card">PAN card *</label>
+            <input
+              id="rc-pan-card"
+              type="text"
+              className="input-field text-mono"
+              placeholder="ABCDE1234F"
+              value={values.panCard}
+              onChange={e => onChange({ panCard: normalizePanCard(e.target.value).slice(0, 10) })}
+              required
+              maxLength={10}
+              autoCapitalize="characters"
+              spellCheck={false}
+            />
+          </div>
+          <UploadField
+            label="PAN card image"
+            hint="Optional · PDF / image"
+            uploadDisabled={!canUploadFiles}
+            disabledReason={fileUploadTitle}
+            file={panCardImage}
+            uploading={panCardUploading}
+            progress={panCardProgress}
+            accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
+            uploadLabel="Upload"
+            formats="Max 15 MB"
+            inputRef={panCardInputRef}
+            onSelect={onPanCardSelect}
+            onRemove={onPanCardRemove}
             submitting={submitting}
             variant="document"
             compact

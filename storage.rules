@@ -39,6 +39,11 @@ service firebase.storage {
       allow write: if isAuthenticated();
     }
 
+    match /users/{userId}/pan-card/{fileName} {
+      allow read: if isSuperAdmin();
+      allow write: if isAuthenticated();
+    }
+
     match /users/{userId}/biodata/{fileName} {
       allow read: if true;
       allow write: if isAuthenticated();

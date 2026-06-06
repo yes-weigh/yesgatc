@@ -26,12 +26,16 @@ import {
   validateRcPincodeInput,
   validateRcCodeInput,
   validateZohoIdInput,
+  validateZohoVendorIdInput,
+  validateZohoVendorNameInput,
+  validatePanCardInput,
   normalizeRcCode,
   normalizeZohoId,
   type RcFormValues,
 } from '../../lib/rcProfileFields';
 import {
   deleteRcStorageFile,
+  uploadRcPanCard,
   uploadRcSeal,
   uploadRcStandardWeightsCert,
 } from '../../lib/rcCertificateUpload';
@@ -71,6 +75,16 @@ function sealMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
   };
 }
 
+function panCardMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
+  if (!rc.panCardUrl) return null;
+  return {
+    url: rc.panCardUrl,
+    path: rc.panCardPath || '',
+    name: rc.panCardName || 'PAN card',
+    contentType: rc.panCardContentType || '',
+  };
+}
+
 function formatRcCertDueDate(rc: FirestoreUserDoc): string {
   const iso = rc.standardWeightsCertDate?.trim()
     ? standardWeightsCertExpiryFromDate(rc.standardWeightsCertDate)
@@ -105,6 +119,11 @@ export const RCList: React.FC = () => {
   const [sealUploading, setSealUploading] = useState(false);
   const [sealProgress, setSealProgress] = useState(0);
   const [pendingSealFile, setPendingSealFile] = useState<File | null>(null);
+  const [panCardImage, setPanCardImage] = useState<ProductFileMeta | null>(null);
+  const [panCardRemoved, setPanCardRemoved] = useState(false);
+  const [panCardUploading, setPanCardUploading] = useState(false);
+  const [panCardProgress, setPanCardProgress] = useState(0);
+  const [pendingPanCardFile, setPendingPanCardFile] = useState<File | null>(null);
 
   const fetchRCs = useCallback(async () => {
     setLoading(true);
@@ -129,7 +148,7 @@ export const RCList: React.FC = () => {
   }, [fetchRCs]);
 
   const showForm = showAddForm || editingUid !== null;
-  const formBusy = submitting || certUploading || sealUploading;
+  const formBusy = submitting || certUploading || sealUploading || panCardUploading;
   const editingRc = editingUid ? rcList.find(r => r.uid === editingUid) : null;
   const formMode = showAddForm ? 'create' : 'edit';
 
@@ -142,6 +161,10 @@ export const RCList: React.FC = () => {
     setSealRemoved(false);
     setPendingSealFile(null);
     setSealProgress(0);
+    setPanCardImage(null);
+    setPanCardRemoved(false);
+    setPendingPanCardFile(null);
+    setPanCardProgress(0);
   };
 
   const handleCloseModal = () => {
@@ -174,6 +197,12 @@ export const RCList: React.FC = () => {
     if (rcCodeError) return rcCodeError;
     const zohoIdError = validateZohoIdInput(formValues.zohoId);
     if (zohoIdError) return zohoIdError;
+    const zohoVendorIdError = validateZohoVendorIdInput(formValues.zohoVendorId);
+    if (zohoVendorIdError) return zohoVendorIdError;
+    const zohoVendorNameError = validateZohoVendorNameInput(formValues.zohoVendorName);
+    if (zohoVendorNameError) return zohoVendorNameError;
+    const panCardError = validatePanCardInput(formValues.panCard);
+    if (panCardError) return panCardError;
     if (!formValues.address.trim()) return 'Address is required.';
     const pincodeError = validateRcPincodeInput(formValues.pincode);
     if (pincodeError) return pincodeError;
@@ -268,6 +297,44 @@ export const RCList: React.FC = () => {
     setPendingSealFile(null);
   };
 
+  const handlePanCardSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const uid = editingUid;
+    if (!uid && formMode === 'create') {
+      setPendingPanCardFile(file);
+      setPanCardRemoved(false);
+      return;
+    }
+    if (!uid) return;
+
+    setPanCardUploading(true);
+    setPanCardProgress(0);
+    setError('');
+    try {
+      const meta = await uploadRcPanCard(uid, file, setPanCardProgress);
+      const prevPath = panCardImage?.path || editingRc?.panCardPath;
+      if (prevPath && prevPath !== meta.path) {
+        await deleteRcStorageFile(prevPath).catch(() => undefined);
+      }
+      setPanCardImage(meta);
+      setPanCardRemoved(false);
+      setPendingPanCardFile(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'PAN card upload failed.');
+    } finally {
+      setPanCardUploading(false);
+    }
+  };
+
+  const handlePanCardRemove = () => {
+    setPanCardImage(null);
+    setPanCardRemoved(true);
+    setPendingPanCardFile(null);
+  };
+
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (showAddForm) {
@@ -297,6 +364,7 @@ export const RCList: React.FC = () => {
 
       let certMeta: ProductFileMeta | null = null;
       let sealMeta: ProductFileMeta | null = null;
+      let panMeta: ProductFileMeta | null = null;
       if (pendingCertFile) {
         setCertUploading(true);
         try {
@@ -313,6 +381,14 @@ export const RCList: React.FC = () => {
           setSealUploading(false);
         }
       }
+      if (pendingPanCardFile) {
+        setPanCardUploading(true);
+        try {
+          panMeta = await uploadRcPanCard(uid, pendingPanCardFile, setPanCardProgress);
+        } finally {
+          setPanCardUploading(false);
+        }
+      }
 
       const profile: FirestoreUserDoc = {
         aadhar: cleanAadhar,
@@ -320,7 +396,7 @@ export const RCList: React.FC = () => {
         createdAt: new Date().toISOString(),
         createdByUid: user?.uid,
         rcId: uid,
-        ...buildRcFirestoreFields(formValues, { cert: certMeta, seal: sealMeta }, {
+        ...buildRcFirestoreFields(formValues, { cert: certMeta, seal: sealMeta, panCard: panMeta }, {
           includePassword: formValues.password,
           isCreate: true,
         }),
@@ -357,6 +433,9 @@ export const RCList: React.FC = () => {
     setSeal(sealMetaFromUser(rc));
     setSealRemoved(false);
     setPendingSealFile(null);
+    setPanCardImage(panCardMetaFromUser(rc));
+    setPanCardRemoved(false);
+    setPendingPanCardFile(null);
   };
 
   const handleSaveEdit = async (uid: string) => {
@@ -372,7 +451,7 @@ export const RCList: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
-      const updates = buildRcFirestoreFields(formValues, { cert, seal }, { isCreate: false });
+      const updates = buildRcFirestoreFields(formValues, { cert, seal, panCard: panCardImage }, { isCreate: false });
 
       if (certRemoved && !cert) {
         updates.standardWeightsCertUrl = '';
@@ -389,6 +468,15 @@ export const RCList: React.FC = () => {
         updates.sealName = '';
         updates.sealContentType = '';
         const oldPath = rc.sealPath;
+        if (oldPath) await deleteRcStorageFile(oldPath).catch(() => undefined);
+      }
+
+      if (panCardRemoved && !panCardImage) {
+        updates.panCardUrl = '';
+        updates.panCardPath = '';
+        updates.panCardName = '';
+        updates.panCardContentType = '';
+        const oldPath = rc.panCardPath;
         if (oldPath) await deleteRcStorageFile(oldPath).catch(() => undefined);
       }
 
@@ -432,6 +520,9 @@ export const RCList: React.FC = () => {
       }
       if (rc?.sealPath) {
         await deleteRcStorageFile(rc.sealPath).catch(() => undefined);
+      }
+      if (rc?.panCardPath) {
+        await deleteRcStorageFile(rc.panCardPath).catch(() => undefined);
       }
       await deleteDoc(doc(db, 'users', uid));
       if (rc?.aadhar) await releaseAadharIndex(rc.aadhar);
@@ -516,6 +607,11 @@ export const RCList: React.FC = () => {
                   sealProgress={sealProgress}
                   onSealSelect={handleSealSelect}
                   onSealRemove={handleSealRemove}
+                  panCardImage={panCardImage}
+                  panCardUploading={panCardUploading}
+                  panCardProgress={panCardProgress}
+                  onPanCardSelect={handlePanCardSelect}
+                  onPanCardRemove={handlePanCardRemove}
                   submitting={submitting}
                   showPassword={showPw}
                   onTogglePassword={() => setShowPw(p => !p)}
