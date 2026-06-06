@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import {
   verificationDeviceDetailsBlockReason,
   verificationDevicePhotosBlockReason,
@@ -70,7 +69,6 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
   laboratorySealIdentification = '',
   tileRef,
 }) => {
-  const locked = submitting || readOnly;
   const localId = row.localId;
   const images = deviceImages[localId] ?? emptyDeviceVerificationImagesState();
   const rvDocs = deviceRvImages[localId];

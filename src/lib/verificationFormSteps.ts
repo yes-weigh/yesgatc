@@ -90,7 +90,7 @@ function siteStepBlockReason(values: VerificationSessionValues): string | null {
 }
 
 export function verificationDevicePhotosBlockReason(
-  row: VerificationSessionValues['devices'][number],
+  _row: VerificationSessionValues['devices'][number],
   index: number,
   images: DeviceVerificationImagesState,
   rvDocuments: DeviceRvDocumentsState | undefined,
