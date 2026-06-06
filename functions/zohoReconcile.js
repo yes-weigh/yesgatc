@@ -2,8 +2,17 @@ const { HttpsError } = require('firebase-functions/v2/https');
 const { canPushRvZohoInvoice, processRvZohoInvoice } = require('./zohoRv');
 const { processWalletTopUpZohoTransfer } = require('./zohoWallet');
 
+const APP_SETTINGS_COLLECTION = 'appSettings';
+const APP_SETTINGS_GLOBAL_DOC = 'global';
+
 const DEFAULT_RV_BATCH = 25;
 const DEFAULT_WALLET_BATCH = 25;
+
+async function isZohoReconcileScheduledEnabled(db) {
+  const snap = await db.doc(`${APP_SETTINGS_COLLECTION}/${APP_SETTINGS_GLOBAL_DOC}`).get();
+  if (!snap.exists) return true;
+  return snap.data().zohoReconcileEnabled !== false;
+}
 
 function isWalletTopUpZohoOutstanding(record) {
   if (!record || record.status !== 'approved') return false;
@@ -140,6 +149,10 @@ async function reconcileZohoOutstandingHandler(request, db) {
 }
 
 async function reconcileZohoOutstandingScheduledHandler(db) {
+  if (!(await isZohoReconcileScheduledEnabled(db))) {
+    console.log('Zoho reconcile scheduled run skipped — disabled in Admin Zoho settings.');
+    return { skipped: true, reason: 'zohoReconcileEnabled is false' };
+  }
   return reconcileOutstandingZoho(db);
 }
 

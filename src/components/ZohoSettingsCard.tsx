@@ -213,6 +213,25 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
               </div>
             </div>
 
+            <hr className="admin-zoho-settings-divider my-5" />
+
+            <h3 className="text-base font-semibold mb-3">Outstanding Zoho sweep</h3>
+            <p className="text-muted text-sm mb-4">
+              Every 30 minutes, Cloud Functions can automatically push any RV invoices and wallet top-up
+              transfers that are still outstanding in YesGATC (legacy rows, missed triggers, or retries
+              after a transient Zoho error). Submit and approval hooks still run when this is off.
+            </p>
+
+            <label className="flex items-center gap-2 mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={draft.zohoReconcileEnabled}
+                onChange={e => updateDraft({ zohoReconcileEnabled: e.target.checked })}
+                disabled={saving}
+              />
+              <span>Enable automatic 30-minute Zoho reconciliation</span>
+            </label>
+
             <div className="flex items-center gap-3 mt-4 flex-wrap">
               <button
                 type="button"

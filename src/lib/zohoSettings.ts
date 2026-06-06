@@ -12,6 +12,8 @@ export type ZohoRvSettings = {
   zohoWalletFromAccountId: string;
   /** Destination bank account (e.g. Kotak Current Account). */
   zohoWalletToAccountId: string;
+  /** When true, a scheduled job every 30 minutes pushes outstanding RV invoices and wallet transfers. */
+  zohoReconcileEnabled: boolean;
 };
 
 /** Exact dropdown labels from Zoho Books `cf_mode_of_transport` (invoice custom field). */
@@ -55,6 +57,7 @@ export const DEFAULT_ZOHO_RV_SETTINGS: ZohoRvSettings = {
   zohoWalletTransferEnabled: true,
   zohoWalletFromAccountId: '99381000030412002',
   zohoWalletToAccountId: '99381000000006234',
+  zohoReconcileEnabled: true,
 };
 
 export function normalizeZohoNumericId(input: string): string {
@@ -86,7 +89,14 @@ export function normalizeZohoRvSettings(
     zohoWalletToAccountId:
       normalizeZohoNumericId(data?.zohoWalletToAccountId ?? '')
       || DEFAULT_ZOHO_RV_SETTINGS.zohoWalletToAccountId,
+    zohoReconcileEnabled: data?.zohoReconcileEnabled !== false,
   };
+}
+
+export function isZohoReconcileEnabled(
+  settings: Pick<ZohoRvSettings, 'zohoReconcileEnabled'> | null | undefined,
+): boolean {
+  return settings?.zohoReconcileEnabled !== false;
 }
 
 export type ZohoRvSettingsFormValues = ZohoRvSettings;
