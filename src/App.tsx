@@ -101,6 +101,7 @@ const App: React.FC = () => {
                 <Route path="notifications" element={<RCNotifications />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<VCTProfile />} />
+                <Route path="wallet" element={<RCWallet />} />
                 <Route path="certificates" element={<Certificates />} />
                 <Route path="queue" element={<Navigate to="/vct/new-job" replace />} />
               </Route>

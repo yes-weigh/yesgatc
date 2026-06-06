@@ -2,46 +2,55 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, IndianRupee, Wallet } from 'lucide-react';
 import { formatRcFeeAmount } from '../lib/rcProfileFields';
-import { fetchRcWalletBalance, fetchWalletTopUps } from '../lib/rcWallet';
-import { useRcScope } from '../lib/roleScope';
+import { subscribeRcWalletBalance, subscribeWalletTopUps } from '../lib/rcWallet';
+import { useRcScope, useRoleBasePath } from '../lib/roleScope';
 
 export const RcWalletDashboardCard: React.FC = () => {
-  const { rcUid, isRcAdmin } = useRcScope();
-  const [balance, setBalance] = useState<number | null>(null);
+  const { rcUid, isVct } = useRcScope();
+  const basePath = useRoleBasePath();
+  const [balance, setBalance] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!rcUid || !isRcAdmin) {
+    if (!rcUid) {
+      setBalance(0);
+      setPendingCount(0);
       setLoading(false);
       return;
     }
 
-    let cancelled = false;
-    (async () => {
-      try {
-        const [walletBalance, pending] = await Promise.all([
-          fetchRcWalletBalance(rcUid),
-          fetchWalletTopUps({ rcId: rcUid, status: 'pending' }),
-        ]);
-        if (!cancelled) {
-          setBalance(walletBalance);
-          setPendingCount(pending.length);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    setLoading(true);
+    const unsubBalance = subscribeRcWalletBalance(
+      rcUid,
+      value => {
+        setBalance(value);
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
+
+    const unsubTopUps = subscribeWalletTopUps(
+      { rcId: rcUid, status: 'pending' },
+      rows => {
+        setPendingCount(rows.length);
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
 
     return () => {
-      cancelled = true;
+      unsubBalance();
+      unsubTopUps();
     };
-  }, [rcUid, isRcAdmin]);
+  }, [rcUid]);
 
-  if (!isRcAdmin) return null;
+  if (!rcUid) return null;
+
+  const balanceLabel = isVct ? 'RC wallet balance' : 'Wallet balance';
 
   return (
-    <Link to="/rc/wallet" className="rc-kpi-card rc-kpi-card--violet rc-wallet-dashboard-card">
+    <Link to={`${basePath}/wallet`} className="rc-kpi-card rc-kpi-card--violet rc-wallet-dashboard-card">
       <div className="rc-kpi-card__glow" aria-hidden="true" />
       <div className="rc-kpi-card__top">
         <div className="rc-kpi-card__icon">
@@ -50,19 +59,21 @@ export const RcWalletDashboardCard: React.FC = () => {
         <ArrowUpRight size={16} className="rc-kpi-card__arrow" aria-hidden="true" />
       </div>
       <div className="rc-kpi-card__body">
-        <p className="rc-kpi-card__label">Wallet balance</p>
+        <p className="rc-kpi-card__label">{balanceLabel}</p>
         {loading ? (
           <span className="rc-kpi-card__skeleton" aria-hidden="true" />
         ) : (
           <p className="rc-kpi-card__value">
             <IndianRupee size={18} className="inline-icon" aria-hidden />
-            {formatRcFeeAmount(balance ?? 0).replace('₹', '').trim()}
+            {formatRcFeeAmount(balance).replace('₹', '').trim()}
           </p>
         )}
         <p className="rc-kpi-card__sub">
           {pendingCount > 0
             ? `${pendingCount} top-up${pendingCount === 1 ? '' : 's'} awaiting approval`
-            : 'Add payment screenshot to top up'}
+            : isVct
+              ? 'Shared RC centre wallet — tap to top up or pay RV fees'
+              : 'Add payment screenshot to top up'}
         </p>
       </div>
     </Link>

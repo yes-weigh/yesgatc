@@ -310,16 +310,22 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    function canReadRcWallet(rcId) {
+      return isSuperAdmin()
+        || (isRCAdmin() && request.auth.uid == rcId)
+        || (isOperationalVct() && vctRcId() == rcId);
+    }
+
     // ── RC wallet balance (mutations via Cloud Functions only) ────
     match /rcWallets/{rcId} {
-      allow read: if isSuperAdmin()
-        || (isRCAdmin() && request.auth.uid == rcId);
+      allow read: if canReadRcWallet(rcId);
       allow write: if false;
     }
 
     match /walletTopUps/{topUpId} {
       allow read: if isSuperAdmin()
-        || (isRCAdmin() && resource.data.rcId == request.auth.uid);
+        || (isRCAdmin() && resource.data.rcId == request.auth.uid)
+        || (isOperationalVct() && resource.data.rcId == vctRcId());
 
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid
@@ -347,7 +353,8 @@ service cloud.firestore {
 
     match /walletLedger/{entryId} {
       allow read: if isSuperAdmin()
-        || (isRCAdmin() && resource.data.rcId == request.auth.uid);
+        || (isRCAdmin() && resource.data.rcId == request.auth.uid)
+        || (isOperationalVct() && resource.data.rcId == vctRcId());
       allow write: if false;
     }
   }

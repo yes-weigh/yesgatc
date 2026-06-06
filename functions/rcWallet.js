@@ -30,11 +30,60 @@ async function assertSuperAdmin(db, uid) {
   }
 }
 
-async function assertRcAdmin(db, uid, rcId) {
-  const snap = await db.doc(`users/${uid}`).get();
-  if (!snap.exists || snap.data().role !== 'rc_admin' || uid !== rcId) {
-    throw new HttpsError('permission-denied', 'RC Admin only.');
+async function assertRcWalletAccess(db, uid, rcId) {
+  if (!rcId || typeof rcId !== 'string') {
+    throw new HttpsError('invalid-argument', 'rcId is required.');
   }
+
+  const callerSnap = await db.doc(`users/${uid}`).get();
+  if (!callerSnap.exists) {
+    throw new HttpsError('permission-denied', 'User profile not found.');
+  }
+
+  const caller = callerSnap.data();
+  if (caller.role === 'rc_admin') {
+    if (uid !== rcId) {
+      throw new HttpsError('permission-denied', 'Cannot use wallet for another RC.');
+    }
+    return caller;
+  }
+
+  if (caller.role === 'vct') {
+    if (caller.rcId !== rcId) {
+      throw new HttpsError('permission-denied', 'Cannot use wallet for another RC.');
+    }
+    const approvalStatus = caller.approvalStatus ?? 'approved';
+    if (approvalStatus !== 'approved') {
+      throw new HttpsError('permission-denied', 'VCT approval required before using wallet.');
+    }
+    if (caller.active === false) {
+      throw new HttpsError('permission-denied', 'VCT account is inactive.');
+    }
+    return caller;
+  }
+
+  throw new HttpsError('permission-denied', 'RC or VCT access required.');
+}
+
+async function resolveWalletRcId(db, uid) {
+  const callerSnap = await db.doc(`users/${uid}`).get();
+  if (!callerSnap.exists) {
+    throw new HttpsError('permission-denied', 'User profile not found.');
+  }
+
+  const caller = callerSnap.data();
+  if (caller.role === 'rc_admin') {
+    return uid;
+  }
+
+  if (caller.role === 'vct') {
+    if (typeof caller.rcId !== 'string' || !caller.rcId.trim()) {
+      throw new HttpsError('failed-precondition', 'VCT is not linked to an RC centre.');
+    }
+    return caller.rcId.trim();
+  }
+
+  throw new HttpsError('permission-denied', 'RC or VCT access required.');
 }
 
 async function isRvWalletEnabled(db) {
@@ -214,7 +263,7 @@ async function payRvFromWalletHandler(request, db) {
     throw new HttpsError('invalid-argument', 'rcId is required.');
   }
 
-  await assertRcAdmin(db, request.auth.uid, rcId);
+  await assertRcWalletAccess(db, request.auth.uid, rcId);
 
   const ledgerId = idempotencyKey
     ? `rv-${idempotencyKey}`
@@ -309,7 +358,7 @@ async function refundRvWalletPaymentHandler(request, db) {
     throw new HttpsError('failed-precondition', 'Only RV wallet payments can be refunded.');
   }
 
-  await assertRcAdmin(db, request.auth.uid, ledger.rcId);
+  await assertRcWalletAccess(db, request.auth.uid, ledger.rcId);
 
   return db.runTransaction(async transaction => {
     const freshLedgerSnap = await transaction.get(ledgerRef(db, ledgerId));
@@ -405,7 +454,7 @@ async function linkWalletPaymentToRecordsHandler(request, db) {
   }
 
   const ledger = ledgerSnap.data();
-  await assertRcAdmin(db, request.auth.uid, ledger.rcId);
+  await assertRcWalletAccess(db, request.auth.uid, ledger.rcId);
 
   await ledgerRef(db, ledgerId).set({ recordIds }, { merge: true });
   return { paymentId, recordIds };
@@ -577,20 +626,19 @@ function validateWalletScreenshotBuffer(buffer, contentType) {
 
 async function processWalletTopUpSubmission(
   db,
-  uid,
-  { amountInr, note, screenshotBuffer, screenshotContentType, screenshotName },
+  { rcId, submittedByUid, amountInr, note, screenshotBuffer, screenshotContentType, screenshotName },
 ) {
   if (!Number.isFinite(amountInr) || amountInr <= 0) {
     throw new HttpsError('invalid-argument', 'Enter a valid payment amount.');
   }
 
   const normalizedAmount = roundInr(amountInr);
-  await assertNoDuplicatePendingTopUp(db, uid, normalizedAmount);
+  await assertNoDuplicatePendingTopUp(db, rcId, normalizedAmount);
 
   const contentType = validateWalletScreenshotBuffer(screenshotBuffer, screenshotContentType);
   const topUpId = crypto.randomUUID();
-  const profileSnap = await db.doc(`users/${uid}`).get();
-  const profile = profileSnap.exists ? profileSnap.data() : {};
+  const rcProfileSnap = await db.doc(`users/${rcId}`).get();
+  const rcProfile = rcProfileSnap.exists ? rcProfileSnap.data() : {};
 
   const screenshotMeta = await uploadWalletScreenshot(
     screenshotBuffer,
@@ -601,8 +649,8 @@ async function processWalletTopUpSubmission(
 
   try {
     await db.doc(`walletTopUps/${topUpId}`).set({
-      rcId: uid,
-      rcCompanyName: profile.companyName?.trim() || profile.username?.trim() || '',
+      rcId,
+      rcCompanyName: rcProfile.companyName?.trim() || rcProfile.username?.trim() || '',
       amountInr: normalizedAmount,
       status: 'pending',
       screenshotUrl: screenshotMeta.url,
@@ -611,7 +659,7 @@ async function processWalletTopUpSubmission(
       screenshotContentType: screenshotMeta.contentType,
       note: typeof note === 'string' ? note.trim() : '',
       submittedAt: new Date().toISOString(),
-      submittedByUid: uid,
+      submittedByUid,
     });
   } catch (err) {
     await deleteWalletScreenshot(screenshotMeta.path);
@@ -630,7 +678,8 @@ async function submitWalletTopUpCallableHandler(request, db) {
   }
 
   const uid = request.auth.uid;
-  await assertRcAdmin(db, uid, uid);
+  const rcId = await resolveWalletRcId(db, uid);
+  await assertRcWalletAccess(db, uid, rcId);
 
   const amountInr = Number(request.data?.amountInr);
   const note = typeof request.data?.note === 'string' ? request.data.note : '';
@@ -658,7 +707,9 @@ async function submitWalletTopUpCallableHandler(request, db) {
     throw new HttpsError('invalid-argument', 'Payment screenshot is required.');
   }
 
-  return processWalletTopUpSubmission(db, uid, {
+  return processWalletTopUpSubmission(db, {
+    rcId,
+    submittedByUid: uid,
     amountInr,
     note,
     screenshotBuffer,
@@ -668,7 +719,7 @@ async function submitWalletTopUpCallableHandler(request, db) {
 }
 
 /**
- * RC Admin submits a wallet top-up with payment screenshot (multipart HTTP).
+ * RC Admin or VCT submits a wallet top-up with payment screenshot (multipart HTTP).
  * Uploads via Admin SDK so client Storage rules are not required.
  */
 async function submitWalletTopUpHttpHandler(req, res, db, auth) {
@@ -688,14 +739,17 @@ async function submitWalletTopUpHttpHandler(req, res, db, auth) {
 
   try {
     const uid = await verifyBearerToken(req, auth);
-    await assertRcAdmin(db, uid, uid);
+    const rcId = await resolveWalletRcId(db, uid);
+    await assertRcWalletAccess(db, uid, rcId);
 
     const { fields, files } = await parseMultipart(req);
     const amountInr = Number(fields.amountInr);
     const note = typeof fields.note === 'string' ? fields.note.trim() : '';
     const screenshot = files.screenshot;
 
-    const result = await processWalletTopUpSubmission(db, uid, {
+    const result = await processWalletTopUpSubmission(db, {
+      rcId,
+      submittedByUid: uid,
       amountInr,
       note,
       screenshotBuffer: screenshot?.buffer,

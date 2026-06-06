@@ -20,7 +20,7 @@ import type { WalletTopUp } from '../../types';
 
 export const RCWallet: React.FC = () => {
   const { user } = useAuth();
-  const { rcUid } = useRcScope();
+  const { rcUid, isVct } = useRcScope();
   const [balance, setBalance] = useState(0);
   const [topUps, setTopUps] = useState<WalletTopUp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -182,7 +182,9 @@ export const RCWallet: React.FC = () => {
             </p>
           )}
           <p className="rc-kpi-card__sub">
-            Use wallet balance for RV verification fees when wallet payments are enabled.
+            {isVct
+              ? 'Shared RC centre wallet — use for RV verification fees when wallet payments are enabled.'
+              : 'Use wallet balance for RV verification fees when wallet payments are enabled.'}
           </p>
         </div>
       </section>
