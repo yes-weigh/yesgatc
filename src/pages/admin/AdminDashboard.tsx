@@ -17,6 +17,7 @@ export const AdminDashboard: React.FC = () => {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingVerifications, setLoadingVerifications] = useState(true);
   const [pendingWalletTopUps, setPendingWalletTopUps] = useState(0);
+  const [loadingWalletTopUps, setLoadingWalletTopUps] = useState(true);
 
   useEffect(() => {
     const fetchCounts = async () => {
@@ -42,6 +43,7 @@ export const AdminDashboard: React.FC = () => {
 
       const pendingTopUps = await fetchWalletTopUps({ status: 'pending' });
       setPendingWalletTopUps(pendingTopUps.length);
+      setLoadingWalletTopUps(false);
     };
     void fetchCounts();
   }, []);
@@ -54,25 +56,29 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="fade-in">
 
-      <div className="panel glass admin-dashboard-wallet-panel">
-        <div className="panel-header">
-          <h2><Wallet className="inline-icon" /> Wallet approvals</h2>
-          {pendingWalletTopUps > 0 && <span className="badge-count">{pendingWalletTopUps}</span>}
-        </div>
-        <div className="panel-body flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-muted text-sm mb-0">
-            Review RC payment screenshots and credit wallet balances.
-          </p>
-          <Link to="/admin/wallet" className="btn btn-primary btn-sm">
-            {pendingWalletTopUps > 0
-              ? `Review ${pendingWalletTopUps} pending`
-              : 'View pending top-ups'}
-          </Link>
-        </div>
-      </div>
-
       {/* ── Top KPI Row ── */}
-      <div className="stats-grid mt-6">
+      <div className="stats-grid stats-grid--4">
+        <div className="stat-card glass">
+          <div className="stat-icon text-green"><Wallet /></div>
+          <div className="stat-content">
+            <h3>Pending Wallet Approvals</h3>
+            <p className="stat-value">
+              {loadingWalletTopUps ? '—' : pendingWalletTopUps}
+            </p>
+            <p className="stat-sub">
+              {loadingWalletTopUps
+                ? 'Loading…'
+                : pendingWalletTopUps === 0
+                  ? 'No top-ups awaiting review'
+                  : 'RC payment screenshots to review'}
+            </p>
+            <Link to="/admin/wallet" className="btn btn-primary btn-sm stat-card-action">
+              {pendingWalletTopUps > 0
+                ? `Review ${pendingWalletTopUps} pending`
+                : 'View pending top-ups'}
+            </Link>
+          </div>
+        </div>
         <div className="stat-card glass">
           <div className="stat-icon text-blue"><ShieldCheck /></div>
           <div className="stat-content">

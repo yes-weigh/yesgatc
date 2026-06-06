@@ -1111,6 +1111,10 @@ select.input-field option {
   gap: 1.5rem;
 }
 
+.stats-grid--4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 .stat-card {
   display: flex;
   align-items: center;
@@ -3653,6 +3657,10 @@ select.input-field option {
   font-size: 0.78rem;
   opacity: 0.55;
   margin-top: 0.25rem;
+}
+
+.stat-card-action {
+  margin-top: 0.75rem;
 }
 
 /* ── VCT Dashboard ───────────────────────────────────────────── */
@@ -17740,28 +17748,6 @@ body.verification-photo-viewer-open {
 
 .admin-wallet-reject-modal {
   max-width: 28rem;
-}
-
-.admin-wallet-wipe-panel {
-  padding: 0.85rem 1rem;
-  border-radius: 8px;
-  border: 1px dashed rgba(248, 113, 113, 0.35);
-  background: rgba(248, 113, 113, 0.06);
-}
-
-.admin-wallet-wipe-panel__title {
-  margin: 0 0 0.25rem;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(252, 165, 165, 0.95);
-}
-
-.admin-wallet-wipe-panel__actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
 }
 
 .admin-wallet-ledger-item__foot {

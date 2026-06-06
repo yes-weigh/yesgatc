@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -10,7 +10,6 @@ import {
   deleteWalletTopUp,
   fetchWalletLedger,
   fetchWalletTopUps,
-  resetRcWallet,
   reviewWalletTopUp,
   walletLedgerTypeLabel,
   walletTopUpStatusLabel,
@@ -31,7 +30,6 @@ export const AdminWalletTopUps: React.FC = () => {
   const [rejectTarget, setRejectTarget] = useState<WalletTopUp | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [resettingRcId, setResettingRcId] = useState<string | null>(null);
 
   const refreshTopUps = useCallback(async () => {
     setLoading(true);
@@ -72,21 +70,6 @@ export const AdminWalletTopUps: React.FC = () => {
   }, [refreshLedger]);
 
   const pendingCount = topUps.filter(item => item.status === 'pending').length;
-
-  const rcWipeTargets = useMemo(() => {
-    const map = new Map<string, string>();
-    topUps.forEach(item => {
-      if (!map.has(item.rcId)) {
-        map.set(item.rcId, item.rcCompanyName?.trim() || item.rcId);
-      }
-    });
-    ledger.forEach(item => {
-      if (!map.has(item.rcId)) {
-        map.set(item.rcId, item.rcId);
-      }
-    });
-    return [...map.entries()].map(([rcId, label]) => ({ rcId, label }));
-  }, [topUps, ledger]);
 
   const handleApprove = async (item: WalletTopUp) => {
     const ok = await confirm({
@@ -163,26 +146,6 @@ export const AdminWalletTopUps: React.FC = () => {
     }
   };
 
-  const handleResetRcWallet = async (rcId: string, label: string) => {
-    const ok = await confirm({
-      title: 'Reset RC wallet?',
-      message: `Delete ALL top-ups, ledger entries, and screenshots for ${label}, and set wallet balance to ₹0? This cannot be undone.`,
-      confirmLabel: 'Reset wallet',
-    });
-    if (!ok) return;
-
-    setResettingRcId(rcId);
-    setError('');
-    try {
-      await resetRcWallet(rcId);
-      await refresh();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Wallet reset failed.');
-    } finally {
-      setResettingRcId(null);
-    }
-  };
-
   const handleRejectConfirm = async () => {
     if (!rejectTarget) return;
     const reason = rejectReason.trim();
@@ -239,31 +202,6 @@ export const AdminWalletTopUps: React.FC = () => {
           </div>
 
           {error && <p className="form-error mb-3">{error}</p>}
-
-          {rcWipeTargets.length > 0 && (
-            <div className="admin-wallet-wipe-panel mb-4">
-              <p className="admin-wallet-wipe-panel__title">Pre-production wipe</p>
-              <p className="text-sm text-muted mb-3">
-                Reset an RC wallet to ₹0 and delete all of its top-ups and ledger history.
-              </p>
-              <div className="admin-wallet-wipe-panel__actions">
-                {rcWipeTargets.map(target => (
-                  <button
-                    key={target.rcId}
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={resettingRcId === target.rcId}
-                    onClick={() => void handleResetRcWallet(target.rcId, target.label)}
-                  >
-                    <Trash2 size={14} aria-hidden />
-                    {resettingRcId === target.rcId
-                      ? 'Resetting…'
-                      : `Reset ${target.label}`}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {loading ? (
             <div className="text-center py-10"><span className="spinner-inline" /></div>
