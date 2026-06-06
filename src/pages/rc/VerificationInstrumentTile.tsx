@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   verificationDeviceDetailsBlockReason,
   verificationDevicePhotosBlockReason,
@@ -74,6 +74,8 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
   const rvDocs = deviceRvImages[localId];
   const scrollRef = useRef<HTMLDivElement>(null);
   const [subStage, setSubStage] = useState<VerificationInstrumentSubStage>('photos');
+  const [focusSerialRequest, setFocusSerialRequest] = useState(0);
+  const serialFocusDoneRef = useRef(false);
   const wasPhotosCompleteRef = useRef(false);
 
   const photosComplete =
@@ -95,6 +97,10 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
       if (stage === 'details' && !photosComplete) return;
       el.scrollTo({ left: stage === 'photos' ? 0 : el.clientWidth, behavior });
       setSubStage(stage);
+      if (stage === 'details' && !serialFocusDoneRef.current) {
+        serialFocusDoneRef.current = true;
+        setFocusSerialRequest(n => n + 1);
+      }
     },
     [photosComplete],
   );
@@ -206,33 +212,35 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
       >
         <section className="verification-instrument-tile-slide" aria-label="Photos">
           <h4 className="verification-instrument-tile-section-title">Photos</h4>
-          <VerificationDeviceEvidenceFields
-            device={row}
-            devices={devices}
-            deviceIndex={index}
-            totalDevices={totalDevices}
-            verificationType={verificationType}
-            verificationLocation={verificationLocation}
-            verificationSubject={verificationSubject}
-            feesStructure={feesStructure}
-            images={images}
-            rvDocuments={rvDocs}
-            onImageSelect={(kind, file) => onDeviceImageSelect(localId, kind, file)}
-            onImageRemove={kind => onDeviceImageRemove(localId, kind)}
-            onRvDocumentSelect={
-              onDeviceRvDocumentSelect
-                ? (kind, file) => onDeviceRvDocumentSelect(localId, kind, file)
-                : undefined
-            }
-            onRvDocumentRemove={
-              onDeviceRvDocumentRemove
-                ? kind => onDeviceRvDocumentRemove(localId, kind)
-                : undefined
-            }
-            submitting={submitting}
-            readOnly={readOnly}
-            embedded
-          />
+          <div className="verification-instrument-tile-slide-content">
+            <VerificationDeviceEvidenceFields
+              device={row}
+              devices={devices}
+              deviceIndex={index}
+              totalDevices={totalDevices}
+              verificationType={verificationType}
+              verificationLocation={verificationLocation}
+              verificationSubject={verificationSubject}
+              feesStructure={feesStructure}
+              images={images}
+              rvDocuments={rvDocs}
+              onImageSelect={(kind, file) => onDeviceImageSelect(localId, kind, file)}
+              onImageRemove={kind => onDeviceImageRemove(localId, kind)}
+              onRvDocumentSelect={
+                onDeviceRvDocumentSelect
+                  ? (kind, file) => onDeviceRvDocumentSelect(localId, kind, file)
+                  : undefined
+              }
+              onRvDocumentRemove={
+                onDeviceRvDocumentRemove
+                  ? kind => onDeviceRvDocumentRemove(localId, kind)
+                  : undefined
+              }
+              submitting={submitting}
+              readOnly={readOnly}
+              embedded
+            />
+          </div>
           {photosComplete && !readOnly && (
             <button
               type="button"
@@ -261,6 +269,7 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
           aria-hidden={!photosComplete}
         >
           <h4 className="verification-instrument-tile-section-title">Details</h4>
+          <div className="verification-instrument-tile-slide-content">
           {photosComplete ? (
             <VerificationDeviceFields
               devices={devices}
@@ -287,11 +296,22 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
               allowAddDevice={false}
               visibleDeviceLocalId={localId}
               embedded
+              focusSerialRequest={focusSerialRequest}
             />
           ) : (
             <p className="verification-instrument-tile-lock-hint mb-0">
               Upload all required photos first, then swipe right to enter details.
             </p>
+          )}
+          </div>
+          {photosComplete && !readOnly && (
+            <button
+              type="button"
+              className="verification-form-btn verification-form-btn--back verification-instrument-tile-back-btn"
+              onClick={() => scrollToStage('photos')}
+            >
+              <ChevronLeft size={16} aria-hidden /> Back to photos
+            </button>
           )}
         </section>
       </div>

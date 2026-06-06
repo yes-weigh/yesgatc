@@ -253,6 +253,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
 
   const devicesRef = useRef(devices);
   devicesRef.current = devices;
+  const visibleDeviceLocalIdRef = useRef(visibleDeviceLocalId);
+  visibleDeviceLocalIdRef.current = visibleDeviceLocalId;
   const lastHandledSerialFocusRef = useRef(0);
 
   useLayoutEffect(() => {
@@ -262,7 +264,10 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
 
     const tryFocus = () => {
       const rows = devicesRef.current;
-      const targetRow = rows.find(d => d.included) ?? rows[0];
+      const visibleId = visibleDeviceLocalIdRef.current;
+      const targetRow = visibleId
+        ? rows.find(d => d.localId === visibleId)
+        : rows.find(d => d.included) ?? rows[0];
       if (!targetRow) return;
       const input = getVerificationSerialInput(targetRow.localId);
       if (input) focusMobileTextInput(input);
@@ -704,65 +709,135 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   />
                 </div>
 
-                <div
-                  className={`verification-device-fields-grid${isRv ? ' verification-device-fields-grid--with-mfg' : ''}`}
-                >
-                  <div className="verification-device-field">
-                    <label
-                      className="verification-device-label"
-                      htmlFor={`verification-mobile-serial-${row.localId}`}
-                    >
-                      Serial <span className="verification-device-required">*</span>
-                    </label>
-                    <input
-                      id={`verification-mobile-serial-${row.localId}`}
-                      type="text"
-                      inputMode="text"
-                      className="input-field verification-device-input"
-                      placeholder="Serial no."
-                      value={row.serialNumber}
-                      onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-                      disabled={locked || !row.included}
-                      autoComplete="off"
-                      enterKeyHint="next"
-                    />
-                  </div>
-
-                  {isRv && (
-                    <div className="verification-device-field verification-device-field--mfg-year">
-                      <label className="verification-device-label">
-                        Year <span className="verification-device-required">*</span>
+                {compact ? (
+                  <>
+                    <div className="verification-device-field verification-device-field--full verification-device-field--serial-hero">
+                      <label
+                        className="verification-device-label verification-device-label--serial-hero"
+                        htmlFor={`verification-mobile-serial-${row.localId}`}
+                      >
+                        Serial number <span className="verification-device-required">*</span>
                       </label>
-                      <ManufacturingYearPicker
-                        value={row.manufacturingYear}
-                        onChange={year => onDeviceChange(row.localId, { manufacturingYear: year })}
+                      <input
+                        id={`verification-mobile-serial-${row.localId}`}
+                        type="text"
+                        inputMode="text"
+                        className="input-field verification-device-input verification-device-input--serial-hero"
+                        placeholder="Enter serial number"
+                        value={row.serialNumber}
+                        onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
                         disabled={locked || !row.included}
-                        readOnly={readOnly}
+                        autoComplete="off"
+                        enterKeyHint="next"
                       />
                     </div>
-                  )}
 
-                  <div
-                    className={`verification-device-field${isRv ? ' verification-device-field--mpe-narrow' : ''}`}
-                  >
-                    <label
-                      className="verification-device-label"
-                      htmlFor={`verification-mobile-mpe-${row.localId}`}
+                    <div
+                      className={[
+                        'verification-device-fields-grid',
+                        'verification-device-fields-grid--under-serial',
+                        isRv ? 'verification-device-fields-grid--mpe-year' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
                     >
-                      MPE
-                    </label>
-                    <input
-                      id={`verification-mobile-mpe-${row.localId}`}
-                      type="number"
-                      step="any"
-                      className="input-field verification-device-input"
-                      placeholder="MPE"
-                      value={row.maximumPermissibleError}
-                      onChange={e => onDeviceChange(row.localId, { maximumPermissibleError: e.target.value })}
-                      disabled={locked || !row.included}
-                    />
+                      <div className="verification-device-field verification-device-field--mpe">
+                        <label
+                          className="verification-device-label"
+                          htmlFor={`verification-mobile-mpe-${row.localId}`}
+                        >
+                          MPE
+                        </label>
+                        <input
+                          id={`verification-mobile-mpe-${row.localId}`}
+                          type="number"
+                          step="any"
+                          className="input-field verification-device-input"
+                          placeholder="MPE"
+                          value={row.maximumPermissibleError}
+                          onChange={e =>
+                            onDeviceChange(row.localId, { maximumPermissibleError: e.target.value })
+                          }
+                          disabled={locked || !row.included}
+                        />
+                      </div>
+
+                      {isRv && (
+                        <div className="verification-device-field verification-device-field--mfg-year">
+                          <label className="verification-device-label">
+                            Mfg year <span className="verification-device-required">*</span>
+                          </label>
+                          <ManufacturingYearPicker
+                            value={row.manufacturingYear}
+                            onChange={year => onDeviceChange(row.localId, { manufacturingYear: year })}
+                            disabled={locked || !row.included}
+                            readOnly={readOnly}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    className={`verification-device-fields-grid${isRv ? ' verification-device-fields-grid--with-mfg' : ''}`}
+                  >
+                    <div className="verification-device-field">
+                      <label
+                        className="verification-device-label"
+                        htmlFor={`verification-mobile-serial-${row.localId}`}
+                      >
+                        Serial <span className="verification-device-required">*</span>
+                      </label>
+                      <input
+                        id={`verification-mobile-serial-${row.localId}`}
+                        type="text"
+                        inputMode="text"
+                        className="input-field verification-device-input"
+                        placeholder="Serial no."
+                        value={row.serialNumber}
+                        onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
+                        disabled={locked || !row.included}
+                        autoComplete="off"
+                        enterKeyHint="next"
+                      />
+                    </div>
+
+                    {isRv && (
+                      <div className="verification-device-field verification-device-field--mfg-year">
+                        <label className="verification-device-label">
+                          Year <span className="verification-device-required">*</span>
+                        </label>
+                        <ManufacturingYearPicker
+                          value={row.manufacturingYear}
+                          onChange={year => onDeviceChange(row.localId, { manufacturingYear: year })}
+                          disabled={locked || !row.included}
+                          readOnly={readOnly}
+                        />
+                      </div>
+                    )}
+
+                    <div
+                      className={`verification-device-field${isRv ? ' verification-device-field--mpe-narrow' : ''}`}
+                    >
+                      <label
+                        className="verification-device-label"
+                        htmlFor={`verification-mobile-mpe-${row.localId}`}
+                      >
+                        MPE
+                      </label>
+                      <input
+                        id={`verification-mobile-mpe-${row.localId}`}
+                        type="number"
+                        step="any"
+                        className="input-field verification-device-input"
+                        placeholder="MPE"
+                        value={row.maximumPermissibleError}
+                        onChange={e => onDeviceChange(row.localId, { maximumPermissibleError: e.target.value })}
+                        disabled={locked || !row.included}
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="verification-device-field verification-device-field--full">
                   <label
