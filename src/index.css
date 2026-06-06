@@ -9733,9 +9733,11 @@ body.verification-mobile-wizard-active {
 
 .verification-list-card-type-row {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.35rem;
+  width: max-content;
+  max-width: none;
 }
 
 .verification-list-zoho-badge {
@@ -9745,8 +9747,9 @@ body.verification-mobile-wizard-active {
   border-radius: 999px;
   font-size: 0.68rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .verification-list-zoho-badge--pending {
@@ -15979,12 +15982,26 @@ body.verification-photo-viewer-open {
   min-width: 0;
 }
 
+.verification-list-card-metric-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.verification-list-card-metric--vct {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
 .verification-list-card-metric-label--type,
 .verification-list-card-type-badge {
   display: none;
 }
 
-.verification-list-card-metric--type .verification-list-card-type-badge {
+.verification-list-card-metric--type .verification-list-card-type-badge,
+.verification-list-card-metric--vct .verification-list-card-type-badge {
   display: inline-flex;
   align-items: center;
   padding: 0.08rem 0.32rem;
@@ -16159,40 +16176,40 @@ body.verification-photo-viewer-open {
   }
 
   .verification-list-card-metric--vct {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto;
-    column-gap: 0.35rem;
-    row-gap: 0.2rem;
-    align-items: end;
+    grid-column: 1 / -1;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 0.5rem;
   }
 
-  .verification-list-card-metric--vct > .verification-list-card-metric-label:first-child {
-    grid-column: 1;
-    grid-row: 1;
+  .verification-list-card-metric-stack--vct {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
-  .verification-list-card-metric--vct > .verification-list-card-metric-text {
-    grid-column: 1;
-    grid-row: 2;
+  .verification-list-card-metric-stack--type {
+    flex: 0 0 auto;
+    align-items: flex-end;
   }
 
   .verification-list-card-metric-label--type {
     display: block;
-    grid-column: 2;
-    grid-row: 1;
     text-align: right;
   }
 
-  .verification-list-card-type-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-self: end;
-    grid-column: 2;
-    grid-row: 2;
+  .verification-list-card-metric--vct .verification-list-card-type-badge {
     padding: 0.08rem 0.32rem;
     font-size: 0.52rem;
     line-height: 1.2;
+    flex-shrink: 0;
+  }
+
+  .verification-list-card-metric--vct .verification-list-zoho-badge {
+    font-size: 0.5rem;
+    padding: 0.08rem 0.38rem;
+    overflow: visible;
+    text-overflow: clip;
   }
 
   .verification-list-card-actions {

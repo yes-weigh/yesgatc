@@ -15,7 +15,7 @@ import {
   isZohoRvInvoicingEnabled,
   resolveZohoPushStatus,
   shouldShowZohoListBadge,
-  zohoListBadgeLabel,
+  zohoListBadgeText,
   type ZohoPushStatus,
 } from '../lib/zohoRvSubmit';
 import {
@@ -111,8 +111,9 @@ function VerificationListTypeBadges({
       {zohoListBadge && (
         <span
           className={`verification-list-zoho-badge verification-list-zoho-badge--${zohoListBadge}`}
+          title={zohoListBadgeText(record, zohoListBadge)}
         >
-          {zohoListBadgeLabel(zohoListBadge)}
+          {zohoListBadgeText(record, zohoListBadge)}
         </span>
       )}
     </span>
@@ -318,14 +319,18 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                     )}
                     {showVctColumn && (
                       <div className="verification-list-card-metric verification-list-card-metric--vct">
-                        <span className="verification-list-card-metric-label">VCT</span>
-                        <span className="verification-list-card-metric-value verification-list-card-metric-text">
-                          {verificationVctLabel(record)}
-                        </span>
-                        <span className="verification-list-card-metric-label verification-list-card-metric-label--type">
-                          Type
-                        </span>
-                        <VerificationListTypeBadges record={record} zohoListBadge={zohoListBadge} />
+                        <div className="verification-list-card-metric-stack verification-list-card-metric-stack--vct">
+                          <span className="verification-list-card-metric-label">VCT</span>
+                          <span className="verification-list-card-metric-value verification-list-card-metric-text">
+                            {verificationVctLabel(record)}
+                          </span>
+                        </div>
+                        <div className="verification-list-card-metric-stack verification-list-card-metric-stack--type">
+                          <span className="verification-list-card-metric-label verification-list-card-metric-label--type">
+                            Type
+                          </span>
+                          <VerificationListTypeBadges record={record} zohoListBadge={zohoListBadge} />
+                        </div>
                       </div>
                     )}
                     {!showVctColumn && (

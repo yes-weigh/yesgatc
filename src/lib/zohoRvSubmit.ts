@@ -75,7 +75,7 @@ export function zohoPushStatusLabel(status: ZohoPushStatus): string {
   }
 }
 
-/** Compact labels for verification list cards. */
+/** Compact labels for verification list cards (legacy). */
 export function zohoListBadgeLabel(status: ZohoPushStatus): string {
   switch (status) {
     case 'sent':
@@ -87,6 +87,20 @@ export function zohoListBadgeLabel(status: ZohoPushStatus): string {
     default:
       return 'Zoho pending';
   }
+}
+
+/** Inline list badge: `zoho: YES/26-27/0760` (no wrap). */
+export function zohoListBadgeText(
+  record: Pick<SiteCalibration, 'zohoInvoiceNumber' | 'zohoInvoiceId'>,
+  status: ZohoPushStatus,
+): string {
+  if (status === 'sent') {
+    const invoice = verificationZohoInvoiceNumber(record);
+    return invoice ? `zoho: ${invoice}` : 'zoho: pushed';
+  }
+  if (status === 'failed') return 'zoho: failed';
+  if (status === 'skipped') return 'zoho: skipped';
+  return 'zoho: pending';
 }
 
 export function shouldShowZohoListBadge(status: ZohoPushStatus | null): status is ZohoPushStatus {
