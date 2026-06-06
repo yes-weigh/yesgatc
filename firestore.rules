@@ -81,7 +81,11 @@ service cloud.firestore {
         && request.resource.data.get('zohoExpenseAmountInr', null) == resource.data.get('zohoExpenseAmountInr', null)
         && request.resource.data.get('zohoSettlementStatus', null) == resource.data.get('zohoSettlementStatus', null)
         && request.resource.data.get('zohoSettlementError', null) == resource.data.get('zohoSettlementError', null)
-        && request.resource.data.get('zohoSettledAt', null) == resource.data.get('zohoSettledAt', null);
+        && request.resource.data.get('zohoSettledAt', null) == resource.data.get('zohoSettledAt', null)
+        && request.resource.data.get('zohoInvoiceReferenceNumber', null) == resource.data.get('zohoInvoiceReferenceNumber', null)
+        && request.resource.data.get('zohoInvoiceReferenceSynced', null) == resource.data.get('zohoInvoiceReferenceSynced', null)
+        && request.resource.data.get('zohoInvoiceReferenceSyncedAt', null) == resource.data.get('zohoInvoiceReferenceSyncedAt', null)
+        && request.resource.data.get('zohoInvoiceReferenceSyncError', null) == resource.data.get('zohoInvoiceReferenceSyncError', null);
     }
 
     // ── users ─────────────────────────────────────────────────────

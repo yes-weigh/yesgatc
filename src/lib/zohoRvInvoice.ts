@@ -90,6 +90,7 @@ export type ReconcileZohoOutstandingInput = {
 export type ReconcileZohoOutstandingResult = {
   rv: { found: number; sent: number; failed: number };
   rvSettlement: { found: number; sent: number; failed: number };
+  rvInvoiceRef: { found: number; sent: number; failed: number };
   wallet: { found: number; sent: number; failed: number };
 };
 

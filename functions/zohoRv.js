@@ -1,5 +1,6 @@
 const { defineSecret } = require('firebase-functions/params');
 const { HttpsError } = require('firebase-functions/v2/https');
+const { zohoInvoiceOrderReferenceFromCertificate } = require('./zohoInvoiceReference');
 
 const zohoClientId = defineSecret('ZOHO_CLIENT_ID');
 const zohoClientSecret = defineSecret('ZOHO_CLIENT_SECRET');
@@ -169,6 +170,8 @@ async function createRvInvoice(record, rcZohoId, settings) {
     throw new Error('applicationNumber is required for Zoho invoice.');
   }
 
+  const orderReference = zohoInvoiceOrderReferenceFromCertificate(record.certificateNumber);
+
   const invoiceBody = {
     customer_id: rcZohoId,
     salesperson_id: settings.zohoSalespersonId,
@@ -185,6 +188,10 @@ async function createRvInvoice(record, rcZohoId, settings) {
       { api_name: 'cf_mode_of_transport', value: settings.zohoModeOfTransport },
     ],
   };
+
+  if (orderReference) {
+    invoiceBody.reference_number = orderReference;
+  }
 
   const created = await zohoBooksRequest(
     `/invoices?organization_id=${settings.zohoOrganizationId}`,
@@ -226,6 +233,13 @@ async function createRvInvoice(record, rcZohoId, settings) {
     zohoCustomerName: verifiedInvoice.customer_name ? String(verifiedInvoice.customer_name) : undefined,
     zohoInvoiceTotal: verifiedInvoice.total != null ? Number(verifiedInvoice.total) : undefined,
     zohoOrganizationId: settings.zohoOrganizationId,
+    ...(orderReference
+      ? {
+        zohoInvoiceReferenceNumber: orderReference,
+        zohoInvoiceReferenceSynced: true,
+        zohoInvoiceReferenceSyncedAt: new Date().toISOString(),
+      }
+      : {}),
     zohoApiSummary: summary,
   };
 }

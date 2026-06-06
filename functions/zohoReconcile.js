@@ -1,6 +1,7 @@
 const { HttpsError } = require('firebase-functions/v2/https');
 const { canPushRvZohoInvoice, processRvZohoInvoice } = require('./zohoRv');
 const { canSettleRvZoho, processRvZohoSettlement } = require('./zohoRvSettlement');
+const { canSyncRvInvoiceReference, processRvInvoiceReferenceSync } = require('./zohoRvInvoiceRef');
 const { processWalletTopUpZohoTransfer } = require('./zohoWallet');
 
 const APP_SETTINGS_COLLECTION = 'appSettings';
@@ -8,6 +9,7 @@ const APP_SETTINGS_GLOBAL_DOC = 'global';
 
 const DEFAULT_RV_BATCH = 25;
 const DEFAULT_RV_SETTLEMENT_BATCH = 25;
+const DEFAULT_RV_INVOICE_REF_BATCH = 50;
 const DEFAULT_WALLET_BATCH = 25;
 
 async function isZohoReconcileScheduledEnabled(db) {
@@ -104,6 +106,33 @@ async function collectOutstandingRvSettlements(db, limit) {
   return outstanding.slice(0, limit);
 }
 
+async function collectOutstandingRvInvoiceReferences(db, limit) {
+  const seen = new Set();
+  const outstanding = [];
+
+  const tryAdd = (id, data) => {
+    if (seen.has(id) || !canSyncRvInvoiceReference(data)) return;
+    seen.add(id);
+    outstanding.push({ id, data });
+  };
+
+  for (const status of ['submitted', 'approved', 'certified']) {
+    if (outstanding.length >= limit) break;
+    const snap = await db
+      .collection('siteCalibrations')
+      .where('verificationType', '==', 'RV')
+      .where('status', '==', status)
+      .limit(250)
+      .get();
+    for (const doc of snap.docs) {
+      if (outstanding.length >= limit) break;
+      tryAdd(doc.id, doc.data());
+    }
+  }
+
+  return outstanding.slice(0, limit);
+}
+
 async function collectOutstandingWalletTransfers(db, limit) {
   const snap = await db
     .collection('walletTopUps')
@@ -130,11 +159,15 @@ async function reconcileOutstandingZoho(db, options = {}) {
   const rvSettlementLimit = Number(options.rvSettlementLimit) > 0
     ? Number(options.rvSettlementLimit)
     : DEFAULT_RV_SETTLEMENT_BATCH;
+  const rvInvoiceRefLimit = Number(options.rvInvoiceRefLimit) > 0
+    ? Number(options.rvInvoiceRefLimit)
+    : DEFAULT_RV_INVOICE_REF_BATCH;
   const walletLimit = Number(options.walletLimit) > 0 ? Number(options.walletLimit) : DEFAULT_WALLET_BATCH;
 
   const summary = {
     rv: { found: 0, sent: 0, failed: 0 },
     rvSettlement: { found: 0, sent: 0, failed: 0 },
+    rvInvoiceRef: { found: 0, sent: 0, failed: 0 },
     wallet: { found: 0, sent: 0, failed: 0 },
   };
 
@@ -169,6 +202,23 @@ async function reconcileOutstandingZoho(db, options = {}) {
     } catch (err) {
       console.error(`Zoho reconcile RV settlement failed for ${id}`, err);
       summary.rvSettlement.failed += 1;
+    }
+  }
+
+  const rvInvoiceRefTargets = await collectOutstandingRvInvoiceReferences(db, rvInvoiceRefLimit);
+  summary.rvInvoiceRef.found = rvInvoiceRefTargets.length;
+
+  for (const { id, data } of rvInvoiceRefTargets) {
+    try {
+      const result = await processRvInvoiceReferenceSync(db, id, data);
+      if (result) {
+        summary.rvInvoiceRef.sent += 1;
+      } else {
+        summary.rvInvoiceRef.failed += 1;
+      }
+    } catch (err) {
+      console.error(`Zoho reconcile invoice ref failed for ${id}`, err);
+      summary.rvInvoiceRef.failed += 1;
     }
   }
 
@@ -208,8 +258,9 @@ async function reconcileZohoOutstandingHandler(request, db) {
 
   const rvLimit = request.data?.rvLimit;
   const rvSettlementLimit = request.data?.rvSettlementLimit;
+  const rvInvoiceRefLimit = request.data?.rvInvoiceRefLimit;
   const walletLimit = request.data?.walletLimit;
-  return reconcileOutstandingZoho(db, { rvLimit, rvSettlementLimit, walletLimit });
+  return reconcileOutstandingZoho(db, { rvLimit, rvSettlementLimit, rvInvoiceRefLimit, walletLimit });
 }
 
 async function reconcileZohoOutstandingScheduledHandler(db) {

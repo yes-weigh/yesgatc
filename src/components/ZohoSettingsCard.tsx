@@ -240,10 +240,11 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
                   onClick={() => {
                     setReconcileSummary('');
                     setReconciling(true);
-                    void reconcileZohoOutstanding({ rvSettlementLimit: 50 })
+                    void reconcileZohoOutstanding({ rvSettlementLimit: 50, rvInvoiceRefLimit: 50 })
                       .then(summary => {
                         setReconcileSummary(
                           `Reconcile: ${summary.rv.sent}/${summary.rv.found} invoices, ` +
+                          `${summary.rvInvoiceRef.sent}/${summary.rvInvoiceRef.found} order numbers, ` +
                           `${summary.rvSettlement.sent}/${summary.rvSettlement.found} settlements, ` +
                           `${summary.wallet.sent}/${summary.wallet.found} wallet transfers.`,
                         );

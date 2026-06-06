@@ -427,6 +427,11 @@ export interface SiteCalibration {
   zohoSettlementStatus?: 'completed' | 'failed';
   zohoSettlementError?: string;
   zohoSettledAt?: string;
+  /** Zoho invoice ORDER NUMBER — last two certificate segments (e.g. 26/1271). */
+  zohoInvoiceReferenceNumber?: string;
+  zohoInvoiceReferenceSynced?: boolean;
+  zohoInvoiceReferenceSyncedAt?: string;
+  zohoInvoiceReferenceSyncError?: string;
   /** Stored for future DOCA automation; worker currently submits 0. */
   carriageConveyanceFee?: number;
   totalDeposited?: number;

@@ -1,6 +1,7 @@
 import React from 'react';
 import { FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { zohoInvoiceOrderReferenceFromCertificate } from '../lib/zohoInvoiceReference';
 import {
   canViewZohoPushDiagnostics,
   resolveZohoPushStatus,
@@ -20,6 +21,9 @@ export const VerificationZohoInvoiceSection: React.FC<VerificationZohoInvoiceSec
   const { user } = useAuth();
   const status = resolveZohoPushStatus(record);
   const settlementStatus = resolveZohoSettlementStatus(record);
+  const orderReference =
+    record.zohoInvoiceReferenceNumber?.trim()
+    || zohoInvoiceOrderReferenceFromCertificate(record.certificateNumber);
   if (!status) return null;
 
   const showError =
@@ -44,6 +48,12 @@ export const VerificationZohoInvoiceSection: React.FC<VerificationZohoInvoiceSec
           <div className="verification-detail-field">
             <span className="verification-detail-label">Invoice no.</span>
             <span className="verification-detail-value text-mono">{record.zohoInvoiceNumber.trim()}</span>
+          </div>
+        )}
+        {orderReference && (
+          <div className="verification-detail-field">
+            <span className="verification-detail-label">Order no.</span>
+            <span className="verification-detail-value text-mono">{orderReference}</span>
           </div>
         )}
         {record.zohoCustomerName?.trim() && (

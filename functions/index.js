@@ -26,6 +26,10 @@ const {
 } = require('./zohoReconcile');
 const { pushLegacyRvZohoSettlementHandler } = require('./zohoRvSettlement');
 const {
+  onSiteCalibrationZohoInvoiceRefHandler,
+  pushLegacyRvInvoiceReferenceHandler,
+} = require('./zohoRvInvoiceRef');
+const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
   refundRvWalletPaymentHandler,
@@ -113,6 +117,18 @@ exports.onSiteCalibrationRvZohoInvoice = onDocumentWritten(
   async event => onSiteCalibrationZohoRvHandler(event, adminDb()),
 );
 
+/** When certificate number is set, sync Zoho invoice ORDER NUMBER (e.g. 26/1271). */
+exports.onSiteCalibrationZohoInvoiceRef = onDocumentWritten(
+  {
+    document: 'siteCalibrations/{recordId}',
+    region: FIRESTORE_REGION,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async event => onSiteCalibrationZohoInvoiceRefHandler(event, adminDb()),
+);
+
 /** RC/VCT invokes after RV submit — backup if the Firestore trigger is delayed or missed. */
 exports.triggerRvZohoInvoice = onCall(
   {
@@ -123,6 +139,18 @@ exports.triggerRvZohoInvoice = onCall(
     memory: '256MiB',
   },
   async request => triggerRvZohoInvoiceHandler(request, adminDb()),
+);
+
+/** Super Admin sets Zoho invoice ORDER NUMBER to applicationNumber on a legacy RV invoice. */
+exports.pushLegacyRvInvoiceReference = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async request => pushLegacyRvInvoiceReferenceHandler(request, adminDb()),
 );
 
 /** Super Admin records customer payment + labour expense for a legacy RV Zoho invoice. */
