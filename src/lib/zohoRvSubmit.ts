@@ -75,6 +75,24 @@ export function zohoPushStatusLabel(status: ZohoPushStatus): string {
   }
 }
 
+/** Compact labels for verification list cards. */
+export function zohoListBadgeLabel(status: ZohoPushStatus): string {
+  switch (status) {
+    case 'sent':
+      return 'Zoho pushed';
+    case 'failed':
+      return 'Zoho failed';
+    case 'skipped':
+      return 'Zoho skipped';
+    default:
+      return 'Zoho pending';
+  }
+}
+
+export function shouldShowZohoListBadge(status: ZohoPushStatus | null): status is ZohoPushStatus {
+  return status === 'pending' || status === 'sent' || status === 'failed';
+}
+
 /** True once an RV has left the draft stage (includes legacy rows missing `status`). */
 export function isRvVerificationSubmittedOrBeyond(
   record: Pick<SiteCalibration, 'status' | 'certificateNumber' | 'submittedAt' | 'approvedAt' | 'certifiedAt'>,

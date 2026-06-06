@@ -11,9 +11,6 @@ export const AdminSettings: React.FC = () => (
         <Settings className="inline-icon" aria-hidden />
         Settings
       </h1>
-      <p className="text-muted text-sm mb-0">
-        Payment configuration and integration tools. Review counts and approvals remain on the dashboard.
-      </p>
     </header>
 
     <RvPaymentSettingsCard className="admin-settings-section" />

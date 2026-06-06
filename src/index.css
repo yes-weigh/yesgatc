@@ -9738,7 +9738,7 @@ body.verification-mobile-wizard-active {
   gap: 0.35rem;
 }
 
-.verification-list-zoho-due-badge {
+.verification-list-zoho-badge {
   display: inline-flex;
   align-items: center;
   padding: 0.15rem 0.5rem;
@@ -9747,9 +9747,28 @@ body.verification-mobile-wizard-active {
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+}
+
+.verification-list-zoho-badge--pending {
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.verification-list-zoho-badge--sent {
   color: #bfdbfe;
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.verification-list-zoho-badge--failed {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.verification-list-card-metric--wallet .verification-list-card-metric-value {
+  color: #6ee7b7;
 }
 
 .verification-certified-actions {
@@ -13780,6 +13799,75 @@ body.verification-photo-viewer-open {
   margin-top: 0;
 }
 
+.rv-payment-structure-table-wrap {
+  padding-top: 0;
+}
+
+.data-table--rv-payment-structure {
+  width: 100%;
+  min-width: 20rem;
+}
+
+.data-table--rv-payment-structure th,
+.data-table--rv-payment-structure td {
+  text-align: left;
+  white-space: nowrap;
+}
+
+.data-table--rv-payment-structure th:not(:first-child),
+.data-table--rv-payment-structure td:not(:first-child) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table--rv-payment-structure tbody td:first-child {
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .data-table--rv-payment-structure thead {
+    display: none;
+  }
+
+  .data-table--rv-payment-structure tbody tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem 0.75rem;
+    padding: 0.65rem 0;
+  }
+
+  .data-table--rv-payment-structure tbody tr + tr {
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
+  .data-table--rv-payment-structure tbody td {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0;
+    text-align: right;
+  }
+
+  .data-table--rv-payment-structure tbody td::before {
+    content: attr(data-label);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    text-align: left;
+  }
+
+  .data-table--rv-payment-structure tbody td:first-child {
+    grid-column: 1 / -1;
+    font-size: 0.82rem;
+  }
+
+  .data-table--rv-payment-structure tbody td:first-child::before {
+    content: 'Cap';
+  }
+}
+
 .admin-zoho-settings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -15894,6 +15982,14 @@ body.verification-photo-viewer-open {
 .verification-list-card-metric-label--type,
 .verification-list-card-type-badge {
   display: none;
+}
+
+.verification-list-card-metric--type .verification-list-card-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.32rem;
+  font-size: 0.68rem;
+  line-height: 1.2;
 }
 
 .verification-list-card-actions {

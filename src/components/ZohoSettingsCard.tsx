@@ -73,13 +73,6 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
         <h2><FileText className="inline-icon" /> Zoho Books</h2>
       </div>
       <div className="panel-body">
-        <p className="text-muted text-sm mb-4">
-          Non-secret Zoho configuration for automatic RV invoices on submit. OAuth credentials stay in
-          Cloud Functions secrets (<span className="text-mono">ZOHO_CLIENT_ID</span>,{' '}
-          <span className="text-mono">ZOHO_CLIENT_SECRET</span>,{' '}
-          <span className="text-mono">ZOHO_REFRESH_TOKEN</span>).
-        </p>
-
         {error && <p className="form-error mb-3">{error}</p>}
         {saved && <p className="text-success text-sm mb-3">Zoho settings saved.</p>}
 
@@ -147,7 +140,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
               </div>
 
               <div className="form-group admin-zoho-settings-grid__full">
-                <label htmlFor="zoho-mode-of-transport">Mode of transport (`cf_mode_of_transport`)</label>
+                <label htmlFor="zoho-mode-of-transport">Mode of transport</label>
                 <select
                   id="zoho-mode-of-transport"
                   className="input-field"
@@ -161,21 +154,12 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
                     </option>
                   ))}
                 </select>
-                <p className="text-muted text-xs mt-1 mb-0">
-                  Must match a Zoho Books dropdown label exactly. Use <strong>CUSTOMER PICKUP</strong> for
-                  on-site RV without courier; <strong>With Machine</strong> when the RC travels with the machine.
-                </p>
               </div>
             </div>
 
             <hr className="admin-zoho-settings-divider my-5" />
 
             <h3 className="text-base font-semibold mb-3">Wallet top-up transfer</h3>
-            <p className="text-muted text-sm mb-4">
-              When a Super Admin approves an RC wallet top-up, YesGATC records a{' '}
-              <span className="text-mono">transfer_fund</span> in Zoho Books (GATC Wallet → Kotak).
-              The description includes the RC name.
-            </p>
 
             <label className="flex items-center gap-2 mb-4 cursor-pointer">
               <input
@@ -216,11 +200,6 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
             <hr className="admin-zoho-settings-divider my-5" />
 
             <h3 className="text-base font-semibold mb-3">Outstanding Zoho sweep</h3>
-            <p className="text-muted text-sm mb-4">
-              Every 30 minutes, Cloud Functions can automatically push any RV invoices and wallet top-up
-              transfers that are still outstanding in YesGATC (legacy rows, missed triggers, or retries
-              after a transient Zoho error). Submit and approval hooks still run when this is off.
-            </p>
 
             <label className="flex items-center gap-2 mb-4 cursor-pointer">
               <input
@@ -242,9 +221,6 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
                 <Save size={16} aria-hidden />
                 {saving ? 'Saving…' : 'Save Zoho settings'}
               </button>
-              <p className="text-muted text-sm mb-0">
-                RV submit creates one B2C invoice. Wallet approval moves funds GATC Wallet → Kotak in Books.
-              </p>
             </div>
           </>
         )}

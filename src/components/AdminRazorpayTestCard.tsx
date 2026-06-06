@@ -13,10 +13,6 @@ export const AdminRazorpayTestCard: React.FC<AdminRazorpayTestCardProps> = ({ cl
   const [testOpen, setTestOpen] = useState(false);
   const [lastSuccess, setLastSuccess] = useState<string | null>(null);
 
-  const siteOrigin = useMemo(
-    () => (typeof window !== 'undefined' ? window.location.origin : ''),
-    [],
-  );
   const siteHost = useMemo(
     () => (typeof window !== 'undefined' ? window.location.host : ''),
     [],
@@ -33,30 +29,13 @@ export const AdminRazorpayTestCard: React.FC<AdminRazorpayTestCardProps> = ({ cl
           </h2>
         </div>
         <div className="panel-body">
-          <p className="text-muted text-sm mb-4">
-            Confirm server keys, order creation, UPI checkout, and site whitelist without submitting
-            a real RV verification. Uses a ₹1 test order marked as admin-only in payment logs.
-          </p>
-
           <div className="admin-razorpay-test-whitelist">
             <div className="admin-razorpay-test-whitelist-head">
               <Globe size={16} aria-hidden />
-              <span>Whitelist this site in Razorpay</span>
+              <span>Site host</span>
             </div>
             <p className="admin-razorpay-test-whitelist-host mb-0">
               <code>{siteHost || '—'}</code>
-            </p>
-            <p className="text-muted text-sm mb-0">
-              Razorpay Dashboard → Account &amp; Settings → Website &amp; App settings → add{' '}
-              <strong>{siteHost}</strong>
-              {siteOrigin ? (
-                <>
-                  {' '}
-                  (origin <code>{siteOrigin}</code>)
-                </>
-              ) : null}
-              . If checkout opens but payment fails with a domain error, the whitelist is missing or
-              still propagating.
             </p>
             <a
               href="https://dashboard.razorpay.com/app/website-app-settings/websites"

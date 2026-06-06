@@ -8,6 +8,16 @@ import {
   ShieldCheck,
   Trash2,
 } from 'lucide-react';
+import { useAppSettings } from '../hooks/useAppSettings';
+import { isRvWalletPaymentRequired } from '../lib/appSettings';
+import { formatRcFeeAmount } from '../lib/rcProfileFields';
+import {
+  isZohoRvInvoicingEnabled,
+  resolveZohoPushStatus,
+  shouldShowZohoListBadge,
+  zohoListBadgeLabel,
+  type ZohoPushStatus,
+} from '../lib/zohoRvSubmit';
 import {
   canDeleteVerification,
   canDownloadVerificationCertificate,
@@ -57,8 +67,6 @@ export interface VerificationListTableProps {
   flashRecordId?: string | null;
   /** RV records submitted before wallet payment that still owe administrative fees. */
   walletPaymentDueRecordIds?: Set<string>;
-  /** RV records submitted before Zoho automation that still need a Zoho invoice. */
-  zohoInvoiceDueRecordIds?: Set<string>;
 }
 
 type VerificationListStatusTone =
@@ -82,6 +90,33 @@ function verificationListStatusTone(record: SiteCalibration): VerificationListSt
 
 function verificationListDisplayDate(record: SiteCalibration): string {
   return record.certifiedAt || record.approvedAt || record.submittedAt || record.createdAt;
+}
+
+function VerificationListTypeBadges({
+  record,
+  zohoListBadge,
+}: {
+  record: SiteCalibration;
+  zohoListBadge: ZohoPushStatus | null;
+}) {
+  return (
+    <span className="verification-list-card-type-row">
+      <span
+        className={`verification-list-card-type-badge role-badge ${
+          record.verificationType === 'RV' ? 'badge-vct' : 'badge-rc'
+        }`}
+      >
+        {record.verificationType === 'RV' ? 'RV' : 'OV'}
+      </span>
+      {zohoListBadge && (
+        <span
+          className={`verification-list-zoho-badge verification-list-zoho-badge--${zohoListBadge}`}
+        >
+          {zohoListBadgeLabel(zohoListBadge)}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function VerificationListStatusIcon({ tone }: { tone: VerificationListStatusTone }) {
@@ -118,11 +153,13 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   lastViewedRecordId = null,
   flashRecordId = null,
   walletPaymentDueRecordIds,
-  zohoInvoiceDueRecordIds,
 }) => {
+  const { appSettings } = useAppSettings();
   const showBulkSelect = mode === 'rc' && bulkSelect;
   const showRcCentre = mode === 'admin';
   const showVctColumn = !hideVctColumn;
+  const rvWalletListEnabled = isRvWalletPaymentRequired('RV', appSettings);
+  const zohoRvListEnabled = isZohoRvInvoicingEnabled(appSettings);
 
   return (
     <div className="verification-list-cards-wrap">
@@ -165,7 +202,19 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const certNo = record.certificateNumber?.trim() || '—';
             const serial = record.serialNumber?.trim() || '—';
             const walletPaymentDue = walletPaymentDueRecordIds?.has(record.id) ?? false;
-            const zohoInvoiceDue = zohoInvoiceDueRecordIds?.has(record.id) ?? false;
+            const zohoPushStatus =
+              record.verificationType === 'RV' && zohoRvListEnabled
+                ? resolveZohoPushStatus(record)
+                : null;
+            const zohoListBadge = shouldShowZohoListBadge(zohoPushStatus) ? zohoPushStatus : null;
+            const walletDeductedAmount =
+              record.verificationType === 'RV'
+              && rvWalletListEnabled
+              && record.rvPaymentStatus === 'paid'
+              && record.rvPaymentAmount != null
+              && Number.isFinite(record.rvPaymentAmount)
+                ? record.rvPaymentAmount
+                : null;
 
             return (
               <article
@@ -248,6 +297,14 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                       <span className="verification-list-card-metric-label">Date</span>
                       <span className="verification-list-card-metric-value">{displayDate}</span>
                     </div>
+                    {walletDeductedAmount != null && (
+                      <div className="verification-list-card-metric verification-list-card-metric--wallet">
+                        <span className="verification-list-card-metric-label">Wallet</span>
+                        <span className="verification-list-card-metric-value">
+                          {formatRcFeeAmount(walletDeductedAmount)}
+                        </span>
+                      </div>
+                    )}
                     {showRcCentre && (
                       <div className="verification-list-card-metric verification-list-card-metric--rc">
                         <span className="verification-list-card-metric-label">RC centre</span>
@@ -268,18 +325,13 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                         <span className="verification-list-card-metric-label verification-list-card-metric-label--type">
                           Type
                         </span>
-                        <span className="verification-list-card-type-row">
-                          <span
-                            className={`verification-list-card-type-badge role-badge ${
-                              record.verificationType === 'RV' ? 'badge-vct' : 'badge-rc'
-                            }`}
-                          >
-                            {record.verificationType === 'RV' ? 'RV' : 'OV'}
-                          </span>
-                          {zohoInvoiceDue && record.verificationType === 'RV' && (
-                            <span className="verification-list-zoho-due-badge">Zoho due</span>
-                          )}
-                        </span>
+                        <VerificationListTypeBadges record={record} zohoListBadge={zohoListBadge} />
+                      </div>
+                    )}
+                    {!showVctColumn && (
+                      <div className="verification-list-card-metric verification-list-card-metric--type">
+                        <span className="verification-list-card-metric-label">Type</span>
+                        <VerificationListTypeBadges record={record} zohoListBadge={zohoListBadge} />
                       </div>
                     )}
                   </div>

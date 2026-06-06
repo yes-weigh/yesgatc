@@ -133,7 +133,6 @@ import {
   refundRvWalletPayment,
 } from '../../lib/rcWallet';
 import {
-  isRvZohoInvoiceOutstanding,
   isZohoRvInvoicingEnabled,
   rcZohoIdReady,
   RV_ZOHO_SUBMIT_BLOCK_MESSAGE,
@@ -1599,16 +1598,6 @@ export const RCSiteCalibration: React.FC = () => {
     return collapseVerificationsForListDisplay(filtered, records);
   }, [records, statusFilter, typeFilter, searchTerm]);
 
-  const zohoInvoiceDueRecordIds = useMemo(
-    () =>
-      new Set(
-        filteredRecords
-          .filter(record => isRvZohoInvoiceOutstanding(record))
-          .map(record => record.id),
-      ),
-    [filteredRecords],
-  );
-
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
     [filteredRecords, page],
@@ -2017,7 +2006,6 @@ export const RCSiteCalibration: React.FC = () => {
                 lastViewedRecordId={lastViewedVerificationId}
                 flashRecordId={rowHighlightFlashId}
                 walletPaymentDueRecordIds={walletPaymentDueRecordIds}
-                zohoInvoiceDueRecordIds={zohoInvoiceDueRecordIds}
                 onEdit={startEdit}
                 onSubmit={handleSubmitRecord}
                 onDelete={handleDelete}
