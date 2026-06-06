@@ -201,8 +201,15 @@ export const AdminWalletTopUps: React.FC = () => {
     setReviewingId(item.id);
     setError('');
     try {
-      await reviewWalletTopUp({ topUpId: item.id, action: 'approve' });
+      const result = await reviewWalletTopUp({ topUpId: item.id, action: 'approve' });
       await refresh();
+      if (result.zohoTransferStatus === 'failed') {
+        setError(
+          result.zohoTransferError?.trim()
+            ? `Top-up approved, but Zoho transfer failed: ${result.zohoTransferError}`
+            : 'Top-up approved, but Zoho transfer failed. Use Push to Zoho to retry.',
+        );
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Approval failed.');
     } finally {

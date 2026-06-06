@@ -251,12 +251,16 @@ async function reviewWalletTopUpHandler(request, db) {
   });
 
   if (result.status === 'approved' && result.topUp) {
-    const zohoResult = await processWalletTopUpZohoTransfer(db, topUpId, result.topUp);
+    await processWalletTopUpZohoTransfer(db, topUpId, result.topUp);
+    const freshTopUpSnap = await db.doc(`walletTopUps/${topUpId}`).get();
+    const freshTopUp = freshTopUpSnap.exists ? freshTopUpSnap.data() : result.topUp;
     return {
       topUpId: result.topUpId,
       status: result.status,
       balanceInr: result.balanceInr,
-      zohoTransfer: zohoResult,
+      zohoTransferStatus: freshTopUp.zohoTransferStatus || null,
+      zohoTransferError: freshTopUp.zohoTransferError || null,
+      zohoTransactionId: freshTopUp.zohoTransactionId || null,
     };
   }
 

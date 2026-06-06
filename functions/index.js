@@ -1,4 +1,4 @@
-const { onDocumentDeleted, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onDocumentDeleted, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 
@@ -16,6 +16,7 @@ const {
   zohoRefreshToken,
   onSiteCalibrationZohoRvHandler,
   pushLegacyRvZohoInvoiceHandler,
+  triggerRvZohoInvoiceHandler,
 } = require('./zohoRv');
 const { pushLegacyWalletTopUpZohoTransferHandler } = require('./zohoWallet');
 const {
@@ -36,8 +37,8 @@ const { getFirestore } = require('firebase-admin/firestore');
 
 const AUTH_EMAIL_DOMAIN = 'yesgatc.auth';
 const CALLABLE_REGION = 'us-central1';
-/** Firestore database region — must match Eventarc trigger location. */
-const FIRESTORE_REGION = 'asia-south1';
+/** Firestore (default) is nam5 — nearest supported functions region for triggers. */
+const FIRESTORE_REGION = 'us-central1';
 /** Allow Vite dev server and production hosting to call HTTPS functions. */
 const CALLABLE_CORS = [
   /^https:\/\/yesgatc\.in$/,
@@ -95,7 +96,7 @@ async function deleteAuthUserSafe(uid) {
 }
 
 /** Creates a Zoho Books invoice when an RV verification is submitted (skips resubmits). */
-exports.onSiteCalibrationRvZohoInvoice = onDocumentUpdated(
+exports.onSiteCalibrationRvZohoInvoice = onDocumentWritten(
   {
     document: 'siteCalibrations/{recordId}',
     region: FIRESTORE_REGION,
@@ -104,6 +105,18 @@ exports.onSiteCalibrationRvZohoInvoice = onDocumentUpdated(
     memory: '256MiB',
   },
   async event => onSiteCalibrationZohoRvHandler(event, adminDb()),
+);
+
+/** RC/VCT invokes after RV submit — backup if the Firestore trigger is delayed or missed. */
+exports.triggerRvZohoInvoice = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async request => triggerRvZohoInvoiceHandler(request, adminDb()),
 );
 
 /** Super Admin manually pushes a legacy RV verification to Zoho Books. */

@@ -88,6 +88,7 @@ import {
   collapseVerificationsForListDisplay,
   verificationListRecordsForFilterCounts,
 } from '../../lib/verificationListGrouping';
+import { queueRvZohoInvoicesAfterSubmit } from '../../lib/zohoRvInvoice';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import type {
   Customer,
@@ -1055,6 +1056,9 @@ export const RCSiteCalibration: React.FC = () => {
         for (const recordId of draftRecordIds) {
           await updateDoc(doc(db, 'siteCalibrations', recordId), buildVerificationSubmitPatch());
         }
+        if (sessionForSave.verificationType === 'RV') {
+          queueRvZohoInvoicesAfterSubmit(draftRecordIds);
+        }
       }
 
       const submittedRecordIds = submitAfterSave ? draftRecordIds : [];
@@ -1166,6 +1170,9 @@ export const RCSiteCalibration: React.FC = () => {
     setListError('');
     try {
       await updateDoc(doc(db, 'siteCalibrations', record.id), buildVerificationSubmitPatch());
+      if (record.verificationType === 'RV') {
+        queueRvZohoInvoicesAfterSubmit([record.id]);
+      }
       if (editingId === record.id) handleCloseForm();
       await fetchRecords();
       beginSubmitProgress([record.id]);
@@ -1194,6 +1201,9 @@ export const RCSiteCalibration: React.FC = () => {
         selectedRecords.map(record =>
           updateDoc(doc(db, 'siteCalibrations', record.id), buildVerificationSubmitPatch()),
         ),
+      );
+      queueRvZohoInvoicesAfterSubmit(
+        selectedRecords.filter(record => record.verificationType === 'RV').map(record => record.id),
       );
       setSelectedDraftIds(new Set());
       if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
@@ -1298,6 +1308,9 @@ export const RCSiteCalibration: React.FC = () => {
       }
 
       await updateDoc(doc(db, 'siteCalibrations', editingId), buildVerificationSubmitPatch());
+      if (sessionForSave.verificationType === 'RV') {
+        queueRvZohoInvoicesAfterSubmit([editingId]);
+      }
 
       handleCloseForm();
       await fetchRecords();

@@ -386,6 +386,9 @@ export type ReviewWalletTopUpResult = {
   topUpId: string;
   status: WalletTopUpStatus;
   balanceInr: number;
+  zohoTransferStatus?: 'completed' | 'failed' | null;
+  zohoTransferError?: string | null;
+  zohoTransactionId?: string | null;
 };
 
 export async function reviewWalletTopUp(input: {

@@ -232,10 +232,16 @@ async function createRvInvoice(record, rcZohoId, settings) {
 
 function shouldProcessRvZohoInvoice(before, after) {
   if (!after || after.verificationType !== 'RV') return false;
-  if (after.status !== 'submitted') return false;
-  if (before?.status === 'submitted') return false;
   if (after.resubmittedFromId) return false;
   if (after.zohoInvoiceId) return false;
+  if (after.zohoPushStatus === 'sent') return false;
+
+  const afterStatus = verificationRecordStatus(after);
+  if (afterStatus === 'draft') return false;
+
+  const beforeStatus = before ? verificationRecordStatus(before) : 'draft';
+  if (beforeStatus !== 'draft') return false;
+
   return true;
 }
 
@@ -250,7 +256,14 @@ async function writeZohoPushResult(db, recordId, patch) {
 }
 
 function verificationRecordStatus(record) {
-  return String(record?.status || 'draft');
+  const status = String(record?.status || '').trim();
+  if (status === 'draft' || status === 'submitted' || status === 'approved' || status === 'certified') {
+    return status;
+  }
+  if (record?.submittedAt?.trim()) return 'submitted';
+  if (record?.approvedAt?.trim()) return 'approved';
+  if (record?.certifiedAt?.trim()) return 'certified';
+  return 'draft';
 }
 
 function canPushRvZohoInvoice(record) {
@@ -287,6 +300,44 @@ async function assertSuperAdmin(db, uid) {
   if (!snap.exists || snap.data().role !== 'super_admin') {
     throw new HttpsError('permission-denied', 'Super Admin only.');
   }
+}
+
+async function assertVerificationZohoAccess(db, uid, record) {
+  const callerSnap = await db.doc(`users/${uid}`).get();
+  if (!callerSnap.exists) {
+    throw new HttpsError('permission-denied', 'User profile not found.');
+  }
+
+  const caller = callerSnap.data();
+  const rcId = String(record?.rcId || '').trim();
+  if (!rcId) {
+    throw new HttpsError('failed-precondition', 'Verification is not linked to an RC.');
+  }
+
+  if (caller.role === 'super_admin') return;
+
+  if (caller.role === 'rc_admin') {
+    if (uid !== rcId) {
+      throw new HttpsError('permission-denied', 'Cannot invoice verifications for another RC.');
+    }
+    return;
+  }
+
+  if (caller.role === 'vct') {
+    if (caller.rcId !== rcId) {
+      throw new HttpsError('permission-denied', 'Cannot invoice verifications for another RC.');
+    }
+    const approvalStatus = caller.approvalStatus ?? 'approved';
+    if (approvalStatus !== 'approved') {
+      throw new HttpsError('permission-denied', 'VCT approval required.');
+    }
+    if (caller.active === false) {
+      throw new HttpsError('permission-denied', 'VCT account is inactive.');
+    }
+    return;
+  }
+
+  throw new HttpsError('permission-denied', 'RC or VCT access required.');
 }
 
 async function processRvZohoInvoice(db, recordId, record, { allowLegacyPush = false } = {}) {
@@ -342,6 +393,45 @@ async function processRvZohoInvoice(db, recordId, record, { allowLegacyPush = fa
   }
 }
 
+async function triggerRvZohoInvoiceHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const recordId = request.data?.recordId;
+  if (!recordId || typeof recordId !== 'string') {
+    throw new HttpsError('invalid-argument', 'recordId is required.');
+  }
+
+  const snap = await db.doc(`siteCalibrations/${recordId}`).get();
+  if (!snap.exists) {
+    throw new HttpsError('not-found', 'Verification record not found.');
+  }
+
+  const record = snap.data();
+  await assertVerificationZohoAccess(db, request.auth.uid, record);
+
+  if (!canPushRvZohoInvoice(record)) {
+    return {
+      recordId,
+      skipped: true,
+      reason: 'Verification is not eligible for Zoho invoicing.',
+    };
+  }
+
+  const result = await processRvZohoInvoice(db, recordId, record);
+  if (!result) {
+    const fresh = await db.doc(`siteCalibrations/${recordId}`).get();
+    const error = fresh.exists ? fresh.data()?.zohoPushError : null;
+    throw new HttpsError(
+      'internal',
+      typeof error === 'string' && error.trim() ? error : 'Zoho invoice push did not complete.',
+    );
+  }
+
+  return result;
+}
+
 async function pushLegacyRvZohoInvoiceHandler(request, db) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Sign in required.');
@@ -377,8 +467,8 @@ async function pushLegacyRvZohoInvoiceHandler(request, db) {
 }
 
 async function onSiteCalibrationZohoRvHandler(event, db) {
-  const before = event.data.before.exists ? event.data.before.data() : null;
-  const after = event.data.after.exists ? event.data.after.data() : null;
+  const before = event.data?.before?.exists ? event.data.before.data() : null;
+  const after = event.data?.after?.exists ? event.data.after.data() : null;
   if (!shouldProcessRvZohoInvoice(before, after)) return;
 
   const recordId = event.params.recordId;
@@ -390,6 +480,7 @@ module.exports = {
   zohoClientSecret,
   zohoRefreshToken,
   onSiteCalibrationZohoRvHandler,
+  triggerRvZohoInvoiceHandler,
   pushLegacyRvZohoInvoiceHandler,
   normalizeZohoRvSettings,
   maximumCapacityKg,
