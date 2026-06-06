@@ -2,7 +2,19 @@
 # https://github.com/firebase/firebase-tools
 
 name: Deploy to Firebase Hosting on PR
-on: pull_request
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'tsconfig*.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'scripts/generate-app-icons.mjs'
+      - 'eslint.config.js'
+      - 'firebase.json'
 permissions:
   checks: write
   contents: read
@@ -13,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: npm install && npm run build
+      - run: npm ci && npm run build
         env:
           VITE_WEATHERAPI_KEY: ${{ secrets.VITE_WEATHERAPI_KEY }}
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}

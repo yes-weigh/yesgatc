@@ -11,3 +11,21 @@ Assume high intelligence. Code must be production-ready, minimal, and modern.
 - Output raw code blocks immediately if request is obvious.
 - Minimize inline comments unless logic is highly complex.
 - Focus on performance, memory, and type safety.
+
+## Deployment (verified in repo)
+
+### Firebase — automatic on push to `main` (path-filtered)
+- Workflow: `.github/workflows/firebase-deploy.yml`
+- Compares changed files in the push; only deploys what changed:
+  - **Hosting** — `src/**`, `public/**`, build config, root `package*.json`, `firebase.json`
+  - **Functions** — `functions/**`, `firebase.json`
+  - **Firestore rules** — `firestore.rules`
+  - **Firestore indexes** — `firestore.indexes.json`
+  - **Storage rules** — `storage.rules`, `firebase.json`
+- **Do not** suggest manual `firebase deploy` for normal releases when the relevant paths changed.
+- Manual run: GitHub Actions → **Deploy to Firebase on merge** → `workflow_dispatch` (pick targets).
+- PR hosting previews: `.github/workflows/firebase-hosting-pull-request.yml` (frontend paths only).
+
+### When manual `firebase deploy` is OK
+- CI failure, partial/emergency deploy, or deploy before merge to `main`.
+- On PowerShell, quote comma-separated `--only` values.
