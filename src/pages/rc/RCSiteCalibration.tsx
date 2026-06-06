@@ -71,7 +71,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import {
-  Pencil, Plus, Save, Send, Eye, X,
+  Pencil, Plus, Save, Send, Eye, Wallet, X,
 } from 'lucide-react';
 
 import {
@@ -115,6 +115,7 @@ import {
   computeRvPaymentAmount,
   isRvPaymentSatisfied,
   isRvSessionPaymentSatisfied,
+  isRvWalletPaymentOutstanding,
 } from '../../lib/rvPaymentAmount';
 import {
   isWalletPaymentId,
@@ -127,7 +128,7 @@ import {
   computeVerificationDocaCharges,
   shouldPersistVerificationDocaCharges,
 } from '../../lib/verificationDocaCharges';
-import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
+import { formatRcFeeAmount, resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { buildCustomerVerificationSession } from '../../lib/verificationCustomerEntry';
 import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
@@ -184,6 +185,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [submitProgressRecordIds, setSubmitProgressRecordIds] = useState<string[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [rvPaymentOpen, setRvPaymentOpen] = useState(false);
+  const [retroactiveRvPayment, setRetroactiveRvPayment] = useState(false);
   const [rvSessionPayment, setRvSessionPayment] = useState<{ paymentId: string; amountInr: number } | null>(null);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
@@ -374,6 +376,7 @@ export const RCSiteCalibration: React.FC = () => {
     setEditingId(null);
     setWizardOnLastStep(false);
     setRvPaymentOpen(false);
+    setRetroactiveRvPayment(false);
     setRvSessionPayment(null);
     resetForm();
   };
@@ -1207,9 +1210,47 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleRvPaymentComplete = async (paymentId: string) => {
     if (!rvPaymentBreakdown) return;
+    setRvPaymentOpen(false);
+
+    if (retroactiveRvPayment && editingId) {
+      setRetroactiveRvPayment(false);
+      const walletPaymentId = isWalletPaymentId(paymentId) ? paymentId : null;
+      setSubmitting(true);
+      setError('');
+      try {
+        await updateDoc(doc(db, 'siteCalibrations', editingId), {
+          ...buildRvPaymentFirestorePatch(paymentId, rvPaymentBreakdown.total),
+        });
+        if (walletPaymentId) {
+          await linkWalletPaymentToRecords({
+            paymentId: walletPaymentId,
+            recordIds: [editingId],
+          });
+        }
+        await fetchRecords();
+      } catch (err: unknown) {
+        if (walletPaymentId) {
+          try {
+            await refundRvWalletPayment({
+              paymentId: walletPaymentId,
+              reason: 'Failed to record wallet payment on verification',
+            });
+          } catch {
+            setError(
+              `${err instanceof Error ? err.message : 'Failed to record payment.'} Wallet refund could not be completed automatically — contact support with payment id ${walletPaymentId}.`,
+            );
+            return;
+          }
+        }
+        setError(err instanceof Error ? err.message : 'Failed to record payment on verification.');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const payment = { paymentId, amountInr: rvPaymentBreakdown.total };
     setRvSessionPayment(payment);
-    setRvPaymentOpen(false);
     await executeSubmitFromForm(payment);
   };
 
@@ -1271,6 +1312,8 @@ export const RCSiteCalibration: React.FC = () => {
     if (!isVerificationViewable(record)) return;
     setLastViewedVerificationId(record.id);
     setShowAddForm(false);
+    setRvPaymentOpen(false);
+    setRetroactiveRvPayment(false);
     setEditingId(record.id);
     const session = verificationSessionFromRecord(record);
     const devices = isVerificationEditable(record)
@@ -1331,6 +1374,20 @@ export const RCSiteCalibration: React.FC = () => {
   const editingRecord = editingId ? records.find(r => r.id === editingId) ?? null : null;
   const editingDraft = editingRecord ? isVerificationEditable(editingRecord) : showAddForm;
   const isViewMode = Boolean(editingRecord && !editingDraft);
+  const showRetroactiveRvPayment =
+    isViewMode
+    && editingRecord
+    && isRvWalletPaymentOutstanding(editingRecord, appSettings)
+    && rvPaymentBreakdown != null
+    && rvPaymentBreakdown.total > 0;
+  const walletPaymentDueRecordIds = useMemo(() => {
+    if (!isRvWalletPaymentRequired('RV', appSettings)) return new Set<string>();
+    return new Set(
+      records
+        .filter(record => isRvWalletPaymentOutstanding(record, appSettings))
+        .map(record => record.id),
+    );
+  }, [records, appSettings]);
   const isCertifiedActionsView =
     isViewMode && editingRecord !== null && canShowVerificationCertifiedActions(editingRecord);
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
@@ -1615,6 +1672,32 @@ export const RCSiteCalibration: React.FC = () => {
                         )}
                       </div>
                     )}
+                    {showRetroactiveRvPayment && rvPaymentBreakdown && (
+                      <div className="rv-retroactive-payment-banner mt-3">
+                        <div className="rv-retroactive-payment-banner__text">
+                          <p className="rv-retroactive-payment-banner__title mb-0">
+                            Administrative fees not paid
+                          </p>
+                          <p className="text-muted text-sm mb-0">
+                            This verification was submitted before wallet payment was required.
+                            Pay {formatRcFeeAmount(rvPaymentBreakdown.total)} from your RC wallet to
+                            complete payment.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-primary rv-retroactive-payment-banner__btn"
+                          onClick={() => {
+                            setRetroactiveRvPayment(true);
+                            setRvPaymentOpen(true);
+                          }}
+                          disabled={formBusy || !rcUid}
+                        >
+                          <Wallet size={16} aria-hidden />
+                          Pay administrative fees
+                        </button>
+                      </div>
+                    )}
                     <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
                       {error || '\u00a0'}
                     </p>
@@ -1750,6 +1833,7 @@ export const RCSiteCalibration: React.FC = () => {
                 onView={openRecord}
                 lastViewedRecordId={lastViewedVerificationId}
                 flashRecordId={rowHighlightFlashId}
+                walletPaymentDueRecordIds={walletPaymentDueRecordIds}
                 onEdit={startEdit}
                 onSubmit={handleSubmitRecord}
                 onDelete={handleDelete}
@@ -1781,7 +1865,10 @@ export const RCSiteCalibration: React.FC = () => {
           rcId={rcUid}
           recordIds={editingId ? [editingId] : undefined}
           onPaid={handleRvPaymentComplete}
-          onClose={() => setRvPaymentOpen(false)}
+          onClose={() => {
+            setRvPaymentOpen(false);
+            setRetroactiveRvPayment(false);
+          }}
         />
       )}
 
@@ -1791,7 +1878,10 @@ export const RCSiteCalibration: React.FC = () => {
           rcId={rcUid}
           recordIds={editingId ? [editingId] : undefined}
           onPaid={handleRvPaymentComplete}
-          onClose={() => setRvPaymentOpen(false)}
+          onClose={() => {
+            setRvPaymentOpen(false);
+            setRetroactiveRvPayment(false);
+          }}
         />
       )}
 

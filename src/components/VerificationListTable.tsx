@@ -55,6 +55,8 @@ export interface VerificationListTableProps {
   hideVctColumn?: boolean;
   lastViewedRecordId?: string | null;
   flashRecordId?: string | null;
+  /** RV records submitted before wallet payment that still owe administrative fees. */
+  walletPaymentDueRecordIds?: Set<string>;
 }
 
 type VerificationListStatusTone =
@@ -113,6 +115,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   hideVctColumn = false,
   lastViewedRecordId = null,
   flashRecordId = null,
+  walletPaymentDueRecordIds,
 }) => {
   const showBulkSelect = mode === 'rc' && bulkSelect;
   const showRcCentre = mode === 'admin';
@@ -158,6 +161,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const displayDate = formatDate(verificationListDisplayDate(record));
             const certNo = record.certificateNumber?.trim() || '—';
             const serial = record.serialNumber?.trim() || '—';
+            const walletPaymentDue = walletPaymentDueRecordIds?.has(record.id) ?? false;
 
             return (
               <article
@@ -214,6 +218,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   title={detailTitle}
                 >
                   <h3 className="verification-list-card-title">{record.customerName || '—'}</h3>
+                  {walletPaymentDue && (
+                    <span className="verification-list-wallet-due-badge">Payment due</span>
+                  )}
                   <p className="verification-list-card-cert text-mono" title={certNo}>
                     {certNo}
                   </p>

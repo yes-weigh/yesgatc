@@ -9656,6 +9656,50 @@ body.verification-mobile-wizard-active {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.rv-retroactive-payment-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: linear-gradient(
+    135deg,
+    rgba(251, 191, 36, 0.12) 0%,
+    rgba(15, 23, 42, 0.65) 100%
+  );
+}
+
+.rv-retroactive-payment-banner__title {
+  font-weight: 600;
+  color: #fde68a;
+}
+
+.rv-retroactive-payment-banner__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.verification-list-wallet-due-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.2rem;
+  margin-bottom: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #fde68a;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
 .verification-certified-actions {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

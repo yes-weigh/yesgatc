@@ -1,3 +1,4 @@
+import { isRvWalletPaymentRequired, type AppGlobalSettings } from './appSettings';
 import {
   rcVerificationFeeQuote,
   rvGatewayFee,
@@ -6,6 +7,7 @@ import {
   verificationFeeWithGst,
 } from './rcProfileFields';
 import type { VerificationDeviceRowValues } from './siteCalibrationProfileFields';
+import { normalizeVerificationStatus } from './verificationRequest';
 import type { JobType, Product, RcFeesStructure, SiteCalibration, VerificationLocation } from '../types';
 
 export type RvPaymentBreakdown = {
@@ -103,4 +105,15 @@ export function isRvSessionPaymentSatisfied(
 ): boolean {
   if (!sessionPayment || expectedAmount == null) return false;
   return inrAmountsMatch(sessionPayment.amountInr, expectedAmount) && Boolean(sessionPayment.paymentId);
+}
+
+/** Submitted RV records that still owe wallet administrative fees (e.g. before pay-before-submit). */
+export function isRvWalletPaymentOutstanding(
+  record: Pick<SiteCalibration, 'verificationType' | 'rvPaymentStatus' | 'status'> | null | undefined,
+  settings: AppGlobalSettings,
+): boolean {
+  if (!record || record.verificationType !== 'RV') return false;
+  if (!isRvWalletPaymentRequired('RV', settings)) return false;
+  if (record.rvPaymentStatus === 'paid') return false;
+  return normalizeVerificationStatus(record as SiteCalibration) !== 'draft';
 }
