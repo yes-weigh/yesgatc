@@ -1,5 +1,6 @@
 const { onDocumentDeleted, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 
 const razorpayKeyId = defineSecret('RAZORPAY_KEY_ID');
@@ -19,6 +20,10 @@ const {
   triggerRvZohoInvoiceHandler,
 } = require('./zohoRv');
 const { pushLegacyWalletTopUpZohoTransferHandler } = require('./zohoWallet');
+const {
+  reconcileZohoOutstandingHandler,
+  reconcileZohoOutstandingScheduledHandler,
+} = require('./zohoReconcile');
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -129,6 +134,30 @@ exports.pushLegacyRvZohoInvoice = onCall(
     memory: '256MiB',
   },
   async request => pushLegacyRvZohoInvoiceHandler(request, adminDb()),
+);
+
+/** Every 30 minutes — push any RV invoices / wallet transfers still outstanding in Firestore. */
+exports.reconcileZohoOutstandingScheduled = onSchedule(
+  {
+    schedule: 'every 30 minutes',
+    region: CALLABLE_REGION,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 540,
+    memory: '512MiB',
+  },
+  async () => reconcileZohoOutstandingScheduledHandler(adminDb()),
+);
+
+/** Super Admin on-demand sweep for unpushed Zoho RV invoices and wallet transfers. */
+exports.reconcileZohoOutstanding = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 540,
+    memory: '512MiB',
+  },
+  async request => reconcileZohoOutstandingHandler(request, adminDb()),
 );
 
 /** Super Admin manually pushes a legacy wallet top-up credit to Zoho Books. */

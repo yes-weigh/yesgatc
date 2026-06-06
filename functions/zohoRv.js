@@ -486,6 +486,8 @@ module.exports = {
   onSiteCalibrationZohoRvHandler,
   triggerRvZohoInvoiceHandler,
   pushLegacyRvZohoInvoiceHandler,
+  canPushRvZohoInvoice,
+  processRvZohoInvoice,
   normalizeZohoRvSettings,
   maximumCapacityKg,
   pickZohoItemId,
