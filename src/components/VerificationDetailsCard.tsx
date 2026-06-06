@@ -23,6 +23,7 @@ import { VerificationPhotoViewer } from './VerificationPhotoViewer';
 import { VerificationVoidWatermark } from './VerificationVoidWatermark';
 import { VERIFICATION_LOCATION_OPTIONS, verificationTypeLabel } from '../lib/siteCalibrationProfileFields';
 import { formatVerificationListDate } from '../lib/verificationListFormat';
+import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import { formatVerificationCapAcc, verificationVctLabel } from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
 
@@ -97,6 +98,16 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
     'sky',
     true,
   );
+  if (record.verificationType === 'RV') {
+    pushTile(
+      'zoho-invoice',
+      'Zoho invoice',
+      verificationZohoInvoiceNumber(record),
+      FileText,
+      'blue',
+      true,
+    );
+  }
   pushTile('serial', 'Serial', record.serialNumber?.trim() || null, Barcode, 'sky', true);
   pushTile('type', 'Type', verificationTypeLabel(record.verificationType), Package, 'violet');
   pushTile('vct', 'VCT', verificationVctLabel(record), ShieldCheck, 'violet');

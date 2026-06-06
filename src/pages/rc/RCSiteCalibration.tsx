@@ -134,6 +134,7 @@ import {
   isZohoRvInvoicingEnabled,
   rcZohoIdReady,
   RV_ZOHO_SUBMIT_BLOCK_MESSAGE,
+  verificationZohoInvoiceNumber,
 } from '../../lib/zohoRvSubmit';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
@@ -1817,6 +1818,11 @@ export const RCSiteCalibration: React.FC = () => {
                         {editingRecord.applicationNumber?.trim() && (
                           <span className="text-mono text-xs">
                             App {editingRecord.applicationNumber.trim()}
+                          </span>
+                        )}
+                        {verificationZohoInvoiceNumber(editingRecord) && (
+                          <span className="text-mono text-xs">
+                            Zoho {verificationZohoInvoiceNumber(editingRecord)}
                           </span>
                         )}
                         {editingRecord.certificateNumber?.trim() && (

@@ -39,6 +39,24 @@ export const VerificationZohoInvoiceSection: React.FC<VerificationZohoInvoiceSec
             <span className="verification-detail-value text-mono">{record.zohoInvoiceNumber.trim()}</span>
           </div>
         )}
+        {record.zohoCustomerName?.trim() && (
+          <div className="verification-detail-field">
+            <span className="verification-detail-label">Zoho customer</span>
+            <span className="verification-detail-value">{record.zohoCustomerName.trim()}</span>
+          </div>
+        )}
+        {record.zohoInvoiceTotal != null && Number.isFinite(record.zohoInvoiceTotal) && (
+          <div className="verification-detail-field">
+            <span className="verification-detail-label">Invoice total</span>
+            <span className="verification-detail-value">₹{record.zohoInvoiceTotal.toLocaleString('en-IN')}</span>
+          </div>
+        )}
+        {record.zohoOrganizationId?.trim() && (
+          <div className="verification-detail-field">
+            <span className="verification-detail-label">Zoho org ID</span>
+            <span className="verification-detail-value text-mono text-sm">{record.zohoOrganizationId.trim()}</span>
+          </div>
+        )}
         {record.zohoInvoiceId?.trim() && (
           <div className="verification-detail-field">
             <span className="verification-detail-label">Invoice ID</span>

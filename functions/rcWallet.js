@@ -3,6 +3,7 @@ const { Busboy } = require('@fastify/busboy');
 const { HttpsError } = require('firebase-functions/v2/https');
 const { FieldValue } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
+const { processWalletTopUpZohoTransfer } = require('./zohoWallet');
 
 const MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024;
 const ALLOWED_SCREENSHOT_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -175,7 +176,7 @@ async function reviewWalletTopUpHandler(request, db) {
   const reviewedAt = new Date().toISOString();
   const reviewedByUid = request.auth.uid;
 
-  return db.runTransaction(async transaction => {
+  const result = await db.runTransaction(async transaction => {
     const topUpSnap = await transaction.get(topUpRef(db, topUpId));
     if (!topUpSnap.exists) {
       throw new HttpsError('not-found', 'Top-up request not found.');
@@ -240,8 +241,30 @@ async function reviewWalletTopUpHandler(request, db) {
       topUpId,
       status: 'approved',
       balanceInr: nextBalance,
+      topUp: {
+        ...topUp,
+        status: 'approved',
+        reviewedAt,
+        reviewedByUid,
+      },
     };
   });
+
+  if (result.status === 'approved' && result.topUp) {
+    const zohoResult = await processWalletTopUpZohoTransfer(db, topUpId, result.topUp);
+    return {
+      topUpId: result.topUpId,
+      status: result.status,
+      balanceInr: result.balanceInr,
+      zohoTransfer: zohoResult,
+    };
+  }
+
+  return {
+    topUpId: result.topUpId,
+    status: result.status,
+    balanceInr: result.balanceInr,
+  };
 }
 
 /**

@@ -6,7 +6,43 @@ export type ZohoRvSettings = {
   zohoItemIdUpto20Kg: string;
   zohoItemIdAbove20Kg: string;
   zohoModeOfTransport: string;
+  /** When true, wallet top-up approval posts Kotak → GATC Wallet transfer in Zoho Books. */
+  zohoWalletTransferEnabled: boolean;
+  /** Source bank account (e.g. Kotak Current Account). */
+  zohoWalletFromAccountId: string;
+  /** Destination bank account (e.g. GATC Wallet). */
+  zohoWalletToAccountId: string;
 };
+
+/** Exact dropdown labels from Zoho Books `cf_mode_of_transport` (invoice custom field). */
+export const ZOHO_MODE_OF_TRANSPORT_OPTIONS = [
+  'CUSTOMER PICKUP',
+  'With Machine',
+  'Indian Post',
+  'DTDC',
+  'BLUEDART',
+  'Delhivery',
+  'GATI',
+  'VRL',
+  'TCI',
+  'Cloud',
+] as const;
+
+export type ZohoModeOfTransportOption = (typeof ZOHO_MODE_OF_TRANSPORT_OPTIONS)[number];
+
+const ZOHO_MODE_OF_TRANSPORT_ALIASES: Record<string, ZohoModeOfTransportOption> = {
+  'without machine': 'CUSTOMER PICKUP',
+  'with machine': 'With Machine',
+};
+
+/** Maps legacy labels to a valid Zoho dropdown value (case-insensitive for known aliases). */
+export function resolveZohoModeOfTransport(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return DEFAULT_ZOHO_RV_SETTINGS.zohoModeOfTransport;
+  const alias = ZOHO_MODE_OF_TRANSPORT_ALIASES[trimmed.toLowerCase()];
+  if (alias) return alias;
+  return trimmed;
+}
 
 export const DEFAULT_ZOHO_RV_SETTINGS: ZohoRvSettings = {
   zohoRvInvoicingEnabled: true,
@@ -14,7 +50,11 @@ export const DEFAULT_ZOHO_RV_SETTINGS: ZohoRvSettings = {
   zohoSalespersonId: '99381000030360028',
   zohoItemIdUpto20Kg: '99381000030360012',
   zohoItemIdAbove20Kg: '99381000030360017',
-  zohoModeOfTransport: 'Without Machine',
+  /** Closest Zoho option to “without machine” — `Without Machine` is not in the dropdown. */
+  zohoModeOfTransport: 'CUSTOMER PICKUP',
+  zohoWalletTransferEnabled: true,
+  zohoWalletFromAccountId: '99381000000006234',
+  zohoWalletToAccountId: '99381000030412002',
 };
 
 export function normalizeZohoNumericId(input: string): string {
@@ -38,8 +78,14 @@ export function normalizeZohoRvSettings(
     zohoItemIdAbove20Kg:
       normalizeZohoNumericId(data?.zohoItemIdAbove20Kg ?? '')
       || DEFAULT_ZOHO_RV_SETTINGS.zohoItemIdAbove20Kg,
-    zohoModeOfTransport:
-      data?.zohoModeOfTransport?.trim() || DEFAULT_ZOHO_RV_SETTINGS.zohoModeOfTransport,
+    zohoModeOfTransport: resolveZohoModeOfTransport(data?.zohoModeOfTransport),
+    zohoWalletTransferEnabled: data?.zohoWalletTransferEnabled !== false,
+    zohoWalletFromAccountId:
+      normalizeZohoNumericId(data?.zohoWalletFromAccountId ?? '')
+      || DEFAULT_ZOHO_RV_SETTINGS.zohoWalletFromAccountId,
+    zohoWalletToAccountId:
+      normalizeZohoNumericId(data?.zohoWalletToAccountId ?? '')
+      || DEFAULT_ZOHO_RV_SETTINGS.zohoWalletToAccountId,
   };
 }
 
@@ -71,8 +117,20 @@ export function validateZohoRvSettingsForm(values: ZohoRvSettingsFormValues): st
   const itemAbove20 = normalizeZohoNumericId(values.zohoItemIdAbove20Kg);
   if (itemAbove20.length < 10) return 'Zoho item ID (above 20 kg) must be at least 10 digits.';
 
-  if (!values.zohoModeOfTransport.trim()) {
+  const mode = resolveZohoModeOfTransport(values.zohoModeOfTransport);
+  if (!mode) {
     return 'Mode of transport is required.';
+  }
+  if (!ZOHO_MODE_OF_TRANSPORT_OPTIONS.includes(mode as ZohoModeOfTransportOption)) {
+    return `Mode of transport must match a Zoho dropdown option (e.g. ${ZOHO_MODE_OF_TRANSPORT_OPTIONS.slice(0, 3).join(', ')}).`;
+  }
+
+  if (values.zohoWalletTransferEnabled) {
+    const fromId = normalizeZohoNumericId(values.zohoWalletFromAccountId);
+    const toId = normalizeZohoNumericId(values.zohoWalletToAccountId);
+    if (fromId.length < 10) return 'Zoho wallet source account ID (Kotak) is required.';
+    if (toId.length < 10) return 'Zoho wallet destination account ID (GATC Wallet) is required.';
+    if (fromId === toId) return 'Kotak and GATC Wallet account IDs must differ.';
   }
 
   return null;

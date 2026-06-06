@@ -65,6 +65,11 @@ service cloud.firestore {
     function verificationZohoFieldsUnchanged() {
       return request.resource.data.get('zohoInvoiceId', null) == resource.data.get('zohoInvoiceId', null)
         && request.resource.data.get('zohoInvoiceNumber', null) == resource.data.get('zohoInvoiceNumber', null)
+        && request.resource.data.get('zohoInvoiceStatus', null) == resource.data.get('zohoInvoiceStatus', null)
+        && request.resource.data.get('zohoCustomerId', null) == resource.data.get('zohoCustomerId', null)
+        && request.resource.data.get('zohoCustomerName', null) == resource.data.get('zohoCustomerName', null)
+        && request.resource.data.get('zohoInvoiceTotal', null) == resource.data.get('zohoInvoiceTotal', null)
+        && request.resource.data.get('zohoOrganizationId', null) == resource.data.get('zohoOrganizationId', null)
         && request.resource.data.get('zohoPushStatus', null) == resource.data.get('zohoPushStatus', null)
         && request.resource.data.get('zohoPushedAt', null) == resource.data.get('zohoPushedAt', null)
         && request.resource.data.get('zohoPushError', null) == resource.data.get('zohoPushError', null);

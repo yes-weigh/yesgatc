@@ -16,8 +16,20 @@ const DEFAULT_ZOHO_RV_SETTINGS = {
   zohoSalespersonId: '99381000030360028',
   zohoItemIdUpto20Kg: '99381000030360012',
   zohoItemIdAbove20Kg: '99381000030360017',
-  zohoModeOfTransport: 'Without Machine',
+  zohoModeOfTransport: 'CUSTOMER PICKUP',
 };
+
+const ZOHO_MODE_OF_TRANSPORT_ALIASES = {
+  'without machine': 'CUSTOMER PICKUP',
+  'with machine': 'With Machine',
+};
+
+function resolveZohoModeOfTransport(value) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) return DEFAULT_ZOHO_RV_SETTINGS.zohoModeOfTransport;
+  const alias = ZOHO_MODE_OF_TRANSPORT_ALIASES[trimmed.toLowerCase()];
+  return alias || trimmed;
+}
 
 function normalizeZohoNumericId(value) {
   return String(value ?? '').replace(/\D/g, '');
@@ -35,8 +47,7 @@ function normalizeZohoRvSettings(data) {
       normalizeZohoNumericId(source.zohoItemIdUpto20Kg) || DEFAULT_ZOHO_RV_SETTINGS.zohoItemIdUpto20Kg,
     zohoItemIdAbove20Kg:
       normalizeZohoNumericId(source.zohoItemIdAbove20Kg) || DEFAULT_ZOHO_RV_SETTINGS.zohoItemIdAbove20Kg,
-    zohoModeOfTransport:
-      String(source.zohoModeOfTransport ?? '').trim() || DEFAULT_ZOHO_RV_SETTINGS.zohoModeOfTransport,
+    zohoModeOfTransport: resolveZohoModeOfTransport(source.zohoModeOfTransport),
   };
 }
 
@@ -99,7 +110,27 @@ async function getZohoAccessToken() {
   return cachedAccessToken;
 }
 
-async function zohoBooksRequest(path, { method = 'GET', body } = {}) {
+function summarizeZohoInvoice(invoice) {
+  if (!invoice || typeof invoice !== 'object') return null;
+  return {
+    invoice_id: invoice.invoice_id,
+    invoice_number: invoice.invoice_number,
+    status: invoice.status,
+    customer_id: invoice.customer_id,
+    customer_name: invoice.customer_name,
+    date: invoice.date,
+    total: invoice.total,
+    balance: invoice.balance,
+    cf_gatc_ref_no: (invoice.custom_fields || []).find(
+      field => field.api_name === 'cf_gatc_ref_no',
+    )?.value,
+    cf_mode_of_transport: (invoice.custom_fields || []).find(
+      field => field.api_name === 'cf_mode_of_transport',
+    )?.value,
+  };
+}
+
+async function zohoBooksRequest(path, { method = 'GET', body, logLabel } = {}) {
   const accessToken = await getZohoAccessToken();
   const response = await fetch(`${ZOHO_BOOKS_BASE}${path}`, {
     method,
@@ -111,6 +142,16 @@ async function zohoBooksRequest(path, { method = 'GET', body } = {}) {
   });
 
   const payload = await response.json().catch(() => ({}));
+  if (logLabel) {
+    console.log(`Zoho API ${logLabel}`, {
+      method,
+      path,
+      httpStatus: response.status,
+      code: payload.code,
+      message: payload.message,
+      invoice: summarizeZohoInvoice(payload.invoice),
+    });
+  }
   if (!response.ok) {
     const message = payload.message || payload.error || `Zoho Books request failed (${response.status})`;
     throw new Error(message);
@@ -147,7 +188,7 @@ async function createRvInvoice(record, rcZohoId, settings) {
 
   const created = await zohoBooksRequest(
     `/invoices?organization_id=${settings.zohoOrganizationId}`,
-    { method: 'POST', body: invoiceBody },
+    { method: 'POST', body: invoiceBody, logLabel: 'create-invoice' },
   );
 
   const invoice = created.invoice;
@@ -157,12 +198,35 @@ async function createRvInvoice(record, rcZohoId, settings) {
 
   await zohoBooksRequest(
     `/invoices/${invoice.invoice_id}/status/sent?organization_id=${settings.zohoOrganizationId}`,
-    { method: 'POST' },
+    { method: 'POST', logLabel: 'mark-sent' },
   );
 
+  const verified = await zohoBooksRequest(
+    `/invoices/${invoice.invoice_id}?organization_id=${settings.zohoOrganizationId}`,
+    { method: 'GET', logLabel: 'verify-invoice' },
+  );
+  const verifiedInvoice = verified.invoice;
+  if (!verifiedInvoice?.invoice_id) {
+    throw new Error('Zoho invoice verify GET did not return invoice_id.');
+  }
+
+  const summary = summarizeZohoInvoice(verifiedInvoice);
+  console.log('Zoho invoice verified', {
+    organizationId: settings.zohoOrganizationId,
+    ...summary,
+  });
+
   return {
-    zohoInvoiceId: String(invoice.invoice_id),
-    zohoInvoiceNumber: invoice.invoice_number ? String(invoice.invoice_number) : undefined,
+    zohoInvoiceId: String(verifiedInvoice.invoice_id),
+    zohoInvoiceNumber: verifiedInvoice.invoice_number
+      ? String(verifiedInvoice.invoice_number)
+      : undefined,
+    zohoInvoiceStatus: verifiedInvoice.status ? String(verifiedInvoice.status) : undefined,
+    zohoCustomerId: verifiedInvoice.customer_id ? String(verifiedInvoice.customer_id) : undefined,
+    zohoCustomerName: verifiedInvoice.customer_name ? String(verifiedInvoice.customer_name) : undefined,
+    zohoInvoiceTotal: verifiedInvoice.total != null ? Number(verifiedInvoice.total) : undefined,
+    zohoOrganizationId: settings.zohoOrganizationId,
+    zohoApiSummary: summary,
   };
 }
 
@@ -330,4 +394,6 @@ module.exports = {
   normalizeZohoRvSettings,
   maximumCapacityKg,
   pickZohoItemId,
+  zohoBooksRequest,
+  ZOHO_BOOKS_BASE,
 };

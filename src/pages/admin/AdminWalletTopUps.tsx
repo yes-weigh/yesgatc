@@ -16,8 +16,14 @@ import {
   walletLedgerTypeLabel,
   walletTopUpStatusLabel,
 } from '../../lib/rcWallet';
+import {
+  isWalletTopUpZohoTransferOutstanding,
+  pushLegacyWalletTopUpZohoTransfer,
+} from '../../lib/zohoWalletTransfer';
+import { normalizeZohoNumericId } from '../../lib/zohoSettings';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import type { FirestoreUserDoc, WalletLedgerEntry, WalletTopUp } from '../../types';
-import { CheckCircle2, IndianRupee, RefreshCw, Trash2, Wallet, X, XCircle } from 'lucide-react';
+import { CheckCircle2, FileText, IndianRupee, RefreshCw, Trash2, Wallet, X, XCircle } from 'lucide-react';
 
 function splitWalletTimestamp(iso: string): { date: string; time: string } {
   const value = new Date(iso);
@@ -59,6 +65,7 @@ function WalletScreenshotThumb({
 export const AdminWalletTopUps: React.FC = () => {
   const navigate = useNavigate();
   const confirm = useConfirm();
+  const { appSettings } = useAppSettings();
   const [topUps, setTopUps] = useState<WalletTopUp[]>([]);
   const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +76,7 @@ export const AdminWalletTopUps: React.FC = () => {
   const [rejectTarget, setRejectTarget] = useState<WalletTopUp | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pushingZohoTopUpId, setPushingZohoTopUpId] = useState<string | null>(null);
   const [topUpById, setTopUpById] = useState<Map<string, WalletTopUp>>(new Map());
   const [rcNamesById, setRcNamesById] = useState<Record<string, string>>({});
 
@@ -140,6 +148,43 @@ export const AdminWalletTopUps: React.FC = () => {
   }, [refreshLedger]);
 
   const pendingCount = topUps.filter(item => item.status === 'pending').length;
+
+  const zohoWalletPushBlockedReason = useCallback(() => {
+    const fromId = normalizeZohoNumericId(appSettings.zohoWalletFromAccountId);
+    const toId = normalizeZohoNumericId(appSettings.zohoWalletToAccountId);
+    if (fromId.length < 10 || toId.length < 10) {
+      return 'Configure Kotak and GATC Wallet account IDs in Admin Zoho settings.';
+    }
+    return null;
+  }, [appSettings.zohoWalletFromAccountId, appSettings.zohoWalletToAccountId]);
+
+  const handlePushZohoTopUp = async (topUp: WalletTopUp, rcName: string) => {
+    const blocked = zohoWalletPushBlockedReason();
+    if (blocked) {
+      setError(blocked);
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Push wallet top-up to Zoho?',
+      message:
+        `Record Kotak → GATC Wallet transfer for ${formatRcFeeAmount(topUp.amountInr)} ` +
+        `(${rcName}) in Zoho Books?`,
+      confirmLabel: 'Push to Zoho',
+    });
+    if (!ok) return;
+
+    setPushingZohoTopUpId(topUp.id);
+    setError('');
+    try {
+      await pushLegacyWalletTopUpZohoTransfer({ topUpId: topUp.id });
+      await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Zoho wallet transfer failed.');
+    } finally {
+      setPushingZohoTopUpId(null);
+    }
+  };
 
   const handleApprove = async (item: WalletTopUp) => {
     const ok = await confirm({
@@ -326,6 +371,16 @@ export const AdminWalletTopUps: React.FC = () => {
                                 {item.rejectionReason}
                               </span>
                             ) : null}
+                            {item.zohoTransferStatus === 'completed' && (
+                              <span className="table-mobile-summary-meta text-mono text-xs">
+                                Zoho transfer · {item.zohoReferenceNumber || item.zohoTransactionId}
+                              </span>
+                            )}
+                            {item.zohoTransferStatus === 'failed' && item.zohoTransferError ? (
+                              <span className="form-error table-mobile-summary-meta text-xs">
+                                Zoho: {item.zohoTransferError}
+                              </span>
+                            ) : null}
                           </div>
                         </td>
                         <td className="table-mobile-col-hide text-muted text-sm">{date}</td>
@@ -361,6 +416,21 @@ export const AdminWalletTopUps: React.FC = () => {
                                   Reject
                                 </button>
                               </>
+                            )}
+                            {isWalletTopUpZohoTransferOutstanding(item) && item.status === 'approved' && (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={
+                                  pushingZohoTopUpId === item.id
+                                  || deletingId === item.id
+                                  || reviewingId === item.id
+                                }
+                                onClick={() => void handlePushZohoTopUp(item, rcName)}
+                              >
+                                <FileText size={14} aria-hidden />
+                                {pushingZohoTopUpId === item.id ? 'Pushing…' : 'Push to Zoho'}
+                              </button>
                             )}
                             <button
                               type="button"
@@ -457,6 +527,16 @@ export const AdminWalletTopUps: React.FC = () => {
                                 {entry.refundReason ? ` · ${entry.refundReason}` : ''}
                               </span>
                             ) : null}
+                            {linkedTopUp?.zohoTransferStatus === 'completed' && (
+                              <span className="table-mobile-summary-meta text-mono text-xs">
+                                Zoho · {linkedTopUp.zohoReferenceNumber || linkedTopUp.zohoTransactionId}
+                              </span>
+                            )}
+                            {linkedTopUp?.zohoTransferStatus === 'failed' && linkedTopUp.zohoTransferError ? (
+                              <span className="form-error table-mobile-summary-meta text-xs">
+                                Zoho: {linkedTopUp.zohoTransferError}
+                              </span>
+                            ) : null}
                           </div>
                         </td>
                         <td className="table-mobile-col-hide text-muted text-sm">{date}</td>
@@ -477,10 +557,26 @@ export const AdminWalletTopUps: React.FC = () => {
                         </td>
                         <td className="table-mobile-col-actions text-right">
                           <div className="admin-wallet-table-actions">
+                            {entry.type === 'top_up_credit'
+                              && linkedTopUp
+                              && isWalletTopUpZohoTransferOutstanding(linkedTopUp) && (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={
+                                  pushingZohoTopUpId === linkedTopUp.id
+                                  || deletingId === entry.id
+                                }
+                                onClick={() => void handlePushZohoTopUp(linkedTopUp, rcName)}
+                              >
+                                <FileText size={14} aria-hidden />
+                                {pushingZohoTopUpId === linkedTopUp.id ? 'Pushing…' : 'Push to Zoho'}
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="btn btn-secondary btn-sm admin-wallet-delete-btn"
-                              disabled={deletingId === entry.id}
+                              disabled={deletingId === entry.id || pushingZohoTopUpId === entry.topUpId}
                               onClick={() => void handleDeleteLedgerEntry(entry)}
                             >
                               <Trash2 size={14} aria-hidden />

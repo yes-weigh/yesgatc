@@ -1,5 +1,6 @@
 import React from 'react';
 import { Barcode, ShieldCheck, UserRound } from 'lucide-react';
+import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import {
   getVerificationDisplayStatus,
   verificationDisplayStatusLabel,
@@ -15,7 +16,9 @@ function headerSubtitle(record: SiteCalibration): string {
   const parts: string[] = [];
   const app = record.applicationNumber?.trim();
   const cert = record.certificateNumber?.trim();
+  const zohoInvoice = verificationZohoInvoiceNumber(record);
   if (app) parts.push(`App ${app}`);
+  if (zohoInvoice) parts.push(`Zoho ${zohoInvoice}`);
   if (cert) parts.push(cert);
   return parts.join(' • ');
 }

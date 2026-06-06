@@ -105,36 +105,28 @@ export function isRvZohoInvoiceOutstanding(
   return isRvVerificationSubmittedOrBeyond(record);
 }
 
+/** Zoho Books RV line-item rates (pre-GST) — must match configured Zoho products. */
+export const ZOHO_RV_PRODUCT_BASE_UPTO_20_KG = 150;
+export const ZOHO_RV_PRODUCT_BASE_ABOVE_20_KG = 250;
+
 export type RvZohoInvoiceSummary = {
   baseInr: number;
   totalInr: number;
   tierLabel: string;
 };
 
-export function rvZohoInvoiceSummary(
-  record: Pick<
-    SiteCalibration,
-    'maximumCapacity' | 'unitOfMeasurement' | 'verificationFeeBase' | 'verificationFeeTotal'
-  >,
-): RvZohoInvoiceSummary | null {
-  if (
-    record.verificationFeeTotal != null
-    && Number.isFinite(record.verificationFeeTotal)
-    && record.verificationFeeBase != null
-    && Number.isFinite(record.verificationFeeBase)
-  ) {
-    const capacityKg = maximumCapacityKgFromRecord(record);
-    return {
-      baseInr: record.verificationFeeBase,
-      totalInr: record.verificationFeeTotal,
-      tierLabel: capacityKg != null && capacityKg <= 20 ? 'Up to 20 kg' : 'Above 20 kg',
-    };
-  }
+export function zohoRvProductBaseInr(capacityKg: number): number {
+  return capacityKg <= 20 ? ZOHO_RV_PRODUCT_BASE_UPTO_20_KG : ZOHO_RV_PRODUCT_BASE_ABOVE_20_KG;
+}
 
+/** Amounts shown for Zoho push — always from Zoho product tiers + 18% GST, not DOCA totals on the record. */
+export function rvZohoInvoiceSummary(
+  record: Pick<SiteCalibration, 'maximumCapacity' | 'unitOfMeasurement'>,
+): RvZohoInvoiceSummary | null {
   const capacityKg = maximumCapacityKgFromRecord(record);
   if (capacityKg == null) return null;
 
-  const baseInr = capacityKg <= 20 ? 150 : 250;
+  const baseInr = zohoRvProductBaseInr(capacityKg);
   const { total } = verificationFeeWithGst(baseInr);
   return {
     baseInr,
@@ -145,4 +137,13 @@ export function rvZohoInvoiceSummary(
 
 export function formatRvZohoInvoiceSummary(summary: RvZohoInvoiceSummary): string {
   return `${formatRcFeeAmount(summary.totalInr)} (${summary.tierLabel}, pre-GST ${formatRcFeeAmount(summary.baseInr)})`;
+}
+
+export function verificationZohoInvoiceNumber(
+  record: Pick<SiteCalibration, 'zohoInvoiceNumber' | 'zohoInvoiceId'>,
+): string | null {
+  const number = record.zohoInvoiceNumber?.trim();
+  if (number) return number;
+  const id = record.zohoInvoiceId?.trim();
+  return id || null;
 }

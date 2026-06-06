@@ -96,6 +96,15 @@ export interface WalletTopUp {
   reviewedAt?: string;
   reviewedByUid?: string;
   rejectionReason?: string;
+  /** Zoho Books transfer_fund Kotak → GATC Wallet on Super Admin approval. */
+  zohoTransferStatus?: 'completed' | 'failed';
+  zohoTransactionId?: string;
+  zohoFromAccountName?: string;
+  zohoToAccountName?: string;
+  zohoReferenceNumber?: string;
+  zohoTransferDescription?: string;
+  zohoTransferError?: string;
+  zohoTransferredAt?: string;
 }
 
 export type WalletLedgerEntryType = 'top_up_credit' | 'rv_payment' | 'rv_refund';
@@ -386,6 +395,11 @@ export interface SiteCalibration {
   /** Zoho Books invoice — written by Cloud Function on RV submit. */
   zohoInvoiceId?: string;
   zohoInvoiceNumber?: string;
+  zohoInvoiceStatus?: string;
+  zohoCustomerId?: string;
+  zohoCustomerName?: string;
+  zohoInvoiceTotal?: number;
+  zohoOrganizationId?: string;
   zohoPushStatus?: 'pending' | 'sent' | 'failed' | 'skipped';
   zohoPushedAt?: string;
   zohoPushError?: string;

@@ -6,6 +6,7 @@ import { VerificationSerialGroupView } from './VerificationSerialGroupView';
 import { ListViewBackBar } from './ListViewBackBar';
 import { RvLegacyWalletPaymentSection } from './RvLegacyWalletPaymentSection';
 import { RvLegacyZohoInvoiceSection } from './RvLegacyZohoInvoiceSection';
+import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import { VerificationZohoInvoiceSection } from './VerificationZohoInvoiceSection';
 import { getVerificationSerialGroup } from '../lib/verificationResubmit';
 import { VERIFICATION_LOCATION_OPTIONS } from '../lib/siteCalibrationProfileFields';
@@ -131,6 +132,11 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               {record.applicationNumber?.trim() && (
                 <span className="text-mono text-xs">App {record.applicationNumber.trim()}</span>
               )}
+              {verificationZohoInvoiceNumber(record) && (
+                <span className="text-mono text-xs">
+                  Zoho {verificationZohoInvoiceNumber(record)}
+                </span>
+              )}
               {record.certificateNumber?.trim() && (
                 <span className="text-mono text-xs">Cert {record.certificateNumber.trim()}</span>
               )}
@@ -163,6 +169,18 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
                   )
                 }
               />
+              {record.verificationType === 'RV' && (
+                <DetailField
+                  label="Zoho invoice"
+                  value={
+                    verificationZohoInvoiceNumber(record) ? (
+                      <span className="text-mono">{verificationZohoInvoiceNumber(record)}</span>
+                    ) : (
+                      '—'
+                    )
+                  }
+                />
+              )}
               <DetailField label="RC centre" value={rcCenterName || '—'} />
               <DetailField label="VCT" value={verificationVctLabel(record)} />
               <DetailField label="Type" value={record.verificationType} />

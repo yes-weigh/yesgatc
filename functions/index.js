@@ -17,6 +17,7 @@ const {
   onSiteCalibrationZohoRvHandler,
   pushLegacyRvZohoInvoiceHandler,
 } = require('./zohoRv');
+const { pushLegacyWalletTopUpZohoTransferHandler } = require('./zohoWallet');
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -37,6 +38,13 @@ const AUTH_EMAIL_DOMAIN = 'yesgatc.auth';
 const CALLABLE_REGION = 'us-central1';
 /** Firestore database region — must match Eventarc trigger location. */
 const FIRESTORE_REGION = 'asia-south1';
+/** Allow Vite dev server and production hosting to call HTTPS functions. */
+const CALLABLE_CORS = [
+  /^https:\/\/yesgatc\.web\.app$/,
+  /^https:\/\/yesgatc\.firebaseapp\.com$/,
+  /^http:\/\/localhost(:\d+)?$/,
+  /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+];
 
 if (!getApps().length) {
   initializeApp({ storageBucket: 'yesgatc.firebasestorage.app' });
@@ -100,11 +108,24 @@ exports.onSiteCalibrationRvZohoInvoice = onDocumentUpdated(
 exports.pushLegacyRvZohoInvoice = onCall(
   {
     region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
     secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
     timeoutSeconds: 120,
     memory: '256MiB',
   },
   async request => pushLegacyRvZohoInvoiceHandler(request, adminDb()),
+);
+
+/** Super Admin manually pushes a legacy wallet top-up credit to Zoho Books. */
+exports.pushLegacyWalletTopUpZohoTransfer = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async request => pushLegacyWalletTopUpZohoTransferHandler(request, adminDb()),
 );
 
 /** Deletes Firebase Auth when a Firestore user profile is removed (backup if app delete misses Auth). */
@@ -211,8 +232,9 @@ exports.razorpayWebhook = onRequest(
 );
 
 /** Super Admin approves or rejects RC wallet top-up requests. */
-exports.reviewWalletTopUp = onCall({ region: CALLABLE_REGION }, async request =>
-  reviewWalletTopUpHandler(request, adminDb()),
+exports.reviewWalletTopUp = onCall(
+  { region: CALLABLE_REGION, secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken] },
+  async request => reviewWalletTopUpHandler(request, adminDb()),
 );
 
 /** RC Admin debits wallet for RV verification payment. */

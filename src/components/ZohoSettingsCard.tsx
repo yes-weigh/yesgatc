@@ -9,6 +9,7 @@ import {
 } from '../lib/appSettings';
 import {
   DEFAULT_ZOHO_RV_SETTINGS,
+  ZOHO_MODE_OF_TRANSPORT_OPTIONS,
   validateZohoRvSettingsForm,
   zohoRvSettingsFromForm,
   zohoRvSettingsToFormValues,
@@ -69,7 +70,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
   return (
     <div className={`panel glass mt-6${className ? ` ${className}` : ''}`}>
       <div className="panel-header">
-        <h2><FileText className="inline-icon" /> Zoho Books — RV invoicing</h2>
+        <h2><FileText className="inline-icon" /> Zoho Books</h2>
       </div>
       <div className="panel-body">
         <p className="text-muted text-sm mb-4">
@@ -147,13 +148,67 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
 
               <div className="form-group admin-zoho-settings-grid__full">
                 <label htmlFor="zoho-mode-of-transport">Mode of transport (`cf_mode_of_transport`)</label>
-                <input
+                <select
                   id="zoho-mode-of-transport"
                   className="input-field"
                   value={draft.zohoModeOfTransport}
                   onChange={e => updateDraft({ zohoModeOfTransport: e.target.value })}
                   disabled={saving || !draft.zohoRvInvoicingEnabled}
-                  placeholder={DEFAULT_ZOHO_RV_SETTINGS.zohoModeOfTransport}
+                >
+                  {ZOHO_MODE_OF_TRANSPORT_OPTIONS.map(option => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-muted text-xs mt-1 mb-0">
+                  Must match a Zoho Books dropdown label exactly. Use <strong>CUSTOMER PICKUP</strong> for
+                  on-site RV without courier; <strong>With Machine</strong> when the RC travels with the machine.
+                </p>
+              </div>
+            </div>
+
+            <hr className="admin-zoho-settings-divider my-5" />
+
+            <h3 className="text-base font-semibold mb-3">Wallet top-up transfer</h3>
+            <p className="text-muted text-sm mb-4">
+              When a Super Admin approves an RC wallet top-up, YesGATC records a{' '}
+              <span className="text-mono">transfer_fund</span> in Zoho Books (Kotak → GATC Wallet).
+              The description includes the RC name.
+            </p>
+
+            <label className="flex items-center gap-2 mb-4 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={draft.zohoWalletTransferEnabled}
+                onChange={e => updateDraft({ zohoWalletTransferEnabled: e.target.checked })}
+                disabled={saving}
+              />
+              <span>Enable Zoho transfer on wallet top-up approval</span>
+            </label>
+
+            <div className="form-grid admin-zoho-settings-grid">
+              <div className="form-group">
+                <label htmlFor="zoho-wallet-from">Source account ID (Kotak)</label>
+                <input
+                  id="zoho-wallet-from"
+                  className="input-field text-mono"
+                  value={draft.zohoWalletFromAccountId}
+                  onChange={e => updateDraft({ zohoWalletFromAccountId: e.target.value })}
+                  disabled={saving || !draft.zohoWalletTransferEnabled}
+                  placeholder={DEFAULT_ZOHO_RV_SETTINGS.zohoWalletFromAccountId}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="zoho-wallet-to">Destination account ID (GATC Wallet)</label>
+                <input
+                  id="zoho-wallet-to"
+                  className="input-field text-mono"
+                  value={draft.zohoWalletToAccountId}
+                  onChange={e => updateDraft({ zohoWalletToAccountId: e.target.value })}
+                  disabled={saving || !draft.zohoWalletTransferEnabled}
+                  placeholder={DEFAULT_ZOHO_RV_SETTINGS.zohoWalletToAccountId}
                 />
               </div>
             </div>
@@ -169,7 +224,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
                 {saving ? 'Saving…' : 'Save Zoho settings'}
               </button>
               <p className="text-muted text-sm mb-0">
-                Each RV verification creates one B2C invoice (no e-invoice push). Resubmits are skipped.
+                RV submit creates one B2C invoice. Wallet approval moves funds Kotak → GATC Wallet in Books.
               </p>
             </div>
           </>
