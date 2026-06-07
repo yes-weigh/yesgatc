@@ -7,9 +7,14 @@ import type {
   VerificationLocation,
 } from '../types';
 import type { Product } from '../types';
+import { deleteField } from 'firebase/firestore';
 import type { ProductFileMeta } from './productApprovalUpload';
 import { isValidPincode, normalizePincode } from './contactFields';
 import { resolveLaboratorySealIdentification } from './rcLaboratoryFields';
+import {
+  rcZohoExpenseAccountIdFromDoc,
+  rcZohoExpenseAccountNameFromDoc,
+} from './rcZohoExpenseAccountMigration';
 export {
   vctProfilePhotoFromUser as rcProfilePhotoFromUser,
   vctProfilePhotoFieldsFromMeta as rcProfilePhotoFieldsFromMeta,
@@ -315,8 +320,8 @@ export function validatePanCardInput(panCard: string): string | null {
   return null;
 }
 
-export function validateZohoVendorIdInput(zohoVendorId: string): string | null {
-  const normalized = normalizeZohoId(zohoVendorId);
+export function validateZohoExpenseAccountIdInput(zohoExpenseAccountId: string): string | null {
+  const normalized = normalizeZohoId(zohoExpenseAccountId);
   if (!normalized) return 'Zoho labour expense account ID is required.';
   if (normalized.length < 10) {
     return 'Zoho labour expense account ID must be at least 10 digits.';
@@ -324,8 +329,8 @@ export function validateZohoVendorIdInput(zohoVendorId: string): string | null {
   return null;
 }
 
-export function validateZohoVendorNameInput(zohoVendorName: string): string | null {
-  if (!zohoVendorName.trim()) return 'Labour expense account name is required.';
+export function validateZohoExpenseAccountNameInput(zohoExpenseAccountName: string): string | null {
+  if (!zohoExpenseAccountName.trim()) return 'Labour expense account name is required.';
   return null;
 }
 
@@ -347,8 +352,8 @@ export type RcFormValues = {
   place: string;
   rcCode: string;
   zohoId: string;
-  zohoVendorId: string;
-  zohoVendorName: string;
+  zohoExpenseAccountId: string;
+  zohoExpenseAccountName: string;
   panCard: string;
   pincode: string;
   address: string;
@@ -367,8 +372,8 @@ export const EMPTY_RC_FORM: RcFormValues = {
   place: '',
   rcCode: '',
   zohoId: '',
-  zohoVendorId: '',
-  zohoVendorName: '',
+  zohoExpenseAccountId: '',
+  zohoExpenseAccountName: '',
   panCard: '',
   pincode: '',
   address: '',
@@ -396,8 +401,8 @@ export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
     place: doc.place || '',
     rcCode: doc.rcCode || '',
     zohoId: doc.zohoId || '',
-    zohoVendorId: doc.zohoVendorId || '',
-    zohoVendorName: doc.zohoVendorName || '',
+    zohoExpenseAccountId: rcZohoExpenseAccountIdFromDoc(doc),
+    zohoExpenseAccountName: rcZohoExpenseAccountNameFromDoc(doc),
     panCard: doc.panCard || '',
     pincode: doc.pincode || '',
     address: doc.address || '',
@@ -455,8 +460,10 @@ export function buildRcFirestoreFields(
     place: values.place.trim(),
     rcCode: normalizeRcCode(values.rcCode),
     zohoId: normalizeZohoId(values.zohoId),
-    zohoVendorId: normalizeZohoId(values.zohoVendorId),
-    zohoVendorName: values.zohoVendorName.trim(),
+    zohoExpenseAccountId: normalizeZohoId(values.zohoExpenseAccountId),
+    zohoExpenseAccountName: values.zohoExpenseAccountName.trim(),
+    zohoVendorId: deleteField(),
+    zohoVendorName: deleteField(),
     panCard: normalizePanCard(values.panCard),
     pincode,
     address: values.address.trim(),

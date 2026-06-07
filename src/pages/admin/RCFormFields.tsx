@@ -335,28 +335,28 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
         </p>
         <div className="rc-form-grid rc-form-grid--main">
           <div className="form-group mb-0">
-            <label htmlFor="rc-zoho-vendor-id">Zoho labour expense account ID *</label>
+            <label htmlFor="rc-zoho-expense-account-id">Zoho labour expense account ID *</label>
             <input
-              id="rc-zoho-vendor-id"
+              id="rc-zoho-expense-account-id"
               type="text"
               inputMode="numeric"
               className="input-field text-mono"
-              placeholder="Chart of accounts ID (e.g. Shiju GATC Labour Charges)"
-              value={values.zohoVendorId}
-              onChange={e => onChange({ zohoVendorId: normalizeZohoId(e.target.value) })}
+              placeholder="Chart of accounts ID"
+              value={values.zohoExpenseAccountId}
+              onChange={e => onChange({ zohoExpenseAccountId: normalizeZohoId(e.target.value) })}
               required
               spellCheck={false}
             />
           </div>
           <div className="form-group mb-0">
-            <label htmlFor="rc-zoho-vendor-name">Labour expense account name *</label>
+            <label htmlFor="rc-zoho-expense-account-name">Labour expense account name *</label>
             <input
-              id="rc-zoho-vendor-name"
+              id="rc-zoho-expense-account-name"
               type="text"
               className="input-field"
-              placeholder="Account name in Zoho Books"
-              value={values.zohoVendorName}
-              onChange={e => onChange({ zohoVendorName: e.target.value })}
+              placeholder="Expense account name in Zoho Books"
+              value={values.zohoExpenseAccountName}
+              onChange={e => onChange({ zohoExpenseAccountName: e.target.value })}
               required
             />
           </div>

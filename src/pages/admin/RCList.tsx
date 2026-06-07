@@ -18,6 +18,7 @@ import {
 import { releaseAadharIndex } from '../../lib/aadharIndex';
 import { deleteAuthUserAccount, rollbackCreatedAuthUser } from '../../lib/authUserAdmin';
 import { isValidPhone, requireValidEmail } from '../../lib/contactFields';
+import { migrateRcZohoExpenseAccountFieldsForUsers } from '../../lib/rcZohoExpenseAccountMigration';
 import {
   EMPTY_RC_FORM,
   buildRcFirestoreFields,
@@ -26,8 +27,8 @@ import {
   validateRcPincodeInput,
   validateRcCodeInput,
   validateZohoIdInput,
-  validateZohoVendorIdInput,
-  validateZohoVendorNameInput,
+  validateZohoExpenseAccountIdInput,
+  validateZohoExpenseAccountNameInput,
   validatePanCardInput,
   normalizeRcCode,
   normalizeZohoId,
@@ -139,7 +140,24 @@ export const RCList: React.FC = () => {
     });
 
     records.sort((a, b) => b.totalJobs - a.totalJobs);
-    setRcList(records);
+
+    const migratedCount = await migrateRcZohoExpenseAccountFieldsForUsers(rcAdmins, db);
+    if (migratedCount > 0) {
+      const refreshed = await getDocs(collection(db, 'users'));
+      const refreshedUsers = refreshed.docs.map(d => ({ uid: d.id, ...(d.data() as FirestoreUserDoc) }));
+      const refreshedRcAdmins = refreshedUsers.filter(u => u.role === 'rc_admin');
+      const refreshedRecords: RCRecord[] = refreshedRcAdmins.map(rc => {
+        const vctCount = refreshedUsers.filter(u => u.role === 'vct' && u.rcId === rc.uid).length;
+        const rcJobs = jobs.filter(j => j.createdByUid === rc.uid);
+        const completedJobs = rcJobs.filter(j => j.status === 'completed').length;
+        return { ...rc, vctCount, totalJobs: rcJobs.length, completedJobs };
+      });
+      refreshedRecords.sort((a, b) => b.totalJobs - a.totalJobs);
+      setRcList(refreshedRecords);
+    } else {
+      setRcList(records);
+    }
+
     setLoading(false);
   }, [jobs]);
 
@@ -197,10 +215,10 @@ export const RCList: React.FC = () => {
     if (rcCodeError) return rcCodeError;
     const zohoIdError = validateZohoIdInput(formValues.zohoId);
     if (zohoIdError) return zohoIdError;
-    const zohoVendorIdError = validateZohoVendorIdInput(formValues.zohoVendorId);
-    if (zohoVendorIdError) return zohoVendorIdError;
-    const zohoVendorNameError = validateZohoVendorNameInput(formValues.zohoVendorName);
-    if (zohoVendorNameError) return zohoVendorNameError;
+    const zohoExpenseAccountIdError = validateZohoExpenseAccountIdInput(formValues.zohoExpenseAccountId);
+    if (zohoExpenseAccountIdError) return zohoExpenseAccountIdError;
+    const zohoExpenseAccountNameError = validateZohoExpenseAccountNameInput(formValues.zohoExpenseAccountName);
+    if (zohoExpenseAccountNameError) return zohoExpenseAccountNameError;
     const panCardError = validatePanCardInput(formValues.panCard);
     if (panCardError) return panCardError;
     if (!formValues.address.trim()) return 'Address is required.';

@@ -4,6 +4,10 @@ import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { useAppSettings } from '../hooks/useAppSettings';
 import {
+  rcZohoExpenseAccountIdFromDoc,
+  rcZohoExpenseAccountNameFromDoc,
+} from '../lib/rcZohoExpenseAccountMigration';
+import {
   isRvZohoSettlementOutstanding,
   isZohoRvInvoicingEnabled,
   rcZohoIdReady,
@@ -71,7 +75,8 @@ export const RvLegacyZohoSettlementSection: React.FC<RvLegacyZohoSettlementSecti
     if (!rcZohoIdReady(rcProfile?.zohoId)) {
       return 'Set the RC Zoho customer ID before settlement.';
     }
-    if (!rcProfile?.zohoVendorId?.trim() || rcProfile.zohoVendorId.replace(/\D/g, '').length < 10) {
+    const expenseAccountId = rcProfile ? rcZohoExpenseAccountIdFromDoc(rcProfile) : '';
+    if (!expenseAccountId || expenseAccountId.replace(/\D/g, '').length < 10) {
       return 'Set the RC labour expense account ID on the RC profile.';
     }
     if (!record.applicationNumber?.trim()) {
@@ -107,7 +112,9 @@ export const RvLegacyZohoSettlementSection: React.FC<RvLegacyZohoSettlementSecti
           Invoice {invoiceNumber || '—'} · collect ₹{invoiceSummary.totalInr.toLocaleString('en-IN')} to GATC Wallet
           {record.zohoCustomerPaymentStatus === 'skipped_paid' ? ' (already paid in Zoho — will skip)' : ''}
           {' · '}pay ₹{labourPayout.toLocaleString('en-IN')} labour expense
-          {rcProfile?.zohoVendorName ? ` (${rcProfile.zohoVendorName})` : ''}
+          {rcProfile && rcZohoExpenseAccountNameFromDoc(rcProfile)
+            ? ` (${rcZohoExpenseAccountNameFromDoc(rcProfile)})`
+            : ''}
         </p>
       </div>
       {isSuperAdmin && (

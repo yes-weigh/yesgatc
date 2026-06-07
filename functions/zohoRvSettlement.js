@@ -238,7 +238,9 @@ async function processRvZohoSettlement(db, recordId, record, { allowLegacyPush =
   const rcSnap = await db.doc(`users/${record.rcId}`).get();
   const rcData = rcSnap.exists ? rcSnap.data() : null;
   const customerId = normalizeZohoNumericId(record.zohoCustomerId || rcData?.zohoId || '');
-  const expenseAccountId = normalizeZohoNumericId(rcData?.zohoVendorId || '');
+  const expenseAccountId = normalizeZohoNumericId(
+    rcData?.zohoExpenseAccountId || rcData?.zohoVendorId || '',
+  );
 
   if (customerId.length < 10) {
     const error = 'RC Zoho customer ID is missing.';
@@ -252,7 +254,7 @@ async function processRvZohoSettlement(db, recordId, record, { allowLegacyPush =
   }
 
   if (expenseAccountId.length < 10) {
-    const error = 'RC Zoho labour expense account ID is missing (stored as vendor ID on RC profile).';
+    const error = 'RC Zoho labour expense account ID is missing on the RC profile.';
     await writeRvSettlementResult(db, recordId, {
       zohoSettlementStatus: 'failed',
       zohoSettlementError: error,

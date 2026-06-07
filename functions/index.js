@@ -25,6 +25,7 @@ const {
   reconcileZohoOutstandingScheduledHandler,
 } = require('./zohoReconcile');
 const { pushLegacyRvZohoSettlementHandler } = require('./zohoRvSettlement');
+const { migrateRcZohoExpenseAccountFieldsHandler } = require('./migrateRcZohoExpenseAccount');
 const {
   onSiteCalibrationZohoInvoiceRefHandler,
   pushLegacyRvInvoiceReferenceHandler,
@@ -199,6 +200,17 @@ exports.reconcileZohoOutstanding = onCall(
     memory: '512MiB',
   },
   async request => reconcileZohoOutstandingHandler(request, adminDb()),
+);
+
+/** Super Admin migrates legacy zohoVendorId fields to zohoExpenseAccountId on RC profiles. */
+exports.migrateRcZohoExpenseAccountFields = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async request => migrateRcZohoExpenseAccountFieldsHandler(request, adminDb()),
 );
 
 /** Super Admin manually pushes a legacy wallet top-up credit to Zoho Books. */

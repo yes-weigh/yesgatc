@@ -243,9 +243,13 @@ export interface FirestoreUserDoc {
   rcCode?: string;
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
-  /** Super Admin only — Zoho Books vendor ID (mandatory for RC). */
+  /** Super Admin only — Zoho Books labour expense account ID (chart of accounts). */
+  zohoExpenseAccountId?: string;
+  /** Super Admin only — Zoho Books labour expense account display name. */
+  zohoExpenseAccountName?: string;
+  /** @deprecated Renamed to zohoExpenseAccountId — removed after migration. */
   zohoVendorId?: string;
-  /** Super Admin only — Zoho Books vendor display name (mandatory for RC). */
+  /** @deprecated Renamed to zohoExpenseAccountName — removed after migration. */
   zohoVendorName?: string;
   /** Super Admin only — PAN card number (optional). */
   panCard?: string;
@@ -420,7 +424,7 @@ export interface SiteCalibration {
   zohoCustomerPaymentId?: string;
   zohoCustomerPaymentStatus?: 'completed' | 'skipped_paid' | 'failed';
   zohoCustomerPaymentAmountInr?: number;
-  /** Labour payout expense from GATC Wallet (RC zohoVendorId = expense account). */
+  /** Labour payout expense from GATC Wallet (RC zohoExpenseAccountId). */
   zohoExpenseId?: string;
   zohoExpenseStatus?: 'completed' | 'failed';
   zohoExpenseAmountInr?: number;
