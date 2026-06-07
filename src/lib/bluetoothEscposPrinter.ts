@@ -1,12 +1,22 @@
 /** Web Bluetooth transport for ESC/POS thermal printers (BLE UART profiles). */
 
+const BLUETOOTH_SERVICE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Known BLE UART / ESC/POS service UUIDs (must be lowercase 128-bit UUIDs). */
 const OPTIONAL_BLUETOOTH_SERVICES = [
   '000018f0-0000-1000-8000-00805f9b34fb',
   '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
-  '49535343-fe7d-4ae0-bfa0-fcf8cc8dfb7',
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455',
   '0000fee7-0000-1000-8000-00805f9b34fb',
   '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ff01-0000-1000-8000-00805f9b34fb',
 ] as const;
+
+function getOptionalBluetoothServices(): string[] {
+  return OPTIONAL_BLUETOOTH_SERVICES.filter(uuid => BLUETOOTH_SERVICE_UUID.test(uuid));
+}
 
 const CHUNK_SIZE = 512;
 const CHUNK_DELAY_MS = 12;
@@ -55,7 +65,7 @@ export async function requestBluetoothEscposPrinter(): Promise<BluetoothDevice> 
 
   return bluetooth.requestDevice({
     acceptAllDevices: true,
-    optionalServices: [...OPTIONAL_BLUETOOTH_SERVICES],
+    optionalServices: getOptionalBluetoothServices(),
   });
 }
 
