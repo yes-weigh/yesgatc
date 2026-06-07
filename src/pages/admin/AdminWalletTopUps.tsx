@@ -8,6 +8,7 @@ import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { db } from '../../firebase';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import {
+  buildRcWalletSummaryRows,
   deleteWalletTopUp,
   fetchAllRcWallets,
   fetchWalletLedger,
@@ -75,6 +76,7 @@ export const AdminWalletTopUps: React.FC = () => {
   const [topUps, setTopUps] = useState<WalletTopUp[]>([]);
   const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [balancesLoading, setBalancesLoading] = useState(true);
   const [ledgerLoading, setLedgerLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
@@ -86,12 +88,15 @@ export const AdminWalletTopUps: React.FC = () => {
   const [topUpById, setTopUpById] = useState<Map<string, WalletTopUp>>(new Map());
   const [rcNamesById, setRcNamesById] = useState<Record<string, string>>({});
   const [walletBalancesByRcId, setWalletBalancesByRcId] = useState<Record<string, number>>({});
+  const [summaryLedger, setSummaryLedger] = useState<WalletLedgerEntry[]>([]);
 
   const refreshLookup = useCallback(async () => {
-    const [allTopUps, userSnap, wallets] = await Promise.all([
+    setBalancesLoading(true);
+    const [allTopUps, userSnap, wallets, allLedger] = await Promise.all([
       fetchWalletTopUps({}),
       getDocs(collection(db, 'users')),
       fetchAllRcWallets(),
+      fetchWalletLedger({}),
     ]);
 
     const names: Record<string, string> = {};
@@ -111,6 +116,8 @@ export const AdminWalletTopUps: React.FC = () => {
     setTopUpById(new Map(allTopUps.map(row => [row.id, row])));
     setRcNamesById(names);
     setWalletBalancesByRcId(balances);
+    setSummaryLedger(allLedger);
+    setBalancesLoading(false);
   }, []);
 
   const resolveRcName = useCallback(
@@ -278,13 +285,15 @@ export const AdminWalletTopUps: React.FC = () => {
     }
   };
 
-  const rcWalletBalances = Object.entries(rcNamesById)
-    .map(([rcId, name]) => ({
-      rcId,
-      name,
-      balanceInr: walletBalancesByRcId[rcId] ?? 0,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const rcWalletSummary = buildRcWalletSummaryRows(rcNamesById, walletBalancesByRcId, summaryLedger);
+  const summaryTotals = rcWalletSummary.reduce(
+    (acc, row) => ({
+      balanceInr: acc.balanceInr + row.balanceInr,
+      totalUsageInr: acc.totalUsageInr + row.totalUsageInr,
+      totalAddedInr: acc.totalAddedInr + row.totalAddedInr,
+    }),
+    { balanceInr: 0, totalUsageInr: 0, totalAddedInr: 0 },
+  );
 
   const handleRejectConfirm = async () => {
     if (!rejectTarget) return;
@@ -319,28 +328,128 @@ export const AdminWalletTopUps: React.FC = () => {
       <div className="panel glass admin-wallet-balances-panel">
         <div className="panel-header">
           <h2><IndianRupee className="inline-icon" /> RC wallet balances</h2>
-          {!loading && rcWalletBalances.length > 0 && (
-            <span className="text-muted text-sm">{rcWalletBalances.length} centres</span>
+          {!balancesLoading && rcWalletSummary.length > 0 && (
+            <span className="text-muted text-sm">{rcWalletSummary.length} centres</span>
           )}
         </div>
         <div className="panel-body">
-          {loading ? (
+          {balancesLoading ? (
             <div className="admin-wallet-balances-empty"><span className="spinner-inline" /></div>
-          ) : rcWalletBalances.length === 0 ? (
+          ) : rcWalletSummary.length === 0 ? (
             <p className="admin-wallet-balances-empty text-muted mb-0">No RC centres found.</p>
           ) : (
-            <table className="admin-wallet-balances-table">
-              <tbody>
-                {rcWalletBalances.map(row => (
-                  <tr key={row.rcId}>
-                    <td className="admin-wallet-balances-table__name">{row.name}</td>
-                    <td className="admin-wallet-balances-table__amount">
-                      {formatRcFeeAmount(row.balanceInr)}
-                    </td>
-                  </tr>
+            <>
+              <div className="table-scroll-wrap admin-wallet-summary-desktop">
+                <table className="data-table admin-wallet-summary-table">
+                  <thead>
+                    <tr>
+                      <th className="admin-wallet-summary-table__sno">S.No.</th>
+                      <th>Centre</th>
+                      <th className="admin-wallet-summary-table__num">Current balance</th>
+                      <th className="admin-wallet-summary-table__num">Lifetime spend</th>
+                      <th className="admin-wallet-summary-table__num admin-wallet-summary-table__credits">
+                        Lifetime credits
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rcWalletSummary.map((row, index) => (
+                      <tr key={row.rcId}>
+                        <td className="admin-wallet-summary-table__sno text-muted">{index + 1}</td>
+                        <td className="admin-wallet-summary-table__centre">{row.name}</td>
+                        <td
+                          className={`admin-wallet-summary-table__num ${
+                            row.balanceInr > 0 ? 'admin-wallet-summary-table__balance--active' : ''
+                          }`}
+                        >
+                          {formatRcFeeAmount(row.balanceInr)}
+                        </td>
+                        <td className="admin-wallet-summary-table__num">
+                          {formatRcFeeAmount(row.totalUsageInr)}
+                        </td>
+                        <td className="admin-wallet-summary-table__num admin-wallet-summary-table__credits">
+                          {formatRcFeeAmount(row.totalAddedInr)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={2} className="admin-wallet-summary-table__total-label">
+                        Total ({rcWalletSummary.length} centres)
+                      </td>
+                      <td className="admin-wallet-summary-table__num admin-wallet-summary-table__total">
+                        {formatRcFeeAmount(summaryTotals.balanceInr)}
+                      </td>
+                      <td className="admin-wallet-summary-table__num admin-wallet-summary-table__total">
+                        {formatRcFeeAmount(summaryTotals.totalUsageInr)}
+                      </td>
+                      <td className="admin-wallet-summary-table__num admin-wallet-summary-table__total admin-wallet-summary-table__credits">
+                        {formatRcFeeAmount(summaryTotals.totalAddedInr)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div className="admin-wallet-summary-tiles" aria-label="RC wallet balances">
+                {rcWalletSummary.map((row, index) => (
+                  <article key={row.rcId} className="admin-wallet-summary-tile">
+                    <header className="admin-wallet-summary-tile__head">
+                      <span className="admin-wallet-summary-tile__sno">{index + 1}</span>
+                      <h3 className="admin-wallet-summary-tile__name">{row.name}</h3>
+                    </header>
+                    <dl className="admin-wallet-summary-tile__stats">
+                      <div className="admin-wallet-summary-tile__stat">
+                        <dt>Current balance</dt>
+                        <dd
+                          className={
+                            row.balanceInr > 0 ? 'admin-wallet-summary-tile__value--balance' : ''
+                          }
+                        >
+                          {formatRcFeeAmount(row.balanceInr)}
+                        </dd>
+                      </div>
+                      <div className="admin-wallet-summary-tile__stat">
+                        <dt>Lifetime spend</dt>
+                        <dd>{formatRcFeeAmount(row.totalUsageInr)}</dd>
+                      </div>
+                      <div className="admin-wallet-summary-tile__stat">
+                        <dt>Lifetime credits</dt>
+                        <dd className="admin-wallet-summary-tile__value--credits">
+                          {formatRcFeeAmount(row.totalAddedInr)}
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
                 ))}
-              </tbody>
-            </table>
+                <article className="admin-wallet-summary-tile admin-wallet-summary-tile--total">
+                  <header className="admin-wallet-summary-tile__head">
+                    <h3 className="admin-wallet-summary-tile__name">
+                      Total · {rcWalletSummary.length} centres
+                    </h3>
+                  </header>
+                  <dl className="admin-wallet-summary-tile__stats">
+                    <div className="admin-wallet-summary-tile__stat">
+                      <dt>Current balance</dt>
+                      <dd className="admin-wallet-summary-tile__value--balance">
+                        {formatRcFeeAmount(summaryTotals.balanceInr)}
+                      </dd>
+                    </div>
+                    <div className="admin-wallet-summary-tile__stat">
+                      <dt>Lifetime spend</dt>
+                      <dd>{formatRcFeeAmount(summaryTotals.totalUsageInr)}</dd>
+                    </div>
+                    <div className="admin-wallet-summary-tile__stat">
+                      <dt>Lifetime credits</dt>
+                      <dd className="admin-wallet-summary-tile__value--credits">
+                        {formatRcFeeAmount(summaryTotals.totalAddedInr)}
+                      </dd>
+                    </div>
+                  </dl>
+                </article>
+              </div>
+            </>
           )}
         </div>
       </div>

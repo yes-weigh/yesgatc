@@ -194,6 +194,15 @@ public sealed class InstrumentDetailsService
             verificationLocation,
             verificationSubject);
         var isOv = string.Equals(verificationType, "OV", StringComparison.OrdinalIgnoreCase);
+        var isRv = string.Equals(verificationType, "RV", StringComparison.OrdinalIgnoreCase);
+        var zohoInvoiceNumber = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "zohoInvoiceNumber"),
+            FirestoreFieldReader.ReadString(calibrationFields, "zohoInvoiceId"));
+        var moneyReceiptNumber = ResolveMoneyReceiptNumber(
+            isOv,
+            isRv,
+            applicationNumber,
+            zohoInvoiceNumber);
 
         var submittedAt = FirestoreFieldReader.ReadString(calibrationFields, "submittedAt");
         var moneyReceiptDated = DocaVerificationCharges.FormatMoneyReceiptDate(
@@ -232,7 +241,7 @@ public sealed class InstrumentDetailsService
             TypeOfInstrument = "Electronic",
             Manufacturer = manufacturer,
             YearOfManufacture = yearOfManufacture,
-            MoneyReceiptNumber = isOv ? string.Empty : applicationNumber,
+            MoneyReceiptNumber = moneyReceiptNumber,
             MoneyReceiptDated = isOv ? string.Empty : moneyReceiptDated,
             VerificationFeeTotal = isOv ? string.Empty : charges.VerificationFeeTotalText,
             TotalDeposited = isOv ? string.Empty : charges.TotalDepositedText,
@@ -262,6 +271,32 @@ public sealed class InstrumentDetailsService
             ScaleImageContentType = scaleImageContentType,
             ScaleImageUsesStampingFallback = scaleImageUsesStampingFallback,
         };
+    }
+
+    private static string ResolveMoneyReceiptNumber(
+        bool isOv,
+        bool isRv,
+        string applicationNumber,
+        string zohoInvoiceNumber)
+    {
+        if (isOv)
+        {
+            return string.Empty;
+        }
+
+        if (isRv)
+        {
+            if (string.IsNullOrWhiteSpace(zohoInvoiceNumber))
+            {
+                throw new InvalidOperationException(
+                    "Zoho invoice number is missing on the RV verification record. " +
+                    "DOCA money receipt requires the Zoho invoice number (e.g. YES/26-27/0764).");
+            }
+
+            return zohoInvoiceNumber;
+        }
+
+        return applicationNumber;
     }
 
     private static string ResolveRemarks(string verificationType, string? rcCode)

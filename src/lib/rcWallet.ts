@@ -530,3 +530,42 @@ export function walletLedgerTypeLabel(type: WalletLedgerEntry['type']): string {
   if (type === 'rv_refund') return 'RV refund';
   return 'RV payment';
 }
+
+export type RcWalletSummaryRow = {
+  rcId: string;
+  name: string;
+  balanceInr: number;
+  totalUsageInr: number;
+  totalAddedInr: number;
+};
+
+/** Aggregate per-RC wallet stats from ledger entries; sorted by lifetime credits (desc). */
+export function buildRcWalletSummaryRows(
+  rcNamesById: Record<string, string>,
+  walletBalancesByRcId: Record<string, number>,
+  ledger: WalletLedgerEntry[],
+): RcWalletSummaryRow[] {
+  const usageByRc: Record<string, number> = {};
+  const addedByRc: Record<string, number> = {};
+
+  for (const entry of ledger) {
+    if (entry.status === 'refunded') continue;
+    if (entry.type === 'top_up_credit' && entry.amountInr > 0) {
+      addedByRc[entry.rcId] = (addedByRc[entry.rcId] ?? 0) + entry.amountInr;
+    } else if (entry.type === 'rv_payment' && entry.amountInr < 0) {
+      usageByRc[entry.rcId] = (usageByRc[entry.rcId] ?? 0) + Math.abs(entry.amountInr);
+    } else if (entry.type === 'rv_refund' && entry.amountInr > 0) {
+      usageByRc[entry.rcId] = Math.max(0, (usageByRc[entry.rcId] ?? 0) - entry.amountInr);
+    }
+  }
+
+  return Object.entries(rcNamesById)
+    .map(([rcId, name]) => ({
+      rcId,
+      name,
+      balanceInr: walletBalancesByRcId[rcId] ?? 0,
+      totalUsageInr: usageByRc[rcId] ?? 0,
+      totalAddedInr: addedByRc[rcId] ?? 0,
+    }))
+    .sort((a, b) => b.totalAddedInr - a.totalAddedInr || a.name.localeCompare(b.name));
+}

@@ -306,7 +306,10 @@ exports.cleanupGhostAuthUsers = onCall({ region: CALLABLE_REGION }, async (reque
  * then redeploy this function.
  */
 exports.razorpayWebhook = onRequest(
-  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  {
+    region: CALLABLE_REGION,
+    secrets: [razorpayKeyId, razorpayKeySecret, zohoClientId, zohoClientSecret, zohoRefreshToken],
+  },
   async (req, res) => razorpayWebhookHandler(req, res, adminDb()),
 );
 
@@ -318,13 +321,19 @@ exports.createWalletTopUpOrder = onCall(
 
 /** Polls Razorpay for wallet top-up payment completion. */
 exports.getWalletTopUpPaymentStatus = onCall(
-  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  {
+    region: CALLABLE_REGION,
+    secrets: [razorpayKeyId, razorpayKeySecret, zohoClientId, zohoClientSecret, zohoRefreshToken],
+  },
   async request => getWalletTopUpPaymentStatusHandler(request, adminDb()),
 );
 
 /** Verifies Razorpay Checkout signature after wallet top-up payment. */
 exports.verifyWalletTopUpPayment = onCall(
-  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  {
+    region: CALLABLE_REGION,
+    secrets: [razorpayKeyId, razorpayKeySecret, zohoClientId, zohoClientSecret, zohoRefreshToken],
+  },
   async request => verifyWalletTopUpPaymentHandler(request, adminDb()),
 );
 

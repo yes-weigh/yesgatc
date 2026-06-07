@@ -121,6 +121,7 @@ export const Layout: React.FC = () => {
       case 'super_admin':
         return [
           { path: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { path: '/admin/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
           { path: '/admin/rc', icon: <Building2 size={20} />, label: 'Regional Centers' },
           {
             path: '/admin/technicians',
@@ -136,7 +137,6 @@ export const Layout: React.FC = () => {
           { path: '/admin/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
           { path: '/admin/integrations', icon: <Plug size={20} />, label: 'Integrations' },
-          { path: '/admin/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
         ];
       case 'rc_admin':
         return [
