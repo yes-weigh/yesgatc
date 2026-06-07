@@ -1,4 +1,4 @@
-import { isRvWalletPaymentRequired, type AppGlobalSettings } from './appSettings';
+import { isRvWalletPaymentRequired } from './appSettings';
 import {
   rcVerificationFeeQuote,
   rvTdsFee,
@@ -18,15 +18,6 @@ export type RvPaymentBreakdown = {
   total: number;
   tdsTotal: number;
   gatewayTotal: number;
-};
-
-/** ₹1 test order for Super Admin Razorpay / site-whitelist checks. */
-export const RV_PAYMENT_TEST_BREAKDOWN: RvPaymentBreakdown = {
-  administrativeFees: 1,
-  gst: 0,
-  total: 1,
-  tdsTotal: 0,
-  gatewayTotal: 0,
 };
 
 export function computeRvPaymentAmount(
@@ -124,10 +115,9 @@ export function computeRvPaymentBreakdownForRecord(
 /** Submitted RV records that still owe wallet administrative fees (e.g. before pay-before-submit). */
 export function isRvWalletPaymentOutstanding(
   record: Pick<SiteCalibration, 'verificationType' | 'rvPaymentStatus' | 'status'> | null | undefined,
-  settings: AppGlobalSettings,
 ): boolean {
   if (!record || record.verificationType !== 'RV') return false;
-  if (!isRvWalletPaymentRequired('RV', settings)) return false;
+  if (!isRvWalletPaymentRequired('RV')) return false;
   if (record.rvPaymentStatus === 'paid') return false;
   return normalizeVerificationStatus(record as SiteCalibration) !== 'draft';
 }

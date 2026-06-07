@@ -63,7 +63,8 @@ const App: React.FC = () => {
                 <Route path="quality-management" element={<AdminQualityManagement />} />
                 <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="reports" element={<Reports />} />
-                <Route path="settings" element={<AdminSettings />} />
+                <Route path="integrations" element={<AdminSettings />} />
+                <Route path="settings" element={<Navigate to="/admin/integrations" replace />} />
                 <Route path="wallet" element={<AdminWalletTopUps />} />
               </Route>
             </Route>

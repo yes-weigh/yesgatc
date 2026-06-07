@@ -21,6 +21,7 @@ import {
   pushLegacyWalletTopUpZohoTransfer,
 } from '../../lib/zohoWalletTransfer';
 import { normalizeZohoNumericId } from '../../lib/zohoSettings';
+import { isManualWalletRechargeMode } from '../../lib/razorpaySettings';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import type { FirestoreUserDoc, WalletLedgerEntry, WalletTopUp } from '../../types';
 import { CheckCircle2, FileText, IndianRupee, RefreshCw, Trash2, Wallet, X, XCircle } from 'lucide-react';
@@ -70,12 +71,13 @@ export const AdminWalletTopUps: React.FC = () => {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const { appSettings } = useAppSettings();
+  const manualRecharge = isManualWalletRechargeMode(appSettings);
   const [topUps, setTopUps] = useState<WalletTopUp[]>([]);
   const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [ledgerLoading, setLedgerLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [error, setError] = useState('');
   const [rejectTarget, setRejectTarget] = useState<WalletTopUp | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -148,6 +150,10 @@ export const AdminWalletTopUps: React.FC = () => {
   }, [refreshTopUps, refreshLedger, refreshLookup]);
 
   useEffect(() => {
+    setFilter(manualRecharge ? 'pending' : 'all');
+  }, [manualRecharge]);
+
+  useEffect(() => {
     void refreshLookup();
   }, [refreshLookup]);
 
@@ -161,26 +167,38 @@ export const AdminWalletTopUps: React.FC = () => {
 
   const pendingCount = topUps.filter(item => item.status === 'pending').length;
 
-  const zohoWalletPushBlockedReason = useCallback(() => {
+  const zohoWalletPushBlockedReason = useCallback((topUp: WalletTopUp) => {
     const fromId = normalizeZohoNumericId(appSettings.zohoWalletFromAccountId);
-    const toId = normalizeZohoNumericId(appSettings.zohoWalletToAccountId);
-    if (fromId.length < 10 || toId.length < 10) {
-      return 'Configure GATC Wallet and Kotak account IDs in Admin Zoho settings.';
+    if (fromId.length < 10) {
+      return 'Configure GATC Wallet account ID in Admin Zoho settings.';
+    }
+    const toId = topUp.rechargeMethod === 'razorpay'
+      ? normalizeZohoNumericId(appSettings.zohoRazorpayAccountId)
+      : normalizeZohoNumericId(appSettings.zohoWalletToAccountId);
+    if (toId.length < 10) {
+      return topUp.rechargeMethod === 'razorpay'
+        ? 'Configure Zoho Razorpay account ID in Integrations → Razorpay.'
+        : 'Configure Kotak account ID in Admin Zoho settings.';
     }
     return null;
-  }, [appSettings.zohoWalletFromAccountId, appSettings.zohoWalletToAccountId]);
+  }, [
+    appSettings.zohoWalletFromAccountId,
+    appSettings.zohoWalletToAccountId,
+    appSettings.zohoRazorpayAccountId,
+  ]);
 
   const handlePushZohoTopUp = async (topUp: WalletTopUp, rcName: string) => {
-    const blocked = zohoWalletPushBlockedReason();
+    const blocked = zohoWalletPushBlockedReason(topUp);
     if (blocked) {
       setError(blocked);
       return;
     }
 
+    const zohoTarget = topUp.rechargeMethod === 'razorpay' ? 'Razorpay' : 'Kotak';
     const ok = await confirm({
       title: 'Push wallet top-up to Zoho?',
       message:
-        `Record GATC Wallet → Kotak transfer for ${formatRcFeeAmount(topUp.amountInr)} ` +
+        `Record GATC Wallet → ${zohoTarget} transfer for ${formatRcFeeAmount(topUp.amountInr)} ` +
         `(${rcName}) in Zoho Books?`,
       confirmLabel: 'Push to Zoho',
     });
@@ -331,7 +349,9 @@ export const AdminWalletTopUps: React.FC = () => {
         <div className="panel-header">
           <h2><Wallet className="inline-icon" /> Wallet top-ups</h2>
           <div className="flex items-center gap-2 flex-wrap">
-            {pendingCount > 0 && <span className="badge-count">{pendingCount} pending</span>}
+            {manualRecharge && pendingCount > 0 && (
+              <span className="badge-count">{pendingCount} pending</span>
+            )}
             <button type="button" className="btn btn-secondary btn-sm" onClick={() => void refresh()}>
               <RefreshCw size={14} aria-hidden /> Refresh
             </button>
@@ -339,8 +359,17 @@ export const AdminWalletTopUps: React.FC = () => {
         </div>
 
         <div className="panel-body">
+          {!manualRecharge && (
+            <p className="text-muted text-sm mb-4">
+              Wallet recharges use Razorpay and are credited automatically. Switch to Manual mode in
+              Integrations → Razorpay to review payment screenshots.
+            </p>
+          )}
+
           <div className="admin-wallet-filters mb-4">
-            {(['all', 'pending', 'approved', 'rejected'] as const).map(value => (
+            {(['all', 'pending', 'approved', 'rejected'] as const)
+              .filter(value => manualRecharge || value !== 'pending')
+              .map(value => (
               <button
                 key={value}
                 type="button"
@@ -398,6 +427,9 @@ export const AdminWalletTopUps: React.FC = () => {
                               <span className={`rc-wallet-status rc-wallet-status--${item.status}`}>
                                 {walletTopUpStatusLabel(item.status)}
                               </span>
+                              {item.rechargeMethod === 'razorpay' && (
+                                <span className="admin-wallet-recharge-badge">Razorpay</span>
+                              )}
                               {item.zohoTransferStatus === 'completed' && <WalletZohoPushedBadge />}
                             </span>
                             {item.note ? (
@@ -433,7 +465,7 @@ export const AdminWalletTopUps: React.FC = () => {
                         </td>
                         <td className="table-mobile-col-actions text-right">
                           <div className="admin-wallet-table-actions">
-                            {item.status === 'pending' && (
+                            {manualRecharge && item.status === 'pending' && (
                               <>
                                 <button
                                   type="button"

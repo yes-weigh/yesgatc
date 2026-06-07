@@ -6,12 +6,16 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { tallyVerificationStatusFilters } from '../../lib/verificationRequest';
 import { fetchWalletTopUps } from '../../lib/rcWallet';
+import { isManualWalletRechargeMode } from '../../lib/razorpaySettings';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import type { FirestoreUserDoc, Role, SiteCalibration } from '../../types';
 
 interface UserCounts { super_admin: number; rc_admin: number; vct: number; }
 
 export const AdminDashboard: React.FC = () => {
   const { jobs } = useAppContext();
+  const { appSettings } = useAppSettings();
+  const manualWalletRecharge = isManualWalletRechargeMode(appSettings);
   const [userCounts, setUserCounts] = useState<UserCounts>({ super_admin: 0, rc_admin: 0, vct: 0 });
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -41,12 +45,16 @@ export const AdminDashboard: React.FC = () => {
       setVerifications(records);
       setLoadingVerifications(false);
 
-      const pendingTopUps = await fetchWalletTopUps({ status: 'pending' });
-      setPendingWalletTopUps(pendingTopUps.length);
+      if (manualWalletRecharge) {
+        const pendingTopUps = await fetchWalletTopUps({ status: 'pending' });
+        setPendingWalletTopUps(pendingTopUps.length);
+      } else {
+        setPendingWalletTopUps(0);
+      }
       setLoadingWalletTopUps(false);
     };
     void fetchCounts();
-  }, []);
+  }, [manualWalletRecharge]);
 
   const verificationTally = useMemo(
     () => tallyVerificationStatusFilters(verifications),
@@ -58,27 +66,41 @@ export const AdminDashboard: React.FC = () => {
 
       {/* ── Top KPI Row ── */}
       <div className="stats-grid stats-grid--4">
-        <div className="stat-card glass">
-          <div className="stat-icon text-green"><Wallet /></div>
-          <div className="stat-content">
-            <h3>Pending Wallet Approvals</h3>
-            <p className="stat-value">
-              {loadingWalletTopUps ? '—' : pendingWalletTopUps}
-            </p>
-            <p className="stat-sub">
-              {loadingWalletTopUps
-                ? 'Loading…'
-                : pendingWalletTopUps === 0
-                  ? 'No top-ups awaiting review'
-                  : 'RC payment screenshots to review'}
-            </p>
-            <Link to="/admin/wallet" className="btn btn-primary btn-sm stat-card-action">
-              {pendingWalletTopUps > 0
-                ? `Review ${pendingWalletTopUps} pending`
-                : 'View pending top-ups'}
-            </Link>
+        {manualWalletRecharge ? (
+          <div className="stat-card glass">
+            <div className="stat-icon text-green"><Wallet /></div>
+            <div className="stat-content">
+              <h3>Pending Wallet Approvals</h3>
+              <p className="stat-value">
+                {loadingWalletTopUps ? '—' : pendingWalletTopUps}
+              </p>
+              <p className="stat-sub">
+                {loadingWalletTopUps
+                  ? 'Loading…'
+                  : pendingWalletTopUps === 0
+                    ? 'No top-ups awaiting review'
+                    : 'RC payment screenshots to review'}
+              </p>
+              <Link to="/admin/wallet" className="btn btn-primary btn-sm stat-card-action">
+                {pendingWalletTopUps > 0
+                  ? `Review ${pendingWalletTopUps} pending`
+                  : 'View pending top-ups'}
+              </Link>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="stat-card glass">
+            <div className="stat-icon text-green"><Wallet /></div>
+            <div className="stat-content">
+              <h3>Wallet recharge</h3>
+              <p className="stat-value">Razorpay</p>
+              <p className="stat-sub">Auto-credit — no screenshot approvals</p>
+              <Link to="/admin/wallet" className="btn btn-primary btn-sm stat-card-action">
+                View wallet history
+              </Link>
+            </div>
+          </div>
+        )}
         <div className="stat-card glass">
           <div className="stat-icon text-blue"><ShieldCheck /></div>
           <div className="stat-content">

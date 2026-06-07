@@ -3,7 +3,6 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { useAppSettings } from '../hooks/useAppSettings';
 import { resolveRcFeesStructure } from '../lib/rcProfileFields';
 import {
   buildRvPaymentFirestorePatch,
@@ -34,7 +33,6 @@ export const RvLegacyWalletPaymentSection: React.FC<RvLegacyWalletPaymentSection
 }) => {
   const { user } = useAuth();
   const { products } = useAppContext();
-  const { appSettings } = useAppSettings();
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
   const [legacyPaymentOpen, setLegacyPaymentOpen] = useState(false);
   const [legacyPaying, setLegacyPaying] = useState(false);
@@ -75,7 +73,7 @@ export const RvLegacyWalletPaymentSection: React.FC<RvLegacyWalletPaymentSection
   );
 
   const showLegacyPaymentBanner =
-    isRvWalletPaymentOutstanding(record, appSettings)
+    isRvWalletPaymentOutstanding(record)
     && legacyPaymentBreakdown != null
     && legacyPaymentBreakdown.total > 0;
 

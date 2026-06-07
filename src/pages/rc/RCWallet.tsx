@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { IndianRupee, Loader2, Plus, RefreshCw, Wallet, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { WalletRazorpayRechargePanel } from '../../components/WalletRazorpayRechargePanel';
 import {
   VerificationPhotoUploadSection,
   VerificationPhotoUploadSlot,
 } from '../../components/VerificationPhotoUploadSlot';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import {
   hasPendingWalletTopUpDuplicate,
   subscribeRcWalletBalance,
@@ -13,6 +15,10 @@ import {
   walletLedgerTypeLabel,
 } from '../../lib/rcWallet';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
+import {
+  isRazorpayWalletRechargeMode,
+  walletRechargeGrossInr,
+} from '../../lib/razorpaySettings';
 import { useRcScope } from '../../lib/roleScope';
 import type { WalletLedgerEntry } from '../../types';
 
@@ -35,10 +41,14 @@ function formatWalletTransactionDate(iso: string): string {
 export const RCWallet: React.FC = () => {
   const { user } = useAuth();
   const { rcUid, isVct } = useRcScope();
+  const { appSettings } = useAppSettings();
+  const razorpayRecharge = isRazorpayWalletRechargeMode(appSettings);
+
   const [balance, setBalance] = useState(0);
   const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [razorpayPanelOpen, setRazorpayPanelOpen] = useState(false);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
@@ -50,6 +60,15 @@ export const RCWallet: React.FC = () => {
   const [success, setSuccess] = useState('');
 
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+
+  const parsedAmount = useMemo(() => Math.floor(Number(amount.trim())), [amount]);
+  const minRecharge = appSettings.razorpayMinWalletRechargeInr;
+  const grossPreview = useMemo(() => {
+    if (!razorpayRecharge || !Number.isFinite(parsedAmount) || parsedAmount < minRecharge) {
+      return null;
+    }
+    return walletRechargeGrossInr(parsedAmount, appSettings.razorpayServiceChargePercent);
+  }, [razorpayRecharge, parsedAmount, minRecharge, appSettings.razorpayServiceChargePercent]);
 
   useEffect(() => {
     if (!rcUid) {
@@ -134,11 +153,10 @@ export const RCWallet: React.FC = () => {
     setShowAddForm(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rcUid || !user) return;
 
-    const parsedAmount = Number(amount.trim());
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       setError('Enter a valid payment amount.');
       return;
@@ -182,6 +200,19 @@ export const RCWallet: React.FC = () => {
       setUploading(false);
       setUploadProgress(0);
     }
+  };
+
+  const handleRazorpayRecharge = () => {
+    if (!rcUid || !user) return;
+    setError('');
+    setSuccess('');
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount < minRecharge) {
+      setError(`Minimum wallet recharge is ₹${minRecharge}.`);
+      return;
+    }
+
+    setRazorpayPanelOpen(true);
   };
 
   return (
@@ -244,86 +275,162 @@ export const RCWallet: React.FC = () => {
       ) : null}
 
       {showAddForm ? (
-        <form
-          className="rc-wallet-form verification-evidence-panel rc-wallet-form--expanded"
-          onSubmit={e => void handleSubmit(e)}
-        >
-          <header className="verification-evidence-panel-head">
-            <span className="verification-evidence-panel-head-icon" aria-hidden>
-              <IndianRupee size={14} strokeWidth={2.25} />
-            </span>
-            <div className="verification-evidence-panel-head-text">
-              <h2 className="verification-evidence-panel-title">Add to wallet</h2>
-              <p className="verification-evidence-panel-meta">
-                Enter the amount you paid to Interweighing Pvt Ltd and upload the payment
-                screenshot. Super Admin will approve it and credit your wallet.
+        razorpayRecharge ? (
+          <div className="rc-wallet-form verification-evidence-panel rc-wallet-form--expanded">
+            <header className="verification-evidence-panel-head">
+              <span className="verification-evidence-panel-head-icon" aria-hidden>
+                <IndianRupee size={14} strokeWidth={2.25} />
+              </span>
+              <div className="verification-evidence-panel-head-text">
+                <h2 className="verification-evidence-panel-title">Add to wallet</h2>
+                <p className="verification-evidence-panel-meta">
+                  Enter the wallet amount to credit. Pay via Razorpay — your wallet is credited
+                  instantly after payment ({appSettings.razorpayServiceChargePercent}% service charge
+                  added at checkout).
+                </p>
+              </div>
+            </header>
+
+            <div className="rc-wallet-form-fields product-form-flat">
+              <div className="form-group">
+                <label htmlFor="wallet-amount">Wallet credit (INR)</label>
+                <input
+                  id="wallet-amount"
+                  type="number"
+                  min={minRecharge}
+                  step="1"
+                  className="input-field"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  placeholder={`Min ₹${minRecharge}`}
+                  disabled={submitting || razorpayPanelOpen}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="wallet-note">Reference / note (optional)</label>
+                <input
+                  id="wallet-note"
+                  type="text"
+                  className="input-field"
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  placeholder="Internal note"
+                  disabled={submitting || razorpayPanelOpen}
+                />
+              </div>
+            </div>
+
+            {grossPreview != null && (
+              <p className="text-sm text-muted mb-3">
+                You pay <strong>{formatRcFeeAmount(grossPreview)}</strong> at Razorpay → wallet credited{' '}
+                <strong>{formatRcFeeAmount(parsedAmount)}</strong>.
               </p>
-            </div>
-          </header>
+            )}
 
-          <div className="rc-wallet-form-fields product-form-flat">
-            <div className="form-group">
-              <label htmlFor="wallet-amount">Amount paid (INR)</label>
-              <input
-                id="wallet-amount"
-                type="number"
-                min="1"
-                step="0.01"
-                className="input-field"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                placeholder="e.g. 5000"
-                disabled={submitting}
+            {error ? <p className="form-error rc-wallet-form-feedback">{error}</p> : null}
+
+            <div className="rc-wallet-form-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={submitting || razorpayPanelOpen}
+                onClick={() => handleRazorpayRecharge()}
+              >
+                {razorpayPanelOpen ? (
+                  <>
+                    <Loader2 size={18} className="spin" aria-hidden />
+                    Payment in progress…
+                  </>
+                ) : (
+                  'Pay via Razorpay'
+                )}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form
+            className="rc-wallet-form verification-evidence-panel rc-wallet-form--expanded"
+            onSubmit={e => void handleManualSubmit(e)}
+          >
+            <header className="verification-evidence-panel-head">
+              <span className="verification-evidence-panel-head-icon" aria-hidden>
+                <IndianRupee size={14} strokeWidth={2.25} />
+              </span>
+              <div className="verification-evidence-panel-head-text">
+                <h2 className="verification-evidence-panel-title">Add to wallet</h2>
+                <p className="verification-evidence-panel-meta">
+                  Enter the amount you paid to Interweighing Pvt Ltd and upload the payment
+                  screenshot. Super Admin will approve it and credit your wallet.
+                </p>
+              </div>
+            </header>
+
+            <div className="rc-wallet-form-fields product-form-flat">
+              <div className="form-group">
+                <label htmlFor="wallet-amount">Amount paid (INR)</label>
+                <input
+                  id="wallet-amount"
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  className="input-field"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  placeholder="e.g. 5000"
+                  disabled={submitting}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="wallet-note">Reference / note (optional)</label>
+                <input
+                  id="wallet-note"
+                  type="text"
+                  className="input-field"
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  placeholder="UPI ref, bank transfer ID, etc."
+                  disabled={submitting}
+                />
+              </div>
+            </div>
+
+            <VerificationPhotoUploadSection title="Payment screenshot" columns={2}>
+              <VerificationPhotoUploadSlot
+                slotKey="payment-screenshot"
+                label="Payment screenshot"
                 required
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="wallet-note">Reference / note (optional)</label>
-              <input
-                id="wallet-note"
-                type="text"
-                className="input-field"
-                value={note}
-                onChange={e => setNote(e.target.value)}
-                placeholder="UPI ref, bank transfer ID, etc."
+                file={screenshotMeta}
+                uploading={uploading}
+                progress={uploadProgress}
+                accept="image/jpeg,image/png,image/webp"
                 disabled={submitting}
+                icon="document"
+                allowCamera={false}
+                onSelect={handleScreenshotSelect}
+                onRemove={handleScreenshotRemove}
               />
+            </VerificationPhotoUploadSection>
+
+            {error ? <p className="form-error rc-wallet-form-feedback">{error}</p> : null}
+
+            <div className="rc-wallet-form-actions">
+              <button type="submit" className="btn btn-primary" disabled={submitting}>
+                {submitting ? (
+                  <>
+                    <Loader2 size={18} className="spin" aria-hidden />
+                    Submitting…
+                  </>
+                ) : (
+                  'Submit for approval'
+                )}
+              </button>
             </div>
-          </div>
-
-          <VerificationPhotoUploadSection title="Payment screenshot" columns={2}>
-            <VerificationPhotoUploadSlot
-              slotKey="payment-screenshot"
-              label="Payment screenshot"
-              required
-              file={screenshotMeta}
-              uploading={uploading}
-              progress={uploadProgress}
-              accept="image/jpeg,image/png,image/webp"
-              disabled={submitting}
-              icon="document"
-              allowCamera={false}
-              onSelect={handleScreenshotSelect}
-              onRemove={handleScreenshotRemove}
-            />
-          </VerificationPhotoUploadSection>
-
-          {error ? <p className="form-error rc-wallet-form-feedback">{error}</p> : null}
-
-          <div className="rc-wallet-form-actions">
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
-              {submitting ? (
-                <>
-                  <Loader2 size={18} className="spin" aria-hidden />
-                  Submitting…
-                </>
-              ) : (
-                'Submit for approval'
-              )}
-            </button>
-          </div>
-        </form>
+          </form>
+        )
       ) : (
         <section className="rc-wallet-transactions verification-evidence-panel" aria-label="Wallet transactions">
           <header className="verification-evidence-panel-head">
@@ -383,6 +490,22 @@ export const RCWallet: React.FC = () => {
           )}
         </section>
       )}
+
+      {razorpayPanelOpen && parsedAmount >= minRecharge ? (
+        <WalletRazorpayRechargePanel
+          walletCreditInr={parsedAmount}
+          serviceChargePercent={appSettings.razorpayServiceChargePercent}
+          note={note}
+          onPaid={async () => {
+            setRazorpayPanelOpen(false);
+            setShowAddForm(false);
+            resetAddForm();
+            setSuccess(`Wallet credited ${formatRcFeeAmount(parsedAmount)}.`);
+          }}
+          onClose={() => setRazorpayPanelOpen(false)}
+        />
+      ) : null}
+
     </div>
   );
 };

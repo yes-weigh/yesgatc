@@ -72,8 +72,9 @@ export type VerificationRequestSource = 'rc_direct' | 'vct_manual' | 'vct_auto';
 export type JobStatus = 'assigned' | 'pending_review' | 'completed';
 export type PaymentStatus = 'not_required' | 'pending' | 'paid';
 export type WalletTopUpStatus = 'pending' | 'approved' | 'rejected';
+export type WalletRechargeMethod = 'manual' | 'razorpay';
 
-/** RC prepaid balance — topped up via manual payment screenshots approved by Super Admin. */
+/** RC prepaid balance — topped up via manual screenshot or Razorpay auto-credit. */
 export interface RcWallet {
   rcId: string;
   balanceInr: number;
@@ -85,7 +86,13 @@ export interface WalletTopUp {
   rcId: string;
   rcCompanyName?: string;
   amountInr: number;
+  /** Whole rupees paid at Razorpay checkout (wallet credit + service charge). */
+  grossAmountInr?: number;
   status: WalletTopUpStatus;
+  rechargeMethod?: WalletRechargeMethod;
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  paidAt?: string;
   screenshotUrl?: string;
   screenshotPath?: string;
   screenshotName?: string;
@@ -404,7 +411,7 @@ export interface SiteCalibration {
   serviceFee?: number;
   /** RV additional fee (INR) — app-only; stored on Firebase, not used by certificate worker / DOCA. */
   additionalFee?: number;
-  /** RV Razorpay payment for administrative fees + GST. */
+  /** RV wallet payment for administrative fees + GST. */
   rvPaymentStatus?: 'not_required' | 'pending' | 'paid';
   rvPaymentId?: string;
   rvPaymentAmount?: number;

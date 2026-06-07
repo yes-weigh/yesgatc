@@ -5,12 +5,12 @@ const { defineSecret } = require('firebase-functions/params');
 
 const razorpayKeyId = defineSecret('RAZORPAY_KEY_ID');
 const razorpayKeySecret = defineSecret('RAZORPAY_KEY_SECRET');
+const { razorpayWebhookHandler } = require('./razorpayRv');
 const {
-  createRvPaymentOrderHandler,
-  getRvPaymentStatusHandler,
-  verifyRvPaymentHandler,
-  razorpayWebhookHandler,
-} = require('./razorpayRv');
+  createWalletTopUpOrderHandler,
+  getWalletTopUpPaymentStatusHandler,
+  verifyWalletTopUpPaymentHandler,
+} = require('./razorpayWallet');
 const {
   zohoClientId,
   zohoClientSecret,
@@ -299,26 +299,8 @@ exports.cleanupGhostAuthUsers = onCall({ region: CALLABLE_REGION }, async (reque
   return { dryRun, count: ghosts.length, users: ghosts };
 });
 
-/** Creates a Razorpay order + dynamic UPI QR for RV administrative fees + GST. */
-exports.createRvPaymentOrder = onCall(
-  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
-  async (request) => createRvPaymentOrderHandler(request, adminDb()),
-);
-
-/** Polls Razorpay / Firestore for RV payment completion (QR scan or checkout). */
-exports.getRvPaymentStatus = onCall(
-  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
-  async (request) => getRvPaymentStatusHandler(request, adminDb()),
-);
-
-/** Verifies Razorpay Checkout signature after UPI payment on the same device. */
-exports.verifyRvPayment = onCall(
-  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
-  async (request) => verifyRvPaymentHandler(request, adminDb()),
-);
-
 /**
- * Razorpay webhook — optional. Polling + checkout verify work without it.
+ * Razorpay webhook — optional. Wallet top-up polling + checkout verify work without it.
  * When you add a webhook in Razorpay Dashboard, copy its secret and run:
  *   firebase functions:secrets:set RAZORPAY_WEBHOOK_SECRET
  * then redeploy this function.
@@ -326,6 +308,24 @@ exports.verifyRvPayment = onCall(
 exports.razorpayWebhook = onRequest(
   { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
   async (req, res) => razorpayWebhookHandler(req, res, adminDb()),
+);
+
+/** Creates a Razorpay order for RC wallet recharge (gross = credit + service charge). */
+exports.createWalletTopUpOrder = onCall(
+  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  async request => createWalletTopUpOrderHandler(request, adminDb()),
+);
+
+/** Polls Razorpay for wallet top-up payment completion. */
+exports.getWalletTopUpPaymentStatus = onCall(
+  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  async request => getWalletTopUpPaymentStatusHandler(request, adminDb()),
+);
+
+/** Verifies Razorpay Checkout signature after wallet top-up payment. */
+exports.verifyWalletTopUpPayment = onCall(
+  { region: CALLABLE_REGION, secrets: [razorpayKeyId, razorpayKeySecret] },
+  async request => verifyWalletTopUpPaymentHandler(request, adminDb()),
 );
 
 /** Super Admin approves or rejects RC wallet top-up requests. */

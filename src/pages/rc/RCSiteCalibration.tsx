@@ -112,17 +112,12 @@ import {
   resolveLaboratorySealIdentification,
 } from '../../lib/rcLaboratoryFields';
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
-import { RvPaymentPanel } from '../../components/RvPaymentPanel';
 import { RvOutstandingWalletPaymentBanner } from '../../components/RvOutstandingWalletPaymentBanner';
 import { RvLegacyZohoInvoiceSection } from '../../components/RvLegacyZohoInvoiceSection';
 import { RvLegacyZohoSettlementSection } from '../../components/RvLegacyZohoSettlementSection';
 import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
-import {
-  isRvPaymentRequired,
-  isRvRazorpayPaymentRequired,
-  isRvWalletPaymentRequired,
-} from '../../lib/appSettings';
+import { isRvPaymentRequired } from '../../lib/appSettings';
 import {
   buildRvPaymentFirestorePatch,
   computeRvPaymentAmount,
@@ -1366,7 +1361,7 @@ export const RCSiteCalibration: React.FC = () => {
       if (!applied.ok) return;
 
       const isRv = sessionValues.verificationType === 'RV';
-      const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType, appSettings);
+      const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType);
 
       if (isRv && rvPaymentRequired) {
         if (!rvPaymentBreakdown || rvPaymentBreakdown.total <= 0) {
@@ -1515,15 +1510,7 @@ export const RCSiteCalibration: React.FC = () => {
     showAddForm && includedDeviceCount > 1
       ? `Save ${includedDeviceCount} drafts`
       : 'Save draft';
-  const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType, appSettings);
-  const rvRazorpayPaymentRequired = isRvRazorpayPaymentRequired(
-    sessionValues.verificationType,
-    appSettings,
-  );
-  const rvWalletPaymentRequired = isRvWalletPaymentRequired(
-    sessionValues.verificationType,
-    appSettings,
-  );
+  const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType);
   const submitLabel = rvPaymentRequired
     ? showAddForm && includedDeviceCount > 1
       ? `Pay & submit ${includedDeviceCount} for certification`
@@ -1537,17 +1524,18 @@ export const RCSiteCalibration: React.FC = () => {
   const showRetroactiveRvPayment =
     isViewMode
     && editingRecord
-    && isRvWalletPaymentOutstanding(editingRecord, appSettings)
+    && isRvWalletPaymentOutstanding(editingRecord)
     && rvPaymentBreakdown != null
     && rvPaymentBreakdown.total > 0;
-  const walletPaymentDueRecordIds = useMemo(() => {
-    if (!isRvWalletPaymentRequired('RV', appSettings)) return new Set<string>();
-    return new Set(
-      records
-        .filter(record => isRvWalletPaymentOutstanding(record, appSettings))
-        .map(record => record.id),
-    );
-  }, [records, appSettings]);
+  const walletPaymentDueRecordIds = useMemo(
+    () =>
+      new Set(
+        records
+          .filter(record => isRvWalletPaymentOutstanding(record))
+          .map(record => record.id),
+      ),
+    [records],
+  );
   const isCertifiedActionsView =
     isViewMode && editingRecord !== null && canShowVerificationCertifiedActions(editingRecord);
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
@@ -2047,7 +2035,7 @@ export const RCSiteCalibration: React.FC = () => {
         </div>
       )}
 
-      {rvWalletPaymentRequired && rvPaymentOpen && rvPaymentBreakdown && rcUid && (
+      {rvPaymentRequired && rvPaymentOpen && rvPaymentBreakdown && rcUid && (
         <RvWalletPaymentPanel
           breakdown={rvPaymentBreakdown}
           rcId={rcUid}
@@ -2056,16 +2044,6 @@ export const RCSiteCalibration: React.FC = () => {
           onClose={() => setRvPaymentOpen(false)}
           walletOwnerLabel="your"
           paymentContext="submit"
-        />
-      )}
-
-      {rvRazorpayPaymentRequired && rvPaymentOpen && rvPaymentBreakdown && rcUid && (
-        <RvPaymentPanel
-          breakdown={rvPaymentBreakdown}
-          rcId={rcUid}
-          recordIds={editingId ? [editingId] : undefined}
-          onPaid={handleRvPaymentComplete}
-          onClose={() => setRvPaymentOpen(false)}
         />
       )}
 

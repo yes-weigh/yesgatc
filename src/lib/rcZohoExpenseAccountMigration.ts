@@ -22,6 +22,16 @@ export function rcNeedsZohoExpenseAccountMigration(doc: RcZohoExpenseAccountDoc)
   return Boolean(doc.zohoVendorId?.trim() || doc.zohoVendorName?.trim());
 }
 
+export function rcZohoExpenseAccountLegacyCleanupFields(): {
+  zohoVendorId: ReturnType<typeof deleteField>;
+  zohoVendorName: ReturnType<typeof deleteField>;
+} {
+  return {
+    zohoVendorId: deleteField(),
+    zohoVendorName: deleteField(),
+  };
+}
+
 export function buildRcZohoExpenseAccountMigrationPatch(
   doc: RcZohoExpenseAccountDoc,
 ): Record<string, unknown> | null {

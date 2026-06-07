@@ -1,5 +1,6 @@
 const { HttpsError } = require('firebase-functions/v2/https');
 const { zohoBooksRequest } = require('./zohoRv');
+const { normalizeRazorpaySettings } = require('./razorpaySettings');
 
 const APP_SETTINGS_COLLECTION = 'appSettings';
 const APP_SETTINGS_GLOBAL_DOC = 'global';
@@ -70,9 +71,14 @@ async function resolveWalletTopUpApprovalDate(db, topUpId, topUp) {
   return walletTopUpZohoBooksDate(new Date().toISOString());
 }
 
-function buildWalletTopUpDescription(rcName, note, { legacy = false } = {}) {
+function buildWalletTopUpDescription(rcName, note, { legacy = false, rechargeMethod = 'manual' } = {}) {
+  const methodLabel = rechargeMethod === 'razorpay'
+    ? 'GATC wallet top-up via Razorpay'
+    : legacy
+      ? 'GATC wallet top-up approved (legacy push)'
+      : 'GATC wallet top-up approved';
   const parts = [
-    legacy ? 'GATC wallet top-up approved (legacy push)' : 'GATC wallet top-up approved',
+    methodLabel,
     `RC: ${rcName}`,
   ];
   const trimmedNote = String(note || '').trim();
@@ -95,6 +101,8 @@ async function createWalletTopUpFundTransfer({
   transferDate,
   settings,
   legacy = false,
+  rechargeMethod = 'manual',
+  toAccountId: toAccountIdOverride,
 }) {
   const amount = Number(amountInr);
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -102,7 +110,7 @@ async function createWalletTopUpFundTransfer({
   }
 
   const fromAccountId = settings.zohoWalletFromAccountId;
-  const toAccountId = settings.zohoWalletToAccountId;
+  const toAccountId = toAccountIdOverride || settings.zohoWalletToAccountId;
   if (fromAccountId.length < 10 || toAccountId.length < 10) {
     throw new Error('Zoho wallet transfer bank account IDs are not configured.');
   }
@@ -113,7 +121,7 @@ async function createWalletTopUpFundTransfer({
     to_account_id: toAccountId,
     amount,
     date: transferDate,
-    description: buildWalletTopUpDescription(rcName, note, { legacy }),
+    description: buildWalletTopUpDescription(rcName, note, { legacy, rechargeMethod }),
     reference_number: walletTopUpReference(topUpId),
     exchange_rate: 1,
   };
@@ -192,6 +200,24 @@ async function processWalletTopUpZohoTransfer(db, topUpId, topUp, { allowLegacyP
 
   const transferDate = await resolveWalletTopUpApprovalDate(db, topUpId, record);
   const pushedAt = new Date().toISOString();
+  const rechargeMethod = record.rechargeMethod === 'razorpay' ? 'razorpay' : 'manual';
+  let toAccountId = settings.zohoWalletToAccountId;
+
+  if (rechargeMethod === 'razorpay') {
+    const appSnap = await db.doc(`${APP_SETTINGS_COLLECTION}/${APP_SETTINGS_GLOBAL_DOC}`).get();
+    const razorpaySettings = normalizeRazorpaySettings(appSnap.exists ? appSnap.data() : undefined);
+    toAccountId = razorpaySettings.zohoRazorpayAccountId;
+    if (toAccountId.length < 10) {
+      const error = 'Zoho Razorpay account ID is not configured in Razorpay integration settings.';
+      await writeTopUpZohoTransferResult(db, topUpId, {
+        zohoTransferStatus: 'failed',
+        zohoTransferError: error,
+        zohoTransferredAt: pushedAt,
+      });
+      if (allowLegacyPush) throw new HttpsError('failed-precondition', error);
+      return null;
+    }
+  }
 
   try {
     const result = await createWalletTopUpFundTransfer({
@@ -202,6 +228,8 @@ async function processWalletTopUpZohoTransfer(db, topUpId, topUp, { allowLegacyP
       transferDate,
       settings,
       legacy: allowLegacyPush,
+      rechargeMethod,
+      toAccountId,
     });
 
     await writeTopUpZohoTransferResult(db, topUpId, {
@@ -250,13 +278,28 @@ async function pushLegacyWalletTopUpZohoTransferHandler(request, db) {
 
   const topUp = snap.data();
   const settings = await loadZohoWalletSettings(db);
-  if (
-    settings.zohoWalletFromAccountId.length < 10
-    || settings.zohoWalletToAccountId.length < 10
-  ) {
+  if (settings.zohoWalletFromAccountId.length < 10) {
     throw new HttpsError(
       'failed-precondition',
-      'Configure GATC Wallet and Kotak account IDs in Admin Zoho settings.',
+      'Configure GATC Wallet account ID in Admin Zoho settings.',
+    );
+  }
+
+  const rechargeMethod = topUp.rechargeMethod === 'razorpay' ? 'razorpay' : 'manual';
+  if (rechargeMethod === 'razorpay') {
+    const razorpaySettings = normalizeRazorpaySettings(
+      (await db.doc(`${APP_SETTINGS_COLLECTION}/${APP_SETTINGS_GLOBAL_DOC}`).get()).data(),
+    );
+    if (razorpaySettings.zohoRazorpayAccountId.length < 10) {
+      throw new HttpsError(
+        'failed-precondition',
+        'Configure Zoho Razorpay account ID in Integrations → Razorpay.',
+      );
+    }
+  } else if (settings.zohoWalletToAccountId.length < 10) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Configure Kotak account ID in Admin Zoho settings.',
     );
   }
 

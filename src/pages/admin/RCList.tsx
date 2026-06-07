@@ -18,7 +18,10 @@ import {
 import { releaseAadharIndex } from '../../lib/aadharIndex';
 import { deleteAuthUserAccount, rollbackCreatedAuthUser } from '../../lib/authUserAdmin';
 import { isValidPhone, requireValidEmail } from '../../lib/contactFields';
-import { migrateRcZohoExpenseAccountFieldsForUsers } from '../../lib/rcZohoExpenseAccountMigration';
+import {
+  migrateRcZohoExpenseAccountFieldsForUsers,
+  rcZohoExpenseAccountLegacyCleanupFields,
+} from '../../lib/rcZohoExpenseAccountMigration';
 import {
   EMPTY_RC_FORM,
   buildRcFirestoreFields,
@@ -128,37 +131,44 @@ export const RCList: React.FC = () => {
 
   const fetchRCs = useCallback(async () => {
     setLoading(true);
-    const snap = await getDocs(collection(db, 'users'));
-    const allUsers = snap.docs.map(d => ({ uid: d.id, ...(d.data() as FirestoreUserDoc) }));
-    const rcAdmins = allUsers.filter(u => u.role === 'rc_admin');
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const allUsers = snap.docs.map(d => ({ uid: d.id, ...(d.data() as FirestoreUserDoc) }));
+      const rcAdmins = allUsers.filter(u => u.role === 'rc_admin');
 
-    const records: RCRecord[] = rcAdmins.map(rc => {
-      const vctCount = allUsers.filter(u => u.role === 'vct' && u.rcId === rc.uid).length;
-      const rcJobs = jobs.filter(j => j.createdByUid === rc.uid);
-      const completedJobs = rcJobs.filter(j => j.status === 'completed').length;
-      return { ...rc, vctCount, totalJobs: rcJobs.length, completedJobs };
-    });
-
-    records.sort((a, b) => b.totalJobs - a.totalJobs);
-
-    const migratedCount = await migrateRcZohoExpenseAccountFieldsForUsers(rcAdmins, db);
-    if (migratedCount > 0) {
-      const refreshed = await getDocs(collection(db, 'users'));
-      const refreshedUsers = refreshed.docs.map(d => ({ uid: d.id, ...(d.data() as FirestoreUserDoc) }));
-      const refreshedRcAdmins = refreshedUsers.filter(u => u.role === 'rc_admin');
-      const refreshedRecords: RCRecord[] = refreshedRcAdmins.map(rc => {
-        const vctCount = refreshedUsers.filter(u => u.role === 'vct' && u.rcId === rc.uid).length;
+      const records: RCRecord[] = rcAdmins.map(rc => {
+        const vctCount = allUsers.filter(u => u.role === 'vct' && u.rcId === rc.uid).length;
         const rcJobs = jobs.filter(j => j.createdByUid === rc.uid);
         const completedJobs = rcJobs.filter(j => j.status === 'completed').length;
         return { ...rc, vctCount, totalJobs: rcJobs.length, completedJobs };
       });
-      refreshedRecords.sort((a, b) => b.totalJobs - a.totalJobs);
-      setRcList(refreshedRecords);
-    } else {
-      setRcList(records);
-    }
 
-    setLoading(false);
+      records.sort((a, b) => b.totalJobs - a.totalJobs);
+      setRcList(records);
+
+      try {
+        const migratedCount = await migrateRcZohoExpenseAccountFieldsForUsers(rcAdmins, db);
+        if (migratedCount > 0) {
+          const refreshed = await getDocs(collection(db, 'users'));
+          const refreshedUsers = refreshed.docs.map(d => ({ uid: d.id, ...(d.data() as FirestoreUserDoc) }));
+          const refreshedRcAdmins = refreshedUsers.filter(u => u.role === 'rc_admin');
+          const refreshedRecords: RCRecord[] = refreshedRcAdmins.map(rc => {
+            const vctCount = refreshedUsers.filter(u => u.role === 'vct' && u.rcId === rc.uid).length;
+            const rcJobs = jobs.filter(j => j.createdByUid === rc.uid);
+            const completedJobs = rcJobs.filter(j => j.status === 'completed').length;
+            return { ...rc, vctCount, totalJobs: rcJobs.length, completedJobs };
+          });
+          refreshedRecords.sort((a, b) => b.totalJobs - a.totalJobs);
+          setRcList(refreshedRecords);
+        }
+      } catch (migrationErr) {
+        console.error('RC Zoho expense account migration failed', migrationErr);
+      }
+    } catch (err) {
+      console.error('Failed to load regional centers', err);
+    } finally {
+      setLoading(false);
+    }
   }, [jobs]);
 
   useEffect(() => {
@@ -508,7 +518,10 @@ export const RCList: React.FC = () => {
         updates.clearTextPassword = formValues.password.trim();
       }
 
-      await updateDoc(doc(db, 'users', uid), updates);
+      await updateDoc(doc(db, 'users', uid), {
+        ...updates,
+        ...rcZohoExpenseAccountLegacyCleanupFields(),
+      });
       handleCloseModal();
       await fetchRCs();
     } catch (err: unknown) {

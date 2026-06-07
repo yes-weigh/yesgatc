@@ -7,7 +7,6 @@ import type {
   VerificationLocation,
 } from '../types';
 import type { Product } from '../types';
-import { deleteField } from 'firebase/firestore';
 import type { ProductFileMeta } from './productApprovalUpload';
 import { isValidPincode, normalizePincode } from './contactFields';
 import { resolveLaboratorySealIdentification } from './rcLaboratoryFields';
@@ -462,8 +461,6 @@ export function buildRcFirestoreFields(
     zohoId: normalizeZohoId(values.zohoId),
     zohoExpenseAccountId: normalizeZohoId(values.zohoExpenseAccountId),
     zohoExpenseAccountName: values.zohoExpenseAccountName.trim(),
-    zohoVendorId: deleteField(),
-    zohoVendorName: deleteField(),
     panCard: normalizePanCard(values.panCard),
     pincode,
     address: values.address.trim(),

@@ -3,6 +3,7 @@ const { Busboy } = require('@fastify/busboy');
 const { HttpsError } = require('firebase-functions/v2/https');
 const { FieldValue } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
+const { loadRazorpaySettings } = require('./razorpaySettings');
 const { processWalletTopUpZohoTransfer } = require('./zohoWallet');
 
 const MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024;
@@ -89,12 +90,6 @@ async function resolveWalletRcId(db, uid) {
   }
 
   throw new HttpsError('permission-denied', 'RC or VCT access required.');
-}
-
-async function isRvWalletEnabled(db) {
-  const snap = await db.doc('appSettings/global').get();
-  if (!snap.exists) return false;
-  return snap.data()?.rvWalletEnabled === true;
 }
 
 function validatePaymentBreakdown(breakdown, amountInr) {
@@ -222,6 +217,7 @@ async function reviewWalletTopUpHandler(request, db) {
     );
     transaction.update(topUpRef(db, topUpId), {
       status: 'approved',
+      rechargeMethod: topUp.rechargeMethod || 'manual',
       reviewedAt,
       reviewedByUid,
       rejectionReason: FieldValue.delete(),
@@ -277,10 +273,6 @@ async function reviewWalletTopUpHandler(request, db) {
 async function payRvFromWalletHandler(request, db) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Sign in required.');
-  }
-
-  if (!(await isRvWalletEnabled(db))) {
-    throw new HttpsError('failed-precondition', 'RV wallet payments are disabled.');
   }
 
   const rcId = request.data?.rcId;
@@ -655,10 +647,22 @@ function validateWalletScreenshotBuffer(buffer, contentType) {
   return normalizedType;
 }
 
+async function assertManualWalletRechargeEnabled(db) {
+  const settings = await loadRazorpaySettings(db);
+  if (settings.walletRechargeMode !== 'manual') {
+    throw new HttpsError(
+      'failed-precondition',
+      'Manual wallet top-up is disabled. Recharge via Razorpay on the Wallet page.',
+    );
+  }
+}
+
 async function processWalletTopUpSubmission(
   db,
   { rcId, submittedByUid, amountInr, note, screenshotBuffer, screenshotContentType, screenshotName },
 ) {
+  await assertManualWalletRechargeEnabled(db);
+
   if (!Number.isFinite(amountInr) || amountInr <= 0) {
     throw new HttpsError('invalid-argument', 'Enter a valid payment amount.');
   }
@@ -683,6 +687,7 @@ async function processWalletTopUpSubmission(
       rcId,
       rcCompanyName: rcProfile.companyName?.trim() || rcProfile.username?.trim() || '',
       amountInr: normalizedAmount,
+      rechargeMethod: 'manual',
       status: 'pending',
       screenshotUrl: screenshotMeta.url,
       screenshotPath: screenshotMeta.path,

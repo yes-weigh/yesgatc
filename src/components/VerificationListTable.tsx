@@ -159,7 +159,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   const showBulkSelect = mode === 'rc' && bulkSelect;
   const showRcCentre = mode === 'admin';
   const showVctColumn = !hideVctColumn;
-  const rvWalletListEnabled = isRvWalletPaymentRequired('RV', appSettings);
+  const rvWalletListEnabled = isRvWalletPaymentRequired('RV');
   const zohoRvListEnabled = isZohoRvInvoicingEnabled(appSettings);
 
   return (

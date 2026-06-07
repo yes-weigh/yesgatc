@@ -743,6 +743,12 @@ select.input-field option {
     overflow-x: visible;
   }
 
+  .data-table--mobile-cards,
+  .data-table--mobile-cards tbody {
+    display: block;
+    width: 100%;
+  }
+
   .data-table--mobile-cards thead {
     display: none;
   }
@@ -13952,11 +13958,11 @@ body.verification-photo-viewer-open {
   color: #fca5a5;
 }
 
-.admin-settings-header {
-  margin-bottom: 1.25rem;
+.admin-integrations-header {
+  margin-bottom: 1rem;
 }
 
-.admin-settings-title {
+.admin-integrations-title {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -13965,8 +13971,198 @@ body.verification-photo-viewer-open {
   font-weight: 700;
 }
 
-.admin-settings-page .panel.admin-settings-section:first-of-type {
+.admin-integrations-subtitle {
+  margin: 0;
+}
+
+.admin-integrations-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-integrations-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  min-height: 11.5rem;
+  padding: 1.25rem 1.1rem 1.05rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background:
+    linear-gradient(160deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.78) 100%);
+  color: #e2e8f0;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+.admin-integrations-tab:hover {
+  transform: translateY(-2px);
+  border-color: rgba(148, 163, 184, 0.42);
+  box-shadow: 0 10px 28px rgba(2, 6, 23, 0.28);
+}
+
+.admin-integrations-tab-logo-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 4.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.85rem;
+  background: rgba(248, 250, 252, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+}
+
+.admin-integrations-tab--zoho .admin-integrations-tab-logo-wrap {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.admin-integrations-tab--razorpay .admin-integrations-tab-logo-wrap {
+  background: linear-gradient(180deg, #ffffff 0%, #f0f7ff 100%);
+}
+
+.admin-integrations-tab--whatsapp .admin-integrations-tab-logo-wrap {
+  background: linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%);
+}
+
+.admin-integrations-tab--whatsapp .admin-integrations-tab-logo {
+  width: min(100%, 5.5rem);
+  height: 5.5rem;
+}
+
+.admin-integrations-tab--doca .admin-integrations-tab-logo-wrap {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.admin-integrations-tab--doca .admin-integrations-tab-logo {
+  width: min(100%, 16rem);
+  height: 5.25rem;
+}
+
+.admin-integrations-tab--openai .admin-integrations-tab-logo-wrap {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.admin-integrations-tab--openai .admin-integrations-tab-logo {
+  width: min(100%, 14rem);
+  height: 3.75rem;
+}
+
+.admin-integrations-tab-logo {
+  display: block;
+  width: min(100%, 14.5rem);
+  height: 4.25rem;
+  object-fit: contain;
+  object-position: center;
+}
+
+.admin-integrations-tab-hint {
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.95);
+  line-height: 1.35;
+  max-width: 16rem;
+}
+
+.admin-integrations-tab--zoho .admin-integrations-tab-logo {
+  width: min(100%, 16.5rem);
+}
+
+.admin-integrations-tab--active {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 34px rgba(2, 6, 23, 0.34);
+}
+
+.admin-integrations-tab--zoho.admin-integrations-tab--active {
+  border-color: rgba(34, 109, 180, 0.55);
+  background:
+    linear-gradient(160deg, rgba(34, 109, 180, 0.18) 0%, rgba(15, 23, 42, 0.88) 58%),
+    linear-gradient(160deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.78) 100%);
+}
+
+.admin-integrations-tab--razorpay.admin-integrations-tab--active {
+  border-color: rgba(51, 149, 255, 0.58);
+  background:
+    linear-gradient(160deg, rgba(51, 149, 255, 0.16) 0%, rgba(15, 23, 42, 0.88) 58%),
+    linear-gradient(160deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.78) 100%);
+}
+
+.admin-integrations-tab--whatsapp.admin-integrations-tab--active {
+  border-color: rgba(37, 211, 102, 0.55);
+  background:
+    linear-gradient(160deg, rgba(37, 211, 102, 0.14) 0%, rgba(15, 23, 42, 0.88) 58%),
+    linear-gradient(160deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.78) 100%);
+}
+
+.admin-integrations-tab--doca.admin-integrations-tab--active {
+  border-color: rgba(15, 47, 87, 0.55);
+  background:
+    linear-gradient(160deg, rgba(15, 47, 87, 0.2) 0%, rgba(15, 23, 42, 0.88) 58%),
+    linear-gradient(160deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.78) 100%);
+}
+
+.admin-integrations-tab--openai.admin-integrations-tab--active {
+  border-color: rgba(16, 163, 127, 0.55);
+  background:
+    linear-gradient(160deg, rgba(16, 163, 127, 0.16) 0%, rgba(15, 23, 42, 0.88) 58%),
+    linear-gradient(160deg, rgba(30, 41, 59, 0.92) 0%, rgba(15, 23, 42, 0.78) 100%);
+}
+
+@media (max-width: 1280px) {
+  .admin-integrations-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .admin-integrations-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-integrations-tabs {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-integrations-tab {
+    min-height: 10rem;
+  }
+
+  .admin-integrations-tab-logo-wrap {
+    min-height: 4rem;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .admin-integrations-tab-logo {
+    height: 3.5rem;
+    width: min(100%, 12.5rem);
+  }
+}
+
+.admin-integrations-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.admin-integrations-page .panel.admin-integrations-section {
   margin-top: 0;
+}
+
+.admin-integrations-page .panel.admin-integrations-section + .panel.admin-integrations-section {
+  margin-top: 1rem;
 }
 
 .rv-payment-structure-table-wrap {
