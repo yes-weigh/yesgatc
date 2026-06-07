@@ -96,7 +96,7 @@ export const VERIFICATION_IMAGE_CONFIG: Record<
   verificationSeal: {
     label: 'Verification seal photo',
     shortLabel: 'Seal',
-    hint: 'Optional',
+    hint: 'Required for re-verification submit',
     storageFolder: 'verification-seal-image',
     defaultName: 'Verification seal photo',
   },
@@ -228,11 +228,11 @@ export function imageFieldsFromMeta(
   };
 }
 
-/** Serial plate + instrument front photo; rear photo additionally required for RV. */
+/** Serial plate + instrument front photo; rear + seal photo additionally required for RV. */
 export function requiredVerificationImageKinds(
   verificationType?: JobType | '' | undefined,
 ): VerificationImageKind[] {
-  if (verificationType === 'RV') return ['stamping', 'scale', 'instrumentRear'];
+  if (verificationType === 'RV') return ['stamping', 'scale', 'instrumentRear', 'verificationSeal'];
   return ['stamping', 'scale'];
 }
 
@@ -248,7 +248,7 @@ export function verificationImageHint(
   verificationType?: JobType | '' | undefined,
 ): string {
   if (isVerificationImageRequired(kind, verificationType)) {
-    return kind === 'instrumentRear'
+    return kind === 'instrumentRear' || kind === 'verificationSeal'
       ? 'Required for re-verification submit'
       : 'Required for submit';
   }

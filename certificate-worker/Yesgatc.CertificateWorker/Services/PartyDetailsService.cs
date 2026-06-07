@@ -1,5 +1,3 @@
-using System.Net.Http.Headers;
-using System.Text.Json.Serialization;
 using Yesgatc.CertificateWorker.Models;
 namespace Yesgatc.CertificateWorker.Services;
 
@@ -24,6 +22,8 @@ public sealed class PartyDetailsService
         var customerId = FirestoreFieldReader.ReadString(calibrationFields, "customerId");
         var rcId = FirestoreFieldReader.ReadString(calibrationFields, "rcId");
         var verificationSubject = FirestoreFieldReader.ReadString(calibrationFields, "verificationSubject");
+        var performedBy = FirestoreFieldReader.ReadString(calibrationFields, "performedBy");
+        var vctId = FirestoreFieldReader.ReadString(calibrationFields, "vctId");
         var customerName = FirestoreFieldReader.ReadString(calibrationFields, "customerName", job.CustomerName);
 
         var isSelf = verificationSubject == "self"
@@ -34,7 +34,6 @@ public sealed class PartyDetailsService
         string pincode;
         string storedState;
         string storedDistrict;
-        string mobile;
 
         if (isSelf)
         {
@@ -47,7 +46,6 @@ public sealed class PartyDetailsService
             pincode = FirestoreFieldReader.ReadString(rcFields, "pincode");
             storedState = string.Empty;
             storedDistrict = string.Empty;
-            mobile = NormalizeMobile(FirestoreFieldReader.ReadString(rcFields, "phone"));
         }
         else
         {
@@ -64,8 +62,11 @@ public sealed class PartyDetailsService
             pincode = FirestoreFieldReader.ReadString(customerFields, "pincode");
             storedState = FirestoreFieldReader.ReadString(customerFields, "state");
             storedDistrict = FirestoreFieldReader.ReadString(customerFields, "district");
-            mobile = NormalizeMobile(FirestoreFieldReader.ReadString(customerFields, "phone"));
         }
+
+        // Never submit end-customer phone to DOCA — use the performing VCT or RC contact instead.
+        var mobile = await ResolvePerformerMobileAsync(
+            performedBy, vctId, rcId, rcUserId, idToken, cancellationToken);
 
         pincode = PincodeLookupService.NormalizePincode(pincode);
         if (!PincodeLookupService.IsValidPincode(pincode))
@@ -82,11 +83,6 @@ public sealed class PartyDetailsService
         if (string.IsNullOrWhiteSpace(address))
         {
             throw new InvalidOperationException("Address is missing on the customer / RC profile.");
-        }
-
-        if (string.IsNullOrWhiteSpace(mobile))
-        {
-            throw new InvalidOperationException("Mobile number is missing or invalid (10 digits required).");
         }
 
         var lookup = await _pincodeLookup.LookupAsync(pincode, cancellationToken);
@@ -109,6 +105,48 @@ public sealed class PartyDetailsService
             Mobile = mobile,
             IsSelfVerification = isSelf,
         };
+    }
+
+    private async Task<string> ResolvePerformerMobileAsync(
+        string performedBy,
+        string vctId,
+        string rcId,
+        string rcUserId,
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        var useVctPhone = performedBy == "vct"
+            || (!string.IsNullOrWhiteSpace(vctId) && performedBy != "rc");
+
+        string performerUserId;
+        string performerLabel;
+
+        if (useVctPhone && !string.IsNullOrWhiteSpace(vctId))
+        {
+            performerUserId = vctId;
+            performerLabel = "VCT";
+        }
+        else
+        {
+            performerUserId = FirstNonEmpty(rcId, rcUserId);
+            performerLabel = "RC";
+        }
+
+        if (string.IsNullOrWhiteSpace(performerUserId))
+        {
+            throw new InvalidOperationException("Verification is missing rcId for performer contact lookup.");
+        }
+
+        var performerFields = await _documents.GetFieldsAsync(
+            "users", performerUserId, idToken, cancellationToken);
+        var mobile = NormalizeMobile(FirestoreFieldReader.ReadString(performerFields, "phone"));
+        if (string.IsNullOrWhiteSpace(mobile))
+        {
+            throw new InvalidOperationException(
+                $"{performerLabel} mobile number is missing or invalid (10 digits required on the performer profile).");
+        }
+
+        return mobile;
     }
 
     private static string FirstNonEmpty(params string?[] values)

@@ -101,13 +101,6 @@ function VerificationListTypeBadges({
 }) {
   return (
     <span className="verification-list-card-type-row">
-      <span
-        className={`verification-list-card-type-badge role-badge ${
-          record.verificationType === 'RV' ? 'badge-vct' : 'badge-rc'
-        }`}
-      >
-        {record.verificationType === 'RV' ? 'RV' : 'OV'}
-      </span>
       {zohoListBadge && (
         <span
           className={`verification-list-zoho-badge verification-list-zoho-badge--${zohoListBadge}`}
@@ -116,6 +109,13 @@ function VerificationListTypeBadges({
           {zohoListBadgeText(record, zohoListBadge)}
         </span>
       )}
+      <span
+        className={`verification-list-card-type-badge role-badge ${
+          record.verificationType === 'RV' ? 'badge-vct' : 'badge-rc'
+        }`}
+      >
+        {record.verificationType === 'RV' ? 'RV' : 'OV'}
+      </span>
     </span>
   );
 }

@@ -67,11 +67,47 @@ function pickZohoItemId(record, settings) {
   return capacityKg <= 20 ? settings.zohoItemIdUpto20Kg : settings.zohoItemIdAbove20Kg;
 }
 
-function buildLineDescription(record) {
+function formatZohoLineMaxCap(record) {
+  const cap = record.maximumCapacity;
+  if (cap == null || !Number.isFinite(Number(cap))) return null;
+  const unit = record.unitOfMeasurement === 'g' ? 'g' : 'kg';
+  return `${cap} ${unit}`;
+}
+
+function formatZohoLineAccuracy(record) {
+  const interval = record.verificationScaleInterval;
+  if (interval == null || !Number.isFinite(Number(interval))) return null;
+  return `${interval} g`;
+}
+
+async function resolveProductAccuracyClass(db, record) {
+  const productId = String(record.productId || '').trim();
+  if (!productId) return null;
+  const snap = await db.doc(`products/${productId}`).get();
+  if (!snap.exists) return null;
+  const accuracyClass = String(snap.data()?.accuracyClass || '').trim();
+  return accuracyClass || null;
+}
+
+/** Instrument details only — never include RC end-customer PII (name, phone, address). */
+async function buildLineDescription(db, record) {
   const parts = [];
-  if (record.serialNumber) parts.push(`Serial ${record.serialNumber}`);
-  if (record.productName) parts.push(record.productName);
-  if (record.customerName) parts.push(record.customerName);
+
+  const serial = String(record.serialNumber || '').trim();
+  if (serial) parts.push(`Serial ${serial}`);
+
+  const productName = String(record.productName || '').trim();
+  if (productName) parts.push(productName);
+
+  const accuracyClass = await resolveProductAccuracyClass(db, record);
+  if (accuracyClass) parts.push(`Class ${accuracyClass}`);
+
+  const maxCap = formatZohoLineMaxCap(record);
+  if (maxCap) parts.push(`Max cap ${maxCap}`);
+
+  const accuracy = formatZohoLineAccuracy(record);
+  if (accuracy) parts.push(`Accuracy ${accuracy}`);
+
   return parts.join(' · ') || undefined;
 }
 
@@ -163,7 +199,7 @@ async function zohoBooksRequest(path, { method = 'GET', body, logLabel } = {}) {
   return payload;
 }
 
-async function createRvInvoice(record, rcZohoId, settings) {
+async function createRvInvoice(db, record, rcZohoId, settings) {
   const itemId = pickZohoItemId(record, settings);
   const applicationNumber = String(record.applicationNumber || '').trim();
   if (!applicationNumber) {
@@ -180,7 +216,7 @@ async function createRvInvoice(record, rcZohoId, settings) {
       {
         item_id: itemId,
         quantity: 1,
-        description: buildLineDescription(record),
+        description: await buildLineDescription(db, record),
       },
     ],
     custom_fields: [
@@ -379,7 +415,7 @@ async function processRvZohoInvoice(db, recordId, record, { allowLegacyPush = fa
   }
 
   try {
-    const invoice = await createRvInvoice(record, rcZohoId, settings);
+    const invoice = await createRvInvoice(db, record, rcZohoId, settings);
     await writeZohoPushResult(db, recordId, {
       ...invoice,
       zohoPushStatus: 'sent',

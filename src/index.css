@@ -4952,16 +4952,16 @@ body.verification-mobile-wizard-active {
 
 .rc-vehicle-card-dates {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.65rem;
-  padding: 0.75rem 0.85rem 0.9rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem 0.6rem;
 }
 
 .rc-vehicle-date-stat {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-start;
-  gap: 0.2rem;
+  gap: 0.3rem;
   min-width: 0;
 }
 
@@ -4969,34 +4969,52 @@ body.verification-mobile-wizard-active {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.65rem;
-  height: 1.65rem;
-  border-radius: 8px;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex-shrink: 0;
+  border-radius: 6px;
   border: 1px solid rgba(71, 85, 105, 0.5);
   background: rgba(30, 41, 59, 0.75);
   color: #93c5fd;
 }
 
+.rc-vehicle-date-stat-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  min-width: 0;
+  flex: 1;
+}
+
 .rc-vehicle-date-stat-label {
-  font-size: 0.6rem;
+  font-size: 0.52rem;
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   color: rgba(148, 163, 184, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .rc-vehicle-date-stat-value {
-  font-size: 0.82rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: #f8fafc;
-  line-height: 1.25;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .rc-vehicle-date-stat-line {
   display: block;
-  width: 2.25rem;
-  height: 3px;
-  margin-top: 0.15rem;
+  width: 1.75rem;
+  height: 2px;
+  margin-top: 0.1rem;
   border-radius: 999px;
   background: #2563eb;
 }
@@ -5011,13 +5029,6 @@ body.verification-mobile-wizard-active {
 
 .rc-vehicle-date-stat-line--missing {
   background: #64748b;
-}
-
-@media (max-width: 520px) {
-  .rc-vehicle-card-dates {
-    grid-template-columns: 1fr;
-    gap: 0.75rem;
-  }
 }
 
 /* ---- RC list cards (technicians, customers, products, vehicles) ---- */

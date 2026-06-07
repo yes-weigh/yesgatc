@@ -17,7 +17,7 @@ import {
 } from '../../lib/vehicleProfileFields';
 import {
   Building2, RefreshCw, Trash2, Eye, ExternalLink, ImageIcon, UserX, UserCheck,
-  Calendar, ShieldCheck, Check,
+  Calendar, ShieldCheck, Check, Wind,
 } from 'lucide-react';
 import { VehicleLogoMark } from '../../components/VehicleLogoMark';
 import {
@@ -48,22 +48,26 @@ function vehicleTitle(record: Vehicle): string {
 function VehicleDateStat({
   icon,
   label,
+  title,
   value,
   status,
 }: {
   icon: React.ReactNode;
   label: string;
+  title?: string;
   value: string;
   status: ReturnType<typeof validityStatus>;
 }) {
   return (
-    <div className="rc-vehicle-date-stat">
+    <div className="rc-vehicle-date-stat" title={title ?? label}>
       <span className="rc-vehicle-date-stat-icon" aria-hidden>
         {icon}
       </span>
-      <span className="rc-vehicle-date-stat-label">{label}</span>
-      <span className="rc-vehicle-date-stat-value">{value}</span>
-      <span className={`rc-vehicle-date-stat-line rc-vehicle-date-stat-line--${status}`} aria-hidden />
+      <span className="rc-vehicle-date-stat-text">
+        <span className="rc-vehicle-date-stat-label">{label}</span>
+        <span className="rc-vehicle-date-stat-value">{value}</span>
+        <span className={`rc-vehicle-date-stat-line rc-vehicle-date-stat-line--${status}`} aria-hidden />
+      </span>
     </div>
   );
 }
@@ -337,6 +341,7 @@ export const AdminVehicleList: React.FC = () => {
                 const active = isVehicleActive(v);
                 const rcStatus = validityStatus(v.rcValidity);
                 const insuranceStatus = validityStatus(v.insuranceValidity);
+                const pollutionStatus = validityStatus(v.pollutionValidity);
                 const photo = vehiclePhotoFromRecord(v);
                 const label = v.regNumber || `${v.brand} ${v.model}`.trim() || 'vehicle';
                 const plate = v.regNumber?.trim();
@@ -421,16 +426,25 @@ export const AdminVehicleList: React.FC = () => {
 
                     <div className="rc-vehicle-card-dates">
                       <VehicleDateStat
-                        icon={<Calendar size={16} strokeWidth={1.75} />}
-                        label="RC Validity"
+                        icon={<Calendar size={14} strokeWidth={1.75} />}
+                        label="RC"
+                        title="RC validity"
                         value={formatVehicleDisplayDate(v.rcValidity)}
                         status={rcStatus}
                       />
                       <VehicleDateStat
-                        icon={<ShieldCheck size={16} strokeWidth={1.75} />}
-                        label="Insurance Valid Till"
+                        icon={<ShieldCheck size={14} strokeWidth={1.75} />}
+                        label="Insurance"
+                        title="Insurance valid till"
                         value={formatVehicleDisplayDate(v.insuranceValidity)}
                         status={insuranceStatus}
+                      />
+                      <VehicleDateStat
+                        icon={<Wind size={14} strokeWidth={1.75} />}
+                        label="Pollution"
+                        title="Pollution valid till"
+                        value={formatVehicleDisplayDate(v.pollutionValidity)}
+                        status={pollutionStatus}
                       />
                     </div>
                   </article>
