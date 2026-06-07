@@ -34,6 +34,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
   const [reconciling, setReconciling] = useState(false);
   const [reconcileSummary, setReconcileSummary] = useState('');
   const isSuperAdmin = user?.role === 'super_admin';
+  const isDevServer = import.meta.env.DEV;
 
   useEffect(() => {
     if (appSettingsLoading) return;
@@ -232,11 +233,12 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
             )}
 
             <div className="flex items-center gap-3 mt-4 flex-wrap">
-              {isSuperAdmin && (
+              {isDevServer && isSuperAdmin && (
                 <button
                   type="button"
                   className="btn btn-secondary"
                   disabled={reconciling || saving}
+                  title="Dev server only"
                   onClick={() => {
                     setReconcileSummary('');
                     setReconciling(true);
