@@ -10,7 +10,6 @@ export type VerificationCertifiedActionId =
   | 'gst-bill';
 
 export type VerificationCertifiedPrintPlaceholderId =
-  | 'label'
   | 'test-report'
   | 'receipt'
   | 'gst-bill';
@@ -23,13 +22,17 @@ export type VerificationCertifiedAction =
       href: string;
     }
   | {
+      id: 'label';
+      label: string;
+      kind: 'label-modal';
+    }
+  | {
       id: VerificationCertifiedPrintPlaceholderId;
       label: string;
       kind: 'print-placeholder';
     };
 
 const PRINT_PLACEHOLDER_ACTIONS: VerificationCertifiedAction[] = [
-  { id: 'label', label: 'Label', kind: 'print-placeholder' },
   { id: 'test-report', label: 'Test report', kind: 'print-placeholder' },
   { id: 'receipt', label: 'Receipt', kind: 'print-placeholder' },
   { id: 'gst-bill', label: 'GST bill', kind: 'print-placeholder' },
@@ -69,6 +72,12 @@ export function buildVerificationCertifiedActions(
       href: certificateHref,
     });
   }
+
+  byId.set('label', {
+    id: 'label',
+    label: 'Label',
+    kind: 'label-modal',
+  });
 
   for (const placeholder of PRINT_PLACEHOLDER_ACTIONS) {
     byId.set(placeholder.id, placeholder);
