@@ -16,7 +16,8 @@ export type VerificationCertifiedAction =
   | {
       id: 'certificate';
       label: string;
-      kind: 'certificate-modal';
+      kind: 'link';
+      href: string;
     }
   | {
       id: 'label';
@@ -73,7 +74,8 @@ export function buildVerificationCertifiedActions(
     byId.set('certificate', {
       id: 'certificate',
       label: 'Certificate',
-      kind: 'certificate-modal',
+      kind: 'link',
+      href: certificateHref,
     });
   }
 

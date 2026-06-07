@@ -6,7 +6,6 @@ import {
   type VerificationCertifiedActionId,
 } from '../lib/verificationCertifiedActions';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
-import { VerificationCertificateModal } from './VerificationCertificateModal';
 import { VerificationGstBillModal } from './VerificationGstBillModal';
 import { VerificationLabelModal } from './VerificationLabelModal';
 import { VerificationReceiptModal } from './VerificationReceiptModal';
@@ -48,28 +47,13 @@ function CertifiedActionTile({
   onLabelOpen,
   onGstBillOpen,
   onReceiptOpen,
-  onCertificateOpen,
 }: {
   action: VerificationCertifiedAction;
   onLabelOpen: () => void;
   onGstBillOpen: () => void;
   onReceiptOpen: () => void;
-  onCertificateOpen: () => void;
 }) {
   const className = `verification-certified-action verification-certified-action--${action.id}`;
-
-  if (action.kind === 'certificate-modal') {
-    return (
-      <button
-        type="button"
-        className={className}
-        onClick={onCertificateOpen}
-        aria-label="View verification certificate"
-      >
-        <ActionTileContent action={action} />
-      </button>
-    );
-  }
 
   if (action.kind === 'label-modal') {
     return (
@@ -124,14 +108,22 @@ function CertifiedActionTile({
     );
   }
 
-  return null;
+  return (
+    <a
+      href={action.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className}
+    >
+      <ActionTileContent action={action} />
+    </a>
+  );
 }
 
 export const VerificationCertifiedActions: React.FC<VerificationCertifiedActionsProps> = ({
   record,
   className = '',
 }) => {
-  const [certificateOpen, setCertificateOpen] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
   const [gstBillOpen, setGstBillOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
@@ -152,19 +144,12 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
           <CertifiedActionTile
             key={action.id}
             action={action}
-            onCertificateOpen={() => setCertificateOpen(true)}
             onLabelOpen={() => setLabelOpen(true)}
             onGstBillOpen={() => setGstBillOpen(true)}
             onReceiptOpen={() => setReceiptOpen(true)}
           />
         ))}
       </div>
-
-      <VerificationCertificateModal
-        open={certificateOpen}
-        record={record}
-        onClose={() => setCertificateOpen(false)}
-      />
 
       <VerificationLabelModal
         open={labelOpen}
