@@ -1,3 +1,9 @@
+import {
+  clearRememberedBluetoothPrinter,
+  getRememberedBluetoothPrinter,
+  rememberBluetoothPrinter,
+} from './bluetoothPrinterStorage';
+
 /** Web Bluetooth transport for ESC/POS thermal printers (BLE UART profiles). */
 
 const BLUETOOTH_SERVICE_UUID =
@@ -55,19 +61,73 @@ async function findWritableCharacteristic(
   );
 }
 
-export async function requestBluetoothEscposPrinter(): Promise<BluetoothDevice> {
+function getBluetoothApi(): Bluetooth {
   const bluetooth = navigator.bluetooth;
   if (!bluetooth) {
     throw new Error(
       'Web Bluetooth is not available. Use Chrome on Android over HTTPS, open the installed PWA, then try again.',
     );
   }
+  return bluetooth;
+}
 
-  return bluetooth.requestDevice({
+async function findGrantedBluetoothPrinter(deviceId: string): Promise<BluetoothDevice | null> {
+  const bluetooth = getBluetoothApi();
+  if (typeof bluetooth.getDevices !== 'function') return null;
+
+  const grantedDevices = await bluetooth.getDevices();
+  const device = grantedDevices.find(entry => entry.id === deviceId);
+  return device?.gatt ? device : null;
+}
+
+export type ResolveBluetoothEscposPrinterOptions = {
+  /** Show the system device picker even when a remembered printer exists. */
+  forcePicker?: boolean;
+};
+
+/** Reuse the last granted printer, or prompt once and remember the choice. */
+export async function resolveBluetoothEscposPrinter(
+  options: ResolveBluetoothEscposPrinterOptions = {},
+): Promise<BluetoothDevice> {
+  const bluetooth = getBluetoothApi();
+
+  if (!options.forcePicker) {
+    const remembered = getRememberedBluetoothPrinter();
+    if (remembered) {
+      const grantedDevice = await findGrantedBluetoothPrinter(remembered.id);
+      if (grantedDevice) {
+        if (grantedDevice.name?.trim()) {
+          rememberBluetoothPrinter(grantedDevice);
+        }
+        return grantedDevice;
+      }
+    }
+  }
+
+  const device = await bluetooth.requestDevice({
     acceptAllDevices: true,
     optionalServices: getOptionalBluetoothServices(),
   });
+  rememberBluetoothPrinter(device);
+  return device;
 }
+
+/** @deprecated Use resolveBluetoothEscposPrinter instead. */
+export async function requestBluetoothEscposPrinter(): Promise<BluetoothDevice> {
+  return resolveBluetoothEscposPrinter();
+}
+
+export function shouldRetryBluetoothPrinterWithPicker(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'NetworkError' || error.name === 'NotFoundError';
+  }
+  if (error instanceof Error) {
+    return /writable bluetooth characteristic|does not expose gatt/i.test(error.message);
+  }
+  return false;
+}
+
+export { clearRememberedBluetoothPrinter, getRememberedBluetoothPrinter };
 
 export async function sendEscposOverBluetooth(
   device: BluetoothDevice,

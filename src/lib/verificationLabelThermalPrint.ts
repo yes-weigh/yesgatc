@@ -1,14 +1,29 @@
 import { toCanvas } from 'html-to-image';
 import {
+  clearRememberedBluetoothPrinter,
   isBluetoothEscposSupported,
-  requestBluetoothEscposPrinter,
+  resolveBluetoothEscposPrinter,
   sendEscposOverBluetooth,
+  shouldRetryBluetoothPrinterWithPicker,
+  type ResolveBluetoothEscposPrinterOptions,
 } from './bluetoothEscposPrinter';
-import { buildEscPosLabelPayload, canvasToEscPosRaster } from './escposRaster';
+import {
+  buildEscPosLabelPayload,
+  canvasToEscPosRaster,
+  rotateCanvas,
+  type EscPosPrintRotation,
+} from './escposRaster';
 import { VERIFICATION_LABEL_STICKER } from './verificationLabel';
 
-export function getVerificationLabelPrintWidthDots(): number {
-  return VERIFICATION_LABEL_STICKER.widthMm * VERIFICATION_LABEL_STICKER.printDotsPerMm;
+function labelWidthAcrossPrintHead(rotationDeg: EscPosPrintRotation): number {
+  const { widthMm, heightMm } = VERIFICATION_LABEL_STICKER;
+  return rotationDeg === 90 || rotationDeg === 270 ? heightMm : widthMm;
+}
+
+export function getVerificationLabelPrintWidthDots(
+  rotationDeg: EscPosPrintRotation = VERIFICATION_LABEL_STICKER.printRotationDeg,
+): number {
+  return labelWidthAcrossPrintHead(rotationDeg) * VERIFICATION_LABEL_STICKER.printDotsPerMm;
 }
 
 async function waitForLabelImages(element: HTMLElement): Promise<void> {
@@ -42,12 +57,27 @@ export async function captureVerificationLabelCanvas(
 
 export async function printVerificationLabelToBluetooth(
   element: HTMLElement,
+  options: ResolveBluetoothEscposPrinterOptions = {},
 ): Promise<{ deviceName: string }> {
-  const canvas = await captureVerificationLabelCanvas(element);
-  const raster = canvasToEscPosRaster(canvas, getVerificationLabelPrintWidthDots());
-  const payload = buildEscPosLabelPayload(raster);
-  const device = await requestBluetoothEscposPrinter();
-  await sendEscposOverBluetooth(device, payload);
+  const rotationDeg = VERIFICATION_LABEL_STICKER.printRotationDeg;
+  const captured = await captureVerificationLabelCanvas(element);
+  const canvas = rotateCanvas(captured, rotationDeg);
+  const raster = canvasToEscPosRaster(canvas, getVerificationLabelPrintWidthDots(rotationDeg));
+  const payload = buildEscPosLabelPayload(raster, { rotationDeg });
+
+  let device = await resolveBluetoothEscposPrinter(options);
+  try {
+    await sendEscposOverBluetooth(device, payload);
+  } catch (error) {
+    if (!options.forcePicker && shouldRetryBluetoothPrinterWithPicker(error)) {
+      clearRememberedBluetoothPrinter();
+      device = await resolveBluetoothEscposPrinter({ forcePicker: true });
+      await sendEscposOverBluetooth(device, payload);
+    } else {
+      throw error;
+    }
+  }
+
   return { deviceName: device.name || 'Bluetooth printer' };
 }
 
@@ -55,7 +85,7 @@ export function getBluetoothPrintHelpText(): string {
   if (!isBluetoothEscposSupported()) {
     return 'Bluetooth printing needs Chrome on Android over HTTPS. Many ESC/POS printers use Bluetooth Classic only — BLE UART models work best.';
   }
-  return 'Tap Print, choose your ESC/POS label printer, and wait for the sticker to feed. Use Chrome on Android with the PWA installed.';
+  return 'Tap Print to use your saved Bluetooth printer. The device picker appears only the first time, or when you tap Change printer.';
 }
 
 export function formatBluetoothPrintError(error: unknown): string {

@@ -10,6 +10,11 @@ export const VERIFICATION_LABEL_STICKER = {
   previewWidthPx: 240,
   /** Thermal resolution — 203 dpi ≈ 8 dots/mm. */
   printDotsPerMm: 8,
+  /**
+   * Rotate the captured label before Bluetooth print (rotated label stock).
+   * 90 = clockwise; use 270 if your printer prints upside-down.
+   */
+  printRotationDeg: 90 as 0 | 90 | 180 | 270,
 } as const;
 
 /** Footer branding on printed verification labels. */

@@ -36,6 +36,7 @@ interface RequestDeviceOptions {
 
 interface Bluetooth extends EventTarget {
   requestDevice(options?: RequestDeviceOptions): Promise<BluetoothDevice>;
+  getDevices(): Promise<BluetoothDevice[]>;
 }
 
 interface Navigator {

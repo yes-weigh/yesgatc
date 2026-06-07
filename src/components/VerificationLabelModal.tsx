@@ -18,7 +18,11 @@ import {
   VERIFICATION_LABEL_BRANDING,
   VERIFICATION_LABEL_STICKER,
 } from '../lib/verificationLabel';
-import { isBluetoothEscposSupported } from '../lib/bluetoothEscposPrinter';
+import {
+  getRememberedBluetoothPrinter,
+  isBluetoothEscposSupported,
+} from '../lib/bluetoothEscposPrinter';
+import type { RememberedBluetoothPrinter } from '../lib/bluetoothPrinterStorage';
 import {
   formatBluetoothPrintError,
   getBluetoothPrintHelpText,
@@ -65,9 +69,15 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
   const [printing, setPrinting] = useState(false);
   const [printMessage, setPrintMessage] = useState<string | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [savedPrinter, setSavedPrinter] = useState<RememberedBluetoothPrinter | null>(null);
   const bluetoothPrintSupported = isBluetoothEscposSupported();
 
   useHistoryOverlay(open, onClose);
+
+  useEffect(() => {
+    if (!open) return;
+    setSavedPrinter(getRememberedBluetoothPrinter());
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,7 +113,7 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
     [record, rcPhone],
   );
 
-  const handleBluetoothPrint = async () => {
+  const handleBluetoothPrint = async (forcePicker = false) => {
     if (!cardRef.current || printing || loading) return;
 
     setPrinting(true);
@@ -111,7 +121,10 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
     setPrintError(null);
 
     try {
-      const { deviceName } = await printVerificationLabelToBluetooth(cardRef.current);
+      const { deviceName } = await printVerificationLabelToBluetooth(cardRef.current, {
+        forcePicker,
+      });
+      setSavedPrinter(getRememberedBluetoothPrinter());
       setPrintMessage(`Label sent to ${deviceName}.`);
     } catch (error) {
       setPrintError(formatBluetoothPrintError(error));
@@ -261,14 +274,32 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
             disabled={printing || loading || !bluetoothPrintSupported}
             title={
               bluetoothPrintSupported
-                ? 'Print sticker to Bluetooth ESC/POS printer'
+                ? savedPrinter
+                  ? `Print to saved printer (${savedPrinter.name})`
+                  : 'Print sticker to Bluetooth ESC/POS printer'
                 : 'Bluetooth printing requires Chrome on Android over HTTPS'
             }
           >
             <Bluetooth size={16} aria-hidden />
             <span>{printing ? 'Printing…' : 'Print to Bluetooth'}</span>
           </button>
+          {bluetoothPrintSupported && savedPrinter && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm verification-label-change-printer-btn"
+              onClick={() => void handleBluetoothPrint(true)}
+              disabled={printing || loading}
+            >
+              Change printer
+            </button>
+          )}
         </div>
+
+        {bluetoothPrintSupported && savedPrinter && (
+          <p className="verification-label-saved-printer text-muted text-xs mb-0">
+            Saved printer: {savedPrinter.name}
+          </p>
+        )}
 
         <p className="verification-label-size-note text-muted text-xs mb-0">
           Sticker size {VERIFICATION_LABEL_STICKER.widthMm} × {VERIFICATION_LABEL_STICKER.heightMm} mm

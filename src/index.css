@@ -10267,10 +10267,16 @@ body.verification-mobile-wizard-active {
   max-width: var(--verification-label-width, 420px);
 }
 
-.verification-label-print-btn {
+.verification-label-print-btn,
+.verification-label-change-printer-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+}
+
+.verification-label-saved-printer {
+  text-align: center;
+  max-width: var(--verification-label-width, 420px);
 }
 
 .verification-label-size-note,
@@ -10310,6 +10316,7 @@ body.verification-mobile-wizard-active {
   .verification-label-overlay,
   .verification-label-close,
   .verification-label-actions,
+  .verification-label-saved-printer,
   .verification-label-size-note,
   .verification-label-hint,
   .verification-label-print-help,
