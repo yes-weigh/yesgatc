@@ -11,6 +11,8 @@ import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 export type ConfirmOptions = {
   title?: string;
   message: string;
+  /** When preline, newline characters in message are shown as line breaks. */
+  messageFormat?: 'plain' | 'preline';
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
@@ -79,7 +81,13 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
               <h3 id="confirm-dialog-title" className="confirm-dialog-title">
                 {pending.options.title ?? 'Confirm'}
               </h3>
-              <p id="confirm-dialog-message" className="confirm-dialog-message">
+              <p
+                id="confirm-dialog-message"
+                className={[
+                  'confirm-dialog-message',
+                  pending.options.messageFormat === 'preline' ? 'confirm-dialog-message--preline' : '',
+                ].filter(Boolean).join(' ')}
+              >
                 {pending.options.message}
               </p>
             </div>

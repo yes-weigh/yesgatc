@@ -9,6 +9,7 @@ import { db } from '../../firebase';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import {
   buildRcWalletSummaryRows,
+  deleteWalletLedgerEntry,
   deleteWalletTopUp,
   fetchAllRcWallets,
   fetchWalletLedger,
@@ -17,6 +18,7 @@ import {
   walletLedgerTypeLabel,
   walletTopUpStatusLabel,
 } from '../../lib/rcWallet';
+import { buildWalletLedgerZohoClearanceMessage } from '../../lib/walletLedgerZohoClearance';
 import {
   isWalletTopUpZohoTransferOutstanding,
   pushLegacyWalletTopUpZohoTransfer,
@@ -84,6 +86,8 @@ export const AdminWalletTopUps: React.FC = () => {
   const [rejectTarget, setRejectTarget] = useState<WalletTopUp | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingLedgerId, setDeletingLedgerId] = useState<string | null>(null);
+  const isDevServer = import.meta.env.DEV;
   const [pushingZohoTopUpId, setPushingZohoTopUpId] = useState<string | null>(null);
   const [topUpById, setTopUpById] = useState<Map<string, WalletTopUp>>(new Map());
   const [rcNamesById, setRcNamesById] = useState<Record<string, string>>({});
@@ -260,6 +264,33 @@ export const AdminWalletTopUps: React.FC = () => {
     if (reviewingId) return;
     setRejectTarget(null);
     setRejectReason('');
+  };
+
+  const handleDeleteLedgerEntry = async (
+    entry: WalletLedgerEntry,
+    linkedTopUp: WalletTopUp | undefined,
+    rcName: string,
+  ) => {
+    const zohoNotice = buildWalletLedgerZohoClearanceMessage(entry, linkedTopUp, rcName);
+    const ok = await confirm({
+      title: 'Delete ledger entry? (dev only)',
+      message: zohoNotice,
+      messageFormat: 'preline',
+      confirmLabel: 'Delete from Firebase',
+      destructive: true,
+    });
+    if (!ok) return;
+
+    setDeletingLedgerId(entry.id);
+    setError('');
+    try {
+      await deleteWalletLedgerEntry(entry.id);
+      await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Ledger delete failed.');
+    } finally {
+      setDeletingLedgerId(null);
+    }
   };
 
   const handleDeleteTopUp = async (item: WalletTopUp) => {
@@ -635,9 +666,14 @@ export const AdminWalletTopUps: React.FC = () => {
       <div className="panel glass mt-4">
         <div className="panel-header">
           <h2>Wallet ledger</h2>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void refreshLedger()}>
-            <RefreshCw size={14} aria-hidden /> Refresh
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {isDevServer && (
+              <span className="admin-wallet-dev-badge text-muted text-xs">Dev: ledger delete enabled</span>
+            )}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => void refreshLedger()}>
+              <RefreshCw size={14} aria-hidden /> Refresh
+            </button>
+          </div>
         </div>
         <div className="panel-body">
           {ledgerLoading ? (
@@ -746,11 +782,26 @@ export const AdminWalletTopUps: React.FC = () => {
                               <button
                                 type="button"
                                 className="btn btn-secondary btn-sm"
-                                disabled={pushingZohoTopUpId === linkedTopUp.id}
+                                disabled={
+                                  pushingZohoTopUpId === linkedTopUp.id
+                                  || deletingLedgerId === entry.id
+                                }
                                 onClick={() => void handlePushZohoTopUp(linkedTopUp, rcName)}
                               >
                                 <FileText size={14} aria-hidden />
                                 {pushingZohoTopUpId === linkedTopUp.id ? 'Pushing…' : 'Push to Zoho'}
+                              </button>
+                            )}
+                            {isDevServer && (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm admin-wallet-delete-btn"
+                                disabled={deletingLedgerId === entry.id || Boolean(deletingId)}
+                                onClick={() => void handleDeleteLedgerEntry(entry, linkedTopUp, rcName)}
+                                title="Dev only — deletes Firebase ledger row"
+                              >
+                                <Trash2 size={14} aria-hidden />
+                                {deletingLedgerId === entry.id ? 'Deleting…' : 'Delete'}
                               </button>
                             )}
                           </div>

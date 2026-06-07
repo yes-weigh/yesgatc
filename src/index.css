@@ -1419,6 +1419,14 @@ select.input-field option {
   font-size: 0.875rem;
 }
 
+.confirm-dialog-message--preline,
+.confirm-inline-bar .confirm-dialog-message--preline {
+  white-space: pre-line;
+  line-height: 1.45;
+  max-height: min(40vh, 16rem);
+  overflow-y: auto;
+}
+
 .confirm-inline-bar .confirm-dialog-actions {
   flex-shrink: 0;
 }
