@@ -3,7 +3,7 @@
 const OPTIONAL_BLUETOOTH_SERVICES = [
   '000018f0-0000-1000-8000-00805f9b34fb',
   '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
-  '49535343-fe7d-4ae0-bfa0-fcf8cc8cdb7',
+  '49535343-fe7d-4ae0-bfa0-fcf8cc8dfb7',
   '0000fee7-0000-1000-8000-00805f9b34fb',
   '0000ff00-0000-1000-8000-00805f9b34fb',
 ] as const;
