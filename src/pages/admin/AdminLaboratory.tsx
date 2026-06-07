@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { Scale, Save } from 'lucide-react';
 import { db } from '../../firebase';
+import { LaboratoryPageHeader } from '../../components/LaboratoryPageHeader';
 import { LaboratorySettingsForm } from '../../components/LaboratorySettingsForm';
 import type { FirestoreUserDoc } from '../../types';
 
@@ -54,34 +54,20 @@ export const AdminLaboratory: React.FC = () => {
   return (
     <div className="fade-in page-content">
       <div className="panel glass rc-laboratory-panel">
-        <div className="panel-header justify-between">
-          <div>
-            <h2>
-              <Scale className="inline-icon text-blue" /> Laboratory
-            </h2>
-            <p className="text-muted text-sm mt-1 mb-0">
-              View and edit laboratory defaults for any regional centre.
+        <LaboratoryPageHeader
+          subtitle="View and edit laboratory defaults for any regional centre."
+          formId="admin-laboratory-form"
+          showSave={!listLoading && Boolean(selectedRcId) && !formLoading}
+          saving={saving}
+        >
+          {listError && (
+            <p className="rc-form-topbar-error text-sm mt-2 mb-0" role="alert">
+              {listError}
             </p>
-            {listError && (
-              <p className="rc-form-topbar-error text-sm mt-1 mb-0" role="alert">
-                {listError}
-              </p>
-            )}
-          </div>
-          {!listLoading && selectedRcId && !formLoading && (
-            <button
-              type="submit"
-              form="admin-laboratory-form"
-              className="btn btn-primary flex items-center gap-2 text-sm py-1.5 px-3 shrink-0"
-              disabled={saving}
-            >
-              {saving ? <span className="spinner-inline" /> : <Save size={15} />}
-              Save
-            </button>
           )}
-        </div>
+        </LaboratoryPageHeader>
 
-        <div className="panel-body pt-2">
+        <div className="panel-body rc-laboratory-body">
           {listLoading ? (
             <div className="text-center py-6">
               <span className="spinner-inline" />

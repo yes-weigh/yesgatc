@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { LaboratoryMenu } from './LaboratoryMenu';
 import {
   buildLaboratorySettingsPatch,
   EMPTY_LABORATORY_SETTINGS,
@@ -31,6 +32,8 @@ export const LaboratorySettingsForm: React.FC<LaboratorySettingsFormProps> = ({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [values, setValues] = useState<LaboratorySettings>(EMPTY_LABORATORY_SETTINGS);
+
+  const sealField = LABORATORY_FIELDS[0]!;
 
   useEffect(() => {
     onLoadingChange?.(loading);
@@ -108,40 +111,33 @@ export const LaboratorySettingsForm: React.FC<LaboratorySettingsFormProps> = ({
 
   return (
     <form id={formId} onSubmit={handleSave} className="rc-laboratory-form">
-      <div className="rc-laboratory-sheet" role="group" aria-label="Laboratory data fields">
-        <div className="rc-laboratory-sheet-head">
-          <span>Field</span>
-          <span>Value</span>
-          <span className="rc-laboratory-sheet-head-note">Used for</span>
-        </div>
-        {LABORATORY_FIELDS.map(field => (
-          <div key={field.key} className="rc-laboratory-field-row">
-            <label htmlFor={`${idPrefix}-${field.key}`} className="rc-laboratory-field-label">
-              {field.label}
-            </label>
-            <input
-              id={`${idPrefix}-${field.key}`}
-              type="text"
-              className={`input-field rc-laboratory-field-input${field.mono ? ' font-mono' : ''}`}
-              value={values[field.key]}
-              onChange={e => patchField(field.key, e.target.value)}
-              placeholder={field.placeholder}
-              disabled={saving}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <span className="rc-laboratory-field-hint">{field.hint}</span>
-          </div>
-        ))}
+      <div className="rc-laboratory-seal-field">
+        <label htmlFor={`${idPrefix}-${sealField.key}`} className="rc-laboratory-seal-label">
+          {sealField.label}
+        </label>
+        <input
+          id={`${idPrefix}-${sealField.key}`}
+          type="text"
+          className={`input-field rc-laboratory-seal-input${sealField.mono ? ' font-mono' : ''}`}
+          value={values[sealField.key]}
+          onChange={e => patchField(sealField.key, e.target.value)}
+          placeholder={sealField.placeholder}
+          disabled={saving}
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <p className="rc-laboratory-seal-hint mb-0">{sealField.hint}.</p>
       </div>
 
+      <LaboratoryMenu />
+
       {error && (
-        <p className="rc-form-topbar-error text-sm mb-0 mt-2" role="alert">
+        <p className="rc-form-topbar-error text-sm mb-0 mt-3" role="alert">
           {error}
         </p>
       )}
 
-      {saved && <p className="text-green text-xs mb-0 mt-2">Laboratory settings saved.</p>}
+      {saved && <p className="text-green text-xs mb-0 mt-3">Laboratory settings saved.</p>}
     </form>
   );
 };

@@ -1,23 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  Bluetooth,
-  Calendar,
-  MessageCircle,
-  ScrollText,
-  Shield,
-  ShieldCheck,
-  X,
-} from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 import { QRCode } from 'react-qr-code';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
-import {
-  buildVerificationLabelData,
-  VERIFICATION_LABEL_BRANDING,
-  VERIFICATION_LABEL_STICKER,
-} from '../lib/verificationLabel';
+import { buildVerificationLabelData, VERIFICATION_LABEL_STICKER } from '../lib/verificationLabel';
 import {
   getRememberedBluetoothPrinter,
   isBluetoothEscposSupported,
@@ -25,7 +13,6 @@ import {
 import type { RememberedBluetoothPrinter } from '../lib/bluetoothPrinterStorage';
 import {
   formatBluetoothPrintError,
-  getBluetoothPrintHelpText,
   printVerificationLabelToBluetooth,
 } from '../lib/verificationLabelThermalPrint';
 import type { FirestoreUserDoc, SiteCalibration } from '../types';
@@ -35,28 +22,6 @@ type VerificationLabelModalProps = {
   record: SiteCalibration;
   onClose: () => void;
 };
-
-function LabelInfoRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: boolean }>;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="verification-label-info-row">
-      <span className="verification-label-info-icon" aria-hidden>
-        <Icon size={15} strokeWidth={2} />
-      </span>
-      <div className="verification-label-info-copy">
-        <span className="verification-label-info-label">{label}</span>
-        <span className="verification-label-info-value">{value}</span>
-      </div>
-    </div>
-  );
-}
 
 export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
   open,
@@ -172,98 +137,38 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
           style={stickerStyle}
           data-verification-label-print
         >
-          <header className="verification-label-header">
-            <div className="verification-label-brand-top">
-              <span className="verification-label-logo-wrap" aria-hidden>
-                <img
-                  src={VERIFICATION_LABEL_BRANDING.logoSrc}
-                  alt=""
-                  className="verification-label-logo"
-                />
-              </span>
-              <p className="verification-label-brand-name">{VERIFICATION_LABEL_BRANDING.logoAlt}</p>
+          <div className="verification-label-content">
+            <header className="verification-label-header">
+              <p className="verification-label-title-line mb-0">VERIFIED &amp;</p>
+              <p className="verification-label-title-line mb-0">CERTIFIED</p>
+            </header>
+
+            <div className="verification-label-validity">
+              <p className="verification-label-valid-till-label mb-0">VALID TILL</p>
+              <p className="verification-label-valid-till-date mb-0">{labelData.validTill}</p>
             </div>
-            <p className="verification-label-badge">★VERIFIED &amp; CERTIFIED★</p>
-            <p className="verification-label-subtitle">AS PER LEGAL METROLOGY RULES</p>
-            <p className="verification-label-govt mb-0" aria-hidden>
-              {VERIFICATION_LABEL_BRANDING.governmentApprovedLines.join(' ')}
-            </p>
-          </header>
 
-          <section className="verification-label-details" aria-label="Verification details">
-            <LabelInfoRow
-              icon={Shield}
-              label="APPROVAL NUMBER"
-              value={labelData.approvalNumber}
-            />
-            <LabelInfoRow
-              icon={ScrollText}
-              label="CERTIFICATE NUMBER"
-              value={labelData.certificateNumber}
-            />
-            <LabelInfoRow
-              icon={Calendar}
-              label="VALID TILL"
-              value={labelData.validTill}
-            />
-          </section>
-
-          <section className="verification-label-qr-section" aria-label="Verification QR code">
-            {labelData.verifyUrl ? (
-              <div className="verification-label-qr-frame">
-                <QRCode
-                  value={labelData.verifyUrl}
-                  size={256}
-                  bgColor="#FFFFFF"
-                  fgColor="#000000"
-                  level="M"
-                  aria-hidden
-                />
-              </div>
-            ) : (
-              <p className="verification-label-qr-missing mb-0">QR unavailable</p>
-            )}
-          </section>
-
-          <footer className="verification-label-footer">
-            {labelData.verifyUrl && (
-              <a
-                href={labelData.verifyUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="verification-label-scan-btn"
-              >
-                SCAN TO VERIFY
-              </a>
-            )}
-            <div className="verification-label-stamped">
-              <ShieldCheck size={14} strokeWidth={1.85} aria-hidden />
-              <span className="verification-label-stamped-lines" aria-hidden>
-                VERIFIED &amp; STAMPED
-              </span>
-            </div>
-            <p className="verification-label-company-name mb-0">
-              {VERIFICATION_LABEL_BRANDING.companyName}
-            </p>
-            <div className="verification-label-contact">
-              {labelData.rcWhatsAppUrl ? (
-                <a
-                  href={labelData.rcWhatsAppUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="verification-label-contact-link"
-                >
-                  <MessageCircle size={12} strokeWidth={2} aria-hidden />
-                  <span>{loading ? '…' : labelData.rcPhoneDisplay}</span>
-                </a>
+            <section className="verification-label-qr-section" aria-label="Verification QR code">
+              {labelData.verifyUrl ? (
+                <>
+                  <div className="verification-label-qr-frame">
+                    <QRCode
+                      value={labelData.verifyUrl}
+                      size={512}
+                      bgColor="#FFFFFF"
+                      fgColor="#000000"
+                      level="M"
+                      style={{ width: '100%', height: 'auto', display: 'block' }}
+                      aria-hidden
+                    />
+                  </div>
+                  <p className="verification-label-scan-btn mb-0">SCAN TO VERIFY</p>
+                </>
               ) : (
-                <span className="verification-label-contact-link verification-label-contact-link--static">
-                  <MessageCircle size={12} strokeWidth={2} aria-hidden />
-                  <span>{loading ? '…' : labelData.rcPhoneDisplay}</span>
-                </span>
+                <p className="verification-label-qr-missing mb-0">QR unavailable</p>
               )}
-            </div>
-          </footer>
+            </section>
+          </div>
         </article>
 
         <div className="verification-label-actions">
@@ -272,16 +177,22 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
             className="btn btn-primary btn-sm verification-label-print-btn"
             onClick={() => void handleBluetoothPrint()}
             disabled={printing || loading || !bluetoothPrintSupported}
+            aria-label={
+              printing
+                ? 'Printing label'
+                : savedPrinter
+                  ? `Print label to ${savedPrinter.name}`
+                  : 'Print label'
+            }
             title={
               bluetoothPrintSupported
                 ? savedPrinter
-                  ? `Print to saved printer (${savedPrinter.name})`
-                  : 'Print sticker to Bluetooth ESC/POS printer'
-                : 'Bluetooth printing requires Chrome on Android over HTTPS'
+                  ? `Print label (${savedPrinter.name})`
+                  : 'Print label'
+                : 'Label printing requires Chrome on Android over HTTPS'
             }
           >
-            <Bluetooth size={16} aria-hidden />
-            <span>{printing ? 'Printing…' : 'Print to Bluetooth'}</span>
+            <Printer size={18} strokeWidth={2} aria-hidden />
           </button>
           {bluetoothPrintSupported && savedPrinter && (
             <button
@@ -294,21 +205,6 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
             </button>
           )}
         </div>
-
-        {bluetoothPrintSupported && savedPrinter && (
-          <p className="verification-label-saved-printer text-muted text-xs mb-0">
-            Saved printer: {savedPrinter.name}
-          </p>
-        )}
-
-        <p className="verification-label-size-note text-muted text-xs mb-0">
-          Sticker size {VERIFICATION_LABEL_STICKER.widthMm} × {VERIFICATION_LABEL_STICKER.heightMm} mm
-          {bluetoothPrintSupported ? '' : ' · Bluetooth print unavailable in this browser'}
-        </p>
-
-        <p className="verification-label-print-help text-muted text-xs mb-0">
-          {getBluetoothPrintHelpText()}
-        </p>
 
         {printMessage && (
           <p className="verification-label-print-status text-sm mb-0" role="status">

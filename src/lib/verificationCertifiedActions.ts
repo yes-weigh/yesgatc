@@ -1,4 +1,5 @@
 import { buildDocaCertificateViewUrl } from './docaCertificateUrl';
+import { canShowVerificationWalletReceipt } from './verificationReceipt';
 import { canDownloadVerificationCertificate } from './verificationRequest';
 import type { SiteCalibration } from '../types';
 
@@ -9,10 +10,7 @@ export type VerificationCertifiedActionId =
   | 'receipt'
   | 'gst-bill';
 
-export type VerificationCertifiedPrintPlaceholderId =
-  | 'test-report'
-  | 'receipt'
-  | 'gst-bill';
+export type VerificationCertifiedPrintPlaceholderId = 'test-report';
 
 export type VerificationCertifiedAction =
   | {
@@ -27,6 +25,16 @@ export type VerificationCertifiedAction =
       kind: 'label-modal';
     }
   | {
+      id: 'gst-bill';
+      label: string;
+      kind: 'gst-bill-modal';
+    }
+  | {
+      id: 'receipt';
+      label: string;
+      kind: 'receipt-modal';
+    }
+  | {
       id: VerificationCertifiedPrintPlaceholderId;
       label: string;
       kind: 'print-placeholder';
@@ -34,8 +42,6 @@ export type VerificationCertifiedAction =
 
 const PRINT_PLACEHOLDER_ACTIONS: VerificationCertifiedAction[] = [
   { id: 'test-report', label: 'Test report', kind: 'print-placeholder' },
-  { id: 'receipt', label: 'Receipt', kind: 'print-placeholder' },
-  { id: 'gst-bill', label: 'GST bill', kind: 'print-placeholder' },
 ];
 
 /** Fixed toolbar order — matches product mockup. */
@@ -78,6 +84,22 @@ export function buildVerificationCertifiedActions(
     label: 'Label',
     kind: 'label-modal',
   });
+
+  if (record.verificationType === 'RV') {
+    byId.set('gst-bill', {
+      id: 'gst-bill',
+      label: 'GST bill',
+      kind: 'gst-bill-modal',
+    });
+
+    if (canShowVerificationWalletReceipt(record)) {
+      byId.set('receipt', {
+        id: 'receipt',
+        label: 'Receipt',
+        kind: 'receipt-modal',
+      });
+    }
+  }
 
   for (const placeholder of PRINT_PLACEHOLDER_ACTIONS) {
     byId.set(placeholder.id, placeholder);

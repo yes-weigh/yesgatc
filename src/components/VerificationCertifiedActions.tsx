@@ -6,7 +6,9 @@ import {
   type VerificationCertifiedActionId,
 } from '../lib/verificationCertifiedActions';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
+import { VerificationGstBillModal } from './VerificationGstBillModal';
 import { VerificationLabelModal } from './VerificationLabelModal';
+import { VerificationReceiptModal } from './VerificationReceiptModal';
 import type { SiteCalibration } from '../types';
 
 type VerificationCertifiedActionsProps = {
@@ -43,9 +45,13 @@ function ActionTileContent({ action }: { action: VerificationCertifiedAction }) 
 function CertifiedActionTile({
   action,
   onLabelOpen,
+  onGstBillOpen,
+  onReceiptOpen,
 }: {
   action: VerificationCertifiedAction;
   onLabelOpen: () => void;
+  onGstBillOpen: () => void;
+  onReceiptOpen: () => void;
 }) {
   const className = `verification-certified-action verification-certified-action--${action.id}`;
 
@@ -56,6 +62,32 @@ function CertifiedActionTile({
         className={className}
         onClick={onLabelOpen}
         aria-label="View verification label"
+      >
+        <ActionTileContent action={action} />
+      </button>
+    );
+  }
+
+  if (action.kind === 'gst-bill-modal') {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={onGstBillOpen}
+        aria-label="View GST bill"
+      >
+        <ActionTileContent action={action} />
+      </button>
+    );
+  }
+
+  if (action.kind === 'receipt-modal') {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={onReceiptOpen}
+        aria-label="View wallet receipt"
       >
         <ActionTileContent action={action} />
       </button>
@@ -93,6 +125,8 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
   className = '',
 }) => {
   const [labelOpen, setLabelOpen] = useState(false);
+  const [gstBillOpen, setGstBillOpen] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
 
   if (!canShowVerificationCertifiedActions(record)) return null;
 
@@ -111,6 +145,8 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
             key={action.id}
             action={action}
             onLabelOpen={() => setLabelOpen(true)}
+            onGstBillOpen={() => setGstBillOpen(true)}
+            onReceiptOpen={() => setReceiptOpen(true)}
           />
         ))}
       </div>
@@ -119,6 +155,18 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
         open={labelOpen}
         record={record}
         onClose={() => setLabelOpen(false)}
+      />
+
+      <VerificationGstBillModal
+        open={gstBillOpen}
+        record={record}
+        onClose={() => setGstBillOpen(false)}
+      />
+
+      <VerificationReceiptModal
+        open={receiptOpen}
+        record={record}
+        onClose={() => setReceiptOpen(false)}
       />
     </>
   );
