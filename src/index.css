@@ -9903,7 +9903,7 @@ body.verification-mobile-wizard-active {
   margin: 0.35rem 0 0.15rem;
 }
 
-/* ── Verification label sticker (60×40 mm preview) ── */
+/* ── Verification label sticker (40×60 mm portrait preview) ── */
 .verification-label-overlay {
   align-items: center;
   justify-content: center;
@@ -9942,14 +9942,15 @@ body.verification-mobile-wizard-active {
   --vl-ink: #000000;
   --vl-paper: #ffffff;
   --vl-stroke: 1.5px;
-  --vl-gap: 4cqi;
-  --vl-pad: 3.5mm;
+  --vl-pad: 2.5mm;
   container-type: inline-size;
-  width: min(var(--verification-label-width, 420px), calc(100vw - 2rem));
-  aspect-ratio: var(--verification-label-aspect, 60 / 40);
+  width: min(var(--verification-label-width, 240px), calc(100vw - 2rem));
+  aspect-ratio: var(--verification-label-aspect, 40 / 60);
   box-sizing: border-box;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  align-content: stretch;
+  row-gap: clamp(0.1rem, 1cqi, 0.28rem);
   padding: var(--vl-pad);
   border: var(--vl-stroke) solid var(--vl-ink);
   border-radius: 0.2rem;
@@ -9963,42 +9964,23 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-label-header {
-  display: grid;
-  grid-template-columns: 1.58fr var(--vl-gap) 1fr;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  padding: 0;
-}
-
-.verification-label-brand {
-  grid-column: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 0;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.verification-label-brand-block {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: fit-content;
-  max-width: 100%;
+  text-align: center;
+  gap: clamp(0.08rem, 0.65cqi, 0.18rem);
+  min-height: 0;
 }
 
 .verification-label-brand-top {
-  --brand-logo-size: clamp(1.6rem, 9.5cqi, 2.25rem);
-  --brand-text-size: clamp(1.05rem, 6.2cqi, 1.55rem);
+  --brand-logo-size: clamp(1rem, 7.5cqi, 1.45rem);
+  --brand-text-size: clamp(0.78rem, 5.2cqi, 1.05rem);
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 0.35em;
+  width: 100%;
   min-width: 0;
-  max-width: 100%;
 }
 
 .verification-label-logo-wrap {
@@ -10037,94 +10019,58 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-label-badge {
-  margin: 0.34em 0 0;
+  margin: 0;
   display: block;
   width: 100%;
-  align-self: stretch;
   box-sizing: border-box;
-  padding: 0.22em 0.5em;
-  border-radius: 0.18em;
+  padding: 0.18em 0.4em;
+  border-radius: 0.16em;
   background: var(--vl-ink);
   color: var(--vl-paper);
-  font-size: clamp(0.44rem, 2.55cqi, 0.6rem);
+  font-size: clamp(0.36rem, 2.15cqi, 0.5rem);
   font-weight: 800;
-  letter-spacing: 0.04em;
-  line-height: 1.2;
+  letter-spacing: 0.035em;
+  line-height: 1.15;
   text-align: center;
   white-space: nowrap;
 }
 
 .verification-label-subtitle {
-  margin: 0.3em 0 0;
-  font-size: clamp(0.36rem, 1.9cqi, 0.5rem);
+  margin: 0;
+  font-size: clamp(0.3rem, 1.65cqi, 0.42rem);
   font-weight: 700;
-  letter-spacing: 0.025em;
-  line-height: 1.15;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
   text-align: center;
 }
 
-.verification-label-govt-rule {
-  grid-column: 2;
-  justify-self: start;
-  width: var(--vl-stroke);
-  height: clamp(2rem, 10.5cqi, 2.85rem);
-  background: var(--vl-ink);
-  align-self: center;
-}
-
 .verification-label-govt {
-  grid-column: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 0;
-  min-width: 0;
-  padding-left: 0.7em;
-  font-size: clamp(0.5rem, 2.85cqi, 0.7rem);
-  font-weight: 800;
-  line-height: 1.1;
-  text-align: left;
-  letter-spacing: 0.01em;
-  text-transform: uppercase;
-  align-self: center;
-}
-
-.verification-label-govt span {
-  display: block;
   width: 100%;
-}
-
-.verification-label-body {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 1.58fr var(--vl-gap) 1fr;
-  align-items: start;
-  padding: 0;
-  margin-top: clamp(0.1rem, 0.8cqi, 0.2rem);
-  overflow: hidden;
+  font-size: clamp(0.38rem, 2.2cqi, 0.52rem);
+  font-weight: 800;
+  line-height: 1.08;
+  text-align: center;
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
 }
 
 .verification-label-details {
-  grid-column: 1;
   display: flex;
   flex-direction: column;
+  width: 100%;
   box-sizing: border-box;
-  height: var(--vl-details-height, 22mm);
-  min-height: var(--vl-details-height, 22mm);
-  max-height: var(--vl-details-height, 22mm);
   border: var(--vl-stroke) solid var(--vl-ink);
-  border-radius: 0.55rem;
+  border-radius: 0.35rem;
   background: var(--vl-paper);
   overflow: hidden;
+  min-height: 0;
 }
 
 .verification-label-info-row {
-  flex: 1 1 0;
   display: flex;
   align-items: center;
-  gap: 4%;
-  padding: 0 5.5% 0 6%;
+  gap: 3.5%;
+  padding: clamp(0.1rem, 0.85cqi, 0.22rem) 4.5% clamp(0.1rem, 0.85cqi, 0.22rem) 5%;
   min-height: 0;
 }
 
@@ -10137,8 +10083,8 @@ body.verification-mobile-wizard-active {
   align-items: center;
   justify-content: center;
   align-self: center;
-  width: clamp(1.05rem, 6cqi, 1.35rem);
-  height: clamp(1.05rem, 6cqi, 1.35rem);
+  width: clamp(0.82rem, 5.2cqi, 1.05rem);
+  height: clamp(0.82rem, 5.2cqi, 1.05rem);
   border: var(--vl-stroke) solid var(--vl-ink);
   border-radius: 999px;
   background: var(--vl-paper);
@@ -10147,8 +10093,8 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-label-info-icon svg {
-  width: clamp(0.62rem, 3.5cqi, 0.78rem);
-  height: clamp(0.62rem, 3.5cqi, 0.78rem);
+  width: clamp(0.5rem, 3cqi, 0.65rem);
+  height: clamp(0.5rem, 3cqi, 0.65rem);
 }
 
 .verification-label-info-copy {
@@ -10160,43 +10106,34 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-label-info-label {
-  font-size: clamp(0.36rem, 1.9cqi, 0.48rem);
+  font-size: clamp(0.3rem, 1.65cqi, 0.42rem);
   font-weight: 800;
-  letter-spacing: 0.04em;
-  line-height: 1.05;
+  letter-spacing: 0.035em;
+  line-height: 1.02;
 }
 
 .verification-label-info-value {
-  font-size: clamp(0.5rem, 2.75cqi, 0.72rem);
+  font-size: clamp(0.36rem, 2.1cqi, 0.52rem);
   font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: 0.015em;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
   word-break: break-word;
 }
 
-.verification-label-qr-panel {
-  grid-column: 3;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  align-content: center;
-  justify-items: center;
-  justify-self: center;
-  box-sizing: border-box;
-  height: var(--vl-details-height, 22mm);
-  min-height: var(--vl-details-height, 22mm);
-  max-height: var(--vl-details-height, 22mm);
-  width: 94%;
-  max-width: 94%;
+.verification-label-qr-section {
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .verification-label-qr-frame {
-  width: min(100%, 100%);
-  height: 100%;
-  max-height: 100%;
-  max-width: 100%;
-  aspect-ratio: 1;
-  justify-self: center;
-  align-self: center;
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -10219,16 +10156,16 @@ body.verification-mobile-wizard-active {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  margin-top: clamp(0.15rem, 1.2cqi, 0.28rem);
-  padding: 0.24em 0.65em;
+  margin: 0;
+  padding: 0.2em 0.55em;
   border-radius: 999px;
   background: var(--vl-ink);
   color: var(--vl-paper);
-  font-size: clamp(0.36rem, 1.95cqi, 0.5rem);
+  font-size: clamp(0.32rem, 1.75cqi, 0.44rem);
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-decoration: none;
-  line-height: 1.2;
+  line-height: 1.15;
   white-space: nowrap;
 }
 
@@ -10239,60 +10176,49 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-label-footer {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: end;
-  padding: clamp(0.22rem, 1.5cqi, 0.38rem) 0 0.2em;
-  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: clamp(0.08rem, 0.55cqi, 0.16rem);
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .verification-label-stamped {
-  grid-column: 1;
   display: flex;
   align-items: center;
-  gap: 0.38rem;
+  justify-content: center;
+  gap: 0.28rem;
   flex-shrink: 0;
   color: var(--vl-ink);
-  align-self: end;
 }
 
 .verification-label-stamped svg {
-  width: clamp(1rem, 6cqi, 1.35rem);
-  height: clamp(1rem, 6cqi, 1.35rem);
+  width: clamp(0.72rem, 4.5cqi, 0.95rem);
+  height: clamp(0.72rem, 4.5cqi, 0.95rem);
   flex-shrink: 0;
 }
 
 .verification-label-stamped-lines {
-  display: flex;
-  flex-direction: column;
-  font-size: clamp(0.44rem, 2.5cqi, 0.62rem);
+  font-size: clamp(0.34rem, 2cqi, 0.48rem);
   font-weight: 800;
-  letter-spacing: 0.035em;
-  line-height: 1.08;
-}
-
-.verification-label-footer-company {
-  grid-column: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-self: stretch;
-  width: 100%;
-  min-width: 0;
-  text-align: left;
-  overflow: visible;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .verification-label-company-name {
   display: block;
   width: 100%;
   max-width: none;
-  font-size: clamp(0.52rem, 3.15cqi, 0.78rem);
+  font-size: clamp(0.38rem, 2.35cqi, 0.54rem);
   font-weight: 900;
-  letter-spacing: 0.02em;
-  line-height: 1.05;
+  letter-spacing: 0.015em;
+  line-height: 1.02;
   border-bottom: var(--vl-stroke) solid var(--vl-ink);
-  padding-bottom: 0.14em;
+  padding-bottom: 0.1em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -10300,9 +10226,8 @@ body.verification-mobile-wizard-active {
 .verification-label-contact {
   display: flex;
   flex-wrap: nowrap;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 0.45rem;
-  margin-top: 0.2em;
   width: 100%;
 }
 
@@ -10311,7 +10236,7 @@ body.verification-mobile-wizard-active {
   align-items: center;
   gap: 0.22em;
   color: inherit;
-  font-size: clamp(0.5rem, 2.85cqi, 0.72rem);
+  font-size: clamp(0.38rem, 2.25cqi, 0.54rem);
   font-weight: 900;
   line-height: 1.1;
   text-decoration: none;
@@ -10324,8 +10249,8 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-label-contact-link svg {
-  width: clamp(0.65rem, 3.6cqi, 0.82rem);
-  height: clamp(0.65rem, 3.6cqi, 0.82rem);
+  width: clamp(0.52rem, 3cqi, 0.68rem);
+  height: clamp(0.52rem, 3cqi, 0.68rem);
   flex-shrink: 0;
 }
 
@@ -10394,10 +10319,10 @@ body.verification-mobile-wizard-active {
   }
 
   .verification-label-card {
-    width: 60mm;
-    height: 40mm;
+    width: 40mm;
+    height: 60mm;
     aspect-ratio: auto;
-    padding: 3.5mm;
+    padding: 2.5mm;
     box-shadow: none;
     page-break-inside: avoid;
     background: #ffffff;

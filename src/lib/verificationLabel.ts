@@ -2,14 +2,12 @@ import { normalizePhone } from './contactFields';
 import { buildDocaCertificateViewUrl } from './docaCertificateUrl';
 import type { SiteCalibration } from '../types';
 
-/** Sticker canvas — 60 × 40 mm at print. */
+/** Sticker canvas — 40 × 60 mm portrait at print. */
 export const VERIFICATION_LABEL_STICKER = {
-  widthMm: 60,
-  heightMm: 40,
-  /** Fixed height of the approval / certificate / valid-till box. */
-  detailsHeightMm: 25,
+  widthMm: 40,
+  heightMm: 60,
   /** Screen preview width (height follows aspect ratio). */
-  previewWidthPx: 360,
+  previewWidthPx: 240,
   /** Thermal resolution — 203 dpi ≈ 8 dots/mm. */
   printDotsPerMm: 8,
 } as const;

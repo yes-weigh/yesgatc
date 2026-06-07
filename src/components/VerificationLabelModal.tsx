@@ -125,7 +125,6 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
       ({
         '--verification-label-width': `${VERIFICATION_LABEL_STICKER.previewWidthPx}px`,
         '--verification-label-aspect': `${VERIFICATION_LABEL_STICKER.widthMm} / ${VERIFICATION_LABEL_STICKER.heightMm}`,
-        '--vl-details-height': `${VERIFICATION_LABEL_STICKER.detailsHeightMm}mm`,
       }) as React.CSSProperties,
     [],
   );
@@ -156,112 +155,100 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
 
         <article
           ref={cardRef}
-          className="verification-label-card"
+          className="verification-label-card verification-label-card--portrait"
           style={stickerStyle}
           data-verification-label-print
         >
           <header className="verification-label-header">
-            <div className="verification-label-brand">
-              <div className="verification-label-brand-block">
-                <div className="verification-label-brand-top">
-                  <span className="verification-label-logo-wrap" aria-hidden>
-                    <img
-                      src={VERIFICATION_LABEL_BRANDING.logoSrc}
-                      alt=""
-                      className="verification-label-logo"
-                    />
-                  </span>
-                  <p className="verification-label-brand-name">{VERIFICATION_LABEL_BRANDING.logoAlt}</p>
-                </div>
-                <p className="verification-label-badge">★VERIFIED &amp; CERTIFIED★</p>
-                <p className="verification-label-subtitle">AS PER LEGAL METROLOGY RULES</p>
-              </div>
+            <div className="verification-label-brand-top">
+              <span className="verification-label-logo-wrap" aria-hidden>
+                <img
+                  src={VERIFICATION_LABEL_BRANDING.logoSrc}
+                  alt=""
+                  className="verification-label-logo"
+                />
+              </span>
+              <p className="verification-label-brand-name">{VERIFICATION_LABEL_BRANDING.logoAlt}</p>
             </div>
-            <div className="verification-label-govt-rule" aria-hidden />
-            <div className="verification-label-govt" aria-hidden>
-              {VERIFICATION_LABEL_BRANDING.governmentApprovedLines.map(line => (
-                <span key={line}>{line}</span>
-              ))}
-            </div>
+            <p className="verification-label-badge">★VERIFIED &amp; CERTIFIED★</p>
+            <p className="verification-label-subtitle">AS PER LEGAL METROLOGY RULES</p>
+            <p className="verification-label-govt mb-0" aria-hidden>
+              {VERIFICATION_LABEL_BRANDING.governmentApprovedLines.join(' ')}
+            </p>
           </header>
 
-          <div className="verification-label-body">
-            <div className="verification-label-details">
-              <LabelInfoRow
-                icon={Shield}
-                label="APPROVAL NUMBER"
-                value={labelData.approvalNumber}
-              />
-              <LabelInfoRow
-                icon={ScrollText}
-                label="CERTIFICATE NUMBER"
-                value={labelData.certificateNumber}
-              />
-              <LabelInfoRow
-                icon={Calendar}
-                label="VALID TILL"
-                value={labelData.validTill}
-              />
-            </div>
+          <section className="verification-label-details" aria-label="Verification details">
+            <LabelInfoRow
+              icon={Shield}
+              label="APPROVAL NUMBER"
+              value={labelData.approvalNumber}
+            />
+            <LabelInfoRow
+              icon={ScrollText}
+              label="CERTIFICATE NUMBER"
+              value={labelData.certificateNumber}
+            />
+            <LabelInfoRow
+              icon={Calendar}
+              label="VALID TILL"
+              value={labelData.validTill}
+            />
+          </section>
 
-            <div className="verification-label-qr-panel">
-              {labelData.verifyUrl ? (
-                <>
-                  <div className="verification-label-qr-frame">
-                    <QRCode
-                      value={labelData.verifyUrl}
-                      size={112}
-                      bgColor="#FFFFFF"
-                      fgColor="#000000"
-                      level="M"
-                      aria-hidden
-                    />
-                  </div>
-                  <a
-                    href={labelData.verifyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="verification-label-scan-btn"
-                  >
-                    SCAN TO VERIFY
-                  </a>
-                </>
-              ) : (
-                <p className="verification-label-qr-missing mb-0">QR unavailable</p>
-              )}
-            </div>
-          </div>
+          <section className="verification-label-qr-section" aria-label="Verification QR code">
+            {labelData.verifyUrl ? (
+              <div className="verification-label-qr-frame">
+                <QRCode
+                  value={labelData.verifyUrl}
+                  size={256}
+                  bgColor="#FFFFFF"
+                  fgColor="#000000"
+                  level="M"
+                  aria-hidden
+                />
+              </div>
+            ) : (
+              <p className="verification-label-qr-missing mb-0">QR unavailable</p>
+            )}
+          </section>
 
           <footer className="verification-label-footer">
+            {labelData.verifyUrl && (
+              <a
+                href={labelData.verifyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="verification-label-scan-btn"
+              >
+                SCAN TO VERIFY
+              </a>
+            )}
             <div className="verification-label-stamped">
-              <ShieldCheck size={18} strokeWidth={1.85} aria-hidden />
+              <ShieldCheck size={14} strokeWidth={1.85} aria-hidden />
               <span className="verification-label-stamped-lines" aria-hidden>
-                <span>VERIFIED &amp;</span>
-                <span>STAMPED</span>
+                VERIFIED &amp; STAMPED
               </span>
             </div>
-            <div className="verification-label-footer-company">
-              <p className="verification-label-company-name mb-0">
-                {VERIFICATION_LABEL_BRANDING.companyName}
-              </p>
-              <div className="verification-label-contact">
-                {labelData.rcWhatsAppUrl ? (
-                  <a
-                    href={labelData.rcWhatsAppUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="verification-label-contact-link"
-                  >
-                    <MessageCircle size={12} strokeWidth={2} aria-hidden />
-                    <span>{loading ? '…' : labelData.rcPhoneDisplay}</span>
-                  </a>
-                ) : (
-                  <span className="verification-label-contact-link verification-label-contact-link--static">
-                    <MessageCircle size={12} strokeWidth={2} aria-hidden />
-                    <span>{loading ? '…' : labelData.rcPhoneDisplay}</span>
-                  </span>
-                )}
-              </div>
+            <p className="verification-label-company-name mb-0">
+              {VERIFICATION_LABEL_BRANDING.companyName}
+            </p>
+            <div className="verification-label-contact">
+              {labelData.rcWhatsAppUrl ? (
+                <a
+                  href={labelData.rcWhatsAppUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="verification-label-contact-link"
+                >
+                  <MessageCircle size={12} strokeWidth={2} aria-hidden />
+                  <span>{loading ? '…' : labelData.rcPhoneDisplay}</span>
+                </a>
+              ) : (
+                <span className="verification-label-contact-link verification-label-contact-link--static">
+                  <MessageCircle size={12} strokeWidth={2} aria-hidden />
+                  <span>{loading ? '…' : labelData.rcPhoneDisplay}</span>
+                </span>
+              )}
             </div>
           </footer>
         </article>
