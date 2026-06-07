@@ -99,10 +99,14 @@ function resolveTaxableValue(record: SiteCalibration): number | null {
   return null;
 }
 
+function roundInrPaise(amount: number): number {
+  return Math.round(amount * 100) / 100;
+}
+
 function splitKeralaGst(taxableValue: number): { cgst: number; sgst: number; total: number } {
-  const cgst = Math.round(taxableValue * 0.09);
-  const sgst = Math.round(taxableValue * 0.09);
-  return { cgst, sgst, total: taxableValue + cgst + sgst };
+  const cgst = roundInrPaise(taxableValue * 0.09);
+  const sgst = roundInrPaise(taxableValue * 0.09);
+  return { cgst, sgst, total: roundInrPaise(taxableValue + cgst + sgst) };
 }
 
 function formatCustomerLocation(customer?: Customer | null): string {

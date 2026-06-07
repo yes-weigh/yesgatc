@@ -1,29 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Tags, X } from 'lucide-react';
+import { MessageCircle, X } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAppContext } from '../context/AppContext';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
-import {
-  getRememberedBluetoothPrinter,
-  isBluetoothEscposSupported,
-} from '../lib/bluetoothEscposPrinter';
-import type { RememberedBluetoothPrinter } from '../lib/bluetoothPrinterStorage';
 import { DEFAULT_RC_FEES_STRUCTURE } from '../lib/rcProfileFields';
 import {
   buildVerificationReceiptData,
-  buildVerificationReceiptShareMessage,
   formatReceiptLineAmount,
   formatReceiptMoney,
   VERIFICATION_RECEIPT_BRANDING,
   VERIFICATION_RECEIPT_THERMAL,
 } from '../lib/verificationReceipt';
-import { buildWhatsAppShareUrl } from '../lib/verificationWhatsAppShare';
 import {
-  formatBluetoothPrintError,
-  printVerificationReceiptToBluetooth,
-} from '../lib/verificationReceiptPrint';
+  formatReceiptShareError,
+  shareVerificationReceiptOnWhatsApp,
+} from '../lib/verificationReceiptShare';
 import type { Customer, SiteCalibration } from '../types';
 
 type VerificationReceiptModalProps = {
@@ -66,18 +59,11 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
   const fees = DEFAULT_RC_FEES_STRUCTURE;
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(false);
-  const [printing, setPrinting] = useState(false);
-  const [printMessage, setPrintMessage] = useState<string | null>(null);
-  const [printError, setPrintError] = useState<string | null>(null);
-  const [savedPrinter, setSavedPrinter] = useState<RememberedBluetoothPrinter | null>(null);
-  const bluetoothPrintSupported = isBluetoothEscposSupported();
+  const [sharing, setSharing] = useState(false);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   useHistoryOverlay(open, onClose);
-
-  useEffect(() => {
-    if (!open) return;
-    setSavedPrinter(getRememberedBluetoothPrinter());
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -108,31 +94,27 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
     [record, customer, products, fees],
   );
 
-  const whatsAppShareUrl = useMemo(() => {
-    if (loading) return null;
-    return buildWhatsAppShareUrl(
-      buildVerificationReceiptShareMessage(receiptData),
-      customer?.phone,
-    );
-  }, [receiptData, customer?.phone, loading]);
+  const handleWhatsAppShare = async () => {
+    if (!receiptRef.current || sharing || loading) return;
 
-  const handleBluetoothPrint = async (forcePicker = false) => {
-    if (printing || loading) return;
-
-    setPrinting(true);
-    setPrintMessage(null);
-    setPrintError(null);
+    setSharing(true);
+    setShareMessage(null);
+    setShareError(null);
 
     try {
-      const { deviceName } = await printVerificationReceiptToBluetooth(receiptData, {
-        forcePicker,
+      const result = await shareVerificationReceiptOnWhatsApp({
+        element: receiptRef.current,
+        phone: customer?.phone,
       });
-      setSavedPrinter(getRememberedBluetoothPrinter());
-      setPrintMessage(`Receipt sent to ${deviceName}.`);
+      setShareMessage(
+        result === 'shared'
+          ? 'Receipt image shared.'
+          : 'Receipt image downloaded. Attach it in the WhatsApp chat that opened.',
+      );
     } catch (error) {
-      setPrintError(formatBluetoothPrintError(error));
+      setShareError(formatReceiptShareError(error));
     } finally {
-      setPrinting(false);
+      setSharing(false);
     }
   };
 
@@ -246,7 +228,7 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
 
             <ReceiptRule />
 
-            <footer className="verification-gst-bill-footer">
+            <footer className="verification-gst-bill-footer" aria-label="Receipt footer">
               {VERIFICATION_RECEIPT_BRANDING.footerLines.map(line => (
                 <p key={line} className="verification-gst-bill-footer-line mb-0">
                   {line}
@@ -256,8 +238,10 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
 
             <ReceiptRule />
 
-            <p className="verification-gst-bill-footnote mb-0">This is a computer generated receipt.</p>
-            <p className="verification-gst-bill-footnote mb-0">No signature required.</p>
+            <div className="verification-gst-bill-footer verification-gst-bill-footnotes">
+              <p className="verification-gst-bill-footnote mb-0">This is a computer generated receipt.</p>
+              <p className="verification-gst-bill-footnote mb-0">No signature required.</p>
+            </div>
           </article>
         </div>
 
@@ -265,59 +249,25 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
           <div className="verification-gst-bill-actions">
             <button
               type="button"
-              className="btn btn-primary btn-sm verification-gst-bill-print-btn"
-              onClick={() => void handleBluetoothPrint()}
-              disabled={printing || loading || !bluetoothPrintSupported}
-              aria-label={
-                printing
-                  ? 'Printing receipt'
-                  : savedPrinter
-                    ? `Print receipt to ${savedPrinter.name}`
-                    : 'Print receipt'
-              }
-              title={
-                bluetoothPrintSupported
-                  ? savedPrinter
-                    ? `Print receipt (${savedPrinter.name})`
-                    : 'Print receipt'
-                  : 'Printing requires Chrome on Android over HTTPS'
-              }
+              className="btn btn-secondary btn-sm verification-gst-bill-whatsapp-btn"
+              onClick={() => void handleWhatsAppShare()}
+              disabled={sharing || loading}
+              aria-label={sharing ? 'Sharing receipt image' : 'Share receipt image on WhatsApp'}
+              title="Share receipt image on WhatsApp"
             >
-              <Tags size={18} aria-hidden />
+              <MessageCircle size={18} aria-hidden />
             </button>
-            {whatsAppShareUrl && (
-              <a
-                href={whatsAppShareUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-secondary btn-sm verification-gst-bill-whatsapp-btn"
-                aria-label="Share receipt on WhatsApp"
-                title="Share receipt on WhatsApp"
-              >
-                <MessageCircle size={18} aria-hidden />
-              </a>
-            )}
-            {bluetoothPrintSupported && savedPrinter && (
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm verification-gst-bill-change-printer-btn"
-                onClick={() => void handleBluetoothPrint(true)}
-                disabled={printing || loading}
-              >
-                Change printer
-              </button>
-            )}
           </div>
 
-          {printMessage && (
+          {shareMessage && (
             <p className="verification-gst-bill-print-status text-sm mb-0" role="status">
-              {printMessage}
+              {shareMessage}
             </p>
           )}
 
-          {printError && (
+          {shareError && (
             <p className="verification-gst-bill-print-error text-sm mb-0" role="alert">
-              {printError}
+              {shareError}
             </p>
           )}
 

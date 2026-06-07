@@ -154,28 +154,3 @@ export function buildVerificationReceiptData(
     missingFields,
   };
 }
-
-/** Plain-text wallet receipt summary for WhatsApp share. */
-export function buildVerificationReceiptShareMessage(receipt: VerificationReceiptData): string {
-  return [
-    VERIFICATION_RECEIPT_BRANDING.companyName,
-    ...VERIFICATION_RECEIPT_BRANDING.addressLines,
-    `GSTIN : ${VERIFICATION_RECEIPT_BRANDING.gstin}`,
-    '',
-    'CASH RECEIPT',
-    '',
-    `Receipt No : ${receipt.receiptNumber}`,
-    `Date : ${receipt.receiptDate}`,
-    `Time : ${receipt.receiptTime}`,
-    `Customer Name : ${receipt.customerName}`,
-    `Location : ${receipt.customerLocation}`,
-    '',
-    `${receipt.lineDescription} : ${formatReceiptMoney(receipt.totalAmount)}`,
-    `Total Amount : ${formatReceiptMoney(receipt.totalAmount)}`,
-    receipt.amountInWords,
-    '',
-    `Payment Mode : ${VERIFICATION_RECEIPT_BRANDING.paymentMode}`,
-    '',
-    VERIFICATION_RECEIPT_BRANDING.footerLines[0],
-  ].join('\n');
-}
