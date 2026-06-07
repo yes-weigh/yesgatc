@@ -271,16 +271,33 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   onClick={openDetails}
                   title={detailTitle}
                 >
-                  <h3 className="verification-list-card-title">{record.customerName || '—'}</h3>
-                  {walletPaymentDue && (
-                    <span className="verification-list-wallet-due-badge">Payment due</span>
-                  )}
-                  <p className="verification-list-card-cert text-mono" title={certNo}>
-                    {certNo}
-                  </p>
+                  <div className="verification-list-card-header">
+                    <div className="verification-list-card-header-main">
+                      <h3 className="verification-list-card-title">{record.customerName || '—'}</h3>
+                      {walletPaymentDue && (
+                        <span className="verification-list-wallet-due-badge">Payment due</span>
+                      )}
+                    </div>
+                    <VerificationListTypeBadges record={record} zohoListBadge={zohoListBadge} />
+                  </div>
+
+                  <div className="verification-list-card-identity">
+                    <span className="verification-list-card-cert text-mono" title={certNo}>
+                      {certNo}
+                    </span>
+                    {showRcCentre && (
+                      <span
+                        className="verification-list-card-rc"
+                        title={record.rcCenterName || undefined}
+                      >
+                        {record.rcCenterName || '—'}
+                      </span>
+                    )}
+                  </div>
+
                   <div className="verification-list-card-metrics">
                     <div className="verification-list-card-metric verification-list-card-metric--serial">
-                      <span className="verification-list-card-metric-label">Serial No.</span>
+                      <span className="verification-list-card-metric-label">Serial</span>
                       <span
                         className="verification-list-card-metric-value text-mono"
                         title={serial}
@@ -306,37 +323,12 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                         </span>
                       </div>
                     )}
-                    {showRcCentre && (
-                      <div className="verification-list-card-metric verification-list-card-metric--rc">
-                        <span className="verification-list-card-metric-label">RC centre</span>
-                        <span
-                          className="verification-list-card-metric-value"
-                          title={record.rcCenterName || undefined}
-                        >
-                          {record.rcCenterName || '—'}
-                        </span>
-                      </div>
-                    )}
                     {showVctColumn && (
                       <div className="verification-list-card-metric verification-list-card-metric--vct">
-                        <div className="verification-list-card-metric-stack verification-list-card-metric-stack--vct">
-                          <span className="verification-list-card-metric-label">VCT</span>
-                          <span className="verification-list-card-metric-value verification-list-card-metric-text">
-                            {verificationVctLabel(record)}
-                          </span>
-                        </div>
-                        <div className="verification-list-card-metric-stack verification-list-card-metric-stack--type">
-                          <span className="verification-list-card-metric-label verification-list-card-metric-label--type">
-                            Type
-                          </span>
-                          <VerificationListTypeBadges record={record} zohoListBadge={zohoListBadge} />
-                        </div>
-                      </div>
-                    )}
-                    {!showVctColumn && (
-                      <div className="verification-list-card-metric verification-list-card-metric--type">
-                        <span className="verification-list-card-metric-label">Type</span>
-                        <VerificationListTypeBadges record={record} zohoListBadge={zohoListBadge} />
+                        <span className="verification-list-card-metric-label">VCT</span>
+                        <span className="verification-list-card-metric-value verification-list-card-metric-text">
+                          {verificationVctLabel(record)}
+                        </span>
                       </div>
                     )}
                   </div>

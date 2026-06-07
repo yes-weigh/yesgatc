@@ -26,21 +26,26 @@ export type VerificationListActiveFilters = {
 
 export type VerificationListCountOmitFilter = 'status' | 'type' | 'rc' | 'search';
 
-/** Records visible in the list after applying all filters except those omitted (for chip/dropdown counts). */
+/** Records matching active filters except those omitted — raw Firestore rows (for chip/dropdown counts). */
 export function verificationListRecordsForFilterCounts(
   allRecords: SiteCalibration[],
   filters: VerificationListActiveFilters,
   omit: VerificationListCountOmitFilter | VerificationListCountOmitFilter[],
-): VerificationListDisplayRecord[] {
+): SiteCalibration[] {
   const omitted = new Set(Array.isArray(omit) ? omit : [omit]);
-  const filtered = allRecords.filter(record => {
+  const primaryIds = buildDuplicatePrimaryIdSet(allRecords);
+
+  return allRecords.filter(record => {
     if (!omitted.has('search')) {
       const extras = filters.searchExtras?.(record) ?? {};
       if (!matchesVerificationSearch(record, filters.searchTerm ?? '', extras)) {
         return false;
       }
     }
-    if (!omitted.has('status') && !matchesVerificationStatusFilter(record, filters.statusFilter)) {
+    if (
+      !omitted.has('status') &&
+      !matchesVerificationListStatusFilter(record, filters.statusFilter, primaryIds)
+    ) {
       return false;
     }
     if (!omitted.has('type') && !matchesVerificationTypeFilter(record, filters.typeFilter)) {
@@ -56,7 +61,6 @@ export function verificationListRecordsForFilterCounts(
     }
     return true;
   });
-  return collapseVerificationsForListDisplay(filtered, allRecords);
 }
 
 export type VerificationListDisplayRecord = SiteCalibration & {
@@ -113,6 +117,79 @@ function recordRecencyKey(record: SiteCalibration): string {
     record.createdAt ||
     ''
   );
+}
+
+/** Primary row id per RC + serial group (and every record without a serial key). */
+export function buildDuplicatePrimaryIdSet(allRecords: SiteCalibration[]): Set<string> {
+  const primaryIds = new Set<string>();
+  const groups = buildSerialGroupMap(allRecords);
+
+  for (const group of groups.values()) {
+    primaryIds.add(pickPrimaryListRecord(group).id);
+  }
+
+  for (const record of allRecords) {
+    if (!serialGroupKey(record)) {
+      primaryIds.add(record.id);
+    }
+  }
+
+  return primaryIds;
+}
+
+export function isVerificationListDuplicate(
+  record: SiteCalibration,
+  primaryIds: Set<string>,
+): boolean {
+  const key = serialGroupKey(record);
+  return Boolean(key && !primaryIds.has(record.id));
+}
+
+export function matchesVerificationListStatusFilter(
+  record: SiteCalibration,
+  filter: VerificationStatusFilter,
+  primaryIds: Set<string>,
+): boolean {
+  if (filter === 'duplicates') {
+    return isVerificationListDuplicate(record, primaryIds);
+  }
+  return matchesVerificationStatusFilter(record, filter);
+}
+
+export function countVerificationDuplicates(
+  filteredRecords: SiteCalibration[],
+  allRecords: SiteCalibration[],
+): number {
+  const primaryIds = buildDuplicatePrimaryIdSet(allRecords);
+  let duplicates = 0;
+  for (const record of filteredRecords) {
+    if (isVerificationListDuplicate(record, primaryIds)) {
+      duplicates += 1;
+    }
+  }
+  return duplicates;
+}
+
+/** Collapse to unique serials for all stages except Duplicates. */
+export function buildVerificationListDisplay(
+  filtered: SiteCalibration[],
+  allRecords: SiteCalibration[],
+  statusFilter: VerificationStatusFilter,
+): VerificationListDisplayRecord[] {
+  if (statusFilter === 'duplicates') {
+    const groups = buildSerialGroupMap(allRecords);
+    return sortVerificationsByCertificateDesc(
+      filtered.map(record => {
+        const key = serialGroupKey(record);
+        return {
+          ...record,
+          serialVersionCount: key ? (groups.get(key)?.length ?? 1) : 1,
+        };
+      }),
+    );
+  }
+
+  return collapseVerificationsForListDisplay(filtered, allRecords);
 }
 
 /** Best row to represent a serial in list views (active cert first, void copies last). */

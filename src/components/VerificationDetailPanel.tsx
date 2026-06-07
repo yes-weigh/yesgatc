@@ -10,13 +10,13 @@ import { RvLegacyZohoSettlementSection } from './RvLegacyZohoSettlementSection';
 import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import { VerificationZohoInvoiceSection } from './VerificationZohoInvoiceSection';
 import { getVerificationSerialGroup } from '../lib/verificationResubmit';
-import { VERIFICATION_LOCATION_OPTIONS } from '../lib/siteCalibrationProfileFields';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
 import {
-  canShowVerificationCertifiedActions,
-  formatVerificationCapAcc,
-  verificationVctLabel,
-} from '../lib/verificationRequest';
+  VerificationDetailSpecRow,
+  VerificationDetailSpecSection,
+  VerificationDetailSpecs,
+} from './VerificationDetailSpecs';
+import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
 
 interface VerificationDetailPanelProps {
@@ -40,20 +40,6 @@ function formatDateTime(iso?: string): string {
   } catch {
     return iso;
   }
-}
-
-function locationLabel(value?: SiteCalibration['verificationLocation']): string {
-  if (!value) return '—';
-  return VERIFICATION_LOCATION_OPTIONS.find(opt => opt.value === value)?.label ?? value;
-}
-
-function DetailField({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="verification-detail-field">
-      <span className="verification-detail-label">{label}</span>
-      <span className="verification-detail-value">{value || '—'}</span>
-    </div>
-  );
 }
 
 function DetailImage({
@@ -125,6 +111,11 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             <p className="text-muted text-sm mt-1 mb-0">
               {record.customerName || '—'} · {record.serialNumber || 'no serial'}
             </p>
+            {rcCenterName?.trim() && (
+              <p className="verification-detail-rc-centre text-sm mt-1 mb-0">
+                {rcCenterName.trim()}
+              </p>
+            )}
             <div className="verification-view-banner mt-2">
               <VerificationStatusBadge record={record} />
               {record.submittedAt && (
@@ -160,98 +151,40 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
         </div>
 
         <div className="verification-detail-body">
-          <section className="verification-detail-section">
-            <h3 className="verification-detail-section-title">Overview</h3>
-            <div className="verification-detail-grid">
-              <DetailField label="Record ID" value={<span className="text-mono text-sm">{record.id}</span>} />
-              <DetailField
-                label="Application no."
-                value={
-                  record.applicationNumber?.trim() ? (
-                    <span className="text-mono">{record.applicationNumber.trim()}</span>
-                  ) : (
-                    '—'
-                  )
-                }
-              />
-              {record.verificationType === 'RV' && (
-                <DetailField
-                  label="Zoho invoice"
-                  value={
-                    verificationZohoInvoiceNumber(record) ? (
-                      <span className="text-mono">{verificationZohoInvoiceNumber(record)}</span>
-                    ) : (
-                      '—'
-                    )
-                  }
-                />
-              )}
-              <DetailField label="RC centre" value={rcCenterName || '—'} />
-              <DetailField label="VCT" value={verificationVctLabel(record)} />
-              <DetailField label="Type" value={record.verificationType} />
-              <DetailField label="Customer" value={record.customerName} />
-              <DetailField label="Product" value={record.productName} />
-              <DetailField label="Serial number" value={<span className="text-mono">{record.serialNumber}</span>} />
-              <DetailField label="Cap / accuracy" value={formatVerificationCapAcc(record)} />
-              <DetailField
-                label="MPE"
-                value={
-                  record.maximumPermissibleError != null ? `${record.maximumPermissibleError} g` : undefined
-                }
-              />
-              <DetailField
-                label="Subject"
-                value={record.verificationSubject === 'self' ? 'Self' : record.verificationSubject === 'customer' ? 'Customer' : '—'}
-              />
-              <DetailField label="Location" value={locationLabel(record.verificationLocation)} />
-            </div>
-          </section>
-
-          <section className="verification-detail-section">
-            <h3 className="verification-detail-section-title">Session</h3>
-            <div className="verification-detail-grid">
-              <DetailField label="Ambient temperature" value={record.ambientTemperature} />
-              <DetailField label="Relative humidity" value={record.relativeHumidity} />
-              <DetailField label="Seal ID" value={record.sealIdentificationNumber} />
-              {record.verificationType === 'RV' && (
-                <DetailField
-                  label="Manufacturing year"
-                  value={record.manufacturingYear != null ? String(record.manufacturingYear) : undefined}
-                />
-              )}
-            </div>
-          </section>
+          <VerificationDetailSpecs record={record} omitChromeFields includeTimeline />
 
           <VerificationZohoInvoiceSection record={record} />
 
-          <section className="verification-detail-section">
-            <h3 className="verification-detail-section-title">Timeline</h3>
-            <div className="verification-detail-grid">
-              <DetailField label="Created" value={formatDateTime(record.createdAt)} />
-              <DetailField label="Submitted" value={formatDateTime(record.submittedAt)} />
-              <DetailField label="Approved" value={formatDateTime(record.approvedAt)} />
-              <DetailField label="Certified" value={formatDateTime(record.certifiedAt)} />
-            </div>
-          </section>
+          <VerificationDetailSpecSection title="Record">
+            <VerificationDetailSpecRow
+              label="Record ID"
+              value={<span className="text-mono text-sm">{record.id}</span>}
+              mono
+              full
+            />
+            <VerificationDetailSpecRow label="Created" value={formatDateTime(record.createdAt)} />
+            <VerificationDetailSpecRow label="Approved" value={formatDateTime(record.approvedAt)} />
+          </VerificationDetailSpecSection>
 
           {(record.pipelineFailedPhase || record.pipelineFailureMessage) && (
-            <section className="verification-detail-section">
-              <h3 className="verification-detail-section-title">Pipeline</h3>
-              <div className="verification-detail-grid">
-                <DetailField
-                  label="Failed phase"
-                  value={
-                    record.pipelineFailedPhase === 'submit'
-                      ? 'Submit'
-                      : record.pipelineFailedPhase === 'certification'
-                        ? 'Certification'
-                        : record.pipelineFailedPhase
-                  }
-                />
-                <DetailField label="Failed at" value={formatDateTime(record.pipelineFailedAt)} />
-                <DetailField label="Message" value={record.pipelineFailureMessage} />
-              </div>
-            </section>
+            <VerificationDetailSpecSection title="Pipeline">
+              <VerificationDetailSpecRow
+                label="Failed phase"
+                value={
+                  record.pipelineFailedPhase === 'submit'
+                    ? 'Submit'
+                    : record.pipelineFailedPhase === 'certification'
+                      ? 'Certification'
+                      : record.pipelineFailedPhase
+                }
+              />
+              <VerificationDetailSpecRow label="Failed at" value={formatDateTime(record.pipelineFailedAt)} />
+              <VerificationDetailSpecRow
+                label="Message"
+                value={record.pipelineFailureMessage}
+                full
+              />
+            </VerificationDetailSpecSection>
           )}
 
           <section className="verification-detail-section">

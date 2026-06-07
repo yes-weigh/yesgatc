@@ -1,30 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import {
-  Award,
-  Barcode,
-  Calendar,
-  Crosshair,
-  Droplets,
-  FileText,
-  MapPin,
-  Package,
-  Scale,
-  Shield,
-  ShieldCheck,
-  Thermometer,
-  Users,
-  ZoomIn,
-} from 'lucide-react';
+import { ZoomIn } from 'lucide-react';
 import { StorageImage } from './StorageImage';
-import { ProductSpecIconTile } from './ProductSpecIconTile';
 import { isVerificationCertificateVoided } from '../lib/verificationCertificateVoid';
 import { listVerificationAttachmentsFromRecord } from '../lib/verificationAttachments';
 import { VerificationPhotoViewer } from './VerificationPhotoViewer';
 import { VerificationVoidWatermark } from './VerificationVoidWatermark';
-import { VERIFICATION_LOCATION_OPTIONS, verificationTypeLabel } from '../lib/siteCalibrationProfileFields';
-import { formatVerificationListDate } from '../lib/verificationListFormat';
-import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
-import { formatVerificationCapAcc, verificationVctLabel } from '../lib/verificationRequest';
+import { VerificationDetailSpecs } from './VerificationDetailSpecs';
 import type { SiteCalibration } from '../types';
 
 type VerificationDetailsCardProps = {
@@ -32,35 +13,10 @@ type VerificationDetailsCardProps = {
   className?: string;
 };
 
-function locationLabel(value?: SiteCalibration['verificationLocation']): string | null {
-  if (!value) return null;
-  return VERIFICATION_LOCATION_OPTIONS.find(opt => opt.value === value)?.label ?? value;
-}
-
-function subjectLabel(record: SiteCalibration): string | null {
-  if (record.verificationSubject === 'self') return 'Self';
-  if (record.verificationSubject === 'customer') return 'Customer';
-  return null;
-}
-
-function formatTemperature(value?: string): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  return trimmed.includes('°') ? trimmed : `${trimmed} °C`;
-}
-
-function formatHumidity(value?: string): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  return trimmed.includes('%') ? trimmed : `${trimmed} %`;
-}
-
 export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = ({
   record,
   className = '',
 }) => {
-  const mpe =
-    record.maximumPermissibleError != null ? `${record.maximumPermissibleError} g` : null;
   const isVoided = isVerificationCertificateVoided(record);
   const attachments = useMemo(() => listVerificationAttachmentsFromRecord(record), [record]);
   const [viewerAttachmentId, setViewerAttachmentId] = useState<string | null>(null);
@@ -69,62 +25,6 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
       ? attachments.findIndex(item => item.id === viewerAttachmentId)
       : -1;
 
-  const detailTiles: Array<{
-    key: string;
-    label: string;
-    value: React.ReactNode;
-    icon: typeof FileText;
-    tone: 'sky' | 'violet' | 'teal' | 'emerald' | 'orange' | 'pink' | 'blue';
-    mono?: boolean;
-  }> = [];
-
-  const pushTile = (
-    key: string,
-    label: string,
-    value: React.ReactNode,
-    icon: typeof FileText,
-    tone: 'sky' | 'violet' | 'teal' | 'emerald' | 'orange' | 'pink' | 'blue',
-    mono = false,
-  ) => {
-    if (value === null || value === undefined || value === '' || value === '—') return;
-    detailTiles.push({ key, label, value, icon, tone, mono });
-  };
-
-  pushTile(
-    'application',
-    'Application',
-    record.applicationNumber?.trim() || null,
-    FileText,
-    'sky',
-    true,
-  );
-  if (record.verificationType === 'RV') {
-    pushTile(
-      'zoho-invoice',
-      'Zoho invoice',
-      verificationZohoInvoiceNumber(record),
-      FileText,
-      'blue',
-      true,
-    );
-  }
-  pushTile('serial', 'Serial', record.serialNumber?.trim() || null, Barcode, 'sky', true);
-  pushTile('type', 'Type', verificationTypeLabel(record.verificationType), Package, 'violet');
-  pushTile('vct', 'VCT', verificationVctLabel(record), ShieldCheck, 'violet');
-  pushTile('belongs', 'Belongs to', subjectLabel(record), Users, 'teal');
-  pushTile('location', 'Location', locationLabel(record.verificationLocation), MapPin, 'emerald');
-  pushTile('product', 'Product', record.productName, Package, 'orange');
-  pushTile('cap', 'Cap / accuracy', formatVerificationCapAcc(record), Crosshair, 'orange');
-  pushTile('mpe', 'MPE', mpe, Scale, 'pink');
-  pushTile('temperature', 'Temperature', formatTemperature(record.ambientTemperature), Thermometer, 'pink');
-  pushTile('humidity', 'Humidity', formatHumidity(record.relativeHumidity), Droplets, 'blue');
-  pushTile('seal', 'Seal ID', record.sealIdentificationNumber, Shield, 'blue', true);
-  if (record.verificationType === 'RV' && record.manufacturingYear != null) {
-    pushTile('mfg', 'Mfg year', String(record.manufacturingYear), Calendar, 'violet');
-  }
-  pushTile('submitted', 'Submitted', formatVerificationListDate(record.submittedAt), Calendar, 'emerald');
-  pushTile('certified', 'Certified on', formatVerificationListDate(record.certifiedAt), Award, 'emerald');
-
   return (
     <section
       className={`verification-summary-details-card verification-ref-details-card${
@@ -132,18 +32,7 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
       }${className ? ` ${className}` : ''}`}
       aria-label="Verification details"
     >
-      <div className="details-specs-icon-grid verification-ref-details-grid">
-        {detailTiles.map(tile => (
-          <ProductSpecIconTile
-            key={tile.key}
-            label={tile.label}
-            value={tile.value}
-            icon={tile.icon}
-            tone={tile.tone}
-            mono={tile.mono}
-          />
-        ))}
-      </div>
+      <VerificationDetailSpecs record={record} omitChromeFields includeTimeline />
 
       {attachments.length > 0 && (
         <div className="verification-summary-photos">

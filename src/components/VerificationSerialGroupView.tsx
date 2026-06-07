@@ -199,6 +199,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
                 <div className="verification-version-card-main">
                   <VerificationSummaryChrome
                     record={version}
+                    rcCenterName={rcCenterName}
                     versionHint={
                       showGroupHeading
                         ? `${verificationVersionTitle(version, group)} · ${verificationVersionSubtitle(version)}`

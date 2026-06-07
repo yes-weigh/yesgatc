@@ -80,7 +80,7 @@ export type VerificationFilterStatus =
   | 'failed_submit'
   | 'failed_certification';
 
-export type VerificationStatusFilter = VerificationFilterStatus | 'all';
+export type VerificationStatusFilter = VerificationFilterStatus | 'all' | 'duplicates';
 
 export type VerificationTypeFilter = 'all' | JobType;
 
@@ -98,6 +98,7 @@ export interface VerificationStatusFilterCounts {
   certified: number;
   failed_submit: number;
   failed_certification: number;
+  duplicates: number;
 }
 
 export function isVerificationFullyCertified(record: SiteCalibration): boolean {
@@ -148,6 +149,7 @@ export function verificationFilterLabel(filter: VerificationStatusFilter): strin
   if (filter === 'all') return 'All stages';
   if (filter === 'failed_submit') return 'Failed at submit';
   if (filter === 'failed_certification') return 'Failed at certification';
+  if (filter === 'duplicates') return 'Duplicates';
   return verificationStatusLabel(filter);
 }
 
@@ -178,6 +180,7 @@ export function matchesVerificationStatusFilter(
   record: SiteCalibration,
   filter: VerificationStatusFilter,
 ): boolean {
+  if (filter === 'duplicates') return false;
   if (filter === 'all') return true;
   if (filter === 'failed_submit') return isVerificationFailedAtSubmit(record);
   if (filter === 'failed_certification') return isVerificationFailedAtCertification(record);
@@ -231,6 +234,7 @@ export function tallyVerificationStatusFilters(
     certified: 0,
     failed_submit: 0,
     failed_certification: 0,
+    duplicates: 0,
   };
 
   for (const record of records) {
@@ -268,6 +272,7 @@ export function buildVerificationStatusFilterOptions(
       label: 'Failed at certification',
       count: counts.failed_certification,
     },
+    { value: 'duplicates', label: 'Duplicates', count: counts.duplicates },
   ];
 }
 

@@ -39,7 +39,6 @@ import {
   canSubmitVerification,
   isVerificationEditable,
   isVerificationViewable,
-  matchesVerificationStatusFilter,
   matchesVerificationTypeFilter,
   normalizeVerificationStatus,
   resolveVerificationDraftActorForSession,
@@ -84,7 +83,10 @@ import {
   type VerificationTypeFilter,
 } from '../../components/VerificationListFilters';
 import {
-  collapseVerificationsForListDisplay,
+  buildDuplicatePrimaryIdSet,
+  buildVerificationListDisplay,
+  countVerificationDuplicates,
+  matchesVerificationListStatusFilter,
   verificationListRecordsForFilterCounts,
 } from '../../lib/verificationListGrouping';
 import { submitVerificationRecord, submitVerificationRecords } from '../../lib/verificationSubmit';
@@ -1590,14 +1592,18 @@ export const RCSiteCalibration: React.FC = () => {
 
   const canSubmitFromForm = !submitBlockReason;
 
+  const duplicatePrimaryIds = useMemo(() => buildDuplicatePrimaryIdSet(records), [records]);
+
   const filteredRecords = useMemo(() => {
     const filtered = records.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
-      if (!matchesVerificationStatusFilter(record, statusFilter)) return false;
+      if (!matchesVerificationListStatusFilter(record, statusFilter, duplicatePrimaryIds)) {
+        return false;
+      }
       return matchesVerificationTypeFilter(record, typeFilter);
     });
-    return collapseVerificationsForListDisplay(filtered, records);
-  }, [records, statusFilter, typeFilter, searchTerm]);
+    return buildVerificationListDisplay(filtered, records, statusFilter);
+  }, [records, statusFilter, typeFilter, searchTerm, duplicatePrimaryIds]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -1631,10 +1637,13 @@ export const RCSiteCalibration: React.FC = () => {
     [records, listFilters],
   );
 
-  const statusCounts = useMemo(
-    () => tallyVerificationStatusFilters(recordsForStatusCounts),
-    [recordsForStatusCounts],
-  );
+  const statusCounts = useMemo(() => {
+    const base = tallyVerificationStatusFilters(recordsForStatusCounts);
+    return {
+      ...base,
+      duplicates: countVerificationDuplicates(recordsForStatusCounts, records),
+    };
+  }, [recordsForStatusCounts, records]);
   const typeCounts = useMemo(
     () => tallyVerificationTypeFilters(recordsForTypeCounts),
     [recordsForTypeCounts],

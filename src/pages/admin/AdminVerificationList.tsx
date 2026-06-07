@@ -6,7 +6,6 @@ import {
   buildVerificationStatusFilterOptions,
   buildVerificationTypeFilterOptions,
   canDeleteVerification,
-  matchesVerificationStatusFilter,
   matchesVerificationTypeFilter,
   tallyVerificationStatusFilters,
   tallyVerificationTypeFilters,
@@ -14,7 +13,10 @@ import {
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
-  collapseVerificationsForListDisplay,
+  buildDuplicatePrimaryIdSet,
+  buildVerificationListDisplay,
+  countVerificationDuplicates,
+  matchesVerificationListStatusFilter,
   verificationListRecordsForFilterCounts,
 } from '../../lib/verificationListGrouping';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
@@ -117,12 +119,14 @@ export const AdminVerificationList: React.FC = () => {
     }
   }, [records, viewingRecord?.id]);
 
+  const duplicatePrimaryIds = useMemo(() => buildDuplicatePrimaryIdSet(records), [records]);
+
   const filteredRecords = useMemo(() => {
     const filtered = records.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm, { rcCenterName: record.rcCenterName })) {
         return false;
       }
-      if (!matchesVerificationStatusFilter(record, statusFilter)) {
+      if (!matchesVerificationListStatusFilter(record, statusFilter, duplicatePrimaryIds)) {
         return false;
       }
       if (!matchesVerificationTypeFilter(record, typeFilter)) {
@@ -133,8 +137,8 @@ export const AdminVerificationList: React.FC = () => {
       }
       return true;
     });
-    return collapseVerificationsForListDisplay(filtered, records);
-  }, [records, statusFilter, typeFilter, rcFilter, searchTerm]);
+    return buildVerificationListDisplay(filtered, records, statusFilter);
+  }, [records, statusFilter, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -212,10 +216,13 @@ export const AdminVerificationList: React.FC = () => {
     [records, listFilters],
   );
 
-  const counts = useMemo(
-    () => tallyVerificationStatusFilters(recordsForStatusCounts),
-    [recordsForStatusCounts],
-  );
+  const counts = useMemo(() => {
+    const base = tallyVerificationStatusFilters(recordsForStatusCounts);
+    return {
+      ...base,
+      duplicates: countVerificationDuplicates(recordsForStatusCounts, records),
+    };
+  }, [recordsForStatusCounts, records]);
   const typeCounts = useMemo(
     () => tallyVerificationTypeFilters(recordsForTypeCounts),
     [recordsForTypeCounts],
