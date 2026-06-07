@@ -25,6 +25,8 @@ import { VerificationSummaryChrome } from './VerificationSummaryChrome';
 import { RvLegacyWalletPaymentSection } from './RvLegacyWalletPaymentSection';
 import { RvLegacyZohoInvoiceSection } from './RvLegacyZohoInvoiceSection';
 import { RvLegacyZohoSettlementSection } from './RvLegacyZohoSettlementSection';
+import { RvSubmitTestRevertSection } from './RvSubmitTestRevertSection';
+import { canRevertRvSubmitTest } from '../lib/rvSubmitTestRevert';
 import { ListViewBackBar } from './ListViewBackBar';
 import type { SiteCalibration } from '../types';
 
@@ -77,6 +79,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
     [group, record],
   );
   const showSerialResubmit = isSuperAdmin && canResubmitSerialGroup(group, record);
+  const showDevRvWipe = canRevertRvSubmitTest(record, isSuperAdmin);
   const voidOthersCount = resubmitSource
     ? countVoidableCertificatesInGroup(group, resubmitSource.id)
     : 0;
@@ -181,7 +184,6 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
         }}
         className="verification-serial-group-payment-banner"
       />
-
       <div className="verification-serial-group-versions">
         {sortedGroup.map(version => {
           const tone = versionTone(version, group);
@@ -226,27 +228,43 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
         })}
       </div>
 
-      {showSerialResubmit && (
+      {(showSerialResubmit || showDevRvWipe) && (
         <div className="verification-serial-group-resubmit verification-serial-group-resubmit--footer">
-          {voidOthersCount > 0 && (
+          {showSerialResubmit && voidOthersCount > 0 && (
             <p className="verification-serial-group-resubmit-hint mb-0">
               Marks {voidOthersCount} other certificate{voidOthersCount === 1 ? '' : 's'} as void,
               then queues one new run.
             </p>
           )}
-          <button
-            type="button"
-            className="verification-form-btn verification-form-btn--resubmit"
-            disabled={resubmitting || closeDisabled}
-            onClick={() => void handleSerialResubmit()}
-          >
-            {resubmitting ? (
-              <span className="spinner-inline" aria-hidden />
-            ) : (
-              <RefreshCw size={16} aria-hidden />
+          <div className="verification-serial-group-footer-actions">
+            {showDevRvWipe && (
+              <RvSubmitTestRevertSection
+                record={record}
+                allRecords={allRecords}
+                rcCenterName={rcCenterName}
+                onReverted={async () => {
+                  await onPaymentRecorded?.();
+                  onClose();
+                }}
+                className="rv-submit-test-revert--footer"
+              />
             )}
-            <span>Resubmit on DOCA</span>
-          </button>
+            {showSerialResubmit && (
+              <button
+                type="button"
+                className="verification-form-btn verification-form-btn--resubmit"
+                disabled={resubmitting || closeDisabled}
+                onClick={() => void handleSerialResubmit()}
+              >
+                {resubmitting ? (
+                  <span className="spinner-inline" aria-hidden />
+                ) : (
+                  <RefreshCw size={16} aria-hidden />
+                )}
+                <span>Resubmit on DOCA</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

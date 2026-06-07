@@ -5,7 +5,8 @@ import { ShieldCheck, XCircle, AlertTriangle, Clock, Users, Building2, Wallet } 
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { tallyVerificationStatusFilters } from '../../lib/verificationRequest';
-import { fetchWalletTopUps } from '../../lib/rcWallet';
+import { formatRcFeeAmount } from '../../lib/rcProfileFields';
+import { fetchAllRcWallets, fetchWalletTopUps } from '../../lib/rcWallet';
 import { isManualWalletRechargeMode } from '../../lib/razorpaySettings';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import type { FirestoreUserDoc, Role, SiteCalibration } from '../../types';
@@ -21,6 +22,7 @@ export const AdminDashboard: React.FC = () => {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingVerifications, setLoadingVerifications] = useState(true);
   const [pendingWalletTopUps, setPendingWalletTopUps] = useState(0);
+  const [totalWalletBalance, setTotalWalletBalance] = useState(0);
   const [loadingWalletTopUps, setLoadingWalletTopUps] = useState(true);
 
   useEffect(() => {
@@ -45,12 +47,14 @@ export const AdminDashboard: React.FC = () => {
       setVerifications(records);
       setLoadingVerifications(false);
 
-      if (manualWalletRecharge) {
-        const pendingTopUps = await fetchWalletTopUps({ status: 'pending' });
-        setPendingWalletTopUps(pendingTopUps.length);
-      } else {
-        setPendingWalletTopUps(0);
-      }
+      const [wallets, pendingTopUps] = await Promise.all([
+        fetchAllRcWallets(),
+        manualWalletRecharge ? fetchWalletTopUps({ status: 'pending' }) : Promise.resolve([]),
+      ]);
+      setTotalWalletBalance(
+        wallets.reduce((sum, wallet) => sum + (Number(wallet.balanceInr) || 0), 0),
+      );
+      setPendingWalletTopUps(manualWalletRecharge ? pendingTopUps.length : 0);
       setLoadingWalletTopUps(false);
     };
     void fetchCounts();
@@ -77,9 +81,11 @@ export const AdminDashboard: React.FC = () => {
               <p className="stat-sub">
                 {loadingWalletTopUps
                   ? 'Loading…'
-                  : pendingWalletTopUps === 0
-                    ? 'No top-ups awaiting review'
-                    : 'RC payment screenshots to review'}
+                  : `${formatRcFeeAmount(totalWalletBalance)} total balance · ${
+                      pendingWalletTopUps === 0
+                        ? 'no top-ups awaiting review'
+                        : 'RC payment screenshots to review'
+                    }`}
               </p>
               <Link to="/admin/wallet" className="btn btn-primary btn-sm stat-card-action">
                 {pendingWalletTopUps > 0
@@ -93,8 +99,10 @@ export const AdminDashboard: React.FC = () => {
             <div className="stat-icon text-green"><Wallet /></div>
             <div className="stat-content">
               <h3>Wallet recharge</h3>
-              <p className="stat-value">Razorpay</p>
-              <p className="stat-sub">Auto-credit — no screenshot approvals</p>
+              <p className="stat-value">
+                {loadingWalletTopUps ? '—' : formatRcFeeAmount(totalWalletBalance)}
+              </p>
+              <p className="stat-sub">Total balance · Razorpay auto-credit</p>
               <Link to="/admin/wallet" className="btn btn-primary btn-sm stat-card-action">
                 View wallet history
               </Link>

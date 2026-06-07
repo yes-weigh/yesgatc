@@ -113,6 +113,7 @@ import {
 } from '../../lib/rcLaboratoryFields';
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
 import { RvOutstandingWalletPaymentBanner } from '../../components/RvOutstandingWalletPaymentBanner';
+import { RvSubmitTestRevertSection } from '../../components/RvSubmitTestRevertSection';
 import { RvLegacyZohoInvoiceSection } from '../../components/RvLegacyZohoInvoiceSection';
 import { RvLegacyZohoSettlementSection } from '../../components/RvLegacyZohoSettlementSection';
 import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
@@ -1864,6 +1865,16 @@ export const RCSiteCalibration: React.FC = () => {
                         <RvLegacyZohoSettlementSection
                           record={editingRecord}
                           onSettled={() => void fetchRecords()}
+                        />
+                        <RvSubmitTestRevertSection
+                          record={editingRecord}
+                          allRecords={records}
+                          rcCenterName={rcProfile?.companyName || rcProfile?.username}
+                          onReverted={async () => {
+                            handleCloseForm();
+                            await fetchRecords();
+                          }}
+                          className="mt-3"
                         />
                       </>
                     )}

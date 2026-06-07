@@ -7,6 +7,7 @@ import { ListViewBackBar } from './ListViewBackBar';
 import { RvLegacyWalletPaymentSection } from './RvLegacyWalletPaymentSection';
 import { RvLegacyZohoInvoiceSection } from './RvLegacyZohoInvoiceSection';
 import { RvLegacyZohoSettlementSection } from './RvLegacyZohoSettlementSection';
+import { RvSubmitTestRevertSection } from './RvSubmitTestRevertSection';
 import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import { VerificationZohoInvoiceSection } from './VerificationZohoInvoiceSection';
 import { getVerificationSerialGroup } from '../lib/verificationResubmit';
@@ -146,6 +147,16 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             <RvLegacyZohoSettlementSection
               record={record}
               onSettled={onRecordsChanged}
+            />
+            <RvSubmitTestRevertSection
+              record={record}
+              allRecords={allRecords}
+              rcCenterName={rcCenterName}
+              onReverted={async () => {
+                await onRecordsChanged?.();
+                onClose();
+              }}
+              className="mt-3"
             />
           </div>
         </div>

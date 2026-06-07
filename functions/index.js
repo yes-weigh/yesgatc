@@ -30,6 +30,7 @@ const {
   onSiteCalibrationZohoInvoiceRefHandler,
   pushLegacyRvInvoiceReferenceHandler,
 } = require('./zohoRvInvoiceRef');
+const { revertRvSubmitTestHandler } = require('./rvSubmitTestRevert');
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -392,4 +393,9 @@ exports.deleteWalletLedgerEntry = onCall({ region: CALLABLE_REGION }, async requ
 /** Super Admin wipes all wallet data for an RC and resets balance to zero. */
 exports.resetRcWallet = onCall({ region: CALLABLE_REGION }, async request =>
   resetRcWalletHandler(request, adminDb()),
+);
+
+/** Dev/testing — delete submitted RV records and restore wallet (Zoho cleared manually). */
+exports.revertRvSubmitTest = onCall({ region: CALLABLE_REGION }, async request =>
+  revertRvSubmitTestHandler(request, adminDb()),
 );
