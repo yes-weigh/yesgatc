@@ -324,7 +324,16 @@ function canPushRvZohoInvoice(record) {
   return verificationRecordStatus(record) !== 'draft';
 }
 
-function assertRvZohoInvoiceRecord(record) {
+/** Draft RV awaiting pre-submit Zoho invoice (submit gate). */
+function canPushRvZohoInvoicePreSubmit(record) {
+  if (!record || record.verificationType !== 'RV') return false;
+  if (record.resubmittedFromId) return false;
+  if (record.zohoInvoiceId) return false;
+  if (record.zohoPushStatus === 'sent') return false;
+  return verificationRecordStatus(record) === 'draft';
+}
+
+function assertRvZohoInvoiceRecord(record, { preSubmit = false } = {}) {
   if (!record || record.verificationType !== 'RV') {
     throw new Error('Only RV verifications can be invoiced in Zoho.');
   }
@@ -334,7 +343,12 @@ function assertRvZohoInvoiceRecord(record) {
   if (record.zohoInvoiceId) {
     throw new Error('This verification already has a Zoho invoice.');
   }
-  if (verificationRecordStatus(record) === 'draft') {
+  const status = verificationRecordStatus(record);
+  if (preSubmit) {
+    if (status !== 'draft') {
+      throw new Error('Pre-submit Zoho invoice requires a draft verification.');
+    }
+  } else if (status === 'draft') {
     throw new Error('Submit the verification before pushing to Zoho.');
   }
   if (!String(record.applicationNumber || '').trim()) {
@@ -390,14 +404,22 @@ async function assertVerificationZohoAccess(db, uid, record) {
   throw new HttpsError('permission-denied', 'RC or VCT access required.');
 }
 
-async function processRvZohoInvoice(db, recordId, record, { allowLegacyPush = false } = {}) {
+async function processRvZohoInvoice(db, recordId, record, { allowLegacyPush = false, preSubmit = false } = {}) {
   const settings = await loadZohoRvSettings(db);
   if (!settings.zohoRvInvoicingEnabled && !allowLegacyPush) {
     console.log(`Zoho RV invoicing disabled — skip ${recordId}`);
     return null;
   }
 
-  assertRvZohoInvoiceRecord(record);
+  if (preSubmit) {
+    if (!canPushRvZohoInvoicePreSubmit(record)) {
+      const error = 'Verification is not eligible for pre-submit Zoho invoicing.';
+      if (allowLegacyPush) throw new HttpsError('failed-precondition', error);
+      return null;
+    }
+  }
+
+  assertRvZohoInvoiceRecord(record, { preSubmit });
 
   const rcSnap = await db.doc(`users/${record.rcId}`).get();
   const rcZohoId = normalizeZohoNumericId(rcSnap.exists ? rcSnap.data()?.zohoId : '');
@@ -540,9 +562,85 @@ async function onSiteCalibrationZohoRvHandler(event, db) {
   const before = event.data?.before?.exists ? event.data.before.data() : null;
   const after = event.data?.after?.exists ? event.data.after.data() : null;
   if (!shouldProcessRvZohoInvoice(before, after)) return;
+  // Submit gate already created the invoice before status became submitted.
+  if (after?.zohoInvoiceId) return;
 
   const recordId = event.params.recordId;
   await processRvZohoInvoice(db, recordId, after);
+}
+
+/**
+ * RV submit gate — create Zoho invoice while still draft, then mark submitted.
+ * Wallet is already debited client-side; Zoho failure leaves the record in draft.
+ */
+async function submitRvWithZohoGateHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+
+  const recordIds = Array.isArray(request.data?.recordIds)
+    ? request.data.recordIds.filter(id => typeof id === 'string' && id.trim())
+    : [];
+  if (!recordIds.length) {
+    throw new HttpsError('invalid-argument', 'recordIds is required.');
+  }
+
+  const settings = await loadZohoRvSettings(db);
+  if (!settings.zohoRvInvoicingEnabled) {
+    throw new HttpsError('failed-precondition', 'Zoho RV invoicing is disabled in app settings.');
+  }
+
+  const submitted = [];
+  const submittedAt = new Date().toISOString();
+
+  for (const recordId of recordIds) {
+    const snap = await db.doc(`siteCalibrations/${recordId}`).get();
+    if (!snap.exists) {
+      throw new HttpsError('not-found', `Verification ${recordId} not found.`);
+    }
+
+    const record = snap.data();
+    if (record.verificationType !== 'RV') {
+      throw new HttpsError('failed-precondition', 'Only RV verifications use the Zoho submit gate.');
+    }
+    if (verificationRecordStatus(record) !== 'draft') {
+      throw new HttpsError(
+        'failed-precondition',
+        'Only draft RV verifications can be submitted through the Zoho gate.',
+      );
+    }
+
+    await assertVerificationZohoAccess(db, request.auth.uid, record);
+
+    if (!record.zohoInvoiceId) {
+      const invoiceResult = await processRvZohoInvoice(db, recordId, record, { preSubmit: true });
+      if (!invoiceResult) {
+        const fresh = await db.doc(`siteCalibrations/${recordId}`).get();
+        const zohoError = fresh.exists ? fresh.data()?.zohoPushError : null;
+        const message = typeof zohoError === 'string' && zohoError.trim()
+          ? zohoError.trim()
+          : 'Zoho invoice could not be created.';
+        throw new HttpsError('failed-precondition', `ZOHO_INVOICE_GATE: ${message}`);
+      }
+    }
+
+    await db.doc(`siteCalibrations/${recordId}`).set(
+      {
+        status: 'submitted',
+        submittedAt,
+        updatedAt: submittedAt,
+      },
+      { merge: true },
+    );
+
+    submitted.push(recordId);
+  }
+
+  return {
+    recordIds: submitted,
+    submittedAt,
+    count: submitted.length,
+  };
 }
 
 module.exports = {
@@ -552,7 +650,9 @@ module.exports = {
   onSiteCalibrationZohoRvHandler,
   triggerRvZohoInvoiceHandler,
   pushLegacyRvZohoInvoiceHandler,
+  submitRvWithZohoGateHandler,
   canPushRvZohoInvoice,
+  canPushRvZohoInvoicePreSubmit,
   processRvZohoInvoice,
   normalizeZohoRvSettings,
   maximumCapacityKg,

@@ -49,6 +49,49 @@ export async function triggerRvZohoInvoice(
   return result.data;
 }
 
+export type SubmitRvWithZohoGateInput = {
+  recordIds: string[];
+};
+
+export type SubmitRvWithZohoGateResult = {
+  recordIds: string[];
+  submittedAt: string;
+  count: number;
+};
+
+/** Synchronous Zoho invoice + submit for draft RV records (wallet already paid). */
+export async function submitRvWithZohoGate(
+  input: SubmitRvWithZohoGateInput,
+): Promise<SubmitRvWithZohoGateResult> {
+  const fn = httpsCallable<SubmitRvWithZohoGateInput, SubmitRvWithZohoGateResult>(
+    functionsClient(),
+    'submitRvWithZohoGate',
+  );
+  const result = await fn(input);
+  return result.data;
+}
+
+export function callableErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'object' && err !== null && 'message' in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return '';
+}
+
+export function isZohoInvoiceGateError(err: unknown): boolean {
+  return callableErrorMessage(err).includes('ZOHO_INVOICE_GATE');
+}
+
+export function formatZohoInvoiceGateError(err: unknown): string {
+  const message = callableErrorMessage(err);
+  const stripped = message.replace(/^ZOHO_INVOICE_GATE:\s*/i, '').trim();
+  return (
+    stripped
+    || 'Zoho invoice could not be created. Your wallet payment is kept — retry when Zoho is available.'
+  );
+}
+
 /** Fire-and-forget Zoho invoice push for one or more RV record ids. */
 export function queueRvZohoInvoicesAfterSubmit(recordIds: string[]): void {
   if (recordIds.length === 0) return;

@@ -89,7 +89,11 @@ import {
   matchesVerificationListStatusFilter,
   verificationListRecordsForFilterCounts,
 } from '../../lib/verificationListGrouping';
-import { submitVerificationRecord, submitVerificationRecords } from '../../lib/verificationSubmit';
+import {
+  submitVerificationRecord,
+  submitVerificationRecords,
+  type VerificationSubmitOptions,
+} from '../../lib/verificationSubmit';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import type {
   Customer,
@@ -113,6 +117,8 @@ import {
 } from '../../lib/rcLaboratoryFields';
 import { VerificationSubmitProgressOverlay } from '../../components/VerificationSubmitProgressOverlay';
 import { RvOutstandingWalletPaymentBanner } from '../../components/RvOutstandingWalletPaymentBanner';
+import { RvZohoSubmitGateBanner } from '../../components/RvZohoSubmitGateBanner';
+import { formatZohoInvoiceGateError, isZohoInvoiceGateError } from '../../lib/zohoRvInvoice';
 import { RvSubmitTestRevertSection } from '../../components/RvSubmitTestRevertSection';
 import { RvLegacyZohoInvoiceSection } from '../../components/RvLegacyZohoInvoiceSection';
 import { RvLegacyZohoSettlementSection } from '../../components/RvLegacyZohoSettlementSection';
@@ -132,6 +138,7 @@ import {
   refundRvWalletPayment,
 } from '../../lib/rcWallet';
 import {
+  isRvZohoSubmitGateRetry,
   isZohoRvInvoicingEnabled,
   rcZohoIdReady,
   RV_ZOHO_SUBMIT_BLOCK_MESSAGE,
@@ -227,6 +234,11 @@ export const RCSiteCalibration: React.FC = () => {
       zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
     }),
     [partyContext.customerForm, rcProfile?.zohoId, appSettings],
+  );
+
+  const submitOptions = useMemo<VerificationSubmitOptions>(
+    () => ({ zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings) }),
+    [appSettings],
   );
 
   const rvZohoSubmitBlocked =
@@ -1055,6 +1067,8 @@ export const RCSiteCalibration: React.FC = () => {
             id: recordId,
             verificationType: sessionForSave.verificationType,
           })),
+          db,
+          submitOptions,
         );
       }
 
@@ -1066,6 +1080,11 @@ export const RCSiteCalibration: React.FC = () => {
         beginSubmitProgress(submittedRecordIds);
       }
     } catch (err: unknown) {
+      if (isZohoInvoiceGateError(err)) {
+        await fetchRecords();
+        setError(formatZohoInvoiceGateError(err));
+        return;
+      }
       if (walletPaymentId) {
         const refunded = await refundWalletPaymentIfNeeded(
           'Verification submit failed after wallet payment',
@@ -1166,15 +1185,25 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await submitVerificationRecord({
-        id: record.id,
-        verificationType: record.verificationType,
-      });
+      await submitVerificationRecord(
+        {
+          id: record.id,
+          verificationType: record.verificationType,
+        },
+        db,
+        submitOptions,
+      );
       if (editingId === record.id) handleCloseForm();
       await fetchRecords();
       beginSubmitProgress([record.id]);
     } catch (err: unknown) {
-      setListError(err instanceof Error ? err.message : 'Failed to submit verification.');
+      setListError(
+        isZohoInvoiceGateError(err)
+          ? formatZohoInvoiceGateError(err)
+          : err instanceof Error
+            ? err.message
+            : 'Failed to submit verification.',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1199,13 +1228,19 @@ export const RCSiteCalibration: React.FC = () => {
           id: record.id,
           verificationType: record.verificationType,
         })),
+        db,
+        submitOptions,
       );
       setSelectedDraftIds(new Set());
       if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
       await fetchRecords();
       beginSubmitProgress(selectedRecords.map(record => record.id));
     } catch (err: unknown) {
-      setListError(formatSaveError(err, 'Failed to submit selected verifications.'));
+      setListError(
+        isZohoInvoiceGateError(err)
+          ? formatZohoInvoiceGateError(err)
+          : formatSaveError(err, 'Failed to submit selected verifications.'),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1302,15 +1337,24 @@ export const RCSiteCalibration: React.FC = () => {
         });
       }
 
-      await submitVerificationRecord({
-        id: editingId,
-        verificationType: sessionForSave.verificationType,
-      });
+      await submitVerificationRecord(
+        {
+          id: editingId,
+          verificationType: sessionForSave.verificationType,
+        },
+        db,
+        submitOptions,
+      );
 
       handleCloseForm();
       await fetchRecords();
       beginSubmitProgress([editingId]);
     } catch (err: unknown) {
+      if (isZohoInvoiceGateError(err)) {
+        await fetchRecords();
+        setError(formatZohoInvoiceGateError(err));
+        return;
+      }
       if (walletPaymentId) {
         const refunded = await refundWalletPaymentIfNeeded(
           'Verification submit failed after wallet payment',
@@ -1512,14 +1556,17 @@ export const RCSiteCalibration: React.FC = () => {
       ? `Save ${includedDeviceCount} drafts`
       : 'Save draft';
   const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType);
-  const submitLabel = rvPaymentRequired
-    ? showAddForm && includedDeviceCount > 1
-      ? `Pay & submit ${includedDeviceCount} for certification`
-      : 'Pay & submit for certification'
-    : showAddForm && includedDeviceCount > 1
-      ? `Submit ${includedDeviceCount} for certification`
-      : 'Submit for certification';
   const editingRecord = editingId ? records.find(r => r.id === editingId) ?? null : null;
+  const zohoGateRetry = isRvZohoSubmitGateRetry(editingRecord);
+  const submitLabel = zohoGateRetry
+    ? 'Retry Zoho & submit for certification'
+    : rvPaymentRequired
+      ? showAddForm && includedDeviceCount > 1
+        ? `Pay & submit ${includedDeviceCount} for certification`
+        : 'Pay & submit for certification'
+      : showAddForm && includedDeviceCount > 1
+        ? `Submit ${includedDeviceCount} for certification`
+        : 'Submit for certification';
   const editingDraft = editingRecord ? isVerificationEditable(editingRecord) : showAddForm;
   const isViewMode = Boolean(editingRecord && !editingDraft);
   const showRetroactiveRvPayment =
@@ -1854,6 +1901,9 @@ export const RCSiteCalibration: React.FC = () => {
                     )}
                     {showRetroactiveRvPayment && rvPaymentBreakdown && (
                       <RvOutstandingWalletPaymentBanner breakdown={rvPaymentBreakdown} />
+                    )}
+                    {!isViewMode && editingRecord && isRvZohoSubmitGateRetry(editingRecord) && (
+                      <RvZohoSubmitGateBanner record={editingRecord} />
                     )}
                     {isViewMode && editingRecord && (
                       <>

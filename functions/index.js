@@ -17,6 +17,7 @@ const {
   zohoRefreshToken,
   onSiteCalibrationZohoRvHandler,
   pushLegacyRvZohoInvoiceHandler,
+  submitRvWithZohoGateHandler,
   triggerRvZohoInvoiceHandler,
 } = require('./zohoRv');
 const { pushLegacyWalletTopUpZohoTransferHandler } = require('./zohoWallet');
@@ -129,6 +130,18 @@ exports.onSiteCalibrationZohoInvoiceRef = onDocumentWritten(
     memory: '256MiB',
   },
   async event => onSiteCalibrationZohoInvoiceRefHandler(event, adminDb()),
+);
+
+/** RV submit gate — Zoho invoice while draft, then mark submitted (wallet already debited). */
+exports.submitRvWithZohoGate = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async request => submitRvWithZohoGateHandler(request, adminDb()),
 );
 
 /** RC/VCT invokes after RV submit — backup if the Firestore trigger is delayed or missed. */

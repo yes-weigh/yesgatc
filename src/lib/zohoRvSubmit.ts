@@ -52,14 +52,37 @@ export function resolveZohoPushStatus(
   >,
 ): ZohoPushStatus | null {
   if (record.verificationType !== 'RV') return null;
-  if (record.status !== 'submitted' && record.status !== 'approved' && record.status !== 'certified') {
-    return null;
-  }
   if (record.resubmittedFromId?.trim()) return 'skipped';
   if (record.zohoPushStatus === 'sent' || record.zohoInvoiceId) return 'sent';
   if (record.zohoPushStatus === 'failed') return 'failed';
   if (record.zohoPushStatus === 'skipped') return 'skipped';
+
+  const status = normalizeVerificationStatus(record);
+  if (status === 'draft') return null;
+
   return 'pending';
+}
+
+/** Draft RV with wallet paid but Zoho invoice blocked submit — user can retry. */
+export function isRvZohoSubmitGateRetry(
+  record: Pick<
+    SiteCalibration,
+    | 'verificationType'
+    | 'status'
+    | 'rvPaymentStatus'
+    | 'zohoInvoiceId'
+    | 'zohoPushStatus'
+    | 'resubmittedFromId'
+    | 'zohoPushError'
+  > | null
+  | undefined,
+): boolean {
+  if (!record || record.verificationType !== 'RV') return false;
+  if (record.resubmittedFromId?.trim()) return false;
+  if (normalizeVerificationStatus(record) !== 'draft') return false;
+  if (record.rvPaymentStatus !== 'paid') return false;
+  if (record.zohoInvoiceId?.trim()) return false;
+  return record.zohoPushStatus === 'failed' || Boolean(record.zohoPushError?.trim());
 }
 
 export function zohoPushStatusLabel(status: ZohoPushStatus): string {
