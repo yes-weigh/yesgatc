@@ -387,20 +387,98 @@ public static class DocaCaptchaOcr
     private static Bitmap PreprocessForOcrScaledOnly(byte[] imageBytes)
     {
         using var source = new Bitmap(new MemoryStream(imageBytes));
-        var scale = Math.Max(4, 500 / Math.Max(1, Math.Min(source.Width, source.Height)));
-        var width = source.Width * scale;
-        var height = source.Height * scale;
+        using var cropped = TrimToCharacterContent(source);
+        var scale = Math.Max(4, 500 / Math.Max(1, Math.Min(cropped.Width, cropped.Height)));
+        var width = cropped.Width * scale;
+        var height = cropped.Height * scale;
 
         var output = new Bitmap(width, height, PixelFormat.Format24bppRgb);
         using (var graphics = Graphics.FromImage(output))
         {
             graphics.Clear(Color.White);
             graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-            graphics.DrawImage(source, 0, 0, width, height);
+            graphics.DrawImage(cropped, 0, 0, width, height);
         }
 
         return output;
     }
+
+    /// <summary>
+    /// Remove white margins and outer box chrome so OCR sees only the character row.
+    /// </summary>
+    private static Bitmap TrimToCharacterContent(Bitmap source, int padding = 3, int whiteThreshold = 235)
+    {
+        using var trimmedMargins = TrimWhiteMargins(source, whiteThreshold, padding);
+        using var binary = Binarize(trimmedMargins, threshold: 130);
+        var regions = FindCharacterRegions(binary);
+        var charRegions = regions
+            .Where(region => region.Width >= 4 && region.Height >= Math.Max(8, trimmedMargins.Height / 5))
+            .ToList();
+
+        if (charRegions.Count is >= 4 and <= 8)
+        {
+            var left = charRegions.Min(region => region.Left);
+            var top = charRegions.Min(region => region.Top);
+            var right = charRegions.Max(region => region.Right);
+            var bottom = charRegions.Max(region => region.Bottom);
+            var crop = new Rectangle(
+                left,
+                top,
+                right - left + 1,
+                bottom - top + 1);
+            return CropRegion(trimmedMargins, crop, padding: padding);
+        }
+
+        return CloneBitmap(trimmedMargins);
+    }
+
+    private static Bitmap TrimWhiteMargins(Bitmap source, int whiteThreshold, int padding)
+    {
+        var minX = source.Width;
+        var minY = source.Height;
+        var maxX = 0;
+        var maxY = 0;
+        var found = false;
+
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                if (GetLuminance(source.GetPixel(x, y)) >= whiteThreshold)
+                {
+                    continue;
+                }
+
+                found = true;
+                minX = Math.Min(minX, x);
+                maxX = Math.Max(maxX, x);
+                minY = Math.Min(minY, y);
+                maxY = Math.Max(maxY, y);
+            }
+        }
+
+        if (!found || maxX <= minX || maxY <= minY)
+        {
+            return CloneBitmap(source);
+        }
+
+        var crop = new Rectangle(minX, minY, maxX - minX + 1, maxY - minY + 1);
+        return CropRegion(source, crop, padding: padding);
+    }
+
+    private static Bitmap CloneBitmap(Bitmap source)
+    {
+        var clone = new Bitmap(source.Width, source.Height, PixelFormat.Format24bppRgb);
+        using (var graphics = Graphics.FromImage(clone))
+        {
+            graphics.DrawImage(source, 0, 0, source.Width, source.Height);
+        }
+
+        return clone;
+    }
+
+    private static int GetLuminance(Color pixel) =>
+        (int)(pixel.R * 0.299 + pixel.G * 0.587 + pixel.B * 0.114);
 
     private static Bitmap PreprocessForOcr(byte[] imageBytes, int threshold)
     {
@@ -424,6 +502,5 @@ public static class DocaCaptchaOcr
         return output;
     }
 
-    private static bool IsInk(Color pixel) =>
-        (int)(pixel.R * 0.299 + pixel.G * 0.587 + pixel.B * 0.114) < 130;
+    private static bool IsInk(Color pixel) => GetLuminance(pixel) < 130;
 }
