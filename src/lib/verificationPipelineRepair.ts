@@ -49,7 +49,7 @@ export type PipelineRepairDiagnosis = {
   isCorrupted: boolean;
   docaExpectedPhase: 'phase1_pending' | 'phase2_pending' | 'complete' | 'unknown';
   queueEligible: boolean;
-  repairAction: 'set_approved' | 'set_submitted' | 'none';
+  repairAction: 'set_approved' | 'set_submitted' | 'fix_certified' | 'none';
   notes: string[];
 };
 
@@ -89,9 +89,18 @@ export function diagnoseVerificationPipeline(record: SiteCalibration): PipelineR
     notes.push('Certified in Firebase but PDF missing — worker queue ignores this today.');
     queueEligible = false;
   }
+  if (corrupted && inferredStatus === 'certified' && !hasCertNumber) {
+    notes.push('Certificate number field is corrupted or missing — repair clears it; re-sync from DOCA if needed.');
+  }
 
   let repairAction: PipelineRepairDiagnosis['repairAction'] = 'none';
-  if (corrupted && inferredStatus === 'submitted' && isValidVerificationIsoTimestamp(record.submittedAt) && !hasPdf) {
+  if (corrupted && inferredStatus === 'certified') {
+    repairAction = 'fix_certified';
+    notes.push(
+      'Repair writes valid certified status and timestamps. If PDF or cert number is still missing, set approved and re-queue worker sync after repair.',
+    );
+    docaExpectedPhase = hasPdf && hasCertNumber ? 'complete' : 'unknown';
+  } else if (corrupted && inferredStatus === 'submitted' && isValidVerificationIsoTimestamp(record.submittedAt) && !hasPdf) {
     repairAction = 'set_approved';
     notes.push(
       'Repair sets approved so the worker can sync. If DOCA IC Verification shows "Certificate Uploaded", the worker downloads the PDF and marks Firebase certified — it will not re-upload to DOCA.',
@@ -145,6 +154,31 @@ export async function repairVerificationForPhase2(
     ...(record ? corruptedFieldCleanupPatch(record) : {}),
     status: 'approved' satisfies VerificationRequestStatus,
     approvedAt: now,
+    updatedAt: now,
+    pipelineFailedPhase: deleteField(),
+    pipelineFailureMessage: deleteField(),
+    pipelineFailedAt: deleteField(),
+  });
+}
+
+export async function repairVerificationCertified(
+  recordId: string,
+  record?: Pick<
+    SiteCalibration,
+    'certificateNumber' | 'approvedAt' | 'updatedAt' | 'certifiedAt' | 'submittedAt'
+  >,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const submittedAt = isValidVerificationIsoTimestamp(record?.submittedAt) ? record!.submittedAt! : now;
+  const approvedAt = isValidVerificationIsoTimestamp(record?.approvedAt) ? record!.approvedAt! : submittedAt;
+  const certifiedAt = isValidVerificationIsoTimestamp(record?.certifiedAt) ? record!.certifiedAt! : now;
+
+  await updateDoc(doc(db, 'siteCalibrations', recordId), {
+    ...(record ? corruptedFieldCleanupPatch(record) : {}),
+    status: 'certified' satisfies VerificationRequestStatus,
+    submittedAt,
+    approvedAt,
+    certifiedAt,
     updatedAt: now,
     pipelineFailedPhase: deleteField(),
     pipelineFailureMessage: deleteField(),

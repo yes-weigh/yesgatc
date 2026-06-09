@@ -34,6 +34,7 @@ import {
   diagnoseVerificationPipeline,
   findVerificationBySerial,
   repairVerificationForPhase2,
+  repairVerificationCertified,
   repairVerificationSubmitted,
   type PipelineRepairDiagnosis,
 } from '../lib/verificationPipelineRepair';
@@ -201,6 +202,21 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     }
   };
 
+  const handleRepairCertified = async (recordId: string) => {
+    setError('');
+    setRepairMessage('');
+    setRepairLoading(true);
+    try {
+      await repairVerificationCertified(recordId, repairRecords.find(r => r.id === recordId));
+      setRepairMessage('Record repaired — certified status and timestamps fixed in Firestore.');
+      await handleLookupSerial(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Repair failed.');
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
   const handleRepairForPhase2 = async (recordId: string) => {
     setError('');
     setRepairMessage('');
@@ -298,6 +314,16 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                         <li key={note}>{note}</li>
                       ))}
                     </ul>
+                  )}
+                  {diagnosis.repairAction === 'fix_certified' && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={repairLoading}
+                      onClick={() => void handleRepairCertified(diagnosis.recordId)}
+                    >
+                      Fix certified fields
+                    </button>
                   )}
                   {diagnosis.repairAction === 'set_approved' && (
                     <button
