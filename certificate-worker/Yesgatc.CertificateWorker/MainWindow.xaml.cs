@@ -190,13 +190,16 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        await StartDocaBrowserAsync();
+        _telemetry.LogDiagnostic = message => LogToFile($"[telemetry] {message}");
 
         if (!string.IsNullOrWhiteSpace(AadharBox.Text) && !string.IsNullOrWhiteSpace(PasswordBox.Text))
         {
             await SignInAndLoadAsync();
+            await StartDocaBrowserAsync();
             return;
         }
+
+        await StartDocaBrowserAsync();
 
         SignInExpander.IsExpanded = true;
         SetStatus(
@@ -414,10 +417,42 @@ public partial class MainWindow : Window
         await PollRemoteControlAsync();
     }
 
-    private Task ReportCaptchaAttemptAsync(CaptchaAttemptReport report) =>
-        _session is null
-            ? Task.CompletedTask
-            : _telemetry.ReportCaptchaAttemptAsync(report, () => GetFreshIdTokenAsync());
+    private readonly List<CaptchaAttemptReport> _pendingCaptchaReports = [];
+
+    private async Task ReportCaptchaAttemptAsync(CaptchaAttemptReport report)
+    {
+        if (_session is null)
+        {
+            lock (_pendingCaptchaReports)
+            {
+                _pendingCaptchaReports.Add(report);
+            }
+
+            return;
+        }
+
+        await _telemetry.ReportCaptchaAttemptAsync(report, () => GetFreshIdTokenAsync());
+    }
+
+    private async Task FlushPendingCaptchaReportsAsync()
+    {
+        List<CaptchaAttemptReport> pending;
+        lock (_pendingCaptchaReports)
+        {
+            if (_pendingCaptchaReports.Count == 0)
+            {
+                return;
+            }
+
+            pending = [.. _pendingCaptchaReports];
+            _pendingCaptchaReports.Clear();
+        }
+
+        foreach (var report in pending)
+        {
+            await _telemetry.ReportCaptchaAttemptAsync(report, () => GetFreshIdTokenAsync());
+        }
+    }
 
     private async Task PublishWorkerStatusAsync()
     {
@@ -1682,6 +1717,8 @@ public partial class MainWindow : Window
             _automationService.DocaCredentials = CurrentDocaCredentials();
             UpdateSignInSummary();
             SignInExpander.IsExpanded = false;
+
+            await FlushPendingCaptchaReportsAsync();
 
             SetStatus("Signed in. Loading certification queue...", StatusKind.Working);
             if (_useRealtimeListener)

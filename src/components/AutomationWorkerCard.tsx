@@ -76,6 +76,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [listenerError, setListenerError] = useState('');
 
   const runtimeState = useMemo(() => resolveWorkerRuntimeState(status), [status]);
 
@@ -97,12 +98,16 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
   const avgSessionSeconds = useMemo(() => averageSessionSeconds(sessions), [sessions]);
 
   useEffect(() => {
+    const onListenerError = (err: Error) => {
+      setListenerError(err.message);
+    };
+
     const unsubscribers = [
-      subscribeAutomationWorkerStatus(setStatus),
-      subscribeAutomationWorkerRemote(setRemote),
-      subscribeAutomationWorkerLogs(setLogs),
-      subscribeAutomationWorkerCaptchaAttempts(setCaptchaAttempts),
-      subscribeAutomationWorkerSessions(setSessions),
+      subscribeAutomationWorkerStatus(setStatus, onListenerError),
+      subscribeAutomationWorkerRemote(setRemote, onListenerError),
+      subscribeAutomationWorkerLogs(setLogs, onListenerError),
+      subscribeAutomationWorkerCaptchaAttempts(setCaptchaAttempts, onListenerError),
+      subscribeAutomationWorkerSessions(setSessions, onListenerError),
     ];
     return () => unsubscribers.forEach(unsub => unsub());
   }, []);
@@ -199,6 +204,11 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
 
       <div className="panel-body">
         {error && <p className="form-error mb-3">{error}</p>}
+        {listenerError && (
+          <p className="form-error mb-3">
+            Live updates error: {listenerError}. If this mentions an index, open the Firebase console link from the browser devtools network tab.
+          </p>
+        )}
         {saved && <p className="text-success text-sm mb-3">Worker settings sent. The desktop app applies them on its next sync.</p>}
 
         <section className="automation-worker-status-grid mb-6">

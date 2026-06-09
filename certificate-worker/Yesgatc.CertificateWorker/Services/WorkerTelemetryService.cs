@@ -77,6 +77,8 @@ public sealed class WorkerTelemetryService
         }
     }
 
+    public Action<string>? LogDiagnostic { get; set; }
+
     public async Task ReportCaptchaAttemptAsync(
         CaptchaAttemptReport report,
         Func<Task<string>> resolveIdToken,
@@ -85,21 +87,29 @@ public sealed class WorkerTelemetryService
         try
         {
             var idToken = await resolveIdToken();
-            string? imageUrl = null;
-            string? imagePath = null;
+            string imageUrl = string.Empty;
+            string imagePath = string.Empty;
 
             if (report.ImageBytes.Length > 0)
             {
-                var storagePath =
-                    $"automationWorker/captcha/{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid():N}.png";
-                var upload = await _storage.UploadImageBytesAsync(
-                    storagePath,
-                    report.ImageBytes,
-                    "image/png",
-                    idToken,
-                    cancellationToken);
-                imageUrl = upload.DownloadUrl;
-                imagePath = upload.StoragePath;
+                try
+                {
+                    var storagePath =
+                        $"automationWorker/captcha/{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid():N}.png";
+                    var upload = await _storage.UploadImageBytesAsync(
+                        storagePath,
+                        report.ImageBytes,
+                        "image/png",
+                        idToken,
+                        cancellationToken);
+                    imageUrl = upload.DownloadUrl;
+                    imagePath = upload.StoragePath;
+                }
+                catch (Exception ex)
+                {
+                    LogDiagnostic?.Invoke(
+                        $"Captcha image upload failed (attempt {report.AttemptNumber}): {ex.Message}");
+                }
             }
 
             await _documents.CreateDocumentAsync(
@@ -112,16 +122,17 @@ public sealed class WorkerTelemetryService
                     ["attemptNumber"] = report.AttemptNumber,
                     ["success"] = report.Success,
                     ["outcome"] = report.Outcome,
-                    ["imageUrl"] = imageUrl ?? string.Empty,
-                    ["imagePath"] = imagePath ?? string.Empty,
+                    ["imageUrl"] = imageUrl,
+                    ["imagePath"] = imagePath,
                     ["machineName"] = Environment.MachineName,
                 },
                 idToken,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            // Telemetry must not break login flow.
+            LogDiagnostic?.Invoke(
+                $"Captcha telemetry write failed (attempt {report.AttemptNumber}, {report.Outcome}): {ex.Message}");
         }
     }
 
@@ -197,9 +208,9 @@ public sealed class WorkerTelemetryService
                 idToken,
                 cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
-            // Heartbeat failures are non-fatal.
+            LogDiagnostic?.Invoke($"Worker status heartbeat failed: {ex.Message}");
         }
         finally
         {
