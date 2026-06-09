@@ -216,7 +216,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     }
   };
 
-  const handleRepairSubmitted = async (recordId: string, submittedAt?: string) => {
+  const handleRepairSubmitted = async (recordId: string) => {
     setError('');
     setRepairMessage('');
     setRepairLoading(true);
@@ -314,10 +314,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                       type="button"
                       className="btn btn-primary btn-sm"
                       disabled={repairLoading}
-                      onClick={() => void handleRepairSubmitted(
-                        diagnosis.recordId,
-                        repairRecords[index]?.submittedAt,
-                      )}
+                      onClick={() => void handleRepairSubmitted(diagnosis.recordId)}
                     >
                       Restore submitted → re-queue worker
                     </button>
