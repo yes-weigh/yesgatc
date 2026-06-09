@@ -88,6 +88,34 @@ function formatCaptchaOutcome(outcome: string): string {
   return outcome.replace(/_/g, ' ');
 }
 
+function formatSessionProbeResult(result: string): string {
+  switch (result) {
+    case 'valid':
+      return 'Valid';
+    case 'expired':
+      return 'Session expired';
+    case 'error':
+      return 'Probe error';
+    case 'browser_disconnected':
+      return 'Browser disconnected';
+    default:
+      return result ? result.replace(/_/g, ' ') : '—';
+  }
+}
+
+function formatLogoutReason(reason: string): string {
+  switch (reason) {
+    case 'session_probe':
+      return 'Periodic probe';
+    case 'job_failure':
+      return 'Job detected logout';
+    case 'login_required':
+      return 'Login failed';
+    default:
+      return reason ? reason.replace(/_/g, ' ') : 'Unknown';
+  }
+}
+
 function runtimeClass(state: WorkerRuntimeState): string {
   return `automation-worker-status-dot automation-worker-status-dot--${state}`;
 }
@@ -383,12 +411,12 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
           <div className="automation-worker-status-card">
             <h3 className="automation-worker-section-title"><Clock className="inline-icon" /> Session insights</h3>
             <dl className="automation-worker-stat-grid">
+              <div><dt>Current session age</dt><dd>{status?.docaSessionAgeSeconds ? formatDuration(status.docaSessionAgeSeconds) : '—'}</dd></div>
+              <div><dt>Last session probe</dt><dd>{formatTimestamp(status?.lastSessionProbeAt || '')}</dd></div>
+              <div><dt>Probe result</dt><dd>{formatSessionProbeResult(status?.lastSessionProbeResult || '')}</dd></div>
               <div><dt>Avg DOCA session</dt><dd>{avgSessionSeconds != null ? formatDuration(avgSessionSeconds) : '—'}</dd></div>
               <div><dt>Sessions logged</dt><dd>{sessions.length}</dd></div>
-              <div><dt>Captcha attempts</dt><dd>{captchaStats.total}</dd></div>
-              <div><dt>Captcha failures</dt><dd>{captchaStats.failed}</dd></div>
               <div><dt>Captcha success rate</dt><dd>{captchaStats.successRate != null ? `${captchaStats.successRate}%` : '—'}</dd></div>
-              <div><dt>Fill-only mode</dt><dd>{status?.docaFillOnly ? 'On' : 'Off'}</dd></div>
             </dl>
           </div>
         </section>
@@ -556,6 +584,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                       </div>
                       <div className="text-muted text-sm">
                         {formatTimestamp(session.loggedInAt)} → {formatTimestamp(session.loggedOutAt)}
+                        {session.logoutReason ? ` · ${formatLogoutReason(session.logoutReason)}` : ''}
                       </div>
                     </li>
                   ))}

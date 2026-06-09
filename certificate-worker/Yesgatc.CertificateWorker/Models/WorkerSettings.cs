@@ -28,6 +28,11 @@ public sealed class AutoWorkerSettings
     public bool SkipBatchConfirmation { get; init; } = true;
     /// <summary>When waiting for DOCA captcha/login, probe this often (seconds).</summary>
     public int DocaLoginProbeSeconds { get; init; } = 30;
+    /// <summary>
+    /// While logged in and idle, navigate to a protected DOCA page this often (minutes) to detect silent logout.
+    /// Set to 0 to disable.
+    /// </summary>
+    public int DocaSessionProbeMinutes { get; init; } = 10;
 }
 
 public sealed class FirebaseSettings

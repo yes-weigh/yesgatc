@@ -43,6 +43,9 @@ export type AutomationWorkerStatus = {
   jobsCompletedSession: number;
   jobsFailedSession: number;
   docaLoggedInAt: string;
+  docaSessionAgeSeconds: number;
+  lastSessionProbeAt: string;
+  lastSessionProbeResult: string;
 };
 
 export type AutomationWorkerRemoteControl = {
@@ -86,6 +89,7 @@ export type AutomationWorkerSessionEvent = {
   loggedInAt: string;
   loggedOutAt: string;
   durationSeconds: number;
+  logoutReason: string;
   machineName: string;
 };
 
@@ -151,6 +155,9 @@ export function normalizeAutomationWorkerStatus(
     jobsCompletedSession: readInt(data, 'jobsCompletedSession'),
     jobsFailedSession: readInt(data, 'jobsFailedSession'),
     docaLoggedInAt: readString(data, 'docaLoggedInAt'),
+    docaSessionAgeSeconds: readInt(data, 'docaSessionAgeSeconds'),
+    lastSessionProbeAt: readString(data, 'lastSessionProbeAt'),
+    lastSessionProbeResult: readString(data, 'lastSessionProbeResult'),
   };
 }
 
@@ -317,6 +324,7 @@ export function subscribeAutomationWorkerSessions(
             loggedInAt: readString(data, 'loggedInAt'),
             loggedOutAt: readString(data, 'loggedOutAt'),
             durationSeconds: readInt(data, 'durationSeconds'),
+            logoutReason: readString(data, 'logoutReason'),
             machineName: readString(data, 'machineName'),
           };
         }),

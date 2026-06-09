@@ -10,6 +10,12 @@ public enum DocaSessionState
     LoginRequired,
 }
 
+public sealed class DocaSessionProbeResult
+{
+    public DocaSessionState State { get; init; }
+    public bool AttemptedAutoLogin { get; init; }
+}
+
 public sealed record DocaOpenResult(
     DocaSessionState State,
     string Message,
@@ -93,65 +99,68 @@ public sealed class AutomationService : IAsyncDisposable
     /// <summary>Before processing a job: launch Chrome if needed and confirm DOCA session is usable.</summary>
     public async Task<DocaOpenResult?> EnsureDocaSessionForJobAsync(CancellationToken cancellationToken = default)
     {
-        await EnsureBrowserReadyAsync(cancellationToken);
+        var probe = await ProbeDocaSessionAtProtectedRouteAsync(
+            cancellationToken,
+            forceAutoLogin: !ManualDocaLoginWait);
+        if (probe.State == DocaSessionState.LoggedIn)
+        {
+            return null;
+        }
+
         var page = await GetPageAsync();
-
-        if (IsBlankBrowserPage(page.Url))
-        {
-            await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.Load,
-                Timeout = 60_000,
-            });
-        }
-
-        if (await IsLoginPageAsync(page))
-        {
-            return await TryEnsureLoggedInOrReturnLoginRequiredAsync(
-                page,
-                "retry the job",
-                cancellationToken);
-        }
-
-        return null;
+        return await TryEnsureLoggedInOrReturnLoginRequiredAsync(
+            page,
+            "retry the job",
+            cancellationToken);
     }
 
-    public async Task<DocaSessionState> ProbeDocaSessionAsync(CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Navigate to the IC verification list (protected route) to verify DOCA session is still valid.
+    /// </summary>
+    public async Task<DocaSessionProbeResult> ProbeDocaSessionAtProtectedRouteAsync(
+        CancellationToken cancellationToken = default,
+        bool forceAutoLogin = false)
     {
         await EnsureBrowserReadyAsync(cancellationToken);
         var page = await GetPageAsync();
 
-        if (ManualDocaLoginWait)
+        await page.GotoAsync(_settings.DocaViewIcVerificationUrl, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.Load,
+            Timeout = 60_000,
+        });
+
+        if (!await IsLoginPageAsync(page))
         {
             await page.BringToFrontAsync();
-            if (IsBlankBrowserPage(page.Url))
+            return new DocaSessionProbeResult
             {
-                await page.GotoAsync(_settings.DocaLoginUrl, new PageGotoOptions
-                {
-                    WaitUntil = WaitUntilState.Load,
-                    Timeout = 60_000,
-                });
-            }
-        }
-        else
-        {
-            await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.Load,
-                Timeout = 60_000,
-            });
+                State = DocaSessionState.LoggedIn,
+            };
         }
 
-        if (await IsLoginPageAsync(page))
+        if (!forceAutoLogin && ManualDocaLoginWait)
         {
-            // During periodic probe, always retry AI auto-login even when paused for a prior failure.
-            var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
             await page.BringToFrontAsync();
-            return loginState;
+            return new DocaSessionProbeResult
+            {
+                State = DocaSessionState.LoginRequired,
+            };
         }
 
+        var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
         await page.BringToFrontAsync();
-        return DocaSessionState.LoggedIn;
+        return new DocaSessionProbeResult
+        {
+            State = loginState,
+            AttemptedAutoLogin = true,
+        };
+    }
+
+    public async Task<DocaSessionState> ProbeDocaSessionAsync(CancellationToken cancellationToken = default)
+    {
+        var probe = await ProbeDocaSessionAtProtectedRouteAsync(cancellationToken, forceAutoLogin: true);
+        return probe.State;
     }
 
     /// <summary>When true, do not navigate away from the DOCA login page while the operator enters a new password.</summary>

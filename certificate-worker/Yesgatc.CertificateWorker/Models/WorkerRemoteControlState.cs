@@ -28,4 +28,7 @@ public sealed class WorkerStatusSnapshot
     public int QueueApproved { get; init; }
     public int JobsCompletedSession { get; init; }
     public int JobsFailedSession { get; init; }
+    public string LastSessionProbeAt { get; init; } = string.Empty;
+    public string LastSessionProbeResult { get; init; } = string.Empty;
+    public int DocaSessionAgeSeconds { get; init; }
 }

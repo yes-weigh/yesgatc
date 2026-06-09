@@ -58,8 +58,10 @@ public partial class MainWindow : Window
     private DispatcherTimer? _pollFallbackTimer;
     private DispatcherTimer? _retryBadgeTimer;
     private DispatcherTimer? _docaProbeTimer;
+    private DispatcherTimer? _docaSessionWatchdogTimer;
     private DispatcherTimer? _telemetryTimer;
     private bool _autoWorkerCyclePending;
+    private bool _sessionProbeRunning;
     private StatusKind _lastStatusKind = StatusKind.Idle;
 
     public MainWindow()
@@ -230,6 +232,7 @@ public partial class MainWindow : Window
 
             SetStatus("DOCA browser open and logged in to DOCA.", StatusKind.Success);
             _telemetry.MarkDocaLoggedIn();
+            StartDocaSessionWatchdogTimer();
         }
         catch (Exception ex)
         {
@@ -326,6 +329,7 @@ public partial class MainWindow : Window
         }
 
         StartRetryBadgeTimer();
+        StartDocaSessionWatchdogTimer();
         UpdateAutoWorkerStatusText();
     }
 
@@ -378,6 +382,7 @@ public partial class MainWindow : Window
         }
 
         StopDocaProbeTimer();
+        StopDocaSessionWatchdogTimer();
     }
 
     private void StartTelemetryTimer()
@@ -475,6 +480,10 @@ public partial class MainWindow : Window
             _ => "idle",
         };
 
+        var docaSessionAgeSeconds = _telemetry.DocaLoggedInAt is { } loggedInAt
+            ? (int)Math.Max(0, (DateTimeOffset.UtcNow - loggedInAt).TotalSeconds)
+            : 0;
+
         await _telemetry.PublishStatusAsync(
             new WorkerStatusSnapshot
             {
@@ -490,6 +499,9 @@ public partial class MainWindow : Window
                 QueueApproved = approved,
                 JobsCompletedSession = _telemetry.JobsCompletedSession,
                 JobsFailedSession = _telemetry.JobsFailedSession,
+                LastSessionProbeAt = _telemetry.LastSessionProbeAt?.ToString("O") ?? string.Empty,
+                LastSessionProbeResult = _telemetry.LastSessionProbeResult,
+                DocaSessionAgeSeconds = docaSessionAgeSeconds,
             },
             () => GetFreshIdTokenAsync());
     }
@@ -617,7 +629,7 @@ public partial class MainWindow : Window
         await PublishWorkerStatusAsync();
     }
 
-    private void SetDocaLoginPaused(bool paused)
+    private void SetDocaLoginPaused(bool paused, string logoutReason = "login_required")
     {
         var wasPaused = _autoWorkerPausedForDoca;
         _autoWorkerPausedForDoca = paused;
@@ -625,7 +637,8 @@ public partial class MainWindow : Window
 
         if (paused && !wasPaused)
         {
-            _ = _telemetry.MarkDocaLoggedOutAsync(() => GetFreshIdTokenAsync());
+            StopDocaSessionWatchdogTimer();
+            _ = _telemetry.MarkDocaLoggedOutAsync(() => GetFreshIdTokenAsync(), logoutReason);
         }
 
         if (paused)
@@ -636,6 +649,7 @@ public partial class MainWindow : Window
         {
             StopDocaProbeTimer();
             _telemetry.MarkDocaLoggedIn();
+            StartDocaSessionWatchdogTimer();
         }
 
         UpdateAutoWorkerStatusText();
@@ -677,6 +691,92 @@ public partial class MainWindow : Window
         _docaProbeTimer.Tick -= DocaProbeTimer_Tick;
         _docaProbeTimer.Stop();
         _docaProbeTimer = null;
+    }
+
+    private void StartDocaSessionWatchdogTimer()
+    {
+        StopDocaSessionWatchdogTimer();
+
+        var probeMinutes = App.Settings.AutoWorker.DocaSessionProbeMinutes;
+        if (probeMinutes <= 0 || _session is null || !_autoWorkerEnabled || _remotePaused || _autoWorkerPausedForDoca)
+        {
+            return;
+        }
+
+        _docaSessionWatchdogTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMinutes(Math.Max(1, probeMinutes)),
+        };
+        _docaSessionWatchdogTimer.Tick += DocaSessionWatchdogTimer_Tick;
+        _docaSessionWatchdogTimer.Start();
+    }
+
+    private void StopDocaSessionWatchdogTimer()
+    {
+        if (_docaSessionWatchdogTimer is null)
+        {
+            return;
+        }
+
+        _docaSessionWatchdogTimer.Tick -= DocaSessionWatchdogTimer_Tick;
+        _docaSessionWatchdogTimer.Stop();
+        _docaSessionWatchdogTimer = null;
+    }
+
+    private async void DocaSessionWatchdogTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_sessionProbeRunning
+            || _isBusy
+            || _remotePaused
+            || !_autoWorkerEnabled
+            || _autoWorkerPausedForDoca
+            || _session is null
+            || !_automationService.IsBrowserConnected)
+        {
+            return;
+        }
+
+        _sessionProbeRunning = true;
+        try
+        {
+            DocaSessionProbeResult probe;
+            try
+            {
+                probe = await _automationService.ProbeDocaSessionAtProtectedRouteAsync(forceAutoLogin: false);
+            }
+            catch (Exception ex) when (AutomationService.IsBrowserDisconnectedError(ex))
+            {
+                _telemetry.RecordSessionProbe("browser_disconnected");
+                await PublishWorkerStatusAsync();
+                return;
+            }
+            catch (Exception ex)
+            {
+                _telemetry.RecordSessionProbe("error");
+                LogToFile($"[session-probe] {ex.Message}");
+                await PublishWorkerStatusAsync();
+                return;
+            }
+
+            if (probe.State == DocaSessionState.LoggedIn)
+            {
+                _telemetry.RecordSessionProbe("valid");
+                await PublishWorkerStatusAsync();
+                return;
+            }
+
+            _telemetry.RecordSessionProbe("expired");
+            await _telemetry.ReportActivityAsync(
+                "DOCA session expired (detected by periodic IC verification probe). Retrying auto-login…",
+                "warning",
+                () => GetFreshIdTokenAsync());
+            SetDocaLoginPaused(true, logoutReason: "session_probe");
+            await TryResumeAutoWorkerAfterDocaLoginAsync();
+        }
+        finally
+        {
+            _sessionProbeRunning = false;
+        }
     }
 
     private async void DocaProbeTimer_Tick(object? sender, EventArgs e)
@@ -826,9 +926,11 @@ public partial class MainWindow : Window
         var watchMode = _realtimeListenerActive
             ? "watching Firestore live"
             : $"polling every {App.Settings.AutoWorker.PollIntervalSeconds}s";
+        var probeMinutes = App.Settings.AutoWorker.DocaSessionProbeMinutes;
+        var probeNote = probeMinutes > 0 ? $" · DOCA session probe every {probeMinutes} min" : string.Empty;
         AutoWorkerStatusText.Text = waitingRetries > 0
-            ? $"Running — {eligible} job(s) ready, {waitingRetries} waiting for retry ({watchMode})."
-            : $"Running — {watchMode} · {eligible} job(s) ready.";
+            ? $"Running — {eligible} job(s) ready, {waitingRetries} waiting for retry ({watchMode}{probeNote})."
+            : $"Running — {watchMode} · {eligible} job(s) ready{probeNote}.";
     }
 
     private async void SignInButton_Click(object sender, RoutedEventArgs e)
@@ -946,7 +1048,7 @@ public partial class MainWindow : Window
         {
             if (fromAutoWorker || _autoWorkerEnabled)
             {
-                SetDocaLoginPaused(true);
+                SetDocaLoginPaused(true, logoutReason: "job_failure");
             }
 
             SetStatus(result.Message, StatusKind.Error);
@@ -1134,7 +1236,7 @@ public partial class MainWindow : Window
         {
             if (fromAutoWorker || _autoWorkerEnabled)
             {
-                SetDocaLoginPaused(true);
+                SetDocaLoginPaused(true, logoutReason: "job_failure");
             }
 
             lastError = result.Message;
@@ -1265,7 +1367,7 @@ public partial class MainWindow : Window
                         }
                         if (_autoWorkerEnabled)
                         {
-                            SetDocaLoginPaused(true);
+                            SetDocaLoginPaused(true, logoutReason: "job_failure");
                         }
 
                         SetStatusSafe($"{label} — DOCA login required in Chrome {workerIndex + 1}.", StatusKind.Error);

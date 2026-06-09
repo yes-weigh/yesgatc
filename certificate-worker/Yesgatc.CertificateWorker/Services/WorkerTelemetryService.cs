@@ -20,6 +20,8 @@ public sealed class WorkerTelemetryService
     private int _lastAppliedCommandRevision;
     private int _lastAppliedCredentialsRevision;
     private DateTimeOffset? _docaLoggedInAt;
+    private DateTimeOffset? _lastSessionProbeAt;
+    private string _lastSessionProbeResult = string.Empty;
     private int _jobsCompletedSession;
     private int _jobsFailedSession;
     private string? _lastActivityMessage;
@@ -44,7 +46,22 @@ public sealed class WorkerTelemetryService
         _docaLoggedInAt = DateTimeOffset.UtcNow;
     }
 
-    public async Task MarkDocaLoggedOutAsync(Func<Task<string>> resolveIdToken, CancellationToken cancellationToken = default)
+    public DateTimeOffset? DocaLoggedInAt => _docaLoggedInAt;
+
+    public DateTimeOffset? LastSessionProbeAt => _lastSessionProbeAt;
+
+    public string LastSessionProbeResult => _lastSessionProbeResult;
+
+    public void RecordSessionProbe(string result)
+    {
+        _lastSessionProbeAt = DateTimeOffset.UtcNow;
+        _lastSessionProbeResult = result;
+    }
+
+    public async Task MarkDocaLoggedOutAsync(
+        Func<Task<string>> resolveIdToken,
+        string logoutReason = "unknown",
+        CancellationToken cancellationToken = default)
     {
         if (_docaLoggedInAt is null)
         {
@@ -66,6 +83,7 @@ public sealed class WorkerTelemetryService
                     ["loggedInAt"] = loggedInAt.ToString("O"),
                     ["loggedOutAt"] = loggedOutAt.ToString("O"),
                     ["durationSeconds"] = durationSeconds,
+                    ["logoutReason"] = logoutReason,
                     ["machineName"] = Environment.MachineName,
                 },
                 idToken,
@@ -204,6 +222,9 @@ public sealed class WorkerTelemetryService
                     ["jobsCompletedSession"] = snapshot.JobsCompletedSession,
                     ["jobsFailedSession"] = snapshot.JobsFailedSession,
                     ["docaLoggedInAt"] = _docaLoggedInAt?.ToString("O") ?? string.Empty,
+                    ["docaSessionAgeSeconds"] = snapshot.DocaSessionAgeSeconds,
+                    ["lastSessionProbeAt"] = snapshot.LastSessionProbeAt,
+                    ["lastSessionProbeResult"] = snapshot.LastSessionProbeResult,
                 },
                 idToken,
                 cancellationToken);
