@@ -55,9 +55,7 @@ internal sealed class FirestoreDocumentClient
             return;
         }
 
-        var payloadFields = fields.ToDictionary(
-            pair => pair.Key,
-            pair => (object?)ToFirestoreValue(pair.Value));
+        var payloadFields = fields.ToDictionary(pair => pair.Key, pair => (object?)pair.Value);
         await PatchFieldsAsync(collection, documentId, payloadFields, idToken, cancellationToken);
     }
 

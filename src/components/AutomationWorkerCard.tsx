@@ -8,8 +8,10 @@ import {
   Play,
   RefreshCw,
   Save,
+  Search,
   Server,
   Shield,
+  Wrench,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -31,6 +33,13 @@ import {
   type WorkerRuntimeState,
   DEFAULT_AUTOMATION_WORKER_REMOTE,
 } from '../lib/automationWorker';
+import {
+  diagnoseVerificationPipeline,
+  findVerificationBySerial,
+  repairVerificationForPhase2,
+  type PipelineRepairDiagnosis,
+} from '../lib/verificationPipelineRepair';
+import type { SiteCalibration } from '../types';
 
 type AutomationWorkerCardProps = {
   className?: string;
@@ -77,6 +86,11 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [listenerError, setListenerError] = useState('');
+  const [repairSerial, setRepairSerial] = useState('');
+  const [repairLoading, setRepairLoading] = useState(false);
+  const [repairRecords, setRepairRecords] = useState<SiteCalibration[]>([]);
+  const [repairDiagnoses, setRepairDiagnoses] = useState<PipelineRepairDiagnosis[]>([]);
+  const [repairMessage, setRepairMessage] = useState('');
 
   const runtimeState = useMemo(() => resolveWorkerRuntimeState(status), [status]);
 
@@ -193,6 +207,41 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
 
   const remoteReady = user?.role === 'super_admin';
 
+  const handleLookupSerial = async (keepRepairMessage = false) => {
+    setError('');
+    if (!keepRepairMessage) {
+      setRepairMessage('');
+    }
+    setRepairLoading(true);
+    try {
+      const records = await findVerificationBySerial(repairSerial);
+      setRepairRecords(records);
+      setRepairDiagnoses(records.map(diagnoseVerificationPipeline));
+      if (records.length === 0) {
+        setRepairMessage('No verification found for that serial number.');
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Serial lookup failed.');
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
+  const handleRepairForPhase2 = async (recordId: string) => {
+    setError('');
+    setRepairMessage('');
+    setRepairLoading(true);
+    try {
+      await repairVerificationForPhase2(recordId);
+      setRepairMessage('Record repaired — status set to approved. The worker should pick it up for Phase 2 within ~30 seconds.');
+      await handleLookupSerial(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Repair failed.');
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
   return (
     <div className={`panel glass mt-6 automation-worker-card${className ? ` ${className}` : ''}`}>
       <div className="panel-header">
@@ -210,6 +259,68 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
           </p>
         )}
         {saved && <p className="text-success text-sm mb-3">Worker settings sent. The desktop app applies them on its next sync.</p>}
+        {repairMessage && <p className="text-success text-sm mb-3">{repairMessage}</p>}
+
+        <section className="automation-worker-recovery mb-6">
+          <h3 className="automation-worker-section-title"><Wrench className="inline-icon" /> Pipeline recovery</h3>
+          <p className="text-muted text-sm">
+            Look up a serial when DOCA and Firebase are out of sync or the worker queue shows 0 jobs.
+          </p>
+          <div className="automation-worker-control-row mb-3">
+            <input
+              id="worker-repair-serial"
+              className="input-field text-mono"
+              placeholder="Serial e.g. YXL61309"
+              value={repairSerial}
+              onChange={e => setRepairSerial(e.target.value)}
+              disabled={repairLoading}
+            />
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={!remoteReady || repairLoading || !repairSerial.trim()}
+              onClick={() => void handleLookupSerial()}
+            >
+              <Search className="inline-icon" />
+              {repairLoading ? 'Looking up…' : 'Look up'}
+            </button>
+          </div>
+          {repairDiagnoses.length > 0 && (
+            <ul className="automation-worker-recovery-list">
+              {repairDiagnoses.map((diagnosis, index) => (
+                <li key={diagnosis.recordId} className="automation-worker-recovery-item">
+                  <div>
+                    <strong>{diagnosis.serialNumber}</strong>
+                    <span className="text-muted text-sm"> · {repairRecords[index]?.applicationNumber || '—'}</span>
+                  </div>
+                  <dl className="automation-worker-kv mt-2">
+                    <div><dt>Firebase status</dt><dd>{diagnosis.status}</dd></div>
+                    <div><dt>Expected DOCA phase</dt><dd>{diagnosis.docaExpectedPhase.replace('_', ' ')}</dd></div>
+                    <div><dt>Worker queue</dt><dd>{diagnosis.queueEligible ? 'Eligible' : 'Not listed'}</dd></div>
+                    <div><dt>Document ID</dt><dd className="text-mono text-sm">{diagnosis.recordId}</dd></div>
+                  </dl>
+                  {diagnosis.notes.length > 0 && (
+                    <ul className="text-muted text-sm mb-2">
+                      {diagnosis.notes.map(note => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {diagnosis.repairAction === 'set_approved' && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={repairLoading}
+                      onClick={() => void handleRepairForPhase2(diagnosis.recordId)}
+                    >
+                      Mark approved → re-queue Phase 2
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         <section className="automation-worker-status-grid mb-6">
           <div className="automation-worker-status-card">
