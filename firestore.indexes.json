@@ -48,27 +48,6 @@
         { "fieldPath": "rcId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "automationWorkerLogs",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "automationWorkerCaptchaAttempts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "automationWorkerSessions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "loggedOutAt", "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []
