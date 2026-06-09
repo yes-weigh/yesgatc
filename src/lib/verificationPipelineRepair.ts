@@ -115,6 +115,12 @@ export function diagnoseVerificationPipeline(record: SiteCalibration): PipelineR
   } else if (!validStatus && !corrupted) {
     repairAction = 'set_submitted';
     notes.push('Status value is invalid — repair will reset to submitted.');
+  } else if (inferredStatus === 'certified' && !hasCertNumber) {
+    repairAction = 'set_approved';
+    notes.push(
+      'Certificate number missing after cleanup. Repair sets approved so worker v1.0.19+ can sync cert number and PDF from DOCA (Certificate Uploaded).',
+    );
+    docaExpectedPhase = 'phase2_pending';
   }
 
   return {

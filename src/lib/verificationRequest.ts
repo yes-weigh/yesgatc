@@ -219,10 +219,8 @@ export function isVerificationFailedAtSubmit(record: SiteCalibration): boolean {
 export function isVerificationFailedAtCertification(record: SiteCalibration): boolean {
   if (record.pipelineFailedPhase === 'certification') return true;
   const status = normalizeVerificationStatus(record);
-  // status "certified" with a certificate number means DOCA issued the cert — not a failure
-  // even when the signed PDF was never stored in Firebase (missing certificatePdfUrl).
   if (status === 'certified') {
-    return !record.certificateNumber?.trim();
+    return !verificationCertificateNumber(record);
   }
   return false;
 }
@@ -256,6 +254,13 @@ export function verificationDisplayStatusLabel(record: SiteCalibration): string 
 export function verificationDisplayStatusTitle(record: SiteCalibration): string | undefined {
   if (isVerificationCertifiedOnDoca(record) && !record.certificatePdfUrl?.trim()) {
     return 'Certified on DOCA — signed PDF is not stored in Firebase yet.';
+  }
+  if (
+    normalizeVerificationStatus(record) === 'certified'
+    && !verificationCertificateNumber(record)
+    && isValidVerificationIsoTimestamp(record.certifiedAt)
+  ) {
+    return 'Certified in Firebase but certificate number not synced — use Pipeline recovery to re-queue DOCA sync.';
   }
   const display = getVerificationDisplayStatus(record);
   if (display === 'failed_submit' || display === 'failed_certification') {
