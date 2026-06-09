@@ -109,6 +109,19 @@ public static class DocaViewVerificationService
         await page.BringToFrontAsync();
     }
 
+    /// <summary>
+    /// True when the IC Verification row shows upload is already complete on DOCA.
+    /// </summary>
+    public static async Task<bool> IsCertificateAlreadyUploadedAsync(
+        IPage page,
+        string viewIcVerificationBaseUrl,
+        string serialNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var row = await NavigateAndFindRowAsync(page, viewIcVerificationBaseUrl, serialNumber, cancellationToken);
+        return await RowIndicatesCertificateUploadedAsync(row);
+    }
+
     private static async Task ClickUploadCertificateAndWaitForUploadPageAsync(IPage page, ILocator row)
     {
         var upload = row.GetByRole(AriaRole.Link, new LocatorGetByRoleOptions { Name = "Upload Certificate" });
@@ -119,6 +132,12 @@ public static class DocaViewVerificationService
 
         if (await upload.CountAsync() == 0)
         {
+            if (await RowIndicatesCertificateUploadedAsync(row))
+            {
+                throw new InvalidOperationException(
+                    "DOCA already shows Certificate Uploaded for this serial — use Firebase sync instead of re-uploading.");
+            }
+
             upload = row.Locator("a, button")
                 .Filter(new LocatorFilterOptions
                 {
@@ -510,6 +529,40 @@ public static class DocaViewVerificationService
         }
 
         return dataRows[0];
+    }
+
+    private static async Task<bool> RowIndicatesCertificateUploadedAsync(ILocator row)
+    {
+        var uploaded = row.Locator("a, button, span, td")
+            .Filter(new LocatorFilterOptions
+            {
+                HasTextRegex = new Regex(
+                    @"Certificate\s+Uploaded|certificate\s+uploaded",
+                    RegexOptions.IgnoreCase),
+            });
+        return await uploaded.CountAsync() > 0;
+    }
+
+    private static async Task<bool> RowHasUploadCertificateActionAsync(ILocator row)
+    {
+        var upload = row.GetByRole(AriaRole.Link, new LocatorGetByRoleOptions { Name = "Upload Certificate" });
+        if (await upload.CountAsync() > 0)
+        {
+            return true;
+        }
+
+        upload = row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Upload Certificate" });
+        if (await upload.CountAsync() > 0)
+        {
+            return true;
+        }
+
+        upload = row.Locator("a, button")
+            .Filter(new LocatorFilterOptions
+            {
+                HasTextRegex = new Regex("^\\s*Upload\\s+Certificate\\s*$", RegexOptions.IgnoreCase),
+            });
+        return await upload.CountAsync() > 0;
     }
 
     private static async Task<bool> RowHasDataAsync(ILocator row)

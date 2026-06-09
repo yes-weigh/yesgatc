@@ -302,7 +302,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                       disabled={repairLoading}
                       onClick={() => void handleRepairForPhase2(diagnosis.recordId)}
                     >
-                      Mark approved → re-queue Phase 2
+                      Mark approved → sync / Phase 2
                     </button>
                   )}
                   {diagnosis.repairAction === 'set_submitted' && (

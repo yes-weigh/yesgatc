@@ -63,12 +63,18 @@ export function diagnoseVerificationPipeline(record: SiteCalibration): PipelineR
   }
 
   let repairAction: PipelineRepairDiagnosis['repairAction'] = 'none';
-  if (corrupted && inferredStatus === 'submitted') {
-    repairAction = 'set_submitted';
-    notes.push('Repair will restore status to submitted so the worker can continue Phase 1/2.');
-  } else if (corrupted && (inferredStatus === 'approved' || docaExpectedPhase === 'phase2_pending')) {
+  if (corrupted && inferredStatus === 'submitted' && isValidVerificationIsoTimestamp(record.submittedAt) && !hasPdf) {
     repairAction = 'set_approved';
-    notes.push('Repair will set status to approved so Phase 2 can run (DOCA Upload Certificate).');
+    notes.push(
+      'Repair sets approved so the worker can sync. If DOCA IC Verification shows "Certificate Uploaded", the worker downloads the PDF and marks Firebase certified — it will not re-upload to DOCA.',
+    );
+    docaExpectedPhase = 'phase2_pending';
+  } else if (corrupted && inferredStatus === 'submitted') {
+    repairAction = 'set_submitted';
+    notes.push('Repair will restore status to submitted so the worker can continue Phase 1.');
+  } else if (corrupted && inferredStatus === 'approved') {
+    repairAction = 'set_approved';
+    notes.push('Repair will set status to approved so Phase 2 can run (DOCA Upload Certificate or Firebase sync).');
   } else if (!validStatus && !corrupted) {
     repairAction = 'set_submitted';
     notes.push('Status value is invalid — repair will reset to submitted.');
