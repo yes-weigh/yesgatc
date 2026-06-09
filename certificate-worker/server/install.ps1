@@ -37,16 +37,11 @@ if ($updateSrc -ne $updateDest -and (Test-Path $updateSrc)) {
     Copy-Item $updateSrc $updateDest -Force
 }
 
-$pullUpdateDest = Join-Path $InstallPath "pull-update.ps1"
-$pullUpdateSrc = Join-Path $PSScriptRoot "pull-update.ps1"
-if ($pullUpdateSrc -ne $pullUpdateDest -and (Test-Path $pullUpdateSrc)) {
-    Copy-Item $pullUpdateSrc $pullUpdateDest -Force
-}
-
-$readmeDest = Join-Path $InstallPath "README-SERVER.md"
-$readmeSrc = Join-Path $PSScriptRoot "README-SERVER.md"
-if ($readmeSrc -ne $readmeDest -and (Test-Path $readmeSrc)) {
-    Copy-Item $readmeSrc $readmeDest -Force -ErrorAction SilentlyContinue
+foreach ($serverFile in @("pull-update.ps1", "update.ps1", "register-autostart.ps1", "start-worker.ps1", "README-SERVER.md")) {
+    $serverFilePath = Join-Path $PSScriptRoot $serverFile
+    if (Test-Path $serverFilePath) {
+        Copy-Item $serverFilePath $InstallPath -Force
+    }
 }
 
 if (-not (Test-Path (Join-Path $InstallPath "appsettings.local.json"))) {
@@ -58,16 +53,14 @@ if (-not (Test-Path (Join-Path $InstallPath "appsettings.local.json"))) {
 }
 
 if ($CreateLogonTask) {
-    $currentUser = "$env:USERDOMAIN\$env:USERNAME"
-    Write-Host "Creating logon scheduled task for $currentUser ..." -ForegroundColor Cyan
-
-    $action = New-ScheduledTaskAction -Execute $exePath -WorkingDirectory $InstallPath
-    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-    $principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Limited
-
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-    Write-Host "Scheduled task '$TaskName' will start the worker when you sign in via RDP." -ForegroundColor Green
+    $registerScript = Join-Path $InstallPath "register-autostart.ps1"
+    if (-not (Test-Path $registerScript)) {
+        $registerScript = Join-Path $PSScriptRoot "register-autostart.ps1"
+    }
+    if (-not (Test-Path $registerScript)) {
+        throw "register-autostart.ps1 not found in $InstallPath or next to install.ps1"
+    }
+    & powershell -ExecutionPolicy Bypass -File $registerScript -InstallPath $InstallPath -TaskName $TaskName
 }
 
 Write-Host ""
@@ -75,4 +68,5 @@ Write-Host "Install complete." -ForegroundColor Green
 Write-Host "  Run now:  Start-Process '$exePath'"
 Write-Host "  Data dir: $env:LOCALAPPDATA\YesGATC\CertificateWorker (credentials, DOCA browser profile - kept across updates)"
 Write-Host ""
-Write-Host "After first launch: sign in, complete DOCA captcha in Chrome, enable Auto worker, leave the session open or use -CreateLogonTask."
+Write-Host "After first launch: sign in, complete DOCA captcha in Chrome, enable Auto worker."
+Write-Host "For auto-start after reboot: run register-autostart.ps1 (or reinstall with -CreateLogonTask)."

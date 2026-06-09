@@ -1,0 +1,41 @@
+---
+description: Tag and push GitHub release when Certificate Worker code changes
+globs: certificate-worker/**/*
+alwaysApply: false
+---
+
+# Certificate Worker — release on change
+
+When you **finish** changes under `certificate-worker/` (C# app, server scripts, publish scripts), **create a GitHub release** unless the user explicitly says not to.
+
+## Tag format
+
+- Prefix: `certificate-worker-v`
+- Semver: `certificate-worker-v{major}.{minor}.{patch}` (e.g. `certificate-worker-v1.0.20`)
+- Bump **patch** for fixes and small changes; **minor** for new features; **major** for breaking changes.
+
+## Release steps
+
+1. Ensure worker changes are **committed** on `main` (include related server scripts in the same commit when they ship together).
+2. Find the latest tag: `git tag -l "certificate-worker-v*"` and pick the next version.
+3. Create and push the tag (triggers `.github/workflows/certificate-worker-release.yml`):
+   ```powershell
+   git tag certificate-worker-v1.0.X
+   git push origin main
+   git push origin certificate-worker-v1.0.X
+   ```
+4. Confirm the **Release Certificate Worker** GitHub Action succeeded.
+5. Tell the user the server update command:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -Tag certificate-worker-v1.0.X -Start
+   ```
+   Add `-EnsureAutoStart` when server auto-start scripts changed.
+
+## Scope
+
+Applies to paths under `certificate-worker/` including:
+- `Yesgatc.CertificateWorker/` (C# source)
+- `server/` (`install.ps1`, `pull-update.ps1`, `register-autostart.ps1`, etc.)
+- `scripts/publish-release.ps1`
+
+Do **not** tag for unrelated web-app-only changes in `src/`.

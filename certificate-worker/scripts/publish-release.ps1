@@ -127,7 +127,7 @@ $versionText = @(
 Set-Content -Path (Join-Path $stagingDir "version.txt") -Value $versionText -Encoding UTF8
 
 $serverDir = Join-Path $scriptDir "..\server"
-foreach ($serverFile in @("pull-update.ps1", "update.ps1", "install.ps1", "README-SERVER.md")) {
+foreach ($serverFile in @("pull-update.ps1", "update.ps1", "install.ps1", "start-worker.ps1", "register-autostart.ps1", "README-SERVER.md")) {
     $serverFilePath = Join-Path $serverDir $serverFile
     if (Test-Path $serverFilePath) {
         Copy-Item $serverFilePath $stagingDir -Force

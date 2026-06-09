@@ -10,6 +10,8 @@
 # First install from GitHub only:
 #   powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -FirstInstall -CreateLogonTask -Start
 #
+# Register auto-start after VM reboot (existing install):
+#   powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -EnsureAutoStart
 # Specific release:
 #   powershell -ExecutionPolicy Bypass -File .\pull-update.ps1 -Tag certificate-worker-v1.0.0 -Start
 
@@ -23,6 +25,7 @@ param(
     [switch]$Start,
     [switch]$FirstInstall,
     [switch]$CreateLogonTask,
+    [switch]$EnsureAutoStart,
     [switch]$SkipPlaywright
 )
 
@@ -333,5 +336,20 @@ if ($Start -and $shouldInstall) {
     if (Test-Path $exePath) {
         Start-Process $exePath -WorkingDirectory $InstallPath
         Write-Host "Started $ExeName" -ForegroundColor Green
+    }
+}
+
+if ($EnsureAutoStart -or ($CreateLogonTask -and -not $shouldInstall)) {
+    $registerScript = Join-Path $InstallPath "register-autostart.ps1"
+    if (-not (Test-Path $registerScript)) {
+        $registerScript = Join-Path $ExtractDir "register-autostart.ps1"
+    }
+    if (Test-Path $registerScript) {
+        Write-Host ""
+        Write-Host "Ensuring auto-start scheduled task ..." -ForegroundColor Cyan
+        & powershell -ExecutionPolicy Bypass -File $registerScript -InstallPath $InstallPath
+    }
+    else {
+        Write-Warning "register-autostart.ps1 not found. Update from a recent release, then run -EnsureAutoStart again."
     }
 }

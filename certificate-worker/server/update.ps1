@@ -73,6 +73,13 @@ if (Test-Path $pullUpdateSrc) {
     Copy-Item $pullUpdateSrc (Join-Path $InstallPath "pull-update.ps1") -Force
 }
 
+foreach ($serverFile in @("start-worker.ps1", "register-autostart.ps1")) {
+    $src = Join-Path $SourcePath $serverFile
+    if (Test-Path $src) {
+        Copy-Item $src (Join-Path $InstallPath $serverFile) -Force
+    }
+}
+
 $versionFile = Join-Path $InstallPath "version.txt"
 if (Test-Path $versionFile) {
     Write-Host ""

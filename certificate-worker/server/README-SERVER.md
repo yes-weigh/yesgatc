@@ -219,6 +219,54 @@ powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-rele
 
 ---
 
+## Auto-start after VM / node reboot
+
+The worker is a **desktop app** (Chrome + DOCA). It cannot run with no Windows user session. After a host provider reboots the VM, use a **scheduled task** so the worker starts again when the session is available.
+
+### One-time setup (on the server, as your RDP user)
+
+After updating to a release that includes `register-autostart.ps1`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -EnsureAutoStart
+```
+
+Or directly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\register-autostart.ps1
+```
+
+This registers task **YesGATC Certificate Worker** with:
+
+- **At logon** — starts when you sign in via RDP
+- **At startup** (+ 2 minute delay) — starts after reboot when this user has an interactive session
+- **Restart on failure** — retries if the process exits
+
+Verify in Task Scheduler (`taskschd.msc`) → Task Scheduler Library → *YesGATC Certificate Worker*.
+
+Test without rebooting:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\start-worker.ps1
+```
+
+### After a provider reboot
+
+| Scenario | What happens |
+|----------|----------------|
+| You **RDP in** after reboot | Task runs at logon → worker starts |
+| **Auto-logon** configured for the worker user | Startup trigger runs ~2 min after boot |
+| Nobody signs in | Worker stays stopped until someone logs in |
+
+### Optional: unattended auto-logon (advanced)
+
+For a dedicated VM that must recover without manual RDP, configure **automatic sign-in** for the same Windows user that runs the worker (e.g. `Sysinternals Autologon` or `netplwiz`). Restrict RDP access and use a strong password. Only do this on a single-purpose automation server.
+
+**Do not** sign out — use **Disconnect** on RDP so the session stays active.
+
+---
+
 ## Troubleshooting
 
 | Issue | What to do |
@@ -227,3 +275,4 @@ powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-rele
 | DOCA browser missing | Run `powershell -File C:\YesGATC\CertificateWorker\playwright.ps1 install chromium` |
 | Queue not updating | Check status line: should say *watching Firestore live*; verify network to Firebase |
 | Lost DOCA login | RDP in and log in again — profile is under `%LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser` |
+| Worker not running after VM reboot | Run `register-autostart.ps1` or `pull-update.ps1 -EnsureAutoStart`, then RDP in once (or configure auto-logon) |
