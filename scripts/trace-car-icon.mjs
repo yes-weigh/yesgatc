@@ -5,7 +5,7 @@ import { PNG } from 'pngjs';
 import ImageTracer from 'imagetracerjs';
 
 const root = path.resolve(import.meta.dirname, '..');
-const input = path.resolve(root, process.argv[2] ?? 'image.png');
+const input = path.resolve(root, process.argv[2] ?? 'public/vehicle/vehicle-logo.png');
 const output = path.resolve(root, process.argv[3] ?? 'public/vehicle/vehicle-logo.svg');
 
 const png = PNG.sync.read(fs.readFileSync(input));

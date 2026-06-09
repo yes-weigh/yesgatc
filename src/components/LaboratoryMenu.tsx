@@ -33,8 +33,7 @@ function LaboratoryMenuCardVisual({
 }
 
 export const LaboratoryMenu: React.FC = () => (
-  <section className="laboratory-menu" aria-label="Laboratory menu">
-    <div className="laboratory-menu-grid">
+  <div className="laboratory-menu-grid">
       {LABORATORY_MENU_ITEMS.map(item => {
         const Icon = item.icon;
         return (
@@ -64,6 +63,5 @@ export const LaboratoryMenu: React.FC = () => (
           </button>
         );
       })}
-    </div>
-  </section>
+  </div>
 );

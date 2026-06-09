@@ -183,6 +183,7 @@ export const Layout: React.FC = () => {
   const pageTitle = currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
+  const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
 
   const roleLabel = {
     super_admin: 'Super Admin',
@@ -286,7 +287,7 @@ export const Layout: React.FC = () => {
       )}
 
       <main
-        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}${useShieldBrand ? ' mobile-verification' : ''}`}
+        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}${useShieldBrand ? ' mobile-verification' : ''}${isMobile && isLaboratoryPage ? ' mobile-laboratory-dashboard' : ''}`}
       >
         {isMobile && (
           <header className={`mobile-app-bar${useShieldBrand ? ' mobile-app-bar--sticky' : ''}`}>
@@ -316,7 +317,45 @@ export const Layout: React.FC = () => {
                 )}
               </div>
             </div>
-            {profilePath ? (
+            {isLaboratoryPage ? (
+              <div className="mobile-app-bar-actions">
+                {profilePath ? (
+                  <button
+                    type="button"
+                    className={`mobile-profile-shortcut${location.pathname === profilePath ? ' mobile-profile-shortcut--active' : ''}`}
+                    onClick={() => navigate(profilePath)}
+                    title="My profile"
+                    aria-label="Open my profile"
+                  >
+                    {profilePhoto?.url || profilePhoto?.path ? (
+                      <StorageImage
+                        url={profilePhoto.url}
+                        path={profilePhoto.path}
+                        alt=""
+                        className="mobile-profile-shortcut-img"
+                      />
+                    ) : (
+                      <span className="mobile-profile-shortcut-placeholder" aria-hidden>
+                        <UserCircle size={22} className="text-blue" />
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                  <span className="mobile-profile-shortcut mobile-profile-shortcut--static" aria-hidden>
+                    <UserCircle size={22} className="text-blue" />
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="mobile-logout-shortcut"
+                  onClick={() => void handleLogout()}
+                  title="Logout"
+                  aria-label="Logout"
+                >
+                  <LogOut size={20} className="text-red" aria-hidden />
+                </button>
+              </div>
+            ) : profilePath ? (
               <button
                 type="button"
                 className={`mobile-profile-shortcut${location.pathname === profilePath ? ' mobile-profile-shortcut--active' : ''}`}

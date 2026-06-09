@@ -6,7 +6,7 @@ type VehicleLogoMarkProps = {
   className?: string;
 };
 
-/** Front car icon traced from image.png, polished for UI use. */
+/** Front car icon traced from public/vehicle/vehicle-logo.png, polished for UI use. */
 function VehicleFrontIcon({ className }: { className?: string }) {
   return (
     <svg

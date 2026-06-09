@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { LaboratoryBottomNav } from './LaboratoryBottomNav';
+import { LaboratoryConfigCard } from './LaboratoryConfigCard';
+import { LaboratoryDocumentsSection } from './LaboratoryDocumentsSection';
 import { LaboratoryMenu } from './LaboratoryMenu';
 import {
   buildLaboratorySettingsPatch,
@@ -12,20 +15,28 @@ import {
   type LaboratorySettings,
 } from '../lib/rcLaboratoryFields';
 
-interface LaboratorySettingsFormProps {
+type LaboratorySettingsFormProps = {
   userId: string;
   formId: string;
   idPrefix?: string;
+  configSubtitle: string;
+  showBottomNav?: boolean;
+  bottomNavBasePath?: '/rc' | '/admin';
   onLoadingChange?: (loading: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
-}
+  configExtras?: React.ReactNode;
+};
 
 export const LaboratorySettingsForm: React.FC<LaboratorySettingsFormProps> = ({
   userId,
   formId,
   idPrefix = 'laboratory',
+  configSubtitle,
+  showBottomNav = false,
+  bottomNavBasePath = '/rc',
   onLoadingChange,
   onSavingChange,
+  configExtras,
 }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -34,6 +45,7 @@ export const LaboratorySettingsForm: React.FC<LaboratorySettingsFormProps> = ({
   const [values, setValues] = useState<LaboratorySettings>(EMPTY_LABORATORY_SETTINGS);
 
   const sealField = LABORATORY_FIELDS[0]!;
+  const sealInputId = `${idPrefix}-${sealField.key}`;
 
   useEffect(() => {
     onLoadingChange?.(loading);
@@ -66,8 +78,8 @@ export const LaboratorySettingsForm: React.FC<LaboratorySettingsFormProps> = ({
     setSaved(false);
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault();
 
     const validationError = validateLaboratorySettings(values);
     if (validationError) {
@@ -103,41 +115,51 @@ export const LaboratorySettingsForm: React.FC<LaboratorySettingsFormProps> = ({
 
   if (loading) {
     return (
-      <div className="text-center py-6">
-        <span className="spinner-inline" />
+      <div className="laboratory-dashboard laboratory-dashboard--loading">
+        <div className="text-center py-6">
+          <span className="spinner-inline" />
+        </div>
       </div>
     );
   }
 
   return (
-    <form id={formId} onSubmit={handleSave} className="rc-laboratory-form">
-      <div className="rc-laboratory-seal-field">
-        <label htmlFor={`${idPrefix}-${sealField.key}`} className="rc-laboratory-seal-label">
-          {sealField.label}
-        </label>
-        <input
-          id={`${idPrefix}-${sealField.key}`}
-          type="text"
-          className={`input-field rc-laboratory-seal-input${sealField.mono ? ' font-mono' : ''}`}
-          value={values[sealField.key]}
-          onChange={e => patchField(sealField.key, e.target.value)}
-          placeholder={sealField.placeholder}
-          disabled={saving}
-          autoComplete="off"
-          spellCheck={false}
-        />
-        <p className="rc-laboratory-seal-hint mb-0">{sealField.hint}.</p>
-      </div>
+    <div className={`laboratory-dashboard${showBottomNav ? ' laboratory-dashboard--with-bottom-nav' : ''}`}>
+      <form id={formId} onSubmit={handleSave} className="laboratory-dashboard-form">
+        <LaboratoryConfigCard
+          subtitle={configSubtitle}
+          formId={formId}
+          sealField={sealField}
+          sealValue={values[sealField.key]}
+          sealInputId={sealInputId}
+          saving={saving}
+          showSave
+          onSealChange={value => patchField(sealField.key, value)}
+        >
+          {configExtras}
+        </LaboratoryConfigCard>
 
-      <LaboratoryMenu />
+        {error && (
+          <p className="rc-form-topbar-error text-sm mb-0" role="alert">
+            {error}
+          </p>
+        )}
 
-      {error && (
-        <p className="rc-form-topbar-error text-sm mb-0 mt-3" role="alert">
-          {error}
-        </p>
-      )}
+        {saved && <p className="text-green text-xs mb-0">Laboratory settings saved.</p>}
+      </form>
 
-      {saved && <p className="text-green text-xs mb-0 mt-3">Laboratory settings saved.</p>}
-    </form>
+      <section className="laboratory-menu-section" aria-labelledby="laboratory-menu-heading">
+        <div className="laboratory-section-head">
+          <h3 id="laboratory-menu-heading" className="laboratory-section-title mb-0">
+            Laboratory Menu
+          </h3>
+        </div>
+        <LaboratoryMenu />
+      </section>
+
+      <LaboratoryDocumentsSection />
+
+      {showBottomNav && <LaboratoryBottomNav basePath={bottomNavBasePath} />}
+    </div>
   );
 };
