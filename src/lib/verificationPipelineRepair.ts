@@ -6,7 +6,6 @@ import {
   query,
   updateDoc,
   where,
-  type DocumentData,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { SiteCalibration, VerificationRequestStatus } from '../types';
@@ -24,12 +23,7 @@ export type PipelineRepairDiagnosis = {
   notes: string[];
 };
 
-function readString(data: DocumentData, key: string): string {
-  const value = data[key];
-  return typeof value === 'string' ? value : '';
-}
-
-export function isCorruptedFirestoreString(value: string | undefined): boolean {
+(value: string | undefined): boolean {
   return Boolean(value?.includes(CORRUPTED_MARKER));
 }
 
