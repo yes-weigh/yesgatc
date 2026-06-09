@@ -182,6 +182,8 @@ public sealed class AutomationService : IAsyncDisposable
 
     public Func<CancellationToken, Task<string>>? ResolveFirebaseIdToken { get; set; }
 
+    public Func<CaptchaAttemptReport, Task>? CaptchaAttemptReporter { get; set; }
+
     /// <summary>Phase 2 — open OV form, select instrument type, fill party section.</summary>
     public async Task<DocaOpenResult> RunOvStarterAsync(
         SiteCalibrationRecord job,
@@ -829,7 +831,14 @@ public sealed class AutomationService : IAsyncDisposable
             return DocaSessionState.LoginRequired;
         }
 
-        return await DocaLoginAutomation.TryLoginAsync(page, _settings, DocaCredentials, cancellationToken);
+        return await DocaLoginAutomation.TryLoginAsync(
+            page,
+            _settings,
+            DocaCredentials,
+            cancellationToken,
+            CaptchaAttemptReporter is null
+                ? null
+                : report => CaptchaAttemptReporter(report));
     }
 
     private async Task<DocaOpenResult?> TryEnsureLoggedInOnPageAsync(

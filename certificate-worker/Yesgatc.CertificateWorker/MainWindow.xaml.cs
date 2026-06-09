@@ -43,6 +43,7 @@ public partial class MainWindow : Window
     private readonly AutomationService _automationService;
     private readonly LocalCredentialsStore _credentialStore = new();
     private readonly JobRetryTracker _jobRetries = new();
+    private readonly WorkerTelemetryService _telemetry;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private readonly List<AutomationService> _preparedBulkWorkers = [];
 
@@ -51,12 +52,15 @@ public partial class MainWindow : Window
     private bool _isBusy;
     private bool _autoWorkerEnabled;
     private bool _autoWorkerPausedForDoca;
+    private bool _remotePaused;
     private bool _useRealtimeListener;
     private bool _realtimeListenerActive;
     private DispatcherTimer? _pollFallbackTimer;
     private DispatcherTimer? _retryBadgeTimer;
     private DispatcherTimer? _docaProbeTimer;
+    private DispatcherTimer? _telemetryTimer;
     private bool _autoWorkerCyclePending;
+    private StatusKind _lastStatusKind = StatusKind.Idle;
 
     public MainWindow()
     {
@@ -74,8 +78,10 @@ public partial class MainWindow : Window
         _useRealtimeListener = settings.AutoWorker.UseRealtimeListener;
         _partyDetailsService = new PartyDetailsService(settings.Firebase);
         _instrumentDetailsService = new InstrumentDetailsService(settings.Firebase);
+        _telemetry = new WorkerTelemetryService(settings.Firebase);
         _automationService = new AutomationService(settings.Automation, _firestoreService);
         _automationService.ResolveFirebaseIdToken = GetFreshIdTokenAsync;
+        _automationService.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
         App.AutomationService = _automationService;
 
         JobsGrid.ItemsSource = _jobs;
@@ -220,6 +226,7 @@ public partial class MainWindow : Window
             }
 
             SetStatus("DOCA browser open and logged in to DOCA.", StatusKind.Success);
+            _telemetry.MarkDocaLoggedIn();
         }
         catch (Exception ex)
         {
@@ -230,6 +237,7 @@ public partial class MainWindow : Window
     private async void MainWindow_Closed(object? sender, EventArgs e)
     {
         StopAutoWorkerTimers();
+        StopTelemetryTimer();
         await _queueListener.StopAsync();
         await DisposePreparedBulkWorkersAsync();
         await _automationService.DisposeAsync();
@@ -302,8 +310,9 @@ public partial class MainWindow : Window
     private void StartAutoWorkerTimers()
     {
         StopAutoWorkerTimers();
+        StartTelemetryTimer();
 
-        if (!_autoWorkerEnabled || _session is null)
+        if (!_autoWorkerEnabled || _session is null || _remotePaused)
         {
             return;
         }
@@ -368,10 +377,221 @@ public partial class MainWindow : Window
         StopDocaProbeTimer();
     }
 
+    private void StartTelemetryTimer()
+    {
+        StopTelemetryTimer();
+
+        if (_session is null)
+        {
+            return;
+        }
+
+        _telemetryTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(30),
+        };
+        _telemetryTimer.Tick += TelemetryTimer_Tick;
+        _telemetryTimer.Start();
+        _ = PublishWorkerStatusAsync();
+        _ = PollRemoteControlAsync();
+    }
+
+    private void StopTelemetryTimer()
+    {
+        if (_telemetryTimer is null)
+        {
+            return;
+        }
+
+        _telemetryTimer.Tick -= TelemetryTimer_Tick;
+        _telemetryTimer.Stop();
+        _telemetryTimer = null;
+    }
+
+    private async void TelemetryTimer_Tick(object? sender, EventArgs e)
+    {
+        await PublishWorkerStatusAsync();
+        await PollRemoteControlAsync();
+    }
+
+    private Task ReportCaptchaAttemptAsync(CaptchaAttemptReport report) =>
+        _session is null
+            ? Task.CompletedTask
+            : _telemetry.ReportCaptchaAttemptAsync(report, () => GetFreshIdTokenAsync());
+
+    private async Task PublishWorkerStatusAsync()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        var submitted = _jobs.Count(item => item.Record.IsSubmitted);
+        var approved = _jobs.Count(item => item.Record.IsReadyToCertify || item.Record.NeedsCertificatePdfUpload);
+        var eligible = _jobs.Count(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id));
+
+        var state = _lastStatusKind switch
+        {
+            StatusKind.Working => "working",
+            StatusKind.Error => "error",
+            StatusKind.Success => "idle",
+            _ when _autoWorkerPausedForDoca => "login_required",
+            _ when _remotePaused => "paused",
+            _ => "idle",
+        };
+
+        await _telemetry.PublishStatusAsync(
+            new WorkerStatusSnapshot
+            {
+                State = state,
+                StatusMessage = StatusText.Text,
+                AutoWorkerEnabled = _autoWorkerEnabled,
+                RemotePaused = _remotePaused,
+                DocaFillOnly = DocaFillOnlyEnabled,
+                DocaSessionState = _autoWorkerPausedForDoca ? "login_required" : "logged_in",
+                QueueTotal = _jobs.Count,
+                QueueEligible = eligible,
+                QueueSubmitted = submitted,
+                QueueApproved = approved,
+                JobsCompletedSession = _telemetry.JobsCompletedSession,
+                JobsFailedSession = _telemetry.JobsFailedSession,
+            },
+            () => GetFreshIdTokenAsync());
+    }
+
+    private async Task PollRemoteControlAsync()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        var remote = await _telemetry.PollRemoteControlAsync(() => GetFreshIdTokenAsync());
+        if (remote is null)
+        {
+            return;
+        }
+
+        if (_telemetry.ShouldApplyCredentials(remote))
+        {
+            await ApplyRemoteCredentialsAsync(remote);
+        }
+
+        if (_telemetry.ShouldApplyCommand(remote))
+        {
+            await ApplyRemoteCommandAsync(remote);
+        }
+    }
+
+    private async Task ApplyRemoteCredentialsAsync(WorkerRemoteControlState remote)
+    {
+        var changed = false;
+
+        if (!string.IsNullOrWhiteSpace(remote.SuperAdminAadhar))
+        {
+            AadharBox.Text = remote.SuperAdminAadhar.Trim();
+            changed = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(remote.SuperAdminPassword))
+        {
+            PasswordBox.Text = remote.SuperAdminPassword;
+            changed = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(remote.DocaEmail))
+        {
+            DocaEmailBox.Text = remote.DocaEmail.Trim();
+            changed = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(remote.DocaPassword))
+        {
+            DocaPasswordBox.Text = remote.DocaPassword;
+            changed = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(remote.CaptchaApiKey))
+        {
+            CaptchaApiKeyBox.Text = remote.CaptchaApiKey.Trim();
+            OpenAiCaptchaOcr.RuntimeApiKeyOverride = remote.CaptchaApiKey.Trim();
+            UpdateCaptchaApiKeyHint();
+            changed = true;
+        }
+
+        if (changed)
+        {
+            PersistCredentials();
+            _automationService.DocaCredentials = CurrentDocaCredentials();
+            foreach (var worker in _preparedBulkWorkers)
+            {
+                worker.DocaCredentials = CurrentDocaCredentials();
+                worker.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
+            }
+
+            AddActivityEntry("Applied remote credential update from web admin.");
+            SetStatus("Remote credentials applied from web admin.", StatusKind.Success);
+        }
+
+        _telemetry.MarkCredentialsApplied(remote.CredentialsRevision);
+        await _telemetry.ClearAppliedCredentialsAsync(remote.CredentialsRevision, () => GetFreshIdTokenAsync());
+    }
+
+    private async Task ApplyRemoteCommandAsync(WorkerRemoteControlState remote)
+    {
+        if (remote.AutoWorkerEnabled.HasValue)
+        {
+            _autoWorkerEnabled = remote.AutoWorkerEnabled.Value;
+            if (_autoWorkerEnabled && _session is not null && !_remotePaused)
+            {
+                StartAutoWorkerTimers();
+            }
+            else
+            {
+                StopAutoWorkerTimers();
+                StartTelemetryTimer();
+            }
+        }
+
+        if (remote.DocaFillOnly.HasValue && remote.DocaFillOnly.Value != DocaFillOnlyEnabled)
+        {
+            DocaFillOnlyCheckBox.IsChecked = remote.DocaFillOnly.Value;
+            ApplyDocaFillOnlyToAutomationWorkers();
+            PersistCredentials();
+            AddActivityEntry($"Remote control set DOCA mode to {(remote.DocaFillOnly.Value ? "fill-only" : "full submit")}.");
+        }
+
+        var wasPaused = _remotePaused;
+        _remotePaused = remote.PauseWorker;
+        if (_remotePaused && !wasPaused)
+        {
+            AddActivityEntry("Auto worker paused from web admin.");
+        }
+        else if (!_remotePaused && wasPaused)
+        {
+            AddActivityEntry("Auto worker resumed from web admin.");
+            if (_autoWorkerEnabled && _session is not null)
+            {
+                StartAutoWorkerTimers();
+                _ = RunAutoWorkerCycleAsync();
+            }
+        }
+
+        _telemetry.MarkCommandApplied(remote.CommandRevision);
+        UpdateAutoWorkerStatusText();
+        await PublishWorkerStatusAsync();
+    }
+
     private void SetDocaLoginPaused(bool paused)
     {
+        var wasPaused = _autoWorkerPausedForDoca;
         _autoWorkerPausedForDoca = paused;
         ApplyManualDocaLoginWaitToAllAutomation(paused);
+
+        if (paused && !wasPaused)
+        {
+            _ = _telemetry.MarkDocaLoggedOutAsync(() => GetFreshIdTokenAsync());
+        }
 
         if (paused)
         {
@@ -380,9 +600,11 @@ public partial class MainWindow : Window
         else
         {
             StopDocaProbeTimer();
+            _telemetry.MarkDocaLoggedIn();
         }
 
         UpdateAutoWorkerStatusText();
+        _ = PublishWorkerStatusAsync();
     }
 
     private void ApplyManualDocaLoginWaitToAllAutomation(bool paused)
@@ -491,7 +713,7 @@ public partial class MainWindow : Window
 
     private async Task RunAutoWorkerCycleAsync()
     {
-        if (!_autoWorkerEnabled || _session is null || _autoWorkerPausedForDoca)
+        if (!_autoWorkerEnabled || _session is null || _autoWorkerPausedForDoca || _remotePaused)
         {
             return;
         }
@@ -542,6 +764,12 @@ public partial class MainWindow : Window
         if (!_autoWorkerEnabled)
         {
             AutoWorkerStatusText.Text = "Disabled in appsettings.json.";
+            return;
+        }
+
+        if (_remotePaused)
+        {
+            AutoWorkerStatusText.Text = "Paused from web admin — resume in Integrations → Automation Worker.";
             return;
         }
 
@@ -710,6 +938,7 @@ public partial class MainWindow : Window
         if (result.Completed)
         {
             _jobRetries.Clear(job.Id);
+            _telemetry.RecordJobCompleted();
             SetStatus(result.Message, StatusKind.Success);
             await LoadQueueAsync();
             SelectJobAtIndexAfterRemoval(jobIndex);
@@ -720,6 +949,7 @@ public partial class MainWindow : Window
             job.Id,
             result.Message,
             TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+        _telemetry.RecordJobFailed();
         RefreshRetryBadges();
         SetStatus(result.Message, StatusKind.Info);
         await LoadQueueAsync();
@@ -1470,7 +1700,7 @@ public partial class MainWindow : Window
                 {
                     _ = TryResumeAutoWorkerAfterDocaLoginAsync();
                 }
-                else
+                else if (!_remotePaused)
                 {
                     _ = RunAutoWorkerCycleAsync();
                 }
@@ -1669,6 +1899,7 @@ public partial class MainWindow : Window
 
     private void SetStatus(string message, Exception? ex, StatusKind kind = StatusKind.Info)
     {
+        _lastStatusKind = kind;
         StatusText.Text = message;
         StatusTimestampText.Text = DateTime.Now.ToString("HH:mm:ss");
 
@@ -1698,6 +1929,19 @@ public partial class MainWindow : Window
 
         AddActivityEntry(message);
         LogToFile(message, ex);
+
+        if (_session is not null)
+        {
+            var level = kind switch
+            {
+                StatusKind.Error => "error",
+                StatusKind.Success => "success",
+                StatusKind.Working => "working",
+                _ => "info",
+            };
+            _ = _telemetry.ReportActivityAsync(message, level, () => GetFreshIdTokenAsync());
+            _ = PublishWorkerStatusAsync();
+        }
     }
 
     private void AddActivityEntry(string message)

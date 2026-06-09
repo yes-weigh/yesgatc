@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Plug } from 'lucide-react';
+import { AutomationWorkerCard } from '../../components/AutomationWorkerCard';
 import { AdminRazorpayTestCard } from '../../components/AdminRazorpayTestCard';
 import { RazorpaySettingsCard } from '../../components/RazorpaySettingsCard';
 import { ZohoSettingsCard } from '../../components/ZohoSettingsCard';
 
-type IntegrationsTab = 'zoho' | 'razorpay' | 'whatsapp' | 'doca' | 'openai';
+type IntegrationsTab = 'zoho' | 'razorpay' | 'whatsapp' | 'doca' | 'worker' | 'openai';
 
 const INTEGRATIONS_TABS: {
   id: IntegrationsTab;
@@ -37,7 +38,14 @@ const INTEGRATIONS_TABS: {
   {
     id: 'doca',
     label: 'DOCA',
-    subtitle: 'Certificate portal & automation',
+    subtitle: 'Certificate portal settings',
+    logoSrc: '/integrations/doca.svg',
+    brandClass: 'admin-integrations-tab--doca',
+  },
+  {
+    id: 'worker',
+    label: 'Automation Worker',
+    subtitle: 'Remote worker control & logs',
     logoSrc: '/integrations/doca.svg',
     brandClass: 'admin-integrations-tab--doca',
   },
@@ -137,6 +145,17 @@ export const AdminSettings: React.FC = () => {
           aria-labelledby="integrations-tab-doca"
           className="admin-integrations-panel"
         />
+      )}
+
+      {activeTab === 'worker' && (
+        <div
+          id="integrations-panel-worker"
+          role="tabpanel"
+          aria-labelledby="integrations-tab-worker"
+          className="admin-integrations-panel"
+        >
+          <AutomationWorkerCard className="admin-integrations-section" />
+        </div>
       )}
 
       {activeTab === 'openai' && (

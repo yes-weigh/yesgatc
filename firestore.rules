@@ -362,6 +362,26 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // ── certificate automation worker (remote control + telemetry) ─
+    match /automationWorker/{docId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /automationWorkerLogs/{logId} {
+      allow read, create: if isSuperAdmin();
+      allow update, delete: if false;
+    }
+
+    match /automationWorkerCaptchaAttempts/{attemptId} {
+      allow read, create: if isSuperAdmin();
+      allow update, delete: if false;
+    }
+
+    match /automationWorkerSessions/{sessionId} {
+      allow read, create: if isSuperAdmin();
+      allow update, delete: if false;
+    }
+
     function canReadRcWallet(rcId) {
       return isSuperAdmin()
         || (isRCAdmin() && request.auth.uid == rcId)

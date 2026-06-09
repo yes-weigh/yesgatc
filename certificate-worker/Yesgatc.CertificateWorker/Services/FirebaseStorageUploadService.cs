@@ -24,6 +24,54 @@ public sealed class FirebaseStorageUploadService
         _settings = settings;
     }
 
+    public async Task<CertificatePdfUploadResult> UploadImageBytesAsync(
+        string storagePath,
+        byte[] bytes,
+        string contentType,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        var bucket = ResolveStorageBucket();
+        var uploadUrl =
+            $"https://firebasestorage.googleapis.com/v0/b/{Uri.EscapeDataString(bucket)}/o?name={Uri.EscapeDataString(storagePath)}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
+        request.Content = new ByteArrayContent(bytes);
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+
+        using var response = await _http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Could not upload image to Firebase Storage ({(int)response.StatusCode}): {body}");
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<StorageUploadResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Firebase Storage returned an empty upload response.");
+
+        var downloadToken = payload.DownloadTokens?
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(downloadToken))
+        {
+            throw new InvalidOperationException("Firebase Storage did not return a download token for the image.");
+        }
+
+        var fileName = Path.GetFileName(storagePath);
+        var downloadUrl =
+            $"https://firebasestorage.googleapis.com/v0/b/{Uri.EscapeDataString(bucket)}/o/{Uri.EscapeDataString(storagePath)}?alt=media&token={Uri.EscapeDataString(downloadToken)}";
+
+        return new CertificatePdfUploadResult(
+            downloadUrl,
+            storagePath,
+            fileName,
+            contentType,
+            bytes.Length);
+    }
+
     public async Task<CertificatePdfUploadResult> UploadCertificatePdfAsync(
         string jobId,
         string localPdfPath,

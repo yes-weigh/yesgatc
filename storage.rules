@@ -59,5 +59,9 @@ service firebase.storage {
       allow read: if true;
       allow write: if isAuthenticated();
     }
+
+    match /automationWorker/captcha/{fileName} {
+      allow read, write: if isSuperAdmin();
+    }
   }
 }

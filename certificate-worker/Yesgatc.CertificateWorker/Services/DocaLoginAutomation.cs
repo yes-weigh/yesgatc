@@ -14,7 +14,8 @@ public static class DocaLoginAutomation
         IPage page,
         AutomationSettings settings,
         DocaCredentialSettings credentials,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<CaptchaAttemptReport, Task>? reportAttemptAsync = null)
     {
         var email = credentials.Email.Trim();
         var password = credentials.Password;
@@ -31,18 +32,20 @@ public static class DocaLoginAutomation
             return DocaSessionState.LoginRequired;
         }
 
-        return await TryLoginWithOcrAsync(page, settings, credentials, cancellationToken);
+        return await TryLoginWithOcrAsync(page, settings, credentials, cancellationToken, reportAttemptAsync);
     }
 
     private static async Task<DocaSessionState> TryLoginWithOcrAsync(
         IPage page,
         AutomationSettings settings,
         DocaCredentialSettings credentials,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<CaptchaAttemptReport, Task>? reportAttemptAsync)
     {
         await FillCredentialsAsync(page, credentials);
 
         var maxAttempts = Math.Max(1, settings.CaptchaMaxAttempts);
+        var ocrProvider = ResolveOcrProviderLabel(settings.CaptchaOcr);
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -54,6 +57,17 @@ public static class DocaLoginAutomation
                 cancellationToken);
             if (string.IsNullOrWhiteSpace(captchaText) || captchaText.Length < 4)
             {
+                if (reportAttemptAsync is not null)
+                {
+                    await reportAttemptAsync(new CaptchaAttemptReport(
+                        imageBytes,
+                        captchaText,
+                        ocrProvider,
+                        attempt,
+                        false,
+                        "ocr_failed"));
+                }
+
                 if (attempt < maxAttempts)
                 {
                     await ClickCaptchaRefreshAsync(page, cancellationToken);
@@ -65,7 +79,19 @@ public static class DocaLoginAutomation
             await FillCaptchaAsync(page, captchaText);
             await SubmitLoginAsync(page);
 
-            if (await WaitForLoginResultAsync(page, cancellationToken))
+            var loginSucceeded = await WaitForLoginResultAsync(page, cancellationToken);
+            if (reportAttemptAsync is not null)
+            {
+                await reportAttemptAsync(new CaptchaAttemptReport(
+                    imageBytes,
+                    captchaText,
+                    ocrProvider,
+                    attempt,
+                    loginSucceeded,
+                    loginSucceeded ? "login_success" : "invalid_captcha"));
+            }
+
+            if (loginSucceeded)
             {
                 return DocaSessionState.LoggedIn;
             }
@@ -77,6 +103,17 @@ public static class DocaLoginAutomation
         }
 
         return DocaSessionState.LoginRequired;
+    }
+
+    private static string ResolveOcrProviderLabel(CaptchaOcrSettings settings)
+    {
+        if (settings.Provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
+            || settings.Provider.Equals("AI", StringComparison.OrdinalIgnoreCase))
+        {
+            return "openai";
+        }
+
+        return "tesseract";
     }
 
     private static async Task<byte[]> ReadCaptchaImageBytesAsync(IPage page, CancellationToken cancellationToken)
