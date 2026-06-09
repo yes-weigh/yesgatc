@@ -62,6 +62,7 @@ public partial class MainWindow : Window
     private DispatcherTimer? _telemetryTimer;
     private bool _autoWorkerCyclePending;
     private bool _sessionProbeRunning;
+    private int _docaSessionProbeMinutes;
     private StatusKind _lastStatusKind = StatusKind.Idle;
 
     public MainWindow()
@@ -129,6 +130,9 @@ public partial class MainWindow : Window
         DocaFillOnlyCheckBox.IsChecked = saved.DocaFillOnly;
         ApplyDocaFillOnlyToAutomationWorkers();
 
+        _docaSessionProbeMinutes = saved.DocaSessionProbeMinutes ?? settings.AutoWorker.DocaSessionProbeMinutes;
+        DocaSessionProbeMinutesBox.Text = _docaSessionProbeMinutes.ToString();
+
         _automationService.DocaCredentials = CurrentDocaCredentials();
         UpdateSignInSummary();
     }
@@ -143,6 +147,8 @@ public partial class MainWindow : Window
     };
 
     private bool DocaFillOnlyEnabled => DocaFillOnlyCheckBox.IsChecked == true;
+
+    private int DocaSessionProbeMinutesSetting => _docaSessionProbeMinutes;
 
     private void ApplyDocaFillOnlyToAutomationWorkers()
     {
@@ -162,7 +168,45 @@ public partial class MainWindow : Window
             DocaEmailBox.Text,
             DocaPasswordBox.Text,
             CaptchaApiKeyBox.Text,
-            DocaFillOnlyEnabled);
+            DocaFillOnlyEnabled,
+            _docaSessionProbeMinutes);
+    }
+
+    private bool TryApplyDocaSessionProbeMinutesFromUi(bool persist, bool restartWatchdog)
+    {
+        if (!int.TryParse(DocaSessionProbeMinutesBox.Text.Trim(), out var minutes))
+        {
+            DocaSessionProbeMinutesBox.Text = _docaSessionProbeMinutes.ToString();
+            SetStatus("Session probe must be a whole number of minutes (0 = off).", StatusKind.Error);
+            return false;
+        }
+
+        minutes = Math.Clamp(minutes, 0, 24 * 60);
+        if (minutes != _docaSessionProbeMinutes || DocaSessionProbeMinutesBox.Text.Trim() != minutes.ToString())
+        {
+            _docaSessionProbeMinutes = minutes;
+            DocaSessionProbeMinutesBox.Text = minutes.ToString();
+            if (persist)
+            {
+                PersistCredentials();
+            }
+
+            if (restartWatchdog)
+            {
+                StartDocaSessionWatchdogTimer();
+            }
+
+            UpdateAutoWorkerStatusText();
+            var label = minutes == 0 ? "disabled" : $"every {minutes} min";
+            AddActivityEntry($"DOCA session probe {label} (saved).");
+        }
+
+        return true;
+    }
+
+    private void DocaSessionProbeMinutesBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        TryApplyDocaSessionProbeMinutesFromUi(persist: true, restartWatchdog: true);
     }
 
     private void DocaFillOnlyCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -697,7 +741,7 @@ public partial class MainWindow : Window
     {
         StopDocaSessionWatchdogTimer();
 
-        var probeMinutes = App.Settings.AutoWorker.DocaSessionProbeMinutes;
+        var probeMinutes = DocaSessionProbeMinutesSetting;
         if (probeMinutes <= 0 || _session is null || !_autoWorkerEnabled || _remotePaused || _autoWorkerPausedForDoca)
         {
             return;
@@ -926,7 +970,7 @@ public partial class MainWindow : Window
         var watchMode = _realtimeListenerActive
             ? "watching Firestore live"
             : $"polling every {App.Settings.AutoWorker.PollIntervalSeconds}s";
-        var probeMinutes = App.Settings.AutoWorker.DocaSessionProbeMinutes;
+        var probeMinutes = DocaSessionProbeMinutesSetting;
         var probeNote = probeMinutes > 0 ? $" · DOCA session probe every {probeMinutes} min" : string.Empty;
         AutoWorkerStatusText.Text = waitingRetries > 0
             ? $"Running — {eligible} job(s) ready, {waitingRetries} waiting for retry ({watchMode}{probeNote})."
@@ -940,6 +984,11 @@ public partial class MainWindow : Window
 
     private void SaveCredsButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!TryApplyDocaSessionProbeMinutesFromUi(persist: false, restartWatchdog: true))
+        {
+            return;
+        }
+
         PersistCredentials();
         _automationService.DocaCredentials = CurrentDocaCredentials();
 

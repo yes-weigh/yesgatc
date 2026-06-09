@@ -217,6 +217,17 @@
                                Foreground="{StaticResource TextMutedBrush}"
                                TextWrapping="Wrap"
                                Margin="22,4,0,0"/>
+                    <TextBlock Text="Session probe (minutes)"
+                               Style="{StaticResource FieldLabel}"
+                               Margin="0,12,0,4"/>
+                    <TextBox x:Name="DocaSessionProbeMinutesBox"
+                             Style="{StaticResource GlassTextBox}"
+                             LostFocus="DocaSessionProbeMinutesBox_LostFocus"/>
+                    <TextBlock Text="While logged in, open IC verification on this interval to detect DOCA logout and measure session length. 0 = disabled."
+                               FontSize="10"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
 

@@ -57,7 +57,8 @@ public sealed class LocalCredentialsStore
         string docaEmail,
         string docaPassword,
         string captchaApiKey = "",
-        bool docaFillOnly = false)
+        bool docaFillOnly = false,
+        int? docaSessionProbeMinutes = null)
     {
         Save(new StoredCredentials
         {
@@ -65,6 +66,7 @@ public sealed class LocalCredentialsStore
             Doca = new DocaCredentialSettings { Email = docaEmail.Trim(), Password = docaPassword },
             CaptchaApiKey = captchaApiKey.Trim(),
             DocaFillOnly = docaFillOnly,
+            DocaSessionProbeMinutes = docaSessionProbeMinutes,
         });
     }
 }
@@ -77,6 +79,12 @@ public sealed class StoredCredentials
 
     /// <summary>When true, Phase 1 fills the DOCA form but does not click Generate Certificate.</summary>
     public bool DocaFillOnly { get; set; }
+
+    /// <summary>
+    /// Minutes between idle DOCA session probes. Null = use appsettings default.
+    /// 0 disables probing.
+    /// </summary>
+    public int? DocaSessionProbeMinutes { get; set; }
 
     [JsonPropertyName("rc")]
     public CredentialSettings? LegacyRc { get; set; }
