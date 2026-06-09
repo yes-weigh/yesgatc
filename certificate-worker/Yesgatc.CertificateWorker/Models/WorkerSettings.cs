@@ -105,14 +105,17 @@ public sealed class CaptchaOcrSettings
     /// <summary>API key for OpenAI or any OpenAI-compatible endpoint. Env: OPENAI_API_KEY.</summary>
     public string ApiKey { get; init; } = string.Empty;
 
-    /// <summary>Chat model with vision support, e.g. gpt-4o-mini.</summary>
-    public string Model { get; init; } = "gpt-4o-mini";
+    /// <summary>Chat model with vision support, e.g. gpt-4o.</summary>
+    public string Model { get; init; } = "gpt-4o";
 
     /// <summary>Default OpenAI. Set to https://openrouter.ai/api/v1 for OpenRouter, etc.</summary>
     public string ApiBaseUrl { get; init; } = "https://api.openai.com/v1";
 
     /// <summary>If the AI provider fails or returns garbage, retry with local Tesseract.</summary>
     public bool FallbackToTesseract { get; init; } = true;
+
+    /// <summary>Run Tesseract alongside AI and merge — fixes S/5-style single-char mistakes.</summary>
+    public bool CombineWithTesseract { get; init; } = true;
 }
 
 public sealed class CredentialSettings

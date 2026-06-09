@@ -40,8 +40,9 @@ public static class OpenAiCaptchaOcr
         var baseUrl = string.IsNullOrWhiteSpace(settings.ApiBaseUrl)
             ? "https://api.openai.com/v1"
             : settings.ApiBaseUrl.TrimEnd('/');
-        var model = string.IsNullOrWhiteSpace(settings.Model) ? "gpt-4o-mini" : settings.Model.Trim();
-        var imageBase64 = Convert.ToBase64String(imageBytes);
+        var model = string.IsNullOrWhiteSpace(settings.Model) ? "gpt-4o" : settings.Model.Trim();
+        var visionBytes = DocaCaptchaOcr.BuildVisionApiPngBytes(imageBytes);
+        var imageBase64 = Convert.ToBase64String(visionBytes);
 
         var request = new ChatCompletionRequest
         {
@@ -61,7 +62,8 @@ public static class OpenAiCaptchaOcr
                             Text =
                                 "This image is a website login captcha with spaced alphanumeric characters. " +
                                 "Reply with ONLY the captcha text: uppercase letters A-Z and digits 0-9, no spaces. " +
-                                "Example: if you see '5 2 F C 9 W' reply 52FC9W. If unreadable reply EMPTY.",
+                                "Pay close attention to similar characters: S vs 5, O vs 0, B vs 8, G vs 6, Z vs 2, I vs 1. " +
+                                "Example: if you see 'Q 7 6 A 2 S' reply Q76A2S. If unreadable reply EMPTY.",
                         },
                         new ChatContentPart
                         {

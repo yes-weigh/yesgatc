@@ -7,10 +7,8 @@ import {
   Pause,
   Play,
   RefreshCw,
-  Save,
   Search,
   Server,
-  Shield,
   Wrench,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -25,7 +23,6 @@ import {
   subscribeAutomationWorkerSessions,
   subscribeAutomationWorkerStatus,
   type AutomationWorkerCaptchaAttempt,
-  type AutomationWorkerCredentialsForm,
   type AutomationWorkerLogEntry,
   type AutomationWorkerRemoteControl,
   type AutomationWorkerSessionEvent,
@@ -37,6 +34,7 @@ import {
   diagnoseVerificationPipeline,
   findVerificationBySerial,
   repairVerificationForPhase2,
+  repairVerificationSubmitted,
   type PipelineRepairDiagnosis,
 } from '../lib/verificationPipelineRepair';
 import type { SiteCalibration } from '../types';
@@ -63,6 +61,32 @@ function formatTimestamp(value: string): string {
   return new Date(parsed).toLocaleString();
 }
 
+function formatCompactTimestamp(value: string): string {
+  if (!value) return '—';
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return value;
+  const date = new Date(parsed);
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  if (sameDay) {
+    return date.toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  }
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function formatCaptchaOutcome(outcome: string): string {
+  return outcome.replace(/_/g, ' ');
+}
+
 function runtimeClass(state: WorkerRuntimeState): string {
   return `automation-worker-status-dot automation-worker-status-dot--${state}`;
 }
@@ -75,13 +99,6 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
   const [captchaAttempts, setCaptchaAttempts] = useState<AutomationWorkerCaptchaAttempt[]>([]);
   const [sessions, setSessions] = useState<AutomationWorkerSessionEvent[]>([]);
   const [activeLogTab, setActiveLogTab] = useState<WorkerLogTab>('activity');
-  const [credentials, setCredentials] = useState<AutomationWorkerCredentialsForm>({
-    superAdminAadhar: '',
-    superAdminPassword: '',
-    docaEmail: '',
-    docaPassword: '',
-    captchaApiKey: '',
-  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
@@ -126,20 +143,9 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     return () => unsubscribers.forEach(unsub => unsub());
   }, []);
 
-  useEffect(() => {
-    if (!remote) return;
-    setCredentials(prev => ({
-      superAdminAadhar: remote.superAdminAadhar || prev.superAdminAadhar,
-      docaEmail: remote.docaEmail || prev.docaEmail,
-      superAdminPassword: '',
-      docaPassword: '',
-      captchaApiKey: '',
-    }));
-  }, [remote?.superAdminAadhar, remote?.docaEmail]);
-
   const pushRemote = async (
-    patch: Partial<AutomationWorkerRemoteControl> & Partial<AutomationWorkerCredentialsForm>,
-    options?: { incrementCommand?: boolean; incrementCredentials?: boolean },
+    patch: Partial<AutomationWorkerRemoteControl>,
+    options?: { incrementCommand?: boolean },
   ) => {
     if (!user?.uid) return;
     setError('');
@@ -173,38 +179,6 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     await pushRemote({ docaFillOnly: !remote.docaFillOnly }, { incrementCommand: true });
   };
 
-  const handleSaveCredentials = async () => {
-    const hasCredentialField =
-      credentials.superAdminAadhar.trim() ||
-      credentials.superAdminPassword.trim() ||
-      credentials.docaEmail.trim() ||
-      credentials.docaPassword.trim() ||
-      credentials.captchaApiKey.trim();
-
-    if (!hasCredentialField) {
-      setError('Enter at least one credential field to push to the remote worker.');
-      return;
-    }
-
-    await pushRemote(
-      {
-        superAdminAadhar: credentials.superAdminAadhar.trim(),
-        superAdminPassword: credentials.superAdminPassword,
-        docaEmail: credentials.docaEmail.trim(),
-        docaPassword: credentials.docaPassword,
-        captchaApiKey: credentials.captchaApiKey.trim(),
-      },
-      { incrementCredentials: true },
-    );
-
-    setCredentials(prev => ({
-      ...prev,
-      superAdminPassword: '',
-      docaPassword: '',
-      captchaApiKey: '',
-    }));
-  };
-
   const remoteReady = user?.role === 'super_admin';
 
   const handleLookupSerial = async (keepRepairMessage = false) => {
@@ -234,6 +208,21 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     try {
       await repairVerificationForPhase2(recordId);
       setRepairMessage('Record repaired — status set to approved. The worker should pick it up for Phase 2 within ~30 seconds.');
+      await handleLookupSerial(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Repair failed.');
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
+  const handleRepairSubmitted = async (recordId: string, submittedAt?: string) => {
+    setError('');
+    setRepairMessage('');
+    setRepairLoading(true);
+    try {
+      await repairVerificationSubmitted(recordId, submittedAt);
+      setRepairMessage('Record repaired — status restored to submitted. The worker should pick it up within ~30 seconds.');
       await handleLookupSerial(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Repair failed.');
@@ -314,6 +303,19 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                       onClick={() => void handleRepairForPhase2(diagnosis.recordId)}
                     >
                       Mark approved → re-queue Phase 2
+                    </button>
+                  )}
+                  {diagnosis.repairAction === 'set_submitted' && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={repairLoading}
+                      onClick={() => void handleRepairSubmitted(
+                        diagnosis.recordId,
+                        repairRecords[index]?.submittedAt,
+                      )}
+                    >
+                      Restore submitted → re-queue worker
                     </button>
                   )}
                 </li>
@@ -400,85 +402,6 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
           </div>
         </section>
 
-        <section className="automation-worker-credentials mb-6">
-          <h3 className="automation-worker-section-title"><Shield className="inline-icon" /> Remote credentials</h3>
-          <p className="text-muted text-sm">
-            Push updated Super Admin, DOCA portal, or captcha OCR credentials to the worker. Password fields are cleared from Firestore after the worker applies them.
-          </p>
-          <div className="form-grid automation-worker-credentials-grid">
-            <div className="form-group">
-              <label htmlFor="worker-super-aadhar">Super Admin Aadhar</label>
-              <input
-                id="worker-super-aadhar"
-                className="input-field text-mono"
-                value={credentials.superAdminAadhar}
-                onChange={e => setCredentials(prev => ({ ...prev, superAdminAadhar: e.target.value }))}
-                disabled={saving}
-                autoComplete="off"
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="worker-super-password">Super Admin password</label>
-              <input
-                id="worker-super-password"
-                type="password"
-                className="input-field"
-                value={credentials.superAdminPassword}
-                onChange={e => setCredentials(prev => ({ ...prev, superAdminPassword: e.target.value }))}
-                disabled={saving}
-                autoComplete="new-password"
-                placeholder="Leave blank to keep current"
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="worker-doca-email">DOCA email</label>
-              <input
-                id="worker-doca-email"
-                className="input-field"
-                value={credentials.docaEmail}
-                onChange={e => setCredentials(prev => ({ ...prev, docaEmail: e.target.value }))}
-                disabled={saving}
-                autoComplete="off"
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="worker-doca-password">DOCA password</label>
-              <input
-                id="worker-doca-password"
-                type="password"
-                className="input-field"
-                value={credentials.docaPassword}
-                onChange={e => setCredentials(prev => ({ ...prev, docaPassword: e.target.value }))}
-                disabled={saving}
-                autoComplete="new-password"
-                placeholder="Leave blank to keep current"
-              />
-            </div>
-            <div className="form-group automation-worker-credentials-grid__full">
-              <label htmlFor="worker-captcha-key">OpenAI captcha API key</label>
-              <input
-                id="worker-captcha-key"
-                type="password"
-                className="input-field text-mono"
-                value={credentials.captchaApiKey}
-                onChange={e => setCredentials(prev => ({ ...prev, captchaApiKey: e.target.value }))}
-                disabled={saving}
-                autoComplete="new-password"
-                placeholder="Leave blank to keep current"
-              />
-            </div>
-          </div>
-          <button
-            type="button"
-            className="btn btn-primary mt-3"
-            disabled={!remoteReady || saving}
-            onClick={() => void handleSaveCredentials()}
-          >
-            <Save className="inline-icon" />
-            {saving ? 'Sending…' : 'Push credentials to worker'}
-          </button>
-        </section>
-
         <section className="automation-worker-logs">
           <div className="automation-worker-log-tabs" role="tablist" aria-label="Worker logs">
             {([
@@ -517,33 +440,77 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
           )}
 
           {activeLogTab === 'captcha' && (
-            <div role="tabpanel" className="automation-worker-log-panel">
+            <div role="tabpanel" className="automation-worker-log-panel automation-worker-log-panel--captcha">
               {captchaAttempts.length === 0 ? (
                 <p className="text-muted text-sm">No captcha OCR attempts recorded yet.</p>
               ) : (
-                <ul className="automation-worker-captcha-list">
-                  {captchaAttempts.map(attempt => (
-                    <li
-                      key={attempt.id}
-                      className={`automation-worker-captcha-item${attempt.success ? '' : ' automation-worker-captcha-item--failed'}`}
-                    >
-                      <div className="automation-worker-captcha-meta">
-                        <time>{formatTimestamp(attempt.createdAt)}</time>
-                        <span className="text-mono">{attempt.resolvedText || '(empty OCR)'}</span>
-                        <span className="text-muted text-sm">
-                          {attempt.ocrProvider} · attempt {attempt.attemptNumber} · {attempt.outcome}
-                        </span>
-                      </div>
-                      {attempt.imageUrl ? (
-                        <a href={attempt.imageUrl} target="_blank" rel="noreferrer" className="automation-worker-captcha-image-link">
-                          <img src={attempt.imageUrl} alt={`Captcha resolved as ${attempt.resolvedText || 'unknown'}`} loading="lazy" />
-                        </a>
-                      ) : (
-                        <div className="automation-worker-captcha-placeholder"><ImageIcon aria-hidden /></div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                <div className="automation-worker-captcha-scroll">
+                  <table className="automation-worker-captcha-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Captcha</th>
+                        <th scope="col">Time</th>
+                        <th scope="col">Resolved</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Outcome</th>
+                        <th scope="col">Provider</th>
+                        <th scope="col">Try</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {captchaAttempts.map(attempt => (
+                        <tr
+                          key={attempt.id}
+                          className={attempt.success ? '' : 'automation-worker-captcha-row--failed'}
+                          title={formatTimestamp(attempt.createdAt)}
+                        >
+                          <td className="automation-worker-captcha-cell-image">
+                            {attempt.imageUrl ? (
+                              <a
+                                href={attempt.imageUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="automation-worker-captcha-thumb-link"
+                              >
+                                <img
+                                  src={attempt.imageUrl}
+                                  alt={`Captcha resolved as ${attempt.resolvedText || 'unknown'}`}
+                                  loading="lazy"
+                                />
+                              </a>
+                            ) : (
+                              <span className="automation-worker-captcha-thumb-placeholder" aria-hidden>
+                                <ImageIcon />
+                              </span>
+                            )}
+                          </td>
+                          <td className="automation-worker-captcha-cell-time text-mono">
+                            {formatCompactTimestamp(attempt.createdAt)}
+                          </td>
+                          <td className="automation-worker-captcha-cell-text text-mono">
+                            {attempt.resolvedText || '(empty)'}
+                          </td>
+                          <td>
+                            <span
+                              className={`automation-worker-captcha-status automation-worker-captcha-status--${attempt.success ? 'ok' : 'fail'}`}
+                            >
+                              {attempt.success ? 'OK' : 'Fail'}
+                            </span>
+                          </td>
+                          <td className="automation-worker-captcha-cell-outcome">
+                            {formatCaptchaOutcome(attempt.outcome)}
+                          </td>
+                          <td className="automation-worker-captcha-cell-provider">
+                            {attempt.ocrProvider || '—'}
+                          </td>
+                          <td className="automation-worker-captcha-cell-try text-mono">
+                            {attempt.attemptNumber || '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           )}

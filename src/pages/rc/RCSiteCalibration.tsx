@@ -37,6 +37,7 @@ import {
   canDeleteVerification,
   canShowVerificationCertifiedActions,
   canSubmitVerification,
+  isCorruptedVerificationRecord,
   isVerificationEditable,
   isVerificationViewable,
   matchesVerificationTypeFilter,
@@ -915,12 +916,15 @@ export const RCSiteCalibration: React.FC = () => {
     else if (editingId) await handleSaveEdit(editingId);
   };
 
-  const formatSaveError = (err: unknown, fallback: string): string => {
+  const formatSaveError = (err: unknown, fallback: string, record?: SiteCalibration): string => {
     const code =
       typeof err === 'object' && err !== null && 'code' in err
         ? String((err as { code: string }).code)
         : '';
     if (code === 'permission-denied') {
+      if (record && isCorruptedVerificationRecord(record) && normalizeVerificationStatus(record) !== 'draft') {
+        return 'This verification was already submitted but its status was damaged by a server bug. It cannot be resubmitted from the app — contact super admin to repair it from Automation Worker → Pipeline recovery.';
+      }
       if (isVct) {
         return 'Permission denied. Ensure your technician account is approved and linked to your RC centre, then try again.';
       }
@@ -1166,7 +1170,7 @@ export const RCSiteCalibration: React.FC = () => {
       handleCloseForm();
       await fetchRecords();
     } catch (err: unknown) {
-      setError(formatSaveError(err, 'Failed to update verification record.'));
+      setError(formatSaveError(err, 'Failed to update verification record.', existing));
     } finally {
       setSubmitting(false);
     }
@@ -1200,9 +1204,7 @@ export const RCSiteCalibration: React.FC = () => {
       setListError(
         isZohoInvoiceGateError(err)
           ? formatZohoInvoiceGateError(err)
-          : err instanceof Error
-            ? err.message
-            : 'Failed to submit verification.',
+          : formatSaveError(err, 'Failed to submit verification.', record),
       );
     } finally {
       setSubmitting(false);
@@ -1376,7 +1378,7 @@ export const RCSiteCalibration: React.FC = () => {
           /* best effort */
         }
       }
-      setError(formatSaveError(err, 'Failed to submit verification.'));
+      setError(formatSaveError(err, 'Failed to submit verification.', editingRecord ?? undefined));
     } finally {
       setSubmitting(false);
     }

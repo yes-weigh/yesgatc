@@ -110,7 +110,7 @@ public static class DocaLoginAutomation
         if (settings.Provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
             || settings.Provider.Equals("AI", StringComparison.OrdinalIgnoreCase))
         {
-            return "openai";
+            return settings.CombineWithTesseract ? "openai+tesseract" : "openai";
         }
 
         return "tesseract";

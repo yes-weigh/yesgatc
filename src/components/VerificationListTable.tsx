@@ -25,8 +25,10 @@ import {
   getVerificationDisplayStatus,
   isVerificationEditable,
   normalizeVerificationStatus,
+  sanitizeVerificationDisplayText,
   verificationFilterLabel,
   verificationVctLabel,
+  firstValidVerificationTimestamp,
 } from '../lib/verificationRequest';
 import type { SiteCalibration, VerificationRequestStatus } from '../types';
 
@@ -89,7 +91,7 @@ function verificationListStatusTone(record: SiteCalibration): VerificationListSt
 }
 
 function verificationListDisplayDate(record: SiteCalibration): string {
-  return record.certifiedAt || record.approvedAt || record.submittedAt || record.createdAt;
+  return firstValidVerificationTimestamp(record) ?? '';
 }
 
 function VerificationListTypeBadges({
@@ -200,7 +202,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const statusTone = verificationListStatusTone(record);
             const statusLabel = verificationListStatusLabel(record);
             const displayDate = formatDate(verificationListDisplayDate(record));
-            const certNo = record.certificateNumber?.trim() || '—';
+            const certNo = sanitizeVerificationDisplayText(record.certificateNumber);
             const serial = record.serialNumber?.trim() || '—';
             const walletPaymentDue = walletPaymentDueRecordIds?.has(record.id) ?? false;
             const zohoPushStatus =

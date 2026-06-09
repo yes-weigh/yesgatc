@@ -9,22 +9,41 @@ public static class DocaCaptchaReader
         CaptchaOcrSettings settings,
         CancellationToken cancellationToken = default)
     {
-        if (UseOpenAi(settings))
+        if (!UseOpenAi(settings))
         {
-            try
-            {
-                var fromAi = await OpenAiCaptchaOcr.ReadCaptchaFromImageAsync(imageBytes, settings, cancellationToken);
-                if (fromAi.Length is >= 4 and <= 8)
-                {
-                    return fromAi;
-                }
-            }
-            catch when (settings.FallbackToTesseract)
-            {
-            }
+            return DocaCaptchaOcr.ReadCaptchaFromImage(imageBytes);
         }
 
-        return DocaCaptchaOcr.ReadCaptchaFromImage(imageBytes);
+        string tesseractText = string.Empty;
+        if (settings.CombineWithTesseract || settings.FallbackToTesseract)
+        {
+            tesseractText = DocaCaptchaOcr.ReadCaptchaFromImage(imageBytes);
+        }
+
+        string? openAiText = null;
+        try
+        {
+            openAiText = await OpenAiCaptchaOcr.ReadCaptchaFromImageAsync(imageBytes, settings, cancellationToken);
+        }
+        catch when (settings.FallbackToTesseract)
+        {
+            return tesseractText;
+        }
+
+        if (settings.CombineWithTesseract
+            && DocaCaptchaOcr.IsValidCaptchaLength(tesseractText)
+            && !string.IsNullOrWhiteSpace(openAiText)
+            && DocaCaptchaOcr.IsValidCaptchaLength(openAiText))
+        {
+            return DocaCaptchaOcr.MergePreferringTesseract(openAiText, tesseractText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(openAiText) && DocaCaptchaOcr.IsValidCaptchaLength(openAiText))
+        {
+            return openAiText;
+        }
+
+        return tesseractText;
     }
 
     private static bool UseOpenAi(CaptchaOcrSettings settings)

@@ -15,6 +15,105 @@ export const VERIFICATION_REQUEST_STATUSES: VerificationRequestStatus[] = [
   'certified',
 ];
 
+const CORRUPTED_FIRESTORE_MARKER = 'System.Collections.Generic.Dictionary';
+
+export type VerificationStatusSource = Pick<
+  SiteCalibration,
+  | 'status'
+  | 'submittedAt'
+  | 'approvedAt'
+  | 'certifiedAt'
+  | 'certificateNumber'
+  | 'certificatePdfUrl'
+>;
+
+export function isCorruptedFirestoreString(value: string | undefined): boolean {
+  return Boolean(value?.includes(CORRUPTED_FIRESTORE_MARKER));
+}
+
+export function isValidVerificationIsoTimestamp(value: string | undefined): value is string {
+  if (!value?.trim() || isCorruptedFirestoreString(value)) return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed);
+}
+
+/** Infer workflow stage when status/timestamps were corrupted by the certificate worker bug. */
+export function inferVerificationStatus(record: VerificationStatusSource): VerificationRequestStatus {
+  if (record.certificateNumber?.trim() && !isCorruptedFirestoreString(record.certificateNumber)) {
+    return 'certified';
+  }
+  if (record.certificatePdfUrl?.trim() && !isCorruptedFirestoreString(record.certificatePdfUrl)) {
+    return 'certified';
+  }
+  if (isValidVerificationIsoTimestamp(record.certifiedAt)) {
+    return 'certified';
+  }
+  if (isValidVerificationIsoTimestamp(record.approvedAt)) {
+    return 'approved';
+  }
+  if (isValidVerificationIsoTimestamp(record.submittedAt)) {
+    return 'submitted';
+  }
+  return 'draft';
+}
+
+export function normalizeVerificationStatus(
+  record: VerificationStatusSource,
+): VerificationRequestStatus {
+  const raw = record.status;
+  if (
+    raw === 'submitted' ||
+    raw === 'approved' ||
+    raw === 'certified' ||
+    raw === 'draft'
+  ) {
+    return raw;
+  }
+
+  if (isCorruptedFirestoreString(raw) || typeof raw === 'string') {
+    return inferVerificationStatus(record);
+  }
+
+  return 'draft';
+}
+
+export function sanitizeVerificationDisplayText(value: string | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed || isCorruptedFirestoreString(trimmed)) return '—';
+  return trimmed;
+}
+
+export function firstValidVerificationTimestamp(
+  record: Pick<
+    SiteCalibration,
+    'certifiedAt' | 'approvedAt' | 'submittedAt' | 'createdAt' | 'updatedAt'
+  >,
+): string | undefined {
+  for (const candidate of [
+    record.certifiedAt,
+    record.approvedAt,
+    record.submittedAt,
+    record.createdAt,
+    record.updatedAt,
+  ]) {
+    if (isValidVerificationIsoTimestamp(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+export function isCorruptedVerificationRecord(
+  record: Pick<SiteCalibration, 'status' | 'approvedAt' | 'updatedAt' | 'submittedAt'>,
+): boolean {
+  return (
+    isCorruptedFirestoreString(record.status) ||
+    isCorruptedFirestoreString(record.approvedAt) ||
+    isCorruptedFirestoreString(record.updatedAt) ||
+    isCorruptedFirestoreString(record.submittedAt)
+  );
+}
+
 /** Fields only the certificate server should write (Firebase Admin SDK). */
 export const VERIFICATION_SERVER_MANAGED_FIELDS = [
   'status',
@@ -37,21 +136,7 @@ export type VerificationApprovalPayload = {
   certificatePdfContentType: string;
 };
 
-export function normalizeVerificationStatus(
-  record: Pick<SiteCalibration, 'status'>,
-): VerificationRequestStatus {
-  if (
-    record.status === 'submitted' ||
-    record.status === 'approved' ||
-    record.status === 'certified' ||
-    record.status === 'draft'
-  ) {
-    return record.status;
-  }
-  return 'draft';
-}
-
-export function isVerificationEditable(record: Pick<SiteCalibration, 'status'>): boolean {
+export function isVerificationEditable(record: VerificationStatusSource): boolean {
   return normalizeVerificationStatus(record) === 'draft';
 }
 
@@ -59,7 +144,7 @@ export function isVerificationViewable(_record: Pick<SiteCalibration, 'status'>)
   return true;
 }
 
-export function canSubmitVerification(record: Pick<SiteCalibration, 'status'>): boolean {
+export function canSubmitVerification(record: VerificationStatusSource): boolean {
   return normalizeVerificationStatus(record) === 'draft';
 }
 
@@ -71,7 +156,7 @@ export function canDownloadVerificationCertificate(record: SiteCalibration): boo
   );
 }
 
-export function canDeleteVerification(record: Pick<SiteCalibration, 'status'>): boolean {
+export function canDeleteVerification(record: VerificationStatusSource): boolean {
   return normalizeVerificationStatus(record) === 'draft';
 }
 

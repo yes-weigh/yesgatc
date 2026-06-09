@@ -74,6 +74,47 @@ public static class DocaCaptchaOcr
         return cleaned;
     }
 
+    /// <summary>Upscale captcha PNG for vision APIs — same preprocessing Tesseract uses.</summary>
+    public static byte[] BuildVisionApiPngBytes(byte[] imageBytes)
+    {
+        using var scaled = PreprocessForOcrScaledOnly(imageBytes);
+        using var memory = new MemoryStream();
+        scaled.Save(memory, DrawingImageFormat.Png);
+        return memory.ToArray();
+    }
+
+    public static bool IsValidCaptchaLength(string text) => text.Length is >= 4 and <= 8;
+
+    /// <summary>When AI and Tesseract disagree char-by-char, keep segmented Tesseract chars.</summary>
+    public static string MergePreferringTesseract(string aiText, string tesseractText)
+    {
+        if (string.Equals(aiText, tesseractText, StringComparison.OrdinalIgnoreCase))
+        {
+            return aiText.ToUpperInvariant();
+        }
+
+        if (!IsValidCaptchaLength(tesseractText))
+        {
+            return IsValidCaptchaLength(aiText) ? aiText.ToUpperInvariant() : string.Empty;
+        }
+
+        if (!IsValidCaptchaLength(aiText) || aiText.Length != tesseractText.Length)
+        {
+            return tesseractText.ToUpperInvariant();
+        }
+
+        var merged = tesseractText.ToUpperInvariant().ToCharArray();
+        for (var i = 0; i < merged.Length; i++)
+        {
+            if (char.ToUpperInvariant(aiText[i]) == char.ToUpperInvariant(tesseractText[i]))
+            {
+                merged[i] = char.ToUpperInvariant(aiText[i]);
+            }
+        }
+
+        return new string(merged);
+    }
+
     private static string PickBestByVote(IReadOnlyList<string> candidates)
     {
         if (candidates.Count == 0)
