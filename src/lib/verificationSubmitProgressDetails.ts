@@ -1,4 +1,5 @@
 import { inferVerificationSubject, verificationLocationLabel } from './siteCalibrationProfileFields';
+import { sanitizeVerificationDisplayText } from './verificationRequest';
 import type { VerificationSubmitProgressStage } from './verificationSubmitProgressStages';
 import type { Customer, SiteCalibration } from '../types';
 
@@ -9,8 +10,7 @@ export type VerificationProgressDetailRow = {
 };
 
 function displayValue(value: string | undefined | null): string {
-  const trimmed = value?.trim();
-  return trimmed || '—';
+  return sanitizeVerificationDisplayText(value ?? undefined);
 }
 
 export function formatVerificationProgressCapacity(record: SiteCalibration): string {

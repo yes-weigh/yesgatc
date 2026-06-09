@@ -6,6 +6,7 @@ import {
   query,
   updateDoc,
   where,
+  type UpdateData,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
@@ -15,6 +16,31 @@ import {
   isValidVerificationIsoTimestamp,
 } from './verificationRequest';
 import type { SiteCalibration, VerificationRequestStatus } from '../types';
+
+function corruptedFieldCleanupPatch(
+  record: Pick<
+    SiteCalibration,
+    'certificateNumber' | 'approvedAt' | 'updatedAt' | 'certifiedAt' | 'submittedAt'
+  >,
+): UpdateData<SiteCalibration> {
+  const patch: UpdateData<SiteCalibration> = {};
+  if (isCorruptedFirestoreString(record.certificateNumber)) {
+    patch.certificateNumber = deleteField();
+  }
+  if (isCorruptedFirestoreString(record.approvedAt)) {
+    patch.approvedAt = deleteField();
+  }
+  if (isCorruptedFirestoreString(record.updatedAt)) {
+    patch.updatedAt = deleteField();
+  }
+  if (isCorruptedFirestoreString(record.certifiedAt)) {
+    patch.certifiedAt = deleteField();
+  }
+  if (isCorruptedFirestoreString(record.submittedAt)) {
+    patch.submittedAt = deleteField();
+  }
+  return patch;
+}
 
 export type PipelineRepairDiagnosis = {
   recordId: string;
@@ -35,7 +61,9 @@ export function diagnoseVerificationPipeline(record: SiteCalibration): PipelineR
   const inferredStatus = inferVerificationStatus(record);
   const status = corrupted ? `(corrupted → ${inferredStatus})` : record.status || '(missing)';
   const hasPdf = Boolean(record.certificatePdfUrl?.trim());
-  const hasCertNumber = Boolean(record.certificateNumber?.trim());
+  const hasCertNumber = Boolean(
+    record.certificateNumber?.trim() && !isCorruptedFirestoreString(record.certificateNumber),
+  );
   const validStatus = ['draft', 'submitted', 'approved', 'certified'].includes(record.status ?? '');
 
   if (corrupted) {
@@ -108,9 +136,13 @@ export async function findVerificationBySerial(serialNumber: string): Promise<Si
   }));
 }
 
-export async function repairVerificationForPhase2(recordId: string): Promise<void> {
+export async function repairVerificationForPhase2(
+  recordId: string,
+  record?: Pick<SiteCalibration, 'certificateNumber' | 'approvedAt' | 'updatedAt' | 'certifiedAt' | 'submittedAt'>,
+): Promise<void> {
   const now = new Date().toISOString();
   await updateDoc(doc(db, 'siteCalibrations', recordId), {
+    ...(record ? corruptedFieldCleanupPatch(record) : {}),
     status: 'approved' satisfies VerificationRequestStatus,
     approvedAt: now,
     updatedAt: now,
@@ -120,10 +152,15 @@ export async function repairVerificationForPhase2(recordId: string): Promise<voi
   });
 }
 
-export async function repairVerificationSubmitted(recordId: string, submittedAt?: string): Promise<void> {
+export async function repairVerificationSubmitted(
+  recordId: string,
+  submittedAt?: string,
+  record?: Pick<SiteCalibration, 'certificateNumber' | 'approvedAt' | 'updatedAt' | 'certifiedAt' | 'submittedAt'>,
+): Promise<void> {
   const now = new Date().toISOString();
   const resolvedSubmittedAt = isValidVerificationIsoTimestamp(submittedAt) ? submittedAt : now;
   await updateDoc(doc(db, 'siteCalibrations', recordId), {
+    ...(record ? corruptedFieldCleanupPatch(record) : {}),
     status: 'submitted' satisfies VerificationRequestStatus,
     submittedAt: resolvedSubmittedAt,
     updatedAt: now,

@@ -47,6 +47,7 @@ import {
   tallyVerificationStatusFilters,
   tallyVerificationTypeFilters,
   verificationFilterLabel,
+  verificationCertificateNumber,
   verificationPerformerCreatedByUid,
   verificationStatusDescription,
   type AssignableVctOption,
@@ -1894,9 +1895,9 @@ export const RCSiteCalibration: React.FC = () => {
                             Zoho {verificationZohoInvoiceNumber(editingRecord)}
                           </span>
                         )}
-                        {editingRecord.certificateNumber?.trim() && (
+                        {verificationCertificateNumber(editingRecord) && (
                           <span className="text-mono text-xs">
-                            Cert {editingRecord.certificateNumber.trim()}
+                            Cert {verificationCertificateNumber(editingRecord)}
                           </span>
                         )}
                       </div>

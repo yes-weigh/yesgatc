@@ -3,6 +3,8 @@ import { Barcode, Building2, ShieldCheck, UserRound } from 'lucide-react';
 import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import {
   getVerificationDisplayStatus,
+  sanitizeVerificationDisplayText,
+  verificationCertificateNumber,
   verificationDisplayStatusLabel,
 } from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
@@ -15,10 +17,10 @@ type VerificationSummaryChromeProps = {
 
 function headerRefLines(record: SiteCalibration): { key: string; line: string }[] {
   const refs: { key: string; line: string }[] = [];
-  const app = record.applicationNumber?.trim();
-  const cert = record.certificateNumber?.trim();
+  const app = sanitizeVerificationDisplayText(record.applicationNumber);
+  const cert = verificationCertificateNumber(record);
   const zohoInvoice = verificationZohoInvoiceNumber(record);
-  if (app) refs.push({ key: 'app', line: `App No. ${app}` });
+  if (app !== '—') refs.push({ key: 'app', line: `App No. ${app}` });
   if (zohoInvoice) refs.push({ key: 'zoho', line: `Zoho ${zohoInvoice}` });
   if (cert) refs.push({ key: 'cert', line: cert });
   return refs;

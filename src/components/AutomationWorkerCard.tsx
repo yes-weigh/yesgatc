@@ -206,7 +206,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     setRepairMessage('');
     setRepairLoading(true);
     try {
-      await repairVerificationForPhase2(recordId);
+      await repairVerificationForPhase2(recordId, repairRecords.find(r => r.id === recordId));
       setRepairMessage('Record repaired — status set to approved. The worker should pick it up for Phase 2 within ~30 seconds.');
       await handleLookupSerial(true);
     } catch (err: unknown) {
@@ -221,7 +221,11 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     setRepairMessage('');
     setRepairLoading(true);
     try {
-      await repairVerificationSubmitted(recordId, submittedAt);
+      await repairVerificationSubmitted(
+        recordId,
+        repairRecords.find(r => r.id === recordId)?.submittedAt,
+        repairRecords.find(r => r.id === recordId),
+      );
       setRepairMessage('Record repaired — status restored to submitted. The worker should pick it up within ~30 seconds.');
       await handleLookupSerial(true);
     } catch (err: unknown) {

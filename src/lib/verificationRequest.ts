@@ -83,6 +83,13 @@ export function sanitizeVerificationDisplayText(value: string | undefined): stri
   return trimmed;
 }
 
+export function verificationCertificateNumber(
+  record: Pick<SiteCalibration, 'certificateNumber'>,
+): string | undefined {
+  const sanitized = sanitizeVerificationDisplayText(record.certificateNumber);
+  return sanitized === '—' ? undefined : sanitized;
+}
+
 export function firstValidVerificationTimestamp(
   record: Pick<
     SiteCalibration,
@@ -104,13 +111,17 @@ export function firstValidVerificationTimestamp(
 }
 
 export function isCorruptedVerificationRecord(
-  record: Pick<SiteCalibration, 'status' | 'approvedAt' | 'updatedAt' | 'submittedAt'>,
+  record: Pick<
+    SiteCalibration,
+    'status' | 'approvedAt' | 'updatedAt' | 'submittedAt' | 'certificateNumber'
+  >,
 ): boolean {
   return (
     isCorruptedFirestoreString(record.status) ||
     isCorruptedFirestoreString(record.approvedAt) ||
     isCorruptedFirestoreString(record.updatedAt) ||
-    isCorruptedFirestoreString(record.submittedAt)
+    isCorruptedFirestoreString(record.submittedAt) ||
+    isCorruptedFirestoreString(record.certificateNumber)
   );
 }
 

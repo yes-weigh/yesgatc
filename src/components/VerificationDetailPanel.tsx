@@ -17,7 +17,7 @@ import {
   VerificationDetailSpecSection,
   VerificationDetailSpecs,
 } from './VerificationDetailSpecs';
-import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
+import { canShowVerificationCertifiedActions, verificationCertificateNumber } from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
 
 interface VerificationDetailPanelProps {
@@ -130,8 +130,8 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
                   Zoho {verificationZohoInvoiceNumber(record)}
                 </span>
               )}
-              {record.certificateNumber?.trim() && (
-                <span className="text-mono text-xs">Cert {record.certificateNumber.trim()}</span>
+              {verificationCertificateNumber(record) && (
+                <span className="text-mono text-xs">Cert {verificationCertificateNumber(record)}</span>
               )}
             </div>
             <RvLegacyWalletPaymentSection
