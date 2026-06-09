@@ -1466,6 +1466,7 @@ public partial class MainWindow : Window
 
         var current = job;
         var ranPhase1 = false;
+        var phase1DocaSucceeded = false;
 
         if (current.IsSubmitted)
         {
@@ -1479,7 +1480,10 @@ public partial class MainWindow : Window
 
             if (submitResult.FillOnlyCompleted)
             {
-                return new JobPipelineResult(true, false, submitResult.Message);
+                return new JobPipelineResult(
+                    false,
+                    false,
+                    submitResult.Message + " Job remains submitted in Firebase until you submit on DOCA manually or disable fill-only mode.");
             }
 
             if (submitResult.DuplicateOnDoca)
@@ -1489,14 +1493,27 @@ public partial class MainWindow : Window
                 SetStatusSafe(
                     $"Serial {current.SerialNumber} already on DOCA — synced Firebase to approved, continuing to certify…",
                     StatusKind.Info);
+                phase1DocaSucceeded = true;
             }
             else if (!submitResult.VerificationApproved)
             {
                 return new JobPipelineResult(false, false, submitResult.Message);
             }
+            else
+            {
+                phase1DocaSucceeded = true;
+            }
 
             ranPhase1 = true;
-            current = await ReloadJobAsync(current.Id) ?? current;
+            current = await EnsureJobApprovedAfterDocaSubmitAsync(current);
+            if (phase1DocaSucceeded && !current.IsApproved)
+            {
+                return new JobPipelineResult(
+                    false,
+                    false,
+                    $"Serial {current.SerialNumber} — DOCA Phase 1 finished but Firebase status is still \"{current.StatusLabel}\". " +
+                    "Check Super Admin Firestore access, then retry.");
+            }
         }
 
         if (current.NeedsCertificatePdfUpload && !current.IsReadyToCertify)
@@ -1564,7 +1581,37 @@ public partial class MainWindow : Window
             return new JobPipelineResult(false, false, certifyResult.Message);
         }
 
-        return new JobPipelineResult(false, false, "No pipeline steps matched this job status.");
+        return new JobPipelineResult(
+            false,
+            false,
+            $"No pipeline steps matched serial {current.SerialNumber} (Firebase status: {current.StatusLabel}).");
+    }
+
+    private async Task<SiteCalibrationRecord> EnsureJobApprovedAfterDocaSubmitAsync(SiteCalibrationRecord job)
+    {
+        if (!job.IsSubmitted)
+        {
+            return job;
+        }
+
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            var token = await GetFreshIdTokenAsync();
+            await _firestoreService.ApproveVerificationAsync(job.Id, token);
+
+            if (attempt < 5)
+            {
+                await Task.Delay(400 * attempt);
+            }
+
+            var reloaded = await ReloadJobAsync(job.Id);
+            if (reloaded is not null && reloaded.IsApproved)
+            {
+                return reloaded;
+            }
+        }
+
+        return await ReloadJobAsync(job.Id) ?? job;
     }
 
     private async Task<DocaOpenResult> SubmitJobToDocaAsync(

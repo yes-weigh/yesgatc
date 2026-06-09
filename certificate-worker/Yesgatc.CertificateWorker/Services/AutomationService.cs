@@ -287,11 +287,11 @@ public sealed class AutomationService : IAsyncDisposable
             return postSubmitLogin;
         }
 
-        if (string.Equals(job.Status, "submitted", StringComparison.OrdinalIgnoreCase))
+        if (job.IsSubmitted)
         {
             await _firestoreService.ApproveVerificationAsync(job.Id, firebaseIdToken, cancellationToken);
         }
-        else
+        else if (job.IsApproved)
         {
             await _firestoreService.TouchCertificationAsync(job.Id, firebaseIdToken, cancellationToken);
         }
