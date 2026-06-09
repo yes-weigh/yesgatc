@@ -23,7 +23,7 @@ export type PipelineRepairDiagnosis = {
   notes: string[];
 };
 
-(value: string | undefined): boolean {
+export function isCorruptedFirestoreString(value: string | undefined): boolean {
   return Boolean(value?.includes(CORRUPTED_MARKER));
 }
 
