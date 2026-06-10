@@ -90,6 +90,7 @@ public partial class MainWindow : Window
         _automationService = new AutomationService(settings.Automation, _firestoreService);
         _automationService.ResolveFirebaseIdToken = GetFreshIdTokenAsync;
         _automationService.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
+        _automationService.DocaCredentialsCaptured = creds => SyncDocaCredentialsToAllAutomation(creds);
         _scraperAutomationService = new AutomationService(settings.Automation, _firestoreService);
         _scraperAutomationService.WorkerIndex = -2;
         _scraperAutomationService.ScraperMode = true;
@@ -103,6 +104,7 @@ public partial class MainWindow : Window
             _telemetry);
         _scrapeOrchestrator.ResolveFirebaseIdToken = () => GetFreshIdTokenAsync();
         _scrapeOrchestrator.IsPauseRequested = () => _remoteScrapePause;
+        _scrapeOrchestrator.ResolveDocaCredentials = ResolveDocaCredentialsOnUiThread;
         App.AutomationService = _automationService;
 
         JobsGrid.ItemsSource = _jobs;
@@ -151,8 +153,7 @@ public partial class MainWindow : Window
         _docaSessionProbeMinutes = saved.DocaSessionProbeMinutes ?? settings.AutoWorker.DocaSessionProbeMinutes;
         DocaSessionProbeMinutesBox.Text = _docaSessionProbeMinutes.ToString();
 
-        _automationService.DocaCredentials = CurrentDocaCredentials();
-        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
+        SyncDocaCredentialsToAllAutomation();
         UpdateSignInSummary();
     }
 
@@ -164,6 +165,49 @@ public partial class MainWindow : Window
         Email = DocaEmailBox.Text.Trim(),
         Password = DocaPasswordBox.Text,
     };
+
+    private static bool HasDocaLoginCredentials(DocaCredentialSettings credentials) =>
+        !string.IsNullOrWhiteSpace(credentials.Email)
+        && !string.IsNullOrWhiteSpace(credentials.Password);
+
+    private DocaCredentialSettings ResolveDocaCredentials()
+    {
+        var fromUi = CurrentDocaCredentials();
+        if (HasDocaLoginCredentials(fromUi))
+        {
+            return fromUi;
+        }
+
+        var fromPrimary = _automationService.DocaCredentials;
+        if (HasDocaLoginCredentials(fromPrimary))
+        {
+            return fromPrimary;
+        }
+
+        var fromStore = _credentialStore.Load().Doca;
+        if (HasDocaLoginCredentials(fromStore))
+        {
+            return fromStore;
+        }
+
+        return fromUi;
+    }
+
+    private DocaCredentialSettings ResolveDocaCredentialsOnUiThread() =>
+        Dispatcher.CheckAccess()
+            ? ResolveDocaCredentials()
+            : Dispatcher.Invoke(ResolveDocaCredentials);
+
+    private void SyncDocaCredentialsToAllAutomation(DocaCredentialSettings? credentials = null)
+    {
+        var resolved = credentials ?? ResolveDocaCredentials();
+        _automationService.DocaCredentials = resolved;
+        _scraperAutomationService.DocaCredentials = resolved;
+        foreach (var worker in _preparedBulkWorkers)
+        {
+            worker.DocaCredentials = resolved;
+        }
+    }
 
     private bool DocaFillOnlyEnabled => DocaFillOnlyCheckBox.IsChecked == true;
 
@@ -278,8 +322,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            _automationService.DocaCredentials = CurrentDocaCredentials();
-        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
+            SyncDocaCredentialsToAllAutomation();
             SetStatus("Opening DOCA browser...", StatusKind.Working);
             var state = await _automationService.OpenDocaWorkspaceAsync();
 
@@ -646,12 +689,9 @@ public partial class MainWindow : Window
         if (changed)
         {
             PersistCredentials();
-            _automationService.DocaCredentials = CurrentDocaCredentials();
-        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
-            _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
+            SyncDocaCredentialsToAllAutomation();
             foreach (var worker in _preparedBulkWorkers)
             {
-                worker.DocaCredentials = CurrentDocaCredentials();
                 worker.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
             }
 
@@ -731,7 +771,7 @@ public partial class MainWindow : Window
             }
         }
 
-        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
+        SyncDocaCredentialsToAllAutomation();
         _scrapeCts = new CancellationTokenSource();
         var token = _scrapeCts.Token;
 
@@ -800,6 +840,7 @@ public partial class MainWindow : Window
     private void ApplyManualDocaLoginWaitToAllAutomation(bool paused)
     {
         _automationService.ManualDocaLoginWait = paused;
+        _scraperAutomationService.ManualDocaLoginWait = false;
         foreach (var worker in _preparedBulkWorkers)
         {
             worker.ManualDocaLoginWait = paused;
@@ -1087,8 +1128,7 @@ public partial class MainWindow : Window
         }
 
         PersistCredentials();
-        _automationService.DocaCredentials = CurrentDocaCredentials();
-        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
+        SyncDocaCredentialsToAllAutomation();
 
         // Apply captcha key immediately so auto-login uses it without restart.
         var apiKey = CaptchaApiKeyBox.Text.Trim();
@@ -1601,7 +1641,7 @@ public partial class MainWindow : Window
         {
             for (var i = 0; i < workerCount; i++)
             {
-                _preparedBulkWorkers[i].DocaCredentials = CurrentDocaCredentials();
+                _preparedBulkWorkers[i].DocaCredentials = ResolveDocaCredentials();
                 _preparedBulkWorkers[i].ResolveFirebaseIdToken = GetFreshIdTokenAsync;
                 _preparedBulkWorkers[i].ManualDocaLoginWait = _autoWorkerPausedForDoca;
             }
@@ -1636,7 +1676,7 @@ public partial class MainWindow : Window
         var automation = new AutomationService(App.Settings.Automation, _firestoreService)
         {
             WorkerIndex = workerIndex,
-            DocaCredentials = CurrentDocaCredentials(),
+            DocaCredentials = ResolveDocaCredentials(),
             DocaFillOnly = DocaFillOnlyEnabled,
             ResolveFirebaseIdToken = GetFreshIdTokenAsync,
             ManualDocaLoginWait = _autoWorkerPausedForDoca,
@@ -1710,7 +1750,7 @@ public partial class MainWindow : Window
             return new JobPipelineResult(false, false, "No pending pipeline steps for this job.");
         }
 
-        automation.DocaCredentials = CurrentDocaCredentials();
+        automation.DocaCredentials = ResolveDocaCredentials();
         automation.DocaFillOnly = DocaFillOnlyEnabled;
 
         var current = job;
@@ -2010,8 +2050,7 @@ public partial class MainWindow : Window
             _session = await _authService.SignInAsSuperAdminAsync(AadharBox.Text, PasswordBox.Text);
 
             PersistCredentials();
-            _automationService.DocaCredentials = CurrentDocaCredentials();
-        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
+            SyncDocaCredentialsToAllAutomation();
             UpdateSignInSummary();
             SignInExpander.IsExpanded = false;
 

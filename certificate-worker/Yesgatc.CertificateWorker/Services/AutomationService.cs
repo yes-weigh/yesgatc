@@ -209,6 +209,9 @@ public sealed class AutomationService : IAsyncDisposable
 
     public Func<CaptchaAttemptReport, Task>? CaptchaAttemptReporter { get; set; }
 
+    /// <summary>Raised when email/password are read from the DOCA login form after a failed auto-login.</summary>
+    public Action<DocaCredentialSettings>? DocaCredentialsCaptured { get; set; }
+
     /// <summary>Phase 2 — open OV form, select instrument type, fill party section.</summary>
     public async Task<DocaOpenResult> RunOvStarterAsync(
         SiteCalibrationRecord job,
@@ -513,7 +516,15 @@ public sealed class AutomationService : IAsyncDisposable
             Timeout = 60_000,
         });
 
-        page = await ConsolidateToSingleDocaPageAsync();
+        // Scraper uses a separate profile — stay on the tab we navigated to login.
+        if (ScraperMode)
+        {
+            await page.BringToFrontAsync();
+        }
+        else
+        {
+            page = await ConsolidateToSingleDocaPageAsync();
+        }
 
         try
         {
@@ -527,7 +538,7 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            return await EnsureDocaLoggedInAsync(page, cancellationToken);
+            return await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: ScraperMode);
         }
 
         return DocaSessionState.LoggedIn;
@@ -948,6 +959,7 @@ public sealed class AutomationService : IAsyncDisposable
         if (captured is not null)
         {
             DocaCredentials = captured;
+            DocaCredentialsCaptured?.Invoke(captured);
         }
 
         var message = _settings.AutoSolveCaptcha
@@ -987,7 +999,9 @@ public sealed class AutomationService : IAsyncDisposable
             return null;
         }
 
-        var emailField = page.Locator("input[type='email'], input[name*='email' i], input[id*='email' i]").First;
+        var emailField = page.Locator(
+            "input[type='email'], input[name*='email' i], input[id*='email' i], input[name*='user' i], input[id*='user' i], input[autocomplete='username']")
+            .First;
         var passwordField = page.Locator("input[type='password']").First;
 
         if (await emailField.CountAsync() == 0 && await passwordField.CountAsync() == 0)

@@ -24,6 +24,7 @@ public sealed class DocaScrapeOrchestrator
 
     public Func<Task<string>>? ResolveFirebaseIdToken { get; set; }
     public Func<bool>? IsPauseRequested { get; set; }
+    public Func<DocaCredentialSettings>? ResolveDocaCredentials { get; set; }
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
@@ -301,11 +302,13 @@ public sealed class DocaScrapeOrchestrator
 
     private async Task<IPage> OpenScraperSessionAsync(CancellationToken cancellationToken)
     {
+        ApplyScraperCredentials();
+
         var state = await _scraperBrowser.OpenDocaWorkspaceAsync(chromeNumber: 2, cancellationToken);
-        if (state == DocaSessionState.LoginRequired)
+        if (state == DocaSessionState.LoginRequired && !HasScraperLoginCredentials())
         {
             throw new InvalidOperationException(
-                "DOCA login required on scraper browser (Chrome 2). Complete login or check captcha OCR credentials.");
+                "DOCA email/password are missing for scraper browser (Chrome 2). Save DOCA credentials in the worker or push them from web admin.");
         }
 
         var page = _scraperBrowser.BrowserContext?.Pages.FirstOrDefault()
@@ -319,6 +322,7 @@ public sealed class DocaScrapeOrchestrator
 
         if (await AutomationServiceProbe.IsLoginPageAsync(page))
         {
+            ApplyScraperCredentials();
             var loginState = await _scraperBrowser.EnsureLoggedInOnPageAsync(page, cancellationToken);
             if (loginState == DocaSessionState.LoginRequired)
             {
@@ -339,6 +343,23 @@ public sealed class DocaScrapeOrchestrator
         }
 
         return page;
+    }
+
+    private void ApplyScraperCredentials()
+    {
+        if (ResolveDocaCredentials is null)
+        {
+            return;
+        }
+
+        _scraperBrowser.DocaCredentials = ResolveDocaCredentials();
+    }
+
+    private bool HasScraperLoginCredentials()
+    {
+        var credentials = _scraperBrowser.DocaCredentials;
+        return !string.IsNullOrWhiteSpace(credentials.Email)
+            && !string.IsNullOrWhiteSpace(credentials.Password);
     }
 
     private async Task WaitIfPausedAsync(CancellationToken cancellationToken)

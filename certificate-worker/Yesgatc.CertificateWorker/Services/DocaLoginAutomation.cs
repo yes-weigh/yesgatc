@@ -167,10 +167,21 @@ public static class DocaLoginAutomation
 
     private static async Task FillCredentialsAsync(IPage page, DocaCredentialSettings credentials)
     {
-        var emailField = page.Locator("input[type='email'], input[name*='email' i], input[id*='email' i]").First;
+        var email = credentials.Email.Trim();
+        var emailField = page.Locator(
+            "input[type='email'], input[name*='email' i], input[id*='email' i], input[name*='user' i], input[id*='user' i], input[autocomplete='username']")
+            .First;
         if (await emailField.CountAsync() > 0)
         {
-            await emailField.FillAsync(credentials.Email.Trim());
+            await emailField.FillAsync(email);
+        }
+        else
+        {
+            var textFields = page.Locator("input[type='text']:not([name*='captcha' i]):not([id*='captcha' i])");
+            if (await textFields.CountAsync() > 0)
+            {
+                await textFields.First.FillAsync(email);
+            }
         }
 
         var passwordField = page.Locator("input[type='password']").First;
