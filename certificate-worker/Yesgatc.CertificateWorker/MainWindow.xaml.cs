@@ -68,6 +68,7 @@ public partial class MainWindow : Window
     private bool _remoteScrapePause;
     private CancellationTokenSource? _scrapeCts;
     private Task? _scrapeRunTask;
+    private Task _docaBrowserStartupTask = Task.CompletedTask;
     private StatusKind _lastStatusKind = StatusKind.Idle;
 
     public MainWindow()
@@ -305,6 +306,7 @@ public partial class MainWindow : Window
         {
             await SignInAndLoadAsync();
             await StartDocaBrowserAsync();
+            BeginWorkerServicesAfterDocaBrowser();
             return;
         }
 
@@ -318,7 +320,13 @@ public partial class MainWindow : Window
             StatusKind.Idle);
     }
 
-    private async Task StartDocaBrowserAsync()
+    private Task StartDocaBrowserAsync()
+    {
+        _docaBrowserStartupTask = StartDocaBrowserCoreAsync();
+        return _docaBrowserStartupTask;
+    }
+
+    private async Task StartDocaBrowserCoreAsync()
     {
         try
         {
@@ -344,6 +352,29 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             SetStatus($"Could not open DOCA browser: {ex.Message}", ex, StatusKind.Error);
+        }
+    }
+
+    private void BeginWorkerServicesAfterDocaBrowser()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        StartAutoWorkerTimers();
+        if (!_autoWorkerEnabled || _remotePaused)
+        {
+            return;
+        }
+
+        if (_autoWorkerPausedForDoca)
+        {
+            _ = TryResumeAutoWorkerAfterDocaLoginAsync();
+        }
+        else
+        {
+            _ = RunAutoWorkerCycleAsync();
         }
     }
 
@@ -771,6 +802,20 @@ public partial class MainWindow : Window
             }
         }
 
+        if (!_docaBrowserStartupTask.IsCompleted)
+        {
+            AddActivityEntry("Waiting for Chrome 1 DOCA login before starting scraper (Chrome 2)…");
+            SetStatus("Waiting for Chrome 1 DOCA login before scrape…", StatusKind.Working);
+            try
+            {
+                await _docaBrowserStartupTask.ConfigureAwait(true);
+            }
+            catch
+            {
+                // StartDocaBrowserCoreAsync already logged the failure.
+            }
+        }
+
         SyncDocaCredentialsToAllAutomation();
         _scrapeCts = new CancellationTokenSource();
         var token = _scrapeCts.Token;
@@ -1118,6 +1163,8 @@ public partial class MainWindow : Window
     private async void SignInButton_Click(object sender, RoutedEventArgs e)
     {
         await SignInAndLoadAsync();
+        await StartDocaBrowserAsync();
+        BeginWorkerServicesAfterDocaBrowser();
     }
 
     private void SaveCredsButton_Click(object sender, RoutedEventArgs e)
@@ -2064,19 +2111,6 @@ public partial class MainWindow : Window
             else
             {
                 await LoadQueueAsync();
-            }
-
-            StartAutoWorkerTimers();
-            if (_autoWorkerEnabled)
-            {
-                if (_autoWorkerPausedForDoca)
-                {
-                    _ = TryResumeAutoWorkerAfterDocaLoginAsync();
-                }
-                else if (!_remotePaused)
-                {
-                    _ = RunAutoWorkerCycleAsync();
-                }
             }
         });
     }
