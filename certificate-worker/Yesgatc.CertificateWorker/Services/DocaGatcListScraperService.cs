@@ -94,22 +94,97 @@ public static partial class DocaGatcListScraperService
             return false;
         }
 
-        var nextButton = page.Locator(
-            ".paginate_button.next:not(.disabled), li.next:not(.disabled) a, a.paginate_button.next:not(.disabled)").First;
-        if (await nextButton.CountAsync() == 0)
+        var beforeInfo = await ReadPaginationInfoAsync(page);
+        await ScrollPaginationIntoViewAsync(page);
+
+        var nextLink = GetNextPageClickTarget(page);
+        if (await nextLink.CountAsync() > 0)
+        {
+            try
+            {
+                await nextLink.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
+            }
+            catch (PlaywrightException)
+            {
+                await nextLink.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 15_000 });
+            }
+        }
+        else if (!await ClickNextPageViaScriptAsync(page))
         {
             return false;
         }
 
-        await nextButton.ClickAsync();
-        await page.WaitForTimeoutAsync(900);
-        await page.Locator("table tbody tr").First.WaitForAsync(new LocatorWaitForOptions
-        {
-            Timeout = 60_000,
-        });
-
+        await WaitForPaginationAdvanceAsync(page, beforeInfo.PageStart, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return true;
+    }
+
+    private static ILocator GetNextPageClickTarget(IPage page) =>
+        page.Locator(
+            "#example1_next:not(.disabled) a, " +
+            "li.paginate_button.next:not(.disabled) a, " +
+            ".dataTables_paginate .paginate_button.next:not(.disabled) a")
+            .First;
+
+    private static async Task ScrollPaginationIntoViewAsync(IPage page)
+    {
+        var paginate = page.Locator(".dataTables_paginate, #example1_paginate, .pagination").First;
+        if (await paginate.CountAsync() == 0)
+        {
+            return;
+        }
+
+        await paginate.ScrollIntoViewIfNeededAsync();
+        await page.WaitForTimeoutAsync(250);
+    }
+
+    private static async Task<bool> ClickNextPageViaScriptAsync(IPage page) =>
+        await page.EvaluateAsync<bool>(
+            """
+            () => {
+              const nextLink =
+                document.querySelector('#example1_next:not(.disabled) a') ||
+                document.querySelector('li.paginate_button.next:not(.disabled) a') ||
+                document.querySelector('.dataTables_paginate .paginate_button.next:not(.disabled) a');
+              if (nextLink) {
+                nextLink.click();
+                return true;
+              }
+
+              if (typeof $ !== 'undefined' && $.fn?.dataTable) {
+                const table = $('#example1').DataTable?.();
+                if (table && table.page.info().page < table.page.info().pages - 1) {
+                  table.page('next').draw('page');
+                  return true;
+                }
+              }
+
+              return false;
+            }
+            """);
+
+    private static async Task WaitForPaginationAdvanceAsync(
+        IPage page,
+        int previousPageStart,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 60; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await page.WaitForTimeoutAsync(500);
+
+            var current = await ReadPaginationInfoAsync(page);
+            if (current.PageStart > previousPageStart && current.PageStart > 0)
+            {
+                await page.Locator("table tbody tr").First.WaitForAsync(new LocatorWaitForOptions
+                {
+                    Timeout = 60_000,
+                });
+                return;
+            }
+        }
+
+        throw new TimeoutException("Timed out waiting for DOCA GATC list to advance to the next page.");
     }
 
     private static async Task<DocaGatcRow?> TryParseRowAsync(IPage page, ILocator row)
@@ -176,14 +251,13 @@ public static partial class DocaGatcListScraperService
 
     private static async Task<bool> HasNextPageAsync(IPage page)
     {
-        var nextButton = page.Locator(
-            ".paginate_button.next, li.next a, a.paginate_button.next").First;
-        if (await nextButton.CountAsync() == 0)
+        var nextItem = page.Locator("#example1_next, li.paginate_button.next").First;
+        if (await nextItem.CountAsync() == 0)
         {
             return false;
         }
 
-        var className = await nextButton.GetAttributeAsync("class") ?? string.Empty;
+        var className = await nextItem.GetAttributeAsync("class") ?? string.Empty;
         return !className.Contains("disabled", StringComparison.OrdinalIgnoreCase);
     }
 
