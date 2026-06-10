@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
@@ -216,11 +217,9 @@ export async function resumeDocaScrape(
   );
 }
 
-export async function ensureDocaScrapeRemoteDefaults(
-  current: AutomationWorkerRemoteControl,
-  updatedByUid: string,
-): Promise<void> {
-  if (typeof current.scrapeCommandRevision === 'number') {
+export async function ensureDocaScrapeRemoteDefaults(updatedByUid: string): Promise<void> {
+  const snap = await getDoc(doc(db, AUTOMATION_WORKER_COLLECTION, 'remote'));
+  if (snap.exists() && typeof snap.data()?.scrapeCommandRevision === 'number') {
     return;
   }
 

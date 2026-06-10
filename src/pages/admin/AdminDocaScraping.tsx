@@ -66,8 +66,7 @@ export const AdminDocaScraping: React.FC = () => {
 
   useEffect(() => {
     if (!user?.uid) return;
-    void ensureDocaScrapeRemoteDefaults(remote, user.uid);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialize remote scrape fields once per session
+    void ensureDocaScrapeRemoteDefaults(user.uid);
   }, [user?.uid]);
 
   const filteredRecords = useMemo(() => {

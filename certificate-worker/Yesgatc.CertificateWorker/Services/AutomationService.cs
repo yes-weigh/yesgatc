@@ -59,7 +59,8 @@ public sealed class AutomationService : IAsyncDisposable
 
             try
             {
-                return _context.Browser.IsConnected;
+                var browser = _context.Browser;
+                return browser is not null && browser.IsConnected;
             }
             catch
             {

@@ -47,6 +47,39 @@ service cloud.firestore {
         == resource.data.get('applicationNumber', null);
     }
 
+    function verificationStatusCorrupted(data) {
+      let status = data.get('status', 'draft');
+      return status is string
+        && status.matches('.*System\\.Collections\\.Generic\\.Dictionary.*');
+    }
+
+    function verificationTimestampLooksValid(value) {
+      return value is string
+        && value.size() >= 20
+        && !value.matches('.*System\\.Collections\\.Generic\\.Dictionary.*');
+    }
+
+    function verificationCertificateNumberLooksValid(data) {
+      let certificateNumber = data.get('certificateNumber', '');
+      return certificateNumber is string
+        && certificateNumber.size() > 0
+        && !certificateNumber.matches('.*System\\.Collections\\.Generic\\.Dictionary.*');
+    }
+
+    function inferredVerificationRecordStatus(data) {
+      return verificationTimestampLooksValid(data.get('certifiedAt', '')) ? 'certified'
+        : verificationCertificateNumberLooksValid(data) ? 'certified'
+        : verificationTimestampLooksValid(data.get('approvedAt', '')) ? 'approved'
+        : verificationTimestampLooksValid(data.get('submittedAt', '')) ? 'submitted'
+        : 'draft';
+    }
+
+    function verificationRecordStatus(data) {
+      return verificationStatusCorrupted(data)
+        ? inferredVerificationRecordStatus(data)
+        : data.get('status', 'draft');
+    }
+
     function zohoRvInvoicingEnabled() {
       return get(/databases/$(database)/documents/appSettings/global).data.get('zohoRvInvoicingEnabled', true) != false;
     }
@@ -249,39 +282,6 @@ service cloud.firestore {
 
     // ── site calibrations (RC-managed verification requests) ───────
     match /siteCalibrations/{recordId} {
-      function verificationStatusCorrupted(data) {
-        let status = data.get('status', 'draft');
-        return status is string
-          && status.matches('.*System\\.Collections\\.Generic\\.Dictionary.*');
-      }
-
-      function verificationTimestampLooksValid(value) {
-        return value is string
-          && value.size() >= 20
-          && !value.matches('.*System\\.Collections\\.Generic\\.Dictionary.*');
-      }
-
-      function verificationCertificateNumberLooksValid(data) {
-        let certificateNumber = data.get('certificateNumber', '');
-        return certificateNumber is string
-          && certificateNumber.size() > 0
-          && !certificateNumber.matches('.*System\\.Collections\\.Generic\\.Dictionary.*');
-      }
-
-      function inferredVerificationRecordStatus(data) {
-        return verificationTimestampLooksValid(data.get('certifiedAt', '')) ? 'certified'
-          : verificationCertificateNumberLooksValid(data) ? 'certified'
-          : verificationTimestampLooksValid(data.get('approvedAt', '')) ? 'approved'
-          : verificationTimestampLooksValid(data.get('submittedAt', '')) ? 'submitted'
-          : 'draft';
-      }
-
-      function verificationRecordStatus(data) {
-        return verificationStatusCorrupted(data)
-          ? inferredVerificationRecordStatus(data)
-          : data.get('status', 'draft');
-      }
-
       function vctOwnsVerification(data) {
         return data.get('createdByUid', '') == request.auth.uid
           || data.get('vctId', '') == request.auth.uid;
