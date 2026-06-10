@@ -41,6 +41,8 @@ public partial class MainWindow : Window
     private readonly PartyDetailsService _partyDetailsService;
     private readonly InstrumentDetailsService _instrumentDetailsService;
     private readonly AutomationService _automationService;
+    private readonly AutomationService _scraperAutomationService;
+    private readonly DocaScrapeOrchestrator _scrapeOrchestrator;
     private readonly LocalCredentialsStore _credentialStore = new();
     private readonly JobRetryTracker _jobRetries = new();
     private readonly WorkerTelemetryService _telemetry;
@@ -63,6 +65,9 @@ public partial class MainWindow : Window
     private bool _autoWorkerCyclePending;
     private bool _sessionProbeRunning;
     private int _docaSessionProbeMinutes;
+    private bool _remoteScrapePause;
+    private CancellationTokenSource? _scrapeCts;
+    private Task? _scrapeRunTask;
     private StatusKind _lastStatusKind = StatusKind.Idle;
 
     public MainWindow()
@@ -85,6 +90,19 @@ public partial class MainWindow : Window
         _automationService = new AutomationService(settings.Automation, _firestoreService);
         _automationService.ResolveFirebaseIdToken = GetFreshIdTokenAsync;
         _automationService.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
+        _scraperAutomationService = new AutomationService(settings.Automation, _firestoreService);
+        _scraperAutomationService.WorkerIndex = -2;
+        _scraperAutomationService.ScraperMode = true;
+        _scraperAutomationService.ResolveFirebaseIdToken = GetFreshIdTokenAsync;
+        _scraperAutomationService.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
+        var scrapeSync = new DocaScrapeSyncService(settings.Firebase);
+        _scrapeOrchestrator = new DocaScrapeOrchestrator(
+            settings.Automation,
+            _scraperAutomationService,
+            scrapeSync,
+            _telemetry);
+        _scrapeOrchestrator.ResolveFirebaseIdToken = () => GetFreshIdTokenAsync();
+        _scrapeOrchestrator.IsPauseRequested = () => _remoteScrapePause;
         App.AutomationService = _automationService;
 
         JobsGrid.ItemsSource = _jobs;
@@ -134,6 +152,7 @@ public partial class MainWindow : Window
         DocaSessionProbeMinutesBox.Text = _docaSessionProbeMinutes.ToString();
 
         _automationService.DocaCredentials = CurrentDocaCredentials();
+        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
         UpdateSignInSummary();
     }
 
@@ -260,6 +279,7 @@ public partial class MainWindow : Window
         try
         {
             _automationService.DocaCredentials = CurrentDocaCredentials();
+        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
             SetStatus("Opening DOCA browser...", StatusKind.Working);
             var state = await _automationService.OpenDocaWorkspaceAsync();
 
@@ -288,9 +308,11 @@ public partial class MainWindow : Window
     {
         StopAutoWorkerTimers();
         StopTelemetryTimer();
+        _scrapeCts?.Cancel();
         await _queueListener.StopAsync();
         await DisposePreparedBulkWorkersAsync();
         await _automationService.DisposeAsync();
+        await _scraperAutomationService.DisposeAsync();
         _tokenLock.Dispose();
     }
 
@@ -572,6 +594,17 @@ public partial class MainWindow : Window
         {
             await ApplyRemoteCommandAsync(remote);
         }
+
+        _remoteScrapePause = remote.ScrapePause;
+
+        if (_telemetry.ShouldApplyScrapeCommand(remote))
+        {
+            _telemetry.MarkScrapeCommandApplied(remote.ScrapeCommandRevision);
+            if (!remote.ScrapePause)
+            {
+                await StartDocaScrapeRunAsync();
+            }
+        }
     }
 
     private async Task ApplyRemoteCredentialsAsync(WorkerRemoteControlState remote)
@@ -614,6 +647,8 @@ public partial class MainWindow : Window
         {
             PersistCredentials();
             _automationService.DocaCredentials = CurrentDocaCredentials();
+        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
+            _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
             foreach (var worker in _preparedBulkWorkers)
             {
                 worker.DocaCredentials = CurrentDocaCredentials();
@@ -671,6 +706,68 @@ public partial class MainWindow : Window
         _telemetry.MarkCommandApplied(remote.CommandRevision);
         UpdateAutoWorkerStatusText();
         await PublishWorkerStatusAsync();
+    }
+
+    private async Task StartDocaScrapeRunAsync()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        _scrapeCts?.Cancel();
+        if (_scrapeRunTask is not null)
+        {
+            try
+            {
+                await _scrapeRunTask.ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                AddActivityEntry($"Previous DOCA scrape ended with error: {ex.Message}");
+            }
+        }
+
+        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
+        _scrapeCts = new CancellationTokenSource();
+        var token = _scrapeCts.Token;
+
+        AddActivityEntry("DOCA GATC certificate scrape started (separate scraper browser).");
+        SetStatus("DOCA scrape running in Chrome 2…", StatusKind.Working);
+
+        _scrapeRunTask = Task.Run(async () =>
+        {
+            try
+            {
+                await _scrapeOrchestrator.RunAsync(token).ConfigureAwait(false);
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    AddActivityEntry("DOCA GATC certificate scrape finished.");
+                    SetStatus("DOCA scrape finished.", StatusKind.Success);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    AddActivityEntry("DOCA scrape paused or cancelled.");
+                    SetStatus("DOCA scrape paused.", StatusKind.Info);
+                });
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    AddActivityEntry($"DOCA scrape failed: {ex.Message}");
+                    SetStatus($"DOCA scrape failed: {ex.Message}", StatusKind.Error);
+                });
+            }
+        }, token);
+
+        await Task.CompletedTask;
     }
 
     private void SetDocaLoginPaused(bool paused, string logoutReason = "login_required")
@@ -991,6 +1088,7 @@ public partial class MainWindow : Window
 
         PersistCredentials();
         _automationService.DocaCredentials = CurrentDocaCredentials();
+        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
 
         // Apply captcha key immediately so auto-login uses it without restart.
         var apiKey = CaptchaApiKeyBox.Text.Trim();
@@ -1913,6 +2011,7 @@ public partial class MainWindow : Window
 
             PersistCredentials();
             _automationService.DocaCredentials = CurrentDocaCredentials();
+        _scraperAutomationService.DocaCredentials = CurrentDocaCredentials();
             UpdateSignInSummary();
             SignInExpander.IsExpanded = false;
 

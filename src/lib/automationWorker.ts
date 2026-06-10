@@ -54,6 +54,8 @@ export type AutomationWorkerRemoteControl = {
   autoWorkerEnabled: boolean;
   docaFillOnly: boolean;
   pauseWorker: boolean;
+  scrapeCommandRevision: number;
+  scrapePause: boolean;
   superAdminAadhar: string;
   superAdminPassword: string;
   docaEmail: string;
@@ -107,6 +109,8 @@ export const DEFAULT_AUTOMATION_WORKER_REMOTE: AutomationWorkerRemoteControl = {
   autoWorkerEnabled: true,
   docaFillOnly: false,
   pauseWorker: false,
+  scrapeCommandRevision: 0,
+  scrapePause: false,
   superAdminAadhar: '',
   superAdminPassword: '',
   docaEmail: '',
@@ -118,17 +122,20 @@ export const DEFAULT_AUTOMATION_WORKER_REMOTE: AutomationWorkerRemoteControl = {
 
 export const OFFLINE_HEARTBEAT_MS = 90_000;
 
-function readString(data: Record<string, unknown>, key: string, fallback = ''): string {
+export function readString(data: Record<string, unknown> | undefined, key: string, fallback = ''): string {
+  if (!data) return fallback;
   const value = data[key];
   return typeof value === 'string' ? value : fallback;
 }
 
-function readBool(data: Record<string, unknown>, key: string, fallback = false): boolean {
+export function readBool(data: Record<string, unknown> | undefined, key: string, fallback = false): boolean {
+  if (!data) return fallback;
   const value = data[key];
   return typeof value === 'boolean' ? value : fallback;
 }
 
-function readInt(data: Record<string, unknown>, key: string, fallback = 0): number {
+export function readInt(data: Record<string, unknown> | undefined, key: string, fallback = 0): number {
+  if (!data) return fallback;
   const value = data[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
@@ -171,6 +178,8 @@ export function normalizeAutomationWorkerRemote(
     autoWorkerEnabled: readBool(data, 'autoWorkerEnabled', true),
     docaFillOnly: readBool(data, 'docaFillOnly'),
     pauseWorker: readBool(data, 'pauseWorker'),
+    scrapeCommandRevision: readInt(data, 'scrapeCommandRevision'),
+    scrapePause: readBool(data, 'scrapePause'),
     superAdminAadhar: readString(data, 'superAdminAadhar'),
     superAdminPassword: readString(data, 'superAdminPassword'),
     docaEmail: readString(data, 'docaEmail'),
@@ -336,7 +345,10 @@ export function subscribeAutomationWorkerSessions(
 
 export async function saveAutomationWorkerRemoteControl(
   current: AutomationWorkerRemoteControl,
-  patch: Partial<AutomationWorkerRemoteControl> & Partial<AutomationWorkerCredentialsForm>,
+  patch: Partial<AutomationWorkerRemoteControl> & Partial<AutomationWorkerCredentialsForm> & {
+    scrapeCommandRevision?: number;
+    scrapePause?: boolean;
+  },
   updatedByUid: string,
   options?: { incrementCommand?: boolean; incrementCredentials?: boolean },
 ): Promise<void> {
@@ -353,6 +365,8 @@ export async function saveAutomationWorkerRemoteControl(
       autoWorkerEnabled: patch.autoWorkerEnabled ?? current.autoWorkerEnabled,
       docaFillOnly: patch.docaFillOnly ?? current.docaFillOnly,
       pauseWorker: patch.pauseWorker ?? current.pauseWorker,
+      scrapeCommandRevision: patch.scrapeCommandRevision ?? current.scrapeCommandRevision,
+      scrapePause: patch.scrapePause ?? current.scrapePause,
       superAdminAadhar: patch.superAdminAadhar ?? current.superAdminAadhar,
       superAdminPassword: patch.superAdminPassword ?? current.superAdminPassword,
       docaEmail: patch.docaEmail ?? current.docaEmail,

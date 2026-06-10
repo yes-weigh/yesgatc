@@ -12,6 +12,8 @@ public sealed class WorkerRemoteControlState
     public string? DocaEmail { get; init; }
     public string? DocaPassword { get; init; }
     public string? CaptchaApiKey { get; init; }
+    public int ScrapeCommandRevision { get; init; }
+    public bool ScrapePause { get; init; }
 }
 
 public sealed class WorkerStatusSnapshot

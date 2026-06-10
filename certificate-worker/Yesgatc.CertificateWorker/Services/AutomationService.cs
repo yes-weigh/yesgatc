@@ -38,10 +38,15 @@ public sealed class AutomationService : IAsyncDisposable
         _firestoreService = firestoreService;
     }
 
-    /// <summary>-1 = default single browser profile; 0+ = parallel worker slot with its own profile.</summary>
+    /// <summary>-1 = default single browser profile; 0+ = parallel worker slot; -2 = GATC scraper profile.</summary>
     public int WorkerIndex { get; set; } = -1;
 
+    /// <summary>When true, keep the scraper browser on the GATC list page and do not collapse extra tabs.</summary>
+    public bool ScraperMode { get; set; }
+
     public bool IsRunning => IsBrowserConnected;
+
+    public IBrowserContext? BrowserContext => _context;
 
     public bool IsBrowserConnected
     {
@@ -178,9 +183,12 @@ public sealed class AutomationService : IAsyncDisposable
                     "doca-browser")
                 : Environment.ExpandEnvironmentVariables(_settings.BrowserProfilePath);
 
-            return WorkerIndex >= 0
-                ? Path.Combine(root, $"worker-{WorkerIndex + 1}")
-                : root;
+            return WorkerIndex switch
+            {
+                >= 0 => Path.Combine(root, $"worker-{WorkerIndex + 1}"),
+                -2 => Path.Combine(root, "scraper"),
+                _ => root,
+            };
         }
     }
 
@@ -188,6 +196,13 @@ public sealed class AutomationService : IAsyncDisposable
 
     /// <summary>Fill DOCA IC form fields only — skip Generate Certificate and Firebase approval.</summary>
     public bool DocaFillOnly { get; set; }
+
+    /// <summary>Run captcha OCR login on the current page when DOCA shows the login form.</summary>
+    public Task<DocaSessionState> EnsureLoggedInOnPageAsync(
+        IPage page,
+        CancellationToken cancellationToken = default,
+        bool forceAutoLogin = true) =>
+        EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin);
 
     public Func<CancellationToken, Task<string>>? ResolveFirebaseIdToken { get; set; }
 
@@ -583,6 +598,27 @@ public sealed class AutomationService : IAsyncDisposable
         if (_context is null)
         {
             throw new InvalidOperationException("Browser context is not initialized.");
+        }
+
+        if (ScraperMode)
+        {
+            var pages = _context.Pages.ToList();
+            var listPage = pages.FirstOrDefault(page =>
+                page.Url.Contains("view-gn-uploadcertificate", StringComparison.OrdinalIgnoreCase));
+            if (listPage is not null)
+            {
+                await listPage.BringToFrontAsync();
+                return listPage;
+            }
+
+            var loaded = pages.FirstOrDefault(page => !IsBlankBrowserPage(page.Url));
+            if (loaded is not null)
+            {
+                await loaded.BringToFrontAsync();
+                return loaded;
+            }
+
+            return pages.Count > 0 ? pages[0] : await _context.NewPageAsync();
         }
 
         for (var pass = 0; pass < 4; pass++)

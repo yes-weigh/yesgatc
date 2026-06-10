@@ -48,6 +48,13 @@
         { "fieldPath": "rcId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "docaCertificates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "scrapedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

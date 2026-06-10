@@ -16,7 +16,7 @@ import { AdminVerificationList } from './pages/admin/AdminVerificationList';
 import { AdminLaboratory } from './pages/admin/AdminLaboratory';
 import { AdminWalletTopUps } from './pages/admin/AdminWalletTopUps';
 import { AdminSettings } from './pages/admin/AdminSettings';
-import { AdminQualityManagement, AdminNotifications } from './pages/admin/AdminMenuPages';
+import { AdminQualityManagement, AdminNotifications, AdminDocaScraping } from './pages/admin/AdminMenuPages';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
@@ -53,19 +53,21 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
               <Route path="/admin" element={<Layout />}>
                 <Route index element={<AdminDashboard />} />
+                <Route path="doca-scraping" element={<AdminDocaScraping />} />
+                <Route path="verifications" element={<AdminVerificationList />} />
+                <Route path="wallet" element={<AdminWalletTopUps />} />
+                <Route path="products" element={<Products />} />
+                <Route path="vehicles" element={<AdminVehicleList />} />
                 <Route path="rc" element={<RCList />} />
                 <Route path="technicians" element={<AdminVCTList />} />
                 <Route path="vct" element={<Navigate to="/admin/technicians" replace />} />
-                <Route path="vehicles" element={<AdminVehicleList />} />
-                <Route path="verifications" element={<AdminVerificationList />} />
-                <Route path="products" element={<Products />} />
                 <Route path="laboratory" element={<AdminLaboratory />} />
                 <Route path="quality-management" element={<AdminQualityManagement />} />
                 <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="integrations" element={<AdminSettings />} />
+                <Route path="integrations/:integrationId" element={<AdminSettings />} />
                 <Route path="settings" element={<Navigate to="/admin/integrations" replace />} />
-                <Route path="wallet" element={<AdminWalletTopUps />} />
               </Route>
             </Route>
 

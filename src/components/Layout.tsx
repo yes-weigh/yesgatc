@@ -31,6 +31,7 @@ import {
   GraduationCap,
   LogOut,
   Wallet,
+  Globe2,
 } from 'lucide-react';
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
@@ -121,7 +122,16 @@ export const Layout: React.FC = () => {
       case 'super_admin':
         return [
           { path: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { path: '/admin/doca-scraping', icon: <Globe2 size={20} />, label: 'DOCA Scraping' },
+          {
+            path: '/admin/verifications',
+            icon: <ShieldCheck size={20} />,
+            label: 'Verification',
+            mobileSubtitle: 'Powered by AI',
+          },
           { path: '/admin/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
+          { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
+          { path: '/admin/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Vehicle' },
           { path: '/admin/rc', icon: <Building2 size={20} />, label: 'Regional Centers' },
           {
             path: '/admin/technicians',
@@ -129,9 +139,6 @@ export const Layout: React.FC = () => {
             label: 'Technician',
             pageTitle: 'Verification and Calibration Technician',
           },
-          { path: '/admin/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Vehicle' },
-          { path: '/admin/verifications', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
-          { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
           { path: '/admin/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
           { path: '/admin/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
           { path: '/admin/notifications', icon: <Bell size={20} />, label: 'Notifications' },
@@ -179,7 +186,15 @@ export const Layout: React.FC = () => {
   };
 
   const navItems = getNavItems();
-  const currentNavItem = navItems.find(item => item.path === location.pathname);
+  const currentNavItem = navItems.find(item => {
+    if (location.pathname === item.path) {
+      return true;
+    }
+    if (item.path === '/admin' || item.path === '/rc' || item.path === '/vct') {
+      return false;
+    }
+    return location.pathname.startsWith(`${item.path}/`);
+  });
   const pageTitle = currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
@@ -244,25 +259,26 @@ export const Layout: React.FC = () => {
         ))}
       </nav>
 
-      {user.role === 'super_admin' && mobile && (
-        <div className="sidebar-mobile-account">
-          <div className="sidebar-mobile-user">
-            <UserCircle size={28} className="text-blue shrink-0" />
-            <div className="sidebar-mobile-user-text">
-              <div className="sidebar-mobile-user-name">{user.username}</div>
-              <div className="sidebar-mobile-user-meta text-muted">{formatContactSubtitle(user)}</div>
+      {user.role === 'super_admin' && (
+        <div className={`sidebar-mobile-account${!mobile && collapsed ? ' sidebar-mobile-account--collapsed' : ''}`}>
+          {(!collapsed || mobile) && (
+            <div className="sidebar-mobile-user">
+              <UserCircle size={28} className="text-blue shrink-0" />
+              <div className="sidebar-mobile-user-text">
+                <div className="sidebar-mobile-user-name">{user.username}</div>
+                <div className="sidebar-mobile-user-meta text-muted">{roleLabel}</div>
+              </div>
             </div>
-          </div>
-          <button type="button" className="sidebar-mobile-logout" onClick={() => void handleLogout()}>
+          )}
+          <button
+            type="button"
+            className="sidebar-mobile-logout"
+            onClick={() => void handleLogout()}
+            title={!mobile && collapsed ? 'Logout' : undefined}
+          >
             <LogOut size={16} aria-hidden />
-            Logout
+            <span className="sidebar-logout-label">Logout</span>
           </button>
-        </div>
-      )}
-      {user.role === 'super_admin' && !mobile && !collapsed && (
-        <div className="sidebar-footer">
-          <ShieldCheck size={14} />
-          <span>{roleLabel}</span>
         </div>
       )}
     </>
@@ -345,15 +361,17 @@ export const Layout: React.FC = () => {
                     <UserCircle size={22} className="text-blue" />
                   </span>
                 )}
-                <button
-                  type="button"
-                  className="mobile-logout-shortcut"
-                  onClick={() => void handleLogout()}
-                  title="Logout"
-                  aria-label="Logout"
-                >
-                  <LogOut size={20} className="text-red" aria-hidden />
-                </button>
+                {user.role !== 'super_admin' && (
+                  <button
+                    type="button"
+                    className="mobile-logout-shortcut"
+                    onClick={() => void handleLogout()}
+                    title="Logout"
+                    aria-label="Logout"
+                  >
+                    <LogOut size={20} className="text-red" aria-hidden />
+                  </button>
+                )}
               </div>
             ) : profilePath ? (
               <button
@@ -375,16 +393,6 @@ export const Layout: React.FC = () => {
                     <UserCircle size={22} className="text-blue" />
                   </span>
                 )}
-              </button>
-            ) : user.role === 'super_admin' ? (
-              <button
-                type="button"
-                className="mobile-profile-shortcut"
-                onClick={() => void handleLogout()}
-                title="Logout"
-                aria-label="Logout"
-              >
-                <LogOut size={20} className="text-red" aria-hidden />
               </button>
             ) : null}
           </header>
@@ -421,15 +429,6 @@ export const Layout: React.FC = () => {
                   <span className="user-name">{user.username}</span>
                   <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
                 </div>
-                <button
-                  type="button"
-                  className="logout-btn"
-                  onClick={() => void handleLogout()}
-                  title="Logout"
-                >
-                  <LogOut size={16} aria-hidden />
-                  <span>Logout</span>
-                </button>
               </div>
             )}
           </header>

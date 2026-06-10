@@ -50,6 +50,8 @@ public sealed class AutomationSettings
     public string DocaHomeUrl { get; init; } = "https://doca.gov.in/user/dashboard";
     public string DocaCreateIcVerificationUrl { get; init; } = "https://doca.gov.in/user/create-ic-verification";
     public string DocaViewIcVerificationUrl { get; init; } = "https://doca.gov.in/user/view-ic-verification";
+    public string DocaGatcUploadCertificateUrl { get; init; } = "https://doca.gov.in/user/view-gn-uploadcertificate";
+    public DocaScrapeSettings DocaScrape { get; init; } = new();
     /// <summary>Optional override. Default: %LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser</summary>
     public string BrowserProfilePath { get; init; } = string.Empty;
     /// <summary>Use installed browser instead of Playwright Chromium. Leave empty for default.</summary>
@@ -127,4 +129,11 @@ public sealed class CredentialSettings
 {
     public string Aadhar { get; init; } = string.Empty;
     public string Password { get; init; } = string.Empty;
+}
+
+public sealed class DocaScrapeSettings
+{
+    public int PageSize { get; init; } = 100;
+    public int DelayBetweenRowsMs { get; init; } = 400;
+    public int DelayBetweenPagesMs { get; init; } = 1200;
 }

@@ -1,15 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
-  Bot,
+  CheckCircle2,
+  ChevronDown,
   Clock,
   ImageIcon,
+  Layers,
+  ListOrdered,
   Pause,
   Play,
   RefreshCw,
   Search,
-  Server,
+  ShieldCheck,
   Wrench,
+  XCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -49,10 +53,19 @@ type WorkerLogTab = 'activity' | 'captcha' | 'sessions';
 const RUNTIME_LABELS: Record<WorkerRuntimeState, string> = {
   idle: 'Idle',
   working: 'Processing jobs',
-  paused: 'Paused (remote)',
+  paused: 'Paused',
   login_required: 'DOCA login required',
   error: 'Error',
   offline: 'Offline',
+};
+
+const RUNTIME_HINTS: Record<WorkerRuntimeState, string> = {
+  idle: 'Worker is online and waiting for queue jobs.',
+  working: 'Actively processing certificate jobs on DOCA.',
+  paused: 'Remote pause is active — jobs will not run.',
+  login_required: 'DOCA session expired — worker needs a fresh login.',
+  error: 'Worker reported an error — check activity logs.',
+  offline: 'No heartbeat received — server may be down or unreachable.',
 };
 
 function formatTimestamp(value: string): string {
@@ -82,6 +95,17 @@ function formatCompactTimestamp(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatRelativeAge(value: string): string | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return null;
+  const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
 }
 
 function formatCaptchaOutcome(outcome: string): string {
@@ -116,8 +140,22 @@ function formatLogoutReason(reason: string): string {
   }
 }
 
-function runtimeClass(state: WorkerRuntimeState): string {
-  return `automation-worker-status-dot automation-worker-status-dot--${state}`;
+function captchaRateTone(rate: number | null): 'good' | 'warn' | 'bad' | 'neutral' {
+  if (rate == null) return 'neutral';
+  if (rate >= 70) return 'good';
+  if (rate >= 45) return 'warn';
+  return 'bad';
+}
+
+function logLevelIcon(level: string): React.ReactNode {
+  switch (level) {
+    case 'error':
+      return <XCircle size={14} aria-hidden />;
+    case 'success':
+      return <CheckCircle2 size={14} aria-hidden />;
+    default:
+      return <Activity size={14} aria-hidden />;
+  }
 }
 
 export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ className = '' }) => {
@@ -139,6 +177,10 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
   const [repairMessage, setRepairMessage] = useState('');
 
   const runtimeState = useMemo(() => resolveWorkerRuntimeState(status), [status]);
+  const heartbeatAge = useMemo(
+    () => formatRelativeAge(status?.lastHeartbeatAt || ''),
+    [status?.lastHeartbeatAt],
+  );
 
   const captchaStats = useMemo(() => {
     const withText = captchaAttempts.filter(item => item.resolvedText);
@@ -156,6 +198,8 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
   }, [captchaAttempts]);
 
   const avgSessionSeconds = useMemo(() => averageSessionSeconds(sessions), [sessions]);
+  const captchaTone = captchaRateTone(captchaStats.successRate);
+  const docaLoggedIn = status?.docaSessionState === 'logged_in';
 
   useEffect(() => {
     const onListenerError = (err: Error) => {
@@ -171,6 +215,12 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     ];
     return () => unsubscribers.forEach(unsub => unsub());
   }, []);
+
+  useEffect(() => {
+    if (!saved) return;
+    const timer = window.setTimeout(() => setSaved(false), 4000);
+    return () => window.clearTimeout(timer);
+  }, [saved]);
 
   const pushRemote = async (
     patch: Partial<AutomationWorkerRemoteControl>,
@@ -280,30 +330,325 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
   };
 
   return (
-    <div className={`panel glass mt-6 automation-worker-card${className ? ` ${className}` : ''}`}>
-      <div className="panel-header">
-        <h2><Bot className="inline-icon" /> Automation Worker</h2>
-        <p className="text-muted text-sm mb-0">
-          Remote control and telemetry for the DOCA certificate worker on Windows Server.
-        </p>
-      </div>
+    <div className={`automation-worker${className ? ` ${className}` : ''}`}>
+      {(error || listenerError || saved || repairMessage) && (
+        <div className="cw-alerts" role="status" aria-live="polite">
+          {error && (
+            <div className="cw-alert cw-alert--error">
+              <XCircle size={16} aria-hidden />
+              <span>{error}</span>
+            </div>
+          )}
+          {listenerError && (
+            <div className="cw-alert cw-alert--error">
+              <XCircle size={16} aria-hidden />
+              <span>
+                Live updates error: {listenerError}. If this mentions an index, open the Firebase console link from the browser devtools network tab.
+              </span>
+            </div>
+          )}
+          {saved && (
+            <div className="cw-alert cw-alert--success">
+              <CheckCircle2 size={16} aria-hidden />
+              <span>Worker settings sent. The desktop app applies them on its next sync.</span>
+            </div>
+          )}
+          {repairMessage && (
+            <div className="cw-alert cw-alert--success">
+              <CheckCircle2 size={16} aria-hidden />
+              <span>{repairMessage}</span>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div className="panel-body">
-        {error && <p className="form-error mb-3">{error}</p>}
-        {listenerError && (
-          <p className="form-error mb-3">
-            Live updates error: {listenerError}. If this mentions an index, open the Firebase console link from the browser devtools network tab.
-          </p>
+      <section className={`cw-hero cw-hero--${runtimeState}`} aria-label="Worker status">
+        <div className="cw-hero-main">
+          <div className="cw-hero-status">
+            <span className={`cw-status-dot cw-status-dot--${runtimeState}`} aria-hidden />
+            <div>
+              <p className="cw-hero-label">Worker status</p>
+              <h2 className="cw-hero-title">{RUNTIME_LABELS[runtimeState]}</h2>
+              <p className="cw-hero-message">
+                {status?.statusMessage || RUNTIME_HINTS[runtimeState]}
+              </p>
+            </div>
+          </div>
+
+          <div className="cw-hero-chips">
+            <span className="cw-chip">
+              <span className="cw-chip-label">Machine</span>
+              <strong>{status?.machineName || '—'}</strong>
+            </span>
+            <span className={`cw-chip cw-chip--${docaLoggedIn ? 'ok' : 'warn'}`}>
+              <ShieldCheck size={14} aria-hidden />
+              <span className="cw-chip-label">DOCA</span>
+              <strong>{docaLoggedIn ? 'Logged in' : 'Login required'}</strong>
+            </span>
+            <span className="cw-chip">
+              <Clock size={14} aria-hidden />
+              <span className="cw-chip-label">Heartbeat</span>
+              <strong>{heartbeatAge || formatTimestamp(status?.lastHeartbeatAt || '')}</strong>
+            </span>
+          </div>
+        </div>
+
+        <div className="cw-controls" aria-label="Worker controls">
+          <button
+            type="button"
+            className={`cw-control-btn${remote?.pauseWorker ? ' cw-control-btn--primary' : ''}`}
+            disabled={!remoteReady || saving}
+            onClick={() => void handleTogglePause()}
+          >
+            {remote?.pauseWorker ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}
+            {remote?.pauseWorker ? 'Resume worker' : 'Pause worker'}
+          </button>
+          <button
+            type="button"
+            className={`cw-control-btn${remote?.autoWorkerEnabled === false ? ' cw-control-btn--primary' : ''}`}
+            disabled={!remoteReady || saving}
+            onClick={() => void handleToggleAutoWorker()}
+          >
+            <RefreshCw size={16} aria-hidden />
+            {remote?.autoWorkerEnabled === false ? 'Enable auto worker' : 'Disable auto worker'}
+          </button>
+          <label className="cw-switch">
+            <input
+              type="checkbox"
+              checked={remote?.docaFillOnly ?? false}
+              disabled={!remoteReady || saving}
+              onChange={() => void handleToggleFillOnly()}
+            />
+            <span className="cw-switch-track" aria-hidden />
+            <span className="cw-switch-copy">
+              <strong>Fill only</strong>
+              <span>Fill DOCA forms without submitting</span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section className="cw-metrics" aria-label="Worker metrics">
+        <article className="cw-metric cw-metric--highlight">
+          <ListOrdered size={18} aria-hidden />
+          <div>
+            <p className="cw-metric-label">Eligible now</p>
+            <p className="cw-metric-value">{status?.queueEligible ?? '—'}</p>
+            <p className="cw-metric-sub">{status?.queueTotal ?? '—'} pending total</p>
+          </div>
+        </article>
+        <article className="cw-metric">
+          <Layers size={18} aria-hidden />
+          <div>
+            <p className="cw-metric-label">Queue breakdown</p>
+            <p className="cw-metric-value cw-metric-value--inline">
+              <span>{status?.queueSubmitted ?? '—'} submitted</span>
+              <span className="cw-metric-sep">·</span>
+              <span>{status?.queueApproved ?? '—'} approved</span>
+            </p>
+            <p className="cw-metric-sub">Firestore pipeline stages</p>
+          </div>
+        </article>
+        <article className="cw-metric">
+          <CheckCircle2 size={18} aria-hidden />
+          <div>
+            <p className="cw-metric-label">Session jobs</p>
+            <p className="cw-metric-value cw-metric-value--inline">
+              <span className="cw-metric-good">{status?.jobsCompletedSession ?? '—'} done</span>
+              <span className="cw-metric-sep">·</span>
+              <span className={Number(status?.jobsFailedSession) > 0 ? 'cw-metric-bad' : ''}>
+                {status?.jobsFailedSession ?? '—'} failed
+              </span>
+            </p>
+            <p className="cw-metric-sub">Since worker started</p>
+          </div>
+        </article>
+        <article className="cw-metric">
+          <Clock size={18} aria-hidden />
+          <div>
+            <p className="cw-metric-label">DOCA session</p>
+            <p className="cw-metric-value">
+              {status?.docaSessionAgeSeconds ? formatDuration(status.docaSessionAgeSeconds) : '—'}
+            </p>
+            <p className="cw-metric-sub">
+              Probe: {formatSessionProbeResult(status?.lastSessionProbeResult || '')}
+            </p>
+          </div>
+        </article>
+        <article className={`cw-metric cw-metric--${captchaTone}`}>
+          <ImageIcon size={18} aria-hidden />
+          <div>
+            <p className="cw-metric-label">Captcha OCR</p>
+            <p className="cw-metric-value">
+              {captchaStats.successRate != null ? `${captchaStats.successRate}%` : '—'}
+            </p>
+            <p className="cw-metric-sub">
+              {captchaStats.success}/{captchaStats.total} attempts succeeded
+            </p>
+          </div>
+        </article>
+        <article className="cw-metric">
+          <Activity size={18} aria-hidden />
+          <div>
+            <p className="cw-metric-label">Session history</p>
+            <p className="cw-metric-value">
+              {avgSessionSeconds != null ? formatDuration(avgSessionSeconds) : '—'}
+            </p>
+            <p className="cw-metric-sub">{sessions.length} logout events logged</p>
+          </div>
+        </article>
+      </section>
+
+      <section className="cw-logs" aria-label="Worker telemetry">
+        <div className="cw-log-tabs" role="tablist" aria-label="Worker logs">
+          {([
+            ['activity', 'Activity', logs.length] as const,
+            ['captcha', 'Captcha OCR', captchaAttempts.length] as const,
+            ['sessions', 'DOCA sessions', sessions.length] as const,
+          ]).map(([id, label, count]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={activeLogTab === id}
+              className={activeLogTab === id ? 'cw-log-tab cw-log-tab--active' : 'cw-log-tab'}
+              onClick={() => setActiveLogTab(id)}
+            >
+              {label}
+              <span className="cw-log-tab-count">{count}</span>
+            </button>
+          ))}
+        </div>
+
+        {activeLogTab === 'activity' && (
+          <div role="tabpanel" className="cw-log-panel cw-log-panel--terminal">
+            {logs.length === 0 ? (
+              <p className="cw-log-empty">No activity logs yet. Logs appear when the worker reports status changes.</p>
+            ) : (
+              <ul className="cw-log-list">
+                {logs.map(entry => (
+                  <li key={entry.id} className={`cw-log-item cw-log-item--${entry.level}`}>
+                    <span className="cw-log-level">{logLevelIcon(entry.level)}</span>
+                    <time dateTime={entry.createdAt}>{formatCompactTimestamp(entry.createdAt)}</time>
+                    <span className="cw-log-message">{entry.message}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
-        {saved && <p className="text-success text-sm mb-3">Worker settings sent. The desktop app applies them on its next sync.</p>}
-        {repairMessage && <p className="text-success text-sm mb-3">{repairMessage}</p>}
 
-        <section className="automation-worker-recovery mb-6">
-          <h3 className="automation-worker-section-title"><Wrench className="inline-icon" /> Pipeline recovery</h3>
-          <p className="text-muted text-sm">
-            Look up a serial when DOCA and Firebase are out of sync or the worker queue shows 0 jobs.
-          </p>
-          <div className="automation-worker-control-row mb-3">
+        {activeLogTab === 'captcha' && (
+          <div role="tabpanel" className="cw-log-panel cw-log-panel--captcha">
+            {captchaAttempts.length === 0 ? (
+              <p className="cw-log-empty">No captcha OCR attempts recorded yet.</p>
+            ) : (
+              <div className="automation-worker-captcha-scroll">
+                <table className="automation-worker-captcha-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Captcha</th>
+                      <th scope="col">Time</th>
+                      <th scope="col">Resolved</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Outcome</th>
+                      <th scope="col">Provider</th>
+                      <th scope="col">Try</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {captchaAttempts.map(attempt => (
+                      <tr
+                        key={attempt.id}
+                        className={attempt.success ? '' : 'automation-worker-captcha-row--failed'}
+                        title={formatTimestamp(attempt.createdAt)}
+                      >
+                        <td className="automation-worker-captcha-cell-image">
+                          {attempt.imageUrl ? (
+                            <a
+                              href={attempt.imageUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="automation-worker-captcha-thumb-link"
+                            >
+                              <img
+                                src={attempt.imageUrl}
+                                alt={`Captcha resolved as ${attempt.resolvedText || 'unknown'}`}
+                                loading="lazy"
+                              />
+                            </a>
+                          ) : (
+                            <span className="automation-worker-captcha-thumb-placeholder" aria-hidden>
+                              <ImageIcon />
+                            </span>
+                          )}
+                        </td>
+                        <td className="automation-worker-captcha-cell-time text-mono">
+                          {formatCompactTimestamp(attempt.createdAt)}
+                        </td>
+                        <td className="automation-worker-captcha-cell-text text-mono">
+                          {attempt.resolvedText || '(empty)'}
+                        </td>
+                        <td>
+                          <span
+                            className={`automation-worker-captcha-status automation-worker-captcha-status--${attempt.success ? 'ok' : 'fail'}`}
+                          >
+                            {attempt.success ? 'OK' : 'Fail'}
+                          </span>
+                        </td>
+                        <td className="automation-worker-captcha-cell-outcome">
+                          {formatCaptchaOutcome(attempt.outcome)}
+                        </td>
+                        <td className="automation-worker-captcha-cell-provider">
+                          {attempt.ocrProvider || '—'}
+                        </td>
+                        <td className="automation-worker-captcha-cell-try text-mono">
+                          {attempt.attemptNumber || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeLogTab === 'sessions' && (
+          <div role="tabpanel" className="cw-log-panel">
+            {sessions.length === 0 ? (
+              <p className="cw-log-empty">No DOCA session logout events yet. Sessions are recorded when the worker detects a logout.</p>
+            ) : (
+              <ul className="cw-session-list">
+                {sessions.map(session => (
+                  <li key={session.id} className="cw-session-item">
+                    <div className="cw-session-duration">
+                      <strong>{formatDuration(session.durationSeconds)}</strong>
+                      <span>logged in → logged out</span>
+                    </div>
+                    <div className="cw-session-meta">
+                      {formatTimestamp(session.loggedInAt)} → {formatTimestamp(session.loggedOutAt)}
+                      {session.logoutReason ? ` · ${formatLogoutReason(session.logoutReason)}` : ''}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </section>
+
+      <details className="cw-recovery">
+        <summary className="cw-recovery-summary">
+          <Wrench size={16} aria-hidden />
+          <span>
+            <strong>Pipeline recovery</strong>
+            <span className="cw-recovery-hint">Fix serials when DOCA and Firestore are out of sync</span>
+          </span>
+          <ChevronDown size={16} className="cw-recovery-chevron" aria-hidden />
+        </summary>
+        <div className="cw-recovery-body">
+          <div className="cw-recovery-search">
             <input
               id="worker-repair-serial"
               className="input-field text-mono"
@@ -311,289 +656,87 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
               value={repairSerial}
               onChange={e => setRepairSerial(e.target.value)}
               disabled={repairLoading}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && repairSerial.trim() && remoteReady && !repairLoading) {
+                  void handleLookupSerial();
+                }
+              }}
             />
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-primary"
               disabled={!remoteReady || repairLoading || !repairSerial.trim()}
               onClick={() => void handleLookupSerial()}
             >
-              <Search className="inline-icon" />
+              <Search size={16} aria-hidden />
               {repairLoading ? 'Looking up…' : 'Look up'}
             </button>
           </div>
+
           {repairDiagnoses.length > 0 && (
-            <ul className="automation-worker-recovery-list">
+            <ul className="cw-recovery-list">
               {repairDiagnoses.map((diagnosis, index) => (
-                <li key={diagnosis.recordId} className="automation-worker-recovery-item">
-                  <div>
+                <li key={diagnosis.recordId} className="cw-recovery-item">
+                  <div className="cw-recovery-item-head">
                     <strong>{diagnosis.serialNumber}</strong>
-                    <span className="text-muted text-sm"> · {repairRecords[index]?.applicationNumber || '—'}</span>
+                    <span>{repairRecords[index]?.applicationNumber || '—'}</span>
                   </div>
-                  <dl className="automation-worker-kv mt-2">
+                  <dl className="cw-recovery-kv">
                     <div><dt>Firebase status</dt><dd>{diagnosis.status}</dd></div>
                     <div><dt>Expected DOCA phase</dt><dd>{diagnosis.docaExpectedPhase.replace('_', ' ')}</dd></div>
                     <div><dt>Worker queue</dt><dd>{diagnosis.queueEligible ? 'Eligible' : 'Not listed'}</dd></div>
-                    <div><dt>Document ID</dt><dd className="text-mono text-sm">{diagnosis.recordId}</dd></div>
+                    <div><dt>Document ID</dt><dd className="text-mono">{diagnosis.recordId}</dd></div>
                   </dl>
                   {diagnosis.notes.length > 0 && (
-                    <ul className="text-muted text-sm mb-2">
+                    <ul className="cw-recovery-notes">
                       {diagnosis.notes.map(note => (
                         <li key={note}>{note}</li>
                       ))}
                     </ul>
                   )}
-                  {diagnosis.repairAction === 'fix_certified' && (
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      disabled={repairLoading}
-                      onClick={() => void handleRepairCertified(diagnosis.recordId)}
-                    >
-                      Fix certified fields
-                    </button>
-                  )}
-                  {diagnosis.repairAction === 'set_approved' && (
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      disabled={repairLoading}
-                      onClick={() => void handleRepairForPhase2(diagnosis.recordId)}
-                    >
-                      Mark approved → sync / Phase 2
-                    </button>
-                  )}
-                  {diagnosis.repairAction === 'set_submitted' && (
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      disabled={repairLoading}
-                      onClick={() => void handleRepairSubmitted(diagnosis.recordId)}
-                    >
-                      Restore submitted → re-queue worker
-                    </button>
-                  )}
+                  <div className="cw-recovery-actions">
+                    {diagnosis.repairAction === 'fix_certified' && (
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={repairLoading}
+                        onClick={() => void handleRepairCertified(diagnosis.recordId)}
+                      >
+                        Fix certified fields
+                      </button>
+                    )}
+                    {diagnosis.repairAction === 'set_approved' && (
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={repairLoading}
+                        onClick={() => void handleRepairForPhase2(diagnosis.recordId)}
+                      >
+                        Mark approved → sync / Phase 2
+                      </button>
+                    )}
+                    {diagnosis.repairAction === 'set_submitted' && (
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={repairLoading}
+                        onClick={() => void handleRepairSubmitted(diagnosis.recordId)}
+                      >
+                        Restore submitted → re-queue worker
+                      </button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </div>
+      </details>
 
-        <section className="automation-worker-status-grid mb-6">
-          <div className="automation-worker-status-card">
-            <div className="automation-worker-status-head">
-              <span className={runtimeClass(runtimeState)} aria-hidden />
-              <div>
-                <strong>{RUNTIME_LABELS[runtimeState]}</strong>
-                <p className="text-muted text-sm mb-0">{status?.statusMessage || 'Waiting for worker heartbeat…'}</p>
-              </div>
-            </div>
-            <dl className="automation-worker-kv">
-              <div><dt>Machine</dt><dd>{status?.machineName || '—'}</dd></div>
-              <div><dt>Last heartbeat</dt><dd>{formatTimestamp(status?.lastHeartbeatAt || '')}</dd></div>
-              <div><dt>DOCA session</dt><dd>{status?.docaSessionState === 'logged_in' ? 'Logged in' : 'Login required'}</dd></div>
-              <div><dt>Worker started</dt><dd>{formatTimestamp(status?.startedAt || '')}</dd></div>
-            </dl>
-          </div>
-
-          <div className="automation-worker-status-card">
-            <h3 className="automation-worker-section-title"><Server className="inline-icon" /> Queue</h3>
-            <dl className="automation-worker-stat-grid">
-              <div><dt>Pending total</dt><dd>{status?.queueTotal ?? '—'}</dd></div>
-              <div><dt>Eligible now</dt><dd>{status?.queueEligible ?? '—'}</dd></div>
-              <div><dt>Submitted</dt><dd>{status?.queueSubmitted ?? '—'}</dd></div>
-              <div><dt>Approved</dt><dd>{status?.queueApproved ?? '—'}</dd></div>
-              <div><dt>Done (session)</dt><dd>{status?.jobsCompletedSession ?? '—'}</dd></div>
-              <div><dt>Failed (session)</dt><dd>{status?.jobsFailedSession ?? '—'}</dd></div>
-            </dl>
-          </div>
-
-          <div className="automation-worker-status-card">
-            <h3 className="automation-worker-section-title"><Clock className="inline-icon" /> Session insights</h3>
-            <dl className="automation-worker-stat-grid">
-              <div><dt>Current session age</dt><dd>{status?.docaSessionAgeSeconds ? formatDuration(status.docaSessionAgeSeconds) : '—'}</dd></div>
-              <div><dt>Last session probe</dt><dd>{formatTimestamp(status?.lastSessionProbeAt || '')}</dd></div>
-              <div><dt>Probe result</dt><dd>{formatSessionProbeResult(status?.lastSessionProbeResult || '')}</dd></div>
-              <div><dt>Avg DOCA session</dt><dd>{avgSessionSeconds != null ? formatDuration(avgSessionSeconds) : '—'}</dd></div>
-              <div><dt>Sessions logged</dt><dd>{sessions.length}</dd></div>
-              <div><dt>Captcha success rate</dt><dd>{captchaStats.successRate != null ? `${captchaStats.successRate}%` : '—'}</dd></div>
-            </dl>
-          </div>
-        </section>
-
-        <section className="automation-worker-controls mb-6">
-          <h3 className="automation-worker-section-title"><Activity className="inline-icon" /> Controls</h3>
-          <div className="automation-worker-control-row">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!remoteReady || saving}
-              onClick={() => void handleTogglePause()}
-            >
-              {remote?.pauseWorker ? <Play className="inline-icon" /> : <Pause className="inline-icon" />}
-              {remote?.pauseWorker ? 'Resume worker' : 'Pause worker'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!remoteReady || saving}
-              onClick={() => void handleToggleAutoWorker()}
-            >
-              <RefreshCw className="inline-icon" />
-              {remote?.autoWorkerEnabled === false ? 'Enable auto worker' : 'Disable auto worker'}
-            </button>
-            <label className="automation-worker-toggle">
-              <input
-                type="checkbox"
-                checked={remote?.docaFillOnly ?? false}
-                disabled={!remoteReady || saving}
-                onChange={() => void handleToggleFillOnly()}
-              />
-              <span>
-                <strong>Fill only</strong>
-                <span className="text-muted text-sm">Fill DOCA forms without submitting — no RDP needed to toggle.</span>
-              </span>
-            </label>
-          </div>
-        </section>
-
-        <section className="automation-worker-logs">
-          <div className="automation-worker-log-tabs" role="tablist" aria-label="Worker logs">
-            {([
-              ['activity', 'Activity'],
-              ['captcha', 'Captcha OCR'],
-              ['sessions', 'DOCA sessions'],
-            ] as const).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={activeLogTab === id}
-                className={activeLogTab === id ? 'automation-worker-log-tab automation-worker-log-tab--active' : 'automation-worker-log-tab'}
-                onClick={() => setActiveLogTab(id)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {activeLogTab === 'activity' && (
-            <div role="tabpanel" className="automation-worker-log-panel">
-              {logs.length === 0 ? (
-                <p className="text-muted text-sm">No activity logs yet. Logs appear when the worker reports status changes.</p>
-              ) : (
-                <ul className="automation-worker-log-list">
-                  {logs.map(entry => (
-                    <li key={entry.id} className={`automation-worker-log-item automation-worker-log-item--${entry.level}`}>
-                      <time>{formatTimestamp(entry.createdAt)}</time>
-                      <span>{entry.message}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {activeLogTab === 'captcha' && (
-            <div role="tabpanel" className="automation-worker-log-panel automation-worker-log-panel--captcha">
-              {captchaAttempts.length === 0 ? (
-                <p className="text-muted text-sm">No captcha OCR attempts recorded yet.</p>
-              ) : (
-                <div className="automation-worker-captcha-scroll">
-                  <table className="automation-worker-captcha-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Captcha</th>
-                        <th scope="col">Time</th>
-                        <th scope="col">Resolved</th>
-                        <th scope="col">Status</th>
-                        <th scope="col">Outcome</th>
-                        <th scope="col">Provider</th>
-                        <th scope="col">Try</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {captchaAttempts.map(attempt => (
-                        <tr
-                          key={attempt.id}
-                          className={attempt.success ? '' : 'automation-worker-captcha-row--failed'}
-                          title={formatTimestamp(attempt.createdAt)}
-                        >
-                          <td className="automation-worker-captcha-cell-image">
-                            {attempt.imageUrl ? (
-                              <a
-                                href={attempt.imageUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="automation-worker-captcha-thumb-link"
-                              >
-                                <img
-                                  src={attempt.imageUrl}
-                                  alt={`Captcha resolved as ${attempt.resolvedText || 'unknown'}`}
-                                  loading="lazy"
-                                />
-                              </a>
-                            ) : (
-                              <span className="automation-worker-captcha-thumb-placeholder" aria-hidden>
-                                <ImageIcon />
-                              </span>
-                            )}
-                          </td>
-                          <td className="automation-worker-captcha-cell-time text-mono">
-                            {formatCompactTimestamp(attempt.createdAt)}
-                          </td>
-                          <td className="automation-worker-captcha-cell-text text-mono">
-                            {attempt.resolvedText || '(empty)'}
-                          </td>
-                          <td>
-                            <span
-                              className={`automation-worker-captcha-status automation-worker-captcha-status--${attempt.success ? 'ok' : 'fail'}`}
-                            >
-                              {attempt.success ? 'OK' : 'Fail'}
-                            </span>
-                          </td>
-                          <td className="automation-worker-captcha-cell-outcome">
-                            {formatCaptchaOutcome(attempt.outcome)}
-                          </td>
-                          <td className="automation-worker-captcha-cell-provider">
-                            {attempt.ocrProvider || '—'}
-                          </td>
-                          <td className="automation-worker-captcha-cell-try text-mono">
-                            {attempt.attemptNumber || '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeLogTab === 'sessions' && (
-            <div role="tabpanel" className="automation-worker-log-panel">
-              {sessions.length === 0 ? (
-                <p className="text-muted text-sm">No DOCA session logout events yet. Sessions are recorded when the worker detects a logout.</p>
-              ) : (
-                <ul className="automation-worker-session-list">
-                  {sessions.map(session => (
-                    <li key={session.id} className="automation-worker-session-item">
-                      <div>
-                        <strong>{formatDuration(session.durationSeconds)}</strong>
-                        <span className="text-muted text-sm"> logged in → logged out</span>
-                      </div>
-                      <div className="text-muted text-sm">
-                        {formatTimestamp(session.loggedInAt)} → {formatTimestamp(session.loggedOutAt)}
-                        {session.logoutReason ? ` · ${formatLogoutReason(session.logoutReason)}` : ''}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </section>
-      </div>
+      <footer className="cw-meta-footer">
+        <span>Started {formatTimestamp(status?.startedAt || '')}</span>
+        <span>Last probe {formatTimestamp(status?.lastSessionProbeAt || '')}</span>
+      </footer>
     </div>
   );
 };

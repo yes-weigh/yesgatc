@@ -411,6 +411,10 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    match /docaCertificates/{certId} {
+      allow read, write: if isSuperAdmin();
+    }
+
     function canReadRcWallet(rcId) {
       return isSuperAdmin()
         || (isRCAdmin() && request.auth.uid == rcId)

@@ -63,5 +63,10 @@ service firebase.storage {
     match /automationWorker/captcha/{fileName} {
       allow read, write: if isSuperAdmin();
     }
+
+    match /docaCertificates/{certFolder}/{fileName} {
+      allow read: if isSuperAdmin();
+      allow write: if isSuperAdmin();
+    }
   }
 }

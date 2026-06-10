@@ -8,6 +8,7 @@ public sealed class WorkerTelemetryService
     private const string StatusCollection = "automationWorker";
     private const string StatusDocId = "status";
     private const string RemoteDocId = "remote";
+    private const string ScrapeDocId = "scrape";
     private const string LogsCollection = "automationWorkerLogs";
     private const string CaptchaCollection = "automationWorkerCaptchaAttempts";
     private const string SessionsCollection = "automationWorkerSessions";
@@ -19,6 +20,7 @@ public sealed class WorkerTelemetryService
 
     private int _lastAppliedCommandRevision;
     private int _lastAppliedCredentialsRevision;
+    private int _lastAppliedScrapeCommandRevision;
     private DateTimeOffset? _docaLoggedInAt;
     private DateTimeOffset? _lastSessionProbeAt;
     private string _lastSessionProbeResult = string.Empty;
@@ -268,11 +270,88 @@ public sealed class WorkerTelemetryService
                 DocaEmail = FirestoreDocumentClient.ReadString(fields, "docaEmail"),
                 DocaPassword = FirestoreDocumentClient.ReadString(fields, "docaPassword"),
                 CaptchaApiKey = FirestoreDocumentClient.ReadString(fields, "captchaApiKey"),
+                ScrapeCommandRevision = FirestoreDocumentClient.ReadInt(fields, "scrapeCommandRevision"),
+                ScrapePause = FirestoreDocumentClient.ReadBool(fields, "scrapePause"),
             };
         }
         catch
         {
             return null;
+        }
+    }
+
+    public bool ShouldApplyScrapeCommand(WorkerRemoteControlState remote) =>
+        remote.ScrapeCommandRevision > _lastAppliedScrapeCommandRevision;
+
+    public void MarkScrapeCommandApplied(int revision) => _lastAppliedScrapeCommandRevision = revision;
+
+    public async Task PublishScrapeStateAsync(
+        DocaScrapeProgressState state,
+        Func<Task<string>> resolveIdToken,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var idToken = await resolveIdToken();
+            var fields = new Dictionary<string, object?>
+            {
+                ["status"] = state.Status,
+                ["statusMessage"] = state.StatusMessage.Length > 500 ? state.StatusMessage[..500] : state.StatusMessage,
+                ["currentPage"] = state.CurrentPage,
+                ["totalPages"] = state.TotalPages,
+                ["totalEntries"] = state.TotalEntries,
+                ["processedRows"] = state.ProcessedRows,
+                ["uploadedRows"] = state.UploadedRows,
+                ["skippedRows"] = state.SkippedRows,
+                ["failedRows"] = state.FailedRows,
+                ["checkpointPage"] = state.CheckpointPage,
+                ["startedAt"] = state.StartedAt,
+                ["lastProgressAt"] = state.LastProgressAt,
+                ["lastError"] = state.LastError,
+                ["machineName"] = Environment.MachineName,
+            };
+
+            var existing = await _documents.TryGetFieldsAsync(StatusCollection, ScrapeDocId, idToken, cancellationToken);
+            if (existing.Count == 0)
+            {
+                await _documents.CreateDocumentWithIdAsync(StatusCollection, ScrapeDocId, fields, idToken, cancellationToken);
+            }
+            else
+            {
+                await _documents.PatchFieldsAsync(StatusCollection, ScrapeDocId, fields, idToken, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            LogDiagnostic?.Invoke($"DOCA scrape state publish failed: {ex.Message}");
+        }
+    }
+
+    public async Task ReportScrapeActivityAsync(
+        string message,
+        string level,
+        Func<Task<string>> resolveIdToken,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var idToken = await resolveIdToken();
+            await _documents.CreateDocumentAsync(
+                LogsCollection,
+                new Dictionary<string, object?>
+                {
+                    ["createdAt"] = DateTimeOffset.UtcNow.ToString("O"),
+                    ["message"] = message.Length > 500 ? message[..500] : message,
+                    ["level"] = level,
+                    ["category"] = "doca-scrape",
+                    ["machineName"] = Environment.MachineName,
+                },
+                idToken,
+                cancellationToken);
+        }
+        catch
+        {
+            // Non-fatal.
         }
     }
 

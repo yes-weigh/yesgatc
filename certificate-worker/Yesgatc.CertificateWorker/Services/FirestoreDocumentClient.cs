@@ -116,6 +116,31 @@ internal sealed class FirestoreDocumentClient
         }
     }
 
+    public async Task CreateDocumentWithIdAsync(
+        string collection,
+        string documentId,
+        IReadOnlyDictionary<string, object?> fields,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        var url =
+            $"https://firestore.googleapis.com/v1/projects/{_settings.ProjectId}/databases/(default)/documents/{collection}?documentId={Uri.EscapeDataString(documentId)}";
+
+        var payloadFields = fields.ToDictionary(pair => pair.Key, pair => ToFirestoreValue(pair.Value));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
+        request.Content = JsonContent.Create(new { fields = payloadFields });
+
+        using var response = await _http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Could not create {collection}/{documentId} in Firestore ({(int)response.StatusCode}): {body}");
+        }
+    }
+
     public async Task<Dictionary<string, JsonElement>> TryGetFieldsAsync(
         string collection,
         string documentId,

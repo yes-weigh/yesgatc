@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Plug } from 'lucide-react';
 import { AutomationWorkerCard } from '../../components/AutomationWorkerCard';
 import { AdminRazorpayTestCard } from '../../components/AdminRazorpayTestCard';
+import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { RazorpaySettingsCard } from '../../components/RazorpaySettingsCard';
 import { ZohoSettingsCard } from '../../components/ZohoSettingsCard';
 
@@ -44,10 +46,10 @@ const INTEGRATIONS_TABS: {
   },
   {
     id: 'worker',
-    label: 'Automation Worker',
-    subtitle: 'Remote worker control & logs',
-    logoSrc: '/integrations/doca.svg',
-    brandClass: 'admin-integrations-tab--doca',
+    label: 'Certificate Worker',
+    subtitle: 'Remote DOCA server — status, queue & logs',
+    logoSrc: '/integrations/certificate-worker.png',
+    brandClass: 'admin-integrations-tab--worker',
   },
   {
     id: 'openai',
@@ -58,11 +60,41 @@ const INTEGRATIONS_TABS: {
   },
 ];
 
-export const AdminSettings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<IntegrationsTab>('zoho');
+function isIntegrationsTab(value: string | undefined): value is IntegrationsTab {
+  return INTEGRATIONS_TABS.some(tab => tab.id === value);
+}
+
+function renderIntegrationContent(tabId: IntegrationsTab): React.ReactNode {
+  switch (tabId) {
+    case 'zoho':
+      return <ZohoSettingsCard className="admin-integrations-section" />;
+    case 'razorpay':
+      return (
+        <>
+          <RazorpaySettingsCard className="admin-integrations-section" />
+          <AdminRazorpayTestCard className="admin-integrations-section" />
+        </>
+      );
+    case 'worker':
+      return <AutomationWorkerCard className="admin-integrations-section" />;
+    case 'whatsapp':
+    case 'doca':
+    case 'openai':
+      return (
+        <p className="text-muted text-sm m-0">
+          Settings for this integration are not configured in the web app yet.
+        </p>
+      );
+    default:
+      return null;
+  }
+}
+
+const AdminIntegrationsHub: React.FC = () => {
+  const navigate = useNavigate();
 
   return (
-    <div className="fade-in page-content admin-integrations-page">
+    <>
       <header className="admin-integrations-header">
         <h1 className="admin-integrations-title">
           <Plug className="inline-icon" aria-hidden />
@@ -73,98 +105,83 @@ export const AdminSettings: React.FC = () => {
         </p>
       </header>
 
-      <div className="admin-integrations-tabs" role="tablist" aria-label="Integrations">
-        {INTEGRATIONS_TABS.map(tab => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              id={`integrations-tab-${tab.id}`}
-              aria-selected={isActive}
-              aria-controls={`integrations-panel-${tab.id}`}
-              className={[
-                'admin-integrations-tab',
-                tab.brandClass,
-                isActive ? 'admin-integrations-tab--active' : '',
-              ].filter(Boolean).join(' ')}
-              aria-label={tab.label}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <span className="admin-integrations-tab-logo-wrap" aria-hidden>
-                <img
-                  src={tab.logoSrc}
-                  alt=""
-                  className="admin-integrations-tab-logo"
-                  draggable={false}
-                />
-              </span>
-              <span className="admin-integrations-tab-hint">{tab.subtitle}</span>
-            </button>
-          );
-        })}
+      <div className="admin-integrations-tabs" role="list" aria-label="Integrations">
+        {INTEGRATIONS_TABS.map(tab => (
+          <button
+            key={tab.id}
+            type="button"
+            role="listitem"
+            className={['admin-integrations-tab', tab.brandClass].filter(Boolean).join(' ')}
+            aria-label={tab.label}
+            onClick={() => navigate(`/admin/integrations/${tab.id}`)}
+          >
+            <span className="admin-integrations-tab-logo-wrap" aria-hidden>
+              <img
+                src={tab.logoSrc}
+                alt=""
+                className="admin-integrations-tab-logo"
+                draggable={false}
+              />
+            </span>
+            <span className="admin-integrations-tab-label">{tab.label}</span>
+            <span className="admin-integrations-tab-hint">{tab.subtitle}</span>
+          </button>
+        ))}
       </div>
+    </>
+  );
+};
 
-      {activeTab === 'zoho' && (
-        <div
-          id="integrations-panel-zoho"
-          role="tabpanel"
-          aria-labelledby="integrations-tab-zoho"
-          className="admin-integrations-panel"
-        >
-          <ZohoSettingsCard className="admin-integrations-section" />
+const AdminIntegrationDetail: React.FC<{ tabId: IntegrationsTab }> = ({ tabId }) => {
+  const navigate = useNavigate();
+  const tab = INTEGRATIONS_TABS.find(item => item.id === tabId);
+
+  if (!tab) {
+    return null;
+  }
+
+  return (
+    <>
+      <ListViewBackBar
+        onBack={() => navigate('/admin/integrations')}
+        label="Back to integrations"
+      />
+
+      <header className="admin-integrations-detail-header">
+        <span className={`admin-integrations-detail-logo-wrap ${tab.brandClass}`} aria-hidden>
+          <img src={tab.logoSrc} alt="" className="admin-integrations-tab-logo" draggable={false} />
+        </span>
+        <div className="admin-integrations-detail-copy">
+          <h1 className="admin-integrations-detail-title">{tab.label}</h1>
+          <p className="admin-integrations-detail-subtitle text-muted text-sm mb-0">{tab.subtitle}</p>
         </div>
-      )}
+      </header>
 
-      {activeTab === 'razorpay' && (
-        <div
-          id="integrations-panel-razorpay"
-          role="tabpanel"
-          aria-labelledby="integrations-tab-razorpay"
-          className="admin-integrations-panel"
-        >
-          <RazorpaySettingsCard className="admin-integrations-section" />
-          <AdminRazorpayTestCard className="admin-integrations-section" />
-        </div>
-      )}
+      <div className="admin-integrations-panel">{renderIntegrationContent(tabId)}</div>
+    </>
+  );
+};
 
-      {activeTab === 'whatsapp' && (
-        <div
-          id="integrations-panel-whatsapp"
-          role="tabpanel"
-          aria-labelledby="integrations-tab-whatsapp"
-          className="admin-integrations-panel"
-        />
-      )}
+export const AdminSettings: React.FC = () => {
+  const { integrationId } = useParams<{ integrationId?: string }>();
+  const navigate = useNavigate();
 
-      {activeTab === 'doca' && (
-        <div
-          id="integrations-panel-doca"
-          role="tabpanel"
-          aria-labelledby="integrations-tab-doca"
-          className="admin-integrations-panel"
-        />
-      )}
+  useEffect(() => {
+    if (integrationId && !isIntegrationsTab(integrationId)) {
+      navigate('/admin/integrations', { replace: true });
+    }
+  }, [integrationId, navigate]);
 
-      {activeTab === 'worker' && (
-        <div
-          id="integrations-panel-worker"
-          role="tabpanel"
-          aria-labelledby="integrations-tab-worker"
-          className="admin-integrations-panel"
-        >
-          <AutomationWorkerCard className="admin-integrations-section" />
-        </div>
-      )}
+  if (integrationId && !isIntegrationsTab(integrationId)) {
+    return null;
+  }
 
-      {activeTab === 'openai' && (
-        <div
-          id="integrations-panel-openai"
-          role="tabpanel"
-          aria-labelledby="integrations-tab-openai"
-          className="admin-integrations-panel"
-        />
+  return (
+    <div className="fade-in page-content admin-integrations-page">
+      {integrationId ? (
+        <AdminIntegrationDetail tabId={integrationId} />
+      ) : (
+        <AdminIntegrationsHub />
       )}
     </div>
   );
