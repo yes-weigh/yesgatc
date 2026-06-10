@@ -11,7 +11,6 @@ import {
 import { db } from '../firebase';
 import {
   AUTOMATION_WORKER_COLLECTION,
-  readBool,
   readInt,
   readString,
   saveAutomationWorkerRemoteControl,

@@ -178,7 +178,7 @@ export const AdminSettings: React.FC = () => {
 
   return (
     <div className="fade-in page-content admin-integrations-page">
-      {integrationId ? (
+      {integrationId && isIntegrationsTab(integrationId) ? (
         <AdminIntegrationDetail tabId={integrationId} />
       ) : (
         <AdminIntegrationsHub />
