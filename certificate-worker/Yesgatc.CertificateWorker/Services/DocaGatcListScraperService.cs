@@ -87,6 +87,17 @@ public static partial class DocaGatcListScraperService
         };
     }
 
+    // DOCA GATC list uses DataTables #example1:
+    //   #example1_info          — "Showing 1 to 50 of 1,000 entries"
+    //   #example1_paginate      — ul.pagination wrapper
+    //   #example1_next          — li.paginate_button.next (disabled class on last page)
+    //   #example1_next > a      — clickable Next link (aria-controls="example1")
+
+    private const string PaginationInfoSelector = "#example1_info";
+    private const string PaginationContainerSelector = "#example1_paginate";
+    private const string NextPageItemSelector = "#example1_next";
+    private const string NextPageLinkSelector = "#example1_paginate #example1_next:not(.disabled) > a[aria-controls='example1']";
+
     public static async Task<bool> GoToNextPageAsync(IPage page, CancellationToken cancellationToken = default)
     {
         if (!await HasNextPageAsync(page))
@@ -97,7 +108,7 @@ public static partial class DocaGatcListScraperService
         var beforeInfo = await ReadPaginationInfoAsync(page);
         await ScrollPaginationIntoViewAsync(page);
 
-        var nextLink = GetNextPageClickTarget(page);
+        var nextLink = page.Locator(NextPageLinkSelector).First;
         if (await nextLink.CountAsync() > 0)
         {
             try
@@ -119,16 +130,14 @@ public static partial class DocaGatcListScraperService
         return true;
     }
 
-    private static ILocator GetNextPageClickTarget(IPage page) =>
-        page.Locator(
-            "#example1_next:not(.disabled) a, " +
-            "li.paginate_button.next:not(.disabled) a, " +
-            ".dataTables_paginate .paginate_button.next:not(.disabled) a")
-            .First;
-
     private static async Task ScrollPaginationIntoViewAsync(IPage page)
     {
-        var paginate = page.Locator(".dataTables_paginate, #example1_paginate, .pagination").First;
+        var paginate = page.Locator(PaginationContainerSelector).First;
+        if (await paginate.CountAsync() == 0)
+        {
+            paginate = page.Locator(".dataTables_paginate").First;
+        }
+
         if (await paginate.CountAsync() == 0)
         {
             return;
@@ -142,10 +151,7 @@ public static partial class DocaGatcListScraperService
         await page.EvaluateAsync<bool>(
             """
             () => {
-              const nextLink =
-                document.querySelector('#example1_next:not(.disabled) a') ||
-                document.querySelector('li.paginate_button.next:not(.disabled) a') ||
-                document.querySelector('.dataTables_paginate .paginate_button.next:not(.disabled) a');
+              const nextLink = document.querySelector('#example1_next:not(.disabled) > a[aria-controls="example1"]');
               if (nextLink) {
                 nextLink.click();
                 return true;
@@ -230,7 +236,12 @@ public static partial class DocaGatcListScraperService
 
     private static async Task<(int PageStart, int PageEnd, int TotalEntries)> ReadPaginationInfoAsync(IPage page)
     {
-        var infoLocator = page.Locator(".dataTables_info, #example_info, [id$='_info']").First;
+        var infoLocator = page.Locator(PaginationInfoSelector).First;
+        if (await infoLocator.CountAsync() == 0)
+        {
+            infoLocator = page.Locator(".dataTables_info, [id$='_info']").First;
+        }
+
         if (await infoLocator.CountAsync() == 0)
         {
             return (0, 0, 0);
@@ -251,7 +262,12 @@ public static partial class DocaGatcListScraperService
 
     private static async Task<bool> HasNextPageAsync(IPage page)
     {
-        var nextItem = page.Locator("#example1_next, li.paginate_button.next").First;
+        var nextItem = page.Locator(NextPageItemSelector).First;
+        if (await nextItem.CountAsync() == 0)
+        {
+            nextItem = page.Locator("li.paginate_button.next").First;
+        }
+
         if (await nextItem.CountAsync() == 0)
         {
             return false;
