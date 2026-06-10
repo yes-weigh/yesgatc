@@ -26,6 +26,11 @@ import {
   type DocaScrapeLogEntry,
   type DocaScrapeStatus,
 } from '../../lib/docaScraping';
+import { TablePagination } from '../../components/TablePagination';
+import {
+  DOCA_SCRAPING_TABLE_PAGE_SIZE,
+  paginateItems,
+} from '../../lib/tablePagination';
 
 function formatTimestamp(value: string): string {
   if (!value) return '—';
@@ -46,6 +51,7 @@ export const AdminDocaScraping: React.FC = () => {
   const [logs, setLogs] = useState<DocaScrapeLogEntry[]>([]);
   const [remote, setRemote] = useState(DEFAULT_AUTOMATION_WORKER_REMOTE);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [listenerError, setListenerError] = useState('');
@@ -86,6 +92,17 @@ export const AdminDocaScraping: React.FC = () => {
         .includes(queryText),
     );
   }, [records, search]);
+
+  const paginatedRecords = useMemo(
+    () => paginateItems(filteredRecords, page, DOCA_SCRAPING_TABLE_PAGE_SIZE),
+    [filteredRecords, page],
+  );
+
+  const rowOffset = (page - 1) * DOCA_SCRAPING_TABLE_PAGE_SIZE;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   const runRemoteAction = async (action: () => Promise<void>) => {
     if (!user?.uid) return;
@@ -200,60 +217,77 @@ export const AdminDocaScraping: React.FC = () => {
               No scraped certificates yet. Start a scrape when the worker is online.
             </p>
           ) : (
-            <table className="data-table doca-scraping-table">
-              <thead>
-                <tr>
-                  <th>Certificate</th>
-                  <th>Instrument</th>
-                  <th>Belongs to</th>
-                  <th>Validity</th>
-                  <th>Upload date</th>
-                  <th>Files</th>
-                  <th>Scraped</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRecords.map(record => (
-                  <tr key={record.id}>
-                    <td>
-                      <div className="doca-scraping-cert-cell">
-                        <strong className="text-mono text-sm">{record.generateCertificate || '—'}</strong>
-                        {record.gatcCertificateNo && (
-                          <span className="text-muted text-sm">{record.gatcCertificateNo}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td>{record.instrumentName || '—'}</td>
-                    <td>{record.belongTo || '—'}</td>
-                    <td className="text-mono text-sm">{record.validityDate || '—'}</td>
-                    <td className="text-mono text-sm">{record.uploadDate || '—'}</td>
-                    <td>
-                      <div className="doca-scraping-file-links">
-                        {record.certificatePdfUrl ? (
-                          <a href={record.certificatePdfUrl} target="_blank" rel="noreferrer" className="doca-scraping-file-link">
-                            <FileText size={14} aria-hidden />
-                            PDF
-                            <ExternalLink size={12} aria-hidden />
-                          </a>
-                        ) : (
-                          <span className="text-muted text-sm">No PDF</span>
-                        )}
-                        {record.instrumentPhotoUrl ? (
-                          <a href={record.instrumentPhotoUrl} target="_blank" rel="noreferrer" className="doca-scraping-file-link">
-                            <ImageIcon size={14} aria-hidden />
-                            Photo
-                            <ExternalLink size={12} aria-hidden />
-                          </a>
-                        ) : (
-                          <span className="text-muted text-sm">No photo</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="text-muted text-sm">{formatTimestamp(record.scrapedAt)}</td>
+            <>
+              <TablePagination
+                page={page}
+                totalItems={filteredRecords.length}
+                pageSize={DOCA_SCRAPING_TABLE_PAGE_SIZE}
+                onPageChange={setPage}
+                placement="top"
+              />
+              <table className="data-table doca-scraping-table">
+                <thead>
+                  <tr>
+                    <th className="doca-scraping-col-sno">S.No</th>
+                    <th>Certificate</th>
+                    <th>Instrument</th>
+                    <th>Belongs to</th>
+                    <th>Validity</th>
+                    <th>Upload date</th>
+                    <th>Files</th>
+                    <th>Scraped</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {paginatedRecords.map((record, index) => (
+                    <tr key={record.id}>
+                      <td className="doca-scraping-col-sno text-muted text-sm">{rowOffset + index + 1}</td>
+                      <td>
+                        <div className="doca-scraping-cert-cell">
+                          <strong className="text-mono text-sm">{record.generateCertificate || '—'}</strong>
+                          {record.gatcCertificateNo && (
+                            <span className="text-muted text-sm">{record.gatcCertificateNo}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td>{record.instrumentName || '—'}</td>
+                      <td>{record.belongTo || '—'}</td>
+                      <td className="text-mono text-sm">{record.validityDate || '—'}</td>
+                      <td className="text-mono text-sm">{record.uploadDate || '—'}</td>
+                      <td>
+                        <div className="doca-scraping-file-links">
+                          {record.certificatePdfUrl ? (
+                            <a href={record.certificatePdfUrl} target="_blank" rel="noreferrer" className="doca-scraping-file-link">
+                              <FileText size={14} aria-hidden />
+                              PDF
+                              <ExternalLink size={12} aria-hidden />
+                            </a>
+                          ) : (
+                            <span className="text-muted text-sm">No PDF</span>
+                          )}
+                          {record.instrumentPhotoUrl ? (
+                            <a href={record.instrumentPhotoUrl} target="_blank" rel="noreferrer" className="doca-scraping-file-link">
+                              <ImageIcon size={14} aria-hidden />
+                              Photo
+                              <ExternalLink size={12} aria-hidden />
+                            </a>
+                          ) : (
+                            <span className="text-muted text-sm">No photo</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="text-muted text-sm">{formatTimestamp(record.scrapedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <TablePagination
+                page={page}
+                totalItems={filteredRecords.length}
+                pageSize={DOCA_SCRAPING_TABLE_PAGE_SIZE}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </div>
       </section>

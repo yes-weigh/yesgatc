@@ -20869,6 +20869,21 @@ body.verification-photo-viewer-open {
   min-width: 56rem;
 }
 
+.doca-scraping-table .doca-scraping-col-sno {
+  width: 3.75rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.doca-scraping-table-wrap .table-pagination {
+  margin-bottom: 0.75rem;
+}
+
+.doca-scraping-table-wrap .table-pagination:not(.table-pagination--top) {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
 .doca-scraping-cert-cell {
   display: flex;
   flex-direction: column;

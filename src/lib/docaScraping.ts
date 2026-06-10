@@ -115,12 +115,10 @@ export function normalizeDocaScrapeStatus(
 export function subscribeDocaCertificates(
   onData: (records: DocaCertificateRecord[]) => void,
   onError?: (error: Error) => void,
-  maxEntries = 500,
 ): Unsubscribe {
   const q = query(
     collection(db, DOCA_CERTIFICATES_COLLECTION),
     orderBy('scrapedAt', 'desc'),
-    limit(maxEntries),
   );
   return onSnapshot(
     q,
