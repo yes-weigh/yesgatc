@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.Content;
 using Yesgatc.CertificateWorker.Models;
 
 namespace Yesgatc.CertificateWorker.Services;
@@ -107,7 +108,9 @@ public static class GatcCertificatePdfParser
             extract = extract with { NextVerificationDue = NormalizeDate(nextDueMatch.Groups[1].Value) };
         }
 
-        if (TryParseInstrumentRow(text, out var instrument))
+        if (TryParseInstrumentRow(text, out var instrument)
+            || TryParseInstrumentColumnLayout(rawText, out instrument)
+            || TryParseInstrumentScattered(text, out instrument))
         {
             extract = extract with
             {
@@ -187,6 +190,156 @@ public static class GatcCertificatePdfParser
         return false;
     }
 
+    /// <summary>
+    /// DOCA GATC PDFs often lay out the instrument table in columns; PdfPig reads each row as
+    /// "Electronic Visual Pass …", "YESWEIGH Zero Pass …", etc. Collect the first cell down the column.
+    /// </summary>
+    private static bool TryParseInstrumentColumnLayout(string rawText, out InstrumentRowFields fields)
+    {
+        fields = new InstrumentRowFields();
+        var lines = rawText
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0)
+            .ToList();
+
+        var start = lines.FindIndex(line =>
+            Regex.IsMatch(line, @"^(Electronic|Mechanical|Hybrid)\b", RegexOptions.IgnoreCase));
+
+        if (start < 0)
+        {
+            return false;
+        }
+
+        var tokens = new List<string>();
+        for (var i = start; i < lines.Count; i++)
+        {
+            var line = lines[i];
+            if (i > start && Regex.IsMatch(line, @"^Visual\b", RegexOptions.IgnoreCase))
+            {
+                break;
+            }
+
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+            {
+                continue;
+            }
+
+            if (i > start && IsVerificationTestColumnLabel(parts[0]))
+            {
+                break;
+            }
+
+            tokens.Add(parts[0]);
+            if (tokens.Count >= 12)
+            {
+                break;
+            }
+        }
+
+        return TryMapInstrumentTokens(tokens, out fields);
+    }
+
+    private static bool IsVerificationTestColumnLabel(string token) =>
+        token.Equals("Visual", StringComparison.OrdinalIgnoreCase)
+        || token.Equals("Pass", StringComparison.OrdinalIgnoreCase)
+        || token.Equals("Ambient", StringComparison.OrdinalIgnoreCase)
+        || token.Equals("Supply", StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryMapInstrumentTokens(IReadOnlyList<string> tokens, out InstrumentRowFields fields)
+    {
+        fields = new InstrumentRowFields();
+        if (tokens.Count < 8)
+        {
+            return false;
+        }
+
+        fields = new InstrumentRowFields
+        {
+            InstrumentType = CleanValue(tokens[0]),
+            ManufacturerModel = CleanValue(tokens[1]),
+            SerialNumber = CleanValue(tokens[2]),
+            YearOfManufacture = tokens[3],
+            AccuracyClass = tokens[4],
+            MaxCapacity = CleanMassUnit(tokens[5]),
+            MinCapacity = tokens.Count > 6 ? CleanMassUnit(tokens[6]) : string.Empty,
+            VerificationScaleIntervalE = tokens.Count > 7 ? CleanMassUnit(tokens[7]) : string.Empty,
+            UnitOfMeasurement = tokens.Count > 8 ? CleanValue(tokens[8]) : string.Empty,
+            ActualScaleIntervalD = tokens.Count > 9 ? CleanMassUnit(tokens[9]) : string.Empty,
+            VerificationIntervalsN = tokens.Count > 10 ? tokens[10] : string.Empty,
+            MaximumPermissibleError = tokens.Count > 11 ? CleanMassUnit(tokens[11]) : string.Empty,
+        };
+
+        return IsPlausibleInstrumentRow(fields);
+    }
+
+    /// <summary>Find model/serial/capacity tokens anywhere in flattened text when row patterns fail.</summary>
+    private static bool TryParseInstrumentScattered(string text, out InstrumentRowFields fields)
+    {
+        fields = new InstrumentRowFields();
+
+        Match brandMatch = Regex.Match(
+            text,
+            @"\bYESWEIGH\s+([A-Z][A-Z0-9-]{4,})\b",
+            RegexOptions.CultureInvariant);
+        string instrumentType = "Electronic";
+        string model = "YESWEIGH";
+        string serial;
+
+        if (brandMatch.Success)
+        {
+            serial = brandMatch.Groups[1].Value;
+        }
+        else
+        {
+            brandMatch = Regex.Match(
+                text,
+                @"\b(Electronic|Mechanical|Hybrid)\s+(\S+)\s+([A-Z][A-Z0-9-]{4,})\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (!brandMatch.Success)
+            {
+                return false;
+            }
+
+            instrumentType = brandMatch.Groups[1].Value;
+            model = brandMatch.Groups[2].Value;
+            serial = brandMatch.Groups[3].Value;
+        }
+
+        var classMatch = Regex.Match(
+            text,
+            @"\b(20\d{2})\s+(I{1,3}|IV)\s+(\d+\.?\d*\s*kg)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!classMatch.Success)
+        {
+            return false;
+        }
+
+        var chainMatch = Regex.Match(
+            text,
+            @"\b(\d+\.?\d*\s*g)\s+(\d+\.?\d*\s*g)\s+kg\s+(\d+\.?\d*\s*g)\s+(\d+)\s+(\d+\.?\d*\s*g)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        fields = new InstrumentRowFields
+        {
+            InstrumentType = CleanValue(instrumentType),
+            ManufacturerModel = CleanValue(model),
+            SerialNumber = CleanValue(serial),
+            YearOfManufacture = classMatch.Groups[1].Value,
+            AccuracyClass = classMatch.Groups[2].Value,
+            MaxCapacity = CleanMassUnit(classMatch.Groups[3].Value),
+            MinCapacity = chainMatch.Success ? CleanMassUnit(chainMatch.Groups[1].Value) : string.Empty,
+            VerificationScaleIntervalE = chainMatch.Success ? CleanMassUnit(chainMatch.Groups[2].Value) : string.Empty,
+            UnitOfMeasurement = "kg",
+            ActualScaleIntervalD = chainMatch.Success ? CleanMassUnit(chainMatch.Groups[3].Value) : string.Empty,
+            VerificationIntervalsN = chainMatch.Success ? chainMatch.Groups[4].Value : string.Empty,
+            MaximumPermissibleError = chainMatch.Success ? CleanMassUnit(chainMatch.Groups[5].Value) : string.Empty,
+        };
+
+        return IsPlausibleInstrumentRow(fields);
+    }
+
     private static bool TryBuildInstrumentRowFromTypedMatch(Match match, out InstrumentRowFields fields)
     {
         if (match.Groups.Count < 13)
@@ -241,10 +394,53 @@ public static class GatcCertificatePdfParser
         var builder = new StringBuilder();
         foreach (var page in document.GetPages())
         {
-            builder.AppendLine(page.Text);
+            var rowText = ReconstructTextByWordRows(page);
+            if (!string.IsNullOrWhiteSpace(rowText))
+            {
+                builder.AppendLine(rowText);
+            }
+
+            if (!string.IsNullOrWhiteSpace(page.Text))
+            {
+                builder.AppendLine(page.Text);
+            }
         }
 
         return builder.ToString();
+    }
+
+    private static string ReconstructTextByWordRows(Page page)
+    {
+        var words = page.GetWords().ToList();
+        if (words.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        const double rowTolerance = 4.0;
+        var rowMap = new Dictionary<long, List<Word>>();
+
+        foreach (var word in words)
+        {
+            var rowKey = (long)Math.Round(word.BoundingBox.Bottom / rowTolerance);
+            if (!rowMap.TryGetValue(rowKey, out var rowWords))
+            {
+                rowWords = new List<Word>();
+                rowMap[rowKey] = rowWords;
+            }
+
+            rowWords.Add(word);
+        }
+
+        return string.Join(
+            Environment.NewLine,
+            rowMap.Keys
+                .OrderByDescending(key => key)
+                .Select(key => string.Join(
+                    " ",
+                    rowMap[key]
+                        .OrderBy(word => word.BoundingBox.Left)
+                        .Select(word => word.Text))));
     }
 
     private static string NormalizeText(string text) =>

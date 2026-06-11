@@ -109,6 +109,39 @@ public sealed class GatcCertificatePdfParserTests
     }
 
     [Fact]
+    public void ParseText_extracts_instrument_from_column_major_table_layout()
+    {
+        const string text = """
+            Certificate No: IND/GATC/KL/26/04/26/997 Date of Verification: 01-06-2026
+            belonging to M/s-INTERWEIGHING PVT LTD,Address-49/470 D1 3RD FLOOR,ASIAN TOWER,VYTTILA,COCHIN,KERALA-682019,
+            Ernakulam,Kerala,682019, Ph:- 8590601636
+            Electronic Visual Pass Pass Pass Pass Pass Pass Pass
+            YESWEIGH Zero Pass Pass Pass Pass Pass Pass Pass
+            Y09997 Setting Pass Pass Pass Pass Pass Pass Pass
+            2026 Tracking Pass Pass Pass Pass Pass Pass Pass
+            III Test Pass Pass Pass Pass Pass Pass Pass
+            30kg Performance Pass Pass Pass Pass Pass Pass Pass
+            100g Pass Pass Pass Pass Pass Pass Pass
+            5g Pass Pass Pass Pass Pass Pass Pass
+            kg Pass Pass Pass Pass Pass Pass Pass
+            5g Pass Pass Pass Pass Pass Pass Pass
+            10000 Pass Pass Pass Pass Pass Pass Pass
+            7.5g Pass Pass Pass Pass Pass Pass Pass
+            Visual Examination Zero Setting
+            Next verification falls due on or before: 2027-05-31
+            """;
+
+        var result = GatcCertificatePdfParser.ParseText(text);
+
+        Assert.Equal("IND/GATC/KL/26/04/26/997", result.CertificateNumber);
+        Assert.Equal("Y09997", result.SerialNumber);
+        Assert.Equal("YESWEIGH", result.ManufacturerModel);
+        Assert.Equal("30kg", result.MaxCapacity);
+        Assert.Equal("5g", result.VerificationScaleIntervalE);
+        Assert.Equal("ok", result.ParseStatus);
+    }
+
+    [Fact]
     public void ParseText_extracts_interweighing_certificate_with_dd_mm_yyyy_dates()
     {
         var result = GatcCertificatePdfParser.ParseText(InterweighingCertificateText);
