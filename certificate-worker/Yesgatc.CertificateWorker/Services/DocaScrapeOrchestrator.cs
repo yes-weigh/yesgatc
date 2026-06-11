@@ -39,10 +39,11 @@ public sealed class DocaScrapeOrchestrator
         var uploadedRows = 0;
         var skippedRows = 0;
         var failedRows = 0;
-        var currentPage = 0;
+        var currentPage = ScrapeStartPage > 1 ? ScrapeStartPage - 1 : 0;
         var totalPages = 0;
         var totalEntries = 0;
         var checkpointPage = 0;
+        var visitedPageStarts = new HashSet<int>();
 
         try
         {
@@ -116,6 +117,21 @@ public sealed class DocaScrapeOrchestrator
                 totalPages = totalEntries > 0
                     ? (int)Math.Ceiling(totalEntries / (double)pageSize)
                     : Math.Max(currentPage, 1);
+                var docaPageNumber = parseResult.PageNumber(pageSize);
+                if (docaPageNumber > 0)
+                {
+                    currentPage = docaPageNumber;
+                }
+
+                if (parseResult.PageStart > 0 && !visitedPageStarts.Add(parseResult.PageStart))
+                {
+                    await _telemetry.ReportScrapeActivityAsync(
+                        $"Stopping scrape — DOCA list returned to entries {parseResult.PageStart} (pagination loop detected).",
+                        "info",
+                        ResolveFirebaseIdToken,
+                        cancellationToken);
+                    break;
+                }
 
                 await PublishStateAsync(
                     "running",
@@ -208,7 +224,7 @@ public sealed class DocaScrapeOrchestrator
                     parseResult.Rows.Count > 0
                     && pageSkipped == parseResult.Rows.Count
                     && pageUploaded == 0
-                    && !parseResult.HasNextPage;
+                    && parseResult.IsLastDataPage;
 
                 if (lastPageFullySkipped)
                 {
@@ -239,7 +255,17 @@ public sealed class DocaScrapeOrchestrator
                     return;
                 }
 
+                if (parseResult.IsLastDataPage)
+                {
+                    break;
+                }
+
                 if (!parseResult.HasNextPage)
+                {
+                    break;
+                }
+
+                if (currentPage >= totalPages)
                 {
                     break;
                 }

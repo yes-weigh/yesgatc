@@ -83,7 +83,7 @@ public static partial class DocaGatcListScraperService
             PageStart = pageStart,
             PageEnd = pageEnd,
             TotalEntries = totalEntries,
-            HasNextPage = hasNext,
+            HasNextPage = hasNext && pageEnd < totalEntries,
         };
     }
 
@@ -122,8 +122,8 @@ public static partial class DocaGatcListScraperService
             var navigated = attempt switch
             {
                 0 => await NavigateViaDataTablesAsync(page, "next"),
-                1 => await ClickNextPageViaScriptAsync(page) || await ClickNextPageLinkAsync(page),
-                _ => await NavigateViaDataTablesAsync(page, targetPageIndex >= 0 ? targetPageIndex.ToString(CultureInfo.InvariantCulture) : "next"),
+                1 => await NavigateViaDataTablesAsync(page, targetPageIndex.ToString(CultureInfo.InvariantCulture)),
+                _ => await ClickNextPageLinkAsync(page),
             };
 
             if (!navigated)
@@ -134,11 +134,17 @@ public static partial class DocaGatcListScraperService
 
             try
             {
-                await WaitForPaginationAdvanceAsync(
+                var advanced = await WaitForPaginationAdvanceAsync(
                     page,
                     beforeInfo.PageStart,
                     beforeFirstCert,
-                    cancellationToken);
+                    cancellationToken,
+                    requireForwardAdvance: true);
+                if (!advanced)
+                {
+                    return false;
+                }
+
                 return true;
             }
             catch (TimeoutException) when (attempt < 2)
@@ -147,7 +153,7 @@ public static partial class DocaGatcListScraperService
             }
         }
 
-        throw new TimeoutException("Timed out waiting for DOCA GATC list to advance to the next page.");
+        return false;
     }
 
     /// <summary>Jump to a 1-based page number (e.g. 10 for the last page).</summary>
@@ -193,13 +199,16 @@ public static partial class DocaGatcListScraperService
 
             try
             {
-                await WaitForPaginationAdvanceAsync(
+                var advanced = await WaitForPaginationAdvanceAsync(
                     page,
                     Math.Max(expectedStart - 1, 0),
                     beforeFirstCert,
                     cancellationToken,
                     expectedPageStart: expectedStart);
-                return true;
+                if (advanced)
+                {
+                    return true;
+                }
             }
             catch (TimeoutException) when (attempt < 2)
             {
@@ -345,12 +354,13 @@ public static partial class DocaGatcListScraperService
             }
             """);
 
-    private static async Task WaitForPaginationAdvanceAsync(
+    private static async Task<bool> WaitForPaginationAdvanceAsync(
         IPage page,
         int previousPageStart,
         string previousFirstCertificate,
         CancellationToken cancellationToken,
-        int expectedPageStart = 0)
+        int expectedPageStart = 0,
+        bool requireForwardAdvance = false)
     {
         for (var attempt = 0; attempt < 120; attempt++)
         {
@@ -358,13 +368,23 @@ public static partial class DocaGatcListScraperService
             await page.WaitForTimeoutAsync(500);
 
             var current = await ReadPaginationInfoAsync(page);
-            var currentFirstCert = await ReadFirstRowCertificateAsync(page);
+
+            if (requireForwardAdvance
+                && previousPageStart > 0
+                && current.PageStart > 0
+                && current.PageStart <= previousPageStart)
+            {
+                return false;
+            }
 
             var pageStartAdvanced = current.PageStart > previousPageStart && current.PageStart > 0;
             var reachedExpectedStart = expectedPageStart > 0 && current.PageStart == expectedPageStart;
-            var rowContentChanged = !string.IsNullOrWhiteSpace(previousFirstCertificate)
-                && !string.IsNullOrWhiteSpace(currentFirstCert)
-                && !string.Equals(previousFirstCertificate, currentFirstCert, StringComparison.OrdinalIgnoreCase);
+            var rowContentChanged = !requireForwardAdvance
+                && !string.IsNullOrWhiteSpace(previousFirstCertificate)
+                && !string.Equals(
+                    previousFirstCertificate,
+                    await ReadFirstRowCertificateAsync(page),
+                    StringComparison.OrdinalIgnoreCase);
 
             if (pageStartAdvanced || reachedExpectedStart || rowContentChanged)
             {
@@ -373,7 +393,7 @@ public static partial class DocaGatcListScraperService
                     Timeout = 60_000,
                 });
                 await page.WaitForTimeoutAsync(300);
-                return;
+                return true;
             }
         }
 
@@ -449,6 +469,18 @@ public static partial class DocaGatcListScraperService
 
     private static async Task<bool> HasNextPageAsync(IPage page)
     {
+        var info = await ReadPaginationInfoAsync(page);
+        if (info.TotalEntries > 0 && info.PageEnd >= info.TotalEntries)
+        {
+            return false;
+        }
+
+        var dataTablesHasNext = await ReadDataTablesHasNextPageAsync(page);
+        if (dataTablesHasNext == false)
+        {
+            return false;
+        }
+
         var nextItem = page.Locator(NextPageItemSelector).First;
         if (await nextItem.CountAsync() == 0)
         {
@@ -457,12 +489,30 @@ public static partial class DocaGatcListScraperService
 
         if (await nextItem.CountAsync() == 0)
         {
-            return false;
+            return dataTablesHasNext == true;
         }
 
         var className = await nextItem.GetAttributeAsync("class") ?? string.Empty;
         return !className.Contains("disabled", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static Task<bool?> ReadDataTablesHasNextPageAsync(IPage page) =>
+        page.EvaluateAsync<bool?>(
+            """
+            () => {
+              if (typeof $ === 'undefined' || !$.fn?.dataTable) {
+                return null;
+              }
+
+              const table = $('#example1').DataTable?.();
+              if (!table) {
+                return null;
+              }
+
+              const info = table.page.info();
+              return info.page < info.pages - 1;
+            }
+            """);
 
     private static string NormalizeCell(string? value) =>
         string.IsNullOrWhiteSpace(value) ? string.Empty : Regex.Replace(value.Trim(), "\\s+", " ");

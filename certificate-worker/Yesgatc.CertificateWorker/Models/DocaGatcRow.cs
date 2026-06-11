@@ -19,6 +19,13 @@ public sealed class DocaGatcPageParseResult
     public int PageEnd { get; init; }
     public int TotalEntries { get; init; }
     public bool HasNextPage { get; init; }
+
+    public bool IsLastDataPage => TotalEntries > 0 && PageEnd >= TotalEntries;
+
+    public int PageNumber(int pageSize) =>
+        PageStart > 0 && pageSize > 0
+            ? ((PageStart - 1) / pageSize) + 1
+            : 0;
 }
 
 public sealed class DocaScrapeProgressState
