@@ -25,12 +25,17 @@ public static class GatcCertificatePdfParser
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex InstrumentRowRegex = new(
-        @"\b(Electronic|Mechanical|Hybrid)\s+(\S+)\s+([A-Z0-9-]+)\s+(20\d{2})\s+(I{1,3}|IV)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\S+)",
+        @"(?<!\bif\s)(?<![(\-])(Electronic|Mechanical|Hybrid)\s+(\S+)\s+([A-Z0-9-]+)\s+(20\d{2})\s+(I{1,3}|IV)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+\.?\d*\s*[a-zA-Z]+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex InstrumentRowBeforeVisualRegex = new(
-        @"(?:MPE\)|Maximum Permissible Error \(MPE\))\s+(Electronic|Mechanical|Hybrid)\s+(\S+)\s+([A-Z0-9-]+)\s+(20\d{2})\s+(I{1,3}|IV)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\S+)(?=\s+Visual\b)",
+        @"(?:MPE\)|Maximum Permissible Error \(MPE\))\s+(?<!\bif\s)(Electronic|Mechanical|Hybrid)\s+(\S+)\s+([A-Z0-9-]+)\s+(20\d{2})\s+(I{1,3}|IV)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+\.?\d*\s*g)(?=\s+Visual\b)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>When PdfPig omits the instrument-type prefix or splits MPE (e.g. "7.5 g").</summary>
+    private static readonly Regex InstrumentModelSerialRegex = new(
+        @"(?<![\w(/])([A-Z][A-Z0-9]{2,})\s+([A-Z][A-Z0-9-]{3,})\s+(20\d{2})\s+(I{1,3}|IV)\s+(\d+\.?\d*\s*kg)\s+(\S+)\s+(\d+\.?\d*\s*g)\s+kg\s+(\S+)\s+(\d+)\s+(\d+\.?\d*)\s*g(?=\s+Visual\b)",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex ModelApprovalRegex = new(
         @"Model Approval No\.?\s*:?\s*([^\r\n]+?)(?=\s*(?:Seal|Certificate|Date of|Verification Fee|$))",
@@ -145,33 +150,75 @@ public static class GatcCertificatePdfParser
     {
         foreach (var regex in new[] { InstrumentRowBeforeVisualRegex, InstrumentRowRegex })
         {
-            var match = regex.Match(text);
-            if (!match.Success)
+            foreach (Match match in regex.Matches(text))
             {
-                continue;
+                if (TryBuildInstrumentRowFromTypedMatch(match, out fields) && IsPlausibleInstrumentRow(fields))
+                {
+                    return true;
+                }
             }
+        }
 
+        foreach (Match match in InstrumentModelSerialRegex.Matches(text))
+        {
             fields = new InstrumentRowFields
             {
-                InstrumentType = CleanValue(match.Groups[1].Value),
-                ManufacturerModel = CleanValue(match.Groups[2].Value),
-                SerialNumber = CleanValue(match.Groups[3].Value),
-                YearOfManufacture = match.Groups[4].Value,
-                AccuracyClass = match.Groups[5].Value,
-                MaxCapacity = CleanValue(match.Groups[6].Value),
-                MinCapacity = CleanValue(match.Groups[7].Value),
-                VerificationScaleIntervalE = CleanValue(match.Groups[8].Value),
-                UnitOfMeasurement = CleanValue(match.Groups[9].Value),
-                ActualScaleIntervalD = CleanValue(match.Groups[10].Value),
-                VerificationIntervalsN = match.Groups[11].Value,
-                MaximumPermissibleError = CleanValue(match.Groups[12].Value),
+                InstrumentType = "Electronic",
+                ManufacturerModel = CleanValue(match.Groups[1].Value),
+                SerialNumber = CleanValue(match.Groups[2].Value),
+                YearOfManufacture = match.Groups[3].Value,
+                AccuracyClass = match.Groups[4].Value,
+                MaxCapacity = CleanMassUnit(match.Groups[5].Value),
+                MinCapacity = CleanMassUnit(match.Groups[6].Value),
+                VerificationScaleIntervalE = CleanMassUnit(match.Groups[7].Value),
+                UnitOfMeasurement = CleanValue(match.Groups[8].Value),
+                ActualScaleIntervalD = CleanMassUnit(match.Groups[9].Value),
+                VerificationIntervalsN = match.Groups[10].Value,
+                MaximumPermissibleError = CleanMassUnit($"{match.Groups[11].Value}g"),
             };
-            return true;
+
+            if (IsPlausibleInstrumentRow(fields))
+            {
+                return true;
+            }
         }
 
         fields = new InstrumentRowFields();
         return false;
     }
+
+    private static bool TryBuildInstrumentRowFromTypedMatch(Match match, out InstrumentRowFields fields)
+    {
+        if (match.Groups.Count < 13)
+        {
+            fields = new InstrumentRowFields();
+            return false;
+        }
+
+        fields = new InstrumentRowFields
+        {
+            InstrumentType = CleanValue(match.Groups[1].Value),
+            ManufacturerModel = CleanValue(match.Groups[2].Value),
+            SerialNumber = CleanValue(match.Groups[3].Value),
+            YearOfManufacture = match.Groups[4].Value,
+            AccuracyClass = match.Groups[5].Value,
+            MaxCapacity = CleanMassUnit(match.Groups[6].Value),
+            MinCapacity = CleanMassUnit(match.Groups[7].Value),
+            VerificationScaleIntervalE = CleanMassUnit(match.Groups[8].Value),
+            UnitOfMeasurement = CleanValue(match.Groups[9].Value),
+            ActualScaleIntervalD = CleanMassUnit(match.Groups[10].Value),
+            VerificationIntervalsN = match.Groups[11].Value,
+            MaximumPermissibleError = CleanMassUnit(match.Groups[12].Value),
+        };
+        return true;
+    }
+
+    private static bool IsPlausibleInstrumentRow(InstrumentRowFields fields) =>
+        !string.IsNullOrWhiteSpace(fields.SerialNumber)
+        && fields.YearOfManufacture.StartsWith("20", StringComparison.Ordinal)
+        && fields.MaxCapacity.Contains("kg", StringComparison.OrdinalIgnoreCase)
+        && fields.VerificationScaleIntervalE.Contains('g', StringComparison.OrdinalIgnoreCase)
+        && !fields.ManufacturerModel.Equals("Verification", StringComparison.OrdinalIgnoreCase);
 
     private sealed class InstrumentRowFields
     {
@@ -209,6 +256,13 @@ public static class GatcCertificatePdfParser
 
     private static string CleanValue(string value) =>
         Regex.Replace(value.Trim(), @"\s+", " ");
+
+    private static string CleanMassUnit(string value) =>
+        Regex.Replace(
+            CleanValue(value),
+            @"(\d+\.?\d*)\s+([a-zA-Z]+)",
+            "$1$2",
+            RegexOptions.CultureInvariant);
 
     private static string CleanPhone(string value) =>
         Regex.Replace(value, @"[^\d]", string.Empty).Trim();

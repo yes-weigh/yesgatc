@@ -31,6 +31,7 @@ public sealed class AutomationService : IAsyncDisposable
     private IPlaywright? _playwright;
     private IBrowserContext? _context;
     private bool _pageHandlersAttached;
+    private bool _initialManualCaptchaWaitDone;
 
     public AutomationService(AutomationSettings settings, FirestoreService firestoreService)
     {
@@ -538,10 +539,32 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
-            return await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: ScraperMode);
+            return await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
         }
 
         return DocaSessionState.LoggedIn;
+    }
+
+    /// <summary>
+    /// On the first browser launch for this profile, open DOCA login and wait one minute so the
+    /// operator can solve captcha manually before any automatic login pipeline runs.
+    /// </summary>
+    private async Task ApplyInitialManualCaptchaWindowAsync(CancellationToken cancellationToken)
+    {
+        if (_initialManualCaptchaWaitDone || _context is null)
+        {
+            return;
+        }
+
+        _initialManualCaptchaWaitDone = true;
+        var page = await ConsolidateToSingleDocaPageAsync();
+        await page.GotoAsync(_settings.DocaLoginUrl, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.Load,
+            Timeout = 60_000,
+        });
+        await page.BringToFrontAsync();
+        await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
     }
 
     public async Task ClearSavedSessionAsync()
@@ -865,6 +888,7 @@ public sealed class AutomationService : IAsyncDisposable
             _context = await LaunchPersistentContextAsync(launchOptions);
             AttachPageHandlers();
             await ConsolidateToSingleDocaPageAsync();
+            await ApplyInitialManualCaptchaWindowAsync(cancellationToken);
         }
         catch (PlaywrightException ex) when (!string.IsNullOrWhiteSpace(launchOptions.Channel))
         {

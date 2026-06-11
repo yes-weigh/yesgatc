@@ -2,7 +2,7 @@ namespace Yesgatc.CertificateWorker.Models;
 
 public sealed record GatcCertificatePdfExtract
 {
-    public const int ParserVersion = 2;
+    public const int ParserVersion = 3;
 
     public string ParseStatus { get; init; } = "failed";
     public string ParseError { get; init; } = string.Empty;
