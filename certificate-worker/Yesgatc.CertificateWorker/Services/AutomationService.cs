@@ -338,6 +338,38 @@ public sealed class AutomationService : IAsyncDisposable
             VerificationApproved: true);
     }
 
+    /// <summary>True when the IC Verification list row shows Certificate Uploaded on DOCA.</summary>
+    public async Task<bool> IsCertificateUploadedOnDocaAsync(
+        string serialNumber,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(serialNumber))
+        {
+            throw new InvalidOperationException("Serial number is required for DOCA upload status check.");
+        }
+
+        await EnsureBrowserReadyAsync(cancellationToken);
+        var page = await GetPageAsync();
+
+        if (await IsLoginPageAsync(page))
+        {
+            var loginFailure = await TryEnsureLoggedInOrReturnLoginRequiredAsync(
+                page,
+                "check DOCA upload status",
+                cancellationToken);
+            if (loginFailure is not null)
+            {
+                throw new InvalidOperationException(loginFailure.Message);
+            }
+        }
+
+        return await DocaViewVerificationService.IsCertificateAlreadyUploadedAsync(
+            page,
+            _settings.DocaViewIcVerificationUrl,
+            serialNumber,
+            cancellationToken);
+    }
+
     /// <summary>
     /// Opens View IC Verification, searches by serial, opens Details, downloads the certificate PDF,
     /// stamps it, and uploads the signed PDF back to DOCA.
@@ -395,47 +427,69 @@ public sealed class AutomationService : IAsyncDisposable
             job.SerialNumber,
             cancellationToken);
 
-        var downloadResult = await DocaViewVerificationService.FindDetailsAndDownloadPdfAsync(
-            page,
-            _settings.DocaViewIcVerificationUrl,
-            job.SerialNumber,
-            downloadDirectory,
-            cancellationToken);
+        CertificatePdfDownloadResult downloadResult;
+        string stampedPdfPath;
+        ViewVerificationMatch match;
 
-        var postDownloadLogin = await TryEnsureLoggedInOnPageAsync(page, "run certification again", cancellationToken);
-        if (postDownloadLogin is not null)
+        var existingStampedPdf = WorkerDataPaths.FindLatestStampedPdf(job.Id);
+        if (!alreadyUploaded
+            && !string.IsNullOrWhiteSpace(existingStampedPdf)
+            && File.Exists(existingStampedPdf))
         {
-            return postDownloadLogin;
-        }
-
-        if (alreadyUploaded)
-        {
-            var syncToken = ResolveFirebaseIdToken is not null
-                ? await ResolveFirebaseIdToken(cancellationToken)
-                : firebaseIdToken;
-
-            await _firestoreService.MarkCertifiedWithSignedPdfAsync(
-                job.Id,
-                downloadResult.LocalPdfPath,
-                syncToken,
-                downloadResult.Match.CertificateNumber,
+            match = await DocaViewVerificationService.FindBySerialAsync(
+                page,
+                _settings.DocaViewIcVerificationUrl,
+                job.SerialNumber,
                 cancellationToken);
+            downloadResult = new CertificatePdfDownloadResult(match, existingStampedPdf);
+            stampedPdfPath = existingStampedPdf;
+        }
+        else
+        {
+            downloadResult = await DocaViewVerificationService.FindDetailsAndDownloadPdfAsync(
+                page,
+                _settings.DocaViewIcVerificationUrl,
+                job.SerialNumber,
+                downloadDirectory,
+                cancellationToken);
+            match = downloadResult.Match;
 
-            var syncDetails = new List<string> { $"Serial {downloadResult.Match.SerialNumber}" };
-            if (!string.IsNullOrWhiteSpace(downloadResult.Match.CertificateNumber))
+            var postDownloadLogin = await TryEnsureLoggedInOnPageAsync(page, "run certification again", cancellationToken);
+            if (postDownloadLogin is not null)
             {
-                syncDetails.Add($"Certificate {downloadResult.Match.CertificateNumber}");
+                return postDownloadLogin;
             }
 
-            return new DocaOpenResult(
-                DocaSessionState.LoggedIn,
-                $"DOCA already had Certificate Uploaded — synced PDF to Firebase and marked certified ({string.Join(" · ", syncDetails)}).",
-                VerificationApproved: true);
-        }
+            if (alreadyUploaded)
+            {
+                var syncToken = ResolveFirebaseIdToken is not null
+                    ? await ResolveFirebaseIdToken(cancellationToken)
+                    : firebaseIdToken;
 
-        var stampResult = CertificatePdfStampService.StampPrincipalOfficerSignature(
-            downloadResult.LocalPdfPath,
-            _settings.CertificateStamp);
+                await _firestoreService.MarkCertifiedWithSignedPdfAsync(
+                    job.Id,
+                    downloadResult.LocalPdfPath,
+                    syncToken,
+                    downloadResult.Match.CertificateNumber,
+                    cancellationToken);
+
+                var syncDetails = new List<string> { $"Serial {downloadResult.Match.SerialNumber}" };
+                if (!string.IsNullOrWhiteSpace(downloadResult.Match.CertificateNumber))
+                {
+                    syncDetails.Add($"Certificate {downloadResult.Match.CertificateNumber}");
+                }
+
+                return new DocaOpenResult(
+                    DocaSessionState.LoggedIn,
+                    $"DOCA already had Certificate Uploaded — synced PDF to Firebase and marked certified ({string.Join(" · ", syncDetails)}).",
+                    VerificationApproved: true);
+            }
+
+            var stampResult = CertificatePdfStampService.StampPrincipalOfficerSignature(
+                downloadResult.LocalPdfPath,
+                _settings.CertificateStamp);
+            stampedPdfPath = stampResult.OutputPath;
+        }
 
         var imageDownload = new FirebaseStorageDownloadService();
         var scaleImage = await imageDownload.DownloadScaleImageAsync(
@@ -456,7 +510,7 @@ public sealed class AutomationService : IAsyncDisposable
             page,
             _settings.DocaViewIcVerificationUrl,
             job.SerialNumber,
-            stampResult.OutputPath,
+            stampedPdfPath,
             preparedPhoto.Path,
             instrument.Remarks,
             cancellationToken);
@@ -467,14 +521,13 @@ public sealed class AutomationService : IAsyncDisposable
             return postUploadLogin;
         }
 
-        var match = downloadResult.Match;
         var firebaseToken = ResolveFirebaseIdToken is not null
             ? await ResolveFirebaseIdToken(cancellationToken)
             : firebaseIdToken;
 
         await _firestoreService.MarkCertifiedWithSignedPdfAsync(
             job.Id,
-            stampResult.OutputPath,
+            stampedPdfPath,
             firebaseToken,
             match.CertificateNumber,
             cancellationToken);
@@ -497,7 +550,7 @@ public sealed class AutomationService : IAsyncDisposable
         return new DocaOpenResult(
             DocaSessionState.LoggedIn,
             $"Certificate uploaded to DOCA, saved to Firebase Storage, and marked certified — {string.Join(" · ", details)}. " +
-            $"Signed PDF: {stampResult.OutputPath}. {instrumentPhotoNote}: {preparedPhoto.Summary}.",
+            $"Signed PDF: {stampedPdfPath}. {instrumentPhotoNote}: {preparedPhoto.Summary}.",
             VerificationApproved: true);
     }
 

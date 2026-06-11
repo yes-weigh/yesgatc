@@ -1967,20 +1967,47 @@ public partial class MainWindow : Window
             var existingStampedPdf = WorkerDataPaths.FindLatestStampedPdf(current.Id);
             if (!string.IsNullOrWhiteSpace(existingStampedPdf))
             {
-                SetStatusSafe(
-                    $"Serial {current.SerialNumber} — local stamped PDF found, uploading to Firebase (skipping DOCA re-certify)…",
-                    StatusKind.Working);
-                var token = await GetFreshIdTokenAsync();
-                await _firestoreService.MarkCertifiedWithSignedPdfAsync(
-                    current.Id,
-                    existingStampedPdf,
-                    token,
-                    cancellationToken: CancellationToken.None);
+                var docaUploaded = false;
+                try
+                {
+                    docaUploaded = await automation.IsCertificateUploadedOnDocaAsync(current.SerialNumber);
+                }
+                catch (Exception ex) when (AutomationService.IsBrowserDisconnectedError(ex))
+                {
+                    return new JobPipelineResult(
+                        false,
+                        false,
+                        "DOCA browser was closed or disconnected. Reopening Chrome on the next attempt.",
+                        BrowserDisconnected: true);
+                }
+                catch (Exception ex)
+                {
+                    SetStatusSafe(
+                        $"Serial {current.SerialNumber} — could not verify DOCA upload status ({ex.Message}); continuing Phase 2…",
+                        StatusKind.Info);
+                }
 
-                return new JobPipelineResult(
-                    true,
-                    false,
-                    $"Serial {current.SerialNumber} — recovered from saved stamped PDF and marked certified in Firebase.");
+                if (docaUploaded)
+                {
+                    SetStatusSafe(
+                        $"Serial {current.SerialNumber} — DOCA shows Certificate Uploaded; syncing stamped PDF to Firebase…",
+                        StatusKind.Working);
+                    var token = await GetFreshIdTokenAsync();
+                    await _firestoreService.MarkCertifiedWithSignedPdfAsync(
+                        current.Id,
+                        existingStampedPdf,
+                        token,
+                        cancellationToken: CancellationToken.None);
+
+                    return new JobPipelineResult(
+                        true,
+                        false,
+                        $"Serial {current.SerialNumber} — DOCA already uploaded; synced saved stamped PDF and marked certified in Firebase.");
+                }
+
+                SetStatusSafe(
+                    $"Serial {current.SerialNumber} — local stamped PDF found but DOCA still needs upload; continuing Phase 2…",
+                    StatusKind.Working);
             }
 
             SetStatusSafe($"Phase 2 · Certifying serial {current.SerialNumber} on DOCA…", StatusKind.Working);
