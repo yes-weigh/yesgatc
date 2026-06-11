@@ -29,9 +29,15 @@ public sealed class DocaCertificateEnrichService
             .ToList();
     }
 
-    public bool ShouldSkipEnrich(DocaCertificateSummary summary) =>
-        string.Equals(summary.PdfParseStatus, "ok", StringComparison.OrdinalIgnoreCase)
-        && summary.PdfParserVersion >= GatcCertificatePdfExtract.ParserVersion;
+    public bool ShouldSkipEnrich(DocaCertificateSummary summary)
+    {
+        if (summary.PdfParserVersion < GatcCertificatePdfExtract.ParserVersion)
+        {
+            return false;
+        }
+
+        return string.Equals(summary.PdfParseStatus, "ok", StringComparison.OrdinalIgnoreCase);
+    }
 
     public async Task<GatcCertificatePdfExtract> EnrichCertificateAsync(
         DocaCertificateSummary summary,

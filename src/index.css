@@ -20791,6 +20791,17 @@ body.verification-photo-viewer-open {
   padding: 0.45rem 0.55rem;
 }
 
+.doca-scraping-gap-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.35rem 1rem;
+  max-height: 12rem;
+  overflow: auto;
+}
+
 .doca-scraping-progress-meta {
   display: flex;
   flex-wrap: wrap;

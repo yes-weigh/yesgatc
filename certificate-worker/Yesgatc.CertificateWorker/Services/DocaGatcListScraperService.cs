@@ -156,6 +156,10 @@ public static partial class DocaGatcListScraperService
         return false;
     }
 
+    /// <summary>Jump to the last DOCA list page via DataTables API.</summary>
+    public static Task<bool> GoToLastPageAsync(IPage page, CancellationToken cancellationToken = default) =>
+        GoToPageTargetAsync(page, "last", cancellationToken);
+
     /// <summary>Jump to a 1-based page number (e.g. 10 for the last page).</summary>
     public static async Task<bool> GoToPageNumberAsync(
         IPage page,
@@ -168,27 +172,54 @@ public static partial class DocaGatcListScraperService
         }
 
         var beforeInfo = await ReadPaginationInfoAsync(page);
+        var pageSize = Math.Max(beforeInfo.PageEnd - beforeInfo.PageStart + 1, 1);
+        var totalPages = beforeInfo.TotalEntries > 0
+            ? (int)Math.Ceiling(beforeInfo.TotalEntries / (double)pageSize)
+            : 0;
+
+        if (totalPages > 0 && pageNumber >= totalPages)
+        {
+            return await GoToLastPageAsync(page, cancellationToken);
+        }
+
+        return await GoToPageTargetAsync(
+            page,
+            (pageNumber - 1).ToString(CultureInfo.InvariantCulture),
+            cancellationToken,
+            expectedPageNumber: pageNumber);
+    }
+
+    private static async Task<bool> GoToPageTargetAsync(
+        IPage page,
+        string pageTarget,
+        CancellationToken cancellationToken,
+        int expectedPageNumber = 0)
+    {
+        var beforeInfo = await ReadPaginationInfoAsync(page);
         var beforeFirstCert = await ReadFirstRowCertificateAsync(page);
         var pageSize = Math.Max(beforeInfo.PageEnd - beforeInfo.PageStart + 1, 1);
-        var expectedStart = (pageNumber - 1) * pageSize + 1;
+        var expectedStart = expectedPageNumber > 0
+            ? (expectedPageNumber - 1) * pageSize + 1
+            : beforeInfo.TotalEntries > 0
+                ? ((beforeInfo.TotalEntries - 1) / pageSize) * pageSize + 1
+                : 0;
 
-        if (beforeInfo.PageStart == expectedStart && beforeInfo.PageStart > 0)
+        if (expectedStart > 0 && beforeInfo.PageStart == expectedStart)
         {
             return true;
         }
 
         await ScrollPaginationIntoViewAsync(page);
 
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 0; attempt < 4; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var zeroBasedIndex = pageNumber - 1;
             var navigated = attempt switch
             {
-                0 => await NavigateViaDataTablesAsync(page, zeroBasedIndex.ToString(CultureInfo.InvariantCulture)),
-                1 => await ClickPageNumberButtonAsync(page, pageNumber),
-                _ => await NavigateViaDataTablesAsync(page, zeroBasedIndex.ToString(CultureInfo.InvariantCulture)),
+                0 or 2 => await NavigateViaDataTablesAsync(page, pageTarget),
+                1 when expectedPageNumber > 0 => await ClickPageNumberButtonAsync(page, expectedPageNumber),
+                _ => await NavigateViaDataTablesAsync(page, pageTarget),
             };
 
             if (!navigated)
@@ -241,6 +272,8 @@ public static partial class DocaGatcListScraperService
 
     private static async Task<bool> ClickPageNumberButtonAsync(IPage page, int pageNumber)
     {
+        await ScrollPaginationIntoViewAsync(page);
+
         var button = page
             .Locator($"{PaginationContainerSelector} .paginate_button")
             .Filter(new LocatorFilterOptions { HasText = pageNumber.ToString(CultureInfo.InvariantCulture) })
@@ -262,7 +295,16 @@ public static partial class DocaGatcListScraperService
             return false;
         }
 
-        await button.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+        await button.ScrollIntoViewIfNeededAsync();
+        try
+        {
+            await button.ClickAsync(new LocatorClickOptions { Timeout = 15_000 });
+        }
+        catch (PlaywrightException)
+        {
+            await button.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 15_000 });
+        }
+
         return true;
     }
 
@@ -285,6 +327,14 @@ public static partial class DocaGatcListScraperService
                   return false;
                 }
                 table.page('next').draw('page');
+                return true;
+              }
+
+              if (pageTarget === 'last') {
+                if (info.pages <= 0) {
+                  return false;
+                }
+                table.page('last').draw('page');
                 return true;
               }
 

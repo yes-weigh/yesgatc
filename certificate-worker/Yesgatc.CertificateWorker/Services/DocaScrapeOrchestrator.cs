@@ -92,10 +92,12 @@ public sealed class DocaScrapeOrchestrator
                     string.Empty,
                     cancellationToken);
 
-                var jumped = await DocaGatcListScraperService.GoToPageNumberAsync(
-                    page,
-                    ScrapeStartPage,
-                    cancellationToken);
+                var jumped = ScrapeStartPage >= 10
+                    ? await DocaGatcListScraperService.GoToLastPageAsync(page, cancellationToken)
+                    : await DocaGatcListScraperService.GoToPageNumberAsync(
+                        page,
+                        ScrapeStartPage,
+                        cancellationToken);
                 if (!jumped)
                 {
                     throw new InvalidOperationException(

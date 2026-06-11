@@ -461,4 +461,23 @@ export async function ensureDocaEnrichRemoteDefaults(updatedByUid: string): Prom
   );
 }
 
+export function isDocaCertificateMissingPdf(record: DocaCertificateRecord): boolean {
+  return !record.certificatePdfUrl.trim() && !record.certificatePdfPath.trim();
+}
+
+export function isDocaCertificateMissingPhoto(record: DocaCertificateRecord): boolean {
+  return !record.instrumentPhotoUrl.trim() && !record.instrumentPhotoPath.trim();
+}
+
+export function listDocaCertificatesMissingPdf(records: DocaCertificateRecord[]): DocaCertificateRecord[] {
+  return records.filter(isDocaCertificateMissingPdf);
+}
+
+export function listDocaCertificateNumbersMissingPdf(records: DocaCertificateRecord[]): string[] {
+  return listDocaCertificatesMissingPdf(records)
+    .map(record => record.generateCertificate || record.gatcCertificateNo)
+    .filter(Boolean)
+    .sort();
+}
+
 export { subscribeAutomationWorkerRemote };

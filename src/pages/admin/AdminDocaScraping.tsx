@@ -19,6 +19,8 @@ import {
 import {
   ensureDocaEnrichRemoteDefaults,
   ensureDocaScrapeRemoteDefaults,
+  listDocaCertificateNumbersMissingPdf,
+  listDocaCertificatesMissingPdf,
   pauseDocaEnrich,
   pauseDocaScrape,
   resumeDocaEnrich,
@@ -96,6 +98,11 @@ export const AdminDocaScraping: React.FC = () => {
     () => records.filter(record => record.pdfExtract?.parseStatus === 'ok').length,
     [records],
   );
+
+  const missingPdfRecords = useMemo(() => listDocaCertificatesMissingPdf(records), [records]);
+  const missingPdfNumbers = useMemo(() => listDocaCertificateNumbersMissingPdf(records), [records]);
+  const docaReportedTotal = scrapeStatus?.totalEntries ?? 0;
+  const estimatedNotInFirebase = Math.max(0, docaReportedTotal - records.length);
 
   useEffect(() => {
     const onError = (err: Error) => setListenerError(err.message);
@@ -286,9 +293,47 @@ export const AdminDocaScraping: React.FC = () => {
             <div><dt>Skipped</dt><dd>{scrapeStatus?.skippedRows ?? 0}</dd></div>
             <div><dt>Failed</dt><dd>{scrapeStatus?.failedRows ?? 0}</dd></div>
             <div><dt>In Firebase</dt><dd>{records.length}</dd></div>
+            <div><dt>Missing PDF in Firebase</dt><dd>{missingPdfRecords.length}</dd></div>
+            <div><dt>Not in Firebase (est.)</dt><dd>{docaReportedTotal > 0 ? estimatedNotInFirebase : '—'}</dd></div>
           </dl>
         </div>
       </section>
+
+      {(records.length > 0 || docaReportedTotal > 0) && (
+        <section className="doca-scraping-controls panel glass">
+          <div className="panel-header">
+            <h2>Sync gaps</h2>
+          </div>
+          <div className="panel-body">
+            {docaReportedTotal > 0 && estimatedNotInFirebase > 0 && (
+              <p className="text-muted text-sm">
+                DOCA reports <strong>{docaReportedTotal}</strong> entries but Firebase has{' '}
+                <strong>{records.length}</strong>. About <strong>{estimatedNotInFirebase}</strong> certificate
+                {estimatedNotInFirebase === 1 ? '' : 's'} were never scraped — likely page 10 (entries 901–1000).
+                Their numbers are not in Firebase yet, so they cannot be listed here.
+              </p>
+            )}
+            {missingPdfNumbers.length > 0 ? (
+              <>
+                <p className="text-muted text-sm mb-0">
+                  These {missingPdfNumbers.length} Firebase record{missingPdfNumbers.length === 1 ? '' : 's'} exist
+                  but have no PDF uploaded:
+                </p>
+                <ul className="doca-scraping-gap-list">
+                  {missingPdfNumbers.map(number => (
+                    <li key={number} className="text-mono text-sm">{number}</li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="text-muted text-sm mb-0">
+                All {records.length} Firebase records have a certificate PDF. The gap vs DOCA is unscrape rows, not
+                missing PDFs within Firebase.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="doca-scraping-controls panel glass">
         <div className="doca-scraping-controls-head">
