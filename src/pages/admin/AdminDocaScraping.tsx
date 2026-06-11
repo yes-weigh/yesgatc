@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ExternalLink,
   FileText,
+  Filter,
   Globe2,
   ImageIcon,
   Pause,
@@ -22,10 +23,15 @@ import {
   subscribeDocaCertificates,
   subscribeDocaScrapeLogs,
   subscribeDocaScrapeStatus,
+  subscribeVerificationCertificateNumbers,
   type DocaCertificateRecord,
   type DocaScrapeLogEntry,
   type DocaScrapeStatus,
 } from '../../lib/docaScraping';
+import {
+  countDocaCertificatesInVerifications,
+  isDocaCertificateInVerifications,
+} from '../../lib/docaCertificateMatch';
 import { TablePagination } from '../../components/TablePagination';
 import {
   DOCA_SCRAPING_TABLE_PAGE_SIZE,
@@ -52,6 +58,10 @@ export const AdminDocaScraping: React.FC = () => {
   const [remote, setRemote] = useState(DEFAULT_AUTOMATION_WORKER_REMOTE);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [hideVerificationDuplicates, setHideVerificationDuplicates] = useState(false);
+  const [verificationCertificateNumbers, setVerificationCertificateNumbers] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [listenerError, setListenerError] = useState('');
@@ -66,6 +76,7 @@ export const AdminDocaScraping: React.FC = () => {
       subscribeDocaScrapeStatus(setScrapeStatus, onError),
       subscribeDocaScrapeLogs(setLogs, onError),
       subscribeAutomationWorkerRemote(setRemote, onError),
+      subscribeVerificationCertificateNumbers(setVerificationCertificateNumbers, onError),
     ];
     return () => unsubscribers.forEach(unsub => unsub());
   }, []);
@@ -75,7 +86,7 @@ export const AdminDocaScraping: React.FC = () => {
     void ensureDocaScrapeRemoteDefaults(user.uid);
   }, [user?.uid]);
 
-  const filteredRecords = useMemo(() => {
+  const searchFilteredRecords = useMemo(() => {
     const queryText = search.trim().toLowerCase();
     if (!queryText) return records;
     return records.filter(record =>
@@ -93,6 +104,21 @@ export const AdminDocaScraping: React.FC = () => {
     );
   }, [records, search]);
 
+  const verificationDuplicateCount = useMemo(
+    () => countDocaCertificatesInVerifications(searchFilteredRecords, verificationCertificateNumbers),
+    [searchFilteredRecords, verificationCertificateNumbers],
+  );
+
+  const filteredRecords = useMemo(() => {
+    if (!hideVerificationDuplicates) {
+      return searchFilteredRecords;
+    }
+
+    return searchFilteredRecords.filter(
+      record => !isDocaCertificateInVerifications(record, verificationCertificateNumbers),
+    );
+  }, [hideVerificationDuplicates, searchFilteredRecords, verificationCertificateNumbers]);
+
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, DOCA_SCRAPING_TABLE_PAGE_SIZE),
     [filteredRecords, page],
@@ -102,7 +128,7 @@ export const AdminDocaScraping: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [search, hideVerificationDuplicates]);
 
   const runRemoteAction = async (action: () => Promise<void>) => {
     if (!user?.uid) return;
@@ -200,21 +226,48 @@ export const AdminDocaScraping: React.FC = () => {
 
       <section className="doca-scraping-table panel glass panel--table">
         <div className="panel-header doca-scraping-table-header">
-          <h2>Scraped certificates</h2>
-          <label className="doca-scraping-search">
-            <Search size={16} aria-hidden />
-            <input
-              className="input-field"
-              placeholder="Search certificate, firm, instrument…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-          </label>
+          <div>
+            <h2>Scraped certificates</h2>
+            {hideVerificationDuplicates && (
+              <p className="doca-scraping-filter-hint text-muted text-sm mb-0">
+                Showing {filteredRecords.length} not in site verifications
+                {verificationDuplicateCount > 0
+                  ? ` (${verificationDuplicateCount} hidden duplicate${verificationDuplicateCount === 1 ? '' : 's'})`
+                  : ''}
+              </p>
+            )}
+          </div>
+          <div className="doca-scraping-table-toolbar">
+            <button
+              type="button"
+              className={`btn btn-sm doca-scraping-filter-btn${hideVerificationDuplicates ? ' is-active' : ''}`}
+              aria-pressed={hideVerificationDuplicates}
+              onClick={() => setHideVerificationDuplicates(active => !active)}
+            >
+              <Filter size={16} aria-hidden />
+              Hide duplicates from verification
+            </button>
+            <label className="doca-scraping-search">
+              <Search size={16} aria-hidden />
+              <input
+                className="input-field"
+                placeholder="Search certificate, firm, instrument…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </label>
+          </div>
         </div>
         <div className="panel-body doca-scraping-table-wrap">
-          {filteredRecords.length === 0 ? (
+          {records.length === 0 ? (
             <p className="text-muted text-sm doca-scraping-empty">
               No scraped certificates yet. Start a scrape when the worker is online.
+            </p>
+          ) : filteredRecords.length === 0 ? (
+            <p className="text-muted text-sm doca-scraping-empty">
+              {hideVerificationDuplicates
+                ? 'Every scraped certificate already has a matching certificate number in site verifications.'
+                : 'No certificates match your search.'}
             </p>
           ) : (
             <>

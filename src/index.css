@@ -20845,9 +20845,27 @@ body.verification-photo-viewer-open {
 .doca-scraping-table-header {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.doca-scraping-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.doca-scraping-filter-btn.is-active {
+  border-color: rgba(56, 189, 248, 0.55);
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+}
+
+.doca-scraping-filter-hint {
+  margin-top: 0.25rem;
 }
 
 .doca-scraping-search {

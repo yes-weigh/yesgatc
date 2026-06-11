@@ -18,6 +18,7 @@ import {
   subscribeAutomationWorkerRemote,
   type AutomationWorkerRemoteControl,
 } from './automationWorker';
+import { normalizeCertificateMatchKey } from './docaCertificateMatch';
 
 export const DOCA_CERTIFICATES_COLLECTION = 'docaCertificates';
 export const DOCA_SCRAPE_STATUS_DOC = 'scrape';
@@ -128,6 +129,29 @@ export function subscribeDocaCertificates(
           normalizeDocaCertificate(docSnap.id, docSnap.data() as Record<string, unknown>),
         ),
       );
+    },
+    error => onError?.(error),
+  );
+}
+
+/** Live set of certificate numbers from siteCalibrations (verification pipeline). */
+export function subscribeVerificationCertificateNumbers(
+  onData: (numbers: Set<string>) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, 'siteCalibrations'),
+    snapshot => {
+      const numbers = new Set<string>();
+      snapshot.docs.forEach(docSnap => {
+        const key = normalizeCertificateMatchKey(
+          readString(docSnap.data() as Record<string, unknown>, 'certificateNumber'),
+        );
+        if (key) {
+          numbers.add(key);
+        }
+      });
+      onData(numbers);
     },
     error => onError?.(error),
   );

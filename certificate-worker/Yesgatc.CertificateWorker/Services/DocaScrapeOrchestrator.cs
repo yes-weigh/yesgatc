@@ -42,7 +42,6 @@ public sealed class DocaScrapeOrchestrator
         var totalPages = 0;
         var totalEntries = 0;
         var checkpointPage = 0;
-        var consecutiveFullySkippedPages = 0;
 
         try
         {
@@ -173,22 +172,14 @@ public sealed class DocaScrapeOrchestrator
                     string.Empty,
                     cancellationToken);
 
-                if (parseResult.Rows.Count > 0 && pageSkipped == parseResult.Rows.Count && pageUploaded == 0)
-                {
-                    consecutiveFullySkippedPages++;
-                }
-                else
-                {
-                    consecutiveFullySkippedPages = 0;
-                }
-
-                var allAlreadySynced =
+                // Only stop early on the last DOCA page when every row was already synced.
+                var lastPageFullySkipped =
                     parseResult.Rows.Count > 0
                     && pageSkipped == parseResult.Rows.Count
                     && pageUploaded == 0
-                    && (!parseResult.HasNextPage || consecutiveFullySkippedPages >= 2);
+                    && !parseResult.HasNextPage;
 
-                if (allAlreadySynced)
+                if (lastPageFullySkipped)
                 {
                     await PublishStateAsync(
                         "completed",
