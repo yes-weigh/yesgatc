@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowDownAZ,
+  Download,
   ExternalLink,
   FileSearch,
   FileText,
@@ -46,6 +47,7 @@ import {
   countDocaCertificatesInVerifications,
   isDocaCertificateInVerifications,
 } from '../../lib/docaCertificateMatch';
+import { exportDocaCertificatesToExcel } from '../../lib/docaCertificateExport';
 import { TablePagination } from '../../components/TablePagination';
 import {
   DOCA_SCRAPING_TABLE_PAGE_SIZE,
@@ -188,6 +190,14 @@ export const AdminDocaScraping: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Could not update scraper controls.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      exportDocaCertificatesToExcel(filteredRecords);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not export Excel file.');
     }
   };
 
@@ -376,6 +386,16 @@ export const AdminDocaScraping: React.FC = () => {
               <RefreshCw size={16} aria-hidden />
               Resume
             </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={records.length === 0}
+              onClick={handleExportExcel}
+              title="Download all certificate details and PDF URLs as Excel"
+            >
+              <Download size={16} aria-hidden />
+              Download Excel
+            </button>
           </div>
         </div>
 
@@ -474,6 +494,16 @@ export const AdminDocaScraping: React.FC = () => {
             )}
           </div>
           <div className="doca-scraping-table-toolbar">
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              disabled={filteredRecords.length === 0}
+              onClick={handleExportExcel}
+              title="Download certificate details and PDF URLs as Excel"
+            >
+              <Download size={16} aria-hidden />
+              Export Excel
+            </button>
             <button
               type="button"
               className={`btn btn-sm doca-scraping-filter-btn${hideVerificationDuplicates ? ' is-active' : ''}`}
