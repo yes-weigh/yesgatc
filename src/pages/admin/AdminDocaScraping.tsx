@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ArrowDownAZ,
   ExternalLink,
   FileSearch,
   FileText,
@@ -19,6 +20,7 @@ import {
 import {
   ensureDocaEnrichRemoteDefaults,
   ensureDocaScrapeRemoteDefaults,
+  DOCA_CERTIFICATE_SORT_OPTIONS,
   listDocaCertificateNumbersMissingPdf,
   listDocaCertificatesMissingPdf,
   pauseDocaEnrich,
@@ -33,7 +35,9 @@ import {
   subscribeDocaScrapeLogs,
   subscribeDocaScrapeStatus,
   subscribeVerificationCertificateNumbers,
+  sortDocaCertificates,
   type DocaCertificateRecord,
+  type DocaCertificateSortOption,
   type DocaEnrichStatus,
   type DocaScrapeLogEntry,
   type DocaScrapeStatus,
@@ -82,6 +86,7 @@ export const AdminDocaScraping: React.FC = () => {
   const [page, setPage] = useState(1);
   const [hideVerificationDuplicates, setHideVerificationDuplicates] = useState(false);
   const [scrapeStartPage, setScrapeStartPage] = useState('');
+  const [sortOption, setSortOption] = useState<DocaCertificateSortOption>('scrapedAt-desc');
   const [verificationCertificateNumbers, setVerificationCertificateNumbers] = useState<Set<string>>(
     () => new Set(),
   );
@@ -153,14 +158,14 @@ export const AdminDocaScraping: React.FC = () => {
   );
 
   const filteredRecords = useMemo(() => {
-    if (!hideVerificationDuplicates) {
-      return searchFilteredRecords;
-    }
+    const base = hideVerificationDuplicates
+      ? searchFilteredRecords.filter(
+          record => !isDocaCertificateInVerifications(record, verificationCertificateNumbers),
+        )
+      : searchFilteredRecords;
 
-    return searchFilteredRecords.filter(
-      record => !isDocaCertificateInVerifications(record, verificationCertificateNumbers),
-    );
-  }, [hideVerificationDuplicates, searchFilteredRecords, verificationCertificateNumbers]);
+    return sortDocaCertificates(base, sortOption);
+  }, [hideVerificationDuplicates, searchFilteredRecords, verificationCertificateNumbers, sortOption]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, DOCA_SCRAPING_TABLE_PAGE_SIZE),
@@ -171,7 +176,7 @@ export const AdminDocaScraping: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [search, hideVerificationDuplicates]);
+  }, [search, hideVerificationDuplicates, sortOption]);
 
   const runRemoteAction = async (action: () => Promise<void>) => {
     if (!user?.uid) return;
@@ -395,6 +400,63 @@ export const AdminDocaScraping: React.FC = () => {
             <div><dt>Failed</dt><dd>{enrichStatus?.failedRows ?? 0}</dd></div>
             <div><dt>Parsed in Firebase</dt><dd>{parsedCount}</dd></div>
           </dl>
+
+          {enrichStatus?.lastProcessed?.certificate && (
+            <div className="doca-enrich-last-processed">
+              <div className="doca-enrich-last-processed-head">
+                <h3 className="doca-enrich-last-processed-title">Last processed PDF</h3>
+                <span
+                  className={`doca-enrich-last-action doca-enrich-last-action--${enrichStatus.lastProcessed.action || 'parsed'}`}
+                >
+                  {enrichStatus.lastProcessed.action || 'parsed'}
+                </span>
+              </div>
+              <p className="doca-enrich-last-cert text-mono text-sm">
+                {enrichStatus.lastProcessed.certificate}
+              </p>
+              {enrichStatus.lastProcessed.processedAt && (
+                <p className="text-muted text-sm mb-0">
+                  {formatTimestamp(enrichStatus.lastProcessed.processedAt)}
+                </p>
+              )}
+              {enrichStatus.lastProcessed.action === 'skipped' ? (
+                <p className="text-muted text-sm doca-enrich-last-note mb-0">
+                  Already parsed at the current parser version — no new fields written.
+                </p>
+              ) : enrichStatus.lastProcessed.pdfExtract ? (
+                <dl className="doca-enrich-last-fields">
+                  <div>
+                    <dt>Parse</dt>
+                    <dd>
+                      <span
+                        className={`doca-scraping-parse-status doca-scraping-parse-status--${enrichStatus.lastProcessed.pdfExtract.parseStatus || 'pending'}`}
+                      >
+                        {enrichStatus.lastProcessed.pdfExtract.parseStatus || 'pending'}
+                      </span>
+                    </dd>
+                  </div>
+                  <div><dt>Serial</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.serialNumber || '—'}</dd></div>
+                  <div><dt>Max</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.maxCapacity || '—'}</dd></div>
+                  <div><dt>e</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.verificationScaleIntervalE || '—'}</dd></div>
+                  <div><dt>Model</dt><dd>{enrichStatus.lastProcessed.pdfExtract.manufacturerModel || '—'}</dd></div>
+                  <div><dt>Owner</dt><dd>{enrichStatus.lastProcessed.pdfExtract.ownerName || '—'}</dd></div>
+                  <div className="doca-enrich-last-field-wide">
+                    <dt>Address</dt>
+                    <dd>{enrichStatus.lastProcessed.pdfExtract.ownerAddress || '—'}</dd>
+                  </div>
+                  <div><dt>Phone</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.ownerPhone || '—'}</dd></div>
+                  <div><dt>Verified</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.verificationDate || '—'}</dd></div>
+                  <div><dt>Next due</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.nextVerificationDue || '—'}</dd></div>
+                  {enrichStatus.lastProcessed.pdfExtract.parseError && (
+                    <div className="doca-enrich-last-field-wide">
+                      <dt>Error</dt>
+                      <dd className="doca-enrich-last-error">{enrichStatus.lastProcessed.pdfExtract.parseError}</dd>
+                    </div>
+                  )}
+                </dl>
+              ) : null}
+            </div>
+          )}
         </div>
       </section>
 
@@ -421,6 +483,22 @@ export const AdminDocaScraping: React.FC = () => {
               <Filter size={16} aria-hidden />
               Hide duplicates from verification
             </button>
+            <label className="doca-scraping-sort">
+              <ArrowDownAZ size={16} aria-hidden />
+              <span className="sr-only">Sort by</span>
+              <select
+                className="input-field"
+                value={sortOption}
+                onChange={e => setSortOption(e.target.value as DocaCertificateSortOption)}
+                aria-label="Sort certificates by"
+              >
+                {DOCA_CERTIFICATE_SORT_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="doca-scraping-search">
               <Search size={16} aria-hidden />
               <input

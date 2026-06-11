@@ -33,6 +33,7 @@ public sealed class DocaEnrichOrchestrator
         var parsedRows = 0;
         var skippedRows = 0;
         var failedRows = 0;
+        DocaEnrichLastProcessed? lastProcessed = null;
 
         try
         {
@@ -46,6 +47,7 @@ public sealed class DocaEnrichOrchestrator
                 failedRows,
                 startedAt,
                 string.Empty,
+                null,
                 cancellationToken);
 
             var idToken = await ResolveFirebaseIdToken();
@@ -62,6 +64,7 @@ public sealed class DocaEnrichOrchestrator
                 failedRows,
                 startedAt,
                 string.Empty,
+                null,
                 cancellationToken);
 
             foreach (var summary in certificates)
@@ -74,6 +77,7 @@ public sealed class DocaEnrichOrchestrator
                 if (_enrichService.ShouldSkipEnrich(summary))
                 {
                     skippedRows++;
+                    lastProcessed = BuildLastProcessed(summary.GenerateCertificate, "skipped", null);
                     await PublishStateAsync(
                         "running",
                         $"Skipped {summary.GenerateCertificate} (already parsed).",
@@ -84,6 +88,7 @@ public sealed class DocaEnrichOrchestrator
                         failedRows,
                         startedAt,
                         string.Empty,
+                        lastProcessed,
                         cancellationToken);
                     continue;
                 }
@@ -91,9 +96,12 @@ public sealed class DocaEnrichOrchestrator
                 try
                 {
                     var extract = await _enrichService.EnrichCertificateAsync(summary, idToken, cancellationToken);
+                    lastProcessed = BuildLastProcessed(summary.GenerateCertificate, "parsed", extract);
+
                     if (string.Equals(extract.ParseStatus, "failed", StringComparison.OrdinalIgnoreCase))
                     {
                         failedRows++;
+                        lastProcessed = BuildLastProcessed(summary.GenerateCertificate, "failed", extract);
                         await _telemetry.ReportEnrichActivityAsync(
                             $"Failed to parse {summary.GenerateCertificate}: {extract.ParseError}",
                             "error",
@@ -113,6 +121,17 @@ public sealed class DocaEnrichOrchestrator
                 catch (Exception ex)
                 {
                     failedRows++;
+                    lastProcessed = BuildLastProcessed(
+                        summary.GenerateCertificate,
+                        "failed",
+                        new GatcCertificatePdfExtract
+                        {
+                            ParseStatus = "failed",
+                            ParseError = ex.Message,
+                            ParsedAt = DateTimeOffset.UtcNow.ToString("O"),
+                            ParserVersionValue = GatcCertificatePdfExtract.ParserVersion,
+                        });
+
                     await _telemetry.ReportEnrichActivityAsync(
                         $"Error enriching {summary.GenerateCertificate}: {ex.Message}",
                         "error",
@@ -129,7 +148,9 @@ public sealed class DocaEnrichOrchestrator
                         failedRows,
                         startedAt,
                         ex.Message,
+                        lastProcessed,
                         cancellationToken);
+                    continue;
                 }
 
                 await PublishStateAsync(
@@ -142,6 +163,7 @@ public sealed class DocaEnrichOrchestrator
                     failedRows,
                     startedAt,
                     string.Empty,
+                    lastProcessed,
                     cancellationToken);
 
                 if (_settings.DocaEnrich.DelayBetweenDocsMs > 0)
@@ -160,6 +182,7 @@ public sealed class DocaEnrichOrchestrator
                 failedRows,
                 startedAt,
                 string.Empty,
+                lastProcessed,
                 cancellationToken);
 
             await _telemetry.ReportEnrichActivityAsync(
@@ -180,6 +203,7 @@ public sealed class DocaEnrichOrchestrator
                 failedRows,
                 startedAt,
                 string.Empty,
+                lastProcessed,
                 CancellationToken.None);
             throw;
         }
@@ -195,6 +219,7 @@ public sealed class DocaEnrichOrchestrator
                 failedRows,
                 startedAt,
                 ex.Message,
+                lastProcessed,
                 CancellationToken.None);
             await _telemetry.ReportEnrichActivityAsync(
                 $"PDF enrich failed: {ex.Message}",
@@ -205,21 +230,22 @@ public sealed class DocaEnrichOrchestrator
         }
     }
 
+    private static DocaEnrichLastProcessed BuildLastProcessed(
+        string certificate,
+        string action,
+        GatcCertificatePdfExtract? extract) =>
+        new()
+        {
+            Certificate = certificate,
+            Action = action,
+            ProcessedAt = DateTimeOffset.UtcNow.ToString("O"),
+            Extract = extract,
+        };
+
     private async Task WaitIfPausedAsync(CancellationToken cancellationToken)
     {
         while (IsPauseRequested?.Invoke() == true)
         {
-            await PublishStateAsync(
-                "paused",
-                "PDF enrich paused from web admin.",
-                0,
-                0,
-                0,
-                0,
-                0,
-                string.Empty,
-                string.Empty,
-                cancellationToken);
             await Task.Delay(1500, cancellationToken);
         }
     }
@@ -234,6 +260,7 @@ public sealed class DocaEnrichOrchestrator
         int failedRows,
         string startedAt,
         string lastError,
+        DocaEnrichLastProcessed? lastProcessed,
         CancellationToken cancellationToken) =>
         _telemetry.PublishEnrichStateAsync(
             new DocaEnrichProgressState
@@ -248,6 +275,7 @@ public sealed class DocaEnrichOrchestrator
                 StartedAt = startedAt,
                 LastProgressAt = DateTimeOffset.UtcNow.ToString("O"),
                 LastError = lastError,
+                LastProcessed = lastProcessed,
             },
             ResolveFirebaseIdToken!,
             cancellationToken);

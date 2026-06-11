@@ -88,4 +88,13 @@ public sealed class DocaEnrichProgressState
     public string StartedAt { get; init; } = string.Empty;
     public string LastProgressAt { get; init; } = string.Empty;
     public string LastError { get; init; } = string.Empty;
+    public DocaEnrichLastProcessed? LastProcessed { get; init; }
+}
+
+public sealed class DocaEnrichLastProcessed
+{
+    public string Certificate { get; init; } = string.Empty;
+    public string Action { get; init; } = string.Empty;
+    public string ProcessedAt { get; init; } = string.Empty;
+    public GatcCertificatePdfExtract? Extract { get; init; }
 }

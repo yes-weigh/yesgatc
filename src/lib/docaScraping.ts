@@ -99,6 +99,14 @@ export type DocaEnrichStatus = {
   lastProgressAt: string;
   lastError: string;
   machineName: string;
+  lastProcessed: DocaEnrichLastProcessed | null;
+};
+
+export type DocaEnrichLastProcessed = {
+  certificate: string;
+  action: 'parsed' | 'skipped' | 'failed' | '';
+  processedAt: string;
+  pdfExtract: DocaCertificatePdfExtract | null;
 };
 
 export type DocaScrapeLogEntry = {
@@ -344,6 +352,7 @@ export function normalizeDocaEnrichStatus(
 ): DocaEnrichStatus | null {
   if (!data) return null;
   const status = readString(data, 'status', 'idle');
+  const action = readString(data, 'lastProcessedAction');
   return {
     status: (['idle', 'running', 'paused', 'completed', 'error'].includes(status)
       ? status
@@ -358,6 +367,16 @@ export function normalizeDocaEnrichStatus(
     lastProgressAt: readString(data, 'lastProgressAt'),
     lastError: readString(data, 'lastError'),
     machineName: readString(data, 'machineName'),
+    lastProcessed: readString(data, 'lastProcessedCertificate')
+      ? {
+          certificate: readString(data, 'lastProcessedCertificate'),
+          action: (['parsed', 'skipped', 'failed'].includes(action)
+            ? action
+            : '') as DocaEnrichLastProcessed['action'],
+          processedAt: readString(data, 'lastProcessedAt'),
+          pdfExtract: normalizePdfExtract(data.lastExtract),
+        }
+      : null,
   };
 }
 
@@ -478,6 +497,108 @@ export function listDocaCertificateNumbersMissingPdf(records: DocaCertificateRec
     .map(record => record.generateCertificate || record.gatcCertificateNo)
     .filter(Boolean)
     .sort();
+}
+
+export type DocaCertificateSortOption =
+  | 'scrapedAt-desc'
+  | 'scrapedAt-asc'
+  | 'certificate-asc'
+  | 'certificate-desc'
+  | 'belongTo-asc'
+  | 'instrument-asc'
+  | 'serial-asc'
+  | 'maxCapacity-asc'
+  | 'parseStatus-asc'
+  | 'validityDate-asc'
+  | 'validityDate-desc'
+  | 'uploadDate-desc';
+
+export const DOCA_CERTIFICATE_SORT_OPTIONS: { value: DocaCertificateSortOption; label: string }[] = [
+  { value: 'scrapedAt-desc', label: 'Scraped (newest)' },
+  { value: 'scrapedAt-asc', label: 'Scraped (oldest)' },
+  { value: 'certificate-asc', label: 'Certificate (A–Z)' },
+  { value: 'certificate-desc', label: 'Certificate (Z–A)' },
+  { value: 'belongTo-asc', label: 'Belongs to (A–Z)' },
+  { value: 'instrument-asc', label: 'Instrument (A–Z)' },
+  { value: 'serial-asc', label: 'Serial (A–Z)' },
+  { value: 'maxCapacity-asc', label: 'Max capacity' },
+  { value: 'parseStatus-asc', label: 'Parse status' },
+  { value: 'validityDate-asc', label: 'Validity (soonest)' },
+  { value: 'validityDate-desc', label: 'Validity (latest)' },
+  { value: 'uploadDate-desc', label: 'Upload date (newest)' },
+];
+
+const PARSE_STATUS_RANK: Record<string, number> = {
+  failed: 0,
+  partial: 1,
+  pending: 2,
+  ok: 3,
+  '': 2,
+};
+
+function compareText(a: string, b: string, direction: 'asc' | 'desc'): number {
+  const result = a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true });
+  return direction === 'asc' ? result : -result;
+}
+
+function compareTimestamp(a: string, b: string, direction: 'asc' | 'desc'): number {
+  const aTime = Date.parse(a);
+  const bTime = Date.parse(b);
+  const aValid = Number.isFinite(aTime);
+  const bValid = Number.isFinite(bTime);
+  if (!aValid && !bValid) return 0;
+  if (!aValid) return 1;
+  if (!bValid) return -1;
+  const result = aTime - bTime;
+  return direction === 'asc' ? result : -result;
+}
+
+function sortValue(record: DocaCertificateRecord, option: DocaCertificateSortOption): string {
+  switch (option.split('-')[0]) {
+    case 'certificate':
+      return record.generateCertificate || record.gatcCertificateNo;
+    case 'belongTo':
+      return record.belongTo;
+    case 'instrument':
+      return record.instrumentName;
+    case 'serial':
+      return record.pdfExtract?.serialNumber ?? '';
+    case 'maxCapacity':
+      return record.pdfExtract?.maxCapacity ?? '';
+    case 'parseStatus':
+      return record.pdfExtract?.parseStatus ?? 'pending';
+    case 'validityDate':
+      return record.validityDate;
+    case 'uploadDate':
+      return record.uploadDate;
+    default:
+      return record.scrapedAt;
+  }
+}
+
+export function sortDocaCertificates(
+  records: DocaCertificateRecord[],
+  sortOption: DocaCertificateSortOption,
+): DocaCertificateRecord[] {
+  const [field, direction] = sortOption.split('-') as [string, 'asc' | 'desc'];
+  const sorted = [...records];
+
+  sorted.sort((left, right) => {
+    if (field === 'parseStatus') {
+      const leftRank = PARSE_STATUS_RANK[left.pdfExtract?.parseStatus ?? 'pending'] ?? 2;
+      const rightRank = PARSE_STATUS_RANK[right.pdfExtract?.parseStatus ?? 'pending'] ?? 2;
+      const result = leftRank - rightRank;
+      return direction === 'asc' ? result : -result;
+    }
+
+    if (field === 'scrapedAt' || field === 'validityDate' || field === 'uploadDate') {
+      return compareTimestamp(sortValue(left, sortOption), sortValue(right, sortOption), direction);
+    }
+
+    return compareText(sortValue(left, sortOption), sortValue(right, sortOption), direction);
+  });
+
+  return sorted;
 }
 
 export { subscribeAutomationWorkerRemote };

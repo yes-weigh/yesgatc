@@ -318,6 +318,17 @@ public sealed class WorkerTelemetryService
                 ["machineName"] = Environment.MachineName,
             };
 
+            if (state.LastProcessed is not null)
+            {
+                fields["lastProcessedCertificate"] = state.LastProcessed.Certificate;
+                fields["lastProcessedAction"] = state.LastProcessed.Action;
+                fields["lastProcessedAt"] = state.LastProcessed.ProcessedAt;
+                if (state.LastProcessed.Extract is not null)
+                {
+                    fields["lastExtract"] = state.LastProcessed.Extract.ToFirestoreMap();
+                }
+            }
+
             var existing = await _documents.TryGetFieldsAsync(StatusCollection, EnrichDocId, idToken, cancellationToken);
             if (existing.Count == 0)
             {
