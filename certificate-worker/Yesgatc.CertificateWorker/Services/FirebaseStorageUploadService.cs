@@ -193,6 +193,34 @@ public sealed class FirebaseStorageUploadService
         return $"{_settings.ProjectId}.firebasestorage.app";
     }
 
+    public async Task<byte[]> DownloadFileAsync(
+        string storagePath,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(storagePath))
+        {
+            throw new InvalidOperationException("Storage path is required to download a file.");
+        }
+
+        var bucket = ResolveStorageBucket();
+        var url =
+            $"https://firebasestorage.googleapis.com/v0/b/{Uri.EscapeDataString(bucket)}/o/{Uri.EscapeDataString(storagePath)}?alt=media";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
+
+        using var response = await _http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Could not download {storagePath} from Firebase Storage ({(int)response.StatusCode}): {body}");
+        }
+
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
     private static string SanitizeFileName(string value)
     {
         var invalid = Path.GetInvalidFileNameChars();

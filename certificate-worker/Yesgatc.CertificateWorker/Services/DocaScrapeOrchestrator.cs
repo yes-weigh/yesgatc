@@ -25,6 +25,7 @@ public sealed class DocaScrapeOrchestrator
     public Func<Task<string>>? ResolveFirebaseIdToken { get; set; }
     public Func<bool>? IsPauseRequested { get; set; }
     public Func<DocaCredentialSettings>? ResolveDocaCredentials { get; set; }
+    public int ScrapeStartPage { get; set; } = 1;
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
@@ -72,6 +73,36 @@ public sealed class DocaScrapeOrchestrator
                 page,
                 Math.Clamp(_settings.DocaScrape.PageSize, 10, 100),
                 cancellationToken);
+
+            if (ScrapeStartPage > 1)
+            {
+                await PublishStateAsync(
+                    "running",
+                    $"Jumping to DOCA page {ScrapeStartPage}…",
+                    ScrapeStartPage - 1,
+                    totalPages,
+                    totalEntries,
+                    processedRows,
+                    uploadedRows,
+                    skippedRows,
+                    failedRows,
+                    checkpointPage,
+                    startedAt,
+                    string.Empty,
+                    cancellationToken);
+
+                var jumped = await DocaGatcListScraperService.GoToPageNumberAsync(
+                    page,
+                    ScrapeStartPage,
+                    cancellationToken);
+                if (!jumped)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not jump to DOCA page {ScrapeStartPage}. Try a lower page number or start from page 1.");
+                }
+
+                currentPage = ScrapeStartPage - 1;
+            }
 
             do
             {

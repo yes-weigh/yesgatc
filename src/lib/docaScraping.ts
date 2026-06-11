@@ -22,6 +22,34 @@ import { normalizeCertificateMatchKey } from './docaCertificateMatch';
 
 export const DOCA_CERTIFICATES_COLLECTION = 'docaCertificates';
 export const DOCA_SCRAPE_STATUS_DOC = 'scrape';
+export const DOCA_ENRICH_STATUS_DOC = 'enrich';
+
+export type DocaCertificatePdfExtract = {
+  parseStatus: 'ok' | 'partial' | 'failed' | '';
+  parseError: string;
+  parsedAt: string;
+  parserVersion: number;
+  certificateNumber: string;
+  verificationDate: string;
+  ownerName: string;
+  ownerAddress: string;
+  ownerPhone: string;
+  instrumentType: string;
+  manufacturerModel: string;
+  serialNumber: string;
+  yearOfManufacture: string;
+  accuracyClass: string;
+  maxCapacity: string;
+  minCapacity: string;
+  verificationScaleIntervalE: string;
+  actualScaleIntervalD: string;
+  unitOfMeasurement: string;
+  verificationIntervalsN: string;
+  maximumPermissibleError: string;
+  nextVerificationDue: string;
+  modelApprovalNos: string;
+  sealIdentificationNos: string;
+};
 
 export type DocaCertificateRecord = {
   id: string;
@@ -39,6 +67,7 @@ export type DocaCertificateRecord = {
   docaPhotoSourceUrl: string;
   scrapedAt: string;
   machineName: string;
+  pdfExtract: DocaCertificatePdfExtract | null;
 };
 
 export type DocaScrapeStatus = {
@@ -58,12 +87,60 @@ export type DocaScrapeStatus = {
   machineName: string;
 };
 
+export type DocaEnrichStatus = {
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'error';
+  statusMessage: string;
+  totalRows: number;
+  processedRows: number;
+  parsedRows: number;
+  skippedRows: number;
+  failedRows: number;
+  startedAt: string;
+  lastProgressAt: string;
+  lastError: string;
+  machineName: string;
+};
+
 export type DocaScrapeLogEntry = {
   id: string;
   createdAt: string;
   message: string;
   level: string;
 };
+
+function normalizePdfExtract(data: unknown): DocaCertificatePdfExtract | null {
+  if (!data || typeof data !== 'object') return null;
+  const record = data as Record<string, unknown>;
+  const parseStatus = readString(record, 'parseStatus');
+  return {
+    parseStatus: (['ok', 'partial', 'failed'].includes(parseStatus)
+      ? parseStatus
+      : '') as DocaCertificatePdfExtract['parseStatus'],
+    parseError: readString(record, 'parseError'),
+    parsedAt: readString(record, 'parsedAt'),
+    parserVersion: readInt(record, 'parserVersion'),
+    certificateNumber: readString(record, 'certificateNumber'),
+    verificationDate: readString(record, 'verificationDate'),
+    ownerName: readString(record, 'ownerName'),
+    ownerAddress: readString(record, 'ownerAddress'),
+    ownerPhone: readString(record, 'ownerPhone'),
+    instrumentType: readString(record, 'instrumentType'),
+    manufacturerModel: readString(record, 'manufacturerModel'),
+    serialNumber: readString(record, 'serialNumber'),
+    yearOfManufacture: readString(record, 'yearOfManufacture'),
+    accuracyClass: readString(record, 'accuracyClass'),
+    maxCapacity: readString(record, 'maxCapacity'),
+    minCapacity: readString(record, 'minCapacity'),
+    verificationScaleIntervalE: readString(record, 'verificationScaleIntervalE'),
+    actualScaleIntervalD: readString(record, 'actualScaleIntervalD'),
+    unitOfMeasurement: readString(record, 'unitOfMeasurement'),
+    verificationIntervalsN: readString(record, 'verificationIntervalsN'),
+    maximumPermissibleError: readString(record, 'maximumPermissibleError'),
+    nextVerificationDue: readString(record, 'nextVerificationDue'),
+    modelApprovalNos: readString(record, 'modelApprovalNos'),
+    sealIdentificationNos: readString(record, 'sealIdentificationNos'),
+  };
+}
 
 function normalizeDocaCertificate(
   id: string,
@@ -85,6 +162,7 @@ function normalizeDocaCertificate(
     docaPhotoSourceUrl: readString(data, 'docaPhotoSourceUrl'),
     scrapedAt: readString(data, 'scrapedAt'),
     machineName: readString(data, 'machineName'),
+    pdfExtract: normalizePdfExtract(data?.pdfExtract),
   };
 }
 
@@ -206,12 +284,15 @@ export function subscribeDocaScrapeLogs(
 export async function startDocaScrape(
   currentRemote: AutomationWorkerRemoteControl,
   updatedByUid: string,
+  options?: { startPage?: number },
 ): Promise<void> {
+  const startPage = options?.startPage ?? currentRemote.scrapeStartPage;
   await saveAutomationWorkerRemoteControl(
     currentRemote,
     {
       scrapePause: false,
       scrapeCommandRevision: currentRemote.scrapeCommandRevision + 1,
+      scrapeStartPage: startPage > 1 ? startPage : 0,
     },
     updatedByUid,
   );
@@ -250,6 +331,129 @@ export async function ensureDocaScrapeRemoteDefaults(updatedByUid: string): Prom
     {
       scrapeCommandRevision: 0,
       scrapePause: false,
+      scrapeStartPage: 0,
+      updatedAt: new Date().toISOString(),
+      updatedByUid,
+    },
+    { merge: true },
+  );
+}
+
+export function normalizeDocaEnrichStatus(
+  data: Record<string, unknown> | undefined,
+): DocaEnrichStatus | null {
+  if (!data) return null;
+  const status = readString(data, 'status', 'idle');
+  return {
+    status: (['idle', 'running', 'paused', 'completed', 'error'].includes(status)
+      ? status
+      : 'idle') as DocaEnrichStatus['status'],
+    statusMessage: readString(data, 'statusMessage'),
+    totalRows: readInt(data, 'totalRows'),
+    processedRows: readInt(data, 'processedRows'),
+    parsedRows: readInt(data, 'parsedRows'),
+    skippedRows: readInt(data, 'skippedRows'),
+    failedRows: readInt(data, 'failedRows'),
+    startedAt: readString(data, 'startedAt'),
+    lastProgressAt: readString(data, 'lastProgressAt'),
+    lastError: readString(data, 'lastError'),
+    machineName: readString(data, 'machineName'),
+  };
+}
+
+export function subscribeDocaEnrichStatus(
+  onData: (status: DocaEnrichStatus | null) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    doc(db, AUTOMATION_WORKER_COLLECTION, DOCA_ENRICH_STATUS_DOC),
+    snapshot => {
+      onData(normalizeDocaEnrichStatus(snapshot.data() as Record<string, unknown> | undefined));
+    },
+    error => onError?.(error),
+  );
+}
+
+export function subscribeDocaEnrichLogs(
+  onData: (logs: DocaScrapeLogEntry[]) => void,
+  onError?: (error: Error) => void,
+  maxEntries = 80,
+): Unsubscribe {
+  const q = query(
+    collection(db, 'automationWorkerLogs'),
+    orderBy('createdAt', 'desc'),
+    limit(maxEntries),
+  );
+  return onSnapshot(
+    q,
+    snapshot => {
+      onData(
+        snapshot.docs
+          .map(docSnap => {
+            const data = docSnap.data() as Record<string, unknown>;
+            return {
+              id: docSnap.id,
+              createdAt: readString(data, 'createdAt'),
+              message: readString(data, 'message'),
+              level: readString(data, 'level', 'info'),
+              category: readString(data, 'category'),
+            };
+          })
+          .filter(entry => entry.category === 'doca-enrich')
+          .map(({ id, createdAt, message, level }) => ({ id, createdAt, message, level })),
+      );
+    },
+    error => onError?.(error),
+  );
+}
+
+export async function startDocaEnrich(
+  currentRemote: AutomationWorkerRemoteControl,
+  updatedByUid: string,
+): Promise<void> {
+  await saveAutomationWorkerRemoteControl(
+    currentRemote,
+    {
+      enrichPause: false,
+      enrichCommandRevision: currentRemote.enrichCommandRevision + 1,
+    },
+    updatedByUid,
+  );
+}
+
+export async function pauseDocaEnrich(
+  currentRemote: AutomationWorkerRemoteControl,
+  updatedByUid: string,
+): Promise<void> {
+  await saveAutomationWorkerRemoteControl(
+    currentRemote,
+    { enrichPause: true },
+    updatedByUid,
+  );
+}
+
+export async function resumeDocaEnrich(
+  currentRemote: AutomationWorkerRemoteControl,
+  updatedByUid: string,
+): Promise<void> {
+  await saveAutomationWorkerRemoteControl(
+    currentRemote,
+    { enrichPause: false },
+    updatedByUid,
+  );
+}
+
+export async function ensureDocaEnrichRemoteDefaults(updatedByUid: string): Promise<void> {
+  const snap = await getDoc(doc(db, AUTOMATION_WORKER_COLLECTION, 'remote'));
+  if (snap.exists() && typeof snap.data()?.enrichCommandRevision === 'number') {
+    return;
+  }
+
+  await setDoc(
+    doc(db, AUTOMATION_WORKER_COLLECTION, 'remote'),
+    {
+      enrichCommandRevision: 0,
+      enrichPause: false,
       updatedAt: new Date().toISOString(),
       updatedByUid,
     },

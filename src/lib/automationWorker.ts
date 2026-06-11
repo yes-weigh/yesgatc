@@ -56,6 +56,9 @@ export type AutomationWorkerRemoteControl = {
   pauseWorker: boolean;
   scrapeCommandRevision: number;
   scrapePause: boolean;
+  scrapeStartPage: number;
+  enrichCommandRevision: number;
+  enrichPause: boolean;
   superAdminAadhar: string;
   superAdminPassword: string;
   docaEmail: string;
@@ -111,6 +114,9 @@ export const DEFAULT_AUTOMATION_WORKER_REMOTE: AutomationWorkerRemoteControl = {
   pauseWorker: false,
   scrapeCommandRevision: 0,
   scrapePause: false,
+  scrapeStartPage: 0,
+  enrichCommandRevision: 0,
+  enrichPause: false,
   superAdminAadhar: '',
   superAdminPassword: '',
   docaEmail: '',
@@ -180,6 +186,9 @@ export function normalizeAutomationWorkerRemote(
     pauseWorker: readBool(data, 'pauseWorker'),
     scrapeCommandRevision: readInt(data, 'scrapeCommandRevision'),
     scrapePause: readBool(data, 'scrapePause'),
+    scrapeStartPage: readInt(data, 'scrapeStartPage'),
+    enrichCommandRevision: readInt(data, 'enrichCommandRevision'),
+    enrichPause: readBool(data, 'enrichPause'),
     superAdminAadhar: readString(data, 'superAdminAadhar'),
     superAdminPassword: readString(data, 'superAdminPassword'),
     docaEmail: readString(data, 'docaEmail'),
@@ -348,6 +357,9 @@ export async function saveAutomationWorkerRemoteControl(
   patch: Partial<AutomationWorkerRemoteControl> & Partial<AutomationWorkerCredentialsForm> & {
     scrapeCommandRevision?: number;
     scrapePause?: boolean;
+    scrapeStartPage?: number;
+    enrichCommandRevision?: number;
+    enrichPause?: boolean;
   },
   updatedByUid: string,
   options?: { incrementCommand?: boolean; incrementCredentials?: boolean },
@@ -367,6 +379,9 @@ export async function saveAutomationWorkerRemoteControl(
       pauseWorker: patch.pauseWorker ?? current.pauseWorker,
       scrapeCommandRevision: patch.scrapeCommandRevision ?? current.scrapeCommandRevision,
       scrapePause: patch.scrapePause ?? current.scrapePause,
+      scrapeStartPage: patch.scrapeStartPage ?? current.scrapeStartPage,
+      enrichCommandRevision: patch.enrichCommandRevision ?? current.enrichCommandRevision,
+      enrichPause: patch.enrichPause ?? current.enrichPause,
       superAdminAadhar: patch.superAdminAadhar ?? current.superAdminAadhar,
       superAdminPassword: patch.superAdminPassword ?? current.superAdminPassword,
       docaEmail: patch.docaEmail ?? current.docaEmail,

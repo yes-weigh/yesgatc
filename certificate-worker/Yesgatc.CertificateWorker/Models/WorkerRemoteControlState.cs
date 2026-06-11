@@ -14,6 +14,9 @@ public sealed class WorkerRemoteControlState
     public string? CaptchaApiKey { get; init; }
     public int ScrapeCommandRevision { get; init; }
     public bool ScrapePause { get; init; }
+    public int ScrapeStartPage { get; init; }
+    public int EnrichCommandRevision { get; init; }
+    public bool EnrichPause { get; init; }
 }
 
 public sealed class WorkerStatusSnapshot

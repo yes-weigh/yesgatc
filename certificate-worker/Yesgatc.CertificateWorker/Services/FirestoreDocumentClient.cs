@@ -178,8 +178,17 @@ internal sealed class FirestoreDocumentClient
         bool boolean => new Dictionary<string, object> { ["booleanValue"] = boolean },
         int integer => new Dictionary<string, string> { ["integerValue"] = integer.ToString() },
         long longValue => new Dictionary<string, string> { ["integerValue"] = longValue.ToString() },
-        double doubleValue => new Dictionary<string, double> { ["doubleValue"] = doubleValue },
+        double doubleValue => new Dictionary<string, object> { ["doubleValue"] = doubleValue },
         string text => new Dictionary<string, string> { ["stringValue"] = text },
+        IReadOnlyDictionary<string, object?> dictionary => new Dictionary<string, object>
+        {
+            ["mapValue"] = new Dictionary<string, object>
+            {
+                ["fields"] = dictionary
+                    .Where(pair => pair.Value is not null)
+                    .ToDictionary(pair => pair.Key, pair => ToFirestoreValue(pair.Value)),
+            },
+        },
         _ => new Dictionary<string, string> { ["stringValue"] = value.ToString() ?? string.Empty },
     };
 
@@ -207,6 +216,83 @@ internal sealed class FirestoreDocumentClient
 
         return int.TryParse(value.GetString(), out var parsed) ? parsed : fallback;
     }
+
+    internal static Dictionary<string, JsonElement> ReadMapFields(
+        Dictionary<string, JsonElement> fields,
+        string key)
+    {
+        if (!fields.TryGetValue(key, out var element)
+            || !element.TryGetProperty("mapValue", out var mapValue)
+            || !mapValue.TryGetProperty("fields", out var innerFields))
+        {
+            return new Dictionary<string, JsonElement>();
+        }
+
+        return innerFields
+            .EnumerateObject()
+            .ToDictionary(property => property.Name, property => property.Value);
+    }
+
+    public async Task<List<(string Id, Dictionary<string, JsonElement> Fields)>> ListCollectionAsync(
+        string collection,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        var url =
+            $"https://firestore.googleapis.com/v1/projects/{_settings.ProjectId}/databases/(default)/documents:runQuery";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
+        request.Content = JsonContent.Create(new RunQueryRequest(new StructuredQuery(
+            [new CollectionSelector(collection)])));
+
+        using var response = await _http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Could not list {collection} from Firestore ({(int)response.StatusCode}): {body}");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var rows = await JsonSerializer.DeserializeAsync<List<RunQueryRow>>(stream, cancellationToken: cancellationToken)
+            ?? [];
+
+        var results = new List<(string Id, Dictionary<string, JsonElement> Fields)>();
+        foreach (var row in rows)
+        {
+            if (row.Document?.Fields is null || string.IsNullOrWhiteSpace(row.Document.Name))
+            {
+                continue;
+            }
+
+            var id = row.Document.Name.Split('/').LastOrDefault() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            results.Add((id, row.Document.Fields));
+        }
+
+        return results;
+    }
+
+    private sealed record RunQueryRequest(
+        [property: JsonPropertyName("structuredQuery")] StructuredQuery StructuredQuery);
+
+    private sealed record StructuredQuery(
+        [property: JsonPropertyName("from")] CollectionSelector[] From);
+
+    private sealed record CollectionSelector(
+        [property: JsonPropertyName("collectionId")] string CollectionId);
+
+    private sealed record RunQueryRow(
+        [property: JsonPropertyName("document")] RunQueryDocument? Document);
+
+    private sealed record RunQueryDocument(
+        [property: JsonPropertyName("name")] string? Name,
+        [property: JsonPropertyName("fields")] Dictionary<string, JsonElement>? Fields);
 
     private sealed record FirestoreDocumentPayload(
         [property: JsonPropertyName("fields")] Dictionary<string, JsonElement>? Fields);

@@ -106,28 +106,204 @@ public static partial class DocaGatcListScraperService
         }
 
         var beforeInfo = await ReadPaginationInfoAsync(page);
+        var beforeFirstCert = await ReadFirstRowCertificateAsync(page);
+        var pageSize = Math.Max(beforeInfo.PageEnd - beforeInfo.PageStart + 1, 1);
+        var zeroBasedCurrent = beforeInfo.PageStart > 0
+            ? (beforeInfo.PageStart - 1) / pageSize
+            : 0;
+        var targetPageIndex = zeroBasedCurrent + 1;
+
         await ScrollPaginationIntoViewAsync(page);
 
-        var nextLink = page.Locator(NextPageLinkSelector).First;
-        if (await nextLink.CountAsync() > 0)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var navigated = attempt switch
+            {
+                0 => await NavigateViaDataTablesAsync(page, "next"),
+                1 => await ClickNextPageViaScriptAsync(page) || await ClickNextPageLinkAsync(page),
+                _ => await NavigateViaDataTablesAsync(page, targetPageIndex >= 0 ? targetPageIndex.ToString(CultureInfo.InvariantCulture) : "next"),
+            };
+
+            if (!navigated)
+            {
+                await page.WaitForTimeoutAsync(400);
+                continue;
+            }
+
             try
             {
-                await nextLink.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
+                await WaitForPaginationAdvanceAsync(
+                    page,
+                    beforeInfo.PageStart,
+                    beforeFirstCert,
+                    cancellationToken);
+                return true;
             }
-            catch (PlaywrightException)
+            catch (TimeoutException) when (attempt < 2)
             {
-                await nextLink.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 15_000 });
+                await page.WaitForTimeoutAsync(600);
             }
         }
-        else if (!await ClickNextPageViaScriptAsync(page))
+
+        throw new TimeoutException("Timed out waiting for DOCA GATC list to advance to the next page.");
+    }
+
+    /// <summary>Jump to a 1-based page number (e.g. 10 for the last page).</summary>
+    public static async Task<bool> GoToPageNumberAsync(
+        IPage page,
+        int pageNumber,
+        CancellationToken cancellationToken = default)
+    {
+        if (pageNumber < 1)
         {
             return false;
         }
 
-        await WaitForPaginationAdvanceAsync(page, beforeInfo.PageStart, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
+        var beforeInfo = await ReadPaginationInfoAsync(page);
+        var beforeFirstCert = await ReadFirstRowCertificateAsync(page);
+        var pageSize = Math.Max(beforeInfo.PageEnd - beforeInfo.PageStart + 1, 1);
+        var expectedStart = (pageNumber - 1) * pageSize + 1;
+
+        if (beforeInfo.PageStart == expectedStart && beforeInfo.PageStart > 0)
+        {
+            return true;
+        }
+
+        await ScrollPaginationIntoViewAsync(page);
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var zeroBasedIndex = pageNumber - 1;
+            var navigated = attempt switch
+            {
+                0 => await NavigateViaDataTablesAsync(page, zeroBasedIndex.ToString(CultureInfo.InvariantCulture)),
+                1 => await ClickPageNumberButtonAsync(page, pageNumber),
+                _ => await NavigateViaDataTablesAsync(page, zeroBasedIndex.ToString(CultureInfo.InvariantCulture)),
+            };
+
+            if (!navigated)
+            {
+                await page.WaitForTimeoutAsync(400);
+                continue;
+            }
+
+            try
+            {
+                await WaitForPaginationAdvanceAsync(
+                    page,
+                    Math.Max(expectedStart - 1, 0),
+                    beforeFirstCert,
+                    cancellationToken,
+                    expectedPageStart: expectedStart);
+                return true;
+            }
+            catch (TimeoutException) when (attempt < 2)
+            {
+                await page.WaitForTimeoutAsync(600);
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> ClickNextPageLinkAsync(IPage page)
+    {
+        var nextLink = page.Locator(NextPageLinkSelector).First;
+        if (await nextLink.CountAsync() == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            await nextLink.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
+        }
+        catch (PlaywrightException)
+        {
+            await nextLink.ClickAsync(new LocatorClickOptions { Force = true, Timeout = 15_000 });
+        }
+
         return true;
+    }
+
+    private static async Task<bool> ClickPageNumberButtonAsync(IPage page, int pageNumber)
+    {
+        var button = page
+            .Locator($"{PaginationContainerSelector} .paginate_button")
+            .Filter(new LocatorFilterOptions { HasText = pageNumber.ToString(CultureInfo.InvariantCulture) })
+            .First;
+
+        if (await button.CountAsync() == 0)
+        {
+            return false;
+        }
+
+        var className = await button.GetAttributeAsync("class") ?? string.Empty;
+        if (className.Contains("active", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (className.Contains("disabled", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        await button.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+        return true;
+    }
+
+    private static Task<bool> NavigateViaDataTablesAsync(IPage page, string pageTarget) =>
+        page.EvaluateAsync<bool>(
+            """
+            (pageTarget) => {
+              if (typeof $ === 'undefined' || !$.fn?.dataTable) {
+                return false;
+              }
+
+              const table = $('#example1').DataTable?.();
+              if (!table) {
+                return false;
+              }
+
+              const info = table.page.info();
+              if (pageTarget === 'next') {
+                if (info.page >= info.pages - 1) {
+                  return false;
+                }
+                table.page('next').draw('page');
+                return true;
+              }
+
+              const targetIndex = parseInt(pageTarget, 10);
+              if (!Number.isFinite(targetIndex) || targetIndex < 0 || targetIndex >= info.pages) {
+                return false;
+              }
+
+              if (info.page === targetIndex) {
+                return true;
+              }
+
+              table.page(targetIndex).draw('page');
+              return true;
+            }
+            """,
+            pageTarget);
+
+    private static async Task<string> ReadFirstRowCertificateAsync(IPage page)
+    {
+        var firstRow = page.Locator("table tbody tr").First;
+        if (await firstRow.CountAsync() == 0)
+        {
+            return string.Empty;
+        }
+
+        var cells = await firstRow.Locator("td").AllInnerTextsAsync();
+        return NormalizeCell(cells.ElementAtOrDefault(2));
     }
 
     private static async Task ScrollPaginationIntoViewAsync(IPage page)
@@ -172,20 +348,31 @@ public static partial class DocaGatcListScraperService
     private static async Task WaitForPaginationAdvanceAsync(
         IPage page,
         int previousPageStart,
-        CancellationToken cancellationToken)
+        string previousFirstCertificate,
+        CancellationToken cancellationToken,
+        int expectedPageStart = 0)
     {
-        for (var attempt = 0; attempt < 60; attempt++)
+        for (var attempt = 0; attempt < 120; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await page.WaitForTimeoutAsync(500);
 
             var current = await ReadPaginationInfoAsync(page);
-            if (current.PageStart > previousPageStart && current.PageStart > 0)
+            var currentFirstCert = await ReadFirstRowCertificateAsync(page);
+
+            var pageStartAdvanced = current.PageStart > previousPageStart && current.PageStart > 0;
+            var reachedExpectedStart = expectedPageStart > 0 && current.PageStart == expectedPageStart;
+            var rowContentChanged = !string.IsNullOrWhiteSpace(previousFirstCertificate)
+                && !string.IsNullOrWhiteSpace(currentFirstCert)
+                && !string.Equals(previousFirstCertificate, currentFirstCert, StringComparison.OrdinalIgnoreCase);
+
+            if (pageStartAdvanced || reachedExpectedStart || rowContentChanged)
             {
                 await page.Locator("table tbody tr").First.WaitForAsync(new LocatorWaitForOptions
                 {
                     Timeout = 60_000,
                 });
+                await page.WaitForTimeoutAsync(300);
                 return;
             }
         }

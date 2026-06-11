@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ExternalLink,
+  FileSearch,
   FileText,
   Filter,
   Globe2,
@@ -16,15 +17,22 @@ import {
   subscribeAutomationWorkerRemote,
 } from '../../lib/automationWorker';
 import {
+  ensureDocaEnrichRemoteDefaults,
   ensureDocaScrapeRemoteDefaults,
+  pauseDocaEnrich,
   pauseDocaScrape,
+  resumeDocaEnrich,
   resumeDocaScrape,
+  startDocaEnrich,
   startDocaScrape,
   subscribeDocaCertificates,
+  subscribeDocaEnrichLogs,
+  subscribeDocaEnrichStatus,
   subscribeDocaScrapeLogs,
   subscribeDocaScrapeStatus,
   subscribeVerificationCertificateNumbers,
   type DocaCertificateRecord,
+  type DocaEnrichStatus,
   type DocaScrapeLogEntry,
   type DocaScrapeStatus,
 } from '../../lib/docaScraping';
@@ -50,15 +58,28 @@ function scrapeProgressPercent(status: DocaScrapeStatus | null): number {
   return Math.min(100, Math.round((status.currentPage / status.totalPages) * 100));
 }
 
+function enrichProgressPercent(status: DocaEnrichStatus | null): number {
+  if (!status || status.totalRows <= 0) return 0;
+  return Math.min(100, Math.round((status.processedRows / status.totalRows) * 100));
+}
+
+function truncateAddress(value: string, maxLength = 48): string {
+  if (!value) return '—';
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
+}
+
 export const AdminDocaScraping: React.FC = () => {
   const { user } = useAuth();
   const [records, setRecords] = useState<DocaCertificateRecord[]>([]);
   const [scrapeStatus, setScrapeStatus] = useState<DocaScrapeStatus | null>(null);
+  const [enrichStatus, setEnrichStatus] = useState<DocaEnrichStatus | null>(null);
   const [logs, setLogs] = useState<DocaScrapeLogEntry[]>([]);
+  const [enrichLogs, setEnrichLogs] = useState<DocaScrapeLogEntry[]>([]);
   const [remote, setRemote] = useState(DEFAULT_AUTOMATION_WORKER_REMOTE);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [hideVerificationDuplicates, setHideVerificationDuplicates] = useState(false);
+  const [scrapeStartPage, setScrapeStartPage] = useState('');
   const [verificationCertificateNumbers, setVerificationCertificateNumbers] = useState<Set<string>>(
     () => new Set(),
   );
@@ -68,13 +89,22 @@ export const AdminDocaScraping: React.FC = () => {
 
   const isRunning = scrapeStatus?.status === 'running';
   const isPaused = remote.scrapePause && isRunning;
+  const isEnrichRunning = enrichStatus?.status === 'running';
+  const isEnrichPaused = remote.enrichPause && isEnrichRunning;
+
+  const parsedCount = useMemo(
+    () => records.filter(record => record.pdfExtract?.parseStatus === 'ok').length,
+    [records],
+  );
 
   useEffect(() => {
     const onError = (err: Error) => setListenerError(err.message);
     const unsubscribers = [
       subscribeDocaCertificates(setRecords, onError),
       subscribeDocaScrapeStatus(setScrapeStatus, onError),
+      subscribeDocaEnrichStatus(setEnrichStatus, onError),
       subscribeDocaScrapeLogs(setLogs, onError),
+      subscribeDocaEnrichLogs(setEnrichLogs, onError),
       subscribeAutomationWorkerRemote(setRemote, onError),
       subscribeVerificationCertificateNumbers(setVerificationCertificateNumbers, onError),
     ];
@@ -84,6 +114,7 @@ export const AdminDocaScraping: React.FC = () => {
   useEffect(() => {
     if (!user?.uid) return;
     void ensureDocaScrapeRemoteDefaults(user.uid);
+    void ensureDocaEnrichRemoteDefaults(user.uid);
   }, [user?.uid]);
 
   const searchFilteredRecords = useMemo(() => {
@@ -97,6 +128,11 @@ export const AdminDocaScraping: React.FC = () => {
         record.belongTo,
         record.validityDate,
         record.uploadDate,
+        record.pdfExtract?.serialNumber,
+        record.pdfExtract?.maxCapacity,
+        record.pdfExtract?.verificationScaleIntervalE,
+        record.pdfExtract?.ownerAddress,
+        record.pdfExtract?.ownerName,
       ]
         .join(' ')
         .toLowerCase()
@@ -169,14 +205,44 @@ export const AdminDocaScraping: React.FC = () => {
             </p>
           </div>
           <div className="doca-scraping-control-buttons">
+            <label className="doca-scraping-start-page">
+              <span className="text-muted text-sm">Start page</span>
+              <input
+                className="input-field"
+                type="number"
+                min={1}
+                max={100}
+                placeholder="1"
+                value={scrapeStartPage}
+                onChange={e => setScrapeStartPage(e.target.value)}
+                disabled={isRunning}
+              />
+            </label>
             <button
               type="button"
               className="btn btn-primary"
               disabled={!user?.uid || saving || isRunning}
-              onClick={() => void runRemoteAction(() => startDocaScrape(remote, user!.uid))}
+              onClick={() => {
+                const parsed = Number.parseInt(scrapeStartPage.trim(), 10);
+                const startPage = Number.isFinite(parsed) && parsed > 1 ? parsed : undefined;
+                void runRemoteAction(() => startDocaScrape(remote, user!.uid, { startPage }));
+              }}
             >
               <Play size={16} aria-hidden />
               Start full scrape
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={!user?.uid || saving || isRunning}
+              onClick={() => {
+                setScrapeStartPage('10');
+                void runRemoteAction(() => startDocaScrape(remote, user!.uid, { startPage: 10 }));
+              }}
+              title="Skip pages 1–9 and scrape only the last page (entries 901–1000)"
+            >
+              <Play size={16} aria-hidden />
+              Scrape page 10 only
             </button>
             <button
               type="button"
@@ -220,6 +286,69 @@ export const AdminDocaScraping: React.FC = () => {
             <div><dt>Skipped</dt><dd>{scrapeStatus?.skippedRows ?? 0}</dd></div>
             <div><dt>Failed</dt><dd>{scrapeStatus?.failedRows ?? 0}</dd></div>
             <div><dt>In Firebase</dt><dd>{records.length}</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section className="doca-scraping-controls panel glass">
+        <div className="doca-scraping-controls-head">
+          <div>
+            <h2 className="doca-scraping-section-title">PDF enrich</h2>
+            <p className="text-muted text-sm mb-0">
+              Parse stored certificate PDFs for serial number, capacity, scale interval (e), and owner address. Runs on the worker without a browser.
+            </p>
+          </div>
+          <div className="doca-scraping-control-buttons">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!user?.uid || saving || isEnrichRunning}
+              onClick={() => void runRemoteAction(() => startDocaEnrich(remote, user!.uid))}
+            >
+              <FileSearch size={16} aria-hidden />
+              Parse PDF details
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={!user?.uid || saving || !isEnrichRunning || remote.enrichPause}
+              onClick={() => void runRemoteAction(() => pauseDocaEnrich(remote, user!.uid))}
+            >
+              <Pause size={16} aria-hidden />
+              Pause
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={!user?.uid || saving || !remote.enrichPause}
+              onClick={() => void runRemoteAction(() => resumeDocaEnrich(remote, user!.uid))}
+            >
+              <RefreshCw size={16} aria-hidden />
+              Resume
+            </button>
+          </div>
+        </div>
+
+        <div className="doca-scraping-progress">
+          <div className="doca-scraping-progress-meta">
+            <span className={`doca-scraping-status doca-scraping-status--${enrichStatus?.status || 'idle'}`}>
+              {(enrichStatus?.status || 'idle').replace('_', ' ')}
+              {isEnrichPaused ? ' (paused)' : ''}
+            </span>
+            <span className="text-muted text-sm">
+              {enrichStatus?.statusMessage || 'Waiting to start…'}
+            </span>
+          </div>
+          <div className="doca-scraping-progress-bar" aria-hidden>
+            <span style={{ width: `${enrichProgressPercent(enrichStatus)}%` }} />
+          </div>
+          <dl className="doca-scraping-stats">
+            <div><dt>Total</dt><dd>{enrichStatus?.totalRows ?? 0}</dd></div>
+            <div><dt>Processed</dt><dd>{enrichStatus?.processedRows ?? 0}</dd></div>
+            <div><dt>Parsed</dt><dd>{enrichStatus?.parsedRows ?? 0}</dd></div>
+            <div><dt>Skipped</dt><dd>{enrichStatus?.skippedRows ?? 0}</dd></div>
+            <div><dt>Failed</dt><dd>{enrichStatus?.failedRows ?? 0}</dd></div>
+            <div><dt>Parsed in Firebase</dt><dd>{parsedCount}</dd></div>
           </dl>
         </div>
       </section>
@@ -285,6 +414,11 @@ export const AdminDocaScraping: React.FC = () => {
                     <th>Certificate</th>
                     <th>Instrument</th>
                     <th>Belongs to</th>
+                    <th>Serial</th>
+                    <th>Max</th>
+                    <th>e</th>
+                    <th>Owner address</th>
+                    <th>Parse</th>
                     <th>Validity</th>
                     <th>Upload date</th>
                     <th>Files</th>
@@ -305,6 +439,20 @@ export const AdminDocaScraping: React.FC = () => {
                       </td>
                       <td>{record.instrumentName || '—'}</td>
                       <td>{record.belongTo || '—'}</td>
+                      <td className="text-mono text-sm">{record.pdfExtract?.serialNumber || '—'}</td>
+                      <td className="text-mono text-sm">{record.pdfExtract?.maxCapacity || '—'}</td>
+                      <td className="text-mono text-sm">{record.pdfExtract?.verificationScaleIntervalE || '—'}</td>
+                      <td className="text-sm" title={record.pdfExtract?.ownerAddress || undefined}>
+                        {truncateAddress(record.pdfExtract?.ownerAddress || '')}
+                      </td>
+                      <td>
+                        <span
+                          className={`doca-scraping-parse-status doca-scraping-parse-status--${record.pdfExtract?.parseStatus || 'pending'}`}
+                          title={record.pdfExtract?.parseError || undefined}
+                        >
+                          {record.pdfExtract?.parseStatus || 'pending'}
+                        </span>
+                      </td>
                       <td className="text-mono text-sm">{record.validityDate || '—'}</td>
                       <td className="text-mono text-sm">{record.uploadDate || '—'}</td>
                       <td>
@@ -341,6 +489,26 @@ export const AdminDocaScraping: React.FC = () => {
                 onPageChange={setPage}
               />
             </>
+          )}
+        </div>
+      </section>
+
+      <section className="doca-scraping-logs panel glass">
+        <div className="panel-header">
+          <h2>Enrich activity</h2>
+        </div>
+        <div className="panel-body">
+          {enrichLogs.length === 0 ? (
+            <p className="text-muted text-sm mb-0">Enrich logs will appear here while the worker parses PDFs.</p>
+          ) : (
+            <ul className="doca-scraping-log-list">
+              {enrichLogs.map(entry => (
+                <li key={entry.id} className={`doca-scraping-log-item doca-scraping-log-item--${entry.level}`}>
+                  <time>{formatTimestamp(entry.createdAt)}</time>
+                  <span>{entry.message}</span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </section>

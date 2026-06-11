@@ -43,6 +43,7 @@ public partial class MainWindow : Window
     private readonly AutomationService _automationService;
     private readonly AutomationService _scraperAutomationService;
     private readonly DocaScrapeOrchestrator _scrapeOrchestrator;
+    private readonly DocaEnrichOrchestrator _enrichOrchestrator;
     private readonly LocalCredentialsStore _credentialStore = new();
     private readonly JobRetryTracker _jobRetries = new();
     private readonly WorkerTelemetryService _telemetry;
@@ -66,8 +67,11 @@ public partial class MainWindow : Window
     private bool _sessionProbeRunning;
     private int _docaSessionProbeMinutes;
     private bool _remoteScrapePause;
+    private bool _remoteEnrichPause;
     private CancellationTokenSource? _scrapeCts;
     private Task? _scrapeRunTask;
+    private CancellationTokenSource? _enrichCts;
+    private Task? _enrichRunTask;
     private Task _docaBrowserStartupTask = Task.CompletedTask;
     private StatusKind _lastStatusKind = StatusKind.Idle;
 
@@ -106,6 +110,13 @@ public partial class MainWindow : Window
         _scrapeOrchestrator.ResolveFirebaseIdToken = () => GetFreshIdTokenAsync();
         _scrapeOrchestrator.IsPauseRequested = () => _remoteScrapePause;
         _scrapeOrchestrator.ResolveDocaCredentials = ResolveDocaCredentialsOnUiThread;
+        var enrichService = new DocaCertificateEnrichService(settings.Firebase);
+        _enrichOrchestrator = new DocaEnrichOrchestrator(
+            settings.Automation,
+            enrichService,
+            _telemetry);
+        _enrichOrchestrator.ResolveFirebaseIdToken = () => GetFreshIdTokenAsync();
+        _enrichOrchestrator.IsPauseRequested = () => _remoteEnrichPause;
         App.AutomationService = _automationService;
 
         JobsGrid.ItemsSource = _jobs;
@@ -383,6 +394,7 @@ public partial class MainWindow : Window
         StopAutoWorkerTimers();
         StopTelemetryTimer();
         _scrapeCts?.Cancel();
+        _enrichCts?.Cancel();
         await _queueListener.StopAsync();
         await DisposePreparedBulkWorkersAsync();
         await _automationService.DisposeAsync();
@@ -670,13 +682,23 @@ public partial class MainWindow : Window
         }
 
         _remoteScrapePause = remote.ScrapePause;
+        _remoteEnrichPause = remote.EnrichPause;
 
         if (_telemetry.ShouldApplyScrapeCommand(remote))
         {
             _telemetry.MarkScrapeCommandApplied(remote.ScrapeCommandRevision);
             if (!remote.ScrapePause)
             {
-                await StartDocaScrapeRunAsync();
+                await StartDocaScrapeRunAsync(remote.ScrapeStartPage);
+            }
+        }
+
+        if (_telemetry.ShouldApplyEnrichCommand(remote))
+        {
+            _telemetry.MarkEnrichCommandApplied(remote.EnrichCommandRevision);
+            if (!remote.EnrichPause)
+            {
+                await StartDocaEnrichRunAsync();
             }
         }
     }
@@ -779,12 +801,14 @@ public partial class MainWindow : Window
         await PublishWorkerStatusAsync();
     }
 
-    private async Task StartDocaScrapeRunAsync()
+    private async Task StartDocaScrapeRunAsync(int scrapeStartPage = 0)
     {
         if (_session is null)
         {
             return;
         }
+
+        _scrapeOrchestrator.ScrapeStartPage = scrapeStartPage > 1 ? scrapeStartPage : 1;
 
         _scrapeCts?.Cancel();
         if (_scrapeRunTask is not null)
@@ -848,6 +872,67 @@ public partial class MainWindow : Window
                 {
                     AddActivityEntry($"DOCA scrape failed: {ex.Message}");
                     SetStatus($"DOCA scrape failed: {ex.Message}", StatusKind.Error);
+                });
+            }
+        }, token);
+
+        await Task.CompletedTask;
+    }
+
+    private async Task StartDocaEnrichRunAsync()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        _enrichCts?.Cancel();
+        if (_enrichRunTask is not null)
+        {
+            try
+            {
+                await _enrichRunTask.ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                AddActivityEntry($"Previous PDF enrich ended with error: {ex.Message}");
+            }
+        }
+
+        _enrichCts = new CancellationTokenSource();
+        var token = _enrichCts.Token;
+
+        AddActivityEntry("DOCA certificate PDF enrich started.");
+        SetStatus("Parsing GATC PDF details…", StatusKind.Working);
+
+        _enrichRunTask = Task.Run(async () =>
+        {
+            try
+            {
+                await _enrichOrchestrator.RunAsync(token).ConfigureAwait(false);
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    AddActivityEntry("DOCA certificate PDF enrich finished.");
+                    SetStatus("PDF enrich finished.", StatusKind.Success);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    AddActivityEntry("PDF enrich paused or cancelled.");
+                    SetStatus("PDF enrich paused.", StatusKind.Info);
+                });
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    AddActivityEntry($"PDF enrich failed: {ex.Message}");
+                    SetStatus($"PDF enrich failed: {ex.Message}", StatusKind.Error);
                 });
             }
         }, token);
