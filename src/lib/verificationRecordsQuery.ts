@@ -1,10 +1,13 @@
 import {
   collection,
+  getDocs,
   query,
   where,
   type Firestore,
   type Query,
 } from 'firebase/firestore';
+import { db } from '../firebase';
+import type { SiteCalibration } from '../types';
 
 export function verificationRecordsQuery(
   db: Firestore,
@@ -27,4 +30,12 @@ export function verificationRecordOwnedByVct(
   vctUid: string,
 ): boolean {
   return record.createdByUid === vctUid || record.vctId === vctUid;
+}
+
+export async function fetchAllSiteCalibrations(): Promise<SiteCalibration[]> {
+  const snapshot = await getDocs(collection(db, 'siteCalibrations'));
+  return snapshot.docs.map(docSnap => ({
+    id: docSnap.id,
+    ...(docSnap.data() as Omit<SiteCalibration, 'id'>),
+  }));
 }

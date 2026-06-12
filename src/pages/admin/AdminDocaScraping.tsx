@@ -47,7 +47,10 @@ import {
   countDocaCertificatesInVerifications,
   isDocaCertificateInVerifications,
 } from '../../lib/docaCertificateMatch';
-import { exportDocaCertificatesToExcel } from '../../lib/docaCertificateExport';
+import {
+  exportDocaCertificatesToExcel,
+  exportMergedVerificationsSerialExcel,
+} from '../../lib/docaCertificateExport';
 import { TablePagination } from '../../components/TablePagination';
 import {
   DOCA_SCRAPING_TABLE_PAGE_SIZE,
@@ -93,6 +96,7 @@ export const AdminDocaScraping: React.FC = () => {
     () => new Set(),
   );
   const [saving, setSaving] = useState(false);
+  const [exportingVerifications, setExportingVerifications] = useState(false);
   const [error, setError] = useState('');
   const [listenerError, setListenerError] = useState('');
 
@@ -199,6 +203,21 @@ export const AdminDocaScraping: React.FC = () => {
       exportDocaCertificatesToExcel(filteredRecords);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not export Excel file.');
+    }
+  };
+
+  const handleExportVerificationsExcel = async () => {
+    setError('');
+    setExportingVerifications(true);
+    try {
+      const count = await exportMergedVerificationsSerialExcel(records);
+      if (count === 0) {
+        setError('No serial numbers found in scraped certificates or site verifications.');
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not export verifications Excel file.');
+    } finally {
+      setExportingVerifications(false);
     }
   };
 
@@ -495,6 +514,16 @@ export const AdminDocaScraping: React.FC = () => {
             )}
           </div>
           <div className="doca-scraping-table-toolbar">
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              disabled={exportingVerifications || saving}
+              onClick={() => void handleExportVerificationsExcel()}
+              title="Serial, max capacity, and certificate link (DOCA URL preferred, else Firebase PDF) — merged from scrape + verifications"
+            >
+              <Download size={16} aria-hidden />
+              {exportingVerifications ? 'Exporting…' : 'Export verifications'}
+            </button>
             <button
               type="button"
               className="btn btn-sm btn-secondary"
