@@ -96,7 +96,8 @@ export const AdminDocaScraping: React.FC = () => {
   const [error, setError] = useState('');
   const [listenerError, setListenerError] = useState('');
 
-  const isRunning = scrapeStatus?.status === 'running';
+  const isRunning =
+    scrapeStatus?.status === 'running' || scrapeStatus?.status === 'login_required';
   const isPaused = remote.scrapePause && isRunning;
   const isEnrichRunning = enrichStatus?.status === 'running';
   const isEnrichPaused = remote.enrichPause && isEnrichRunning;

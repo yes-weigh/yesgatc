@@ -26,6 +26,8 @@ public sealed class DocaScrapeOrchestrator
     public Func<bool>? IsPauseRequested { get; set; }
     public Func<DocaCredentialSettings>? ResolveDocaCredentials { get; set; }
     public int ScrapeStartPage { get; set; } = 1;
+    public int LoginProbeSeconds { get; set; } = 30;
+    public Action<string>? ReportActivity { get; set; }
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
@@ -354,45 +356,38 @@ public sealed class DocaScrapeOrchestrator
     {
         ApplyScraperCredentials();
 
-        var state = await _scraperBrowser.OpenDocaWorkspaceAsync(chromeNumber: 2, cancellationToken);
-        if (state == DocaSessionState.LoginRequired && !HasScraperLoginCredentials())
-        {
-            throw new InvalidOperationException(
-                "DOCA email/password are missing for scraper browser (Chrome 2). Save DOCA credentials in the worker or push them from web admin.");
-        }
-
-        var page = _scraperBrowser.BrowserContext?.Pages.FirstOrDefault()
-            ?? throw new InvalidOperationException("Scraper browser page is unavailable.");
-
-        await page.GotoAsync(_settings.DocaGatcUploadCertificateUrl, new PageGotoOptions
-        {
-            WaitUntil = WaitUntilState.Load,
-            Timeout = 90_000,
-        });
-
-        if (await AutomationServiceProbe.IsLoginPageAsync(page))
-        {
-            ApplyScraperCredentials();
-            var loginState = await _scraperBrowser.EnsureLoggedInOnPageAsync(page, cancellationToken);
-            if (loginState == DocaSessionState.LoginRequired)
+        return await _scraperBrowser.WaitForGatcListSessionAsync(
+            LoginProbeSeconds,
+            async message =>
             {
-                throw new InvalidOperationException(
-                    "DOCA captcha/login failed on scraper browser (Chrome 2). Check DOCA credentials and OCR settings.");
-            }
+                await PublishStateAsync(
+                    "login_required",
+                    message,
+                    currentPage: 0,
+                    totalPages: 0,
+                    totalEntries: 0,
+                    processedRows: 0,
+                    uploadedRows: 0,
+                    skippedRows: 0,
+                    failedRows: 0,
+                    checkpointPage: 0,
+                    startedAt: string.Empty,
+                    lastError: string.Empty,
+                    cancellationToken);
 
-            await page.GotoAsync(_settings.DocaGatcUploadCertificateUrl, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.Load,
-                Timeout = 90_000,
-            });
-        }
+                ReportActivity?.Invoke(message);
 
-        if (await AutomationServiceProbe.IsLoginPageAsync(page))
-        {
-            throw new InvalidOperationException("DOCA still shows login after auto-login on scraper browser.");
-        }
-
-        return page;
+                if (ResolveFirebaseIdToken is not null)
+                {
+                    await _telemetry.ReportScrapeActivityAsync(
+                        message,
+                        "warning",
+                        ResolveFirebaseIdToken,
+                        cancellationToken);
+                }
+            },
+            chromeNumber: 2,
+            cancellationToken);
     }
 
     private void ApplyScraperCredentials()
@@ -403,13 +398,6 @@ public sealed class DocaScrapeOrchestrator
         }
 
         _scraperBrowser.DocaCredentials = ResolveDocaCredentials();
-    }
-
-    private bool HasScraperLoginCredentials()
-    {
-        var credentials = _scraperBrowser.DocaCredentials;
-        return !string.IsNullOrWhiteSpace(credentials.Email)
-            && !string.IsNullOrWhiteSpace(credentials.Password);
     }
 
     private async Task WaitIfPausedAsync(CancellationToken cancellationToken)
@@ -453,11 +441,4 @@ public sealed class DocaScrapeOrchestrator
             },
             ResolveFirebaseIdToken!,
             cancellationToken);
-}
-
-internal static class AutomationServiceProbe
-{
-    public static Task<bool> IsLoginPageAsync(IPage page) =>
-        page.Locator("input[type='password'], #password, input[name='password']").CountAsync()
-            .ContinueWith(task => task.Result > 0 && page.Url.Contains("login", StringComparison.OrdinalIgnoreCase));
 }

@@ -71,7 +71,7 @@ export type DocaCertificateRecord = {
 };
 
 export type DocaScrapeStatus = {
-  status: 'idle' | 'running' | 'paused' | 'completed' | 'error';
+  status: 'idle' | 'running' | 'login_required' | 'paused' | 'completed' | 'error';
   statusMessage: string;
   currentPage: number;
   totalPages: number;
@@ -180,7 +180,7 @@ export function normalizeDocaScrapeStatus(
   if (!data) return null;
   const status = readString(data, 'status', 'idle');
   return {
-    status: (['idle', 'running', 'paused', 'completed', 'error'].includes(status)
+    status: (['idle', 'running', 'login_required', 'paused', 'completed', 'error'].includes(status)
       ? status
       : 'idle') as DocaScrapeStatus['status'],
     statusMessage: readString(data, 'statusMessage'),

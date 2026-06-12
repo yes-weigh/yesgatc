@@ -555,10 +555,94 @@ public sealed class AutomationService : IAsyncDisposable
     }
 
     /// <summary>
+    /// Polls the GATC upload-certificate list until DOCA accepts the session (auto-login or manual).
+    /// Used by the Chrome 2 scraper so a failed captcha OCR does not abort the scrape run.
+    /// </summary>
+    public async Task<IPage> WaitForGatcListSessionAsync(
+        int loginProbeSeconds,
+        Func<string, Task>? reportWaitingAsync = null,
+        int chromeNumber = 2,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureBrowserReadyAsync(cancellationToken);
+        await OpenDocaWorkspaceAsync(chromeNumber, attemptAutoLogin: false, cancellationToken);
+
+        var probeSeconds = Math.Max(15, loginProbeSeconds);
+        var preferManualLogin = false;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var page = await GetPageAsync();
+            await page.GotoAsync(_settings.DocaGatcUploadCertificateUrl, new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.Load,
+                Timeout = 90_000,
+            });
+
+            if (!await IsLoginPageAsync(page))
+            {
+                await page.BringToFrontAsync();
+                return page;
+            }
+
+            await page.BringToFrontAsync();
+            if (reportWaitingAsync is not null)
+            {
+                var hint = preferManualLogin
+                    ? $"DOCA login required on Chrome {chromeNumber} (scraper). Complete login manually — scrape will resume automatically."
+                    : $"DOCA login required on Chrome {chromeNumber} (scraper). Retrying AI captcha or complete login manually…";
+                await reportWaitingAsync(hint);
+            }
+
+            if (!preferManualLogin
+                && !string.IsNullOrWhiteSpace(DocaCredentials.Email)
+                && !string.IsNullOrWhiteSpace(DocaCredentials.Password))
+            {
+                try
+                {
+                    var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
+                    if (loginState == DocaSessionState.LoggedIn)
+                    {
+                        continue;
+                    }
+                }
+                catch (PlaywrightException ex) when (IsLoginAutomationTimeout(ex))
+                {
+                }
+                catch (TimeoutException)
+                {
+                }
+
+                preferManualLogin = true;
+                continue;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(probeSeconds), cancellationToken);
+        }
+    }
+
+    private static bool IsLoginAutomationTimeout(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current.Message.Contains("Timeout", StringComparison.OrdinalIgnoreCase)
+                || current.Message.Contains("captcha", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Opens (or focuses) the DOCA browser window so the operator can confirm login before bulk runs.
     /// </summary>
     public async Task<DocaSessionState> OpenDocaWorkspaceAsync(
         int chromeNumber = 1,
+        bool attemptAutoLogin = true,
         CancellationToken cancellationToken = default)
     {
         await EnsureBrowserReadyAsync(cancellationToken);
@@ -592,6 +676,12 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await IsLoginPageAsync(page))
         {
+            if (!attemptAutoLogin)
+            {
+                await page.BringToFrontAsync();
+                return DocaSessionState.LoginRequired;
+            }
+
             return await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
         }
 

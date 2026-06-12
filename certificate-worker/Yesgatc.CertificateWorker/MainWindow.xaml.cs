@@ -110,6 +110,17 @@ public partial class MainWindow : Window
         _scrapeOrchestrator.ResolveFirebaseIdToken = () => GetFreshIdTokenAsync();
         _scrapeOrchestrator.IsPauseRequested = () => _remoteScrapePause;
         _scrapeOrchestrator.ResolveDocaCredentials = ResolveDocaCredentialsOnUiThread;
+        _scrapeOrchestrator.LoginProbeSeconds = settings.AutoWorker.DocaLoginProbeSeconds;
+        _scrapeOrchestrator.ReportActivity = message =>
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                AddActivityEntry(message);
+                return;
+            }
+
+            Dispatcher.Invoke(() => AddActivityEntry(message));
+        };
         var enrichService = new DocaCertificateEnrichService(settings.Firebase);
         _enrichOrchestrator = new DocaEnrichOrchestrator(
             settings.Automation,
