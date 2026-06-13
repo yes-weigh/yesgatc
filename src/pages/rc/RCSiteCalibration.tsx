@@ -8,8 +8,15 @@ import { db } from '../../firebase';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
 import { canCreateVerification, useRcScope } from '../../lib/roleScope';
+import {
+  fetchRcHasStandardWeightsCert,
+  VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE,
+} from '../../lib/rcActivation';
 import { fetchRcVehicles, rcHasRegisteredVehicle, VCT_RC_VEHICLE_REQUIRED_MESSAGE } from '../../lib/rcVehicles';
-import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
+import {
+  RcStandardWeightsCertVctNotice,
+  RcVehicleRequiredNotice,
+} from '../../components/RcVehicleRequiredNotice';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
@@ -204,6 +211,15 @@ function verificationDocaFirestorePatch(
   return charges ?? {};
 }
 
+function vctNewVerificationBlockMessage(
+  rcHasWeightsCert: boolean | null,
+  rcHasVehicle: boolean | null,
+): string | null {
+  if (rcHasWeightsCert !== true) return VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE;
+  if (rcHasVehicle !== true) return VCT_RC_VEHICLE_REQUIRED_MESSAGE;
+  return null;
+}
+
 export const RCSiteCalibration: React.FC = () => {
   const { rcUid, actorUid, isVct } = useRcScope();
   const { user } = useAuth();
@@ -215,6 +231,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [rcHasVehicle, setRcHasVehicle] = useState<boolean | null>(null);
+  const [rcHasWeightsCert, setRcHasWeightsCert] = useState<boolean | null>(null);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -390,22 +407,28 @@ export const RCSiteCalibration: React.FC = () => {
     }
   }, [rcUid, isVct, actorUid]);
 
-  const refreshRcVehicleStatus = useCallback(async () => {
+  const refreshRcVerificationGates = useCallback(async () => {
     if (!rcUid) {
       setRcHasVehicle(null);
+      setRcHasWeightsCert(null);
       return;
     }
     try {
-      const vehicles = await fetchRcVehicles(rcUid);
+      const [vehicles, hasWeightsCert] = await Promise.all([
+        fetchRcVehicles(rcUid),
+        fetchRcHasStandardWeightsCert(rcUid),
+      ]);
       setRcHasVehicle(rcHasRegisteredVehicle(vehicles));
+      setRcHasWeightsCert(hasWeightsCert);
     } catch {
       setRcHasVehicle(null);
+      setRcHasWeightsCert(null);
     }
   }, [rcUid]);
 
   useEffect(() => {
-    void refreshRcVehicleStatus();
-  }, [refreshRcVehicleStatus]);
+    void refreshRcVerificationGates();
+  }, [refreshRcVerificationGates]);
 
   const fetchCustomers = useCallback(async () => {
     if (!rcUid) return;
@@ -489,8 +512,8 @@ export const RCSiteCalibration: React.FC = () => {
   const isEditMode = editingId !== null;
 
   useEffect(() => {
-    if (!showForm) void refreshRcVehicleStatus();
-  }, [showForm, refreshRcVehicleStatus]);
+    if (!showForm) void refreshRcVerificationGates();
+  }, [showForm, refreshRcVerificationGates]);
 
   useEffect(() => {
     if (!showForm || !rcUid) return;
@@ -1092,9 +1115,12 @@ export const RCSiteCalibration: React.FC = () => {
       setError('New verifications must be started by a technician on the mobile app.');
       return;
     }
-    if (isVct && rcHasVehicle !== true) {
-      setError(VCT_RC_VEHICLE_REQUIRED_MESSAGE);
-      return;
+    if (isVct) {
+      const blockMsg = vctNewVerificationBlockMessage(rcHasWeightsCert, rcHasVehicle);
+      if (blockMsg) {
+        setError(blockMsg);
+        return;
+      }
     }
     setError('');
     const validationError = validateVerificationDraft(
@@ -1668,9 +1694,12 @@ export const RCSiteCalibration: React.FC = () => {
         setListError('New verifications must be started by a technician on the mobile app.');
         return;
       }
-      if (isVct && rcHasVehicle !== true) {
-        setListError(VCT_RC_VEHICLE_REQUIRED_MESSAGE);
-        return;
+      if (isVct) {
+        const blockMsg = vctNewVerificationBlockMessage(rcHasWeightsCert, rcHasVehicle);
+        if (blockMsg) {
+          setListError(blockMsg);
+          return;
+        }
       }
       if (!isVerificationCaptureDevice()) {
         setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
@@ -1694,7 +1723,7 @@ export const RCSiteCalibration: React.FC = () => {
       setVerificationDeclarationAccepted(false);
       setShowAddForm(true);
     },
-    [user?.role, isVct, rcHasVehicle],
+    [user?.role, isVct, rcHasWeightsCert, rcHasVehicle],
   );
 
   const handleStartAdd = () => {
@@ -1702,9 +1731,12 @@ export const RCSiteCalibration: React.FC = () => {
       setListError('New verifications must be started by a technician on the mobile app.');
       return;
     }
-    if (isVct && rcHasVehicle !== true) {
-      setListError(VCT_RC_VEHICLE_REQUIRED_MESSAGE);
-      return;
+    if (isVct) {
+      const blockMsg = vctNewVerificationBlockMessage(rcHasWeightsCert, rcHasVehicle);
+      if (blockMsg) {
+        setListError(blockMsg);
+        return;
+      }
     }
     if (!isVerificationCaptureDevice()) {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
@@ -1833,11 +1865,12 @@ export const RCSiteCalibration: React.FC = () => {
     !showVerificationBackBar && (!showAddForm || wizardOnLastStep);
   const mobileFloatingChrome = useVerificationMobileLayout(showAddForm);
   const verificationCaptureAllowed = isVerificationCaptureDevice();
-  const vctVehicleGateSatisfied = !isVct || rcHasVehicle === true;
+  const vctCreateGateSatisfied =
+    !isVct || (rcHasWeightsCert === true && rcHasVehicle === true);
   const canStartNewVerification =
     verificationCaptureAllowed
     && canCreateVerification(user?.role)
-    && vctVehicleGateSatisfied;
+    && vctCreateGateSatisfied;
 
   const draftBlockReason = useMemo(
     () =>
@@ -2256,6 +2289,7 @@ export const RCSiteCalibration: React.FC = () => {
               </p>
             </div>
           )}
+          {isVct && rcHasWeightsCert === false ? <RcStandardWeightsCertVctNotice /> : null}
           {isVct && rcHasVehicle === false ? <RcVehicleRequiredNotice variant="vct" /> : null}
           <VerificationListFilters
             searchTerm={searchTerm}

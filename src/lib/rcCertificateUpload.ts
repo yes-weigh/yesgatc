@@ -12,9 +12,7 @@ function mapStorageError(err: unknown): Error {
       ? String((err as { code: string }).code)
       : '';
   if (code === 'storage/unauthorized' || code === 'storage/unauthenticated') {
-    return new Error(
-      'Upload denied. Sign out and sign in again as Super Admin, then retry.',
-    );
+    return new Error('Upload denied. Sign out and sign in again, then retry.');
   }
   return err instanceof Error ? err : new Error('Upload failed');
 }

@@ -31,3 +31,13 @@ export const RcVehicleRequiredNotice: React.FC<RcVehicleRequiredNoticeProps> = (
     </div>
   );
 };
+
+export const RcStandardWeightsCertVctNotice: React.FC = () => (
+  <div className="rc-vehicle-required-notice" role="status">
+    <p className="rc-vehicle-required-notice__title">Standard weights certificate required</p>
+    <p className="rc-vehicle-required-notice__text mb-0">
+      Your regional centre&apos;s standard weights certificate has not been uploaded yet. Ask your RC
+      admin — you cannot start new verifications until it is.
+    </p>
+  </div>
+);

@@ -277,6 +277,38 @@ export function standardWeightsCertExpiryFromDate(certDate: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+export function rcStandardWeightsCertFromUser(
+  doc: Pick<
+    FirestoreUserDoc,
+    | 'standardWeightsCertUrl'
+    | 'standardWeightsCertPath'
+    | 'standardWeightsCertName'
+    | 'standardWeightsCertContentType'
+  >,
+): ProductFileMeta | null {
+  if (!doc.standardWeightsCertUrl) return null;
+  return {
+    url: doc.standardWeightsCertUrl,
+    path: doc.standardWeightsCertPath || '',
+    name: doc.standardWeightsCertName || 'Certificate',
+    contentType: doc.standardWeightsCertContentType || '',
+  };
+}
+
+export function rcStandardWeightsCertFieldsFromMeta(
+  file: ProductFileMeta | null,
+): Partial<FirestoreUserDoc> {
+  const base: Partial<FirestoreUserDoc> = {};
+  applyFileMeta(base, 'standardWeightsCert', file, !file);
+  return base;
+}
+
+export function rcStandardWeightsCertClearFields(): Partial<FirestoreUserDoc> {
+  const base: Partial<FirestoreUserDoc> = {};
+  applyFileMeta(base, 'standardWeightsCert', null, true);
+  return base;
+}
+
 export const RC_CODE_LENGTH = 3;
 
 export function normalizeRcCode(input: string): string {

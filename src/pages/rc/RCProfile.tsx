@@ -12,6 +12,9 @@ import {
   rcProfileCoordsFromUser,
   rcProfilePhotoFieldsFromMeta,
   rcProfilePhotoFromUser,
+  rcStandardWeightsCertClearFields,
+  rcStandardWeightsCertFieldsFromMeta,
+  rcStandardWeightsCertFromUser,
   formatRcLocation,
   standardWeightsCertExpiryFromDate,
   resolveRcFeesStructure,
@@ -20,12 +23,14 @@ import {
   parseRcFeeAmountInput,
   validateRcFeesStructure,
 } from '../../lib/rcProfileFields';
+import { deleteRcStorageFile, uploadRcStandardWeightsCert } from '../../lib/rcCertificateUpload';
 import { uploadVctProfilePhoto } from '../../lib/vctDocumentUpload';
 import { UploadField } from '../admin/productFormUi';
 import {
   EMPTY_IMAGE_UPLOAD_STATE,
   type ImageUploadState,
 } from './CustomerFormFields';
+import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import type { FirestoreUserDoc, RcFeesStructure } from '../../types';
 
 interface RCProfile extends FirestoreUserDoc {
@@ -92,6 +97,11 @@ export const RCProfile: React.FC = () => {
   const [pendingProfilePhoto, setPendingProfilePhoto] = useState<File | null>(null);
   const [profilePhotoRemoved, setProfilePhotoRemoved] = useState(false);
   const profilePhotoRef = useRef<HTMLInputElement>(null);
+  const certInputRef = useRef<HTMLInputElement>(null);
+  const [cert, setCert] = useState<ProductFileMeta | null>(null);
+  const [certUploading, setCertUploading] = useState(false);
+  const [certProgress, setCertProgress] = useState(0);
+  const [certRemoved, setCertRemoved] = useState(false);
   const [draftCoords, setDraftCoords] = useState({ latitude: '', longitude: '' });
   const [draftFees, setDraftFees] = useState<RcFeesStructure>(rcFeesDraftFromUser(null));
   const [locating, setLocating] = useState(false);
@@ -125,6 +135,10 @@ export const RCProfile: React.FC = () => {
       ...EMPTY_IMAGE_UPLOAD_STATE,
       file: rcProfilePhotoFromUser(profile as FirestoreUserDoc),
     });
+    setCert(rcStandardWeightsCertFromUser(profile as FirestoreUserDoc));
+    setCertRemoved(false);
+    setCertUploading(false);
+    setCertProgress(0);
     setEditing(true);
     setSaved(false);
   };
@@ -140,7 +154,38 @@ export const RCProfile: React.FC = () => {
       ...EMPTY_IMAGE_UPLOAD_STATE,
       file: rcProfilePhotoFromUser(profile as FirestoreUserDoc),
     });
+    setCert(rcStandardWeightsCertFromUser(profile as FirestoreUserDoc));
+    setCertRemoved(false);
+    setCertUploading(false);
+    setCertProgress(0);
     setEditing(false);
+  };
+
+  const handleCertSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !user?.uid) return;
+
+    setCertUploading(true);
+    setCertProgress(0);
+    try {
+      const meta = await uploadRcStandardWeightsCert(user.uid, file, setCertProgress);
+      const prevPath = cert?.path || profile.standardWeightsCertPath;
+      if (prevPath && prevPath !== meta.path) {
+        await deleteRcStorageFile(prevPath).catch(() => undefined);
+      }
+      setCert(meta);
+      setCertRemoved(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Certificate upload failed.');
+    } finally {
+      setCertUploading(false);
+    }
+  };
+
+  const handleCertRemove = () => {
+    setCert(null);
+    setCertRemoved(true);
   };
 
   const handleProfilePhotoSelect = (file: File) => {
@@ -241,6 +286,19 @@ export const RCProfile: React.FC = () => {
     try {
       const photoFields = await uploadProfilePhoto(user.uid);
       const location = parseRcLocation(draftCoords);
+      const certDate = (draft.standardWeightsCertDate ?? '').trim();
+      const certFields: Record<string, unknown> = {
+        standardWeightsCertNumber: (draft.standardWeightsCertNumber ?? '').trim(),
+        standardWeightsCertDate: certDate,
+        standardWeightsCertExpiry: standardWeightsCertExpiryFromDate(certDate),
+      };
+      if (certRemoved && !cert) {
+        Object.assign(certFields, rcStandardWeightsCertClearFields());
+        const oldPath = profile.standardWeightsCertPath;
+        if (oldPath) await deleteRcStorageFile(oldPath).catch(() => undefined);
+      } else if (cert) {
+        Object.assign(certFields, rcStandardWeightsCertFieldsFromMeta(cert));
+      }
       const updates: Record<string, unknown> = {
         companyName: draft.companyName ?? '',
         contactPerson: (draft.contactPerson ?? '').trim(),
@@ -253,6 +311,7 @@ export const RCProfile: React.FC = () => {
         pincode,
         feesStructure: draftFees,
         ...photoFields,
+        ...certFields,
       };
       if (location) {
         updates.location = location;
@@ -267,6 +326,7 @@ export const RCProfile: React.FC = () => {
       } as Partial<RCProfile>));
       setPendingProfilePhoto(null);
       setProfilePhotoRemoved(false);
+      setCertRemoved(false);
       setEditing(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -284,6 +344,10 @@ export const RCProfile: React.FC = () => {
   const mapsUrl = rcMapsUrl(profile as FirestoreUserDoc);
   const displayFees = resolveRcFeesStructure(profile as FirestoreUserDoc);
   const fees = editing ? draftFees : displayFees;
+  const displayCert = editing ? cert : rcStandardWeightsCertFromUser(profile as FirestoreUserDoc);
+  const certDueDate = standardWeightsCertExpiryFromDate(
+    (p.standardWeightsCertDate ?? '').trim() || (profile.standardWeightsCertDate ?? ''),
+  );
   const hasDraftLocation = Boolean(draftCoords.latitude.trim() && draftCoords.longitude.trim());
 
   const setFee = (
@@ -659,52 +723,78 @@ export const RCProfile: React.FC = () => {
           </div>
 
           <div className="profile-grid mt-6 pt-6 border-t border-subtle">
-            <p className="col-span-all text-muted text-sm font-medium mb-2">Standard weights certificate (managed by Super Admin)</p>
+            <p className="col-span-all text-muted text-sm font-medium mb-2">
+              Standard weights certificate
+            </p>
+            <p className="col-span-all text-muted text-xs mb-3 mt-0">
+              Required before technicians can start new verifications. PDF or image, max 15 MB.
+            </p>
             <Field
               icon={<FileText size={16} />}
               label="Certificate Number"
-              value={profile.standardWeightsCertNumber ?? ''}
-              editing={false}
-              readOnly
-              onChange={() => {}}
+              value={p.standardWeightsCertNumber ?? ''}
+              editing={editing}
+              onChange={set('standardWeightsCertNumber')}
+              placeholder="Reference no."
             />
             <Field
               icon={<FileText size={16} />}
               label="Certificate Date"
-              value={profile.standardWeightsCertDate ?? ''}
-              editing={false}
-              readOnly
-              onChange={() => {}}
+              value={p.standardWeightsCertDate ?? ''}
+              editing={editing}
+              inputType="date"
+              onChange={set('standardWeightsCertDate')}
             />
             <Field
               icon={<FileText size={16} />}
               label="Due date"
               value={
-                profile.standardWeightsCertDate
-                  ? standardWeightsCertExpiryFromDate(profile.standardWeightsCertDate)
-                  : profile.standardWeightsCertExpiry || ''
+                certDueDate
+                  || profile.standardWeightsCertExpiry
+                  || ''
               }
               editing={false}
               readOnly
               onChange={() => {}}
             />
             <div className="profile-field col-span-all">
-              <div className="profile-field-label">
-                <span className="profile-icon"><FileText size={16} /></span>
-                <span>Certificate Document</span>
-              </div>
-              {profile.standardWeightsCertUrl ? (
-                <a
-                  href={profile.standardWeightsCertUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-secondary text-sm inline-flex items-center gap-1.5 mt-1"
-                >
-                  <ExternalLink size={14} />
-                  {profile.standardWeightsCertName || 'View certificate'}
-                </a>
+              {editing ? (
+                <UploadField
+                  label="Certificate document"
+                  hint="PDF / image"
+                  file={displayCert}
+                  uploading={certUploading}
+                  progress={certProgress}
+                  accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
+                  uploadLabel="Upload"
+                  formats="Max 15 MB"
+                  inputRef={certInputRef}
+                  onSelect={handleCertSelect}
+                  onRemove={handleCertRemove}
+                  submitting={saving}
+                  variant="document"
+                  compact
+                />
               ) : (
-                <p className="profile-value text-muted">Not uploaded</p>
+                <>
+                  <div className="profile-field-label">
+                    <span className="profile-icon"><FileText size={16} /></span>
+                    <span>Certificate Document</span>
+                  </div>
+                  {profile.standardWeightsCertUrl ? (
+                    <a
+                      href={profile.standardWeightsCertUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary text-sm inline-flex items-center gap-1.5 mt-1"
+                    >
+                      <ExternalLink size={14} />
+                      {profile.standardWeightsCertName || 'View certificate'}
+                    </a>
+                  ) : (
+                    <p className="profile-value text-muted">Not uploaded — edit profile to add</p>
+                  )}
+                </>
               )}
             </div>
           </div>
