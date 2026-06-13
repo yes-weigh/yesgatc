@@ -12,6 +12,16 @@ export type BeforeInstallPromptEvent = Event & {
 let deferredInstallPrompt: BeforeInstallPromptEvent | null = null;
 let listenersBound = false;
 
+function readEarlyDeferredPrompt(): BeforeInstallPromptEvent | null {
+  const win = window as Window & { __YESLAB_DEFERRED_INSTALL__?: BeforeInstallPromptEvent };
+  const early = win.__YESLAB_DEFERRED_INSTALL__;
+  if (early) {
+    delete win.__YESLAB_DEFERRED_INSTALL__;
+    return early;
+  }
+  return null;
+}
+
 export function isAndroidChrome(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
@@ -52,7 +62,12 @@ export function hasDeferredInstallPrompt(): boolean {
 }
 
 export function bindPwaInstallListeners(): void {
-  if (listenersBound || typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return;
+
+  const early = readEarlyDeferredPrompt();
+  if (early) deferredInstallPrompt = early;
+
+  if (listenersBound) return;
   listenersBound = true;
 
   window.addEventListener('beforeinstallprompt', event => {

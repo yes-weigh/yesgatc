@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Download, Smartphone, X } from 'lucide-react';
 import {
-  bindPwaInstallListeners,
   canShowPwaInstallUi,
   dismissPwaInstallPrompt,
   hasDeferredInstallPrompt,
@@ -15,6 +14,8 @@ export const PwaInstallBanner: React.FC = () => {
   const [installing, setInstalling] = useState(false);
   const [nativePrompt, setNativePrompt] = useState(false);
 
+  const [installHint, setInstallHint] = useState('');
+
   const refresh = useCallback(() => {
     if (!canShowPwaInstallUi()) {
       setVisible(false);
@@ -26,7 +27,6 @@ export const PwaInstallBanner: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    bindPwaInstallListeners();
     refresh();
     const onAvailable = () => refresh();
     window.addEventListener(PWA_INSTALL_AVAILABLE_EVENT, onAvailable);
@@ -35,10 +35,13 @@ export const PwaInstallBanner: React.FC = () => {
 
   const handleInstall = async () => {
     setInstalling(true);
+    setInstallHint('');
     try {
       const outcome = await triggerPwaInstall();
       if (outcome === 'unavailable') {
-        // Chrome may still need menu install before engagement criteria are met.
+        setInstallHint(
+          'Install is not ready yet. Open Chrome menu (⋮) → Install app, or Add to Home screen. Visit again after signing in if needed.',
+        );
         return;
       }
       if (outcome === 'accepted') setVisible(false);
@@ -63,23 +66,22 @@ export const PwaInstallBanner: React.FC = () => {
         <div className="pwa-install-banner-text">
           <strong className="pwa-install-banner-title">Install YES LAB</strong>
           <p className="pwa-install-banner-desc mb-0">
-            {nativePrompt
-              ? 'Add to your home screen for faster access and camera uploads.'
-              : 'Open Chrome menu (⋮) and tap Install app, or use the button when available.'}
+            {installHint
+              || (nativePrompt
+                ? 'Add to your home screen for faster access and camera uploads.'
+                : 'Use Install below, or Chrome menu (⋮) → Install app / Add to Home screen.')}
           </p>
         </div>
         <div className="pwa-install-banner-actions">
-          {nativePrompt && (
-            <button
-              type="button"
-              className="pwa-install-banner-btn pwa-install-banner-btn--primary"
-              onClick={() => void handleInstall()}
-              disabled={installing}
-            >
-              <Download size={16} aria-hidden />
-              {installing ? 'Installing…' : 'Install'}
-            </button>
-          )}
+          <button
+            type="button"
+            className="pwa-install-banner-btn pwa-install-banner-btn--primary"
+            onClick={() => void handleInstall()}
+            disabled={installing}
+          >
+            <Download size={16} aria-hidden />
+            {installing ? 'Installing…' : 'Install'}
+          </button>
           <button
             type="button"
             className="pwa-install-banner-btn pwa-install-banner-btn--ghost"

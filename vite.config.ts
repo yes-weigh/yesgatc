@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      injectRegister: null,
       includeAssets: [
         'icons/favicon-16.png',
         'icons/favicon-32.png',
@@ -16,16 +16,19 @@ export default defineConfig({
         'brand/logo-dark.png',
       ],
       manifest: {
-        id: '/',
+        id: 'yeslab-pwa',
         name: 'YES LAB',
         short_name: 'YES LAB',
         description: 'GATC calibration and workflow management',
         start_url: '/',
         scope: '/',
         display: 'standalone',
+        display_override: ['standalone', 'browser'],
         orientation: 'portrait-primary',
         background_color: '#ffffff',
         theme_color: '#1a7f37',
+        prefer_related_applications: false,
+        categories: ['business', 'productivity'],
         icons: [
           {
             src: '/icons/icon-192.png',
@@ -42,6 +45,12 @@ export default defineConfig({
           {
             src: '/icons/icon-512-maskable.png',
             sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/icons/icon-192.png',
+            sizes: '192x192',
             type: 'image/png',
             purpose: 'maskable',
           },
