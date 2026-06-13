@@ -145,7 +145,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   }, [onSelect, openCamera, geoStamp]);
 
   const useInAppCamera =
-    allowCamera && mobileSourceChoice && shouldUseInAppCameraCapture();
+    allowCamera && !cameraOnly && mobileSourceChoice && shouldUseInAppCameraCapture();
 
   const openLiveCamera = useCallback(() => {
     if (useInAppCamera && section) {

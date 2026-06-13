@@ -68,29 +68,52 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     setReady(false);
 
     if (!navigator.mediaDevices?.getUserMedia) {
+      if (!allowGallery && session?.onFallbackNativeCamera) {
+        session.onFallbackNativeCamera();
+        onClose();
+        return;
+      }
       setError('Camera not available in this browser.');
       return;
     }
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+    const constraintAttempts: MediaStreamConstraints[] = [
+      {
         video: {
           facingMode: { ideal: facing },
           width: { ideal: 1920 },
           height: { ideal: 1080 },
         },
         audio: false,
-      });
-      streamRef.current = stream;
-      const video = videoRef.current;
-      if (!video) return;
-      video.srcObject = stream;
-      await video.play();
-      setReady(true);
-    } catch {
-      setError('Could not access the camera. Allow camera permission or choose from images.');
+      },
+      { video: { facingMode: facing }, audio: false },
+      { video: { facingMode: { ideal: facing } }, audio: false },
+      { video: true, audio: false },
+    ];
+
+    for (const constraints of constraintAttempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) return;
+        video.srcObject = stream;
+        await video.play();
+        setReady(true);
+        return;
+      } catch {
+        stopStream();
+      }
     }
-  }, [facing, stopStream]);
+
+    if (!allowGallery && session?.onFallbackNativeCamera) {
+      session.onFallbackNativeCamera();
+      onClose();
+      return;
+    }
+
+    setError('Could not access the camera. Allow camera permission or choose from images.');
+  }, [allowGallery, facing, onClose, session, stopStream]);
 
   useEffect(() => {
     if (open) setFacing(initialFacing);
