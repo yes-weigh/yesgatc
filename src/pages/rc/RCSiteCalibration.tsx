@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { canCreateVerification, useRcScope } from '../../lib/roleScope';
 import {
   fetchRcHasStandardWeightsCert,
+  rcHasStandardWeightsCert,
   VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE,
 } from '../../lib/rcActivation';
 import { fetchRcVehicles, rcHasRegisteredVehicle, VCT_RC_VEHICLE_REQUIRED_MESSAGE } from '../../lib/rcVehicles';
@@ -214,10 +215,29 @@ function verificationDocaFirestorePatch(
 function vctNewVerificationBlockMessage(
   rcHasWeightsCert: boolean | null,
   rcHasVehicle: boolean | null,
+  gatesLoading: boolean,
+  gatesError: string,
 ): string | null {
-  if (rcHasWeightsCert !== true) return VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE;
-  if (rcHasVehicle !== true) return VCT_RC_VEHICLE_REQUIRED_MESSAGE;
+  if (gatesLoading) return 'Checking centre requirements…';
+  if (gatesError) return gatesError;
+  if (rcHasWeightsCert === false) return VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE;
+  if (rcHasVehicle === false) return VCT_RC_VEHICLE_REQUIRED_MESSAGE;
+  if (rcHasWeightsCert !== true || rcHasVehicle !== true) {
+    return 'Could not confirm centre setup. Refresh the page or ask your RC admin.';
+  }
   return null;
+}
+
+function vctCreateGateSatisfied(
+  isVct: boolean,
+  rcHasWeightsCert: boolean | null,
+  rcHasVehicle: boolean | null,
+  gatesLoading: boolean,
+  gatesError: string,
+): boolean {
+  if (!isVct) return true;
+  if (gatesLoading || gatesError) return false;
+  return rcHasWeightsCert === true && rcHasVehicle === true;
 }
 
 export const RCSiteCalibration: React.FC = () => {
@@ -232,6 +252,8 @@ export const RCSiteCalibration: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [rcHasVehicle, setRcHasVehicle] = useState<boolean | null>(null);
   const [rcHasWeightsCert, setRcHasWeightsCert] = useState<boolean | null>(null);
+  const [gatesLoading, setGatesLoading] = useState(false);
+  const [gatesError, setGatesError] = useState('');
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -372,6 +394,9 @@ export const RCSiteCalibration: React.FC = () => {
       const docData = snap.exists() ? (snap.data() as FirestoreUserDoc) : null;
       setRcProfile(docData);
       setLaboratorySealId(resolveLaboratorySealIdentification(docData));
+      if (docData) {
+        setRcHasWeightsCert(rcHasStandardWeightsCert(docData));
+      }
     } catch {
       setRcProfile(null);
       setLaboratorySealId(resolveLaboratorySealIdentification(null));
@@ -411,8 +436,12 @@ export const RCSiteCalibration: React.FC = () => {
     if (!rcUid) {
       setRcHasVehicle(null);
       setRcHasWeightsCert(null);
+      setGatesLoading(false);
+      setGatesError('');
       return;
     }
+    setGatesLoading(true);
+    setGatesError('');
     try {
       const [vehicles, hasWeightsCert] = await Promise.all([
         fetchRcVehicles(rcUid),
@@ -420,9 +449,22 @@ export const RCSiteCalibration: React.FC = () => {
       ]);
       setRcHasVehicle(rcHasRegisteredVehicle(vehicles));
       setRcHasWeightsCert(hasWeightsCert);
-    } catch {
+    } catch (err: unknown) {
       setRcHasVehicle(null);
       setRcHasWeightsCert(null);
+      const code =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code: string }).code)
+          : '';
+      setGatesError(
+        code === 'permission-denied'
+          ? 'Could not verify centre setup (permission denied). Deploy Firestore rules or contact Super Admin.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not verify centre setup. Check your connection and refresh.',
+      );
+    } finally {
+      setGatesLoading(false);
     }
   }, [rcUid]);
 
@@ -1116,7 +1158,12 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
     if (isVct) {
-      const blockMsg = vctNewVerificationBlockMessage(rcHasWeightsCert, rcHasVehicle);
+      const blockMsg = vctNewVerificationBlockMessage(
+        rcHasWeightsCert,
+        rcHasVehicle,
+        gatesLoading,
+        gatesError,
+      );
       if (blockMsg) {
         setError(blockMsg);
         return;
@@ -1695,7 +1742,12 @@ export const RCSiteCalibration: React.FC = () => {
         return;
       }
       if (isVct) {
-        const blockMsg = vctNewVerificationBlockMessage(rcHasWeightsCert, rcHasVehicle);
+        const blockMsg = vctNewVerificationBlockMessage(
+        rcHasWeightsCert,
+        rcHasVehicle,
+        gatesLoading,
+        gatesError,
+      );
         if (blockMsg) {
           setListError(blockMsg);
           return;
@@ -1723,7 +1775,7 @@ export const RCSiteCalibration: React.FC = () => {
       setVerificationDeclarationAccepted(false);
       setShowAddForm(true);
     },
-    [user?.role, isVct, rcHasWeightsCert, rcHasVehicle],
+    [user?.role, isVct, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError],
   );
 
   const handleStartAdd = () => {
@@ -1732,7 +1784,12 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
     if (isVct) {
-      const blockMsg = vctNewVerificationBlockMessage(rcHasWeightsCert, rcHasVehicle);
+      const blockMsg = vctNewVerificationBlockMessage(
+        rcHasWeightsCert,
+        rcHasVehicle,
+        gatesLoading,
+        gatesError,
+      );
       if (blockMsg) {
         setListError(blockMsg);
         return;
@@ -1865,12 +1922,17 @@ export const RCSiteCalibration: React.FC = () => {
     !showVerificationBackBar && (!showAddForm || wizardOnLastStep);
   const mobileFloatingChrome = useVerificationMobileLayout(showAddForm);
   const verificationCaptureAllowed = isVerificationCaptureDevice();
-  const vctCreateGateSatisfied =
-    !isVct || (rcHasWeightsCert === true && rcHasVehicle === true);
+  const vctCreateGateOk = vctCreateGateSatisfied(
+    isVct,
+    rcHasWeightsCert,
+    rcHasVehicle,
+    gatesLoading,
+    gatesError,
+  );
   const canStartNewVerification =
     verificationCaptureAllowed
     && canCreateVerification(user?.role)
-    && vctCreateGateSatisfied;
+    && vctCreateGateOk;
 
   const draftBlockReason = useMemo(
     () =>
@@ -2289,8 +2351,26 @@ export const RCSiteCalibration: React.FC = () => {
               </p>
             </div>
           )}
-          {isVct && rcHasWeightsCert === false ? <RcStandardWeightsCertVctNotice /> : null}
-          {isVct && rcHasVehicle === false ? <RcVehicleRequiredNotice variant="vct" /> : null}
+          {isVct && gatesLoading ? (
+            <div className="rc-vehicle-required-notice" role="status">
+              <p className="rc-vehicle-required-notice__title">Checking centre setup</p>
+              <p className="rc-vehicle-required-notice__text mb-0">
+                Verifying standard weights certificate and vehicle registration…
+              </p>
+            </div>
+          ) : null}
+          {isVct && gatesError ? (
+            <div className="rc-vehicle-required-notice" role="alert">
+              <p className="rc-vehicle-required-notice__title">Cannot start verification</p>
+              <p className="rc-vehicle-required-notice__text mb-0">{gatesError}</p>
+            </div>
+          ) : null}
+          {isVct && !gatesLoading && !gatesError && rcHasWeightsCert === false ? (
+            <RcStandardWeightsCertVctNotice />
+          ) : null}
+          {isVct && !gatesLoading && !gatesError && rcHasVehicle === false ? (
+            <RcVehicleRequiredNotice variant="vct" />
+          ) : null}
           <VerificationListFilters
             searchTerm={searchTerm}
             onSearchTermChange={setSearchTerm}
@@ -2301,7 +2381,16 @@ export const RCSiteCalibration: React.FC = () => {
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
             typeOptions={typeFilterOptions}
-            onNewClick={canStartNewVerification ? handleStartAdd : undefined}
+            onNewClick={canStartNewVerification ? handleStartAdd : isVct ? () => {
+              const blockMsg = vctNewVerificationBlockMessage(
+                rcHasWeightsCert,
+                rcHasVehicle,
+                gatesLoading,
+                gatesError,
+              );
+              if (blockMsg) setListError(blockMsg);
+              else if (!verificationCaptureAllowed) setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
+            } : undefined}
             onRefresh={() => void fetchRecords()}
             refreshing={loading}
           />

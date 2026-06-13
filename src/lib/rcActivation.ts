@@ -22,7 +22,7 @@ export function rcActivationLabel(
 }
 
 export const VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE =
-  'Your regional centre\'s standard weights certificate has not been uploaded yet. Ask your RC admin — you cannot start new verifications until it is.';
+  'Your regional centre\'s standard weights certificate has not been uploaded yet. RC admin: Profile → Edit → upload certificate. VCT cannot start new verifications until then.';
 
 export async function fetchRcHasStandardWeightsCert(rcId: string): Promise<boolean> {
   if (!rcId.trim()) return false;
