@@ -185,6 +185,7 @@ export const VerificationSessionFields = forwardRef<
   }, [onPartyContextChange, stepContext]);
   const lastSelfWeatherKeyRef = useRef('');
   const lastRcPartySeedRef = useRef('');
+  const reviewBottomRef = useRef<HTMLDivElement>(null);
 
   const currentStep = VERIFICATION_FORM_STEPS[activeStep];
 
@@ -344,6 +345,42 @@ export const VerificationSessionFields = forwardRef<
   const isSelf = values.verificationSubject === 'self';
   const showDevices =
     isSelf || Boolean(values.customerId) || isPendingNewCustomerParty(customerPartyForm);
+
+  useEffect(() => {
+    if (!isOnReviewStep || !showDevices) return;
+
+    const scrollReviewToBottom = () => {
+      const anchor = reviewBottomRef.current;
+      if (!anchor) return;
+
+      let el: HTMLElement | null = anchor.parentElement;
+      while (el) {
+        const { overflowY } = getComputedStyle(el);
+        if (
+          (overflowY === 'auto' || overflowY === 'scroll')
+          && el.scrollHeight > el.clientHeight + 1
+        ) {
+          el.scrollTop = el.scrollHeight;
+        }
+        el = el.parentElement;
+      }
+
+      anchor.scrollIntoView({ block: 'end', behavior: 'auto' });
+
+      const pageBottom = anchor.getBoundingClientRect().bottom + window.scrollY;
+      const targetTop = Math.max(0, pageBottom - window.innerHeight + 24);
+      if (Math.abs(window.scrollY - targetTop) > 8) {
+        window.scrollTo({ top: targetTop, behavior: 'auto' });
+      }
+    };
+
+    const frame = requestAnimationFrame(() => {
+      scrollReviewToBottom();
+      window.setTimeout(scrollReviewToBottom, 120);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [isOnReviewStep, activeStep, showDevices]);
 
   const hasGpsLocation = useMemo(() => {
     const party = isSelf ? rcPartyForm : customerPartyForm;
@@ -1015,6 +1052,12 @@ export const VerificationSessionFields = forwardRef<
                   onRemove={onPerformerPhotoRemove}
                 />
               )}
+              <div
+                ref={reviewBottomRef}
+                className="verification-review-scroll-anchor"
+                tabIndex={-1}
+                aria-hidden
+              />
             </>
           )}
 
