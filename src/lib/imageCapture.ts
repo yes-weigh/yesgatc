@@ -48,10 +48,11 @@ export function acceptAllowsImageCapture(accept: string): boolean {
  */
 export function getImageCaptureAttribute(
   accept: string,
-  options?: { avatar?: boolean },
+  options?: { avatar?: boolean; facing?: ImageCaptureFacing },
 ): ImageCaptureFacing | undefined {
   if (!acceptAllowsImageCapture(accept)) return undefined;
   if (!shouldUseMobileCameraCapture()) return undefined;
+  if (options?.facing) return options.facing;
   return options?.avatar ? 'user' : 'environment';
 }
 

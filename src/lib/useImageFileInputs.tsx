@@ -7,6 +7,7 @@ import {
 
 type UseImageFileInputsOptions = {
   avatar?: boolean;
+  captureFacing?: ImageCaptureFacing;
   disabled?: boolean;
   /** When true, only live camera capture — no gallery or file picker. */
   cameraOnly?: boolean;
@@ -26,13 +27,16 @@ export function useImageFileInputs(
   accept: string,
   options: UseImageFileInputsOptions,
 ): ImageFileInputsApi {
-  const { avatar, cameraOnly = false, disabled, onSelect } = options;
+  const { avatar, captureFacing, cameraOnly = false, disabled, onSelect } = options;
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const desktopRef = useRef<HTMLInputElement>(null);
   const idPrefix = useId().replace(/:/g, '');
 
-  const capture: ImageCaptureFacing | undefined = getImageCaptureAttribute(accept, { avatar });
+  const capture: ImageCaptureFacing | undefined = getImageCaptureAttribute(accept, {
+    facing: captureFacing,
+    avatar,
+  });
   const mobileSourceChoice = capture !== undefined;
   const cameraAccept = fileInputAcceptForCapture(accept, capture);
 

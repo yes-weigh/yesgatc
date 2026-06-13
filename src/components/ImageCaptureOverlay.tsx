@@ -10,6 +10,38 @@ import type { ImageCaptureFacing } from '../lib/imageCapture';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { loadPhotoCaptureStamp, type PhotoCaptureStamp } from '../lib/photoCaptureStamp';
 
+function buildCameraConstraintAttempts(facing: ImageCaptureFacing): MediaStreamConstraints[] {
+  if (facing === 'user') {
+    return [
+      { video: { facingMode: { exact: 'user' } }, audio: false },
+      { video: { facingMode: 'user' }, audio: false },
+      {
+        video: {
+          facingMode: { ideal: 'user' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      },
+      { video: true, audio: false },
+    ];
+  }
+
+  return [
+    {
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
+    },
+    { video: { facingMode: 'environment' }, audio: false },
+    { video: { facingMode: { ideal: 'environment' } }, audio: false },
+    { video: true, audio: false },
+  ];
+}
+
 /** Gallery pickers on mobile open more reliably with `image/*` than a long MIME list. */
 function galleryAcceptAttribute(accept: string): string {
   if (accept.split(',').some(part => part.trim().startsWith('image/'))) return 'image/*';
@@ -53,6 +85,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [flashOn, setFlashOn] = useState(false);
   const [stampPrefetch, setStampPrefetch] = useState<PhotoCaptureStamp | null>(null);
+  const allowFlip = allowGallery || initialFacing !== 'user';
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach(track => track.stop());
@@ -77,19 +110,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
       return;
     }
 
-    const constraintAttempts: MediaStreamConstraints[] = [
-      {
-        video: {
-          facingMode: { ideal: facing },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      },
-      { video: { facingMode: facing }, audio: false },
-      { video: { facingMode: { ideal: facing } }, audio: false },
-      { video: true, audio: false },
-    ];
+    const constraintAttempts = buildCameraConstraintAttempts(facing);
 
     for (const constraints of constraintAttempts) {
       try {
@@ -296,15 +317,22 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
             />
           </div>
 
-          <button
-            type="button"
-            className="image-capture-overlay-icon-btn image-capture-overlay-flip-btn"
-            onClick={handleFlip}
-            disabled={Boolean(error)}
-            aria-label="Switch camera"
-          >
-            <FlipHorizontal2 size={22} />
-          </button>
+          {allowFlip ? (
+            <button
+              type="button"
+              className="image-capture-overlay-icon-btn image-capture-overlay-flip-btn"
+              onClick={handleFlip}
+              disabled={Boolean(error)}
+              aria-label="Switch camera"
+            >
+              <FlipHorizontal2 size={22} />
+            </button>
+          ) : (
+            <span
+              className="image-capture-overlay-gallery-btn image-capture-overlay-gallery-btn--hidden"
+              aria-hidden
+            />
+          )}
         </div>
       </div>
     </div>,

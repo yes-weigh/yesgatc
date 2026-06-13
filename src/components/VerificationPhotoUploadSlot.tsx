@@ -123,7 +123,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
     disabled: locked,
     cameraOnly,
-    avatar: cameraFacing === 'user',
+    captureFacing: cameraFacing,
     onSelect,
   });
 
@@ -145,7 +145,10 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   }, [onSelect, openCamera, geoStamp]);
 
   const useInAppCamera =
-    allowCamera && !cameraOnly && mobileSourceChoice && shouldUseInAppCameraCapture();
+    allowCamera
+    && mobileSourceChoice
+    && shouldUseInAppCameraCapture()
+    && (!cameraOnly || cameraFacing === 'user');
 
   const openLiveCamera = useCallback(() => {
     if (useInAppCamera && section) {
