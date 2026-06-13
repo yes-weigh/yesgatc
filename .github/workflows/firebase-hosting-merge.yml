@@ -31,6 +31,7 @@ jobs:
         env:
           VITE_WEATHERAPI_KEY: ${{ secrets.VITE_WEATHERAPI_KEY }}
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+          VITE_PWA_ORIGIN: https://yesgatc.web.app
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}

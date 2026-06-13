@@ -20041,6 +20041,34 @@ body.verification-photo-viewer-open {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.pwa-install-banner-btn--secondary {
+  padding: 0.45rem 0.55rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+}
+
+.pwa-install-banner-btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.pwa-install-banner-link {
+  color: #34d399;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pwa-install-banner-link:hover {
+  color: #6ee7b7;
+}
+
+.pwa-install-banner-blockers {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #fbbf24;
+}
+
 @media (max-width: 480px) {
   .pwa-install-banner-inner {
     flex-wrap: wrap;
