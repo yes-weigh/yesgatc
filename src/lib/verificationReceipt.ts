@@ -1,4 +1,4 @@
-import { computeRvPaymentBreakdownForRecord } from './rvPaymentAmount';
+import { resolveRvWalletDisplayAmount } from './rvPaymentAmount';
 import { inrAmountToWords } from './inrAmountToWords';
 import { VERIFICATION_GST_BILL_BRANDING, VERIFICATION_GST_BILL_RECEIPT } from './verificationGstBill';
 import type { Customer, Product, RcFeesStructure, SiteCalibration } from '../types';
@@ -96,19 +96,7 @@ export function resolveRvWalletChargeAmount(
   products: Product[],
   fees: RcFeesStructure,
 ): number | null {
-  if (record.verificationType !== 'RV') return null;
-
-  if (
-    record.rvPaymentStatus === 'paid'
-    && record.rvPaymentAmount != null
-    && Number.isFinite(record.rvPaymentAmount)
-    && record.rvPaymentAmount > 0
-  ) {
-    return Math.round(record.rvPaymentAmount);
-  }
-
-  const breakdown = computeRvPaymentBreakdownForRecord(record, products, fees);
-  return breakdown?.total ?? null;
+  return resolveRvWalletDisplayAmount(record, products, fees);
 }
 
 export function canShowVerificationWalletReceipt(record: SiteCalibration): boolean {

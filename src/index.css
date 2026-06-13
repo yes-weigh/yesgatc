@@ -11378,6 +11378,11 @@ body.verification-mobile-wizard-active {
   box-shadow: 0 4px 16px rgba(59, 130, 246, 0.18);
 }
 
+.verification-summary-photo-tile--instrumentRear .verification-summary-photo-tile-frame {
+  border-color: rgba(129, 140, 248, 0.45);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.14);
+}
+
 .verification-summary-photo-tile--standardWeight .verification-summary-photo-tile-frame {
   border-color: rgba(74, 222, 128, 0.4);
   box-shadow: 0 4px 16px rgba(34, 197, 94, 0.12);

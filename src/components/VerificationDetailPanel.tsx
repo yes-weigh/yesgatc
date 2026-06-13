@@ -213,16 +213,14 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
                 path={record.scaleImagePath}
                 name={record.scaleImageName}
               />
-              {record.verificationType === 'RV' && (
-                <DetailImage
-                  label="Instrument rear"
-                  url={record.instrumentRearImageUrl}
-                  path={record.instrumentRearImagePath}
-                  name={record.instrumentRearImageName}
-                />
-              )}
               <DetailImage
-                label="Testing"
+                label="Instrument rear"
+                url={record.instrumentRearImageUrl}
+                path={record.instrumentRearImagePath}
+                name={record.instrumentRearImageName}
+              />
+              <DetailImage
+                label="F2 test weight"
                 url={record.standardWeightImageUrl}
                 path={record.standardWeightImagePath}
                 name={record.standardWeightImageName}
@@ -233,12 +231,14 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
                 path={record.verificationSealImagePath}
                 name={record.verificationSealImageName}
               />
-              <DetailImage
-                label="Installation"
-                url={record.installationImageUrl}
-                path={record.installationImagePath}
-                name={record.installationImageName}
-              />
+              {(record.installationImageUrl?.trim() || record.installationImagePath?.trim()) && (
+                <DetailImage
+                  label="Installation (legacy)"
+                  url={record.installationImageUrl}
+                  path={record.installationImagePath}
+                  name={record.installationImageName}
+                />
+              )}
               {record.verificationType === 'RV' && (
                 <>
                   <DetailImage

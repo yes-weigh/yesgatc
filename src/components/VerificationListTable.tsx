@@ -10,7 +10,9 @@ import {
 } from 'lucide-react';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { isRvWalletPaymentRequired } from '../lib/appSettings';
-import { formatRcFeeAmount } from '../lib/rcProfileFields';
+import { useAppContext } from '../context/AppContext';
+import { DEFAULT_RC_FEES_STRUCTURE, formatRcFeeAmount } from '../lib/rcProfileFields';
+import { resolveRvWalletDisplayAmount } from '../lib/rvPaymentAmount';
 import {
   isZohoRvInvoicingEnabled,
   resolveZohoPushStatus,
@@ -158,6 +160,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   walletPaymentDueRecordIds,
 }) => {
   const { appSettings } = useAppSettings();
+  const { products } = useAppContext();
   const showBulkSelect = mode === 'rc' && bulkSelect;
   const showRcCentre = mode === 'admin';
   const showVctColumn = !hideVctColumn;
@@ -210,14 +213,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                 ? resolveZohoPushStatus(record)
                 : null;
             const zohoListBadge = shouldShowZohoListBadge(zohoPushStatus) ? zohoPushStatus : null;
-            const walletDeductedAmount =
-              record.verificationType === 'RV'
-              && rvWalletListEnabled
-              && record.rvPaymentStatus === 'paid'
-              && record.rvPaymentAmount != null
-              && Number.isFinite(record.rvPaymentAmount)
-                ? record.rvPaymentAmount
-                : null;
+            const walletDeductedAmount = rvWalletListEnabled
+              ? resolveRvWalletDisplayAmount(record, products, DEFAULT_RC_FEES_STRUCTURE)
+              : null;
 
             return (
               <article

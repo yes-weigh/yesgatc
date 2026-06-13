@@ -130,6 +130,8 @@ import { isRvPaymentRequired } from '../../lib/appSettings';
 import {
   buildRvPaymentFirestorePatch,
   computeRvPaymentAmount,
+  computeRvPaymentAmountForRow,
+  computeRvPaymentBreakdownForRecord,
   isRvPaymentSatisfied,
   isRvSessionPaymentSatisfied,
   isRvWalletPaymentOutstanding,
@@ -1017,13 +1019,12 @@ export const RCSiteCalibration: React.FC = () => {
       );
       await syncCustomerDevices(rowsToSync, sessionForSave.customerId, applied.customer);
       const applicationNumbers = await allocateVerificationApplicationNumbers(db, includedRows.length);
+      const fees = resolveRcFeesStructure(rcProfile);
 
-      const rvPaymentPatch =
-        sessionForSave.verificationType === 'RV' && rvPayment
-          ? buildRvPaymentFirestorePatch(rvPayment.paymentId, rvPayment.amountInr)
-          : sessionForSave.verificationType === 'RV'
-            ? { rvPaymentStatus: 'pending' as const }
-            : { rvPaymentStatus: 'not_required' as const };
+      const pendingRvPaymentPatch =
+        sessionForSave.verificationType === 'RV'
+          ? { rvPaymentStatus: 'pending' as const }
+          : { rvPaymentStatus: 'not_required' as const };
 
       for (let rowIndex = 0; rowIndex < includedRows.length; rowIndex += 1) {
         const row = includedRows[rowIndex];
@@ -1033,12 +1034,30 @@ export const RCSiteCalibration: React.FC = () => {
         const deviceId = row.isNewDevice ? row.localId : row.deviceId;
         const product = products.find(p => p.id === row.productId) ?? null;
         const docaCharges = computeVerificationDocaCharges(
-          resolveRcFeesStructure(rcProfile),
+          fees,
           sessionForSave.verificationType,
           sessionForSave.verificationLocation,
           sessionForSave.verificationSubject,
           product,
         );
+
+        const perDeviceRvPaymentPatch =
+          sessionForSave.verificationType === 'RV' && rvPayment
+            ? (() => {
+                const breakdown = computeRvPaymentAmountForRow(
+                  row,
+                  products,
+                  fees,
+                  sessionForSave.verificationLocation,
+                  sessionForSave.verificationSubject,
+                  sessionForSave.verificationType,
+                );
+                const perDeviceAmount = breakdown?.total;
+                return perDeviceAmount != null && perDeviceAmount > 0
+                  ? buildRvPaymentFirestorePatch(rvPayment.paymentId, perDeviceAmount)
+                  : pendingRvPaymentPatch;
+              })()
+            : pendingRvPaymentPatch;
 
         const record: Omit<SiteCalibration, 'id'> = {
           rcId: rcUid!,
@@ -1053,7 +1072,7 @@ export const RCSiteCalibration: React.FC = () => {
             docaCharges,
           ),
           ...imageFields,
-          ...rvPaymentPatch,
+          ...perDeviceRvPaymentPatch,
         };
         await setDoc(ref, record);
         draftRecordIds.push(recordId);
@@ -1321,9 +1340,21 @@ export const RCSiteCalibration: React.FC = () => {
         product,
       );
       const imageFields = await uploadRowImages(editingId, row.localId, sessionForSave.verificationType === 'RV');
+      const fees = resolveRcFeesStructure(rcProfile);
+      const perDeviceRvAmount =
+        sessionForSave.verificationType === 'RV'
+          ? computeRvPaymentAmountForRow(
+              row,
+              products,
+              fees,
+              sessionForSave.verificationLocation,
+              sessionForSave.verificationSubject,
+              sessionForSave.verificationType,
+            )?.total
+          : null;
       const rvPaymentPatch =
-        sessionForSave.verificationType === 'RV' && rvPayment
-          ? buildRvPaymentFirestorePatch(rvPayment.paymentId, rvPayment.amountInr)
+        sessionForSave.verificationType === 'RV' && rvPayment && perDeviceRvAmount != null && perDeviceRvAmount > 0
+          ? buildRvPaymentFirestorePatch(rvPayment.paymentId, perDeviceRvAmount)
           : {};
       await updateDoc(doc(db, 'siteCalibrations', editingId), {
         ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
@@ -1422,16 +1453,22 @@ export const RCSiteCalibration: React.FC = () => {
         }
 
         const existing = editingId ? records.find(r => r.id === editingId) ?? null : null;
+        const fees = resolveRcFeesStructure(rcProfile);
+        const perRecordExpected =
+          existing != null
+            ? computeRvPaymentBreakdownForRecord(existing, products, fees)?.total ?? null
+            : null;
 
         if (isRvSessionPaymentSatisfied(rvSessionPayment, rvPaymentBreakdown.total)) {
           await executeSubmitFromForm(rvSessionPayment!, { partyPersisted: true });
           return;
         }
 
-        if (isRvPaymentSatisfied(existing, rvPaymentBreakdown.total)) {
+        if (isRvPaymentSatisfied(existing, perRecordExpected)) {
+          const amountInr = perRecordExpected ?? existing?.rvPaymentAmount;
           await executeSubmitFromForm(
-            existing?.rvPaymentId && existing.rvPaymentAmount != null
-              ? { paymentId: existing.rvPaymentId, amountInr: existing.rvPaymentAmount }
+            existing?.rvPaymentId && amountInr != null
+              ? { paymentId: existing.rvPaymentId, amountInr }
               : undefined,
             { partyPersisted: true },
           );

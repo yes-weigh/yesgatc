@@ -25,7 +25,6 @@ export function listVerificationAttachmentsFromRecord(
   const items: VerificationAttachmentItem[] = [];
 
   for (const kind of ALL_STORED_VERIFICATION_IMAGE_KINDS) {
-    if (kind === 'instrumentRear' && record.verificationType !== 'RV') continue;
     const meta = imageMetaFromRecord(record, kind);
     if (!meta) continue;
     items.push({

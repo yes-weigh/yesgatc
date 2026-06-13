@@ -27,33 +27,20 @@ export type DeviceVerificationImagesState = {
   installation: DeviceImageSlotState;
 };
 
-/** Display order for original verification (OV). */
+/** Display order for OV and RV verification photo uploads. */
 export const VERIFICATION_IMAGE_KINDS: VerificationImageKind[] = [
   'stamping',
   'scale',
+  'instrumentRear',
   'standardWeight',
   'verificationSeal',
-  'installation',
 ];
 
-/** All image kinds persisted on a device record (includes RV-only slots). */
+/** All image kinds persisted on a device record (includes legacy slots). */
 export const ALL_STORED_VERIFICATION_IMAGE_KINDS: VerificationImageKind[] = [
   ...VERIFICATION_IMAGE_KINDS,
-  'instrumentRear',
+  'installation',
 ];
-
-/** Photo slots shown on the evidence step for the given verification type. */
-export function verificationImageKindsForSession(
-  verificationType?: JobType | '' | undefined,
-): VerificationImageKind[] {
-  if (verificationType === 'RV') {
-    const kinds = [...VERIFICATION_IMAGE_KINDS];
-    const scaleIndex = kinds.indexOf('scale');
-    kinds.splice(scaleIndex + 1, 0, 'instrumentRear');
-    return kinds;
-  }
-  return [...VERIFICATION_IMAGE_KINDS];
-}
 
 export const VERIFICATION_IMAGE_CONFIG: Record<
   VerificationImageKind,
@@ -82,21 +69,21 @@ export const VERIFICATION_IMAGE_CONFIG: Record<
   instrumentRear: {
     label: 'Instrument rear photo',
     shortLabel: 'Rear',
-    hint: 'Required for re-verification submit',
+    hint: 'Required for submit',
     storageFolder: 'instrument-rear-image',
     defaultName: 'Instrument rear photo',
   },
   standardWeight: {
-    label: 'Testing photos',
-    shortLabel: 'Testing',
-    hint: 'Optional',
+    label: 'F2 test weight photo',
+    shortLabel: 'F2 test weight',
+    hint: 'Required for submit',
     storageFolder: 'standard-weight-image',
-    defaultName: 'With standard weight image',
+    defaultName: 'F2 test weight photo',
   },
   verificationSeal: {
     label: 'Verification seal photo',
     shortLabel: 'Seal',
-    hint: 'Required for re-verification submit',
+    hint: 'Required for submit',
     storageFolder: 'verification-seal-image',
     defaultName: 'Verification seal photo',
   },
@@ -228,12 +215,18 @@ export function imageFieldsFromMeta(
   };
 }
 
-/** Serial plate + instrument front photo; rear + seal photo additionally required for RV. */
-export function requiredVerificationImageKinds(
-  verificationType?: JobType | '' | undefined,
+/** Photo slots shown on the evidence step (same set for OV and RV). */
+export function verificationImageKindsForSession(
+  _verificationType?: JobType | '' | undefined,
 ): VerificationImageKind[] {
-  if (verificationType === 'RV') return ['stamping', 'scale', 'instrumentRear', 'verificationSeal'];
-  return ['stamping', 'scale'];
+  return [...VERIFICATION_IMAGE_KINDS];
+}
+
+/** All five verification photos required for OV and RV submit. */
+export function requiredVerificationImageKinds(
+  _verificationType?: JobType | '' | undefined,
+): VerificationImageKind[] {
+  return [...VERIFICATION_IMAGE_KINDS];
 }
 
 export function isVerificationImageRequired(
@@ -248,9 +241,7 @@ export function verificationImageHint(
   verificationType?: JobType | '' | undefined,
 ): string {
   if (isVerificationImageRequired(kind, verificationType)) {
-    return kind === 'instrumentRear' || kind === 'verificationSeal'
-      ? 'Required for re-verification submit'
-      : 'Required for submit';
+    return VERIFICATION_IMAGE_CONFIG[kind].hint;
   }
   return 'Optional';
 }

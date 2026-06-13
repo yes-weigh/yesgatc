@@ -20,6 +20,25 @@ export type RvPaymentBreakdown = {
   gatewayTotal: number;
 };
 
+export function computeRvPaymentAmountForRow(
+  row: VerificationDeviceRowValues,
+  products: Product[],
+  fees: RcFeesStructure,
+  verificationLocation: VerificationLocation | '',
+  verificationSubject: 'self' | 'customer',
+  verificationType: JobType | '',
+): RvPaymentBreakdown | null {
+  if (!row.included) return null;
+  return computeRvPaymentAmount(
+    [row],
+    products,
+    fees,
+    verificationLocation,
+    verificationSubject,
+    verificationType,
+  );
+}
+
 export function computeRvPaymentAmount(
   devices: VerificationDeviceRowValues[],
   products: Product[],
@@ -78,14 +97,44 @@ function inrAmountsMatch(a: number | null | undefined, b: number | null | undefi
 }
 
 export function isRvPaymentSatisfied(
-  record: Pick<SiteCalibration, 'verificationType' | 'rvPaymentStatus' | 'rvPaymentAmount'> | null | undefined,
+  record: Pick<SiteCalibration, 'verificationType' | 'rvPaymentStatus' | 'rvPaymentAmount' | 'rvPaymentId'> | null | undefined,
   expectedAmount: number | null,
 ): boolean {
   if (!record) return false;
   if (record.verificationType !== 'RV') return true;
   if (record.rvPaymentStatus !== 'paid') return false;
   if (expectedAmount == null) return true;
-  return inrAmountsMatch(record.rvPaymentAmount, expectedAmount);
+  if (inrAmountsMatch(record.rvPaymentAmount, expectedAmount)) return true;
+  // Legacy batch submit stored session total on each record; wallet still paid once.
+  if (
+    record.rvPaymentId?.startsWith('wallet:')
+    && record.rvPaymentAmount != null
+    && record.rvPaymentAmount > expectedAmount
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Per-instrument wallet amount for list, receipt, and display (not session total). */
+export function resolveRvWalletDisplayAmount(
+  record: SiteCalibration,
+  products: Product[],
+  fees: RcFeesStructure,
+): number | null {
+  if (record.verificationType !== 'RV' || record.rvPaymentStatus !== 'paid') return null;
+
+  const computed = computeRvPaymentBreakdownForRecord(record, products, fees)?.total ?? null;
+  const stored = record.rvPaymentAmount;
+
+  if (computed == null || computed <= 0) {
+    return stored != null && Number.isFinite(stored) && stored > 0 ? Math.round(stored) : null;
+  }
+
+  if (stored == null || !Number.isFinite(stored)) return Math.round(computed);
+  if (inrAmountsMatch(stored, computed)) return Math.round(stored);
+  if (stored > computed) return Math.round(computed);
+  return Math.round(stored);
 }
 
 export function isRvSessionPaymentSatisfied(
