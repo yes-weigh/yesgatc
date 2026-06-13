@@ -522,6 +522,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         value={{ productId: row.productId, productName: row.productName }}
                         onChange={next => handleProductChange(row.localId, next)}
                         disabled={locked || !row.included}
+                        showCapacitySpecs
                       />
                       {product && (
                         <ProductDetailsSpecs
@@ -706,6 +707,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     value={{ productId: row.productId, productName: row.productName }}
                     onChange={next => handleProductChange(row.localId, next)}
                     disabled={locked || !row.included}
+                    showCapacitySpecs
                   />
                 </div>
 

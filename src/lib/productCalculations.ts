@@ -117,6 +117,18 @@ export function formatProductText(value: string | undefined | null): string {
   return trimmed || '—';
 }
 
+/** Max, e, and min — for product pickers on verification flows. */
+export function formatProductCapacitySpecs(product: Product): string {
+  const parts: string[] = [];
+  const max = formatProductMaximumCapacity(product);
+  if (max !== '—') parts.push(`Max ${max}`);
+  const e = formatProductVerificationInterval(product);
+  if (e !== '—') parts.push(`e ${e}`);
+  const min = formatProductMinimumCapacity(product);
+  if (min !== '—') parts.push(`Min ${min}`);
+  return parts.join(' · ');
+}
+
 /** Short product summary for inline tables and pickers. */
 export function formatProductBriefSummary(product: Product | null | undefined): string {
   if (!product) return '';

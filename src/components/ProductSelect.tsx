@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, Image as ImageIcon } from 'lucide-react';
 import { StorageImage } from './StorageImage';
 import type { Product } from '../types';
+import { formatProductCapacitySpecs } from '../lib/productCalculations';
 
 export type ProductSelectValue = {
   productId: string;
@@ -17,6 +18,8 @@ type ProductSelectProps = {
   inputId?: string;
   required?: boolean;
   placeholder?: string;
+  /** Show max capacity, e, and minimum in list + selected label. */
+  showCapacitySpecs?: boolean;
 };
 
 type MenuPosition = {
@@ -25,10 +28,15 @@ type MenuPosition = {
   width: number;
 };
 
-function formatProductLabel(product: Product): string {
+function formatProductLabel(product: Product, showCapacitySpecs = false): string {
   const parts = [product.name];
-  if (product.modelNo) parts.push(product.modelNo);
-  if (product.modelid) parts.push(`(${product.modelid})`);
+  if (!showCapacitySpecs) {
+    if (product.modelNo) parts.push(product.modelNo);
+    if (product.modelid) parts.push(`(${product.modelid})`);
+  } else {
+    const specs = formatProductCapacitySpecs(product);
+    if (specs) parts.push(specs);
+  }
   return parts.join(' · ');
 }
 
@@ -57,6 +65,7 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
   inputId,
   required = false,
   placeholder = 'Select product…',
+  showCapacitySpecs = false,
 }) => {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -167,10 +176,17 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
                     <ProductThumb product={product} className="product-picker-option-thumb" />
                     <span className="product-picker-option-text">
                       <span className="product-picker-option-name">{product.name}</span>
-                      <span className="product-picker-option-meta text-muted text-sm">
-                        {product.modelid}
-                        {product.modelNo ? ` · ${product.modelNo}` : ''}
-                      </span>
+                      {!showCapacitySpecs && (
+                        <span className="product-picker-option-meta text-muted text-sm">
+                          {product.modelid}
+                          {product.modelNo ? ` · ${product.modelNo}` : ''}
+                        </span>
+                      )}
+                      {showCapacitySpecs && (
+                        <span className="product-picker-option-specs text-muted text-sm">
+                          {formatProductCapacitySpecs(product)}
+                        </span>
+                      )}
                     </span>
                   </button>
                 </li>
@@ -209,9 +225,9 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
         <ProductThumb product={selected} />
         <span
           className={`product-select-label${selected ? '' : ' product-select-label--placeholder'}`}
-          title={selected ? formatProductLabel(selected) : undefined}
+          title={selected ? formatProductLabel(selected, showCapacitySpecs) : undefined}
         >
-          {selected ? formatProductLabel(selected) : placeholder}
+          {selected ? formatProductLabel(selected, showCapacitySpecs) : placeholder}
         </span>
         <ChevronDown size={16} className="product-picker-chevron" aria-hidden />
       </button>

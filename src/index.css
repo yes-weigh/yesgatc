@@ -7525,6 +7525,14 @@ body.verification-mobile-wizard-active {
   white-space: nowrap;
 }
 
+.product-picker-option-specs {
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .product-picker-empty {
   padding: 0.65rem 0.75rem;
   border-radius: 10px;
