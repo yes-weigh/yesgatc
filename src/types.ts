@@ -500,6 +500,16 @@ export interface SiteCalibration {
   installationImagePath?: string;
   installationImageName?: string;
   installationImageContentType?: string;
+  /** Live-camera selfie of verifier wearing GATC ID (mobile RV). */
+  performerSelfieIdImageUrl?: string;
+  performerSelfieIdImagePath?: string;
+  performerSelfieIdImageName?: string;
+  performerSelfieIdImageContentType?: string;
+  /** Live-camera photo of Aadhaar + GATC ID together (mobile RV). */
+  performerIdAadhaarImageUrl?: string;
+  performerIdAadhaarImagePath?: string;
+  performerIdAadhaarImageName?: string;
+  performerIdAadhaarImageContentType?: string;
   /** Re-verification only — year the device was manufactured. */
   manufacturingYear?: number;
   oldVerificationCertificateUrl?: string;

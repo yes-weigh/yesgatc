@@ -198,6 +198,29 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             </VerificationDetailSpecSection>
           )}
 
+          {(record.performerSelfieIdImageUrl?.trim()
+            || record.performerSelfieIdImagePath?.trim()
+            || record.performerIdAadhaarImageUrl?.trim()
+            || record.performerIdAadhaarImagePath?.trim()) && (
+            <section className="verification-detail-section">
+              <h3 className="verification-detail-section-title">Verifier identity</h3>
+              <div className="verification-detail-images">
+                <DetailImage
+                  label="Selfie wearing GATC ID"
+                  url={record.performerSelfieIdImageUrl}
+                  path={record.performerSelfieIdImagePath}
+                  name={record.performerSelfieIdImageName}
+                />
+                <DetailImage
+                  label="Aadhaar and GATC ID"
+                  url={record.performerIdAadhaarImageUrl}
+                  path={record.performerIdAadhaarImagePath}
+                  name={record.performerIdAadhaarImageName}
+                />
+              </div>
+            </section>
+          )}
+
           <section className="verification-detail-section">
             <h3 className="verification-detail-section-title">Attachments</h3>
             <div className="verification-detail-images">

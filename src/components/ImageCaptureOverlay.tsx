@@ -28,6 +28,8 @@ export type ImageCaptureOverlayProps = {
   label: string;
   accept?: string;
   facing?: ImageCaptureFacing;
+  /** When false, hide gallery picker (live camera only). */
+  allowGallery?: boolean;
   session: ImageCaptureSession | null;
   onClose: () => void;
 };
@@ -37,6 +39,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   label,
   accept = 'image/jpeg,image/png,image/webp,image/gif',
   facing: initialFacing = 'environment',
+  allowGallery = true,
   session,
   onClose,
 }) => {
@@ -210,9 +213,11 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
           <div className="image-capture-overlay-error">
             <p>{error}</p>
             <div className="image-capture-overlay-error-actions">
-              <label htmlFor={galleryInputId} className="image-capture-overlay-text-btn">
-                Select from images
-              </label>
+              {allowGallery && (
+                <label htmlFor={galleryInputId} className="image-capture-overlay-text-btn">
+                  Select from images
+                </label>
+              )}
               {session?.onFallbackNativeCamera && (
                 <button
                   type="button"
@@ -241,17 +246,21 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
 
       <div className="image-capture-overlay-bottom">
         <div className="image-capture-overlay-controls">
-          <label className="image-capture-overlay-gallery-btn">
-            <input
-              id={galleryInputId}
-              type="file"
-              accept={galleryAccept}
-              className="image-capture-overlay-gallery-input"
-              onChange={handleGalleryChange}
-            />
-            <ImageIcon size={22} aria-hidden />
-            <span className="sr-only">Select from images</span>
-          </label>
+          {allowGallery ? (
+            <label className="image-capture-overlay-gallery-btn">
+              <input
+                id={galleryInputId}
+                type="file"
+                accept={galleryAccept}
+                className="image-capture-overlay-gallery-input"
+                onChange={handleGalleryChange}
+              />
+              <ImageIcon size={22} aria-hidden />
+              <span className="sr-only">Select from images</span>
+            </label>
+          ) : (
+            <span className="image-capture-overlay-gallery-btn image-capture-overlay-gallery-btn--hidden" aria-hidden />
+          )}
 
           <div className="image-capture-overlay-shutter-wrap">
             <span className="image-capture-overlay-mode">Photo</span>

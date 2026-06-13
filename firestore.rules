@@ -244,6 +244,8 @@ service cloud.firestore {
 
       allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
 
+      allow read: if isOperationalVct() && resource.data.rcId == vctRcId();
+
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid;
 
@@ -297,12 +299,6 @@ service cloud.firestore {
       allow read: if isOperationalVct()
         && resource.data.rcId == vctRcId()
         && vctOwnsVerification(resource.data);
-
-      // RC creates draft records only; submit is a separate update.
-      allow create: if isRCAdmin()
-        && request.resource.data.rcId == request.auth.uid
-        && verificationRecordStatus(request.resource.data) == 'draft'
-        && validVerificationApplicationNumber(request.resource.data);
 
       allow create: if isOperationalVct()
         && request.resource.data.rcId == vctRcId()

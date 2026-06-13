@@ -14,8 +14,10 @@ import {
   Scale,
 } from 'lucide-react';
 import { RcWalletDashboardCard } from '../../components/RcWalletDashboardCard';
+import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
 import { db } from '../../firebase';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
+import { fetchRcVehicles, rcHasRegisteredVehicle } from '../../lib/rcVehicles';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
 import {
@@ -68,11 +70,12 @@ function KpiCard({ to, label, value, sub, icon, accent, loading }: KpiCardProps)
 
 export const RCDashboard: React.FC = () => {
   const { jobs, updateJob, addCertificate, loadingData } = useAppContext();
-  const { rcUid, actorUid, isVct } = useRcScope();
+  const { rcUid, actorUid, isVct, isRcAdmin } = useRcScope();
   const basePath = useRoleBasePath();
   const [vctOptions, setVctOptions] = useState<VCTOption[]>([]);
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
   const [loadingVerifications, setLoadingVerifications] = useState(true);
+  const [rcHasVehicle, setRcHasVehicle] = useState<boolean | null>(null);
 
   const fetchVerifications = useCallback(async () => {
     if (!rcUid) return;
@@ -105,6 +108,20 @@ export const RCDashboard: React.FC = () => {
     }
     void fetchVerifications();
   }, [rcUid, isVct, fetchVerifications]);
+
+  useEffect(() => {
+    if (!rcUid || !isRcAdmin) {
+      setRcHasVehicle(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchRcVehicles(rcUid).then(vehicles => {
+      if (!cancelled) setRcHasVehicle(rcHasRegisteredVehicle(vehicles));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rcUid, isRcAdmin]);
 
   const myJobs = useMemo(
     () =>
@@ -150,6 +167,7 @@ export const RCDashboard: React.FC = () => {
 
   return (
     <div className="fade-in rc-dashboard">
+      {isRcAdmin && rcHasVehicle === false ? <RcVehicleRequiredNotice variant="rc" /> : null}
       <section className="rc-kpi-grid" aria-label="Dashboard overview">
         <RcWalletDashboardCard />
         <KpiCard
@@ -262,7 +280,7 @@ export const RCDashboard: React.FC = () => {
                 <FilePenLine size={36} className="text-muted" />
                 <p className="text-muted">No draft verifications yet.</p>
                 <Link to={`${basePath}/verification`} className="btn btn-secondary btn-sm mt-2">
-                  Start verification
+                  {isVct ? 'Start verification' : 'View verifications'}
                 </Link>
               </div>
             ) : (

@@ -31,7 +31,6 @@ import {
   GraduationCap,
   LogOut,
   Wallet,
-  Globe2,
 } from 'lucide-react';
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
@@ -122,7 +121,6 @@ export const Layout: React.FC = () => {
       case 'super_admin':
         return [
           { path: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/admin/doca-scraping', icon: <Globe2 size={20} />, label: 'DOCA Scraping' },
           {
             path: '/admin/verifications',
             icon: <ShieldCheck size={20} />,

@@ -1,4 +1,9 @@
 import { useAuth } from '../context/AuthContext';
+import type { Role } from '../types';
+
+export function canCreateVerification(role: Role | undefined): boolean {
+  return role === 'vct';
+}
 
 export function useRoleBasePath(): string {
   const { user } = useAuth();

@@ -7,7 +7,9 @@ import {
 import { db } from '../../firebase';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
-import { useRcScope } from '../../lib/roleScope';
+import { canCreateVerification, useRcScope } from '../../lib/roleScope';
+import { fetchRcVehicles, rcHasRegisteredVehicle, VCT_RC_VEHICLE_REQUIRED_MESSAGE } from '../../lib/rcVehicles';
+import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
@@ -159,6 +161,19 @@ import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { buildCustomerVerificationSession } from '../../lib/verificationCustomerEntry';
 import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
 import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLayout';
+import {
+  isVerificationCaptureDevice,
+  VERIFICATION_MOBILE_ONLY_NOTICE,
+} from '../../lib/verificationDevicePolicy';
+import {
+  emptyPerformerPhotosState,
+  performerPhotoFieldsFromMeta,
+  performerPhotosFromRecord,
+  PERFORMER_PHOTO_KINDS,
+  recordHasPerformerPhotos,
+  type PerformerPhotoKind,
+  type PerformerPhotosState,
+} from '../../lib/verificationPerformerPhotos';
 
 function verificationDocaFirestorePatch(
   fees: RcFeesStructure,
@@ -199,6 +214,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [records, setRecords] = useState<SiteCalibration[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rcHasVehicle, setRcHasVehicle] = useState<boolean | null>(null);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -207,6 +223,9 @@ export const RCSiteCalibration: React.FC = () => {
   const [sessionValues, setSessionValues] = useState<VerificationSessionValues>(EMPTY_VERIFICATION_SESSION);
   const [deviceImages, setDeviceImages] = useState<Record<string, DeviceVerificationImagesState>>({});
   const [deviceRvImages, setDeviceRvImages] = useState<Record<string, DeviceRvDocumentsState>>({});
+  const [performerPhotos, setPerformerPhotos] = useState<PerformerPhotosState>(
+    () => emptyPerformerPhotosState(),
+  );
 
   const [submitProgressRecordIds, setSubmitProgressRecordIds] = useState<string[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -231,14 +250,30 @@ export const RCSiteCalibration: React.FC = () => {
   });
   const [assignableVcts, setAssignableVcts] = useState<AssignableVctOption[]>([]);
 
-  const validationOptions = useMemo(
-    () => ({
+  const validationOptions = useMemo(() => {
+    const editingRecordForValidation = editingId
+      ? records.find(r => r.id === editingId) ?? null
+      : null;
+    return {
       customerForm: partyContext.customerForm,
       rcZohoId: rcProfile?.zohoId,
       zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
-    }),
-    [partyContext.customerForm, rcProfile?.zohoId, appSettings],
-  );
+      performerPhotos,
+      skipPerformerPhotos:
+        sessionValues.verificationType !== 'RV'
+        || Boolean(
+          editingRecordForValidation && recordHasPerformerPhotos(editingRecordForValidation),
+        ),
+    };
+  }, [
+    partyContext.customerForm,
+    rcProfile?.zohoId,
+    appSettings,
+    performerPhotos,
+    editingId,
+    records,
+    sessionValues.verificationType,
+  ]);
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
     () => ({ zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings) }),
@@ -355,6 +390,23 @@ export const RCSiteCalibration: React.FC = () => {
     }
   }, [rcUid, isVct, actorUid]);
 
+  const refreshRcVehicleStatus = useCallback(async () => {
+    if (!rcUid) {
+      setRcHasVehicle(null);
+      return;
+    }
+    try {
+      const vehicles = await fetchRcVehicles(rcUid);
+      setRcHasVehicle(rcHasRegisteredVehicle(vehicles));
+    } catch {
+      setRcHasVehicle(null);
+    }
+  }, [rcUid]);
+
+  useEffect(() => {
+    void refreshRcVehicleStatus();
+  }, [refreshRcVehicleStatus]);
+
   const fetchCustomers = useCallback(async () => {
     if (!rcUid) return;
     try {
@@ -437,6 +489,10 @@ export const RCSiteCalibration: React.FC = () => {
   const isEditMode = editingId !== null;
 
   useEffect(() => {
+    if (!showForm) void refreshRcVehicleStatus();
+  }, [showForm, refreshRcVehicleStatus]);
+
+  useEffect(() => {
     if (!showForm || !rcUid) return;
     void fetchLaboratorySeal();
   }, [showForm, rcUid, fetchLaboratorySeal]);
@@ -450,6 +506,12 @@ export const RCSiteCalibration: React.FC = () => {
       devices: applyLaboratorySealToDeviceRows(prev.devices, laboratorySealId),
     }));
   }, [laboratorySealId, showForm, editingId, records]);
+
+  useEffect(() => {
+    if (sessionValues.verificationType !== 'RV') {
+      setPerformerPhotos(emptyPerformerPhotosState());
+    }
+  }, [sessionValues.verificationType]);
 
   useEffect(() => {
     if (sessionValues.verificationType !== 'RV') {
@@ -473,6 +535,7 @@ export const RCSiteCalibration: React.FC = () => {
     setSessionValues(EMPTY_VERIFICATION_SESSION);
     setDeviceImages({});
     setDeviceRvImages({});
+    setPerformerPhotos(emptyPerformerPhotosState());
     setPartyContext({ customerForm: EMPTY_CUSTOMER_FORM });
     setError('');
   };
@@ -700,6 +763,78 @@ export const RCSiteCalibration: React.FC = () => {
         [kind]: emptyDeviceImageSlot(),
       },
     }));
+  };
+
+  const handlePerformerPhotoSelect = (kind: PerformerPhotoKind, file: File) => {
+    const previewUrl = URL.createObjectURL(file);
+    setPerformerPhotos(prev => ({
+      ...prev,
+      [kind]: {
+        ...(prev[kind] ?? emptyDeviceImageSlot()),
+        pendingFile: file,
+        removed: false,
+        file: { url: previewUrl, path: '', name: file.name, contentType: file.type },
+        uploading: false,
+        progress: 0,
+      },
+    }));
+  };
+
+  const handlePerformerPhotoRemove = (kind: PerformerPhotoKind) => {
+    setPerformerPhotos(prev => ({
+      ...prev,
+      [kind]: emptyDeviceImageSlot(),
+    }));
+  };
+
+  const uploadPerformerPhotos = async (recordId: string): Promise<Partial<SiteCalibration>> => {
+    let fields: Partial<SiteCalibration> = {};
+    for (const kind of PERFORMER_PHOTO_KINDS) {
+      const slot = performerPhotos[kind] ?? emptyDeviceImageSlot();
+      if (slot.removed && !slot.pendingFile) {
+        fields = { ...fields, ...performerPhotoFieldsFromMeta(kind, null) };
+        continue;
+      }
+      if (!slot.pendingFile) {
+        if (slot.file?.url && !slot.file.url.startsWith('blob:')) {
+          fields = { ...fields, ...performerPhotoFieldsFromMeta(kind, slot.file) };
+        }
+        continue;
+      }
+
+      setPerformerPhotos(prev => ({
+        ...prev,
+        [kind]: { ...(prev[kind] ?? emptyDeviceImageSlot()), uploading: true, progress: 0 },
+      }));
+
+      try {
+        const meta = await uploadSiteCalibrationDeviceImage(recordId, kind, slot.pendingFile, pct => {
+          setPerformerPhotos(prev => ({
+            ...prev,
+            [kind]: { ...(prev[kind] ?? emptyDeviceImageSlot()), progress: pct },
+          }));
+        });
+        setPerformerPhotos(prev => ({
+          ...prev,
+          [kind]: {
+            ...(prev[kind] ?? emptyDeviceImageSlot()),
+            file: meta,
+            uploading: false,
+            progress: 100,
+            pendingFile: null,
+            removed: false,
+          },
+        }));
+        fields = { ...fields, ...performerPhotoFieldsFromMeta(kind, meta) };
+      } catch (err) {
+        setPerformerPhotos(prev => ({
+          ...prev,
+          [kind]: { ...(prev[kind] ?? emptyDeviceImageSlot()), uploading: false, progress: 0 },
+        }));
+        throw err;
+      }
+    }
+    return fields;
   };
 
   const uploadDeviceImageSlot = async (
@@ -953,6 +1088,14 @@ export const RCSiteCalibration: React.FC = () => {
     submitAfterSave = false,
     rvPayment?: { paymentId: string; amountInr: number },
   ) => {
+    if (!canCreateVerification(user?.role)) {
+      setError('New verifications must be started by a technician on the mobile app.');
+      return;
+    }
+    if (isVct && rcHasVehicle !== true) {
+      setError(VCT_RC_VEHICLE_REQUIRED_MESSAGE);
+      return;
+    }
     setError('');
     const validationError = validateVerificationDraft(
       sessionValues,
@@ -1026,10 +1169,15 @@ export const RCSiteCalibration: React.FC = () => {
           ? { rvPaymentStatus: 'pending' as const }
           : { rvPaymentStatus: 'not_required' as const };
 
+      let performerImageFields: Partial<SiteCalibration> = {};
+
       for (let rowIndex = 0; rowIndex < includedRows.length; rowIndex += 1) {
         const row = includedRows[rowIndex];
         const ref = doc(collection(db, 'siteCalibrations'));
         const recordId = ref.id;
+        if (rowIndex === 0 && sessionForSave.verificationType === 'RV' && isVerificationCaptureDevice()) {
+          performerImageFields = await uploadPerformerPhotos(recordId);
+        }
         const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
         const deviceId = row.isNewDevice ? row.localId : row.deviceId;
         const product = products.find(p => p.id === row.productId) ?? null;
@@ -1072,6 +1220,7 @@ export const RCSiteCalibration: React.FC = () => {
             docaCharges,
           ),
           ...imageFields,
+          ...performerImageFields,
           ...perDeviceRvPaymentPatch,
         };
         await setDoc(ref, record);
@@ -1180,10 +1329,15 @@ export const RCSiteCalibration: React.FC = () => {
         product,
       );
       const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
+      const performerImageFields =
+        sessionForSave.verificationType === 'RV' && isVerificationCaptureDevice()
+          ? await uploadPerformerPhotos(recordId)
+          : {};
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
         ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
         ...docaPatch,
         ...imageFields,
+        ...performerImageFields,
         ...buildPerformerPatch(sessionForSave, existing),
         updatedAt: new Date().toISOString(),
       });
@@ -1198,6 +1352,10 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleSubmitRecord = async (record: SiteCalibration) => {
     if (!canSubmitVerification(record)) return;
+    if (!isVerificationCaptureDevice()) {
+      setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
+      return;
+    }
 
     const validationError = siteCalibrationSubmitBlockReason(record, validationOptions);
     if (validationError) {
@@ -1232,6 +1390,10 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const handleBulkSubmitRecords = async () => {
+    if (!isVerificationCaptureDevice()) {
+      setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
+      return;
+    }
     const selectedRecords = filteredRecords.filter(
       r => selectedDraftIds.has(r.id) && isSiteCalibrationSubmittable(r, validationOptions),
     );
@@ -1340,6 +1502,10 @@ export const RCSiteCalibration: React.FC = () => {
         product,
       );
       const imageFields = await uploadRowImages(editingId, row.localId, sessionForSave.verificationType === 'RV');
+      const performerImageFields =
+        sessionForSave.verificationType === 'RV' && isVerificationCaptureDevice()
+          ? await uploadPerformerPhotos(editingId)
+          : {};
       const fees = resolveRcFeesStructure(rcProfile);
       const perDeviceRvAmount =
         sessionForSave.verificationType === 'RV'
@@ -1360,6 +1526,7 @@ export const RCSiteCalibration: React.FC = () => {
         ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
         ...docaPatch,
         ...imageFields,
+        ...performerImageFields,
         ...rvPaymentPatch,
         ...buildPerformerPatch(sessionForSave, existing),
       });
@@ -1497,8 +1664,21 @@ export const RCSiteCalibration: React.FC = () => {
 
   const openNewVerificationSession = useCallback(
     (session: VerificationSessionValues) => {
+      if (!canCreateVerification(user?.role)) {
+        setListError('New verifications must be started by a technician on the mobile app.');
+        return;
+      }
+      if (isVct && rcHasVehicle !== true) {
+        setListError(VCT_RC_VEHICLE_REQUIRED_MESSAGE);
+        return;
+      }
+      if (!isVerificationCaptureDevice()) {
+        setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
+        return;
+      }
       setEditingId(null);
       setError('');
+      setListError('');
       setRvPaymentOpen(false);
       setRvSessionPayment(null);
       setSessionValues(session);
@@ -1509,14 +1689,27 @@ export const RCSiteCalibration: React.FC = () => {
       setDeviceRvImages(
         firstDeviceId ? { [firstDeviceId]: emptyDeviceRvDocumentsState() } : {},
       );
+      setPerformerPhotos(emptyPerformerPhotosState());
       setWizardOnLastStep(false);
       setVerificationDeclarationAccepted(false);
       setShowAddForm(true);
     },
-    [],
+    [user?.role, isVct, rcHasVehicle],
   );
 
   const handleStartAdd = () => {
+    if (!canCreateVerification(user?.role)) {
+      setListError('New verifications must be started by a technician on the mobile app.');
+      return;
+    }
+    if (isVct && rcHasVehicle !== true) {
+      setListError(VCT_RC_VEHICLE_REQUIRED_MESSAGE);
+      return;
+    }
+    if (!isVerificationCaptureDevice()) {
+      setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
+      return;
+    }
     if (rcUid && rcProfile) {
       openNewVerificationSession(
         buildSelfVerificationSession(rcProfile, rcUid, laboratorySealId),
@@ -1532,7 +1725,7 @@ export const RCSiteCalibration: React.FC = () => {
   const pendingCustomerId = searchParams.get('customerId');
 
   useEffect(() => {
-    if (!pendingCustomerId || loading) return;
+    if (!pendingCustomerId || loading || !canCreateVerification(user?.role)) return;
     const customer = customers.find(c => c.id === pendingCustomerId);
     if (!customer) return;
 
@@ -1547,6 +1740,7 @@ export const RCSiteCalibration: React.FC = () => {
     laboratorySealId,
     openNewVerificationSession,
     setSearchParams,
+    user?.role,
   ]);
 
   const openRecord = (record: SiteCalibration) => {
@@ -1567,10 +1761,15 @@ export const RCSiteCalibration: React.FC = () => {
       [session.devices[0]?.localId || record.id]:
         record.verificationType === 'RV' ? rvDocumentsFromRecord(record) : emptyDeviceRvDocumentsState(),
     });
+    setPerformerPhotos(performerPhotosFromRecord(record));
     setError('');
   };
 
   const startEdit = (record: SiteCalibration) => {
+    if (isVerificationEditable(record) && !isVerificationCaptureDevice()) {
+      setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
+      return;
+    }
     openRecord(record);
   };
 
@@ -1633,6 +1832,12 @@ export const RCSiteCalibration: React.FC = () => {
   const showFormFooter =
     !showVerificationBackBar && (!showAddForm || wizardOnLastStep);
   const mobileFloatingChrome = useVerificationMobileLayout(showAddForm);
+  const verificationCaptureAllowed = isVerificationCaptureDevice();
+  const vctVehicleGateSatisfied = !isVct || rcHasVehicle === true;
+  const canStartNewVerification =
+    verificationCaptureAllowed
+    && canCreateVerification(user?.role)
+    && vctVehicleGateSatisfied;
 
   const draftBlockReason = useMemo(
     () =>
@@ -2000,6 +2205,9 @@ export const RCSiteCalibration: React.FC = () => {
                       onDeviceImageRemove={handleDeviceImageRemove}
                       onDeviceRvDocumentSelect={handleDeviceRvDocumentSelect}
                       onDeviceRvDocumentRemove={handleDeviceRvDocumentRemove}
+                      performerPhotos={performerPhotos}
+                      onPerformerPhotoSelect={handlePerformerPhotoSelect}
+                      onPerformerPhotoRemove={handlePerformerPhotoRemove}
                       customers={customers}
                       rcProfile={rcProfile}
                       rcUid={rcUid ?? undefined}
@@ -2040,6 +2248,15 @@ export const RCSiteCalibration: React.FC = () => {
               {listError}
             </p>
           )}
+          {!verificationCaptureAllowed && (
+            <div className="verification-mobile-only-notice" role="status">
+              <p className="verification-mobile-only-notice__title">Mobile app required</p>
+              <p className="verification-mobile-only-notice__text mb-0">
+                {VERIFICATION_MOBILE_ONLY_NOTICE}
+              </p>
+            </div>
+          )}
+          {isVct && rcHasVehicle === false ? <RcVehicleRequiredNotice variant="vct" /> : null}
           <VerificationListFilters
             searchTerm={searchTerm}
             onSearchTermChange={setSearchTerm}
@@ -2050,7 +2267,7 @@ export const RCSiteCalibration: React.FC = () => {
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
             typeOptions={typeFilterOptions}
-            onNewClick={handleStartAdd}
+            onNewClick={canStartNewVerification ? handleStartAdd : undefined}
             onRefresh={() => void fetchRecords()}
             refreshing={loading}
           />

@@ -8,6 +8,8 @@ import {
 type UseImageFileInputsOptions = {
   avatar?: boolean;
   disabled?: boolean;
+  /** When true, only live camera capture — no gallery or file picker. */
+  cameraOnly?: boolean;
   onSelect: (file: File) => void;
 };
 
@@ -24,7 +26,7 @@ export function useImageFileInputs(
   accept: string,
   options: UseImageFileInputsOptions,
 ): ImageFileInputsApi {
-  const { avatar, disabled, onSelect } = options;
+  const { avatar, cameraOnly = false, disabled, onSelect } = options;
   const cameraRef = useRef<HTMLInputElement>(null);
   const galleryRef = useRef<HTMLInputElement>(null);
   const desktopRef = useRef<HTMLInputElement>(null);
@@ -44,16 +46,21 @@ export function useImageFileInputs(
   );
 
   const openPicker = useCallback(() => {
+    if (cameraOnly) {
+      cameraRef.current?.click();
+      return;
+    }
     if (!mobileSourceChoice) desktopRef.current?.click();
-  }, [mobileSourceChoice]);
+  }, [cameraOnly, mobileSourceChoice]);
 
   const openCamera = useCallback(() => {
     cameraRef.current?.click();
   }, []);
 
   const openGallery = useCallback(() => {
+    if (cameraOnly) return;
     galleryRef.current?.click();
-  }, []);
+  }, [cameraOnly]);
 
   const inputs = mobileSourceChoice ? (
     <>
@@ -67,17 +74,19 @@ export function useImageFileInputs(
         onChange={handleChange}
         disabled={disabled}
       />
-      <input
-        ref={galleryRef}
-        id={`${idPrefix}-gallery`}
-        type="file"
-        accept={accept}
-        className="sr-only"
-        onChange={handleChange}
-        disabled={disabled}
-      />
+      {!cameraOnly && (
+        <input
+          ref={galleryRef}
+          id={`${idPrefix}-gallery`}
+          type="file"
+          accept={accept}
+          className="sr-only"
+          onChange={handleChange}
+          disabled={disabled}
+        />
+      )}
     </>
-  ) : (
+  ) : cameraOnly ? null : (
     <input
       ref={desktopRef}
       id={`${idPrefix}-file`}

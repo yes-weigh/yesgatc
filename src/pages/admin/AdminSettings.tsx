@@ -6,6 +6,7 @@ import { AdminRazorpayTestCard } from '../../components/AdminRazorpayTestCard';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { RazorpaySettingsCard } from '../../components/RazorpaySettingsCard';
 import { ZohoSettingsCard } from '../../components/ZohoSettingsCard';
+import { AdminDocaScraping } from './AdminDocaScraping';
 
 type IntegrationsTab = 'zoho' | 'razorpay' | 'whatsapp' | 'doca' | 'worker' | 'openai';
 
@@ -47,7 +48,7 @@ const INTEGRATIONS_TABS: {
   {
     id: 'worker',
     label: 'Certificate Worker',
-    subtitle: 'Remote DOCA server — status, queue & logs',
+    subtitle: 'Remote DOCA server — queue, scraping & logs',
     logoSrc: '/integrations/certificate-worker.png',
     brandClass: 'admin-integrations-tab--worker',
   },
@@ -76,7 +77,12 @@ function renderIntegrationContent(tabId: IntegrationsTab): React.ReactNode {
         </>
       );
     case 'worker':
-      return <AutomationWorkerCard className="admin-integrations-section" />;
+      return (
+        <>
+          <AutomationWorkerCard className="admin-integrations-section" />
+          <AdminDocaScraping embedded />
+        </>
+      );
     case 'whatsapp':
     case 'doca':
     case 'openai':

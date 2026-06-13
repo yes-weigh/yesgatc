@@ -529,7 +529,9 @@ export const RCVehicles: React.FC = () => {
               <VehicleLogoMark size="md" />
               <h2 className="rc-vehicles-summary-title">Vehicles</h2>
               <p className="rc-vehicles-summary-sub">
-                {vehicles.length} vehicle{vehicles.length !== 1 ? 's' : ''} registered
+                {vehicles.length === 0
+                  ? 'At least one vehicle is required for your centre'
+                  : `${vehicles.length} vehicle${vehicles.length !== 1 ? 's' : ''} registered`}
               </p>
             </div>
             <div className="rc-vehicles-summary-actions">
@@ -567,7 +569,10 @@ export const RCVehicles: React.FC = () => {
           ) : vehicles.length === 0 ? (
             <div className="rc-vehicles-empty">
               <VehicleLogoMark size="lg" />
-              <p>No vehicles yet.</p>
+              <p>At least one vehicle is required for your centre.</p>
+              <p className="text-muted text-sm mb-0">
+                Technicians cannot start new verifications until you register a vehicle.
+              </p>
               <button
                 type="button"
                 className="rc-vehicles-add-btn"

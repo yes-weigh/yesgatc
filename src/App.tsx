@@ -16,7 +16,7 @@ import { AdminVerificationList } from './pages/admin/AdminVerificationList';
 import { AdminLaboratory } from './pages/admin/AdminLaboratory';
 import { AdminWalletTopUps } from './pages/admin/AdminWalletTopUps';
 import { AdminSettings } from './pages/admin/AdminSettings';
-import { AdminQualityManagement, AdminNotifications, AdminDocaScraping } from './pages/admin/AdminMenuPages';
+import { AdminQualityManagement, AdminNotifications } from './pages/admin/AdminMenuPages';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
@@ -53,7 +53,7 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
               <Route path="/admin" element={<Layout />}>
                 <Route index element={<AdminDashboard />} />
-                <Route path="doca-scraping" element={<AdminDocaScraping />} />
+                <Route path="doca-scraping" element={<Navigate to="/admin/integrations/worker" replace />} />
                 <Route path="verifications" element={<AdminVerificationList />} />
                 <Route path="wallet" element={<AdminWalletTopUps />} />
                 <Route path="products" element={<Products />} />

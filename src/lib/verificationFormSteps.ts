@@ -14,6 +14,12 @@ import {
   validateDeviceRvDocuments,
   type DeviceRvDocumentsState,
 } from './verificationRvDeviceImages';
+import {
+  emptyPerformerPhotosState,
+  requiresPerformerIdentityPhotos,
+  validatePerformerPhotos,
+  type PerformerPhotosState,
+} from './verificationPerformerPhotos';
 
 export type VerificationFormStepId = 'setup' | 'instruments' | 'review';
 
@@ -51,6 +57,7 @@ export type VerificationFormStepContext = {
   customerForm?: CustomerFormValues;
   deviceImages?: Record<string, DeviceVerificationImagesState>;
   deviceRvImages?: Record<string, DeviceRvDocumentsState>;
+  performerPhotos?: PerformerPhotosState;
 };
 
 function partyStepBlockReason(
@@ -157,6 +164,14 @@ export function isVerificationFormStepComplete(
   return verificationFormStepBlockReason(stepId, values, rcProfile, context) === null;
 }
 
+function performerPhotosBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
+  if (!requiresPerformerIdentityPhotos(values.verificationType)) return null;
+  return validatePerformerPhotos(context?.performerPhotos ?? emptyPerformerPhotosState());
+}
+
 export function verificationFormStepBlockReason(
   stepId: VerificationFormStepId,
   values: VerificationSessionValues,
@@ -172,7 +187,9 @@ export function verificationFormStepBlockReason(
     }
     const partyReason = partyStepBlockReason(values, rcProfile, context);
     if (partyReason) return partyReason;
-    return siteStepBlockReason(values);
+    const siteReason = siteStepBlockReason(values);
+    if (siteReason) return siteReason;
+    return null;
   }
 
   if (stepId === 'instruments') {
@@ -180,7 +197,9 @@ export function verificationFormStepBlockReason(
   }
 
   if (stepId === 'review') {
-    return instrumentsStepBlockReason(values, context);
+    const instrumentsReason = instrumentsStepBlockReason(values, context);
+    if (instrumentsReason) return instrumentsReason;
+    return performerPhotosBlockReason(values, context);
   }
 
   return null;

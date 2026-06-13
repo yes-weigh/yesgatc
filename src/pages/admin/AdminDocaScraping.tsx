@@ -79,7 +79,7 @@ function truncateAddress(value: string, maxLength = 48): string {
   return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
 }
 
-export const AdminDocaScraping: React.FC = () => {
+export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const { user } = useAuth();
   const [records, setRecords] = useState<DocaCertificateRecord[]>([]);
   const [scrapeStatus, setScrapeStatus] = useState<DocaScrapeStatus | null>(null);
@@ -221,19 +221,21 @@ export const AdminDocaScraping: React.FC = () => {
     }
   };
 
-  return (
-    <div className="fade-in page-content doca-scraping-page">
-      <header className="doca-scraping-header">
-        <div>
-          <h1 className="doca-scraping-title">
-            <Globe2 className="inline-icon" aria-hidden />
-            DOCA Scraping
-          </h1>
-          <p className="text-muted text-sm mb-0">
-            Bulk sync of GATC signed certificate PDFs and instrument photos from DOCA into Firebase — separate from verifications.
-          </p>
-        </div>
-      </header>
+  const body = (
+    <>
+      {!embedded && (
+        <header className="doca-scraping-header">
+          <div>
+            <h1 className="doca-scraping-title">
+              <Globe2 className="inline-icon" aria-hidden />
+              DOCA Scraping
+            </h1>
+            <p className="text-muted text-sm mb-0">
+              Bulk sync of GATC signed certificate PDFs and instrument photos from DOCA into Firebase — separate from verifications.
+            </p>
+          </div>
+        </header>
+      )}
 
       {error && <p className="form-error">{error}</p>}
       {listenerError && <p className="form-error">Live updates error: {listenerError}</p>}
@@ -715,6 +717,12 @@ export const AdminDocaScraping: React.FC = () => {
           )}
         </div>
       </section>
-    </div>
+    </>
   );
+
+  if (embedded) {
+    return <div className="doca-scraping-page doca-scraping-page--embedded">{body}</div>;
+  }
+
+  return <div className="fade-in page-content doca-scraping-page">{body}</div>;
 };

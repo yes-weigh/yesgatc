@@ -18186,6 +18186,85 @@ body.verification-photo-viewer-open {
   padding: 0.65rem 1rem 0;
 }
 
+.verification-mobile-only-notice {
+  margin: 0.75rem 1rem 0;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.verification-mobile-only-notice__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.verification-mobile-only-notice__text {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.rc-vehicle-required-notice {
+  margin: 0.75rem 1rem 0;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.rc-dashboard .rc-vehicle-required-notice {
+  margin: 0 0 1.25rem;
+}
+
+.rc-vehicle-required-notice__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #fde68a;
+}
+
+.rc-vehicle-required-notice__text {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.rc-vehicle-required-notice__cta {
+  margin-top: 0.75rem;
+}
+
+.verification-performer-photos {
+  margin-top: 1rem;
+}
+
+.verification-performer-photos-head {
+  margin-bottom: 0.65rem;
+}
+
+.verification-performer-photos-title {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.verification-performer-photo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.verification-performer-photo-hint {
+  line-height: 1.4;
+}
+
+.image-capture-overlay-gallery-btn--hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .verification-list-cards-wrap {
   width: 100%;
   min-width: 0;
@@ -20751,6 +20830,10 @@ body.verification-photo-viewer-open {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+}
+
+.doca-scraping-page--embedded {
+  margin-top: 1.25rem;
 }
 
 .doca-scraping-header {

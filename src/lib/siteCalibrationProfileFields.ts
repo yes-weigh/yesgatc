@@ -30,6 +30,13 @@ import {
   validateDeviceRvDocuments,
   type DeviceRvDocumentsState,
 } from './verificationRvDeviceImages';
+import {
+  emptyPerformerPhotosState,
+  recordHasPerformerPhotos,
+  requiresPerformerIdentityPhotos,
+  validatePerformerPhotos,
+  type PerformerPhotosState,
+} from './verificationPerformerPhotos';
 
 export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind } from './verificationDeviceImages';
 export type { DeviceRvDocumentsState, RvDocumentKind } from './verificationRvDeviceImages';
@@ -431,6 +438,9 @@ export type VerificationValidationOptions = {
   customerForm?: CustomerFormValues;
   rcZohoId?: string | null;
   zohoRvInvoicingEnabled?: boolean;
+  performerPhotos?: PerformerPhotosState;
+  /** Skip performer photo requirement when editing legacy draft on record that already has them. */
+  skipPerformerPhotos?: boolean;
 };
 
 function validatePendingCustomerParty(
@@ -619,7 +629,10 @@ export function validateSiteCalibrationRecord(
     session,
     { [localId]: images },
     rvDocuments ? { [localId]: rvDocuments } : {},
-    options,
+    {
+      ...options,
+      skipPerformerPhotos: recordHasPerformerPhotos(record),
+    },
   );
   if (sessionError) return sessionError;
   return validateRvZohoSubmitReady(
@@ -652,6 +665,16 @@ export function validateVerificationSession(
 ): string | null {
   const headerError = validateSessionHeader(session, options);
   if (headerError) return headerError;
+
+  if (
+    requiresPerformerIdentityPhotos(session.verificationType)
+    && !options?.skipPerformerPhotos
+  ) {
+    const performerError = validatePerformerPhotos(
+      options?.performerPhotos ?? emptyPerformerPhotosState(),
+    );
+    if (performerError) return performerError;
+  }
 
   const included = session.devices.filter(row => row.included);
   if (included.length === 0) return 'Select at least one device to verify.';

@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAppContext } from '../../context/AppContext';
 import { StorageImage } from '../../components/StorageImage';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { db } from '../../firebase';
-import { formatRcFeeAmount } from '../../lib/rcProfileFields';
+import { formatRcFeeAmount, DEFAULT_RC_FEES_STRUCTURE } from '../../lib/rcProfileFields';
 import {
   buildRcWalletSummaryRows,
   deleteWalletLedgerEntry,
@@ -15,10 +16,14 @@ import {
   fetchWalletLedger,
   fetchWalletTopUps,
   reviewWalletTopUp,
-  walletLedgerTypeLabel,
   walletTopUpStatusLabel,
 } from '../../lib/rcWallet';
 import { buildWalletLedgerZohoClearanceMessage } from '../../lib/walletLedgerZohoClearance';
+import {
+  collectWalletLedgerRecordIds,
+  expandWalletLedgerForDisplay,
+  fetchSiteCalibrationsByIds,
+} from '../../lib/walletLedgerDisplay';
 import {
   isWalletTopUpZohoTransferOutstanding,
   pushLegacyWalletTopUpZohoTransfer,
@@ -26,7 +31,7 @@ import {
 import { normalizeZohoNumericId } from '../../lib/zohoSettings';
 import { isManualWalletRechargeMode } from '../../lib/razorpaySettings';
 import { useAppSettings } from '../../hooks/useAppSettings';
-import type { FirestoreUserDoc, WalletLedgerEntry, WalletTopUp } from '../../types';
+import type { FirestoreUserDoc, SiteCalibration, WalletLedgerEntry, WalletTopUp } from '../../types';
 import { CheckCircle2, FileText, IndianRupee, RefreshCw, Trash2, Wallet, X, XCircle } from 'lucide-react';
 
 function WalletZohoPushedBadge() {
@@ -73,10 +78,14 @@ function WalletScreenshotThumb({
 export const AdminWalletTopUps: React.FC = () => {
   const navigate = useNavigate();
   const confirm = useConfirm();
+  const { products } = useAppContext();
   const { appSettings } = useAppSettings();
   const manualRecharge = isManualWalletRechargeMode(appSettings);
   const [topUps, setTopUps] = useState<WalletTopUp[]>([]);
   const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
+  const [ledgerRecordsById, setLedgerRecordsById] = useState<Map<string, SiteCalibration>>(
+    () => new Map(),
+  );
   const [loading, setLoading] = useState(true);
   const [balancesLoading, setBalancesLoading] = useState(true);
   const [ledgerLoading, setLedgerLoading] = useState(true);
@@ -175,6 +184,34 @@ export const AdminWalletTopUps: React.FC = () => {
   useEffect(() => {
     void refreshLedger();
   }, [refreshLedger]);
+
+  useEffect(() => {
+    const recordIds = collectWalletLedgerRecordIds(ledger);
+    if (recordIds.length === 0) {
+      setLedgerRecordsById(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    void fetchSiteCalibrationsByIds(recordIds).then(map => {
+      if (!cancelled) setLedgerRecordsById(map);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ledger]);
+
+  const displayLedger = useMemo(
+    () =>
+      expandWalletLedgerForDisplay(
+        ledger,
+        ledgerRecordsById,
+        products,
+        DEFAULT_RC_FEES_STRUCTURE,
+      ),
+    [ledger, ledgerRecordsById, products],
+  );
 
   const pendingCount = topUps.filter(item => item.status === 'pending').length;
 
@@ -696,18 +733,25 @@ export const AdminWalletTopUps: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {ledger.map(entry => {
+                  {displayLedger.map(row => {
+                    const entry = row.entry;
                     const linkedTopUp = entry.topUpId ? topUpById.get(entry.topUpId) : undefined;
                     const { date, time } = splitWalletTimestamp(entry.createdAt);
                     const rcName = resolveRcName(entry.rcId, linkedTopUp);
-                    const isCredit = entry.amountInr >= 0;
+                    const isCredit = row.amountInr >= 0;
+                    const typeLabel = row.detail ? `${row.typeLabel} · ${row.detail}` : row.typeLabel;
+                    const showEntryActions = row.splitIndex === 0;
                     return (
-                      <tr key={entry.id} className="table-mobile-row table-mobile-row--media-actions">
+                      <tr key={row.key} className="table-mobile-row table-mobile-row--media-actions">
                         <td className="table-mobile-col-media">
-                          <WalletScreenshotThumb
-                            url={linkedTopUp?.screenshotUrl}
-                            path={linkedTopUp?.screenshotPath}
-                          />
+                          {showEntryActions ? (
+                            <WalletScreenshotThumb
+                              url={linkedTopUp?.screenshotUrl}
+                              path={linkedTopUp?.screenshotPath}
+                            />
+                          ) : (
+                            <span className="product-table-thumb-placeholder" aria-hidden>—</span>
+                          )}
                         </td>
                         <td className="table-mobile-col-primary font-medium">
                           <span className="table-mobile-primary-text">{rcName}</span>
@@ -715,12 +759,7 @@ export const AdminWalletTopUps: React.FC = () => {
                             <span className="table-mobile-summary-meta">
                               {date} · {time}
                             </span>
-                            <span className="table-mobile-summary-meta">
-                              {walletLedgerTypeLabel(entry.type)}
-                              {entry.recordIds?.length
-                                ? ` · ${entry.recordIds.length} record(s)`
-                                : ''}
-                            </span>
+                            <span className="table-mobile-summary-meta">{typeLabel}</span>
                             <span className="table-mobile-summary-badges">
                               <span
                                 className={`admin-wallet-table-amount ${
@@ -730,10 +769,13 @@ export const AdminWalletTopUps: React.FC = () => {
                                 }`}
                               >
                                 {isCredit ? '+' : '−'}
-                                {formatRcFeeAmount(Math.abs(entry.amountInr)).replace('₹', '').trim()}
+                                {formatRcFeeAmount(Math.abs(row.amountInr)).replace('₹', '').trim()}
                               </span>
                               <span className="table-mobile-summary-meta">
-                                Balance {formatRcFeeAmount(entry.balanceAfterInr)}
+                                Balance{' '}
+                                {row.balanceAfterInr != null
+                                  ? formatRcFeeAmount(row.balanceAfterInr)
+                                  : '—'}
                               </span>
                               {linkedTopUp?.zohoTransferStatus === 'completed' && <WalletZohoPushedBadge />}
                             </span>
@@ -753,7 +795,7 @@ export const AdminWalletTopUps: React.FC = () => {
                         <td className="table-mobile-col-hide text-muted text-sm">{date}</td>
                         <td className="table-mobile-col-hide text-muted text-sm">{time}</td>
                         <td className="table-mobile-col-hide">
-                          {walletLedgerTypeLabel(entry.type)}
+                          {typeLabel}
                           {linkedTopUp?.zohoTransferStatus === 'completed' && (
                             <span className="admin-wallet-zoho-desktop-meta text-mono">
                               Zoho · {linkedTopUp.zohoReferenceNumber || linkedTopUp.zohoTransactionId}
@@ -769,42 +811,44 @@ export const AdminWalletTopUps: React.FC = () => {
                           }`}
                         >
                           {isCredit ? '+' : '−'}
-                          {formatRcFeeAmount(Math.abs(entry.amountInr))}
+                          {formatRcFeeAmount(Math.abs(row.amountInr))}
                         </td>
                         <td className="table-mobile-col-hide text-muted text-sm">
-                          {formatRcFeeAmount(entry.balanceAfterInr)}
+                          {row.balanceAfterInr != null ? formatRcFeeAmount(row.balanceAfterInr) : '—'}
                         </td>
                         <td className="table-mobile-col-actions text-right">
-                          <div className="admin-wallet-table-actions">
-                            {entry.type === 'top_up_credit'
-                              && linkedTopUp
-                              && isWalletTopUpZohoTransferOutstanding(linkedTopUp) && (
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                disabled={
-                                  pushingZohoTopUpId === linkedTopUp.id
-                                  || deletingLedgerId === entry.id
-                                }
-                                onClick={() => void handlePushZohoTopUp(linkedTopUp, rcName)}
-                              >
-                                <FileText size={14} aria-hidden />
-                                {pushingZohoTopUpId === linkedTopUp.id ? 'Pushing…' : 'Push to Zoho'}
-                              </button>
-                            )}
-                            {isDevServer && (
-                              <button
-                                type="button"
-                                className="btn btn-secondary btn-sm admin-wallet-delete-btn"
-                                disabled={deletingLedgerId === entry.id || Boolean(deletingId)}
-                                onClick={() => void handleDeleteLedgerEntry(entry, linkedTopUp, rcName)}
-                                title="Dev only — deletes Firebase ledger row"
-                              >
-                                <Trash2 size={14} aria-hidden />
-                                {deletingLedgerId === entry.id ? 'Deleting…' : 'Delete'}
-                              </button>
-                            )}
-                          </div>
+                          {showEntryActions ? (
+                            <div className="admin-wallet-table-actions">
+                              {entry.type === 'top_up_credit'
+                                && linkedTopUp
+                                && isWalletTopUpZohoTransferOutstanding(linkedTopUp) && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  disabled={
+                                    pushingZohoTopUpId === linkedTopUp.id
+                                    || deletingLedgerId === entry.id
+                                  }
+                                  onClick={() => void handlePushZohoTopUp(linkedTopUp, rcName)}
+                                >
+                                  <FileText size={14} aria-hidden />
+                                  {pushingZohoTopUpId === linkedTopUp.id ? 'Pushing…' : 'Push to Zoho'}
+                                </button>
+                              )}
+                              {isDevServer && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm admin-wallet-delete-btn"
+                                  disabled={deletingLedgerId === entry.id || Boolean(deletingId)}
+                                  onClick={() => void handleDeleteLedgerEntry(entry, linkedTopUp, rcName)}
+                                  title="Dev only — deletes Firebase ledger row"
+                                >
+                                  <Trash2 size={14} aria-hidden />
+                                  {deletingLedgerId === entry.id ? 'Deleting…' : 'Delete'}
+                                </button>
+                              )}
+                            </div>
+                          ) : null}
                         </td>
                       </tr>
                     );

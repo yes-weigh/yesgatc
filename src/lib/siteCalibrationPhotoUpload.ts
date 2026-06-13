@@ -9,15 +9,18 @@ import {
   type VerificationImageKind,
 } from './verificationDeviceImages';
 import {
-  RV_DOCUMENT_CONFIG,
-  type RvDocumentKind,
-} from './verificationRvDeviceImages';
+  PERFORMER_PHOTO_CONFIG,
+  type PerformerPhotoKind,
+} from './verificationPerformerPhotos';
 
-export type SiteCalibrationUploadKind = VerificationImageKind | RvDocumentKind;
+export type SiteCalibrationUploadKind = VerificationImageKind | RvDocumentKind | PerformerPhotoKind;
 
 function uploadConfigForKind(kind: SiteCalibrationUploadKind) {
   if (kind in VERIFICATION_IMAGE_CONFIG) {
     return VERIFICATION_IMAGE_CONFIG[kind as VerificationImageKind];
+  }
+  if (kind in PERFORMER_PHOTO_CONFIG) {
+    return PERFORMER_PHOTO_CONFIG[kind as PerformerPhotoKind];
   }
   return RV_DOCUMENT_CONFIG[kind as RvDocumentKind];
 }

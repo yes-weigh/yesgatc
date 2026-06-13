@@ -31,6 +31,8 @@ type CameraSession = {
   slotKey: string;
   label: string;
   accept: string;
+  facing: ImageCaptureFacing;
+  cameraOnly: boolean;
   capture: ImageCaptureSession;
 };
 
@@ -57,6 +59,10 @@ type VerificationPhotoUploadSlotProps = {
   icon?: VerificationPhotoSlotIcon;
   /** Mobile/PWA: open camera (in-app or native). Default true. */
   allowCamera?: boolean;
+  /** Live camera only — no gallery or file upload. */
+  cameraOnly?: boolean;
+  /** In-app camera default facing mode. */
+  cameraFacing?: ImageCaptureFacing;
   /** GPS/date stamp on in-app camera capture. Only instrument + stamping plate. */
   geoStamp?: boolean;
 };
@@ -97,6 +103,8 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   onRemove,
   icon = 'camera',
   allowCamera = true,
+  cameraOnly = false,
+  cameraFacing = 'environment',
   geoStamp = false,
 }) => {
   const autoKey = useId();
@@ -114,6 +122,8 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
 
   const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
     disabled: locked,
+    cameraOnly,
+    avatar: cameraFacing === 'user',
     onSelect,
   });
 
@@ -137,40 +147,40 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   const useInAppCamera =
     allowCamera && mobileSourceChoice && shouldUseInAppCameraCapture();
 
-  const handlePrimaryCapture = useCallback(() => {
-    if (!mobileSourceChoice) {
-      openPicker();
+  const openLiveCamera = useCallback(() => {
+    if (useInAppCamera && section) {
+      section.openInAppCamera({
+        slotKey,
+        label,
+        accept,
+        facing: cameraFacing,
+        cameraOnly,
+        capture: cameraCaptureSession(),
+      });
       return;
     }
-    if (allowCamera) {
-      if (useInAppCamera && section) {
-        section.openInAppCamera({
-          slotKey,
-          label,
-          accept,
-          capture: cameraCaptureSession(),
-        });
-      } else {
-        openCamera();
-      }
-    } else if (mobileSourceChoice) {
-      openGallery();
-    } else {
-      openPicker();
-    }
+    openCamera();
   }, [
-    mobileSourceChoice,
-    allowCamera,
     useInAppCamera,
     section,
     slotKey,
     label,
+    accept,
+    cameraFacing,
+    cameraOnly,
     cameraCaptureSession,
-    onSelect,
-    openPicker,
     openCamera,
-    openGallery,
   ]);
+
+  const handlePrimaryCapture = useCallback(() => {
+    if (cameraOnly || mobileSourceChoice) {
+      if (allowCamera) {
+        openLiveCamera();
+      }
+      return;
+    }
+    openPicker();
+  }, [cameraOnly, mobileSourceChoice, allowCamera, openLiveCamera, openPicker]);
 
   const labelNode = (
     <span className="verification-photo-slot-label">
@@ -199,7 +209,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
           onClick={handlePrimaryCapture}
           disabled={locked}
           aria-label={
-            mobileSourceChoice && allowCamera
+            cameraOnly || (mobileSourceChoice && allowCamera)
               ? `${label}. Take photo with camera.`
               : `${label}. Upload photo.`
           }
@@ -275,11 +285,17 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
                     slotKey,
                     label,
                     accept,
+                    facing: cameraFacing,
+                    cameraOnly,
                     capture: cameraCaptureSession(),
                   });
-                } else if (mobileSourceChoice && allowCamera) openCamera();
-                else if (mobileSourceChoice) openGallery();
-                else openPicker();
+                } else if (mobileSourceChoice && allowCamera) {
+                  openCamera();
+                } else if (!cameraOnly && mobileSourceChoice) {
+                  openGallery();
+                } else {
+                  openPicker();
+                }
               }}
               disabled={locked}
               aria-label={`Replace ${label}`}
@@ -343,7 +359,7 @@ export const VerificationPhotoUploadSection: React.FC<VerificationPhotoUploadSec
 
   const sectionContext = useMemo(() => ({ openInAppCamera }), [openInAppCamera]);
 
-  const cameraFacing: ImageCaptureFacing = 'environment';
+  const cameraFacing: ImageCaptureFacing = cameraSession?.facing ?? 'environment';
 
   return (
     <VerificationPhotoSectionContext.Provider value={sectionContext}>
@@ -370,6 +386,7 @@ export const VerificationPhotoUploadSection: React.FC<VerificationPhotoUploadSec
         label={cameraSession?.label ?? ''}
         accept={cameraSession?.accept}
         facing={cameraFacing}
+        allowGallery={!cameraSession?.cameraOnly}
         session={cameraSession?.capture ?? null}
         onClose={() => setCameraSession(null)}
       />

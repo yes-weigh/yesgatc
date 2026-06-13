@@ -62,7 +62,9 @@ import {
 } from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
-import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
+import { VerificationPerformerPhotoFields } from './VerificationPerformerPhotoFields';
+import { requiresPerformerIdentityPhotos } from '../../lib/verificationPerformerPhotos';
+import type { PerformerPhotoKind, PerformerPhotosState } from '../../lib/verificationPerformerPhotos';
 
 type VerificationSessionFieldsProps = {
   values: VerificationSessionValues;
@@ -82,6 +84,9 @@ type VerificationSessionFieldsProps = {
   onDeviceImageRemove: (localId: string, kind: VerificationImageKind) => void;
   onDeviceRvDocumentSelect?: (localId: string, kind: RvDocumentKind, file: File) => void;
   onDeviceRvDocumentRemove?: (localId: string, kind: RvDocumentKind) => void;
+  performerPhotos?: PerformerPhotosState;
+  onPerformerPhotoSelect?: (kind: PerformerPhotoKind, file: File) => void;
+  onPerformerPhotoRemove?: (kind: PerformerPhotoKind) => void;
   customers: Customer[];
   rcProfile: FirestoreUserDoc | null;
   rcUid?: string;
@@ -135,6 +140,9 @@ export const VerificationSessionFields = forwardRef<
   onDeviceImageRemove,
   onDeviceRvDocumentSelect,
   onDeviceRvDocumentRemove,
+  performerPhotos,
+  onPerformerPhotoSelect,
+  onPerformerPhotoRemove,
   customers,
   rcProfile,
   rcUid,
@@ -167,8 +175,8 @@ export const VerificationSessionFields = forwardRef<
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
 
   const stepContext = useMemo<VerificationFormStepContext>(
-    () => ({ customerForm: customerPartyForm, deviceImages, deviceRvImages }),
-    [customerPartyForm, deviceImages, deviceRvImages],
+    () => ({ customerForm: customerPartyForm, deviceImages, deviceRvImages, performerPhotos }),
+    [customerPartyForm, deviceImages, deviceRvImages, performerPhotos],
   );
 
   useEffect(() => {
@@ -993,6 +1001,17 @@ export const VerificationSessionFields = forwardRef<
                   checked={declarationAccepted}
                   onChange={accepted => handleDeclarationAcceptedChange(accepted)}
                   disabled={locked}
+                />
+              )}
+              {requiresPerformerIdentityPhotos(values.verificationType)
+                && performerPhotos
+                && onPerformerPhotoSelect
+                && onPerformerPhotoRemove && (
+                <VerificationPerformerPhotoFields
+                  photos={performerPhotos}
+                  disabled={locked}
+                  onSelect={onPerformerPhotoSelect}
+                  onRemove={onPerformerPhotoRemove}
                 />
               )}
             </>

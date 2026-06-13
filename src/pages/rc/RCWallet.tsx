@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { IndianRupee, Loader2, Plus, RefreshCw, Wallet, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useAppContext } from '../../context/AppContext';
 import { WalletRazorpayRechargePanel } from '../../components/WalletRazorpayRechargePanel';
 import {
   VerificationPhotoUploadSection,
@@ -12,15 +13,19 @@ import {
   subscribeRcWalletBalance,
   subscribeWalletLedger,
   submitWalletTopUpWithScreenshot,
-  walletLedgerTypeLabel,
 } from '../../lib/rcWallet';
-import { formatRcFeeAmount } from '../../lib/rcProfileFields';
+import { formatRcFeeAmount, DEFAULT_RC_FEES_STRUCTURE } from '../../lib/rcProfileFields';
+import {
+  collectWalletLedgerRecordIds,
+  expandWalletLedgerForDisplay,
+  fetchSiteCalibrationsByIds,
+} from '../../lib/walletLedgerDisplay';
 import {
   isRazorpayWalletRechargeMode,
   walletRechargeGrossInr,
 } from '../../lib/razorpaySettings';
 import { useRcScope } from '../../lib/roleScope';
-import type { WalletLedgerEntry } from '../../types';
+import type { SiteCalibration, WalletLedgerEntry } from '../../types';
 
 const TRANSACTIONS_LIMIT = 25;
 
@@ -40,12 +45,16 @@ function formatWalletTransactionDate(iso: string): string {
 
 export const RCWallet: React.FC = () => {
   const { user } = useAuth();
+  const { products } = useAppContext();
   const { rcUid, isVct } = useRcScope();
   const { appSettings } = useAppSettings();
   const razorpayRecharge = isRazorpayWalletRechargeMode(appSettings);
 
   const [balance, setBalance] = useState(0);
   const [ledger, setLedger] = useState<WalletLedgerEntry[]>([]);
+  const [ledgerRecordsById, setLedgerRecordsById] = useState<Map<string, SiteCalibration>>(
+    () => new Map(),
+  );
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [razorpayPanelOpen, setRazorpayPanelOpen] = useState(false);
@@ -107,6 +116,34 @@ export const RCWallet: React.FC = () => {
       unsubLedger();
     };
   }, [rcUid]);
+
+  useEffect(() => {
+    const recordIds = collectWalletLedgerRecordIds(ledger);
+    if (recordIds.length === 0) {
+      setLedgerRecordsById(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    void fetchSiteCalibrationsByIds(recordIds).then(map => {
+      if (!cancelled) setLedgerRecordsById(map);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ledger]);
+
+  const displayLedger = useMemo(
+    () =>
+      expandWalletLedgerForDisplay(
+        ledger,
+        ledgerRecordsById,
+        products,
+        DEFAULT_RC_FEES_STRUCTURE,
+      ),
+    [ledger, ledgerRecordsById, products],
+  );
 
   const screenshotMeta = useMemo(
     () =>
@@ -464,22 +501,25 @@ export const RCWallet: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {ledger.map(entry => {
-                    const isCredit = entry.amountInr >= 0;
+                  {displayLedger.map(row => {
+                    const isCredit = row.amountInr >= 0;
+                    const typeCell = row.detail ? `${row.typeLabel} · ${row.detail}` : row.typeLabel;
                     return (
-                      <tr key={entry.id}>
+                      <tr key={row.key}>
                         <td className="rc-wallet-transactions-table__date">
-                          {formatWalletTransactionDate(entry.createdAt)}
+                          {formatWalletTransactionDate(row.entry.createdAt)}
                         </td>
-                        <td>{walletLedgerTypeLabel(entry.type)}</td>
+                        <td>{typeCell}</td>
                         <td
                           className={`rc-wallet-transactions-table__amount rc-wallet-transactions-table__amount--${isCredit ? 'credit' : 'debit'}`}
                         >
                           {isCredit ? '+' : '−'}
-                          {formatRcFeeAmount(Math.abs(entry.amountInr)).replace('₹', '').trim()}
+                          {formatRcFeeAmount(Math.abs(row.amountInr)).replace('₹', '').trim()}
                         </td>
                         <td className="rc-wallet-transactions-table__amount">
-                          {formatRcFeeAmount(entry.balanceAfterInr).replace('₹', '').trim()}
+                          {row.balanceAfterInr != null
+                            ? formatRcFeeAmount(row.balanceAfterInr).replace('₹', '').trim()
+                            : '—'}
                         </td>
                       </tr>
                     );
