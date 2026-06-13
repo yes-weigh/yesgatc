@@ -62,6 +62,7 @@ import {
 } from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
+import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import { VerificationPerformerPhotoFields } from './VerificationPerformerPhotoFields';
 import { requiresPerformerIdentityPhotos } from '../../lib/verificationPerformerPhotos';
 import type { PerformerPhotoKind, PerformerPhotosState } from '../../lib/verificationPerformerPhotos';

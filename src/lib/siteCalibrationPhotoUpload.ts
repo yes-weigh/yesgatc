@@ -12,6 +12,10 @@ import {
   PERFORMER_PHOTO_CONFIG,
   type PerformerPhotoKind,
 } from './verificationPerformerPhotos';
+import {
+  RV_DOCUMENT_CONFIG,
+  type RvDocumentKind,
+} from './verificationRvDeviceImages';
 
 export type SiteCalibrationUploadKind = VerificationImageKind | RvDocumentKind | PerformerPhotoKind;
 
