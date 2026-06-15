@@ -1,0 +1,26 @@
+[
+  {
+    "origin": [
+      "https://yesgatc.in",
+      "https://www.yesgatc.in",
+      "https://yesgatc.web.app",
+      "https://yesgatc.firebaseapp.com",
+      "http://localhost:5173",
+      "http://localhost:4173"
+    ],
+    "method": ["GET", "HEAD", "PUT", "POST", "DELETE"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": [
+      "Content-Type",
+      "Authorization",
+      "Content-Length",
+      "User-Agent",
+      "x-goog-resumable",
+      "x-goog-upload-command",
+      "x-goog-upload-header-content-length",
+      "x-goog-upload-header-content-type",
+      "x-goog-upload-offset",
+      "x-goog-upload-protocol"
+    ]
+  }
+]

@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-vct-firestore-rules.mjs\"",
     "audit:storage": "node scripts/audit-storage-folders.mjs",
+    "storage:cors": "gsutil cors set storage-cors.json gs://yesgatc.firebasestorage.app && gsutil cors set storage-cors.json gs://yesgatc.appspot.com",
     "seed:super-admin": "node scripts/seed-super-admin.mjs",
     "backfill:verification-app-numbers": "node scripts/backfill-verification-application-numbers.mjs",
     "backfill:remove-rv-gateway-fees": "node scripts/backfill-remove-rv-gateway-fees.mjs",

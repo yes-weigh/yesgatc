@@ -1,5 +1,3 @@
-import { getBytes, ref } from 'firebase/storage';
-import { legacyStorage, storage } from '../firebase';
 import {
   GATC_CERTIFICATE_PARSER_VERSION,
   parseGatcCertificatePdfText,
@@ -12,6 +10,7 @@ import {
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { storagePathFromDownloadUrl } from './storageImageUrl';
+import { downloadStorageFileBytes } from './docaStorageDownload';
 
 type PdfJsModule = typeof import('pdfjs-dist');
 
@@ -103,16 +102,6 @@ export function parseGatcCertificatePdf(bytes: Uint8Array): Promise<DocaCertific
   return extractPdfText(bytes).then(text => parseGatcCertificatePdfText(text));
 }
 
-async function readStorageBytes(path: string): Promise<Uint8Array> {
-  try {
-    const bytes = await getBytes(ref(storage, path));
-    return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  } catch {
-    const bytes = await getBytes(ref(legacyStorage, path));
-    return bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  }
-}
-
 function resolveCertificatePdfStoragePath(record: DocaCertificateRecord): string {
   const path = record.certificatePdfPath.trim();
   if (path) return path;
@@ -128,7 +117,7 @@ function resolveCertificatePdfStoragePath(record: DocaCertificateRecord): string
 export async function downloadDocaCertificatePdf(record: DocaCertificateRecord): Promise<Uint8Array> {
   const storagePath = resolveCertificatePdfStoragePath(record);
   if (storagePath) {
-    return readStorageBytes(storagePath);
+    return downloadStorageFileBytes(storagePath);
   }
 
   const url = record.certificatePdfUrl.trim();
