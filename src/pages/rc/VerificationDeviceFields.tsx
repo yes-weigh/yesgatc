@@ -392,7 +392,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           )}
           {!compact && !readOnly && laboratorySealIdentification && (
             <p className="text-muted text-xs mt-1 mb-0">
-              Seal ID is prefilled from Laboratory ({laboratorySealIdentification}).
+              Seal ID is assigned automatically ({laboratorySealIdentification}).
             </p>
           )}
         </div>
@@ -576,7 +576,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       readOnly
                       tabIndex={-1}
                       aria-label="Seal identification"
-                      title={readOnly ? 'Seal identification at submission' : 'Managed on Laboratory page'}
+                      title={readOnly ? 'Seal identification at submission' : 'Seal ID is assigned automatically'}
                     />
                   </td>
                   {includeEvidence && verificationImageKindsForSession(verificationType).map(kind => (
@@ -855,7 +855,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     value={sealLabelForRow(row)}
                     readOnly
                     tabIndex={-1}
-                    title={readOnly ? 'Seal identification at submission' : 'Managed on Laboratory page'}
+                    title={readOnly ? 'Seal identification at submission' : 'Seal ID is assigned automatically'}
                   />
                 </div>
 

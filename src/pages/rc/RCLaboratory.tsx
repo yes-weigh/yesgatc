@@ -5,7 +5,6 @@ import { LaboratorySettingsForm } from '../../components/LaboratorySettingsForm'
 export const RCLaboratory: React.FC = () => {
   const { user } = useAuth();
   const [, setLoading] = useState(true);
-  const [, setSaving] = useState(false);
 
   if (!user?.uid) return null;
 
@@ -13,12 +12,10 @@ export const RCLaboratory: React.FC = () => {
     <div className="fade-in page-content page-content--laboratory-dashboard">
       <LaboratorySettingsForm
         userId={user.uid}
-        formId="rc-laboratory-form"
-        configSubtitle="Centre defaults — saved here and reused across verification and certificates."
+        configSubtitle="Centre seal ID — shown on verifications and certificates (read-only)."
         showBottomNav
         bottomNavBasePath="/rc"
         onLoadingChange={setLoading}
-        onSavingChange={setSaving}
       />
     </div>
   );

@@ -184,16 +184,15 @@ export const SiteCalibrationFormFields: React.FC<SiteCalibrationFormFieldsProps>
           </div>
 
           <div className="form-group mb-0 site-calibration-form-span-full">
-            <label htmlFor="site-calibration-seal">Seal identification number *</label>
+            <label htmlFor="site-calibration-seal">Seal identification number</label>
             <input
               id="site-calibration-seal"
               type="text"
-              className="input-field"
-              placeholder="Seal ID on instrument"
+              className="input-field input-readonly"
               value={values.sealIdentificationNumber}
-              onChange={e => onChange({ sealIdentificationNumber: e.target.value })}
-              disabled={submitting}
-              required
+              readOnly
+              tabIndex={-1}
+              aria-readonly
             />
           </div>
 

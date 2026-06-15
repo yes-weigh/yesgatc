@@ -231,12 +231,12 @@ export function collapseVerificationsForListDisplay(
     const fullGroup = groups.get(key);
     if (!fullGroup?.length) continue;
 
-    const visibleInFilter = fullGroup.some(member =>
+    const membersInFilter = fullGroup.filter(member =>
       filtered.some(row => row.id === member.id),
     );
-    if (!visibleInFilter) continue;
+    if (!membersInFilter.length) continue;
 
-    const primary = pickPrimaryListRecord(fullGroup);
+    const primary = pickPrimaryListRecord(membersInFilter);
     collapsed.push({
       ...primary,
       serialVersionCount: fullGroup.length,

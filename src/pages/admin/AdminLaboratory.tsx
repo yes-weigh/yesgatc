@@ -14,7 +14,6 @@ export const AdminLaboratory: React.FC = () => {
   const [selectedRcId, setSelectedRcId] = useState('');
   const [listLoading, setListLoading] = useState(true);
   const [formLoading, setFormLoading] = useState(true);
-  const [, setSaving] = useState(false);
   const [listError, setListError] = useState('');
 
   const fetchCentres = useCallback(async () => {
@@ -74,13 +73,11 @@ export const AdminLaboratory: React.FC = () => {
         <LaboratorySettingsForm
           key={selectedRcId}
           userId={selectedRcId}
-          formId="admin-laboratory-form"
           idPrefix={`admin-laboratory-${selectedRcId}`}
-          configSubtitle="View and edit laboratory defaults for any regional centre."
+          configSubtitle="View laboratory seal ID for any regional centre."
           showBottomNav
           bottomNavBasePath="/admin"
           onLoadingChange={setFormLoading}
-          onSavingChange={setSaving}
           configExtras={
             <>
               {listError && (
@@ -107,7 +104,7 @@ export const AdminLaboratory: React.FC = () => {
               </div>
               {selectedLabel && !formLoading && (
                 <p className="laboratory-config-seal-hint mb-0">
-                  Editing laboratory settings for {selectedLabel}.
+                  Showing laboratory seal for {selectedLabel}.
                 </p>
               )}
             </>

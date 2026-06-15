@@ -5,6 +5,7 @@ import { ShieldCheck, XCircle, AlertTriangle, Clock, Users, Building2, Wallet } 
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { tallyVerificationStatusFilters } from '../../lib/verificationRequest';
+import { maxCertificateSequenceNumber } from '../../lib/verificationListSort';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import { fetchAllRcWallets, fetchWalletTopUps } from '../../lib/rcWallet';
 import { isManualWalletRechargeMode } from '../../lib/razorpaySettings';
@@ -65,6 +66,11 @@ export const AdminDashboard: React.FC = () => {
     [verifications],
   );
 
+  const lastCertificateNumber = useMemo(
+    () => maxCertificateSequenceNumber(verifications),
+    [verifications],
+  );
+
   return (
     <div className="fade-in">
 
@@ -114,7 +120,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="stat-content">
             <h3>Total Verifications</h3>
             <p className="stat-value">
-              {loadingVerifications ? '—' : verificationTally.all}
+              {loadingVerifications ? '—' : (lastCertificateNumber ?? '—')}
             </p>
             <p className="stat-sub">
               {loadingVerifications

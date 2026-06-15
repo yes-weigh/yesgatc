@@ -1,6 +1,11 @@
 import * as XLSX from 'xlsx';
 import { buildDocaCertificateViewUrl } from './docaCertificateUrl';
 import type { DocaCertificateRecord } from './docaScraping';
+import {
+  buildCertificateGapReport,
+  DEFAULT_CERTIFICATE_SEQUENCE_MAX,
+  type CertificateGapReport,
+} from './certificateSequence';
 import { normalizeSerialKey } from './verificationResubmit';
 import { fetchAllSiteCalibrations } from './verificationRecordsQuery';
 import type { SiteCalibration } from '../types';
@@ -237,4 +242,82 @@ export async function exportMergedVerificationsSerialExcel(
   const dateStamp = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(workbook, filename ?? `verifications-serial-export-${dateStamp}.xlsx`);
   return rows.length;
+}
+
+function gapReportSummaryRows(report: CertificateGapReport): Record<string, string | number>[] {
+  return [
+    { Metric: 'Range', Value: `1–${report.maxSequence}` },
+    { Metric: 'Present', Value: report.presentCount },
+    { Metric: 'Missing', Value: report.missingCount },
+    { Metric: 'Highest present', Value: report.highestPresent ?? '—' },
+  ];
+}
+
+function writeWorkbook(filename: string, sheets: { name: string; rows: Record<string, string | number>[] }[]): void {
+  const workbook = XLSX.utils.book_new();
+  for (const sheet of sheets) {
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(sheet.rows), sheet.name);
+  }
+  XLSX.writeFile(workbook, filename);
+}
+
+function missingListRows(report: CertificateGapReport): Record<string, string | number>[] {
+  return report.missing.map(row => ({
+    Sequence: row.sequence,
+    'Certificate Number': row.certificateNumber,
+    'DOCA URL': buildDocaCertificateViewUrl(row.certificateNumber) ?? '',
+  }));
+}
+
+function presentListRows(report: CertificateGapReport): Record<string, string | number>[] {
+  return report.present.map(row => ({
+    Sequence: row.sequence,
+    'Certificate Number': row.certificateNumber,
+    Source: row.source,
+    'DOCA URL': buildDocaCertificateViewUrl(row.certificateNumber) ?? '',
+  }));
+}
+
+export function exportCertificateMissingListExcel(
+  scrapeRecords: DocaCertificateRecord[],
+  verificationCertificateNumbers: ReadonlySet<string>,
+  maxSequence: number = DEFAULT_CERTIFICATE_SEQUENCE_MAX,
+  filename?: string,
+): CertificateGapReport {
+  const report = buildCertificateGapReport(scrapeRecords, verificationCertificateNumbers, maxSequence);
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  writeWorkbook(filename ?? `certificate-missing-1-${maxSequence}-${dateStamp}.xlsx`, [
+    { name: 'Missing', rows: missingListRows(report) },
+  ]);
+  return report;
+}
+
+export function exportCertificatePresentListExcel(
+  scrapeRecords: DocaCertificateRecord[],
+  verificationCertificateNumbers: ReadonlySet<string>,
+  maxSequence: number = DEFAULT_CERTIFICATE_SEQUENCE_MAX,
+  filename?: string,
+): CertificateGapReport {
+  const report = buildCertificateGapReport(scrapeRecords, verificationCertificateNumbers, maxSequence);
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  writeWorkbook(filename ?? `certificate-present-1-${maxSequence}-${dateStamp}.xlsx`, [
+    { name: 'Present', rows: presentListRows(report) },
+  ]);
+  return report;
+}
+
+export function exportCertificateGapReportExcel(
+  scrapeRecords: DocaCertificateRecord[],
+  verificationCertificateNumbers: ReadonlySet<string>,
+  maxSequence: number = DEFAULT_CERTIFICATE_SEQUENCE_MAX,
+  filename?: string,
+): CertificateGapReport {
+  const report = buildCertificateGapReport(scrapeRecords, verificationCertificateNumbers, maxSequence);
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  writeWorkbook(filename ?? `certificate-gap-1-${maxSequence}-${dateStamp}.xlsx`, [
+    { name: 'Missing', rows: missingListRows(report) },
+    { name: 'Present', rows: presentListRows(report) },
+    { name: 'Summary', rows: gapReportSummaryRows(report) },
+  ]);
+  return report;
 }

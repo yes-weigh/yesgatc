@@ -1,15 +1,32 @@
 import type { SiteCalibration } from '../types';
+import { parseCertificateSequenceNumber } from './certificateSequence';
 
 type SortableVerification = Pick<SiteCalibration, 'certificateNumber' | 'createdAt'>;
+
+function certificateTailNumber(certificateNumber?: string): number | null {
+  return parseCertificateSequenceNumber(certificateNumber);
+}
 
 function certificateSortTuple(certificateNumber?: string): [hasCert: number, tailNum: number, full: string] {
   const full = certificateNumber?.trim() ?? '';
   if (!full) return [0, 0, ''];
 
-  const tail = full.split('/').pop() ?? '';
-  const tailNum = /^\d+$/.test(tail) ? parseInt(tail, 10) : Number.NaN;
+  const tailNum = certificateTailNumber(full) ?? 0;
 
-  return [1, Number.isNaN(tailNum) ? 0 : tailNum, full.toLowerCase()];
+  return [1, tailNum, full.toLowerCase()];
+}
+
+/** Highest trailing certificate sequence (e.g. IND/GATC/KL/26/04/26/1365 → 1365). */
+export function maxCertificateSequenceNumber(
+  records: Pick<SiteCalibration, 'certificateNumber'>[],
+): number | null {
+  let max: number | null = null;
+  for (const record of records) {
+    const tail = certificateTailNumber(record.certificateNumber);
+    if (tail == null) continue;
+    if (max == null || tail > max) max = tail;
+  }
+  return max;
 }
 
 /** Highest certificate number first; records without a certificate number last. */

@@ -17,7 +17,7 @@ import {
   VerificationDetailSpecSection,
   VerificationDetailSpecs,
 } from './VerificationDetailSpecs';
-import { canShowVerificationCertifiedActions, verificationCertificateNumber } from '../lib/verificationRequest';
+import { canShowVerificationCertifiedActions, normalizeVerificationStatus, verificationCertificateNumber } from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
 
 interface VerificationDetailPanelProps {
@@ -74,9 +74,14 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
     allRecords.length ? allRecords : [record],
     record,
   );
+  const openedStatus = normalizeVerificationStatus(record);
+  const certifiedSiblings = serialGroup.filter(
+    r => r.id !== record.id && canShowVerificationCertifiedActions(r),
+  );
   const showCertifiedGroupView =
-    serialGroup.some(r => canShowVerificationCertifiedActions(r)) ||
-    (canShowVerificationCertifiedActions(record) && serialGroup.length === 1);
+    openedStatus !== 'draft'
+    && (serialGroup.some(r => canShowVerificationCertifiedActions(r))
+      || (canShowVerificationCertifiedActions(record) && serialGroup.length === 1));
 
   if (showCertifiedGroupView) {
     return (
@@ -134,6 +139,16 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
                 <span className="text-mono text-xs">Cert {verificationCertificateNumber(record)}</span>
               )}
             </div>
+            {certifiedSiblings.length > 0 && (
+              <p className="verification-detail-related-cert text-sm mt-2 mb-0" role="status">
+                This serial already has {certifiedSiblings.length} certified record
+                {certifiedSiblings.length === 1 ? '' : 's'}
+                {certifiedSiblings[0]?.applicationNumber?.trim()
+                  ? ` (e.g. App ${certifiedSiblings[0].applicationNumber.trim()})`
+                  : ''}
+                . Switch to <strong>All stages</strong> and open that row to view the certificate.
+              </p>
+            )}
             <RvLegacyWalletPaymentSection
               record={record}
               rcCenterName={rcCenterName}

@@ -3,7 +3,6 @@ import {
   ArrowDownAZ,
   Download,
   ExternalLink,
-  FileSearch,
   FileText,
   Filter,
   Globe2,
@@ -19,27 +18,20 @@ import {
   subscribeAutomationWorkerRemote,
 } from '../../lib/automationWorker';
 import {
-  ensureDocaEnrichRemoteDefaults,
   ensureDocaScrapeRemoteDefaults,
   DOCA_CERTIFICATE_SORT_OPTIONS,
   listDocaCertificateNumbersMissingPdf,
   listDocaCertificatesMissingPdf,
-  pauseDocaEnrich,
   pauseDocaScrape,
-  resumeDocaEnrich,
   resumeDocaScrape,
-  startDocaEnrich,
   startDocaScrape,
   subscribeDocaCertificates,
-  subscribeDocaEnrichLogs,
-  subscribeDocaEnrichStatus,
   subscribeDocaScrapeLogs,
   subscribeDocaScrapeStatus,
   subscribeVerificationCertificateNumbers,
   sortDocaCertificates,
   type DocaCertificateRecord,
   type DocaCertificateSortOption,
-  type DocaEnrichStatus,
   type DocaScrapeLogEntry,
   type DocaScrapeStatus,
 } from '../../lib/docaScraping';
@@ -48,10 +40,13 @@ import {
   isDocaCertificateInVerifications,
 } from '../../lib/docaCertificateMatch';
 import {
+  exportCertificateGapReportExcel,
   exportDocaCertificatesToExcel,
   exportMergedVerificationsSerialExcel,
 } from '../../lib/docaCertificateExport';
 import { TablePagination } from '../../components/TablePagination';
+import { CertificateGapListsPanel } from '../../components/CertificateGapListsPanel';
+import { DocaBrowserEnrichPanel } from '../../components/DocaBrowserEnrichPanel';
 import {
   DOCA_SCRAPING_TABLE_PAGE_SIZE,
   paginateItems,
@@ -69,11 +64,6 @@ function scrapeProgressPercent(status: DocaScrapeStatus | null): number {
   return Math.min(100, Math.round((status.currentPage / status.totalPages) * 100));
 }
 
-function enrichProgressPercent(status: DocaEnrichStatus | null): number {
-  if (!status || status.totalRows <= 0) return 0;
-  return Math.min(100, Math.round((status.processedRows / status.totalRows) * 100));
-}
-
 function truncateAddress(value: string, maxLength = 48): string {
   if (!value) return '—';
   return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
@@ -83,9 +73,7 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
   const { user } = useAuth();
   const [records, setRecords] = useState<DocaCertificateRecord[]>([]);
   const [scrapeStatus, setScrapeStatus] = useState<DocaScrapeStatus | null>(null);
-  const [enrichStatus, setEnrichStatus] = useState<DocaEnrichStatus | null>(null);
   const [logs, setLogs] = useState<DocaScrapeLogEntry[]>([]);
-  const [enrichLogs, setEnrichLogs] = useState<DocaScrapeLogEntry[]>([]);
   const [remote, setRemote] = useState(DEFAULT_AUTOMATION_WORKER_REMOTE);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -97,15 +85,13 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
   );
   const [saving, setSaving] = useState(false);
   const [exportingVerifications, setExportingVerifications] = useState(false);
+  const [exportingGapReport, setExportingGapReport] = useState(false);
   const [error, setError] = useState('');
   const [listenerError, setListenerError] = useState('');
 
   const isRunning =
     scrapeStatus?.status === 'running' || scrapeStatus?.status === 'login_required';
   const isPaused = remote.scrapePause && isRunning;
-  const isEnrichRunning = enrichStatus?.status === 'running';
-  const isEnrichPaused = remote.enrichPause && isEnrichRunning;
-
   const parsedCount = useMemo(
     () => records.filter(record => record.pdfExtract?.parseStatus === 'ok').length,
     [records],
@@ -121,9 +107,7 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
     const unsubscribers = [
       subscribeDocaCertificates(setRecords, onError),
       subscribeDocaScrapeStatus(setScrapeStatus, onError),
-      subscribeDocaEnrichStatus(setEnrichStatus, onError),
       subscribeDocaScrapeLogs(setLogs, onError),
-      subscribeDocaEnrichLogs(setEnrichLogs, onError),
       subscribeAutomationWorkerRemote(setRemote, onError),
       subscribeVerificationCertificateNumbers(setVerificationCertificateNumbers, onError),
     ];
@@ -133,7 +117,6 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
   useEffect(() => {
     if (!user?.uid) return;
     void ensureDocaScrapeRemoteDefaults(user.uid);
-    void ensureDocaEnrichRemoteDefaults(user.uid);
   }, [user?.uid]);
 
   const searchFilteredRecords = useMemo(() => {
@@ -203,6 +186,21 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
       exportDocaCertificatesToExcel(filteredRecords);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not export Excel file.');
+    }
+  };
+
+  const handleExportGapReport = () => {
+    setError('');
+    setExportingGapReport(true);
+    try {
+      const report = exportCertificateGapReportExcel(records, verificationCertificateNumbers);
+      if (report.presentCount === 0) {
+        setError('No certificate numbers found in scraped data or site verifications.');
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not export certificate gap report.');
+    } finally {
+      setExportingGapReport(false);
     }
   };
 
@@ -372,135 +370,17 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
         </section>
       )}
 
-      <section className="doca-scraping-controls panel glass">
-        <div className="doca-scraping-controls-head">
-          <div>
-            <h2 className="doca-scraping-section-title">PDF enrich</h2>
-            <p className="text-muted text-sm mb-0">
-              Parse stored certificate PDFs for serial number, capacity, scale interval (e), and owner address. Runs on the worker without a browser.
-            </p>
-          </div>
-          <div className="doca-scraping-control-buttons">
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!user?.uid || saving || isEnrichRunning}
-              onClick={() => void runRemoteAction(() => startDocaEnrich(remote, user!.uid))}
-            >
-              <FileSearch size={16} aria-hidden />
-              Parse PDF details
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!user?.uid || saving || !isEnrichRunning || remote.enrichPause}
-              onClick={() => void runRemoteAction(() => pauseDocaEnrich(remote, user!.uid))}
-            >
-              <Pause size={16} aria-hidden />
-              Pause
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={!user?.uid || saving || !remote.enrichPause}
-              onClick={() => void runRemoteAction(() => resumeDocaEnrich(remote, user!.uid))}
-            >
-              <RefreshCw size={16} aria-hidden />
-              Resume
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={records.length === 0}
-              onClick={handleExportExcel}
-              title="Download all certificate details and PDF URLs as Excel"
-            >
-              <Download size={16} aria-hidden />
-              Download Excel
-            </button>
-          </div>
-        </div>
+      <DocaBrowserEnrichPanel
+        records={records}
+        parsedCount={parsedCount}
+        onExportExcel={handleExportExcel}
+        exportDisabled={filteredRecords.length === 0}
+      />
 
-        <div className="doca-scraping-progress">
-          <div className="doca-scraping-progress-meta">
-            <span className={`doca-scraping-status doca-scraping-status--${enrichStatus?.status || 'idle'}`}>
-              {(enrichStatus?.status || 'idle').replace('_', ' ')}
-              {isEnrichPaused ? ' (paused)' : ''}
-            </span>
-            <span className="text-muted text-sm">
-              {enrichStatus?.statusMessage || 'Waiting to start…'}
-            </span>
-          </div>
-          <div className="doca-scraping-progress-bar" aria-hidden>
-            <span style={{ width: `${enrichProgressPercent(enrichStatus)}%` }} />
-          </div>
-          <dl className="doca-scraping-stats">
-            <div><dt>Total</dt><dd>{enrichStatus?.totalRows ?? 0}</dd></div>
-            <div><dt>Processed</dt><dd>{enrichStatus?.processedRows ?? 0}</dd></div>
-            <div><dt>Parsed</dt><dd>{enrichStatus?.parsedRows ?? 0}</dd></div>
-            <div><dt>Skipped</dt><dd>{enrichStatus?.skippedRows ?? 0}</dd></div>
-            <div><dt>Failed</dt><dd>{enrichStatus?.failedRows ?? 0}</dd></div>
-            <div><dt>Parsed in Firebase</dt><dd>{parsedCount}</dd></div>
-          </dl>
-
-          {enrichStatus?.lastProcessed?.certificate && (
-            <div className="doca-enrich-last-processed">
-              <div className="doca-enrich-last-processed-head">
-                <h3 className="doca-enrich-last-processed-title">Last processed PDF</h3>
-                <span
-                  className={`doca-enrich-last-action doca-enrich-last-action--${enrichStatus.lastProcessed.action || 'parsed'}`}
-                >
-                  {enrichStatus.lastProcessed.action || 'parsed'}
-                </span>
-              </div>
-              <p className="doca-enrich-last-cert text-mono text-sm">
-                {enrichStatus.lastProcessed.certificate}
-              </p>
-              {enrichStatus.lastProcessed.processedAt && (
-                <p className="text-muted text-sm mb-0">
-                  {formatTimestamp(enrichStatus.lastProcessed.processedAt)}
-                </p>
-              )}
-              {enrichStatus.lastProcessed.action === 'skipped' ? (
-                <p className="text-muted text-sm doca-enrich-last-note mb-0">
-                  Already parsed at the current parser version — no new fields written.
-                </p>
-              ) : enrichStatus.lastProcessed.pdfExtract ? (
-                <dl className="doca-enrich-last-fields">
-                  <div>
-                    <dt>Parse</dt>
-                    <dd>
-                      <span
-                        className={`doca-scraping-parse-status doca-scraping-parse-status--${enrichStatus.lastProcessed.pdfExtract.parseStatus || 'pending'}`}
-                      >
-                        {enrichStatus.lastProcessed.pdfExtract.parseStatus || 'pending'}
-                      </span>
-                    </dd>
-                  </div>
-                  <div><dt>Serial</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.serialNumber || '—'}</dd></div>
-                  <div><dt>Max</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.maxCapacity || '—'}</dd></div>
-                  <div><dt>e</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.verificationScaleIntervalE || '—'}</dd></div>
-                  <div><dt>Model</dt><dd>{enrichStatus.lastProcessed.pdfExtract.manufacturerModel || '—'}</dd></div>
-                  <div><dt>Owner</dt><dd>{enrichStatus.lastProcessed.pdfExtract.ownerName || '—'}</dd></div>
-                  <div className="doca-enrich-last-field-wide">
-                    <dt>Address</dt>
-                    <dd>{enrichStatus.lastProcessed.pdfExtract.ownerAddress || '—'}</dd>
-                  </div>
-                  <div><dt>Phone</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.ownerPhone || '—'}</dd></div>
-                  <div><dt>Verified</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.verificationDate || '—'}</dd></div>
-                  <div><dt>Next due</dt><dd className="text-mono">{enrichStatus.lastProcessed.pdfExtract.nextVerificationDue || '—'}</dd></div>
-                  {enrichStatus.lastProcessed.pdfExtract.parseError && (
-                    <div className="doca-enrich-last-field-wide">
-                      <dt>Error</dt>
-                      <dd className="doca-enrich-last-error">{enrichStatus.lastProcessed.pdfExtract.parseError}</dd>
-                    </div>
-                  )}
-                </dl>
-              ) : null}
-            </div>
-          )}
-        </div>
-      </section>
+      <CertificateGapListsPanel
+        records={records}
+        verificationCertificateNumbers={verificationCertificateNumbers}
+      />
 
       <section className="doca-scraping-table panel glass panel--table">
         <div className="panel-header doca-scraping-table-header">
@@ -516,6 +396,16 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
             )}
           </div>
           <div className="doca-scraping-table-toolbar">
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              disabled={exportingGapReport || saving}
+              onClick={handleExportGapReport}
+              title="Download missing, present, and summary in one Excel file"
+            >
+              <Download size={16} aria-hidden />
+              {exportingGapReport ? 'Exporting…' : 'All 3 sheets'}
+            </button>
             <button
               type="button"
               className="btn btn-sm btn-secondary"
@@ -674,26 +564,6 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
                 onPageChange={setPage}
               />
             </>
-          )}
-        </div>
-      </section>
-
-      <section className="doca-scraping-logs panel glass">
-        <div className="panel-header">
-          <h2>Enrich activity</h2>
-        </div>
-        <div className="panel-body">
-          {enrichLogs.length === 0 ? (
-            <p className="text-muted text-sm mb-0">Enrich logs will appear here while the worker parses PDFs.</p>
-          ) : (
-            <ul className="doca-scraping-log-list">
-              {enrichLogs.map(entry => (
-                <li key={entry.id} className={`doca-scraping-log-item doca-scraping-log-item--${entry.level}`}>
-                  <time>{formatTimestamp(entry.createdAt)}</time>
-                  <span>{entry.message}</span>
-                </li>
-              ))}
-            </ul>
           )}
         </div>
       </section>
