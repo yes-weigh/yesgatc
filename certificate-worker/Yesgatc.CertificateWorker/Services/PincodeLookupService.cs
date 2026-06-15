@@ -118,7 +118,7 @@ public sealed class PincodeLookupService
             return null;
         }
 
-        return new PincodeLookupResult(state, district);
+        return new PincodeLookupResult(state, DocaDistrictAliases.NormalizeForDoca(district));
     }
 
     private static PincodeLookupResult? ParseVercelPincodeResponse(VercelPincodeApiResponse? data)
@@ -131,7 +131,9 @@ public sealed class PincodeLookupService
             return null;
         }
 
-        return new PincodeLookupResult(TitleCaseWords(state), TitleCaseWords(district));
+        return new PincodeLookupResult(
+            TitleCaseWords(state),
+            DocaDistrictAliases.NormalizeForDoca(TitleCaseWords(district)));
     }
 
     private static string TitleCaseWords(string value) =>

@@ -86,8 +86,9 @@ public sealed class PartyDetailsService
         }
 
         var lookup = await _pincodeLookup.LookupAsync(pincode, cancellationToken);
-        var state = lookup?.State ?? storedState;
-        var district = lookup?.District ?? storedDistrict;
+        var state = FirstNonEmpty(storedState, lookup?.State ?? string.Empty);
+        var district = DocaDistrictAliases.NormalizeForDoca(
+            FirstNonEmpty(storedDistrict, lookup?.District ?? string.Empty));
 
         if (string.IsNullOrWhiteSpace(state) || string.IsNullOrWhiteSpace(district))
         {

@@ -1,4 +1,5 @@
 import { isValidPincode, normalizePincode } from './contactFields';
+import { normalizeDistrictForDoca } from './docaDistrictAliases';
 
 export type PincodeLookupResult = {
   state: string;
@@ -38,7 +39,7 @@ function parsePostalPincodeResponse(data: PostalApiBlock[]): PincodeLookupResult
   const district = office.District?.trim();
   if (!state || !district) return null;
 
-  return { state, district };
+  return { state, district: normalizeDistrictForDoca(district) };
 }
 
 function parseVercelPincodeResponse(data: VercelPincodeApiResponse): PincodeLookupResult | null {
@@ -49,7 +50,7 @@ function parseVercelPincodeResponse(data: VercelPincodeApiResponse): PincodeLook
 
   return {
     state: titleCaseWords(state),
-    district: titleCaseWords(district),
+    district: normalizeDistrictForDoca(titleCaseWords(district)),
   };
 }
 
