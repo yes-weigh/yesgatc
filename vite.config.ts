@@ -1,13 +1,9 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
-  const pwaOrigin = (env.VITE_PWA_ORIGIN || '').replace(/\/$/, '')
-  const abs = (path: string) => (pwaOrigin ? `${pwaOrigin}${path}` : path)
-
+export default defineConfig(() => {
   return {
     plugins: [
       react(),
@@ -21,12 +17,12 @@ export default defineConfig(({ mode }) => {
           'brand/logo-dark.png',
         ],
         manifest: {
-          id: pwaOrigin ? `${pwaOrigin}/` : '/',
+          id: '/',
           name: 'YES LAB',
           short_name: 'YES LAB',
           description: 'GATC calibration and workflow management',
-          start_url: abs('/login'),
-          scope: abs('/'),
+          start_url: '/login',
+          scope: '/',
           display: 'standalone',
           orientation: 'portrait-primary',
           background_color: '#ffffff',
@@ -35,19 +31,19 @@ export default defineConfig(({ mode }) => {
           categories: ['business', 'productivity'],
           icons: [
             {
-              src: abs('/icons/icon-192.png'),
+              src: '/icons/icon-192.png',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: abs('/icons/icon-512.png'),
+              src: '/icons/icon-512.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: abs('/icons/icon-512-maskable.png'),
+              src: '/icons/icon-512-maskable.png',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
@@ -63,6 +59,7 @@ export default defineConfig(({ mode }) => {
             {
               urlPattern: ({ url }) =>
                 url.origin.includes('googleapis.com')
+                || url.origin.includes('firebasestorage.googleapis.com')
                 || url.origin.includes('google.com')
                 || url.origin.includes('cloudfunctions.net')
                 || url.origin.includes('.run.app')

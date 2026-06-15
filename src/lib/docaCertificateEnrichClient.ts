@@ -11,6 +11,7 @@ import {
 } from './docaScraping';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { storagePathFromDownloadUrl } from './storageImageUrl';
 
 type PdfJsModule = typeof import('pdfjs-dist');
 
@@ -112,20 +113,38 @@ async function readStorageBytes(path: string): Promise<Uint8Array> {
   }
 }
 
+function resolveCertificatePdfStoragePath(record: DocaCertificateRecord): string {
+  const path = record.certificatePdfPath.trim();
+  if (path) return path;
+
+  const url = record.certificatePdfUrl.trim();
+  if (url.includes('firebasestorage.googleapis.com')) {
+    return storagePathFromDownloadUrl(url) ?? '';
+  }
+
+  return '';
+}
+
 export async function downloadDocaCertificatePdf(record: DocaCertificateRecord): Promise<Uint8Array> {
-  if (record.certificatePdfPath.trim()) {
-    return readStorageBytes(record.certificatePdfPath.trim());
+  const storagePath = resolveCertificatePdfStoragePath(record);
+  if (storagePath) {
+    return readStorageBytes(storagePath);
   }
 
-  if (record.certificatePdfUrl.trim()) {
-    const response = await fetch(record.certificatePdfUrl.trim());
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} downloading PDF.`);
-    }
-    return new Uint8Array(await response.arrayBuffer());
+  const url = record.certificatePdfUrl.trim();
+  if (!url) {
+    throw new Error('Certificate PDF path is missing.');
   }
 
-  throw new Error('Certificate PDF path is missing.');
+  if (url.includes('firebasestorage.googleapis.com')) {
+    throw new Error('Could not resolve Firebase Storage path for certificate PDF.');
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} downloading PDF.`);
+  }
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 export function shouldSkipBrowserPdfEnrich(record: DocaCertificateRecord): boolean {
