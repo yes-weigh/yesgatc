@@ -19,6 +19,7 @@ export const PERFORMER_PHOTO_CONFIG: Record<
   {
     label: string;
     hint: string;
+    shortLabel: string;
     storageFolder: string;
     defaultName: string;
     cameraFacing: ImageCaptureFacing;
@@ -26,6 +27,7 @@ export const PERFORMER_PHOTO_CONFIG: Record<
 > = {
   selfieWithId: {
     label: 'Selfie wearing GATC ID card',
+    shortLabel: 'RV selfie',
     hint: 'Use your front camera. Your face and GATC ID badge must both be clearly visible.',
     storageFolder: 'performer-selfie-id',
     defaultName: 'Selfie with GATC ID',
@@ -33,6 +35,7 @@ export const PERFORMER_PHOTO_CONFIG: Record<
   },
   idAadhaar: {
     label: 'Aadhaar card and GATC ID (one photo)',
+    shortLabel: 'ID + Aadhaar',
     hint: 'One live photo with your Aadhaar card and GATC ID badge together. All text must be readable.',
     storageFolder: 'performer-id-aadhaar',
     defaultName: 'Aadhaar and GATC ID',

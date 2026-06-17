@@ -10,10 +10,16 @@ import {
   rvDocumentMetaFromRecord,
   type RvDocumentKind,
 } from './verificationRvDeviceImages';
+import {
+  PERFORMER_PHOTO_CONFIG,
+  PERFORMER_PHOTO_KINDS,
+  performerPhotoMetaFromRecord,
+  type PerformerPhotoKind,
+} from './verificationPerformerPhotos';
 import type { SiteCalibration } from '../types';
 
 export type VerificationAttachmentItem = {
-  id: VerificationImageKind | RvDocumentKind;
+  id: VerificationImageKind | RvDocumentKind | PerformerPhotoKind;
   label: string;
   url: string;
   path: string;
@@ -42,6 +48,17 @@ export function listVerificationAttachmentsFromRecord(
       items.push({
         id: kind,
         label: RV_DOCUMENT_CONFIG[kind].shortLabel,
+        url: meta.url,
+        path: meta.path,
+      });
+    }
+
+    for (const kind of PERFORMER_PHOTO_KINDS) {
+      const meta = performerPhotoMetaFromRecord(record, kind);
+      if (!meta) continue;
+      items.push({
+        id: kind,
+        label: PERFORMER_PHOTO_CONFIG[kind].shortLabel,
         url: meta.url,
         path: meta.path,
       });
