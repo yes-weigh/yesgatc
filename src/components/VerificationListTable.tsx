@@ -32,6 +32,10 @@ import {
   verificationVctLabel,
   firstValidVerificationTimestamp,
 } from '../lib/verificationRequest';
+import {
+  canDevDeleteSubmittedVerification,
+  verificationAdminDeleteLabel,
+} from '../lib/verificationDevDelete';
 import type { SiteCalibration, VerificationRequestStatus } from '../types';
 
 export type VerificationListTableMode = 'rc' | 'admin';
@@ -71,6 +75,8 @@ export interface VerificationListTableProps {
   flashRecordId?: string | null;
   /** RV records submitted before wallet payment that still owe administrative fees. */
   walletPaymentDueRecordIds?: Set<string>;
+  /** Super Admin + local dev — show delete for submitted OV/RV on admin list. */
+  adminDevDeleteEnabled?: boolean;
 }
 
 type VerificationListStatusTone =
@@ -158,6 +164,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   lastViewedRecordId = null,
   flashRecordId = null,
   walletPaymentDueRecordIds,
+  adminDevDeleteEnabled = false,
 }) => {
   const { appSettings } = useAppSettings();
   const { products } = useAppContext();
@@ -199,7 +206,13 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const showEdit = mode === 'rc' && editable && onEdit;
             const showSubmit = mode === 'rc' && canSubmitVerification(record) && onSubmit;
             const showDownload = canDownloadVerificationCertificate(record);
-            const showDelete = canDeleteVerification(record) && onDelete;
+            const showDelete =
+              onDelete
+              && (canDeleteVerification(record)
+                || (mode === 'admin'
+                  && adminDevDeleteEnabled
+                  && canDevDeleteSubmittedVerification(record, adminDevDeleteEnabled)));
+            const deleteLabel = verificationAdminDeleteLabel(record, adminDevDeleteEnabled);
             const isLastViewed = Boolean(lastViewedRecordId) && lastViewedRecordId === record.id;
             const isFlash = Boolean(flashRecordId) && flashRecordId === record.id;
             const statusTone = verificationListStatusTone(record);
@@ -386,8 +399,8 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                           className="verification-list-card-icon-btn verification-list-card-icon-btn--delete"
                           onClick={() => void onDelete!(record)}
                           disabled={deletingId === record.id}
-                          title="Remove draft"
-                          aria-label={`Remove draft verification for ${record.customerName}`}
+                          title={deleteLabel}
+                          aria-label={`${deleteLabel} for ${record.customerName}`}
                         >
                           <Trash2 size={18} />
                         </button>

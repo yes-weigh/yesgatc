@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import {
   buildVerificationStatusFilterOptions,
@@ -30,6 +31,12 @@ import { VerificationDetailPanel } from '../../components/VerificationDetailPane
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
 import { isRvWalletPaymentOutstanding } from '../../lib/rvPaymentAmount';
+import {
+  buildDevDeleteSubmittedMessage,
+  canDevDeleteSubmittedVerification,
+  collectSubmittedDeleteBatchForDisplay,
+  devDeleteSubmittedVerification,
+} from '../../lib/verificationDevDelete';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 interface VerificationRow extends SiteCalibration {
@@ -37,7 +44,9 @@ interface VerificationRow extends SiteCalibration {
 }
 
 export const AdminVerificationList: React.FC = () => {
+  const { user } = useAuth();
   const confirm = useConfirm();
+  const isSuperAdmin = user?.role === 'super_admin';
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
   const [rcUsersById, setRcUsersById] = useState<
@@ -250,9 +259,41 @@ export const AdminVerificationList: React.FC = () => {
   }, [recordsForRcCounts, rcCenterNameByRcId]);
 
   const handleDelete = async (record: VerificationRow) => {
-    if (!canDeleteVerification(record)) return;
+    const isDevSubmittedDelete = canDevDeleteSubmittedVerification(record, isSuperAdmin);
+    if (!canDeleteVerification(record) && !isDevSubmittedDelete) return;
 
     const label = `${record.customerName} · ${record.serialNumber || 'no serial'}`;
+
+    if (isDevSubmittedDelete) {
+      const batch = collectSubmittedDeleteBatchForDisplay(record, records);
+      const ok = await confirm({
+        title: 'Delete submitted verification? (dev only)',
+        message: buildDevDeleteSubmittedMessage(batch, record.rcCenterName || 'Regional Center'),
+        messageFormat: 'preline',
+        confirmLabel: 'Delete from Firebase',
+        destructive: true,
+      });
+      if (!ok) return;
+
+      setDeletingId(record.id);
+      try {
+        await devDeleteSubmittedVerification(record.id);
+        if (viewingRecord?.id === record.id) {
+          setViewingRecord(null);
+        }
+        if (lastViewedVerificationId === record.id) {
+          setLastViewedVerificationId(null);
+          setRowHighlightFlashId(null);
+        }
+        await fetchRecords();
+      } catch (err: unknown) {
+        alert(err instanceof Error ? err.message : 'Failed to delete submitted verification.');
+      } finally {
+        setDeletingId(null);
+      }
+      return;
+    }
+
     const ok = await confirm({
       title: 'Remove draft verification?',
       message: `Remove draft verification "${label}"?\n\nThis cannot be undone.`,
@@ -351,6 +392,7 @@ export const AdminVerificationList: React.FC = () => {
                 lastViewedRecordId={lastViewedVerificationId}
                 flashRecordId={rowHighlightFlashId}
                 walletPaymentDueRecordIds={walletPaymentDueRecordIds}
+                adminDevDeleteEnabled={isSuperAdmin}
                 onDelete={record => void handleDelete(record as VerificationRow)}
                 deletingId={deletingId}
               />
