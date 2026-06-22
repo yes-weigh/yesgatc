@@ -411,13 +411,15 @@ exports.resetRcWallet = onCall({ region: CALLABLE_REGION }, async request =>
 );
 
 /** Dev/testing — delete submitted RV records and restore wallet (Zoho cleared manually). */
-exports.revertRvSubmitTest = onCall({ region: CALLABLE_REGION }, async request =>
-  revertRvSubmitTestHandler(request, adminDb()),
+exports.revertRvSubmitTest = onCall(
+  { region: CALLABLE_REGION, cors: CALLABLE_CORS },
+  async request => revertRvSubmitTestHandler(request, adminDb()),
 );
 
 /** Dev/testing — Super Admin deletes submitted OV/RV verifications. */
-exports.devDeleteSubmittedVerification = onCall({ region: CALLABLE_REGION }, async request =>
-  devDeleteSubmittedVerificationHandler(request, adminDb()),
+exports.devDeleteSubmittedVerification = onCall(
+  { region: CALLABLE_REGION, cors: CALLABLE_CORS },
+  async request => devDeleteSubmittedVerificationHandler(request, adminDb()),
 );
 
 /** Super Admin downloads a Storage object server-side (avoids bucket CORS in browser). */
