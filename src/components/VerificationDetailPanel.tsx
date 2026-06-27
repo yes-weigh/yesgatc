@@ -10,7 +10,7 @@ import { RvLegacyZohoSettlementSection } from './RvLegacyZohoSettlementSection';
 import { RvSubmitTestRevertSection } from './RvSubmitTestRevertSection';
 import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import { VerificationZohoInvoiceSection } from './VerificationZohoInvoiceSection';
-import { getVerificationSerialGroup } from '../lib/verificationResubmit';
+import { canResubmitSerialGroup, getVerificationSerialGroup } from '../lib/verificationResubmit';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
 import {
   VerificationDetailSpecRow,
@@ -81,7 +81,8 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
   const showCertifiedGroupView =
     openedStatus !== 'draft'
     && (serialGroup.some(r => canShowVerificationCertifiedActions(r))
-      || (canShowVerificationCertifiedActions(record) && serialGroup.length === 1));
+      || (canShowVerificationCertifiedActions(record) && serialGroup.length === 1)
+      || canResubmitSerialGroup(serialGroup, record));
 
   if (showCertifiedGroupView) {
     return (

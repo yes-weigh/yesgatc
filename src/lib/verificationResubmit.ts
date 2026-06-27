@@ -4,7 +4,7 @@ import {
   canDownloadVerificationCertificate,
   isVerificationCertifiedOnDoca,
   isVerificationFullyCertified,
-  isVerificationStuckAtApproved,
+  isCertificationFailureResubmitSource,
   normalizeVerificationStatus,
 } from './verificationRequest';
 import {
@@ -125,10 +125,10 @@ export function canResubmitVerification(
   if (record.supersededByResubmissionId?.trim()) return false;
   if (hasPendingResubmission(record.id, group)) return false;
 
+  if (isCertificationFailureResubmitSource(record)) return true;
+
   const status = normalizeVerificationStatus(record);
   if (status !== 'certified' && status !== 'approved') return false;
-
-  if (isVerificationStuckAtApproved(record)) return true;
 
   return (
     isVerificationCertifiedOnDoca(record) ||
@@ -161,6 +161,7 @@ export function verificationVersionTitle(
 
   if (
     isCertificationFailedRecord(record)
+    || isCertificationFailureResubmitSource(record)
     || (record.supersededByResubmissionId?.trim()
       && normalizeVerificationStatus(record) === 'approved'
       && !canDownloadVerificationCertificate(record))
@@ -289,9 +290,9 @@ export async function resubmitVerificationForDoca(
     createdByUid: resubmittedByUid,
   });
 
-  const stuckApproved = isVerificationStuckAtApproved(source);
+  const certificationFailed = isCertificationFailureResubmitSource(source);
   await updateDoc(doc(firestore, 'siteCalibrations', source.id), {
-    certificateQuality: stuckApproved
+    certificateQuality: certificationFailed
       ? ('certification_failed' satisfies CertificateQuality)
       : ('corrupted_qr' satisfies CertificateQuality),
     supersededByResubmissionId: newRef.id,

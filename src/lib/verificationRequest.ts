@@ -235,8 +235,18 @@ export function isVerificationStuckAtApproved(record: SiteCalibration): boolean 
 
   return (
     record.pipelineFailedPhase === 'certification' ||
-    Boolean(record.certificationLastError?.trim())
+    Boolean(record.certificationLastError?.trim()) ||
+    Boolean(record.pipelineFailureMessage?.trim())
   );
+}
+
+/** Incomplete certification — eligible for Super Admin DOCA resubmit. */
+export function isCertificationFailureResubmitSource(record: SiteCalibration): boolean {
+  if (record.supersededByResubmissionId?.trim()) return false;
+  if (isVerificationFullyCertified(record) || canDownloadVerificationCertificate(record)) {
+    return false;
+  }
+  return isVerificationFailedAtCertification(record);
 }
 
 /** True when Firestore is certified and DOCA issued a certificate number. */
