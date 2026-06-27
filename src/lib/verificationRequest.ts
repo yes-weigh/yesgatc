@@ -13,6 +13,7 @@ export const VERIFICATION_REQUEST_STATUSES: VerificationRequestStatus[] = [
   'submitted',
   'approved',
   'certified',
+  'rejected',
 ];
 
 const CORRUPTED_FIRESTORE_MARKER = 'System.Collections.Generic.Dictionary';
@@ -65,7 +66,8 @@ export function normalizeVerificationStatus(
     raw === 'submitted' ||
     raw === 'approved' ||
     raw === 'certified' ||
-    raw === 'draft'
+    raw === 'draft' ||
+    raw === 'rejected'
   ) {
     return raw;
   }
@@ -174,7 +176,8 @@ export function canDeleteVerification(record: VerificationStatusSource): boolean
 export type VerificationFilterStatus =
   | VerificationRequestStatus
   | 'failed_submit'
-  | 'failed_certification';
+  | 'failed_certification'
+  | 'rejected';
 
 export type VerificationStatusFilter = VerificationFilterStatus | 'all' | 'duplicates';
 
@@ -194,6 +197,7 @@ export interface VerificationStatusFilterCounts {
   certified: number;
   failed_submit: number;
   failed_certification: number;
+  rejected: number;
   duplicates: number;
 }
 
@@ -217,6 +221,8 @@ export function isVerificationFailedAtSubmit(record: SiteCalibration): boolean {
 }
 
 export function isVerificationFailedAtCertification(record: SiteCalibration): boolean {
+  if (isVerificationRejected(record)) return false;
+  if (record.certificateQuality === 'certification_failed') return true;
   if (record.pipelineFailedPhase === 'certification') return true;
   if (isVerificationStuckAtApproved(record)) return true;
   const status = normalizeVerificationStatus(record);
@@ -228,7 +234,7 @@ export function isVerificationFailedAtCertification(record: SiteCalibration): bo
 
 /** Approved on DOCA/Firebase but signed PDF upload never finished (worker retries exhausted). */
 export function isVerificationStuckAtApproved(record: SiteCalibration): boolean {
-  if (record.supersededByResubmissionId?.trim()) return false;
+  if (isVerificationRejected(record)) return false;
   if (normalizeVerificationStatus(record) !== 'approved') return false;
   if (canDownloadVerificationCertificate(record)) return false;
   if (record.certificateNumber?.trim()) return false;
@@ -240,9 +246,13 @@ export function isVerificationStuckAtApproved(record: SiteCalibration): boolean 
   );
 }
 
+export function isVerificationRejected(record: VerificationStatusSource): boolean {
+  return record.status === 'rejected';
+}
+
 /** Incomplete certification — eligible for Super Admin DOCA resubmit. */
 export function isCertificationFailureResubmitSource(record: SiteCalibration): boolean {
-  if (record.supersededByResubmissionId?.trim()) return false;
+  if (isVerificationRejected(record)) return false;
   if (isVerificationFullyCertified(record) || canDownloadVerificationCertificate(record)) {
     return false;
   }
@@ -258,6 +268,7 @@ export function isVerificationCertifiedOnDoca(record: SiteCalibration): boolean 
 }
 
 export function getVerificationDisplayStatus(record: SiteCalibration): VerificationFilterStatus {
+  if (isVerificationRejected(record)) return 'rejected';
   if (isVerificationFailedAtSubmit(record)) return 'failed_submit';
   if (isVerificationFailedAtCertification(record)) return 'failed_certification';
   return normalizeVerificationStatus(record);
@@ -267,6 +278,7 @@ export function verificationFilterLabel(filter: VerificationStatusFilter): strin
   if (filter === 'all') return 'All stages';
   if (filter === 'failed_submit') return 'Failed at submit';
   if (filter === 'failed_certification') return 'Failed at certification';
+  if (filter === 'rejected') return 'Rejected';
   if (filter === 'duplicates') return 'Duplicates';
   return verificationStatusLabel(filter);
 }
@@ -294,11 +306,26 @@ export function verificationDisplayStatusTitle(record: SiteCalibration): string 
     display === 'draft' ||
     display === 'submitted' ||
     display === 'approved' ||
-    display === 'certified'
+    display === 'certified' ||
+    display === 'rejected'
   ) {
     return verificationStatusDescription(display);
   }
   return verificationDisplayStatusLabel(record);
+}
+
+/** Mutually exclusive stage bucket for one record (matches tally + list filter). */
+export function verificationStatusFilterBucket(
+  record: SiteCalibration,
+): Exclude<VerificationStatusFilter, 'all' | 'duplicates'> {
+  if (isVerificationRejected(record)) return 'rejected';
+  if (isVerificationFailedAtSubmit(record)) return 'failed_submit';
+  if (isVerificationFailedAtCertification(record)) return 'failed_certification';
+  if (isVerificationFullyCertified(record)) return 'certified';
+  const status = normalizeVerificationStatus(record);
+  if (status === 'approved') return 'approved';
+  if (status === 'submitted') return 'submitted';
+  return 'draft';
 }
 
 export function matchesVerificationStatusFilter(
@@ -309,9 +336,17 @@ export function matchesVerificationStatusFilter(
   if (filter === 'all') return true;
   if (filter === 'failed_submit') return isVerificationFailedAtSubmit(record);
   if (filter === 'failed_certification') return isVerificationFailedAtCertification(record);
+  if (filter === 'rejected') return isVerificationRejected(record);
   if (filter === 'certified') return isVerificationFullyCertified(record);
   if (filter === 'submitted') {
     return normalizeVerificationStatus(record) === 'submitted' && !isVerificationFailedAtSubmit(record);
+  }
+  if (filter === 'approved') {
+    return (
+      normalizeVerificationStatus(record) === 'approved'
+      && !isVerificationFailedAtCertification(record)
+      && !isVerificationRejected(record)
+    );
   }
   return normalizeVerificationStatus(record) === filter;
 }
@@ -359,24 +394,12 @@ export function tallyVerificationStatusFilters(
     certified: 0,
     failed_submit: 0,
     failed_certification: 0,
+    rejected: 0,
     duplicates: 0,
   };
 
   for (const record of records) {
-    if (isVerificationFailedAtSubmit(record)) {
-      tally.failed_submit += 1;
-      continue;
-    }
-    if (isVerificationFailedAtCertification(record)) {
-      tally.failed_certification += 1;
-      continue;
-    }
-    const status = normalizeVerificationStatus(record);
-    if (status === 'certified') {
-      tally.certified += 1;
-    } else {
-      tally[status] += 1;
-    }
+    tally[verificationStatusFilterBucket(record)] += 1;
   }
 
   return tally;
@@ -397,6 +420,7 @@ export function buildVerificationStatusFilterOptions(
       label: 'Failed at certification',
       count: counts.failed_certification,
     },
+    { value: 'rejected', label: 'Rejected', count: counts.rejected },
     { value: 'duplicates', label: 'Duplicates', count: counts.duplicates },
   ];
 }
@@ -405,6 +429,7 @@ export function verificationStatusLabel(status: VerificationRequestStatus): stri
   if (status === 'draft') return 'Draft';
   if (status === 'submitted') return 'Submitted';
   if (status === 'certified') return 'Certified';
+  if (status === 'rejected') return 'Rejected';
   return 'Approved';
 }
 
@@ -412,6 +437,7 @@ export function verificationStatusDescription(status: VerificationRequestStatus)
   if (status === 'draft') return 'Open and edit before submitting for certificate generation.';
   if (status === 'submitted') return 'Locked — awaiting certificate server processing.';
   if (status === 'certified') return 'Signed certificate uploaded to DOCA.';
+  if (status === 'rejected') return 'Certification failed — closed; not retried by the worker.';
   return 'Certificate generated and ready to download.';
 }
 

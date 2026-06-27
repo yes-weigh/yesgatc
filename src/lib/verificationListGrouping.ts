@@ -6,11 +6,15 @@ import {
 import {
   canShowVerificationCertifiedActions,
   isVerificationCertifiedOnDoca,
+  isVerificationFailedAtCertification,
+  isVerificationRejected,
   matchesVerificationStatusFilter,
   matchesVerificationTypeFilter,
   normalizeVerificationStatus,
+  verificationStatusFilterBucket,
   type VerificationStatusFilter,
   type VerificationTypeFilter,
+  type VerificationStatusFilterCounts,
 } from './verificationRequest';
 import { matchesVerificationSearch, type VerificationSearchExtras } from './verificationListSearch';
 import { sortVerificationsByCertificateDesc } from './verificationListSort';
@@ -34,6 +38,7 @@ export function verificationListRecordsForFilterCounts(
 ): SiteCalibration[] {
   const omitted = new Set(Array.isArray(omit) ? omit : [omit]);
   const primaryIds = buildDuplicatePrimaryIdSet(allRecords);
+  const groups = buildSerialGroupMap(allRecords);
 
   return allRecords.filter(record => {
     if (!omitted.has('search')) {
@@ -44,7 +49,7 @@ export function verificationListRecordsForFilterCounts(
     }
     if (
       !omitted.has('status') &&
-      !matchesVerificationListStatusFilter(record, filters.statusFilter, primaryIds)
+      !matchesVerificationListStatusFilter(record, filters.statusFilter, allRecords, primaryIds, groups)
     ) {
       return false;
     }
@@ -61,6 +66,16 @@ export function verificationListRecordsForFilterCounts(
     }
     return true;
   });
+}
+
+/** Collapsed list rows for chip/dropdown counts (one row per RC + serial). */
+export function verificationListCollapsedForCounts(
+  allRecords: SiteCalibration[],
+  filters: VerificationListActiveFilters,
+  omit: VerificationListCountOmitFilter | VerificationListCountOmitFilter[],
+): VerificationListDisplayRecord[] {
+  const filtered = verificationListRecordsForFilterCounts(allRecords, filters, omit);
+  return buildVerificationListDisplay(filtered, allRecords, filters.statusFilter);
 }
 
 export type VerificationListDisplayRecord = SiteCalibration & {
@@ -94,7 +109,9 @@ export function buildSerialGroupMap(
 /** Lower score = preferred primary row in the verification list. */
 function listRecordScore(record: SiteCalibration): number {
   if (isVerificationCertificateVoided(record)) return 100;
+  if (isVerificationRejected(record)) return 55;
   if (isCorruptedCertificateRecord(record)) return 85;
+  if (isVerificationFailedAtCertification(record)) return 80;
 
   const status = normalizeVerificationStatus(record);
   if (status === 'submitted' || status === 'approved') {
@@ -148,12 +165,22 @@ export function isVerificationListDuplicate(
 export function matchesVerificationListStatusFilter(
   record: SiteCalibration,
   filter: VerificationStatusFilter,
+  allRecords: SiteCalibration[],
   primaryIds: Set<string>,
+  groups: Map<string, SiteCalibration[]> = buildSerialGroupMap(allRecords),
 ): boolean {
   if (filter === 'duplicates') {
     return isVerificationListDuplicate(record, primaryIds);
   }
-  return matchesVerificationStatusFilter(record, filter);
+  if (filter === 'all') return true;
+
+  const key = serialGroupKey(record);
+  if (!key) return matchesVerificationStatusFilter(record, filter);
+
+  const group = groups.get(key);
+  if (!group?.length) return matchesVerificationStatusFilter(record, filter);
+
+  return matchesVerificationStatusFilter(pickPrimaryListRecord(group), filter);
 }
 
 export function countVerificationDuplicates(
@@ -244,4 +271,45 @@ export function collapseVerificationsForListDisplay(
   }
 
   return sortVerificationsByCertificateDesc(collapsed);
+}
+
+/** Status dropdown counts — one row per RC + serial; stage buckets partition All. */
+export function tallyVerificationStatusFiltersCollapsed(
+  allRecords: SiteCalibration[],
+  filters: VerificationListActiveFilters,
+): VerificationStatusFilterCounts {
+  const collapsed = verificationListCollapsedForCounts(
+    allRecords,
+    { ...filters, statusFilter: 'all' },
+    'status',
+  );
+  const groups = buildSerialGroupMap(allRecords);
+
+  const tally: VerificationStatusFilterCounts = {
+    all: collapsed.length,
+    draft: 0,
+    submitted: 0,
+    approved: 0,
+    certified: 0,
+    failed_submit: 0,
+    failed_certification: 0,
+    rejected: 0,
+    duplicates: 0,
+  };
+
+  for (const row of collapsed) {
+    const key = serialGroupKey(row);
+    const group = key ? groups.get(key) : null;
+    const primary = group?.length ? pickPrimaryListRecord(group) : row;
+    tally[verificationStatusFilterBucket(primary)] += 1;
+  }
+
+  const duplicateRecords = verificationListRecordsForFilterCounts(
+    allRecords,
+    { ...filters, statusFilter: 'duplicates' },
+    'status',
+  );
+  tally.duplicates = countVerificationDuplicates(duplicateRecords, allRecords);
+
+  return tally;
 }

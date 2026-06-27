@@ -56,7 +56,7 @@ export type VerificationLocation = 'in_situ' | 'in_premises';
  * Verification request lifecycle — client may create/edit draft and submit.
  * Only the certificate server (Admin SDK) should set `approved` and certificate fields.
  */
-export type VerificationRequestStatus = 'draft' | 'submitted' | 'approved' | 'certified';
+export type VerificationRequestStatus = 'draft' | 'submitted' | 'approved' | 'certified' | 'rejected';
 
 /** Who performed the verification in the field. */
 export type VerificationPerformedBy = 'rc' | 'vct';

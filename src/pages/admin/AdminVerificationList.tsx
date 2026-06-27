@@ -8,7 +8,6 @@ import {
   buildVerificationTypeFilterOptions,
   canDeleteVerification,
   matchesVerificationTypeFilter,
-  tallyVerificationStatusFilters,
   tallyVerificationTypeFilters,
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
@@ -16,9 +15,9 @@ import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   buildDuplicatePrimaryIdSet,
   buildVerificationListDisplay,
-  countVerificationDuplicates,
   matchesVerificationListStatusFilter,
-  verificationListRecordsForFilterCounts,
+  tallyVerificationStatusFiltersCollapsed,
+  verificationListCollapsedForCounts,
 } from '../../lib/verificationListGrouping';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import {
@@ -132,7 +131,7 @@ export const AdminVerificationList: React.FC = () => {
       if (!matchesVerificationSearch(record, searchTerm, { rcCenterName: record.rcCenterName })) {
         return false;
       }
-      if (!matchesVerificationListStatusFilter(record, statusFilter, duplicatePrimaryIds)) {
+      if (!matchesVerificationListStatusFilter(record, statusFilter, records, duplicatePrimaryIds)) {
         return false;
       }
       if (!matchesVerificationTypeFilter(record, typeFilter)) {
@@ -209,35 +208,23 @@ export const AdminVerificationList: React.FC = () => {
     [statusFilter, typeFilter, rcFilter, searchTerm, rcCenterNameByRcId],
   );
 
-  const recordsForStatusCounts = useMemo(
-    () => verificationListRecordsForFilterCounts(records, listFilters, 'status'),
+  const counts = useMemo(
+    () => tallyVerificationStatusFiltersCollapsed(records, listFilters),
     [records, listFilters],
   );
-  const recordsForTypeCounts = useMemo(
-    () => verificationListRecordsForFilterCounts(records, listFilters, 'type'),
-    [records, listFilters],
-  );
-  const recordsForRcCounts = useMemo(
-    () => verificationListRecordsForFilterCounts(records, listFilters, 'rc'),
-    [records, listFilters],
-  );
-
-  const counts = useMemo(() => {
-    const base = tallyVerificationStatusFilters(recordsForStatusCounts);
-    return {
-      ...base,
-      duplicates: countVerificationDuplicates(recordsForStatusCounts, records),
-    };
-  }, [recordsForStatusCounts, records]);
   const typeCounts = useMemo(
-    () => tallyVerificationTypeFilters(recordsForTypeCounts),
-    [recordsForTypeCounts],
+    () =>
+      tallyVerificationTypeFilters(
+        verificationListCollapsedForCounts(records, listFilters, 'type'),
+      ),
+    [records, listFilters],
   );
   const typeFilterOptions = buildVerificationTypeFilterOptions(typeCounts);
 
   const rcFilterOptions = useMemo(() => {
+    const collapsed = verificationListCollapsedForCounts(records, listFilters, 'rc');
     const byRc = new Map<string, { label: string; count: number }>();
-    for (const record of recordsForRcCounts) {
+    for (const record of collapsed) {
       const rcId = record.rcId?.trim() || 'unknown';
       const label = rcCenterNameByRcId.get(rcId) || 'Unknown RC';
       const existing = byRc.get(rcId);
@@ -253,10 +240,10 @@ export const AdminVerificationList: React.FC = () => {
       .sort((a, b) => a.label.localeCompare(b.label));
 
     return [
-      { value: 'all', label: 'All RC', count: recordsForRcCounts.length },
+      { value: 'all', label: 'All RC', count: collapsed.length },
       ...centres,
     ];
-  }, [recordsForRcCounts, rcCenterNameByRcId]);
+  }, [records, listFilters, rcCenterNameByRcId]);
 
   const handleDelete = async (record: VerificationRow) => {
     const isDevSubmittedDelete = canDevDeleteSubmittedVerification(record, isSuperAdmin);

@@ -54,7 +54,6 @@ import {
   normalizeVerificationStatus,
   resolveVerificationDraftActorForSession,
   shouldClearVerificationVctFields,
-  tallyVerificationStatusFilters,
   tallyVerificationTypeFilters,
   verificationFilterLabel,
   verificationCertificateNumber,
@@ -97,9 +96,9 @@ import {
 import {
   buildDuplicatePrimaryIdSet,
   buildVerificationListDisplay,
-  countVerificationDuplicates,
   matchesVerificationListStatusFilter,
-  verificationListRecordsForFilterCounts,
+  tallyVerificationStatusFiltersCollapsed,
+  verificationListCollapsedForCounts,
 } from '../../lib/verificationListGrouping';
 import {
   submitVerificationRecord,
@@ -1973,7 +1972,7 @@ export const RCSiteCalibration: React.FC = () => {
   const filteredRecords = useMemo(() => {
     const filtered = records.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
-      if (!matchesVerificationListStatusFilter(record, statusFilter, duplicatePrimaryIds)) {
+      if (!matchesVerificationListStatusFilter(record, statusFilter, records, duplicatePrimaryIds)) {
         return false;
       }
       return matchesVerificationTypeFilter(record, typeFilter);
@@ -2004,25 +2003,16 @@ export const RCSiteCalibration: React.FC = () => {
     () => ({ statusFilter, typeFilter, searchTerm }),
     [statusFilter, typeFilter, searchTerm],
   );
-  const recordsForStatusCounts = useMemo(
-    () => verificationListRecordsForFilterCounts(records, listFilters, 'status'),
+  const statusCounts = useMemo(
+    () => tallyVerificationStatusFiltersCollapsed(records, listFilters),
     [records, listFilters],
   );
-  const recordsForTypeCounts = useMemo(
-    () => verificationListRecordsForFilterCounts(records, listFilters, 'type'),
-    [records, listFilters],
-  );
-
-  const statusCounts = useMemo(() => {
-    const base = tallyVerificationStatusFilters(recordsForStatusCounts);
-    return {
-      ...base,
-      duplicates: countVerificationDuplicates(recordsForStatusCounts, records),
-    };
-  }, [recordsForStatusCounts, records]);
   const typeCounts = useMemo(
-    () => tallyVerificationTypeFilters(recordsForTypeCounts),
-    [recordsForTypeCounts],
+    () =>
+      tallyVerificationTypeFilters(
+        verificationListCollapsedForCounts(records, listFilters, 'type'),
+      ),
+    [records, listFilters],
   );
 
   const statusFilterOptions = buildVerificationStatusFilterOptions(statusCounts);
