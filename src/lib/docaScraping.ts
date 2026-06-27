@@ -338,7 +338,7 @@ export async function ensureDocaScrapeRemoteDefaults(updatedByUid: string): Prom
     doc(db, AUTOMATION_WORKER_COLLECTION, 'remote'),
     {
       scrapeCommandRevision: 0,
-      scrapePause: false,
+      scrapePause: true,
       scrapeStartPage: 0,
       updatedAt: new Date().toISOString(),
       updatedByUid,

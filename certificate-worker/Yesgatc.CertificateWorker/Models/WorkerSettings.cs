@@ -139,6 +139,10 @@ public sealed class CredentialSettings
 
 public sealed class DocaScrapeSettings
 {
+    /// <summary>
+    /// When false, the worker never opens Chrome 2 (GATC list scraper). Certification uses Chrome 1 only.
+    /// </summary>
+    public bool Enabled { get; init; }
     public int PageSize { get; init; } = 100;
     public int DelayBetweenRowsMs { get; init; } = 400;
     public int DelayBetweenPagesMs { get; init; } = 1200;

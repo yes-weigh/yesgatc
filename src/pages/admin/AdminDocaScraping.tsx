@@ -243,7 +243,8 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
           <div>
             <h2 className="doca-scraping-section-title">Scraper controls</h2>
             <p className="text-muted text-sm mb-0">
-              Runs on the Certificate Worker in a second browser window (Chrome 2). Requires worker online and DOCA login.
+              Optional — disabled by default on the worker (<code>DocaScrape.Enabled: false</code>).
+              Certification uses Chrome 1 only. Enable scraping in worker appsettings if you need to pull DOCA data again.
             </p>
           </div>
           <div className="doca-scraping-control-buttons">

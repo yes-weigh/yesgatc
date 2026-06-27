@@ -68,6 +68,7 @@ public partial class MainWindow : Window
     private int _docaSessionProbeMinutes;
     private bool _remoteScrapePause;
     private bool _remoteEnrichPause;
+    private readonly bool _docaScrapeEnabled;
     private CancellationTokenSource? _scrapeCts;
     private Task? _scrapeRunTask;
     private CancellationTokenSource? _enrichCts;
@@ -92,6 +93,7 @@ public partial class MainWindow : Window
         _partyDetailsService = new PartyDetailsService(settings.Firebase);
         _instrumentDetailsService = new InstrumentDetailsService(settings.Firebase);
         _telemetry = new WorkerTelemetryService(settings.Firebase);
+        _docaScrapeEnabled = settings.Automation.DocaScrape.Enabled;
         _automationService = new AutomationService(settings.Automation, _firestoreService);
         _automationService.ResolveFirebaseIdToken = GetFreshIdTokenAsync;
         _automationService.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
@@ -698,7 +700,7 @@ public partial class MainWindow : Window
         if (_telemetry.ShouldApplyScrapeCommand(remote))
         {
             _telemetry.MarkScrapeCommandApplied(remote.ScrapeCommandRevision);
-            if (!remote.ScrapePause)
+            if (_docaScrapeEnabled && !remote.ScrapePause)
             {
                 await StartDocaScrapeRunAsync(remote.ScrapeStartPage);
             }
@@ -814,7 +816,7 @@ public partial class MainWindow : Window
 
     private async Task StartDocaScrapeRunAsync(int scrapeStartPage = 0)
     {
-        if (_session is null)
+        if (_session is null || !_docaScrapeEnabled)
         {
             return;
         }

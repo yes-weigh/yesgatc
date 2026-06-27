@@ -130,6 +130,8 @@ Auto worker settings (`AutoWorker` section in `appsettings.json`):
 | `MaxPostApprovalRetries` | 3 | Max retries for **approved** jobs (Phase 2 signed PDF upload). Status stays `approved` in Firebase. Submitted jobs retry without cap. |
 | `SkipBatchConfirmation` | true | No dialog when processing batches |
 
+`Automation.DocaScrape.Enabled` defaults to **false** — certification uses **Chrome 1 only**. Set `true` to allow GATC list scraping (Chrome 2) from web admin.
+
 ## Files
 
 | Path | Purpose |

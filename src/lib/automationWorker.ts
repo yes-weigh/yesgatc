@@ -113,7 +113,7 @@ export const DEFAULT_AUTOMATION_WORKER_REMOTE: AutomationWorkerRemoteControl = {
   docaFillOnly: false,
   pauseWorker: false,
   scrapeCommandRevision: 0,
-  scrapePause: false,
+  scrapePause: true,
   scrapeStartPage: 0,
   enrichCommandRevision: 0,
   enrichPause: false,
