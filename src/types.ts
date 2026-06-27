@@ -454,8 +454,10 @@ export interface SiteCalibration {
   resubmittedByUid?: string;
   resubmittedAt?: string;
   /** Set on the original when a resubmission was queued. */
-  certificateQuality?: 'corrupted_qr';
+  certificateQuality?: 'corrupted_qr' | 'certification_failed';
   supersededByResubmissionId?: string;
+  /** Last Phase 2 error from certificate worker (status stays approved). */
+  certificationLastError?: string;
   /** Admin void or auto-void when a resubmission certifies — invalidates this certificate in the app. */
   certificateVoidedAt?: string;
   certificateVoidedByUid?: string;

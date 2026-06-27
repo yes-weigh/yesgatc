@@ -34,13 +34,7 @@ public sealed class FirestoreService
         var submitted = await GetAllSubmittedVerificationsAsync(idToken, cancellationToken);
         var approved = await GetAllApprovedVerificationsAsync(idToken, cancellationToken);
 
-        return submitted
-            .Concat(approved)
-            .OrderBy(record => record.IsSubmitted ? 0 : 1)
-            .ThenByDescending(record => record.IsSubmitted
-                ? record.SubmittedAt ?? record.Id
-                : record.ApprovedAt ?? record.SubmittedAt ?? record.Id)
-            .ToList();
+        return CertificationQueueFilter.Apply(submitted.Concat(approved));
     }
 
     public async Task<SiteCalibrationRecord?> GetVerificationByIdAsync(
@@ -226,6 +220,7 @@ public sealed class FirestoreService
         string jobId,
         string error,
         string idToken,
+        bool retryExhausted = false,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(jobId) || string.IsNullOrWhiteSpace(error))
@@ -240,15 +235,25 @@ public sealed class FirestoreService
         }
 
         var now = DateTime.UtcNow.ToString("O");
+        var trimmed = error.Trim()[..Math.Min(error.Trim().Length, 500)];
+        var fields = new Dictionary<string, string>
+        {
+            ["certificationLastError"] = trimmed,
+            ["updatedAt"] = now,
+        };
+
+        if (retryExhausted)
+        {
+            fields["pipelineFailedPhase"] = "certification";
+            fields["pipelineFailureMessage"] = trimmed;
+            fields["pipelineFailedAt"] = now;
+        }
+
         var documents = new FirestoreDocumentClient(_settings);
         await documents.PatchStringFieldsAsync(
             "siteCalibrations",
             jobId,
-            new Dictionary<string, string>
-            {
-                ["certificationLastError"] = error.Trim()[..Math.Min(error.Trim().Length, 500)],
-                ["updatedAt"] = now,
-            },
+            fields,
             idToken,
             cancellationToken);
     }
@@ -391,6 +396,8 @@ public sealed class FirestoreService
             CertifiedAt = FirestoreFieldReader.ReadString(fields, "certifiedAt"),
             CertificatePdfUrl = FirestoreFieldReader.ReadString(fields, "certificatePdfUrl"),
             ResubmittedFromId = FirestoreFieldReader.ReadString(fields, "resubmittedFromId"),
+            SupersededByResubmissionId = FirestoreFieldReader.ReadString(fields, "supersededByResubmissionId"),
+            CertificateVoidedAt = FirestoreFieldReader.ReadString(fields, "certificateVoidedAt"),
             SealIdentificationNumber = FirestoreFieldReader.ReadString(fields, "sealIdentificationNumber"),
         };
     }

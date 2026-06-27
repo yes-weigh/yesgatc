@@ -17,7 +17,7 @@ import {
   verificationVersionSubtitle,
   verificationVersionTitle,
 } from '../lib/verificationResubmit';
-import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
+import { canShowVerificationCertifiedActions, isVerificationStuckAtApproved } from '../lib/verificationRequest';
 import { VerificationCertifiedActions } from './VerificationCertifiedActions';
 import { VerificationCertificatePreview } from './VerificationCertificatePreview';
 import { VerificationDetailsCard } from './VerificationDetailsCard';
@@ -44,6 +44,7 @@ function versionTone(record: SiteCalibration, group: SiteCalibration[]): string 
   const title = verificationVersionTitle(record, group);
   if (title === 'Void certificate') return 'void';
   if (title === 'Corrupted certificate') return 'corrupted';
+  if (title === 'Certification failed') return 'corrupted';
   if (title === 'Correct certificate') return 'correct';
   if (title === 'Resubmission in progress') return 'pending';
   return 'default';
@@ -79,6 +80,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
     [group, record],
   );
   const showSerialResubmit = isSuperAdmin && canResubmitSerialGroup(group, record);
+  const stuckApprovedSource = resubmitSource && isVerificationStuckAtApproved(resubmitSource);
   const showDevRvWipe = canRevertRvSubmitTest(record, isSuperAdmin);
   const voidOthersCount = resubmitSource
     ? countVoidableCertificatesInGroup(group, resubmitSource.id)
@@ -116,10 +118,13 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
         : '';
 
     const ok = await confirm({
-      title: 'Resubmit on DOCA?',
+      title: stuckApprovedSource ? 'Resubmit after certification failure?' : 'Resubmit on DOCA?',
       message:
         `Queue a new verification for serial ${record.serialNumber?.trim() || '—'}?\n\n` +
         voidLine +
+        (stuckApprovedSource
+          ? 'The stuck approved record stays approved but is superseded — the worker will not retry it. '
+          : '') +
         `Resubmit uses app ${resubmitSource.applicationNumber?.trim() || '—'} as the source. ` +
         'When the new certificate is issued, that source is voided automatically.',
       confirmLabel: 'Resubmit',

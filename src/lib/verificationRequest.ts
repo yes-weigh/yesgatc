@@ -218,11 +218,25 @@ export function isVerificationFailedAtSubmit(record: SiteCalibration): boolean {
 
 export function isVerificationFailedAtCertification(record: SiteCalibration): boolean {
   if (record.pipelineFailedPhase === 'certification') return true;
+  if (isVerificationStuckAtApproved(record)) return true;
   const status = normalizeVerificationStatus(record);
   if (status === 'certified') {
     return !verificationCertificateNumber(record);
   }
   return false;
+}
+
+/** Approved on DOCA/Firebase but signed PDF upload never finished (worker retries exhausted). */
+export function isVerificationStuckAtApproved(record: SiteCalibration): boolean {
+  if (record.supersededByResubmissionId?.trim()) return false;
+  if (normalizeVerificationStatus(record) !== 'approved') return false;
+  if (canDownloadVerificationCertificate(record)) return false;
+  if (record.certificateNumber?.trim()) return false;
+
+  return (
+    record.pipelineFailedPhase === 'certification' ||
+    Boolean(record.certificationLastError?.trim())
+  );
 }
 
 /** True when Firestore is certified and DOCA issued a certificate number. */

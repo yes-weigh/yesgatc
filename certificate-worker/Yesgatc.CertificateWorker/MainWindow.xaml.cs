@@ -1232,7 +1232,7 @@ public partial class MainWindow : Window
         RefreshRetryBadges();
     }
 
-    private async Task RecordPostApprovalFailureAsync(SiteCalibrationRecord job, string error)
+    private async Task RecordPostApprovalFailureAsync(SiteCalibrationRecord job, string error, bool retryExhausted = false)
     {
         if (job.IsSubmitted || _session is null)
         {
@@ -1242,7 +1242,11 @@ public partial class MainWindow : Window
         try
         {
             var token = await GetFreshIdTokenAsync();
-            await _firestoreService.RecordCertificationFailureAsync(job.Id, error, token);
+            await _firestoreService.RecordCertificationFailureAsync(
+                job.Id,
+                error,
+                token,
+                retryExhausted);
         }
         catch
         {
@@ -1447,7 +1451,8 @@ public partial class MainWindow : Window
         {
             await RecordPostApprovalFailureAsync(
                 job,
-                $"{result.Message} (worker stopped after {ResolveMaxRetriesFor(job)} post-approval retries; status remains approved in Firebase)");
+                $"{result.Message} (worker stopped after {ResolveMaxRetriesFor(job)} post-approval retries; status remains approved in Firebase)",
+                retryExhausted: true);
         }
         else
         {

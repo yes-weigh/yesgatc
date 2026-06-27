@@ -19,7 +19,7 @@ public sealed class CertificationQueueItem
     public string NextStepLabel => Record.NextStepLabel;
     public string PipelineDateDisplay => Record.PipelineDateDisplay;
 
-    public bool NeedsPipelineWork => Record.NeedsPipelineWork;
+    public bool NeedsPipelineWork => Record.IsEligibleForWorkerQueue;
 
     public string RetryBadge { get; set; } = string.Empty;
 }

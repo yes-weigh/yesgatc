@@ -2,6 +2,7 @@ import { doc, updateDoc, type Firestore } from 'firebase/firestore';
 import {
   canDownloadVerificationCertificate,
   isVerificationCertifiedOnDoca,
+  isVerificationFullyCertified,
   normalizeVerificationStatus,
 } from './verificationRequest';
 import type { SiteCalibration } from '../types';
@@ -41,7 +42,9 @@ export async function syncVoidSupersededResubmitSources(
     if (!source || isVerificationCertificateVoided(source)) continue;
 
     const childDone =
-      isVerificationCertifiedOnDoca(child) || canDownloadVerificationCertificate(child);
+      isVerificationFullyCertified(child)
+      || isVerificationCertifiedOnDoca(child)
+      || canDownloadVerificationCertificate(child);
     if (!childDone) continue;
 
     await voidVerificationCertificate(firestore, source, voidedByUid, 'resubmit_superseded');
@@ -60,8 +63,11 @@ export async function voidVerificationCertificate(
     throw new Error('This verification cannot be marked as void.');
   }
 
-  if (reason === 'resubmit_superseded' && !record.certificateNumber?.trim()) {
-    return;
+  if (reason === 'resubmit_superseded') {
+    const status = normalizeVerificationStatus(record);
+    if (!record.certificateNumber?.trim() && status !== 'approved') {
+      return;
+    }
   }
 
   const now = new Date().toISOString();

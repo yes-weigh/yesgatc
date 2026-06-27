@@ -4,6 +4,7 @@ import {
   canDownloadVerificationCertificate,
   isVerificationCertifiedOnDoca,
   isVerificationFullyCertified,
+  isVerificationStuckAtApproved,
   normalizeVerificationStatus,
 } from './verificationRequest';
 import {
@@ -14,7 +15,7 @@ import {
 import type { SiteCalibration } from '../types';
 
 /** Original record marked when Super Admin queues a DOCA resubmission. */
-export type CertificateQuality = 'corrupted_qr';
+export type CertificateQuality = 'corrupted_qr' | 'certification_failed';
 
 const CERTIFICATE_OUTCOME_FIELDS = [
   'approvedAt',
@@ -27,6 +28,7 @@ const CERTIFICATE_OUTCOME_FIELDS = [
   'pipelineFailedPhase',
   'pipelineFailureMessage',
   'pipelineFailedAt',
+  'certificationLastError',
   'supersededByResubmissionId',
 ] as const;
 
@@ -54,6 +56,10 @@ export function getVerificationSerialGroup(
 
 export function isCorruptedCertificateRecord(record: SiteCalibration): boolean {
   return record.certificateQuality === 'corrupted_qr';
+}
+
+export function isCertificationFailedRecord(record: SiteCalibration): boolean {
+  return record.certificateQuality === 'certification_failed';
 }
 
 export function hasPendingResubmission(
@@ -122,6 +128,8 @@ export function canResubmitVerification(
   const status = normalizeVerificationStatus(record);
   if (status !== 'certified' && status !== 'approved') return false;
 
+  if (isVerificationStuckAtApproved(record)) return true;
+
   return (
     isVerificationCertifiedOnDoca(record) ||
     canDownloadVerificationCertificate(record) ||
@@ -151,6 +159,15 @@ export function verificationVersionTitle(
     }
   }
 
+  if (
+    isCertificationFailedRecord(record)
+    || (record.supersededByResubmissionId?.trim()
+      && normalizeVerificationStatus(record) === 'approved'
+      && !canDownloadVerificationCertificate(record))
+  ) {
+    return 'Certification failed';
+  }
+
   if (group.length > 1 && !isCorruptedCertificateRecord(record)) {
     const status = normalizeVerificationStatus(record);
     if (status === 'certified' || canDownloadVerificationCertificate(record)) {
@@ -174,6 +191,8 @@ export function verificationVersionDisplayRank(
     case 'Verification':
       return 2;
     case 'Corrupted certificate':
+      return 3;
+    case 'Certification failed':
       return 3;
     case 'Void certificate':
       return 4;
@@ -270,8 +289,11 @@ export async function resubmitVerificationForDoca(
     createdByUid: resubmittedByUid,
   });
 
+  const stuckApproved = isVerificationStuckAtApproved(source);
   await updateDoc(doc(firestore, 'siteCalibrations', source.id), {
-    certificateQuality: 'corrupted_qr' satisfies CertificateQuality,
+    certificateQuality: stuckApproved
+      ? ('certification_failed' satisfies CertificateQuality)
+      : ('corrupted_qr' satisfies CertificateQuality),
     supersededByResubmissionId: newRef.id,
     updatedAt: now,
   });

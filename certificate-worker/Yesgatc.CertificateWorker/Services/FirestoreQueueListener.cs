@@ -212,13 +212,7 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
     {
         lock (_gate)
         {
-            return _submitted.Values
-                .Concat(_approved.Values)
-                .OrderBy(record => record.IsSubmitted ? 0 : 1)
-                .ThenByDescending(record => record.IsSubmitted
-                    ? record.SubmittedAt ?? record.Id
-                    : record.ApprovedAt ?? record.SubmittedAt ?? record.Id)
-                .ToList();
+            return CertificationQueueFilter.Apply(_submitted.Values.Concat(_approved.Values));
         }
     }
 

@@ -192,7 +192,7 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             <VerificationDetailSpecRow label="Approved" value={formatDateTime(record.approvedAt)} />
           </VerificationDetailSpecSection>
 
-          {(record.pipelineFailedPhase || record.pipelineFailureMessage) && (
+          {(record.pipelineFailedPhase || record.pipelineFailureMessage || record.certificationLastError) && (
             <VerificationDetailSpecSection title="Pipeline">
               <VerificationDetailSpecRow
                 label="Failed phase"
@@ -207,7 +207,7 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               <VerificationDetailSpecRow label="Failed at" value={formatDateTime(record.pipelineFailedAt)} />
               <VerificationDetailSpecRow
                 label="Message"
-                value={record.pipelineFailureMessage}
+                value={record.pipelineFailureMessage || record.certificationLastError}
                 full
               />
             </VerificationDetailSpecSection>

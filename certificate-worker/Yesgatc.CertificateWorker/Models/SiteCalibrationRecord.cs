@@ -15,7 +15,13 @@ public sealed class SiteCalibrationRecord
     public string? CertifiedAt { get; init; }
     public string? CertificatePdfUrl { get; init; }
     public string? ResubmittedFromId { get; init; }
+    public string? SupersededByResubmissionId { get; init; }
+    public string? CertificateVoidedAt { get; init; }
     public string? SealIdentificationNumber { get; init; }
+
+    public bool IsSuperseded => !string.IsNullOrWhiteSpace(SupersededByResubmissionId);
+    public bool IsVoided => !string.IsNullOrWhiteSpace(CertificateVoidedAt);
+    public bool IsEligibleForWorkerQueue => NeedsPipelineWork && !IsSuperseded && !IsVoided;
 
     public bool IsDraft => string.Equals(Status, VerificationStatuses.Draft, StringComparison.OrdinalIgnoreCase);
     public bool IsSubmitted => string.Equals(Status, VerificationStatuses.Submitted, StringComparison.OrdinalIgnoreCase);
