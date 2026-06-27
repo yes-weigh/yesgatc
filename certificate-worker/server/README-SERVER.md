@@ -27,20 +27,32 @@ Releases are published from GitHub Actions when you push a tag or run the workfl
 
 ### Dev PC — create a release
 
-**Option A — push a tag (after committing your changes):**
+**Tag format:** `certificate-worker-v{major}.{minor}.{patch}` (current latest: check with `git tag -l "certificate-worker-v*"`).
+
+| Change type | Bump |
+|-------------|------|
+| Bug fix, small worker change | patch (`v1.0.40` → `v1.0.41`) |
+| New feature | minor |
+| Breaking change | major |
+
+**Option A — push a tag (after committing your changes on `main`):**
 
 ```powershell
 cd D:\yesgatc\yesgatcin
-git tag certificate-worker-v1.0.0
-git push origin certificate-worker-v1.0.0
+git add certificate-worker/
+git commit -m "fix(worker): cap post-approval retries at 3"
+git push origin main
+
+git tag certificate-worker-v1.0.41
+git push origin certificate-worker-v1.0.41
 ```
 
-GitHub Actions builds the zip and attaches it to the release automatically.
+GitHub Actions (`.github/workflows/certificate-worker-release.yml`) builds the zip and attaches it to the release.
 
 **Option B — manual workflow run:**
 
 1. GitHub → **Actions** → **Release Certificate Worker** → **Run workflow**
-2. Enter tag e.g. `certificate-worker-v1.0.0`
+2. Enter tag e.g. `certificate-worker-v1.0.41`
 
 Check **Releases** on the repo: `Yesgatc.CertificateWorker-win-x64.zip`
 
@@ -79,15 +91,24 @@ powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-updat
 powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -Start
 ```
 
-This downloads the latest `certificate-worker-v*` release, extracts it, runs `update.ps1` (keeps your config + DOCA session), and starts the app.
+Downloads the **latest** `certificate-worker-v*` release, extracts, runs `update.ps1` (keeps `appsettings.local.json` + DOCA browser session), starts the app.
 
-**Specific version:**
+**Pin a specific version** (recommended after a release):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 `
-  -Tag certificate-worker-v1.0.0 `
+  -Tag certificate-worker-v1.0.41 `
   -Start
 ```
+
+**After auto-start script changes**, add `-EnsureAutoStart`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -EnsureAutoStart
+```
+
+**What `update.ps1` keeps:** `appsettings.local.json`, `%LOCALAPPDATA%\YesGATC\CertificateWorker\` (credentials, DOCA login, cached PDFs).  
+**What it replaces:** exe, dlls, default `appsettings.json` (merge new keys like `MaxPostApprovalRetries` if you customized the old file).
 
 ---
 

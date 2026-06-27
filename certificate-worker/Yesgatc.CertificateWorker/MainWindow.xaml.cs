@@ -1217,6 +1217,39 @@ public partial class MainWindow : Window
         UpdateAutoWorkerStatusText();
     }
 
+    private int ResolveMaxRetriesFor(SiteCalibrationRecord job) =>
+        job.IsSubmitted
+            ? int.MaxValue
+            : Math.Max(1, App.Settings.AutoWorker.MaxPostApprovalRetries);
+
+    private void ScheduleJobRetry(SiteCalibrationRecord job, string error)
+    {
+        _jobRetries.Schedule(
+            job.Id,
+            error,
+            TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds),
+            ResolveMaxRetriesFor(job));
+        RefreshRetryBadges();
+    }
+
+    private async Task RecordPostApprovalFailureAsync(SiteCalibrationRecord job, string error)
+    {
+        if (job.IsSubmitted || _session is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var token = await GetFreshIdTokenAsync();
+            await _firestoreService.RecordCertificationFailureAsync(job.Id, error, token);
+        }
+        catch
+        {
+            // Best-effort — Firebase status must stay approved even if this patch fails.
+        }
+    }
+
     private void UpdateAutoWorkerStatusText()
     {
         if (!_autoWorkerEnabled)
@@ -1390,11 +1423,8 @@ public partial class MainWindow : Window
             SetStatus(result.Message, StatusKind.Info);
             if (fromAutoWorker || _autoWorkerEnabled)
             {
-                _jobRetries.Schedule(
-                    job.Id,
-                    result.Message,
-                    TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
-                RefreshRetryBadges();
+                ScheduleJobRetry(job, result.Message);
+                await RecordPostApprovalFailureAsync(job, result.Message);
             }
 
             await LoadQueueAsync();
@@ -1412,12 +1442,19 @@ public partial class MainWindow : Window
             return;
         }
 
-        _jobRetries.Schedule(
-            job.Id,
-            result.Message,
-            TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+        ScheduleJobRetry(job, result.Message);
+        if (_jobRetries.IsExhausted(job.Id))
+        {
+            await RecordPostApprovalFailureAsync(
+                job,
+                $"{result.Message} (worker stopped after {ResolveMaxRetriesFor(job)} post-approval retries; status remains approved in Firebase)");
+        }
+        else
+        {
+            await RecordPostApprovalFailureAsync(job, result.Message);
+        }
+
         _telemetry.RecordJobFailed();
-        RefreshRetryBadges();
         SetStatus(result.Message, StatusKind.Info);
         await LoadQueueAsync();
         SelectJobById(job.Id);
@@ -1526,11 +1563,8 @@ public partial class MainWindow : Window
             {
                 failed++;
                 lastError = ex.Message;
-                _jobRetries.Schedule(
-                    job.Id,
-                    ex.Message,
-                    TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
-                RefreshRetryBadges();
+                ScheduleJobRetry(job, ex.Message);
+                await RecordPostApprovalFailureAsync(job, ex.Message);
                 SetStatusSafe($"{batchLabel} failed · {ex.Message}", ex, StatusKind.Error);
 
                 if (AutomationService.IsBrowserDisconnectedError(ex))
@@ -1581,11 +1615,7 @@ public partial class MainWindow : Window
         {
             failed++;
             lastError = result.Message;
-            _jobRetries.Schedule(
-                job.Id,
-                result.Message,
-                TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
-            RefreshRetryBadges();
+            ScheduleJobRetry(job, result.Message);
             SetStatusSafe(
                 $"{batchLabel} — browser disconnected. Stopping batch; Chrome will reopen on the next cycle.",
                 StatusKind.Info);
@@ -1603,11 +1633,8 @@ public partial class MainWindow : Window
 
         failed++;
         lastError = result.Message;
-        _jobRetries.Schedule(
-            job.Id,
-            result.Message,
-            TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
-        RefreshRetryBadges();
+        ScheduleJobRetry(job, result.Message);
+        _ = RecordPostApprovalFailureAsync(job, result.Message);
         SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Info);
         return true;
     }
@@ -1707,15 +1734,12 @@ public partial class MainWindow : Window
                     if (result.BrowserDisconnected)
                     {
                         Interlocked.Increment(ref stats.Failed);
-                        _jobRetries.Schedule(
-                            job.Id,
-                            result.Message,
-                            TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+                        ScheduleJobRetry(job, result.Message);
+                        _ = RecordPostApprovalFailureAsync(job, result.Message);
                         lock (stats)
                         {
                             stats.LastError = result.Message;
                         }
-                        RefreshRetryBadges();
                         SetStatusSafe(
                             $"{label} — browser disconnected. Stopping Chrome {workerIndex + 1}; will retry on the next cycle.",
                             StatusKind.Info);
@@ -1731,10 +1755,8 @@ public partial class MainWindow : Window
                     else
                     {
                         Interlocked.Increment(ref stats.Failed);
-                        _jobRetries.Schedule(
-                            job.Id,
-                            result.Message,
-                            TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+                        ScheduleJobRetry(job, result.Message);
+                        _ = RecordPostApprovalFailureAsync(job, result.Message);
                         lock (stats)
                         {
                             stats.LastError = result.Message;
@@ -1745,10 +1767,8 @@ public partial class MainWindow : Window
                 catch (Exception ex)
                 {
                     Interlocked.Increment(ref stats.Failed);
-                    _jobRetries.Schedule(
-                        job.Id,
-                        ex.Message,
-                        TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds));
+                    ScheduleJobRetry(job, ex.Message);
+                    _ = RecordPostApprovalFailureAsync(job, ex.Message);
                     lock (stats)
                     {
                         stats.LastError = ex.Message;

@@ -22,6 +22,11 @@ public sealed class AutoWorkerSettings
     public int PollIntervalSeconds { get; init; } = 5;
     /// <summary>Wait time before retrying a failed job (seconds).</summary>
     public int RetryDelaySeconds { get; init; } = 15;
+    /// <summary>
+    /// Max retries for approved jobs (Phase 2 signed PDF upload to DOCA / Firebase).
+    /// Submitted jobs (Phase 1) retry without this cap. Firebase status stays approved during retries.
+    /// </summary>
+    public int MaxPostApprovalRetries { get; init; } = 3;
     /// <summary>How often to refresh retry countdown badges in the queue (seconds).</summary>
     public int RetryBadgeRefreshSeconds { get; init; } = 15;
     /// <summary>When true, skip the confirmation dialog for Process all jobs.</summary>

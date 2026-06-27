@@ -222,6 +222,37 @@ public sealed class FirestoreService
             cancellationToken);
     }
 
+    public async Task RecordCertificationFailureAsync(
+        string jobId,
+        string error,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId) || string.IsNullOrWhiteSpace(error))
+        {
+            return;
+        }
+
+        var verification = await GetVerificationByIdAsync(jobId, idToken, cancellationToken);
+        if (verification is null || verification.IsSubmitted || verification.IsCertified)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow.ToString("O");
+        var documents = new FirestoreDocumentClient(_settings);
+        await documents.PatchStringFieldsAsync(
+            "siteCalibrations",
+            jobId,
+            new Dictionary<string, string>
+            {
+                ["certificationLastError"] = error.Trim()[..Math.Min(error.Trim().Length, 500)],
+                ["updatedAt"] = now,
+            },
+            idToken,
+            cancellationToken);
+    }
+
     public async Task TouchCertificationAsync(
         string jobId,
         string idToken,
