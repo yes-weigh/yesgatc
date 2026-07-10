@@ -14,6 +14,8 @@ import {
 import {
   VerificationPhotoUploadSection,
   VerificationPhotoUploadSlot,
+  type GeoStampCoordinates,
+  type StampWeather,
 } from '../../components/VerificationPhotoUploadSlot';
 import {
   emptyDeviceImageSlot,
@@ -50,6 +52,8 @@ type VerificationDeviceEvidenceFieldsProps = {
   onImageRemove: (kind: VerificationImageKind) => void;
   onRvDocumentSelect?: (kind: RvDocumentKind, file: File) => void;
   onRvDocumentRemove?: (kind: RvDocumentKind) => void;
+  geoStampCoords?: GeoStampCoordinates | null;
+  geoStampWeather?: StampWeather | null;
   submitting: boolean;
   readOnly?: boolean;
   /** Hide instrument index line when parent shows sub-step progress. */
@@ -82,6 +86,8 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
   onImageRemove,
   onRvDocumentSelect,
   onRvDocumentRemove,
+  geoStampCoords = null,
+  geoStampWeather = null,
   submitting,
   readOnly = false,
   hideDeviceMeta = false,
@@ -202,6 +208,8 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
               progress={slot.progress}
               disabled={locked}
               geoStamp={kind === 'stamping' || kind === 'scale' || kind === 'instrumentRear'}
+              geoStampCoords={geoStampCoords}
+              geoStampWeather={geoStampWeather}
               onSelect={file => onImageSelect(kind, file)}
               onRemove={() => onImageRemove(kind)}
             />

@@ -16,6 +16,7 @@ import {
   RV_DOCUMENT_CONFIG,
   type RvDocumentKind,
 } from './verificationRvDeviceImages';
+import { prepareImageForUpload } from './prepareImageForUpload';
 
 export type SiteCalibrationUploadKind = VerificationImageKind | RvDocumentKind | PerformerPhotoKind;
 
@@ -61,11 +62,20 @@ export async function uploadSiteCalibrationDeviceImage(
 
   await ensureUploadAuth();
 
+  let uploadFile: File;
+  try {
+    uploadFile = await prepareImageForUpload(file);
+  } catch {
+    uploadFile = file;
+  }
+  const postCompressValidation = validateProductImageFile(uploadFile);
+  if (postCompressValidation) throw new Error(postCompressValidation);
+
   const folder = uploadConfigForKind(kind).storageFolder;
-  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
+  const ext = uploadFile.name.includes('.') ? uploadFile.name.slice(uploadFile.name.lastIndexOf('.')) : '.jpg';
   const path = `siteCalibrations/${recordId}/${folder}/${Date.now()}${ext}`;
   const storageRef = ref(storage, path);
-  const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+  const task = uploadBytesResumable(storageRef, uploadFile, { contentType: uploadFile.type });
 
   return new Promise((resolve, reject) => {
     task.on(
@@ -77,7 +87,7 @@ export async function uploadSiteCalibrationDeviceImage(
       err => reject(mapStorageError(err)),
       async () => {
         const url = await getDownloadURL(task.snapshot.ref);
-        resolve({ url, path, name: file.name, contentType: file.type });
+        resolve({ url, path, name: uploadFile.name, contentType: uploadFile.type });
       },
     );
   });

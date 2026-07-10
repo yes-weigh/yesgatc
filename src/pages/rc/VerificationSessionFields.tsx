@@ -13,6 +13,7 @@ import { SegmentToggle } from '../../components/SegmentToggle';
 import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
 import { VerificationInstrumentMultistage } from './VerificationInstrumentMultistage';
+import type { GeoStampCoordinates, StampWeather } from '../../components/VerificationPhotoUploadSlot';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
 import type { AssignableVctOption } from '../../lib/verificationRequest';
 import { customerFormFromRecord, isPendingNewCustomerParty } from '../../lib/customerProfileFields';
@@ -99,6 +100,10 @@ type VerificationSessionFieldsProps = {
   /** RC admin can assign draft verifications to a linked VCT. */
   allowPerformerAssignment?: boolean;
   assignableVcts?: AssignableVctOption[];
+  /** RC desktop — OV only; hides RV type toggle. */
+  lockVerificationTypeToOv?: boolean;
+  /** RC centre GPS for desktop photo geo-stamp. */
+  geoStampCoords?: GeoStampCoordinates | null;
   laboratorySealIdentification?: string;
   onWizardStepChange?: (stepId: VerificationFormStepId, isLastStep: boolean) => void;
   onDeclarationAcceptedChange?: (accepted: boolean) => void;
@@ -153,6 +158,8 @@ export const VerificationSessionFields = forwardRef<
   readOnly = false,
   allowPerformerAssignment = false,
   assignableVcts = [],
+  lockVerificationTypeToOv = false,
+  geoStampCoords = null,
   laboratorySealIdentification = '',
   onWizardStepChange,
   onDeclarationAcceptedChange,
@@ -386,6 +393,13 @@ export const VerificationSessionFields = forwardRef<
     const party = isSelf ? rcPartyForm : customerPartyForm;
     return Boolean(party.latitude.trim() && party.longitude.trim());
   }, [isSelf, rcPartyForm, customerPartyForm]);
+
+  const geoStampWeather = useMemo<StampWeather | null>(() => {
+    const t = values.ambientTemperature.trim();
+    const h = values.relativeHumidity.trim();
+    if (!t && !h) return null;
+    return { ambientTemperature: t || undefined, relativeHumidity: h || undefined };
+  }, [values.ambientTemperature, values.relativeHumidity]);
 
   const mandatoryFieldsComplete = useMemo(
     () =>
@@ -826,16 +840,20 @@ export const VerificationSessionFields = forwardRef<
               <div className="verification-setup-toggles">
                 <div className="verification-setup-toggle-field">
                   <span className="verification-setup-toggle-label">Type</span>
-                  <SegmentToggle
-                    ariaLabel="Verification type"
-                    value={values.verificationType === 'RV' ? 'RV' : 'OV'}
-                    options={VERIFICATION_TYPE_OPTIONS.map(opt => ({
-                      value: opt.value,
-                      label: opt.label,
-                    }))}
-                    onChange={handleVerificationTypeChange}
-                    disabled={locked}
-                  />
+                  {lockVerificationTypeToOv ? (
+                    <span className="verification-setup-type-fixed">OV</span>
+                  ) : (
+                    <SegmentToggle
+                      ariaLabel="Verification type"
+                      value={values.verificationType === 'RV' ? 'RV' : 'OV'}
+                      options={VERIFICATION_TYPE_OPTIONS.map(opt => ({
+                        value: opt.value,
+                        label: opt.label,
+                      }))}
+                      onChange={handleVerificationTypeChange}
+                      disabled={locked}
+                    />
+                  )}
                 </div>
                 <div className="verification-setup-toggle-field">
                   <span className="verification-setup-toggle-label">Party</span>
@@ -1009,6 +1027,8 @@ export const VerificationSessionFields = forwardRef<
               lockCustomer={lockCustomer}
               isSelf={isSelf}
               laboratorySealIdentification={laboratorySealIdentification}
+              geoStampCoords={geoStampCoords}
+              geoStampWeather={geoStampWeather}
               canAddInstrument={canAddInstrument}
               onAddInstrument={handleAddInstrument}
               showDevices={showDevices}

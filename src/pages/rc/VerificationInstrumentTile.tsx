@@ -13,6 +13,7 @@ import {
 import type { DeviceRvDocumentsState, RvDocumentKind } from '../../lib/verificationRvDeviceImages';
 import type { JobType, RcFeesStructure, VerificationLocation } from '../../types';
 import type { VerificationDeviceRowValues } from '../../lib/siteCalibrationProfileFields';
+import type { GeoStampCoordinates, StampWeather } from '../../components/VerificationPhotoUploadSlot';
 import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFields';
 import { VerificationDeviceFields } from './VerificationDeviceFields';
 
@@ -40,6 +41,8 @@ type VerificationInstrumentTileProps = {
   lockCustomer?: boolean;
   isSelf?: boolean;
   laboratorySealIdentification?: string;
+  geoStampCoords?: GeoStampCoordinates | null;
+  geoStampWeather?: StampWeather | null;
   tileRef?: (node: HTMLElement | null) => void;
 };
 
@@ -67,6 +70,8 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
   lockCustomer = false,
   isSelf = false,
   laboratorySealIdentification = '',
+  geoStampCoords = null,
+  geoStampWeather = null,
   tileRef,
 }) => {
   const localId = row.localId;
@@ -239,6 +244,8 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
               submitting={submitting}
               readOnly={readOnly}
               embedded
+              geoStampCoords={geoStampCoords}
+              geoStampWeather={geoStampWeather}
             />
           </div>
           {photosComplete && !readOnly && (

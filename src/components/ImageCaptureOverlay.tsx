@@ -8,7 +8,7 @@ import {
 } from '../lib/captureImageFromVideo';
 import type { ImageCaptureFacing } from '../lib/imageCapture';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
-import { loadPhotoCaptureStamp, type PhotoCaptureStamp } from '../lib/photoCaptureStamp';
+import { loadPhotoCaptureStamp, type PhotoCaptureStamp, type StampWeather } from '../lib/photoCaptureStamp';
 
 function buildCameraConstraintAttempts(facing: ImageCaptureFacing): MediaStreamConstraints[] {
   if (facing === 'user') {
@@ -53,6 +53,8 @@ export type ImageCaptureSession = {
   /** Called when background geo overlay is ready (replaces preview file). */
   onStamped?: (file: File) => void;
   onFallbackNativeCamera?: () => void;
+  /** Ambient temp/humidity burned into the geo banner (govt requirement). */
+  stampWeather?: StampWeather;
 };
 
 export type ImageCaptureOverlayProps = {
@@ -192,11 +194,15 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
       onClose();
 
       if (session.onStamped) {
-        void produceStampedPhotoFromCanvas(frozenCanvas, capturedAt, prefetch, baseName).then(
-          stamped => {
-            if (stamped) session.onStamped?.(stamped);
-          },
-        );
+        void produceStampedPhotoFromCanvas(
+          frozenCanvas,
+          capturedAt,
+          prefetch,
+          baseName,
+          session.stampWeather,
+        ).then(stamped => {
+          if (stamped) session.onStamped?.(stamped);
+        });
       }
     } finally {
       setCapturing(false);

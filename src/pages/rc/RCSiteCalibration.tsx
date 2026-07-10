@@ -171,6 +171,9 @@ import { useVerificationMobileLayout } from '../../hooks/useVerificationMobileLa
 import {
   isVerificationCaptureDevice,
   VERIFICATION_MOBILE_ONLY_NOTICE,
+  RC_PROFILE_GPS_REQUIRED_MESSAGE,
+  verificationRequiresMobileCapture,
+  canUseVerificationCapture,
 } from '../../lib/verificationDevicePolicy';
 import {
   emptyPerformerPhotosState,
@@ -211,7 +214,7 @@ function verificationDocaFirestorePatch(
   return charges ?? {};
 }
 
-function vctNewVerificationBlockMessage(
+function verificationCreateGateBlockMessage(
   rcHasWeightsCert: boolean | null,
   rcHasVehicle: boolean | null,
   gatesLoading: boolean,
@@ -222,25 +225,25 @@ function vctNewVerificationBlockMessage(
   if (rcHasWeightsCert === false) return VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE;
   if (rcHasVehicle === false) return VCT_RC_VEHICLE_REQUIRED_MESSAGE;
   if (rcHasWeightsCert !== true || rcHasVehicle !== true) {
-    return 'Could not confirm centre setup. Refresh the page or ask your RC admin.';
+    return 'Could not confirm centre setup. Refresh the page or check Profile and Vehicles.';
   }
   return null;
 }
 
-function vctCreateGateSatisfied(
-  isVct: boolean,
+function verificationCreateGateSatisfied(
+  role: import('../../types').Role | undefined,
   rcHasWeightsCert: boolean | null,
   rcHasVehicle: boolean | null,
   gatesLoading: boolean,
   gatesError: string,
 ): boolean {
-  if (!isVct) return true;
+  if (role !== 'vct' && role !== 'rc_admin') return false;
   if (gatesLoading || gatesError) return false;
   return rcHasWeightsCert === true && rcHasVehicle === true;
 }
 
 export const RCSiteCalibration: React.FC = () => {
-  const { rcUid, actorUid, isVct } = useRcScope();
+  const { rcUid, actorUid, isVct, isRcAdmin } = useRcScope();
   const { user } = useAuth();
   const { products } = useAppContext();
   const { appSettings } = useAppSettings();
@@ -466,6 +469,15 @@ export const RCSiteCalibration: React.FC = () => {
       setGatesLoading(false);
     }
   }, [rcUid]);
+
+  const rcDesktopVerification = isRcAdmin && !isVerificationCaptureDevice();
+  const rcProfileGeoStampCoords = useMemo(() => {
+    const lat = rcProfile?.location?.lat;
+    const lng = rcProfile?.location?.lng;
+    if (lat == null || lng == null) return null;
+    return { lat, lng };
+  }, [rcProfile?.location?.lat, rcProfile?.location?.lng]);
+  const rcProfileGpsReady = !rcDesktopVerification || rcProfileGeoStampCoords != null;
 
   useEffect(() => {
     void refreshRcVerificationGates();
@@ -1153,20 +1165,26 @@ export const RCSiteCalibration: React.FC = () => {
     rvPayment?: { paymentId: string; amountInr: number },
   ) => {
     if (!canCreateVerification(user?.role)) {
-      setError('New verifications must be started by a technician on the mobile app.');
+      setError('You do not have permission to start verifications.');
       return;
     }
-    if (isVct) {
-      const blockMsg = vctNewVerificationBlockMessage(
-        rcHasWeightsCert,
-        rcHasVehicle,
-        gatesLoading,
-        gatesError,
-      );
-      if (blockMsg) {
-        setError(blockMsg);
-        return;
-      }
+    const gateMsg = verificationCreateGateBlockMessage(
+      rcHasWeightsCert,
+      rcHasVehicle,
+      gatesLoading,
+      gatesError,
+    );
+    if (gateMsg) {
+      setError(gateMsg);
+      return;
+    }
+    if (isRcAdmin && sessionValues.verificationType !== 'OV') {
+      setError('RC desktop verification supports OV only. Use a technician for RV.');
+      return;
+    }
+    if (rcDesktopVerification && !rcProfileGpsReady) {
+      setError(RC_PROFILE_GPS_REQUIRED_MESSAGE);
+      return;
     }
     setError('');
     const validationError = validateVerificationDraft(
@@ -1424,7 +1442,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleSubmitRecord = async (record: SiteCalibration) => {
     if (!canSubmitVerification(record)) return;
-    if (!isVerificationCaptureDevice()) {
+    if (!canUseVerificationCapture(user?.role)) {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
       return;
     }
@@ -1462,7 +1480,7 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const handleBulkSubmitRecords = async () => {
-    if (!isVerificationCaptureDevice()) {
+    if (!canUseVerificationCapture(user?.role)) {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
       return;
     }
@@ -1737,22 +1755,28 @@ export const RCSiteCalibration: React.FC = () => {
   const openNewVerificationSession = useCallback(
     (session: VerificationSessionValues) => {
       if (!canCreateVerification(user?.role)) {
-        setListError('New verifications must be started by a technician on the mobile app.');
+        setListError('You do not have permission to start verifications.');
         return;
       }
-      if (isVct) {
-        const blockMsg = vctNewVerificationBlockMessage(
+      const gateMsg = verificationCreateGateBlockMessage(
         rcHasWeightsCert,
         rcHasVehicle,
         gatesLoading,
         gatesError,
       );
-        if (blockMsg) {
-          setListError(blockMsg);
-          return;
-        }
+      if (gateMsg) {
+        setListError(gateMsg);
+        return;
       }
-      if (!isVerificationCaptureDevice()) {
+      if (isRcAdmin && session.verificationType !== 'OV') {
+        setListError('RC desktop verification supports OV only.');
+        return;
+      }
+      if (rcDesktopVerification && !rcProfileGpsReady) {
+        setListError(RC_PROFILE_GPS_REQUIRED_MESSAGE);
+        return;
+      }
+      if (verificationRequiresMobileCapture(user?.role) && !isVerificationCaptureDevice()) {
         setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
         return;
       }
@@ -1774,27 +1798,29 @@ export const RCSiteCalibration: React.FC = () => {
       setVerificationDeclarationAccepted(false);
       setShowAddForm(true);
     },
-    [user?.role, isVct, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError],
+    [user?.role, isRcAdmin, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError, rcDesktopVerification, rcProfileGpsReady],
   );
 
   const handleStartAdd = () => {
     if (!canCreateVerification(user?.role)) {
-      setListError('New verifications must be started by a technician on the mobile app.');
+      setListError('You do not have permission to start verifications.');
       return;
     }
-    if (isVct) {
-      const blockMsg = vctNewVerificationBlockMessage(
-        rcHasWeightsCert,
-        rcHasVehicle,
-        gatesLoading,
-        gatesError,
-      );
-      if (blockMsg) {
-        setListError(blockMsg);
-        return;
-      }
+    const gateMsg = verificationCreateGateBlockMessage(
+      rcHasWeightsCert,
+      rcHasVehicle,
+      gatesLoading,
+      gatesError,
+    );
+    if (gateMsg) {
+      setListError(gateMsg);
+      return;
     }
-    if (!isVerificationCaptureDevice()) {
+    if (rcDesktopVerification && !rcProfileGpsReady) {
+      setListError(RC_PROFILE_GPS_REQUIRED_MESSAGE);
+      return;
+    }
+    if (verificationRequiresMobileCapture(user?.role) && !isVerificationCaptureDevice()) {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
       return;
     }
@@ -1854,7 +1880,7 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const startEdit = (record: SiteCalibration) => {
-    if (isVerificationEditable(record) && !isVerificationCaptureDevice()) {
+    if (isVerificationEditable(record) && !canUseVerificationCapture(user?.role)) {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
       return;
     }
@@ -1920,18 +1946,19 @@ export const RCSiteCalibration: React.FC = () => {
   const showFormFooter =
     !showVerificationBackBar && (!showAddForm || wizardOnLastStep);
   const mobileFloatingChrome = useVerificationMobileLayout(showAddForm);
-  const verificationCaptureAllowed = isVerificationCaptureDevice();
-  const vctCreateGateOk = vctCreateGateSatisfied(
-    isVct,
+  const verificationCaptureAllowed = canUseVerificationCapture(user?.role);
+  const verificationCreateGateOk = verificationCreateGateSatisfied(
+    user?.role,
     rcHasWeightsCert,
     rcHasVehicle,
     gatesLoading,
     gatesError,
   );
   const canStartNewVerification =
-    verificationCaptureAllowed
-    && canCreateVerification(user?.role)
-    && vctCreateGateOk;
+    canCreateVerification(user?.role)
+    && verificationCreateGateOk
+    && rcProfileGpsReady
+    && (verificationRequiresMobileCapture(user?.role) ? verificationCaptureAllowed : true);
 
   const draftBlockReason = useMemo(
     () =>
@@ -2302,6 +2329,8 @@ export const RCSiteCalibration: React.FC = () => {
                       readOnly={isViewMode}
                       allowPerformerAssignment={!isVct && !isViewMode}
                       assignableVcts={assignableVcts}
+                      lockVerificationTypeToOv={isRcAdmin}
+                      geoStampCoords={rcProfileGeoStampCoords}
                       laboratorySealIdentification={laboratorySealId}
                       onWizardStepChange={handleWizardStepChange}
                       onDeclarationAcceptedChange={setVerificationDeclarationAccepted}
@@ -2333,7 +2362,7 @@ export const RCSiteCalibration: React.FC = () => {
               {listError}
             </p>
           )}
-          {!verificationCaptureAllowed && (
+          {verificationRequiresMobileCapture(user?.role) && !verificationCaptureAllowed && (
             <div className="verification-mobile-only-notice" role="status">
               <p className="verification-mobile-only-notice__title">Mobile app required</p>
               <p className="verification-mobile-only-notice__text mb-0">
@@ -2341,7 +2370,15 @@ export const RCSiteCalibration: React.FC = () => {
               </p>
             </div>
           )}
-          {isVct && gatesLoading ? (
+          {rcDesktopVerification && !rcProfileGpsReady && (
+            <div className="rc-vehicle-required-notice" role="status">
+              <p className="rc-vehicle-required-notice__title">Centre GPS required</p>
+              <p className="rc-vehicle-required-notice__text mb-0">
+                {RC_PROFILE_GPS_REQUIRED_MESSAGE} Set coordinates under Profile → Edit.
+              </p>
+            </div>
+          )}
+          {(isVct || isRcAdmin) && gatesLoading ? (
             <div className="rc-vehicle-required-notice" role="status">
               <p className="rc-vehicle-required-notice__title">Checking centre setup</p>
               <p className="rc-vehicle-required-notice__text mb-0">
@@ -2349,17 +2386,26 @@ export const RCSiteCalibration: React.FC = () => {
               </p>
             </div>
           ) : null}
-          {isVct && gatesError ? (
+          {(isVct || isRcAdmin) && gatesError ? (
             <div className="rc-vehicle-required-notice" role="alert">
               <p className="rc-vehicle-required-notice__title">Cannot start verification</p>
               <p className="rc-vehicle-required-notice__text mb-0">{gatesError}</p>
             </div>
           ) : null}
-          {isVct && !gatesLoading && !gatesError && rcHasWeightsCert === false ? (
-            <RcStandardWeightsCertVctNotice />
+          {(isVct || isRcAdmin) && !gatesLoading && !gatesError && rcHasWeightsCert === false ? (
+            isRcAdmin ? (
+              <div className="rc-vehicle-required-notice" role="status">
+                <p className="rc-vehicle-required-notice__title">Standard weights certificate required</p>
+                <p className="rc-vehicle-required-notice__text mb-0">
+                  {VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE} Upload it under Profile → Edit.
+                </p>
+              </div>
+            ) : (
+              <RcStandardWeightsCertVctNotice />
+            )
           ) : null}
-          {isVct && !gatesLoading && !gatesError && rcHasVehicle === false ? (
-            <RcVehicleRequiredNotice variant="vct" />
+          {(isVct || isRcAdmin) && !gatesLoading && !gatesError && rcHasVehicle === false ? (
+            <RcVehicleRequiredNotice variant={isRcAdmin ? 'rc' : 'vct'} />
           ) : null}
           <VerificationListFilters
             searchTerm={searchTerm}
@@ -2371,16 +2417,29 @@ export const RCSiteCalibration: React.FC = () => {
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
             typeOptions={typeFilterOptions}
-            onNewClick={canStartNewVerification ? handleStartAdd : isVct ? () => {
-              const blockMsg = vctNewVerificationBlockMessage(
-                rcHasWeightsCert,
-                rcHasVehicle,
-                gatesLoading,
-                gatesError,
-              );
-              if (blockMsg) setListError(blockMsg);
-              else if (!verificationCaptureAllowed) setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
-            } : undefined}
+            onNewClick={
+              canStartNewVerification
+                ? handleStartAdd
+                : canCreateVerification(user?.role)
+                  ? () => {
+                      const gateMsg = verificationCreateGateBlockMessage(
+                        rcHasWeightsCert,
+                        rcHasVehicle,
+                        gatesLoading,
+                        gatesError,
+                      );
+                      if (gateMsg) setListError(gateMsg);
+                      else if (rcDesktopVerification && !rcProfileGpsReady) {
+                        setListError(RC_PROFILE_GPS_REQUIRED_MESSAGE);
+                      } else if (
+                        verificationRequiresMobileCapture(user?.role)
+                        && !verificationCaptureAllowed
+                      ) {
+                        setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
+                      }
+                    }
+                  : undefined
+            }
             onRefresh={() => void fetchRecords()}
             refreshing={loading}
           />

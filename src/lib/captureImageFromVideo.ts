@@ -2,12 +2,25 @@ import {
   drawPhotoCaptureStamp,
   stampForCapture,
   type PhotoCaptureStamp,
+  type StampWeather,
 } from './photoCaptureStamp';
+import {
+  exportCanvasAsJpeg,
+  fitWithinMaxEdge,
+  VERIFICATION_JPEG_QUALITY,
+  VERIFICATION_MAX_EDGE,
+} from './prepareImageForUpload';
 
 export type CaptureImageOptions = {
   fileName?: string;
   stamp?: PhotoCaptureStamp | null;
+  /** Longest-edge cap in px. Defaults to VERIFICATION_MAX_EDGE. */
+  maxEdge?: number;
+  /** JPEG quality 0–1. Defaults to VERIFICATION_JPEG_QUALITY. */
+  quality?: number;
 };
+
+export { VERIFICATION_MAX_EDGE, VERIFICATION_JPEG_QUALITY };
 
 /** Snapshot the current video frame immediately (call on shutter — before any async work). */
 export function freezeVideoFrame(video: HTMLVideoElement): HTMLCanvasElement | null {
@@ -30,33 +43,24 @@ export async function captureCanvasToJpegFile(
   options: CaptureImageOptions = {},
 ): Promise<File | null> {
   const fileName = options.fileName ?? `photo-${Date.now()}.jpg`;
-  const width = canvas.width;
-  const height = canvas.height;
+  const maxEdge = options.maxEdge ?? VERIFICATION_MAX_EDGE;
+  const quality = options.quality ?? VERIFICATION_JPEG_QUALITY;
+  const { width, height } = fitWithinMaxEdge(canvas.width, canvas.height, maxEdge);
 
   const stamped = document.createElement('canvas');
   stamped.width = width;
   stamped.height = height;
   const ctx = stamped.getContext('2d');
   if (!ctx) return null;
-  ctx.drawImage(canvas, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(canvas, 0, 0, width, height);
 
   if (options.stamp) {
     await drawPhotoCaptureStamp(ctx, width, height, options.stamp);
   }
 
-  return new Promise(resolve => {
-    stamped.toBlob(
-      blob => {
-        if (!blob) {
-          resolve(null);
-          return;
-        }
-        resolve(new File([blob], fileName, { type: 'image/jpeg', lastModified: Date.now() }));
-      },
-      'image/jpeg',
-      0.9,
-    );
-  });
+  return exportCanvasAsJpeg(stamped, fileName, { maxEdge, quality });
 }
 
 /** Apply geo overlay to a frozen frame (background after camera closes). */
@@ -65,10 +69,19 @@ export async function produceStampedPhotoFromCanvas(
   capturedAt: Date,
   prefetched: PhotoCaptureStamp | null,
   fileName?: string,
+  weather?: StampWeather,
 ): Promise<File | null> {
-  const stamp = prefetched
+  const base = prefetched
     ? { ...prefetched, capturedAt }
     : await stampForCapture(capturedAt, null);
+  const stamp =
+    base && weather
+      ? {
+          ...base,
+          ambientTemperature: weather.ambientTemperature ?? base.ambientTemperature,
+          relativeHumidity: weather.relativeHumidity ?? base.relativeHumidity,
+        }
+      : base;
   return captureCanvasToJpegFile(frozen, {
     fileName: fileName ?? `photo-${Date.now()}.jpg`,
     stamp: stamp ?? undefined,

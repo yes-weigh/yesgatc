@@ -24,6 +24,7 @@ import {
   validateRcFeesStructure,
 } from '../../lib/rcProfileFields';
 import { deleteRcStorageFile, uploadRcStandardWeightsCert } from '../../lib/rcCertificateUpload';
+import { parseGoogleMapsCoordinates } from '../../lib/googleMapsCoordinates';
 import { uploadVctProfilePhoto } from '../../lib/vctDocumentUpload';
 import { UploadField } from '../admin/productFormUi';
 import {
@@ -103,6 +104,7 @@ export const RCProfile: React.FC = () => {
   const [certProgress, setCertProgress] = useState(0);
   const [certRemoved, setCertRemoved] = useState(false);
   const [draftCoords, setDraftCoords] = useState({ latitude: '', longitude: '' });
+  const [mapsPaste, setMapsPaste] = useState('');
   const [draftFees, setDraftFees] = useState<RcFeesStructure>(rcFeesDraftFromUser(null));
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
@@ -127,6 +129,7 @@ export const RCProfile: React.FC = () => {
   const startEdit = () => {
     setDraft({ ...profile });
     setDraftCoords(rcProfileCoordsFromUser(profile as FirestoreUserDoc));
+    setMapsPaste('');
     setDraftFees(rcFeesDraftFromUser(profile as FirestoreUserDoc));
     setLocationError('');
     setPendingProfilePhoto(null);
@@ -146,6 +149,7 @@ export const RCProfile: React.FC = () => {
   const cancelEdit = () => {
     setDraft({});
     setDraftCoords(rcProfileCoordsFromUser(profile as FirestoreUserDoc));
+    setMapsPaste('');
     setDraftFees(rcFeesDraftFromUser(profile as FirestoreUserDoc));
     setLocationError('');
     setPendingProfilePhoto(null);
@@ -258,7 +262,26 @@ export const RCProfile: React.FC = () => {
 
   const handleClearLocation = () => {
     setLocationError('');
+    setMapsPaste('');
     setDraftCoords({ latitude: '', longitude: '' });
+  };
+
+  const handleCoordChange = (field: 'latitude' | 'longitude', value: string) => {
+    setLocationError('');
+    setDraftCoords(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleApplyMapsLink = () => {
+    const parsed = parseGoogleMapsCoordinates(mapsPaste);
+    if (!parsed) {
+      setLocationError('Could not read coordinates from that link or text.');
+      return;
+    }
+    setLocationError('');
+    setDraftCoords({
+      latitude: parsed.lat.toFixed(6),
+      longitude: parsed.lng.toFixed(6),
+    });
   };
 
   const handleSave = async () => {
@@ -281,11 +304,21 @@ export const RCProfile: React.FC = () => {
       alert(feesError);
       return;
     }
+    const latStr = draftCoords.latitude.trim();
+    const lngStr = draftCoords.longitude.trim();
+    if ((latStr && !lngStr) || (!latStr && lngStr)) {
+      alert('Enter both latitude and longitude, or clear both.');
+      return;
+    }
+    const location = parseRcLocation(draftCoords);
+    if (latStr && lngStr && !location) {
+      alert('GPS coordinates are invalid. Use decimal degrees, e.g. 10.123456, 76.654321.');
+      return;
+    }
 
     setSaving(true);
     try {
       const photoFields = await uploadProfilePhoto(user.uid);
-      const location = parseRcLocation(draftCoords);
       const certDate = (draft.standardWeightsCertDate ?? '').trim();
       const certFields: Record<string, unknown> = {
         standardWeightsCertNumber: (draft.standardWeightsCertNumber ?? '').trim(),
@@ -526,7 +559,9 @@ export const RCProfile: React.FC = () => {
               <div className="profile-field-label">
                 <span className="profile-icon"><MapPin size={16} /></span>
                 <span>GPS coordinates</span>
-                <span className="text-muted text-sm font-normal ml-1">Optional — used for weather on self verifications</span>
+                <span className="text-muted text-sm font-normal ml-1">
+                  Required for desktop verification photo geo-stamp
+                </span>
               </div>
               {editing ? (
                 <div className="customer-form-location-side mt-1">
@@ -556,21 +591,47 @@ export const RCProfile: React.FC = () => {
                       <input
                         type="text"
                         className="input-field input-field--coords"
-                        placeholder="Lat"
+                        placeholder="Latitude"
                         value={draftCoords.latitude}
-                        readOnly
-                        tabIndex={-1}
+                        onChange={e => handleCoordChange('latitude', e.target.value)}
+                        disabled={saving || locating}
                         aria-label="Latitude"
+                        inputMode="decimal"
                       />
                       <input
                         type="text"
                         className="input-field input-field--coords"
-                        placeholder="Lng"
+                        placeholder="Longitude"
                         value={draftCoords.longitude}
-                        readOnly
-                        tabIndex={-1}
+                        onChange={e => handleCoordChange('longitude', e.target.value)}
+                        disabled={saving || locating}
                         aria-label="Longitude"
+                        inputMode="decimal"
                       />
+                    </div>
+                  </div>
+                  <div className="customer-form-location-maps-paste mt-2">
+                    <label htmlFor="rc-profile-maps-paste" className="text-sm text-muted">
+                      Paste Google Maps link or coordinates
+                    </label>
+                    <div className="flex gap-2 mt-1 flex-wrap">
+                      <input
+                        id="rc-profile-maps-paste"
+                        type="text"
+                        className="input-field flex-1 min-w-[12rem]"
+                        placeholder="https://maps.google.com/… or 10.123, 76.456"
+                        value={mapsPaste}
+                        onChange={e => setMapsPaste(e.target.value)}
+                        disabled={saving || locating}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary text-sm py-1.5 px-3 shrink-0"
+                        onClick={handleApplyMapsLink}
+                        disabled={saving || locating || !mapsPaste.trim()}
+                      >
+                        Apply
+                      </button>
                     </div>
                   </div>
                   {locationError && (

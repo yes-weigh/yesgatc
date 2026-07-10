@@ -24,8 +24,17 @@ import { isPdfContentType } from '../lib/productApprovalUpload';
 import { useImageFileInputs } from '../lib/useImageFileInputs';
 import { shouldUseInAppCameraCapture, type ImageCaptureFacing } from '../lib/imageCapture';
 import { ImageCaptureOverlay, type ImageCaptureSession } from './ImageCaptureOverlay';
+import { buildPhotoCaptureStampFromCoords, type StampWeather } from '../lib/photoCaptureStamp';
+import { stampVerificationImageFile } from '../lib/stampVerificationImageFile';
 
 export type VerificationPhotoSlotIcon = 'camera' | 'document' | 'invoice';
+
+export type GeoStampCoordinates = {
+  lat: number;
+  lng: number;
+};
+
+export type { StampWeather };
 
 type CameraSession = {
   slotKey: string;
@@ -65,6 +74,10 @@ type VerificationPhotoUploadSlotProps = {
   cameraFacing?: ImageCaptureFacing;
   /** GPS/date stamp on in-app camera capture. Only instrument + stamping plate. */
   geoStamp?: boolean;
+  /** RC centre coords — desktop file uploads burn the same overlay as mobile. */
+  geoStampCoords?: GeoStampCoordinates | null;
+  /** Ambient temp/humidity burned into the geo banner (govt requirement). */
+  geoStampWeather?: StampWeather | null;
 };
 
 const SlotIcon: React.FC<{ kind: VerificationPhotoSlotIcon }> = ({ kind }) => {
@@ -106,6 +119,8 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   cameraOnly = false,
   cameraFacing = 'environment',
   geoStamp = false,
+  geoStampCoords = null,
+  geoStampWeather = null,
 }) => {
   const autoKey = useId();
   const slotKey = slotKeyProp ?? autoKey;
@@ -120,29 +135,61 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
     if (!hasFile) setStampPending(false);
   }, [hasFile]);
 
+  const handleSelect = useCallback(
+    async (file: File) => {
+      const useDesktopProfileStamp =
+        geoStamp
+        && geoStampCoords != null
+        && !shouldUseInAppCameraCapture();
+
+      if (!useDesktopProfileStamp) {
+        onSelect(file);
+        return;
+      }
+
+      setStampPending(true);
+      try {
+        const stamp = await buildPhotoCaptureStampFromCoords(
+          geoStampCoords.lat,
+          geoStampCoords.lng,
+          new Date(),
+          geoStampWeather ?? undefined,
+        );
+        const stamped = await stampVerificationImageFile(file, stamp);
+        onSelect(stamped);
+      } catch {
+        onSelect(file);
+      } finally {
+        setStampPending(false);
+      }
+    },
+    [geoStamp, geoStampCoords, geoStampWeather, onSelect],
+  );
+
   const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
     disabled: locked,
     cameraOnly,
     captureFacing: cameraFacing,
-    onSelect,
+    onSelect: handleSelect,
   });
 
   const cameraCaptureSession = useCallback((): ImageCaptureSession => {
     const session: ImageCaptureSession = {
       onCaptured: immediate => {
         if (geoStamp) setStampPending(true);
-        onSelect(immediate);
+        handleSelect(immediate);
       },
       onFallbackNativeCamera: () => openCamera(),
     };
     if (geoStamp) {
       session.onStamped = stamped => {
         setStampPending(false);
-        onSelect(stamped);
+        handleSelect(stamped);
       };
+      session.stampWeather = geoStampWeather ?? undefined;
     }
     return session;
-  }, [onSelect, openCamera, geoStamp]);
+  }, [handleSelect, openCamera, geoStamp, geoStampWeather]);
 
   const useInAppCamera =
     allowCamera

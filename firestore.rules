@@ -308,6 +308,14 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) == 'draft'
         && validVerificationApplicationNumber(request.resource.data);
 
+      allow create: if isRCAdmin()
+        && request.resource.data.rcId == request.auth.uid
+        && request.resource.data.get('createdByUid', '') == request.auth.uid
+        && request.resource.data.get('performedBy', '') == 'rc'
+        && request.resource.data.get('verificationType', '') == 'OV'
+        && verificationRecordStatus(request.resource.data) == 'draft'
+        && validVerificationApplicationNumber(request.resource.data);
+
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == resource.data.rcId
