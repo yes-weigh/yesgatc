@@ -54,6 +54,8 @@ export default defineConfig(() => {
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/api\//],
           globPatterns: ['**/*.{js,css,html,ico,png,webp,svg,woff2,webmanifest}'],
+          // Main bundle can exceed default 2 MiB precache limit after feature growth.
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           cleanupOutdatedCaches: true,
           runtimeCaching: [
             {
