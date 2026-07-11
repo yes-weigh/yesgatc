@@ -23,8 +23,13 @@ public sealed class AutoWorkerSettings
     /// <summary>Wait time before retrying a failed job (seconds).</summary>
     public int RetryDelaySeconds { get; init; } = 15;
     /// <summary>
+    /// Max retries for submitted jobs (Phase 1 DOCA create / approve).
+    /// After this, worker stops and marks pipelineFailedPhase=submit. Status stays submitted.
+    /// </summary>
+    public int MaxSubmitRetries { get; init; } = 3;
+    /// <summary>
     /// Max retries for approved jobs (Phase 2 signed PDF upload to DOCA / Firebase).
-    /// Submitted jobs (Phase 1) retry without this cap. Firebase status stays approved during retries.
+    /// Firebase status stays approved during retries.
     /// </summary>
     public int MaxPostApprovalRetries { get; init; } = 3;
     /// <summary>How often to refresh retry countdown badges in the queue (seconds).</summary>

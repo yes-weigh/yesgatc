@@ -127,7 +127,8 @@ Auto worker settings (`AutoWorker` section in `appsettings.json`):
 | `ListenerTokenRefreshMinutes` | 45 | Reconnect listener before auth token expires |
 | `PollIntervalSeconds` | 5 | Fallback poll when realtime is off or unavailable |
 | `RetryDelaySeconds` | 15 | Wait after a failed job before retry |
-| `MaxPostApprovalRetries` | 3 | Max retries for **approved** jobs (Phase 2 signed PDF upload). Status stays `approved` in Firebase. Submitted jobs retry without cap. |
+| `MaxSubmitRetries` | 3 | Max retries for **submitted** jobs (Phase 1 DOCA create). Then marks `pipelineFailedPhase=submit`. Status stays `submitted`. |
+| `MaxPostApprovalRetries` | 3 | Max retries for **approved** jobs (Phase 2 signed PDF upload). Status stays `approved` in Firebase. |
 | `SkipBatchConfirmation` | true | No dialog when processing batches |
 
 `Automation.DocaScrape.Enabled` defaults to **false** — certification uses **Chrome 1 only**. Set `true` to allow GATC list scraping (Chrome 2) from web admin.

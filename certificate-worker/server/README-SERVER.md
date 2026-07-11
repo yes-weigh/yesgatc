@@ -108,7 +108,7 @@ powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-updat
 ```
 
 **What `update.ps1` keeps:** `appsettings.local.json`, `%LOCALAPPDATA%\YesGATC\CertificateWorker\` (credentials, DOCA login, cached PDFs).  
-**What it replaces:** exe, dlls, default `appsettings.json` (merge new keys like `MaxPostApprovalRetries` if you customized the old file).
+**What it replaces:** exe, dlls, default `appsettings.json` (merge new keys like `MaxSubmitRetries` / `MaxPostApprovalRetries` if you customized the old file).
 
 ---
 

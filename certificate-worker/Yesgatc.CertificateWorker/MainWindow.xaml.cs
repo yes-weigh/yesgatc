@@ -1221,7 +1221,7 @@ public partial class MainWindow : Window
 
     private int ResolveMaxRetriesFor(SiteCalibrationRecord job) =>
         job.IsSubmitted
-            ? int.MaxValue
+            ? Math.Max(1, App.Settings.AutoWorker.MaxSubmitRetries)
             : Math.Max(1, App.Settings.AutoWorker.MaxPostApprovalRetries);
 
     private void ScheduleJobRetry(SiteCalibrationRecord job, string error)
@@ -1232,6 +1232,36 @@ public partial class MainWindow : Window
             TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds),
             ResolveMaxRetriesFor(job));
         RefreshRetryBadges();
+    }
+
+    private async Task RecordPipelineFailureAsync(SiteCalibrationRecord job, string error, bool? exhausted = null)
+    {
+        var retryExhausted = exhausted ?? _jobRetries.IsExhausted(job.Id);
+        if (job.IsSubmitted)
+        {
+            await RecordSubmitFailureAsync(job, error, retryExhausted);
+            return;
+        }
+
+        await RecordPostApprovalFailureAsync(job, error, retryExhausted);
+    }
+
+    private async Task RecordSubmitFailureAsync(SiteCalibrationRecord job, string error, bool retryExhausted = false)
+    {
+        if (!job.IsSubmitted || !retryExhausted || _session is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var token = await GetFreshIdTokenAsync();
+            await _firestoreService.RecordSubmitFailureAsync(job.Id, error, token, retryExhausted: true);
+        }
+        catch
+        {
+            // Best-effort — status stays submitted even if this patch fails.
+        }
     }
 
     private async Task RecordPostApprovalFailureAsync(SiteCalibrationRecord job, string error, bool retryExhausted = false)
@@ -1430,7 +1460,7 @@ public partial class MainWindow : Window
             if (fromAutoWorker || _autoWorkerEnabled)
             {
                 ScheduleJobRetry(job, result.Message);
-                await RecordPostApprovalFailureAsync(job, result.Message);
+                await RecordPipelineFailureAsync(job, result.Message);
             }
 
             await LoadQueueAsync();
@@ -1451,14 +1481,18 @@ public partial class MainWindow : Window
         ScheduleJobRetry(job, result.Message);
         if (_jobRetries.IsExhausted(job.Id))
         {
-            await RecordPostApprovalFailureAsync(
+            var phase = job.IsSubmitted ? "submit" : "post-approval";
+            var statusNote = job.IsSubmitted
+                ? "status remains submitted in Firebase"
+                : "status remains approved in Firebase";
+            await RecordPipelineFailureAsync(
                 job,
-                $"{result.Message} (worker stopped after {ResolveMaxRetriesFor(job)} post-approval retries; status remains approved in Firebase)",
-                retryExhausted: true);
+                $"{result.Message} (worker stopped after {ResolveMaxRetriesFor(job)} {phase} retries; {statusNote})",
+                exhausted: true);
         }
         else
         {
-            await RecordPostApprovalFailureAsync(job, result.Message);
+            await RecordPipelineFailureAsync(job, result.Message);
         }
 
         _telemetry.RecordJobFailed();
@@ -1571,7 +1605,7 @@ public partial class MainWindow : Window
                 failed++;
                 lastError = ex.Message;
                 ScheduleJobRetry(job, ex.Message);
-                await RecordPostApprovalFailureAsync(job, ex.Message);
+                await RecordPipelineFailureAsync(job, ex.Message);
                 SetStatusSafe($"{batchLabel} failed · {ex.Message}", ex, StatusKind.Error);
 
                 if (AutomationService.IsBrowserDisconnectedError(ex))
@@ -1641,7 +1675,7 @@ public partial class MainWindow : Window
         failed++;
         lastError = result.Message;
         ScheduleJobRetry(job, result.Message);
-        _ = RecordPostApprovalFailureAsync(job, result.Message);
+        _ = RecordPipelineFailureAsync(job, result.Message);
         SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Info);
         return true;
     }
@@ -1742,7 +1776,7 @@ public partial class MainWindow : Window
                     {
                         Interlocked.Increment(ref stats.Failed);
                         ScheduleJobRetry(job, result.Message);
-                        _ = RecordPostApprovalFailureAsync(job, result.Message);
+                        _ = RecordPipelineFailureAsync(job, result.Message);
                         lock (stats)
                         {
                             stats.LastError = result.Message;
@@ -1763,7 +1797,7 @@ public partial class MainWindow : Window
                     {
                         Interlocked.Increment(ref stats.Failed);
                         ScheduleJobRetry(job, result.Message);
-                        _ = RecordPostApprovalFailureAsync(job, result.Message);
+                        _ = RecordPipelineFailureAsync(job, result.Message);
                         lock (stats)
                         {
                             stats.LastError = result.Message;
@@ -1775,7 +1809,7 @@ public partial class MainWindow : Window
                 {
                     Interlocked.Increment(ref stats.Failed);
                     ScheduleJobRetry(job, ex.Message);
-                    _ = RecordPostApprovalFailureAsync(job, ex.Message);
+                    _ = RecordPipelineFailureAsync(job, ex.Message);
                     lock (stats)
                     {
                         stats.LastError = ex.Message;

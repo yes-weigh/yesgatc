@@ -216,6 +216,43 @@ public sealed class FirestoreService
             cancellationToken);
     }
 
+    public async Task RecordSubmitFailureAsync(
+        string jobId,
+        string error,
+        string idToken,
+        bool retryExhausted = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId) || string.IsNullOrWhiteSpace(error) || !retryExhausted)
+        {
+            return;
+        }
+
+        var verification = await GetVerificationByIdAsync(jobId, idToken, cancellationToken);
+        if (verification is null || !verification.IsSubmitted)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow.ToString("O");
+        var trimmed = error.Trim()[..Math.Min(error.Trim().Length, 500)];
+        var fields = new Dictionary<string, string>
+        {
+            ["pipelineFailedPhase"] = "submit",
+            ["pipelineFailureMessage"] = trimmed,
+            ["pipelineFailedAt"] = now,
+            ["updatedAt"] = now,
+        };
+
+        var documents = new FirestoreDocumentClient(_settings);
+        await documents.PatchStringFieldsAsync(
+            "siteCalibrations",
+            jobId,
+            fields,
+            idToken,
+            cancellationToken);
+    }
+
     public async Task RecordCertificationFailureAsync(
         string jobId,
         string error,
