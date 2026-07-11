@@ -165,22 +165,18 @@ export function isVerificationListDuplicate(
 export function matchesVerificationListStatusFilter(
   record: SiteCalibration,
   filter: VerificationStatusFilter,
-  allRecords: SiteCalibration[],
+  _allRecords: SiteCalibration[],
   primaryIds: Set<string>,
-  groups: Map<string, SiteCalibration[]> = buildSerialGroupMap(allRecords),
+  _groups: Map<string, SiteCalibration[]> = new Map(),
 ): boolean {
   if (filter === 'duplicates') {
     return isVerificationListDuplicate(record, primaryIds);
   }
   if (filter === 'all') return true;
 
-  const key = serialGroupKey(record);
-  if (!key) return matchesVerificationStatusFilter(record, filter);
-
-  const group = groups.get(key);
-  if (!group?.length) return matchesVerificationStatusFilter(record, filter);
-
-  return matchesVerificationStatusFilter(pickPrimaryListRecord(group), filter);
+  // Match this row's own stage — not the serial-group primary — so Draft/Submitted/etc.
+  // chips stay aligned with rows that actually appear after collapse.
+  return matchesVerificationStatusFilter(record, filter);
 }
 
 export function countVerificationDuplicates(
@@ -300,6 +296,7 @@ export function tallyVerificationStatusFiltersCollapsed(
   for (const row of collapsed) {
     const key = serialGroupKey(row);
     const group = key ? groups.get(key) : null;
+    // Same row the All-stages list shows for this serial.
     const primary = group?.length ? pickPrimaryListRecord(group) : row;
     tally[verificationStatusFilterBucket(primary)] += 1;
   }

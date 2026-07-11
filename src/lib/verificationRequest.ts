@@ -323,6 +323,7 @@ export function verificationStatusFilterBucket(
   if (isVerificationFailedAtCertification(record)) return 'failed_certification';
   if (isVerificationFullyCertified(record)) return 'certified';
   const status = normalizeVerificationStatus(record);
+  if (status === 'certified') return 'certified';
   if (status === 'approved') return 'approved';
   if (status === 'submitted') return 'submitted';
   return 'draft';
