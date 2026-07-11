@@ -441,11 +441,18 @@ export function verificationStatusDescription(status: VerificationRequestStatus)
   return 'Certificate generated and ready to download.';
 }
 
-export function verificationVctLabel(record: SiteCalibration): string {
-  if (record.performedBy === 'vct' || record.vctId || record.vctName?.trim()) {
+export function verificationVctLabel(
+  record: SiteCalibration,
+  options?: { rcContactPerson?: string | null },
+): string {
+  if (record.performedBy === 'vct' || record.vctId?.trim()) {
     return record.vctName?.trim() || record.vctId || 'VCT';
   }
-  return 'Self';
+  return (
+    record.vctName?.trim()
+    || options?.rcContactPerson?.trim()
+    || 'Self'
+  );
 }
 
 export function productSnapshotFromProduct(
@@ -467,27 +474,30 @@ export function formatVerificationCapAcc(record: SiteCalibration): string {
   return `${cap} ${unit} / ${interval} g`;
 }
 
-export function buildRcDirectVerificationMeta(): {
+export function buildRcDirectVerificationMeta(contactPerson?: string): {
   status: VerificationRequestStatus;
   performedBy: VerificationPerformedBy;
   requestSource: VerificationRequestSource;
+  vctName?: string;
 } {
+  const name = contactPerson?.trim();
   return {
     status: 'draft',
     performedBy: 'rc',
     requestSource: 'rc_direct',
+    ...(name ? { vctName: name } : {}),
   };
 }
 
 export type VerificationDraftActorMeta =
-  | { actor: 'rc' }
+  | { actor: 'rc'; contactPerson?: string }
   | { actor: 'vct'; vctId: string; vctName: string; workflowMode?: WorkflowMode };
 
 export function buildVerificationDraftMeta(
   actor: VerificationDraftActorMeta,
 ): Pick<SiteCalibration, 'status' | 'performedBy' | 'requestSource' | 'vctId' | 'vctName'> {
   if (actor.actor === 'rc') {
-    return buildRcDirectVerificationMeta();
+    return buildRcDirectVerificationMeta(actor.contactPerson);
   }
 
   return {
@@ -504,9 +514,10 @@ export function resolveVerificationDraftActorMeta(params: {
   actorUid: string | null;
   actorUsername?: string;
   actorWorkflowMode?: WorkflowMode;
+  rcContactPerson?: string;
 }): VerificationDraftActorMeta {
   if (!params.isVct || !params.actorUid) {
-    return { actor: 'rc' };
+    return { actor: 'rc', contactPerson: params.rcContactPerson };
   }
 
   return {
@@ -532,6 +543,7 @@ export function resolveVerificationDraftActorForSession(
     actorUsername?: string;
     actorWorkflowMode?: WorkflowMode;
     assignableVcts?: AssignableVctOption[];
+    rcContactPerson?: string;
   },
 ): VerificationDraftActorMeta {
   if (params.isVct) {
@@ -556,7 +568,7 @@ export function resolveVerificationDraftActorForSession(
     }
   }
 
-  return { actor: 'rc' };
+  return { actor: 'rc', contactPerson: params.rcContactPerson };
 }
 
 export function verificationPerformerCreatedByUid(

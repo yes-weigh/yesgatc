@@ -36,6 +36,10 @@ import {
   collectSubmittedDeleteBatchForDisplay,
   devDeleteSubmittedVerification,
 } from '../../lib/verificationDevDelete';
+import {
+  canMoveFailedSubmitToDraft,
+  moveFailedSubmitVerificationToDraft,
+} from '../../lib/verificationPipelineRepair';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 interface VerificationRow extends SiteCalibration {
@@ -49,7 +53,7 @@ export const AdminVerificationList: React.FC = () => {
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
   const [rcUsersById, setRcUsersById] = useState<
-    Map<string, Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath'>>
+    Map<string, Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath' | 'contactPerson'>>
   >(() => new Map());
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
@@ -61,6 +65,7 @@ export const AdminVerificationList: React.FC = () => {
   const [lastViewedVerificationId, setLastViewedVerificationId] = useState<string | null>(null);
   const [rowHighlightFlashId, setRowHighlightFlashId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [movingToDraftId, setMovingToDraftId] = useState<string | null>(null);
   const [listError, setListError] = useState('');
 
   const fetchRecords = useCallback(async () => {
@@ -74,7 +79,10 @@ export const AdminVerificationList: React.FC = () => {
       ]);
 
       const rcByUid = new Map<string, string>();
-      const rcProfiles = new Map<string, Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath'>>();
+      const rcProfiles = new Map<
+        string,
+        Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath' | 'contactPerson'>
+      >();
       userSnap.docs.forEach(d => {
         const data = d.data() as FirestoreUserDoc;
         if (data.role === 'rc_admin') {
@@ -82,6 +90,7 @@ export const AdminVerificationList: React.FC = () => {
           rcProfiles.set(d.id, {
             profilePhotoUrl: data.profilePhotoUrl,
             profilePhotoPath: data.profilePhotoPath,
+            contactPerson: data.contactPerson,
           });
         }
       });
@@ -307,6 +316,39 @@ export const AdminVerificationList: React.FC = () => {
     }
   };
 
+  const handleMoveToDraft = async (record: VerificationRow) => {
+    if (!canMoveFailedSubmitToDraft(record, isSuperAdmin)) return;
+
+    const appNo = record.applicationNumber?.trim() || '—';
+    const serial = record.serialNumber?.trim() || '—';
+    const ok = await confirm({
+      title: 'Move to draft?',
+      message: [
+        `Move App ${appNo} (serial ${serial}) back to draft?`,
+        '',
+        'RC/VCT can then open it, fix photos or pincode, and submit again.',
+        'Application number is kept. Worker will not process it until resubmitted.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Move to draft',
+    });
+    if (!ok) return;
+
+    setMovingToDraftId(record.id);
+    setListError('');
+    try {
+      await moveFailedSubmitVerificationToDraft(record.id);
+      if (viewingRecord?.id === record.id) {
+        setViewingRecord(null);
+      }
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(err instanceof Error ? err.message : 'Failed to move verification to draft.');
+    } finally {
+      setMovingToDraftId(null);
+    }
+  };
+
   const filterOptions = buildVerificationStatusFilterOptions(counts);
   const rowOffset = (page - 1) * VERIFICATION_TABLE_PAGE_SIZE;
   const walletPaymentDueRecordIds = useMemo(() => {
@@ -323,6 +365,11 @@ export const AdminVerificationList: React.FC = () => {
           record={viewingRecord}
           allRecords={records}
           rcCenterName={viewingRecord.rcCenterName}
+          rcContactPerson={
+            viewingRecord.rcId
+              ? rcUsersById.get(viewingRecord.rcId)?.contactPerson
+              : null
+          }
           onClose={closeVerificationDetails}
           onRecordsChanged={async () => {
             await fetchRecords();
@@ -380,8 +427,11 @@ export const AdminVerificationList: React.FC = () => {
                 flashRecordId={rowHighlightFlashId}
                 walletPaymentDueRecordIds={walletPaymentDueRecordIds}
                 adminDevDeleteEnabled={isSuperAdmin}
+                adminMoveFailedSubmitEnabled={isSuperAdmin}
                 onDelete={record => void handleDelete(record as VerificationRow)}
+                onMoveToDraft={record => void handleMoveToDraft(record as VerificationRow)}
                 deletingId={deletingId}
+                movingToDraftId={movingToDraftId}
               />
               <TablePagination
                 page={page}

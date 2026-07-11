@@ -32,6 +32,8 @@ export type VerificationDetailSpecsProps = {
   omitChromeFields?: boolean;
   /** Wide submitted / certified tiles below the grid. */
   includeTimeline?: boolean;
+  /** RC contact person fallback when performedBy is rc and record has no stamped name. */
+  rcContactPerson?: string | null;
   className?: string;
 };
 
@@ -74,6 +76,7 @@ export const VerificationDetailSpecs: React.FC<VerificationDetailSpecsProps> = (
   record,
   omitChromeFields = false,
   includeTimeline = false,
+  rcContactPerson = null,
   className = '',
 }) => {
   const tiles: React.ReactNode[] = [];
@@ -118,7 +121,7 @@ export const VerificationDetailSpecs: React.FC<VerificationDetailSpecsProps> = (
     <ProductSpecIconTile
       key="vct"
       label="VCT"
-      value={verificationVctLabel(record)}
+      value={verificationVctLabel(record, { rcContactPerson })}
       icon={Shield}
       tone="violet"
     />,

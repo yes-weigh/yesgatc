@@ -8,6 +8,7 @@ import { RvLegacyWalletPaymentSection } from './RvLegacyWalletPaymentSection';
 import { RvLegacyZohoInvoiceSection } from './RvLegacyZohoInvoiceSection';
 import { RvLegacyZohoSettlementSection } from './RvLegacyZohoSettlementSection';
 import { RvSubmitTestRevertSection } from './RvSubmitTestRevertSection';
+import { FailedSubmitMoveToDraftSection } from './FailedSubmitMoveToDraftSection';
 import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import { VerificationZohoInvoiceSection } from './VerificationZohoInvoiceSection';
 import { canResubmitSerialGroup, getVerificationSerialGroup } from '../lib/verificationResubmit';
@@ -17,13 +18,19 @@ import {
   VerificationDetailSpecSection,
   VerificationDetailSpecs,
 } from './VerificationDetailSpecs';
-import { canShowVerificationCertifiedActions, normalizeVerificationStatus, verificationCertificateNumber } from '../lib/verificationRequest';
+import {
+  canShowVerificationCertifiedActions,
+  isVerificationFailedAtSubmit,
+  normalizeVerificationStatus,
+  verificationCertificateNumber,
+} from '../lib/verificationRequest';
 import type { SiteCalibration } from '../types';
 
 interface VerificationDetailPanelProps {
   record: SiteCalibration;
   allRecords?: SiteCalibration[];
   rcCenterName?: string;
+  rcContactPerson?: string | null;
   onClose: () => void;
   onRecordsChanged?: (newRecordId?: string) => void | Promise<void>;
 }
@@ -67,6 +74,7 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
   record,
   allRecords = [],
   rcCenterName,
+  rcContactPerson,
   onClose,
   onRecordsChanged,
 }) => {
@@ -80,6 +88,7 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
   );
   const showCertifiedGroupView =
     openedStatus !== 'draft'
+    && !isVerificationFailedAtSubmit(record)
     && (serialGroup.some(r => canShowVerificationCertifiedActions(r))
       || (canShowVerificationCertifiedActions(record) && serialGroup.length === 1)
       || canResubmitSerialGroup(serialGroup, record));
@@ -174,11 +183,24 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               }}
               className="mt-3"
             />
+            <FailedSubmitMoveToDraftSection
+              record={record}
+              onMoved={async () => {
+                await onRecordsChanged?.();
+                onClose();
+              }}
+              className="mt-3"
+            />
           </div>
         </div>
 
         <div className="verification-detail-body">
-          <VerificationDetailSpecs record={record} omitChromeFields includeTimeline />
+          <VerificationDetailSpecs
+            record={record}
+            omitChromeFields
+            includeTimeline
+            rcContactPerson={rcContactPerson}
+          />
 
           <VerificationZohoInvoiceSection record={record} />
 

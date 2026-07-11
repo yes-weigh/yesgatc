@@ -1,28 +1,37 @@
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../types';
 import { inferVerificationSubject } from './siteCalibrationProfileFields';
 
+export type RcListProfile = Pick<
+  FirestoreUserDoc,
+  'profilePhotoUrl' | 'profilePhotoPath' | 'contactPerson'
+>;
+
 export interface VerificationPartyPhoto {
   partyPhotoUrl?: string;
   partyPhotoPath?: string;
+  /** RC contact person for list VCT column when performedBy is rc. */
+  rcContactPerson?: string;
 }
 
 export function verificationPartyPhotoForRecord(
   record: SiteCalibration,
   options: {
-    rcProfile?: Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath'> | null;
-    rcUsersById?: Map<string, Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath'>>;
+    rcProfile?: RcListProfile | null;
+    rcUsersById?: Map<string, RcListProfile>;
     customersById?: Map<string, Customer>;
   },
 ): VerificationPartyPhoto {
   const subject = inferVerificationSubject(record);
+  const rc =
+    options.rcProfile ??
+    (record.rcId ? options.rcUsersById?.get(record.rcId) : undefined);
+  const rcContactPerson = rc?.contactPerson?.trim() || undefined;
 
   if (subject === 'self') {
-    const rc =
-      options.rcProfile ??
-      (record.rcId ? options.rcUsersById?.get(record.rcId) : undefined);
     return {
       partyPhotoUrl: rc?.profilePhotoUrl,
       partyPhotoPath: rc?.profilePhotoPath,
+      rcContactPerson,
     };
   }
 
@@ -30,6 +39,7 @@ export function verificationPartyPhotoForRecord(
   return {
     partyPhotoUrl: customer?.shopPhotoUrl || customer?.customerPhotoUrl,
     partyPhotoPath: customer?.shopPhotoPath || customer?.customerPhotoPath,
+    rcContactPerson,
   };
 }
 

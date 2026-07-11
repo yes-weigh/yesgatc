@@ -363,6 +363,7 @@ export const RCSiteCalibration: React.FC = () => {
         actorUsername: actorProfile?.username ?? user?.username,
         actorWorkflowMode: actorProfile?.workflowMode,
         assignableVcts,
+        rcContactPerson: rcProfile?.contactPerson,
       }),
     [
       sessionValues.assignedVctId,
@@ -372,6 +373,7 @@ export const RCSiteCalibration: React.FC = () => {
       actorProfile?.workflowMode,
       user?.username,
       assignableVcts,
+      rcProfile?.contactPerson,
     ],
   );
 
@@ -383,6 +385,7 @@ export const RCSiteCalibration: React.FC = () => {
         actorUsername: actorProfile?.username ?? user?.username,
         actorWorkflowMode: actorProfile?.workflowMode,
         assignableVcts,
+        rcContactPerson: rcProfile?.contactPerson,
       });
       const patch: Record<string, unknown> = {
         ...buildVerificationDraftMeta(actor),
@@ -390,7 +393,13 @@ export const RCSiteCalibration: React.FC = () => {
       };
       if (shouldClearVerificationVctFields(actor, previousRecord)) {
         patch.vctId = deleteField();
-        patch.vctName = deleteField();
+        if (actor.actor === 'rc') {
+          const contact = actor.contactPerson?.trim();
+          if (contact) patch.vctName = contact;
+          else patch.vctName = deleteField();
+        } else {
+          patch.vctName = deleteField();
+        }
       }
       return patch;
     },
@@ -401,6 +410,7 @@ export const RCSiteCalibration: React.FC = () => {
       actorProfile?.workflowMode,
       user?.username,
       assignableVcts,
+      rcProfile?.contactPerson,
     ],
   );
 

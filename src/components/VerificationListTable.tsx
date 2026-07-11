@@ -2,6 +2,7 @@ import React, { type RefObject } from 'react';
 import {
   AlertCircle,
   Download,
+  FileInput,
   FileText,
   Pencil,
   Send,
@@ -36,6 +37,7 @@ import {
   canDevDeleteSubmittedVerification,
   verificationAdminDeleteLabel,
 } from '../lib/verificationDevDelete';
+import { canMoveFailedSubmitToDraft } from '../lib/verificationPipelineRepair';
 import type { SiteCalibration, VerificationRequestStatus } from '../types';
 
 export type VerificationListTableMode = 'rc' | 'admin';
@@ -44,6 +46,7 @@ export interface VerificationListTableRecord extends SiteCalibration {
   rcCenterName?: string;
   partyPhotoUrl?: string;
   partyPhotoPath?: string;
+  rcContactPerson?: string;
   serialVersionCount?: number;
 }
 
@@ -67,6 +70,9 @@ export interface VerificationListTableProps {
   onEdit?: (record: VerificationListTableRecord) => void;
   onSubmit?: (record: VerificationListTableRecord) => void;
   onDelete?: (record: VerificationListTableRecord) => void;
+  /** Super Admin — move failed-at-submit back to draft. */
+  onMoveToDraft?: (record: VerificationListTableRecord) => void;
+  movingToDraftId?: string | null;
   deletingId?: string | null;
   submitting?: boolean;
   bulkSelect?: VerificationListBulkSelectProps;
@@ -77,6 +83,8 @@ export interface VerificationListTableProps {
   walletPaymentDueRecordIds?: Set<string>;
   /** Super Admin + local dev — show delete for submitted OV/RV on admin list. */
   adminDevDeleteEnabled?: boolean;
+  /** Super Admin — show move-to-draft for failed-at-submit rows. */
+  adminMoveFailedSubmitEnabled?: boolean;
 }
 
 type VerificationListStatusTone =
@@ -157,6 +165,8 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   onEdit,
   onSubmit,
   onDelete,
+  onMoveToDraft,
+  movingToDraftId = null,
   deletingId = null,
   submitting = false,
   bulkSelect,
@@ -165,6 +175,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   flashRecordId = null,
   walletPaymentDueRecordIds,
   adminDevDeleteEnabled = false,
+  adminMoveFailedSubmitEnabled = false,
 }) => {
   const { appSettings } = useAppSettings();
   const { products } = useAppContext();
@@ -212,6 +223,11 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                 || (mode === 'admin'
                   && adminDevDeleteEnabled
                   && canDevDeleteSubmittedVerification(record, adminDevDeleteEnabled)));
+            const showMoveToDraft =
+              mode === 'admin'
+              && adminMoveFailedSubmitEnabled
+              && onMoveToDraft
+              && canMoveFailedSubmitToDraft(record, adminMoveFailedSubmitEnabled);
             const deleteLabel = verificationAdminDeleteLabel(record, adminDevDeleteEnabled);
             const isLastViewed = Boolean(lastViewedRecordId) && lastViewedRecordId === record.id;
             const isFlash = Boolean(flashRecordId) && flashRecordId === record.id;
@@ -340,7 +356,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                       <div className="verification-list-card-metric verification-list-card-metric--vct">
                         <span className="verification-list-card-metric-label">VCT</span>
                         <span className="verification-list-card-metric-value verification-list-card-metric-text">
-                          {verificationVctLabel(record)}
+                          {verificationVctLabel(record, {
+                            rcContactPerson: record.rcContactPerson,
+                          })}
                         </span>
                       </div>
                     )}
@@ -368,7 +386,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                       <span className="verification-list-card-download-label">Download</span>
                     </a>
                   )}
-                  {(showEdit || showSubmit || showDelete) && (
+                  {(showEdit || showSubmit || showDelete || showMoveToDraft) && (
                     <div className="verification-list-card-draft-actions">
                       {showEdit && (
                         <button
@@ -391,6 +409,18 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                           aria-label={`Submit verification for ${record.customerName}`}
                         >
                           <Send size={18} />
+                        </button>
+                      )}
+                      {showMoveToDraft && (
+                        <button
+                          type="button"
+                          className="verification-list-card-icon-btn"
+                          onClick={() => void onMoveToDraft!(record)}
+                          disabled={movingToDraftId === record.id}
+                          title="Move to draft"
+                          aria-label={`Move failed submit to draft for ${record.customerName}`}
+                        >
+                          <FileInput size={18} />
                         </button>
                       )}
                       {showDelete && (

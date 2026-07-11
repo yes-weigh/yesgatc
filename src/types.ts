@@ -470,7 +470,7 @@ export interface SiteCalibration {
   certificatePdfPath?: string;
   certificatePdfName?: string;
   certificatePdfContentType?: string;
-  /** VCT display — RC direct verifications use performedBy `rc` (shown as Self). */
+  /** VCT display — RC direct uses contact person in `vctName` when performedBy is `rc`. */
   performedBy?: VerificationPerformedBy;
   vctId?: string;
   vctName?: string;
