@@ -295,8 +295,15 @@ export const RCSiteCalibration: React.FC = () => {
     const editingRecordForValidation = editingId
       ? records.find(r => r.id === editingId) ?? null
       : null;
+    const customerId = sessionValues.customerId.trim();
+    const listedCustomer = customerId
+      ? customers.find(c => c.id === customerId)
+      : null;
     return {
       customerForm: partyContext.customerForm,
+      rcForm: partyContext.rcForm,
+      customerPincode: listedCustomer?.pincode ?? null,
+      rcPincode: rcProfile?.pincode ?? null,
       rcZohoId: rcProfile?.zohoId,
       zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
       performerPhotos,
@@ -308,13 +315,35 @@ export const RCSiteCalibration: React.FC = () => {
     };
   }, [
     partyContext.customerForm,
+    partyContext.rcForm,
+    customers,
+    rcProfile?.pincode,
     rcProfile?.zohoId,
     appSettings,
     performerPhotos,
     editingId,
     records,
     sessionValues.verificationType,
+    sessionValues.customerId,
   ]);
+
+  const recordSubmitOptions = useCallback(
+    (record: SiteCalibration) => {
+      const listedCustomer = record.customerId
+        ? customers.find(c => c.id === record.customerId)
+        : null;
+      return {
+        ...validationOptions,
+        customerForm: undefined,
+        rcForm: undefined,
+        customerPincode: listedCustomer?.pincode ?? null,
+        rcPincode: rcProfile?.pincode ?? null,
+        requireUploadedImages: true,
+        skipPerformerPhotos: recordHasPerformerPhotos(record),
+      };
+    },
+    [validationOptions, customers, rcProfile?.pincode],
+  );
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
     () => ({ zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings) }),
@@ -1447,7 +1476,7 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
-    const validationError = siteCalibrationSubmitBlockReason(record, validationOptions);
+    const validationError = siteCalibrationSubmitBlockReason(record, recordSubmitOptions(record));
     if (validationError) {
       setListError(validationError);
       return;
@@ -1485,7 +1514,7 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
     const selectedRecords = filteredRecords.filter(
-      r => selectedDraftIds.has(r.id) && isSiteCalibrationSubmittable(r, validationOptions),
+      r => selectedDraftIds.has(r.id) && isSiteCalibrationSubmittable(r, recordSubmitOptions(r)),
     );
 
     if (selectedRecords.length === 0) {
@@ -2049,11 +2078,11 @@ export const RCSiteCalibration: React.FC = () => {
     const meta = new Map<string, { submittable: boolean; blockReason: string | null }>();
     for (const record of filteredRecords) {
       if (normalizeVerificationStatus(record) !== 'draft') continue;
-      const blockReason = siteCalibrationSubmitBlockReason(record, validationOptions);
+      const blockReason = siteCalibrationSubmitBlockReason(record, recordSubmitOptions(record));
       meta.set(record.id, { submittable: !blockReason, blockReason });
     }
     return meta;
-  }, [filteredRecords, validationOptions]);
+  }, [filteredRecords, recordSubmitOptions]);
 
   const selectableDraftIds = useMemo(
     () => [...draftSubmitMeta.entries()].filter(([, value]) => value.submittable).map(([id]) => id),

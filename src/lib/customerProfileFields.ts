@@ -36,8 +36,8 @@ export function isPendingNewCustomerParty(form: CustomerFormValues): boolean {
 
 export function isCustomerPartyReadyToPersist(form: CustomerFormValues): boolean {
   const pin = normalizePincode(form.pincode);
-  if (pin && !isValidPincode(pin)) return false;
-  if (isValidPincode(pin) && (!form.state.trim() || !form.district.trim())) return false;
+  if (!isValidPincode(pin)) return false;
+  if (!form.state.trim() || !form.district.trim()) return false;
   return true;
 }
 
@@ -46,8 +46,11 @@ export function validateCustomerProfile(input: CustomerFormValues): string | nul
   if (!isValidPhone(input.phone)) return 'Mobile number must be exactly 10 digits.';
   if (input.email.trim() && !isValidEmail(input.email)) return 'Enter a valid email address.';
   if (!input.address.trim()) return 'Address is required.';
-  if (input.pincode.trim() && !isValidPincode(input.pincode)) {
+  if (!isValidPincode(input.pincode)) {
     return 'Postal code must be exactly 6 digits.';
+  }
+  if (!input.state.trim() || !input.district.trim()) {
+    return 'Complete postal code and wait for district and state.';
   }
 
   const latStr = input.latitude.trim();

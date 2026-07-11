@@ -32,11 +32,19 @@ import {
 } from './verificationRvDeviceImages';
 import {
   emptyPerformerPhotosState,
+  performerPhotosFromRecord,
   recordHasPerformerPhotos,
   requiresPerformerIdentityPhotos,
   validatePerformerPhotos,
   type PerformerPhotosState,
 } from './verificationPerformerPhotos';
+import {
+  validatePartyPincodeForSubmit,
+  validateVerificationImagesUploaded,
+  verificationHasPendingUploads,
+  verificationOnlineBlockReason,
+  verificationUploadsInProgressBlockReason,
+} from './verificationSubmitGates';
 
 export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind } from './verificationDeviceImages';
 export type { DeviceRvDocumentsState, RvDocumentKind } from './verificationRvDeviceImages';
@@ -436,11 +444,21 @@ export function buildSiteCalibrationFields(
 
 export type VerificationValidationOptions = {
   customerForm?: CustomerFormValues;
+  rcForm?: CustomerFormValues;
+  /** List submit — customer record pincode when form is closed. */
+  customerPincode?: string | null;
+  /** List submit — RC profile pincode when form is closed. */
+  rcPincode?: string | null;
   rcZohoId?: string | null;
   zohoRvInvoicingEnabled?: boolean;
   performerPhotos?: PerformerPhotosState;
   /** Skip performer photo requirement when editing legacy draft on record that already has them. */
   skipPerformerPhotos?: boolean;
+  /**
+   * When true, required photos must already be on Firebase (no pending local files).
+   * Used for list submit and after inline upload completes.
+   */
+  requireUploadedImages?: boolean;
 };
 
 function validatePendingCustomerParty(
@@ -473,6 +491,15 @@ function validateSessionHeader(
   if (session.verificationSubject === 'self' && !session.customerName.trim()) {
     return 'RC centre details are required for self verification.';
   }
+
+  const pincodeError = validatePartyPincodeForSubmit({
+    verificationSubject: session.verificationSubject,
+    customerForm: options?.customerForm,
+    rcForm: options?.rcForm,
+    customerPincode: options?.customerPincode,
+    rcPincode: options?.rcPincode,
+  });
+  if (pincodeError) return pincodeError;
 
   if (session.verificationLocation !== 'in_situ' && session.verificationLocation !== 'in_premises') {
     return 'Select In situ or In the premises.';
@@ -608,8 +635,41 @@ export function validateVerificationForSubmit(
   deviceRvImages: Record<string, DeviceRvDocumentsState> = {},
   options?: VerificationValidationOptions,
 ): string | null {
+  const onlineError = verificationOnlineBlockReason();
+  if (onlineError) return onlineError;
+
+  const uploadingError = verificationUploadsInProgressBlockReason(
+    deviceImages,
+    deviceRvImages,
+    options?.performerPhotos,
+  );
+  if (uploadingError) return uploadingError;
+
   const sessionError = validateVerificationSession(session, deviceImages, deviceRvImages, options);
   if (sessionError) return sessionError;
+
+  const hasPending = verificationHasPendingUploads(
+    deviceImages,
+    deviceRvImages,
+    options?.performerPhotos,
+  );
+  if (options?.requireUploadedImages || !hasPending) {
+    const includedIds = session.devices.filter(row => row.included).map(row => row.localId);
+    const uploadedError = validateVerificationImagesUploaded(
+      session.verificationType,
+      deviceImages,
+      includedIds,
+      deviceRvImages,
+      options?.performerPhotos,
+      { skipPerformerPhotos: options?.skipPerformerPhotos },
+    );
+    if (uploadedError) return uploadedError;
+  } else if (hasPending) {
+    // Pending local files are allowed only while online — upload runs before status change.
+    const stillOffline = verificationOnlineBlockReason();
+    if (stillOffline) return stillOffline;
+  }
+
   return validateRvZohoSubmitReady(
     session.verificationType,
     options?.rcZohoId,
@@ -621,20 +681,41 @@ export function validateSiteCalibrationRecord(
   record: SiteCalibration,
   options?: VerificationValidationOptions,
 ): string | null {
+  const onlineError = verificationOnlineBlockReason();
+  if (onlineError) return onlineError;
+
   const session = verificationSessionFromRecord(record);
   const localId = session.devices[0]?.localId || record.id;
   const images = verificationImagesFromRecord(record);
   const rvDocuments = session.verificationType === 'RV' ? rvDocumentsFromRecord(record) : undefined;
+  const performerFromRecord = performerPhotosFromRecord(record);
+  const skipPerformerPhotos =
+    !requiresPerformerIdentityPhotos(session.verificationType)
+    || recordHasPerformerPhotos(record);
+
   const sessionError = validateVerificationSession(
     session,
     { [localId]: images },
     rvDocuments ? { [localId]: rvDocuments } : {},
     {
       ...options,
-      skipPerformerPhotos: recordHasPerformerPhotos(record),
+      performerPhotos: performerFromRecord,
+      requireUploadedImages: true,
+      skipPerformerPhotos,
     },
   );
   if (sessionError) return sessionError;
+
+  const uploadedError = validateVerificationImagesUploaded(
+    session.verificationType,
+    { [localId]: images },
+    [localId],
+    rvDocuments ? { [localId]: rvDocuments } : {},
+    performerFromRecord,
+    { skipPerformerPhotos: !requiresPerformerIdentityPhotos(session.verificationType) },
+  );
+  if (uploadedError) return uploadedError;
+
   return validateRvZohoSubmitReady(
     record.verificationType,
     options?.rcZohoId,

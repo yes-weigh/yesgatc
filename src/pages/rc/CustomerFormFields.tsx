@@ -122,7 +122,7 @@ export const CustomerFormFields: React.FC<CustomerFormFieldsProps> = ({
         hideHeader
         locationCapture
         showEmail
-        pincodeRequired={false}
+        pincodeRequired={true}
         lookup={isViewMode ? undefined : lookup}
         footer={isViewMode ? null : duplicateNotice}
         heroPhoto={

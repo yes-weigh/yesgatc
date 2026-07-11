@@ -1,5 +1,7 @@
 import type { FirestoreUserDoc } from '../types';
 import { isPendingNewCustomerParty, type CustomerFormValues } from './customerProfileFields';
+import { isValidPincode, normalizePincode } from './contactFields';
+import { VERIFICATION_PINCODE_REQUIRED_MESSAGE } from './verificationSubmitGates';
 import {
   validateVerificationDeviceDetails,
   type VerificationSessionValues,
@@ -55,6 +57,7 @@ export const VERIFICATION_FORM_STEPS: VerificationFormStepDef[] = [
 
 export type VerificationFormStepContext = {
   customerForm?: CustomerFormValues;
+  rcForm?: CustomerFormValues;
   deviceImages?: Record<string, DeviceVerificationImagesState>;
   deviceRvImages?: Record<string, DeviceRvDocumentsState>;
   performerPhotos?: PerformerPhotosState;
@@ -72,10 +75,25 @@ function partyStepBlockReason(
       rcProfile?.username?.trim() ||
       '';
     if (!name) return 'RC centre details are still loading. Please wait a moment.';
+    const pin = context?.rcForm?.pincode ?? rcProfile?.pincode ?? '';
+    if (!isValidPincode(normalizePincode(pin))) {
+      return VERIFICATION_PINCODE_REQUIRED_MESSAGE;
+    }
     return null;
   }
-  if (values.customerId.trim()) return null;
-  if (context?.customerForm && isPendingNewCustomerParty(context.customerForm)) return null;
+  if (values.customerId.trim()) {
+    const pin = context?.customerForm?.pincode ?? '';
+    if (context?.customerForm && !isValidPincode(normalizePincode(pin))) {
+      return VERIFICATION_PINCODE_REQUIRED_MESSAGE;
+    }
+    return null;
+  }
+  if (context?.customerForm && isPendingNewCustomerParty(context.customerForm)) {
+    if (!isValidPincode(normalizePincode(context.customerForm.pincode))) {
+      return VERIFICATION_PINCODE_REQUIRED_MESSAGE;
+    }
+    return null;
+  }
   return 'Select a customer from lookup or enter name and mobile number.';
 }
 

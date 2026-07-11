@@ -183,8 +183,14 @@ export const VerificationSessionFields = forwardRef<
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
 
   const stepContext = useMemo<VerificationFormStepContext>(
-    () => ({ customerForm: customerPartyForm, deviceImages, deviceRvImages, performerPhotos }),
-    [customerPartyForm, deviceImages, deviceRvImages, performerPhotos],
+    () => ({
+      customerForm: customerPartyForm,
+      rcForm: rcPartyForm,
+      deviceImages,
+      deviceRvImages,
+      performerPhotos,
+    }),
+    [customerPartyForm, rcPartyForm, deviceImages, deviceRvImages, performerPhotos],
   );
 
   useEffect(() => {

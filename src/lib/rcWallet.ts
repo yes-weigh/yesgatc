@@ -549,13 +549,18 @@ export function buildRcWalletSummaryRows(
   const addedByRc: Record<string, number> = {};
 
   for (const entry of ledger) {
-    if (entry.status === 'refunded') continue;
-    if (entry.type === 'top_up_credit' && entry.amountInr > 0) {
-      addedByRc[entry.rcId] = (addedByRc[entry.rcId] ?? 0) + entry.amountInr;
-    } else if (entry.type === 'rv_payment' && entry.amountInr < 0) {
-      usageByRc[entry.rcId] = (usageByRc[entry.rcId] ?? 0) + Math.abs(entry.amountInr);
-    } else if (entry.type === 'rv_refund' && entry.amountInr > 0) {
-      usageByRc[entry.rcId] = Math.max(0, (usageByRc[entry.rcId] ?? 0) - entry.amountInr);
+    const amount = Number(entry.amountInr);
+    if (!Number.isFinite(amount) || amount === 0) continue;
+
+    if (entry.type === 'top_up_credit' && amount > 0) {
+      addedByRc[entry.rcId] = (addedByRc[entry.rcId] ?? 0) + amount;
+      continue;
+    }
+
+    // Net RV spend: count completed debits only. Refunded payments are excluded here —
+    // do NOT also subtract rv_refund rows (that double-counted and could zero spend).
+    if (entry.type === 'rv_payment' && amount < 0 && entry.status !== 'refunded') {
+      usageByRc[entry.rcId] = (usageByRc[entry.rcId] ?? 0) + Math.abs(amount);
     }
   }
 
