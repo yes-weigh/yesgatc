@@ -24,6 +24,11 @@ export type PersistVerificationPartyParams = {
   rcUid?: string;
   rcId?: string;
   createdByUid?: string;
+  /**
+   * Draft save — skip profile writes when party form is incomplete instead of failing.
+   * Submit must keep this false so incomplete party cannot be persisted silently.
+   */
+  allowIncomplete?: boolean;
 };
 
 export type PersistVerificationPartyResult = {
@@ -73,7 +78,8 @@ export async function persistVerificationPartyProfile(
   params: PersistVerificationPartyParams,
   existingCustomers: Customer[],
 ): Promise<PersistVerificationPartyResult> {
-  const { isSelf, customerId, customerForm, rcForm, rcUid, rcId, createdByUid } = params;
+  const { isSelf, customerId, customerForm, rcForm, rcUid, rcId, createdByUid, allowIncomplete } =
+    params;
 
   if (isSelf) {
     if (!rcUid || !rcForm.name.trim()) return { error: null };
@@ -83,12 +89,16 @@ export async function persistVerificationPartyProfile(
       return { error: null };
     }
     if (!isPartyFormReadyToPersist(rcForm)) {
-      return {
-        error: 'Complete postal code and wait for district and state before saving.',
-      };
+      return allowIncomplete
+        ? { error: null }
+        : {
+            error: 'Complete postal code and wait for district and state before saving.',
+          };
     }
     const validationError = validateCustomerProfile(rcForm);
-    if (validationError) return { error: validationError };
+    if (validationError) {
+      return allowIncomplete ? { error: null } : { error: validationError };
+    }
     try {
       const patch = rcProfilePatchFromFormValues(rcForm);
       const updates: Record<string, unknown> = { ...patch };
@@ -106,12 +116,16 @@ export async function persistVerificationPartyProfile(
 
   if (!customerForm.name.trim() || !customerForm.phone.trim()) return { error: null };
   if (!isPartyFormReadyToPersist(customerForm)) {
-    return {
-      error: 'Complete postal code and wait for district and state before saving.',
-    };
+    return allowIncomplete
+      ? { error: null }
+      : {
+          error: 'Complete postal code and wait for district and state before saving.',
+        };
   }
   const validationError = validateCustomerProfile(customerForm);
-  if (validationError) return { error: validationError };
+  if (validationError) {
+    return allowIncomplete ? { error: null } : { error: validationError };
+  }
 
   try {
     if (customerId.trim()) {
@@ -133,9 +147,9 @@ export async function persistVerificationPartyProfile(
     const record: Omit<Customer, 'id'> = {
       rcId,
       createdAt,
-      createdByUid,
       devices: [],
       ...profile,
+      ...(createdByUid ? { createdByUid } : {}),
     };
     await setDoc(ref, record);
     return {

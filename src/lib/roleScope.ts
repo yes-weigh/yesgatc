@@ -2,7 +2,7 @@ import { useAuth } from '../context/AuthContext';
 import type { Role } from '../types';
 
 export function canCreateVerification(role: Role | undefined): boolean {
-  return role === 'vct';
+  return role === 'vct' || role === 'rc_admin';
 }
 
 export function useRoleBasePath(): string {

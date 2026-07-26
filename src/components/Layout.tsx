@@ -197,6 +197,8 @@ export const Layout: React.FC = () => {
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
+  const isHomeDashboard =
+    location.pathname === '/rc' || location.pathname === '/vct';
 
   const roleLabel = {
     super_admin: 'Super Admin',
@@ -301,10 +303,14 @@ export const Layout: React.FC = () => {
       )}
 
       <main
-        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}${useShieldBrand ? ' mobile-verification' : ''}${isMobile && isLaboratoryPage ? ' mobile-laboratory-dashboard' : ''}`}
+        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}${useShieldBrand ? ' mobile-verification' : ''}${isMobile && isLaboratoryPage ? ' mobile-laboratory-dashboard' : ''}${isMobile && isHomeDashboard ? ' mobile-home-dashboard' : ''}`}
       >
         {isMobile && (
-          <header className={`mobile-app-bar${useShieldBrand ? ' mobile-app-bar--sticky' : ''}`}>
+          <header
+            className={`mobile-app-bar${useShieldBrand ? ' mobile-app-bar--sticky' : ''}${
+              isHomeDashboard ? ' mobile-app-bar--home' : ''
+            }`}
+          >
             <button
               type="button"
               className="mobile-app-bar-menu collapse-btn"
@@ -317,20 +323,42 @@ export const Layout: React.FC = () => {
             >
               <Menu size={22} />
             </button>
-            <div className="mobile-app-bar-brand">
-              <MobileAppBarBrandIcon variant={useShieldBrand ? 'shield' : 'page'}>
-                {!useShieldBrand ? pageIcon : null}
-              </MobileAppBarBrandIcon>
-              <div className="mobile-app-bar-text">
-                <h1 className="mobile-app-bar-title">{pageTitle}</h1>
-                {currentNavItem?.mobileSubtitle && (
-                  <p className="mobile-app-bar-subtitle">
-                    <Sparkles size={14} className="mobile-app-bar-subtitle-icon" aria-hidden />
-                    {currentNavItem.mobileSubtitle}
+            {isHomeDashboard ? (
+              <div className="mobile-app-bar-brand mobile-app-bar-brand--home">
+                <img
+                  className="wl-brand-mark"
+                  src="/brand/weighlab-logo-dark.png"
+                  alt=""
+                  width={40}
+                  height={40}
+                  decoding="async"
+                />
+                <div className="mobile-app-bar-text">
+                  <h1 className="mobile-app-bar-title wl-brand-title">
+                    <span className="wl-brand-title__weigh">WEIGH</span>
+                    <span className="wl-brand-title__lab">LAB</span>
+                  </h1>
+                  <p className="mobile-app-bar-subtitle wl-brand-subtitle">
+                    GOVERNMENT APPROVED TEST CENTER
                   </p>
-                )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mobile-app-bar-brand">
+                <MobileAppBarBrandIcon variant={useShieldBrand ? 'shield' : 'page'}>
+                  {!useShieldBrand ? pageIcon : null}
+                </MobileAppBarBrandIcon>
+                <div className="mobile-app-bar-text">
+                  <h1 className="mobile-app-bar-title">{pageTitle}</h1>
+                  {currentNavItem?.mobileSubtitle && (
+                    <p className="mobile-app-bar-subtitle">
+                      <Sparkles size={14} className="mobile-app-bar-subtitle-icon" aria-hidden />
+                      {currentNavItem.mobileSubtitle}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
             {isLaboratoryPage ? (
               <div className="mobile-app-bar-actions">
                 {profilePath ? (

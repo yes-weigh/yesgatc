@@ -308,11 +308,25 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) == 'draft'
         && validVerificationApplicationNumber(request.resource.data);
 
+      // RC self verification (performedBy rc).
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid
         && request.resource.data.get('createdByUid', '') == request.auth.uid
         && request.resource.data.get('performedBy', '') == 'rc'
-        && request.resource.data.get('verificationType', '') == 'OV'
+        && request.resource.data.get('verificationType', '') in ['OV', 'RV']
+        && verificationRecordStatus(request.resource.data) == 'draft'
+        && validVerificationApplicationNumber(request.resource.data);
+
+      // RC creates draft assigned to a VCT under this centre (createdByUid = vctId for VCT list query).
+      allow create: if isRCAdmin()
+        && request.resource.data.rcId == request.auth.uid
+        && request.resource.data.get('performedBy', '') == 'vct'
+        && request.resource.data.get('vctId', '') is string
+        && request.resource.data.vctId.size() > 0
+        && request.resource.data.get('createdByUid', '') == request.resource.data.vctId
+        && get(/databases/$(database)/documents/users/$(request.resource.data.vctId)).data.role == 'vct'
+        && get(/databases/$(database)/documents/users/$(request.resource.data.vctId)).data.get('rcId', '') == request.auth.uid
+        && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
         && validVerificationApplicationNumber(request.resource.data);
 

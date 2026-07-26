@@ -135,6 +135,10 @@ import { RvLegacyZohoInvoiceSection } from '../../components/RvLegacyZohoInvoice
 import { RvLegacyZohoSettlementSection } from '../../components/RvLegacyZohoSettlementSection';
 import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
+import {
+  buildInterweighOvSession,
+  isOvInterweighOnlyEnabled,
+} from '../../lib/interweighOvMode';
 import { isRvPaymentRequired } from '../../lib/appSettings';
 import {
   buildRvPaymentFirestorePatch,
@@ -172,6 +176,8 @@ import {
   isVerificationCaptureDevice,
   VERIFICATION_MOBILE_ONLY_NOTICE,
   RC_PROFILE_GPS_REQUIRED_MESSAGE,
+  RC_PROFILE_GPS_REQUIRED_RC_HINT,
+  RC_PROFILE_GPS_REQUIRED_VCT_HINT,
   verificationRequiresMobileCapture,
   canUseVerificationCapture,
 } from '../../lib/verificationDevicePolicy';
@@ -247,6 +253,7 @@ export const RCSiteCalibration: React.FC = () => {
   const { user } = useAuth();
   const { products } = useAppContext();
   const { appSettings } = useAppSettings();
+  const ovInterweighOnly = isOvInterweighOnlyEnabled(appSettings);
   const confirm = useConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
   const [records, setRecords] = useState<SiteCalibration[]>([]);
@@ -509,14 +516,15 @@ export const RCSiteCalibration: React.FC = () => {
     }
   }, [rcUid]);
 
-  const rcDesktopVerification = isRcAdmin && !isVerificationCaptureDevice();
+  const desktopVerification =
+    (isRcAdmin || isVct) && !isVerificationCaptureDevice();
   const rcProfileGeoStampCoords = useMemo(() => {
     const lat = rcProfile?.location?.lat;
     const lng = rcProfile?.location?.lng;
     if (lat == null || lng == null) return null;
     return { lat, lng };
   }, [rcProfile?.location?.lat, rcProfile?.location?.lng]);
-  const rcProfileGpsReady = !rcDesktopVerification || rcProfileGeoStampCoords != null;
+  const rcProfileGpsReady = !desktopVerification || rcProfileGeoStampCoords != null;
 
   useEffect(() => {
     void refreshRcVerificationGates();
@@ -776,8 +784,10 @@ export const RCSiteCalibration: React.FC = () => {
   );
 
   const persistPartyBeforeSave = useCallback(
-    async (currentSession: VerificationSessionValues) => {
-      const result = await verificationFieldsRef.current?.persistPartyChanges();
+    async (currentSession: VerificationSessionValues, allowIncomplete = false) => {
+      const result = await verificationFieldsRef.current?.persistPartyChanges({
+        allowIncomplete,
+      });
       return applyPartyPersistResult(result, currentSession);
     },
     [applyPartyPersistResult],
@@ -1207,6 +1217,10 @@ export const RCSiteCalibration: React.FC = () => {
       setError('You do not have permission to start verifications.');
       return;
     }
+    if (ovInterweighOnly && sessionValues.verificationType !== 'OV') {
+      setError('OV Interweigh mode is on — only Original Verification is allowed.');
+      return;
+    }
     const gateMsg = verificationCreateGateBlockMessage(
       rcHasWeightsCert,
       rcHasVehicle,
@@ -1217,11 +1231,8 @@ export const RCSiteCalibration: React.FC = () => {
       setError(gateMsg);
       return;
     }
-    if (isRcAdmin && sessionValues.verificationType !== 'OV') {
-      setError('RC desktop verification supports OV only. Use a technician for RV.');
-      return;
-    }
-    if (rcDesktopVerification && !rcProfileGpsReady) {
+    // Centre GPS only required when submitting from desktop (geo-stamped evidence). Drafts may save without it.
+    if (submitAfterSave && desktopVerification && !rcProfileGpsReady) {
       setError(RC_PROFILE_GPS_REQUIRED_MESSAGE);
       return;
     }
@@ -1270,7 +1281,7 @@ export const RCSiteCalibration: React.FC = () => {
     const draftRecordIds: string[] = [];
     setSubmitting(true);
     try {
-      const applied = await persistPartyBeforeSave(sessionValues);
+      const applied = await persistPartyBeforeSave(sessionValues, !submitAfterSave);
       if (!applied.ok) {
         if (walletPaymentId) {
           const refunded = await refundWalletPaymentIfNeeded(
@@ -1286,6 +1297,11 @@ export const RCSiteCalibration: React.FC = () => {
       }
 
       const sessionForSave = { ...sessionValues, ...applied.sessionPatch };
+      const createdByUid = verificationPerformerCreatedByUid(verificationDraftActor, actorUid);
+      if (!createdByUid) {
+        setError('Signed-in user is required to save verification drafts.');
+        return;
+      }
       const rowsToSync = includedRows.filter(
         row => row.productId.trim() && row.serialNumber.trim(),
       );
@@ -1339,7 +1355,7 @@ export const RCSiteCalibration: React.FC = () => {
         const record: Omit<SiteCalibration, 'id'> = {
           rcId: rcUid!,
           createdAt: new Date().toISOString(),
-          createdByUid: verificationPerformerCreatedByUid(verificationDraftActor, actorUid),
+          createdByUid,
           applicationNumber: applicationNumbers[rowIndex],
           ...buildNewSiteCalibrationRecord(
             sessionForSave,
@@ -1441,7 +1457,7 @@ export const RCSiteCalibration: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const applied = await persistPartyBeforeSave(sessionValues);
+      const applied = await persistPartyBeforeSave(sessionValues, true);
       if (!applied.ok) return;
 
       const sessionForSave = { ...sessionValues, ...applied.sessionPatch };
@@ -1807,24 +1823,22 @@ export const RCSiteCalibration: React.FC = () => {
         setListError(gateMsg);
         return;
       }
-      if (isRcAdmin && session.verificationType !== 'OV') {
-        setListError('RC desktop verification supports OV only.');
-        return;
-      }
-      if (rcDesktopVerification && !rcProfileGpsReady) {
-        setListError(RC_PROFILE_GPS_REQUIRED_MESSAGE);
-        return;
-      }
       if (verificationRequiresMobileCapture(user?.role) && !isVerificationCaptureDevice()) {
         setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
         return;
       }
+      const nextSession =
+        ovInterweighOnly
+          ? buildInterweighOvSession(
+              session.devices[0]?.sealIdentificationNumber || laboratorySealId,
+            )
+          : session;
       setEditingId(null);
       setError('');
       setListError('');
       setRvPaymentOpen(false);
       setRvSessionPayment(null);
-      setSessionValues(session);
+      setSessionValues(nextSession);
       const firstDeviceId = session.devices[0]?.localId;
       setDeviceImages(
         firstDeviceId ? { [firstDeviceId]: emptyDeviceVerificationImagesState() } : {},
@@ -1837,7 +1851,7 @@ export const RCSiteCalibration: React.FC = () => {
       setVerificationDeclarationAccepted(false);
       setShowAddForm(true);
     },
-    [user?.role, isRcAdmin, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError, rcDesktopVerification, rcProfileGpsReady],
+    [user?.role, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError, ovInterweighOnly, laboratorySealId],
   );
 
   const handleStartAdd = () => {
@@ -1855,12 +1869,12 @@ export const RCSiteCalibration: React.FC = () => {
       setListError(gateMsg);
       return;
     }
-    if (rcDesktopVerification && !rcProfileGpsReady) {
-      setListError(RC_PROFILE_GPS_REQUIRED_MESSAGE);
-      return;
-    }
     if (verificationRequiresMobileCapture(user?.role) && !isVerificationCaptureDevice()) {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
+      return;
+    }
+    if (ovInterweighOnly) {
+      openNewVerificationSession(buildInterweighOvSession(laboratorySealId));
       return;
     }
     if (rcUid && rcProfile) {
@@ -1876,9 +1890,17 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const pendingCustomerId = searchParams.get('customerId');
+  const pendingStatusFilter = searchParams.get('status');
+  const pendingOpenId = searchParams.get('open');
+  const pendingFocusSearch = searchParams.get('focus') === 'search';
 
   useEffect(() => {
     if (!pendingCustomerId || loading || !canCreateVerification(user?.role)) return;
+    if (ovInterweighOnly) {
+      openNewVerificationSession(buildInterweighOvSession(laboratorySealId));
+      setSearchParams({}, { replace: true });
+      return;
+    }
     const customer = customers.find(c => c.id === pendingCustomerId);
     if (!customer) return;
 
@@ -1894,7 +1916,54 @@ export const RCSiteCalibration: React.FC = () => {
     openNewVerificationSession,
     setSearchParams,
     user?.role,
+    ovInterweighOnly,
   ]);
+
+  useEffect(() => {
+    if (!pendingStatusFilter) return;
+    const allowed: VerificationStatusFilter[] = [
+      'all',
+      'draft',
+      'submitted',
+      'approved',
+      'certified',
+      'failed_submit',
+      'failed_certification',
+      'rejected',
+      'duplicates',
+    ];
+    if (allowed.includes(pendingStatusFilter as VerificationStatusFilter)) {
+      setStatusFilter(pendingStatusFilter as VerificationStatusFilter);
+    }
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('status');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingStatusFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingFocusSearch) return;
+    const timer = window.setTimeout(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        'input[placeholder="Search verification…"], input[placeholder="Search verification..."]',
+      );
+      input?.focus();
+      input?.select();
+    }, 80);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('focus');
+        return next;
+      },
+      { replace: true },
+    );
+    return () => window.clearTimeout(timer);
+  }, [pendingFocusSearch, setSearchParams]);
 
   const openRecord = (record: SiteCalibration) => {
     if (!isVerificationViewable(record)) return;
@@ -1917,6 +1986,23 @@ export const RCSiteCalibration: React.FC = () => {
     setPerformerPhotos(performerPhotosFromRecord(record));
     setError('');
   };
+
+  useEffect(() => {
+    if (!pendingOpenId || loading) return;
+    const record = records.find(entry => entry.id === pendingOpenId);
+    if (!record) return;
+    openRecord(record);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('open');
+        return next;
+      },
+      { replace: true },
+    );
+    // Deep-link open once records are ready.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpenId, loading, records, setSearchParams]);
 
   const startEdit = (record: SiteCalibration) => {
     if (isVerificationEditable(record) && !canUseVerificationCapture(user?.role)) {
@@ -1996,7 +2082,6 @@ export const RCSiteCalibration: React.FC = () => {
   const canStartNewVerification =
     canCreateVerification(user?.role)
     && verificationCreateGateOk
-    && rcProfileGpsReady
     && (verificationRequiresMobileCapture(user?.role) ? verificationCaptureAllowed : true);
 
   const draftBlockReason = useMemo(
@@ -2364,11 +2449,11 @@ export const RCSiteCalibration: React.FC = () => {
                       rcUid={rcUid ?? undefined}
                       actorUid={actorUid ?? undefined}
                       submitting={formBusy}
-                      lockCustomer={isEditMode}
+                      lockCustomer={isEditMode || (ovInterweighOnly && showAddForm)}
                       readOnly={isViewMode}
-                      allowPerformerAssignment={!isVct && !isViewMode}
+                      allowPerformerAssignment={!isVct && !isViewMode && !(ovInterweighOnly && showAddForm)}
                       assignableVcts={assignableVcts}
-                      lockVerificationTypeToOv={isRcAdmin}
+                      interweighOvOnly={ovInterweighOnly && showAddForm}
                       geoStampCoords={rcProfileGeoStampCoords}
                       laboratorySealIdentification={laboratorySealId}
                       onWizardStepChange={handleWizardStepChange}
@@ -2409,11 +2494,12 @@ export const RCSiteCalibration: React.FC = () => {
               </p>
             </div>
           )}
-          {rcDesktopVerification && !rcProfileGpsReady && (
+          {desktopVerification && !rcProfileGpsReady && (
             <div className="rc-vehicle-required-notice" role="status">
               <p className="rc-vehicle-required-notice__title">Centre GPS required</p>
               <p className="rc-vehicle-required-notice__text mb-0">
-                {RC_PROFILE_GPS_REQUIRED_MESSAGE} Set coordinates under Profile → Edit.
+                {RC_PROFILE_GPS_REQUIRED_MESSAGE}{' '}
+                {isRcAdmin ? RC_PROFILE_GPS_REQUIRED_RC_HINT : RC_PROFILE_GPS_REQUIRED_VCT_HINT}
               </p>
             </div>
           )}
@@ -2468,9 +2554,7 @@ export const RCSiteCalibration: React.FC = () => {
                         gatesError,
                       );
                       if (gateMsg) setListError(gateMsg);
-                      else if (rcDesktopVerification && !rcProfileGpsReady) {
-                        setListError(RC_PROFILE_GPS_REQUIRED_MESSAGE);
-                      } else if (
+                      else if (
                         verificationRequiresMobileCapture(user?.role)
                         && !verificationCaptureAllowed
                       ) {

@@ -546,7 +546,8 @@ export function validateVerificationDraft(
     return 'Select Original Verification or Re-verification.';
   }
   if (session.verificationSubject === 'customer' && !session.customerId.trim()) {
-    const pendingError = validatePendingCustomerParty(options?.customerForm, true);
+    // Draft: name + mobile enough; full address required only on submit / new-customer persist.
+    const pendingError = validatePendingCustomerParty(options?.customerForm, false);
     if (pendingError) return pendingError;
   }
   if (session.verificationSubject === 'self' && !session.customerName.trim()) {

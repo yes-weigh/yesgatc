@@ -4,6 +4,7 @@ import { Plug } from 'lucide-react';
 import { AutomationWorkerCard } from '../../components/AutomationWorkerCard';
 import { AdminRazorpayTestCard } from '../../components/AdminRazorpayTestCard';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
+import { OvInterweighOnlySwitch } from '../../components/OvInterweighOnlySwitch';
 import { RazorpaySettingsCard } from '../../components/RazorpaySettingsCard';
 import { ZohoSettingsCard } from '../../components/ZohoSettingsCard';
 import { AdminDocaScraping } from './AdminDocaScraping';
@@ -134,6 +135,8 @@ const AdminIntegrationsHub: React.FC = () => {
           </button>
         ))}
       </div>
+
+      <OvInterweighOnlySwitch className="admin-integrations-ov-interweigh" />
     </>
   );
 };
