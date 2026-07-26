@@ -37,7 +37,10 @@ import {
 } from '../../lib/verificationDeviceImages';
 import type { RvDocumentKind } from '../../lib/verificationRvDeviceImages';
 import { defaultRvServiceFee, resolveRcFeesStructure } from '../../lib/rcProfileFields';
-import { lookupWeatherByPincode } from '../../lib/pincodeWeatherLookup';
+import {
+  isWeatherApiConfigured,
+  lookupWeatherByPincode,
+} from '../../lib/pincodeWeatherLookup';
 import { isValidPincode, normalizePincode } from '../../lib/contactFields';
 import {
   persistVerificationPartyProfile,
@@ -203,7 +206,7 @@ export const VerificationSessionFields = forwardRef<
   useEffect(() => {
     onPartyContextChange?.(stepContext);
   }, [onPartyContextChange, stepContext]);
-  const lastSelfWeatherKeyRef = useRef('');
+  const lastWeatherKeyRef = useRef('');
   const lastRcPartySeedRef = useRef('');
   const reviewBottomRef = useRef<HTMLDivElement>(null);
 
@@ -553,7 +556,11 @@ export const VerificationSessionFields = forwardRef<
         return true;
       }
 
-      setWeatherError('Could not fetch weather for this postal code. Enter values manually.');
+      setWeatherError(
+        isWeatherApiConfigured()
+          ? 'Could not fetch weather for this postal code. Enter values manually.'
+          : 'Weather API key missing (VITE_WEATHERAPI_KEY). Enter temperature and humidity manually.',
+      );
       return false;
     } catch {
       setWeatherError('Could not fetch weather for this postal code. Enter values manually.');
@@ -569,11 +576,6 @@ export const VerificationSessionFields = forwardRef<
       district: customer?.district,
       state: customer?.state,
     });
-  };
-
-  const prefillWeatherForRc = async (rc: FirestoreUserDoc | null): Promise<boolean> => {
-    if (!rc) return false;
-    return prefillWeather(rc.pincode ?? '', { location: rc.location });
   };
 
   useEffect(() => {
@@ -628,7 +630,7 @@ export const VerificationSessionFields = forwardRef<
 
   const applyCustomerSubject = () => {
     if (lockCustomer) return;
-    lastSelfWeatherKeyRef.current = '';
+    lastWeatherKeyRef.current = '';
     onCustomerChange('', '', []);
     onChange({
       verificationSubject: 'customer',
@@ -657,50 +659,80 @@ export const VerificationSessionFields = forwardRef<
   };
 
   useEffect(() => {
-    if (readOnly || lockCustomer || values.verificationSubject !== 'self') {
-      lastSelfWeatherKeyRef.current = '';
+    if (readOnly) {
+      lastWeatherKeyRef.current = '';
       return;
     }
-    const pincode = normalizePincode(rcProfile?.pincode ?? '');
-    const hasPincode = isValidPincode(pincode);
-    const hasLocation =
-      rcProfile?.location?.lat != null && rcProfile?.location?.lng != null;
-    if (!hasPincode && !hasLocation) return;
     if (values.ambientTemperature.trim() || values.relativeHumidity.trim()) return;
 
-    const locKey = hasLocation
-      ? `${rcProfile!.location!.lat},${rcProfile!.location!.lng}`
-      : '';
-    const key = `${pincode}:${locKey}:${values.customerId || rcUid || ''}`;
-    if (lastSelfWeatherKeyRef.current === key) return;
+    const listedCustomer = !isSelf && values.customerId
+      ? customers.find(c => c.id === values.customerId) ?? null
+      : null;
+
+    const pincode = normalizePincode(
+      isSelf
+        ? rcPartyForm.pincode || rcProfile?.pincode || ''
+        : customerPartyForm.pincode || listedCustomer?.pincode || '',
+    );
+    const district = (
+      isSelf
+        ? rcPartyForm.district
+        : customerPartyForm.district || listedCustomer?.district || ''
+    ).trim();
+    const state = (
+      isSelf
+        ? rcPartyForm.state
+        : customerPartyForm.state || listedCustomer?.state || ''
+    ).trim();
+    const location = isSelf
+      ? rcProfile?.location
+      : listedCustomer?.location;
+
+    const hasPincode = isValidPincode(pincode);
+    const hasLocation = location?.lat != null && location?.lng != null;
+    if (!hasPincode && !hasLocation) return;
+
+    const locKey = hasLocation ? `${location!.lat},${location!.lng}` : '';
+    const key = `${values.verificationSubject}:${pincode}:${district}:${state}:${locKey}`;
+    if (lastWeatherKeyRef.current === key) return;
 
     void (async () => {
-      const ok = await prefillWeatherForRc(rcProfile);
-      if (ok) lastSelfWeatherKeyRef.current = key;
+      const ok = await prefillWeather(pincode, {
+        district,
+        state,
+        location: hasLocation ? location : undefined,
+      });
+      if (ok) lastWeatherKeyRef.current = key;
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- prefill when self session or RC pincode becomes available
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- autofill when party pincode/region is ready
   }, [
     readOnly,
-    lockCustomer,
+    isSelf,
     values.verificationSubject,
     values.ambientTemperature,
     values.relativeHumidity,
     values.customerId,
+    customerPartyForm.pincode,
+    customerPartyForm.district,
+    customerPartyForm.state,
+    rcPartyForm.pincode,
+    rcPartyForm.district,
+    rcPartyForm.state,
     rcProfile?.pincode,
     rcProfile?.location?.lat,
     rcProfile?.location?.lng,
-    rcUid,
-    values.verificationType,
+    customers,
+    interweighOvOnly,
   ]);
 
   const handleSubjectChange = (subject: VerificationSubject) => {
     if (interweighOvOnly || lockCustomer || subject === values.verificationSubject) return;
     if (subject === 'self') {
-      lastSelfWeatherKeyRef.current = '';
+      lastWeatherKeyRef.current = '';
       applySelfSubject();
       return;
     }
-    lastSelfWeatherKeyRef.current = '';
+    lastWeatherKeyRef.current = '';
     applyCustomerSubject();
   };
 
@@ -715,7 +747,7 @@ export const VerificationSessionFields = forwardRef<
   const handleVerificationTypeChange = (verificationType: JobType) => {
     if (locked || interweighOvOnly || verificationType === values.verificationType) return;
     if (verificationType === 'RV' && values.verificationSubject === 'self') {
-      lastSelfWeatherKeyRef.current = '';
+      lastWeatherKeyRef.current = '';
       onCustomerChange('', '', []);
       onChange({
         verificationType: 'RV',
