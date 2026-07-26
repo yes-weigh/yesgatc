@@ -137,12 +137,11 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
 
   const handleSelect = useCallback(
     async (file: File) => {
-      const useDesktopProfileStamp =
-        geoStamp
-        && geoStampCoords != null
-        && !shouldUseInAppCameraCapture();
+      // Forced coords (RC centre / Interweigh site): stamp gallery + desktop uploads.
+      // Live in-app camera stamps via ImageCaptureOverlay instead.
+      const useForcedCoordStamp = geoStamp && geoStampCoords != null;
 
-      if (!useDesktopProfileStamp) {
+      if (!useForcedCoordStamp) {
         onSelect(file);
         return;
       }
@@ -176,7 +175,12 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   const cameraCaptureSession = useCallback((): ImageCaptureSession => {
     const session: ImageCaptureSession = {
       onCaptured: immediate => {
-        if (geoStamp) setStampPending(true);
+        if (geoStamp) {
+          // Preview first; overlay replaces with stamped file via onStamped.
+          setStampPending(true);
+          onSelect(immediate);
+          return;
+        }
         handleSelect(immediate);
       },
       onFallbackNativeCamera: () => openCamera(),
@@ -184,12 +188,13 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
     if (geoStamp) {
       session.onStamped = stamped => {
         setStampPending(false);
-        handleSelect(stamped);
+        onSelect(stamped);
       };
       session.stampWeather = geoStampWeather ?? undefined;
+      session.stampCoords = geoStampCoords;
     }
     return session;
-  }, [handleSelect, openCamera, geoStamp, geoStampWeather]);
+  }, [handleSelect, openCamera, geoStamp, geoStampWeather, geoStampCoords, onSelect]);
 
   const useInAppCamera =
     allowCamera

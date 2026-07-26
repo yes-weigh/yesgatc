@@ -8,7 +8,12 @@ import {
 } from '../lib/captureImageFromVideo';
 import type { ImageCaptureFacing } from '../lib/imageCapture';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
-import { loadPhotoCaptureStamp, type PhotoCaptureStamp, type StampWeather } from '../lib/photoCaptureStamp';
+import {
+  buildPhotoCaptureStampFromCoords,
+  loadPhotoCaptureStamp,
+  type PhotoCaptureStamp,
+  type StampWeather,
+} from '../lib/photoCaptureStamp';
 
 function buildCameraConstraintAttempts(facing: ImageCaptureFacing): MediaStreamConstraints[] {
   if (facing === 'user') {
@@ -55,6 +60,8 @@ export type ImageCaptureSession = {
   onFallbackNativeCamera?: () => void;
   /** Ambient temp/humidity burned into the geo banner (govt requirement). */
   stampWeather?: StampWeather;
+  /** When set, stamp uses these coords instead of live device GPS. */
+  stampCoords?: { lat: number; lng: number } | null;
 };
 
 export type ImageCaptureOverlayProps = {
@@ -164,13 +171,22 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   useEffect(() => {
     if (!open || !session?.onStamped) return;
     let cancelled = false;
-    void loadPhotoCaptureStamp().then(stamp => {
+    const forced = session.stampCoords;
+    const load = forced
+      ? buildPhotoCaptureStampFromCoords(
+          forced.lat,
+          forced.lng,
+          new Date(),
+          session.stampWeather,
+        )
+      : loadPhotoCaptureStamp();
+    void load.then(stamp => {
       if (!cancelled) setStampPrefetch(stamp);
     });
     return () => {
       cancelled = true;
     };
-  }, [open, session?.onStamped]);
+  }, [open, session?.onStamped, session?.stampCoords, session?.stampWeather]);
 
   const handleShutter = useCallback(async () => {
     const video = videoRef.current;

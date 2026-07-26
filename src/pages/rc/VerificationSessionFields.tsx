@@ -582,17 +582,20 @@ export const VerificationSessionFields = forwardRef<
     if (isSelf) return;
     if (interweighOvOnly) {
       setCustomerPartyForm(prev => {
+        const next = interweighOvPartyForm(geoStampCoords);
         if (
-          prev.name === INTERWEIGH_OV_PARTY.name
-          && prev.phone === INTERWEIGH_OV_PARTY.phone
-          && prev.pincode === INTERWEIGH_OV_PARTY.pincode
-          && prev.address === INTERWEIGH_OV_PARTY.address
-          && prev.district === INTERWEIGH_OV_PARTY.district
-          && prev.state === INTERWEIGH_OV_PARTY.state
+          prev.name === next.name
+          && prev.phone === next.phone
+          && prev.pincode === next.pincode
+          && prev.address === next.address
+          && prev.district === next.district
+          && prev.state === next.state
+          && prev.latitude === next.latitude
+          && prev.longitude === next.longitude
         ) {
           return prev;
         }
-        return interweighOvPartyForm();
+        return next;
       });
       if (values.customerName !== INTERWEIGH_OV_PARTY.name) {
         onChange({ customerName: INTERWEIGH_OV_PARTY.name });
@@ -620,7 +623,15 @@ export const VerificationSessionFields = forwardRef<
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed party form; avoid onChange identity loops
-  }, [isSelf, values.customerId, values.customerName, interweighOvOnly, customers]);
+  }, [
+    isSelf,
+    values.customerId,
+    values.customerName,
+    interweighOvOnly,
+    customers,
+    geoStampCoords?.lat,
+    geoStampCoords?.lng,
+  ]);
 
   useEffect(() => {
     if (!isSelf) {

@@ -137,7 +137,9 @@ import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import {
   buildInterweighOvSession,
+  getOvInterweighGpsCoords,
   isOvInterweighOnlyEnabled,
+  OV_INTERWEIGH_GPS_REQUIRED_MESSAGE,
 } from '../../lib/interweighOvMode';
 import { isRvPaymentRequired } from '../../lib/appSettings';
 import {
@@ -518,13 +520,31 @@ export const RCSiteCalibration: React.FC = () => {
 
   const desktopVerification =
     (isRcAdmin || isVct) && !isVerificationCaptureDevice();
+  const interweighGpsCoords = useMemo(
+    () => getOvInterweighGpsCoords(appSettings),
+    [appSettings.ovInterweighLatitude, appSettings.ovInterweighLongitude],
+  );
   const rcProfileGeoStampCoords = useMemo(() => {
+    if (ovInterweighOnly) return interweighGpsCoords;
     const lat = rcProfile?.location?.lat;
     const lng = rcProfile?.location?.lng;
     if (lat == null || lng == null) return null;
     return { lat, lng };
-  }, [rcProfile?.location?.lat, rcProfile?.location?.lng]);
-  const rcProfileGpsReady = !desktopVerification || rcProfileGeoStampCoords != null;
+  }, [
+    ovInterweighOnly,
+    interweighGpsCoords,
+    rcProfile?.location?.lat,
+    rcProfile?.location?.lng,
+  ]);
+  const rcProfileGpsReady = ovInterweighOnly
+    ? interweighGpsCoords != null
+    : !desktopVerification || rcProfileGeoStampCoords != null;
+  const gpsRequiredMessage = ovInterweighOnly
+    ? OV_INTERWEIGH_GPS_REQUIRED_MESSAGE
+    : RC_PROFILE_GPS_REQUIRED_MESSAGE;
+  const showGpsRequiredNotice = ovInterweighOnly
+    ? !rcProfileGpsReady
+    : desktopVerification && !rcProfileGpsReady;
 
   useEffect(() => {
     void refreshRcVerificationGates();
@@ -1231,9 +1251,13 @@ export const RCSiteCalibration: React.FC = () => {
       setError(gateMsg);
       return;
     }
-    // Centre GPS only required when submitting from desktop (geo-stamped evidence). Drafts may save without it.
-    if (submitAfterSave && desktopVerification && !rcProfileGpsReady) {
-      setError(RC_PROFILE_GPS_REQUIRED_MESSAGE);
+    // Interweigh GPS always required when mode is on; centre GPS only for desktop submit. Drafts may save without it.
+    if (
+      submitAfterSave
+      && !rcProfileGpsReady
+      && (ovInterweighOnly || desktopVerification)
+    ) {
+      setError(gpsRequiredMessage);
       return;
     }
     setError('');
@@ -2494,12 +2518,21 @@ export const RCSiteCalibration: React.FC = () => {
               </p>
             </div>
           )}
-          {desktopVerification && !rcProfileGpsReady && (
+          {showGpsRequiredNotice && (
             <div className="rc-vehicle-required-notice" role="status">
-              <p className="rc-vehicle-required-notice__title">Centre GPS required</p>
+              <p className="rc-vehicle-required-notice__title">
+                {ovInterweighOnly ? 'Interweigh GPS required' : 'Centre GPS required'}
+              </p>
               <p className="rc-vehicle-required-notice__text mb-0">
-                {RC_PROFILE_GPS_REQUIRED_MESSAGE}{' '}
-                {isRcAdmin ? RC_PROFILE_GPS_REQUIRED_RC_HINT : RC_PROFILE_GPS_REQUIRED_VCT_HINT}
+                {gpsRequiredMessage}
+                {!ovInterweighOnly ? (
+                  <>
+                    {' '}
+                    {isRcAdmin
+                      ? RC_PROFILE_GPS_REQUIRED_RC_HINT
+                      : RC_PROFILE_GPS_REQUIRED_VCT_HINT}
+                  </>
+                ) : null}
               </p>
             </div>
           )}
