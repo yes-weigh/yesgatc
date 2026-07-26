@@ -168,25 +168,35 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     return () => document.body.classList.remove('image-capture-overlay-open');
   }, [open]);
 
+  const forcedStampCoords = session?.stampCoords ?? null;
+  const forcedStampLat = forcedStampCoords?.lat;
+  const forcedStampLng = forcedStampCoords?.lng;
+
   useEffect(() => {
     if (!open || !session?.onStamped) return;
     let cancelled = false;
-    const forced = session.stampCoords;
-    const load = forced
-      ? buildPhotoCaptureStampFromCoords(
-          forced.lat,
-          forced.lng,
-          new Date(),
-          session.stampWeather,
-        )
-      : loadPhotoCaptureStamp();
+    const load =
+      forcedStampLat != null && forcedStampLng != null
+        ? buildPhotoCaptureStampFromCoords(
+            forcedStampLat,
+            forcedStampLng,
+            new Date(),
+            session.stampWeather,
+          )
+        : loadPhotoCaptureStamp();
     void load.then(stamp => {
       if (!cancelled) setStampPrefetch(stamp);
     });
     return () => {
       cancelled = true;
     };
-  }, [open, session?.onStamped, session?.stampCoords, session?.stampWeather]);
+  }, [
+    open,
+    session?.onStamped,
+    session?.stampWeather,
+    forcedStampLat,
+    forcedStampLng,
+  ]);
 
   const handleShutter = useCallback(async () => {
     const video = videoRef.current;
@@ -198,6 +208,10 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     const capturedAt = new Date();
     const prefetch = stampPrefetch;
     const baseName = `photo-${Date.now()}.jpg`;
+    const forced =
+      forcedStampLat != null && forcedStampLng != null
+        ? { lat: forcedStampLat, lng: forcedStampLng }
+        : null;
 
     setCapturing(true);
     stopStream();
@@ -216,6 +230,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
           prefetch,
           baseName,
           session.stampWeather,
+          forced,
         ).then(stamped => {
           if (stamped) session.onStamped?.(stamped);
         });
@@ -223,7 +238,16 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     } finally {
       setCapturing(false);
     }
-  }, [ready, capturing, session, stampPrefetch, stopStream, onClose]);
+  }, [
+    ready,
+    capturing,
+    session,
+    stampPrefetch,
+    stopStream,
+    onClose,
+    forcedStampLat,
+    forcedStampLng,
+  ]);
 
   const handleFlip = useCallback(() => {
     setFacing(prev => (prev === 'environment' ? 'user' : 'environment'));
@@ -242,6 +266,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
       e.target.value = '';
       if (!file || !session) return;
       stopStream();
+      // onCaptured stamps with forced coords when set (slot handleSelect).
       session.onCaptured(file);
       onClose();
     },

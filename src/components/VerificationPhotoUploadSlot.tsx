@@ -175,8 +175,14 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   const cameraCaptureSession = useCallback((): ImageCaptureSession => {
     const session: ImageCaptureSession = {
       onCaptured: immediate => {
+        if (geoStamp && geoStampCoords != null) {
+          // Forced site GPS (Interweigh / RC centre): stamp gallery + native + preview.
+          // In-app shutter may replace via onStamped with the same coords.
+          void handleSelect(immediate);
+          return;
+        }
         if (geoStamp) {
-          // Preview first; overlay replaces with stamped file via onStamped.
+          // Live GPS path: preview first; overlay replaces via onStamped.
           setStampPending(true);
           onSelect(immediate);
           return;

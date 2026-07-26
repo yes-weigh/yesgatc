@@ -1,4 +1,5 @@
 import {
+  buildPhotoCaptureStampFromCoords,
   drawPhotoCaptureStamp,
   stampForCapture,
   type PhotoCaptureStamp,
@@ -70,10 +71,28 @@ export async function produceStampedPhotoFromCanvas(
   prefetched: PhotoCaptureStamp | null,
   fileName?: string,
   weather?: StampWeather,
+  /** When set, never fall back to live device GPS. */
+  forcedCoords?: { lat: number; lng: number } | null,
 ): Promise<File | null> {
-  const base = prefetched
-    ? { ...prefetched, capturedAt }
-    : await stampForCapture(capturedAt, null);
+  let base: PhotoCaptureStamp | null;
+  if (forcedCoords) {
+    const prefetchMatches =
+      prefetched != null
+      && prefetched.latitude === forcedCoords.lat
+      && prefetched.longitude === forcedCoords.lng;
+    base = prefetchMatches
+      ? { ...prefetched, capturedAt }
+      : await buildPhotoCaptureStampFromCoords(
+          forcedCoords.lat,
+          forcedCoords.lng,
+          capturedAt,
+          weather,
+        );
+  } else {
+    base = prefetched
+      ? { ...prefetched, capturedAt }
+      : await stampForCapture(capturedAt, null);
+  }
   const stamp =
     base && weather
       ? {
