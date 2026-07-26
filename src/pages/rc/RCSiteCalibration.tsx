@@ -698,9 +698,9 @@ export const RCSiteCalibration: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [showForm, formBusy]);
 
-  const patchSession = (patch: Partial<VerificationSessionValues>) => {
+  const patchSession = useCallback((patch: Partial<VerificationSessionValues>) => {
     setSessionValues(prev => ({ ...prev, ...patch }));
-  };
+  }, []);
 
   const handleCustomerChange = (
     _customerId: string,

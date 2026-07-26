@@ -41,7 +41,7 @@ export function buildInterweighOvSession(sealIdentification = ''): VerificationS
     customerName: INTERWEIGH_OV_PARTY.name,
     ambientTemperature: '',
     relativeHumidity: '',
-    verificationLocation: 'in_premises',
+    verificationLocation: 'in_situ',
     devices: buildInitialSelfDeviceRows(sealIdentification),
   };
 }

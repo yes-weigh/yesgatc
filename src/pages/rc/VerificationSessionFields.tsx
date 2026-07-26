@@ -581,21 +581,46 @@ export const VerificationSessionFields = forwardRef<
   useEffect(() => {
     if (isSelf) return;
     if (interweighOvOnly) {
-      setCustomerPartyForm(interweighOvPartyForm());
+      setCustomerPartyForm(prev => {
+        if (
+          prev.name === INTERWEIGH_OV_PARTY.name
+          && prev.phone === INTERWEIGH_OV_PARTY.phone
+          && prev.pincode === INTERWEIGH_OV_PARTY.pincode
+          && prev.address === INTERWEIGH_OV_PARTY.address
+          && prev.district === INTERWEIGH_OV_PARTY.district
+          && prev.state === INTERWEIGH_OV_PARTY.state
+        ) {
+          return prev;
+        }
+        return interweighOvPartyForm();
+      });
       if (values.customerName !== INTERWEIGH_OV_PARTY.name) {
         onChange({ customerName: INTERWEIGH_OV_PARTY.name });
       }
       return;
     }
     if (!values.customerId) {
-      setCustomerPartyForm(EMPTY_CUSTOMER_FORM);
+      // Pending new customer — keep typed form; do not wipe on parent re-renders.
       return;
     }
     const customer = customers.find(c => c.id === values.customerId);
-    if (customer) {
-      setCustomerPartyForm(customerFormFromRecord(customer));
-    }
-  }, [isSelf, values.customerId, values.customerName, interweighOvOnly, customers, onChange]);
+    if (!customer) return;
+    setCustomerPartyForm(prev => {
+      const next = customerFormFromRecord(customer);
+      if (
+        prev.name === next.name
+        && prev.phone === next.phone
+        && prev.pincode === next.pincode
+        && prev.address === next.address
+        && prev.district === next.district
+        && prev.state === next.state
+      ) {
+        return prev;
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed party form; avoid onChange identity loops
+  }, [isSelf, values.customerId, values.customerName, interweighOvOnly, customers]);
 
   useEffect(() => {
     if (!isSelf) {
@@ -631,6 +656,7 @@ export const VerificationSessionFields = forwardRef<
   const applyCustomerSubject = () => {
     if (lockCustomer) return;
     lastWeatherKeyRef.current = '';
+    setCustomerPartyForm(EMPTY_CUSTOMER_FORM);
     onCustomerChange('', '', []);
     onChange({
       verificationSubject: 'customer',
@@ -696,13 +722,17 @@ export const VerificationSessionFields = forwardRef<
     const key = `${values.verificationSubject}:${pincode}:${district}:${state}:${locKey}`;
     if (lastWeatherKeyRef.current === key) return;
 
+    // Mark in-flight so failed/slow fetches do not re-enter on every parent render.
+    lastWeatherKeyRef.current = key;
     void (async () => {
       const ok = await prefillWeather(pincode, {
         district,
         state,
         location: hasLocation ? location : undefined,
       });
-      if (ok) lastWeatherKeyRef.current = key;
+      if (!ok && lastWeatherKeyRef.current === key) {
+        lastWeatherKeyRef.current = '';
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- autofill when party pincode/region is ready
   }, [
@@ -721,7 +751,6 @@ export const VerificationSessionFields = forwardRef<
     rcProfile?.pincode,
     rcProfile?.location?.lat,
     rcProfile?.location?.lng,
-    customers,
     interweighOvOnly,
   ]);
 
