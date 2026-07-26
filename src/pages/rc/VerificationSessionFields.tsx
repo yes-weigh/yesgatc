@@ -485,7 +485,9 @@ export const VerificationSessionFields = forwardRef<
     ref,
     () => ({
       persistPartyChanges: async (options) => {
-        if (readOnly || lockCustomer) return { error: null };
+        if (readOnly) return { error: null };
+        // Edit lock skips party writes. Interweigh lock still must create/link the fixed customer.
+        if (lockCustomer && !interweighOvOnly) return { error: null };
         return persistVerificationPartyProfile(
           {
             isSelf,
@@ -510,6 +512,7 @@ export const VerificationSessionFields = forwardRef<
     [
       readOnly,
       lockCustomer,
+      interweighOvOnly,
       isSelf,
       values.customerId,
       customerPartyForm,

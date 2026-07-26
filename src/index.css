@@ -9537,6 +9537,12 @@ body.verification-mobile-wizard-active {
   color: rgba(253, 224, 71, 0.92);
 }
 
+.verification-form-footer-hint--error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+}
+
 .verification-form-footer-row {
   display: flex;
   align-items: stretch;

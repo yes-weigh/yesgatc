@@ -2269,6 +2269,11 @@ export const RCSiteCalibration: React.FC = () => {
         isCertifiedActionsView ? ' verification-form-footer--certified-summary' : ''
       }`}
     >
+      {!isCertifiedActionsView && !isViewMode && error && (
+        <p className="verification-form-footer-hint verification-form-footer-hint--error mb-0" role="alert">
+          {error}
+        </p>
+      )}
       {!isCertifiedActionsView && !isViewMode && canSaveDraftFromFooter && draftBlockReason && (
         <p className="verification-form-footer-hint mb-0" role="status">
           {draftBlockReason}
@@ -2288,10 +2293,14 @@ export const RCSiteCalibration: React.FC = () => {
 
         {canSaveDraftFromFooter && (
           <button
-            type="submit"
+            type="button"
             className="verification-form-btn verification-form-btn--save"
             disabled={formBusy || Boolean(draftBlockReason)}
             title={draftBlockReason ?? undefined}
+            onClick={() => {
+              if (showAddForm) void handleCreate(false);
+              else if (editingId) void handleSaveEdit(editingId);
+            }}
           >
             {formBusy ? (
               <span className="spinner-inline" aria-hidden />
