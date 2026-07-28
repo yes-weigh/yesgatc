@@ -1,3 +1,4 @@
+using Microsoft.Playwright;
 using Yesgatc.CertificateWorker.Models;
 
 namespace Yesgatc.CertificateWorker.Services;
@@ -7,9 +8,27 @@ public static class DocaCaptchaReader
     public static async Task<string> ReadCaptchaFromImageAsync(
         byte[] imageBytes,
         CaptchaOcrSettings settings,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IBrowserContext? browserContext = null,
+        IPage? returnToPage = null)
     {
-        if (!UseOpenAi(settings))
+        if (CaptchaOcrKeys.IsDeepSeek(settings))
+        {
+            if (browserContext is null)
+            {
+                throw new InvalidOperationException(
+                    "DeepSeek captcha OCR needs the worker browser context (open eMAAP first).");
+            }
+
+            return await DeepSeekChatCaptchaOcr.ReadCaptchaFromImageAsync(
+                imageBytes,
+                browserContext,
+                settings,
+                cancellationToken,
+                returnToPage);
+        }
+
+        if (!UseAiProvider(settings))
         {
             return DocaCaptchaOcr.ReadCaptchaFromImage(imageBytes);
         }
@@ -20,40 +39,57 @@ public static class DocaCaptchaReader
             tesseractText = DocaCaptchaOcr.ReadCaptchaFromImage(imageBytes);
         }
 
-        string? openAiText = null;
+        string? aiText = null;
         try
         {
-            openAiText = await OpenAiCaptchaOcr.ReadCaptchaFromImageAsync(imageBytes, settings, cancellationToken);
+            aiText = CaptchaOcrKeys.IsGemini(settings)
+                ? await GeminiCaptchaOcr.ReadCaptchaFromImageAsync(imageBytes, settings, cancellationToken)
+                : await OpenAiCaptchaOcr.ReadCaptchaFromImageAsync(imageBytes, settings, cancellationToken);
         }
         catch when (settings.FallbackToTesseract)
         {
             return tesseractText;
         }
 
-        if (settings.CombineWithTesseract
-            && DocaCaptchaOcr.IsValidCaptchaLength(tesseractText)
-            && !string.IsNullOrWhiteSpace(openAiText)
-            && DocaCaptchaOcr.IsValidCaptchaLength(openAiText))
+        // Gemini/DeepSeek/eMAAP: prefer AI answer as-is (case-sensitive). Skip Tesseract merge that uppercases.
+        if (CaptchaOcrKeys.IsGemini(settings))
         {
-            return DocaCaptchaOcr.MergePreferringTesseract(openAiText, tesseractText);
+            if (!string.IsNullOrWhiteSpace(aiText) && DocaCaptchaOcr.IsValidCaptchaLength(aiText))
+            {
+                return aiText;
+            }
+
+            return tesseractText;
         }
 
-        if (!string.IsNullOrWhiteSpace(openAiText) && DocaCaptchaOcr.IsValidCaptchaLength(openAiText))
+        if (settings.CombineWithTesseract
+            && DocaCaptchaOcr.IsValidCaptchaLength(tesseractText)
+            && !string.IsNullOrWhiteSpace(aiText)
+            && DocaCaptchaOcr.IsValidCaptchaLength(aiText))
         {
-            return openAiText;
+            return DocaCaptchaOcr.MergePreferringTesseract(aiText, tesseractText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(aiText) && DocaCaptchaOcr.IsValidCaptchaLength(aiText))
+        {
+            return aiText;
         }
 
         return tesseractText;
     }
 
-    private static bool UseOpenAi(CaptchaOcrSettings settings)
+    private static bool UseAiProvider(CaptchaOcrSettings settings)
     {
-        if (!settings.Provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
-            && !settings.Provider.Equals("AI", StringComparison.OrdinalIgnoreCase))
+        if (CaptchaOcrKeys.IsDeepSeek(settings))
         {
-            return false;
+            return true;
         }
 
-        return !string.IsNullOrWhiteSpace(OpenAiCaptchaOcr.ResolveApiKey(settings));
+        if (CaptchaOcrKeys.IsGemini(settings) || CaptchaOcrKeys.IsOpenAi(settings))
+        {
+            return !string.IsNullOrWhiteSpace(CaptchaOcrKeys.ResolveApiKey(settings));
+        }
+
+        return false;
     }
 }

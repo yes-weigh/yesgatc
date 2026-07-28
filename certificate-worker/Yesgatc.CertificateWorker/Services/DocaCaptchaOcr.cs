@@ -83,6 +83,63 @@ public static class DocaCaptchaOcr
         return memory.ToArray();
     }
 
+    /// <summary>
+    /// Keep near-black ink only (drop colored noise/lines), then light upscale for vision APIs.
+    /// This is the exact PNG Gemini/OpenAI receive.
+    /// </summary>
+    public static byte[] BuildBlackOnlyVisionPngBytes(byte[] imageBytes, int maxChannel = 48)
+    {
+        using var source = new Bitmap(new MemoryStream(imageBytes));
+        using var blackOnly = KeepBlackPixelsOnly(source, maxChannel);
+        using var scaled = UpscaleBitmapNearest(blackOnly, minShortEdge: 160);
+        using var memory = new MemoryStream();
+        scaled.Save(memory, DrawingImageFormat.Png);
+        return memory.ToArray();
+    }
+
+    /// <summary>White out every pixel that is not near-black (colored dots/lines gone).</summary>
+    public static Bitmap KeepBlackPixelsOnly(Bitmap source, int maxChannel = 48)
+    {
+        var output = new Bitmap(source.Width, source.Height, PixelFormat.Format24bppRgb);
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                var pixel = source.GetPixel(x, y);
+                var isInk = pixel.A >= 200
+                    && pixel.R <= maxChannel
+                    && pixel.G <= maxChannel
+                    && pixel.B <= maxChannel;
+                output.SetPixel(x, y, isInk ? Color.Black : Color.White);
+            }
+        }
+
+        return output;
+    }
+
+    private static Bitmap UpscaleBitmapNearest(Bitmap source, int minShortEdge)
+    {
+        var shortEdge = Math.Min(source.Width, source.Height);
+        if (shortEdge >= minShortEdge)
+        {
+            return CloneBitmap(source);
+        }
+
+        var scale = Math.Max(2, (int)Math.Ceiling(minShortEdge / (double)Math.Max(1, shortEdge)));
+        var width = source.Width * scale;
+        var height = source.Height * scale;
+        var output = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+        using (var graphics = Graphics.FromImage(output))
+        {
+            graphics.Clear(Color.White);
+            graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+            graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+            graphics.DrawImage(source, 0, 0, width, height);
+        }
+
+        return output;
+    }
+
     public static bool IsValidCaptchaLength(string text) => text.Length is >= 4 and <= 8;
 
     /// <summary>When AI and Tesseract disagree char-by-char, keep segmented Tesseract chars.</summary>

@@ -5,6 +5,7 @@ const { defineSecret } = require('firebase-functions/params');
 
 const razorpayKeyId = defineSecret('RAZORPAY_KEY_ID');
 const razorpayKeySecret = defineSecret('RAZORPAY_KEY_SECRET');
+const emaapOtpWebhookSecret = defineSecret('EMAAP_OTP_WEBHOOK_SECRET');
 const { razorpayWebhookHandler } = require('./razorpayRv');
 const {
   createWalletTopUpOrderHandler,
@@ -34,6 +35,7 @@ const {
 const { revertRvSubmitTestHandler } = require('./rvSubmitTestRevert');
 const { devDeleteSubmittedVerificationHandler } = require('./verificationDevDelete');
 const { downloadStorageFileBytesHandler } = require('./docaStorageDownload');
+const { emaapOtpWebhookHandler } = require('./emaapOtpInbox');
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -426,4 +428,17 @@ exports.devDeleteSubmittedVerification = onCall(
 exports.downloadStorageFileBytes = onCall(
   { region: CALLABLE_REGION, cors: CALLABLE_CORS, timeoutSeconds: 120, memory: '512MiB' },
   async request => downloadStorageFileBytesHandler(request, getCallerRole),
+);
+
+/**
+ * eMAAP login OTP inbox — POST forwarded mail / Apps Script JSON → Firestore emaapOtpInbox.
+ * Set secret: firebase functions:secrets:set EMAAP_OTP_WEBHOOK_SECRET
+ */
+exports.emaapOtpWebhook = onRequest(
+  {
+    region: CALLABLE_REGION,
+    cors: true,
+    secrets: [emaapOtpWebhookSecret],
+  },
+  async (req, res) => emaapOtpWebhookHandler(req, res, adminDb(), emaapOtpWebhookSecret.value()),
 );

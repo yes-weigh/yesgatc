@@ -20,7 +20,8 @@ public static class DocaUploadImagePreparer
         string outputDirectory,
         long maxBytes = DefaultMaxBytes,
         int maxEdgePx = DefaultMaxEdgePx,
-        long jpegQuality = DefaultJpegQuality)
+        long jpegQuality = DefaultJpegQuality,
+        string outputFileName = "doca-machine-photo.jpg")
     {
         if (!File.Exists(sourcePath))
         {
@@ -28,7 +29,14 @@ public static class DocaUploadImagePreparer
         }
 
         Directory.CreateDirectory(outputDirectory);
-        var outputPath = Path.Combine(outputDirectory, "doca-machine-photo.jpg");
+        var safeName = string.IsNullOrWhiteSpace(outputFileName) ? "doca-machine-photo.jpg" : outputFileName.Trim();
+        if (!safeName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+            && !safeName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
+        {
+            safeName += ".jpg";
+        }
+
+        var outputPath = Path.Combine(outputDirectory, safeName);
         var originalBytes = new FileInfo(sourcePath).Length;
 
         using var source = Image.FromFile(sourcePath);

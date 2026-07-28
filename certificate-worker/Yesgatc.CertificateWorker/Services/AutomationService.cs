@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Playwright;
 using Yesgatc.CertificateWorker.Models;
 
@@ -8,6 +11,8 @@ public enum DocaSessionState
 {
     LoggedIn,
     LoginRequired,
+    /// <summary>eMAAP login succeeded through captcha; waiting for email OTP.</summary>
+    OtpRequired,
 }
 
 public sealed class DocaSessionProbeResult
@@ -37,13 +42,28 @@ public sealed class AutomationService : IAsyncDisposable
     {
         _settings = settings;
         _firestoreService = firestoreService;
+        DocaCredentials = CloneCredentials(settings.DocaCredentials);
     }
 
-    /// <summary>-1 = default single browser profile; 0+ = parallel worker slot; -2 = GATC scraper profile.</summary>
-    public int WorkerIndex { get; set; } = -1;
+    private static DocaCredentialSettings CloneCredentials(DocaCredentialSettings source) => new()
+    {
+        Email = source.Email?.Trim() ?? string.Empty,
+        Password = source.Password ?? string.Empty,
+    };
 
-    /// <summary>When true, keep the scraper browser on the GATC list page and do not collapse extra tabs.</summary>
-    public bool ScraperMode { get; set; }
+    private DocaCredentialSettings EffectiveDocaCredentials()
+    {
+        if (!string.IsNullOrWhiteSpace(DocaCredentials.Email)
+            && !string.IsNullOrWhiteSpace(DocaCredentials.Password))
+        {
+            return DocaCredentials;
+        }
+
+        return CloneCredentials(_settings.DocaCredentials);
+    }
+
+    /// <summary>-1 = default single browser profile; 0+ = parallel worker slot.</summary>
+    public int WorkerIndex { get; set; } = -1;
 
     public bool IsRunning => IsBrowserConnected;
 
@@ -95,7 +115,10 @@ public sealed class AutomationService : IAsyncDisposable
         {
             await ResetContextIfDisconnectedAsync();
             await EnsureContextAsync(cancellationToken);
-            await ConsolidateToSingleDocaPageAsync();
+            if (!UsesSystemChromeProfile)
+            {
+                await ConsolidateToSingleDocaPageAsync();
+            }
         }
         finally
         {
@@ -106,9 +129,10 @@ public sealed class AutomationService : IAsyncDisposable
     /// <summary>Before processing a job: launch Chrome if needed and confirm DOCA session is usable.</summary>
     public async Task<DocaOpenResult?> EnsureDocaSessionForJobAsync(CancellationToken cancellationToken = default)
     {
+        // Always attempt auto-login when processing jobs (credentials + captcha + OTP).
         var probe = await ProbeDocaSessionAtProtectedRouteAsync(
             cancellationToken,
-            forceAutoLogin: !ManualDocaLoginWait);
+            forceAutoLogin: true);
         if (probe.State == DocaSessionState.LoggedIn)
         {
             return null;
@@ -122,7 +146,7 @@ public sealed class AutomationService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Navigate to the IC verification list (protected route) to verify DOCA session is still valid.
+    /// Probe session on a protected route. eMAAP login → eMAAP dashboard (never doca.gov.in).
     /// </summary>
     public async Task<DocaSessionProbeResult> ProbeDocaSessionAtProtectedRouteAsync(
         CancellationToken cancellationToken = default,
@@ -131,35 +155,40 @@ public sealed class AutomationService : IAsyncDisposable
         await EnsureBrowserReadyAsync(cancellationToken);
         var page = await GetPageAsync();
 
-        await page.GotoAsync(_settings.DocaViewIcVerificationUrl, new PageGotoOptions
+        await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
         {
-            WaitUntil = WaitUntilState.Load,
+            WaitUntil = WaitUntilState.DOMContentLoaded,
             Timeout = 60_000,
         });
 
-        if (!await IsLoginPageAsync(page))
+        if (await EmaapLoginAutomation.IsLoggedInAsync(page))
+        {
+            await page.BringToFrontAsync();
+            return new DocaSessionProbeResult { State = DocaSessionState.LoggedIn };
+        }
+
+        if (await EmaapLoginAutomation.IsOtpStepAsync(page) || ManualDocaLoginWait)
         {
             await page.BringToFrontAsync();
             return new DocaSessionProbeResult
             {
-                State = DocaSessionState.LoggedIn,
+                State = await EmaapLoginAutomation.IsOtpStepAsync(page)
+                    ? DocaSessionState.OtpRequired
+                    : DocaSessionState.LoginRequired,
             };
         }
 
-        if (!forceAutoLogin && ManualDocaLoginWait)
+        if (!forceAutoLogin)
         {
             await page.BringToFrontAsync();
-            return new DocaSessionProbeResult
-            {
-                State = DocaSessionState.LoginRequired,
-            };
+            return new DocaSessionProbeResult { State = DocaSessionState.LoginRequired };
         }
 
-        var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
+        var emaapState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
         await page.BringToFrontAsync();
         return new DocaSessionProbeResult
         {
-            State = loginState,
+            State = emaapState,
             AttemptedAutoLogin = true,
         };
     }
@@ -177,6 +206,12 @@ public sealed class AutomationService : IAsyncDisposable
     {
         get
         {
+            // Mirror of system Chrome — real User Data cannot be automated (Chrome policy).
+            if (_settings.UseSystemChromeProfile && WorkerIndex < 0 && WorkerIndex != -2)
+            {
+                return ChromeProfileMirror.MirrorUserDataDir;
+            }
+
             var root = string.IsNullOrWhiteSpace(_settings.BrowserProfilePath)
                 ? Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -194,10 +229,23 @@ public sealed class AutomationService : IAsyncDisposable
         }
     }
 
-    public DocaCredentialSettings DocaCredentials { get; set; } = new();
+    public bool UsesSystemChromeProfile =>
+        _settings.UseSystemChromeProfile && WorkerIndex < 0 && WorkerIndex != -2;
 
-    /// <summary>Fill DOCA IC form fields only — skip Generate Certificate and Firebase approval.</summary>
-    public bool DocaFillOnly { get; set; }
+    public static string ResolveSystemChromeUserDataDir() =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Google",
+            "Chrome",
+            "User Data");
+
+    public string SystemChromeProfileDirectoryName =>
+        ChromeProfilePreference.ResolveDirectory(_settings.ChromeProfileDirectory);
+
+    public string SystemChromeSourceProfileDir =>
+        Path.Combine(ResolveSystemChromeUserDataDir(), SystemChromeProfileDirectoryName);
+
+    public DocaCredentialSettings DocaCredentials { get; set; } = new();
 
     /// <summary>Run captcha OCR login on the current page when DOCA shows the login form.</summary>
     public Task<DocaSessionState> EnsureLoggedInOnPageAsync(
@@ -208,434 +256,12 @@ public sealed class AutomationService : IAsyncDisposable
 
     public Func<CancellationToken, Task<string>>? ResolveFirebaseIdToken { get; set; }
 
+    public FirebaseSettings Firebase { get; set; } = new();
+
     public Func<CaptchaAttemptReport, Task>? CaptchaAttemptReporter { get; set; }
 
     /// <summary>Raised when email/password are read from the DOCA login form after a failed auto-login.</summary>
     public Action<DocaCredentialSettings>? DocaCredentialsCaptured { get; set; }
-
-    /// <summary>Phase 2 — open OV form, select instrument type, fill party section.</summary>
-    public async Task<DocaOpenResult> RunOvStarterAsync(
-        SiteCalibrationRecord job,
-        PartyContactDetails party,
-        InstrumentDetails instrument,
-        string firebaseIdToken,
-        DocaCredentialSettings? docaCredentials = null,
-        bool continueOnSamePage = false,
-        CancellationToken cancellationToken = default)
-    {
-        if (docaCredentials is not null)
-        {
-            DocaCredentials = docaCredentials;
-        }
-
-        await EnsureBrowserReadyAsync(cancellationToken);
-        var page = await GetPageAsync();
-
-        var serial = instrument.SerialNumber.Trim();
-        if (string.IsNullOrWhiteSpace(serial))
-        {
-            throw new InvalidOperationException("Serial number is required before submitting on DOCA.");
-        }
-
-        if (!continueOnSamePage)
-        {
-            await page.GotoAsync(_settings.DocaCreateIcVerificationUrl, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.Load,
-                Timeout = 60_000,
-            });
-        }
-        else if (!await IsOnIcVerificationFormAsync(page))
-        {
-            await page.GotoAsync(_settings.DocaCreateIcVerificationUrl, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.Load,
-                Timeout = 60_000,
-            });
-        }
-        else
-        {
-            await DocaFormFiller.PrepareForNextJobAsync(page);
-        }
-
-        if (await IsLoginPageAsync(page))
-        {
-            var loginFailure = await TryEnsureLoggedInOrReturnLoginRequiredAsync(
-                page,
-                "run automation again",
-                cancellationToken);
-            if (loginFailure is not null)
-            {
-                return loginFailure;
-            }
-        }
-
-        await page.GetByText("Instrument Generate Certificate", new PageGetByTextOptions { Exact = false })
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-
-        await DocaFormFiller.EnsurePageInstrumentTypeSelectedAsync(page);
-
-        await DocaFormFiller.FillPartySectionAsync(page, party);
-        await DocaFormFiller.FillInstrumentSectionAsync(page, instrument);
-
-        var imageDownload = new FirebaseStorageDownloadService();
-        var stampingImage = await imageDownload.DownloadStampingImageAsync(
-            job.Id,
-            instrument.SerialNumber,
-            instrument.StampingImageUrl,
-            instrument.StampingImageName,
-            instrument.StampingImageContentType,
-            cancellationToken);
-
-        var preparedPhoto = DocaUploadImagePreparer.PrepareMachinePhotoForUpload(
-            stampingImage.LocalPath,
-            Path.GetDirectoryName(stampingImage.LocalPath)!,
-            _settings.DocaUploadImageMaxBytes,
-            _settings.DocaUploadImageMaxEdgePx);
-
-        await DocaFormFiller.FillMachinePhotoSectionAsync(page, instrument, preparedPhoto.Path);
-
-        if (DocaFillOnly)
-        {
-            await page.BringToFrontAsync();
-            var fillOnlyNote =
-                $"DOCA form filled for {party.BelongToName}. Serial {instrument.SerialNumber}. " +
-                "Generate Certificate was not clicked (fill-only mode). " +
-                $"{preparedPhoto.Summary}. Stamping plate: {stampingImage.LocalPath}.";
-            return new DocaOpenResult(
-                DocaSessionState.LoggedIn,
-                fillOnlyNote,
-                FillOnlyCompleted: true);
-        }
-
-        await DocaFormFiller.WaitForDocaSubmissionSuccessAsync(page);
-
-        var postSubmitLogin = await TryEnsureLoggedInOnPageAsync(page, "run automation again", cancellationToken);
-        if (postSubmitLogin is not null)
-        {
-            return postSubmitLogin;
-        }
-
-        if (job.IsSubmitted)
-        {
-            await _firestoreService.ApproveVerificationAsync(job.Id, firebaseIdToken, cancellationToken);
-        }
-        else if (job.IsApproved)
-        {
-            await _firestoreService.TouchCertificationAsync(job.Id, firebaseIdToken, cancellationToken);
-        }
-
-        await page.BringToFrontAsync();
-
-        var sizeKb = Math.Max(1, stampingImage.SizeBytes / 1024);
-        var firebaseNote = job.IsSubmitted
-            ? "Firebase status updated to approved."
-            : "DOCA certification recorded (already approved in Firebase).";
-        return new DocaOpenResult(
-            DocaSessionState.LoggedIn,
-            $"DOCA certificate generated for {party.BelongToName}. Serial {instrument.SerialNumber}. " +
-            $"{firebaseNote} {preparedPhoto.Summary}. Stamping plate: {stampingImage.LocalPath} ({sizeKb} KB original).",
-            VerificationApproved: true);
-    }
-
-    /// <summary>True when the IC Verification list row shows Certificate Uploaded on DOCA.</summary>
-    public async Task<bool> IsCertificateUploadedOnDocaAsync(
-        string serialNumber,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(serialNumber))
-        {
-            throw new InvalidOperationException("Serial number is required for DOCA upload status check.");
-        }
-
-        await EnsureBrowserReadyAsync(cancellationToken);
-        var page = await GetPageAsync();
-
-        if (await IsLoginPageAsync(page))
-        {
-            var loginFailure = await TryEnsureLoggedInOrReturnLoginRequiredAsync(
-                page,
-                "check DOCA upload status",
-                cancellationToken);
-            if (loginFailure is not null)
-            {
-                throw new InvalidOperationException(loginFailure.Message);
-            }
-        }
-
-        return await DocaViewVerificationService.IsCertificateAlreadyUploadedAsync(
-            page,
-            _settings.DocaViewIcVerificationUrl,
-            serialNumber,
-            cancellationToken);
-    }
-
-    /// <summary>
-    /// Opens View IC Verification, searches by serial, opens Details, downloads the certificate PDF,
-    /// stamps it, and uploads the signed PDF back to DOCA.
-    /// </summary>
-    public async Task<DocaOpenResult> RunCertificationLookupAsync(
-        SiteCalibrationRecord job,
-        InstrumentDetails instrument,
-        string firebaseIdToken,
-        DocaCredentialSettings? docaCredentials = null,
-        bool continueOnSamePage = false,
-        CancellationToken cancellationToken = default)
-    {
-        if (docaCredentials is not null)
-        {
-            DocaCredentials = docaCredentials;
-        }
-
-        if (string.IsNullOrWhiteSpace(job.SerialNumber))
-        {
-            throw new InvalidOperationException("Serial number is required for View IC Verification lookup.");
-        }
-
-        await EnsureBrowserReadyAsync(cancellationToken);
-        var page = await GetPageAsync();
-
-        if (!continueOnSamePage)
-        {
-            await page.GotoAsync(_settings.DocaViewIcVerificationUrl, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.Load,
-                Timeout = 60_000,
-            });
-        }
-        else
-        {
-            await page.BringToFrontAsync();
-        }
-
-        if (await IsLoginPageAsync(page))
-        {
-            var loginFailure = await TryEnsureLoggedInOrReturnLoginRequiredAsync(
-                page,
-                "run certification again",
-                cancellationToken);
-            if (loginFailure is not null)
-            {
-                return loginFailure;
-            }
-        }
-
-        var downloadDirectory = WorkerDataPaths.CertificatePdfDirectory(job.Id);
-        var alreadyUploaded = await DocaViewVerificationService.IsCertificateAlreadyUploadedAsync(
-            page,
-            _settings.DocaViewIcVerificationUrl,
-            job.SerialNumber,
-            cancellationToken);
-
-        CertificatePdfDownloadResult downloadResult;
-        string stampedPdfPath;
-        ViewVerificationMatch match;
-
-        var existingStampedPdf = WorkerDataPaths.FindLatestStampedPdf(job.Id);
-        if (!alreadyUploaded
-            && !string.IsNullOrWhiteSpace(existingStampedPdf)
-            && File.Exists(existingStampedPdf))
-        {
-            match = await DocaViewVerificationService.FindBySerialAsync(
-                page,
-                _settings.DocaViewIcVerificationUrl,
-                job.SerialNumber,
-                cancellationToken);
-            downloadResult = new CertificatePdfDownloadResult(match, existingStampedPdf);
-            stampedPdfPath = existingStampedPdf;
-        }
-        else
-        {
-            downloadResult = await DocaViewVerificationService.FindDetailsAndDownloadPdfAsync(
-                page,
-                _settings.DocaViewIcVerificationUrl,
-                job.SerialNumber,
-                downloadDirectory,
-                cancellationToken);
-            match = downloadResult.Match;
-
-            var postDownloadLogin = await TryEnsureLoggedInOnPageAsync(page, "run certification again", cancellationToken);
-            if (postDownloadLogin is not null)
-            {
-                return postDownloadLogin;
-            }
-
-            if (alreadyUploaded)
-            {
-                var syncToken = ResolveFirebaseIdToken is not null
-                    ? await ResolveFirebaseIdToken(cancellationToken)
-                    : firebaseIdToken;
-
-                await _firestoreService.MarkCertifiedWithSignedPdfAsync(
-                    job.Id,
-                    downloadResult.LocalPdfPath,
-                    syncToken,
-                    downloadResult.Match.CertificateNumber,
-                    cancellationToken);
-
-                var syncDetails = new List<string> { $"Serial {downloadResult.Match.SerialNumber}" };
-                if (!string.IsNullOrWhiteSpace(downloadResult.Match.CertificateNumber))
-                {
-                    syncDetails.Add($"Certificate {downloadResult.Match.CertificateNumber}");
-                }
-
-                return new DocaOpenResult(
-                    DocaSessionState.LoggedIn,
-                    $"DOCA already had Certificate Uploaded — synced PDF to Firebase and marked certified ({string.Join(" · ", syncDetails)}).",
-                    VerificationApproved: true);
-            }
-
-            var stampResult = CertificatePdfStampService.StampPrincipalOfficerSignature(
-                downloadResult.LocalPdfPath,
-                _settings.CertificateStamp);
-            stampedPdfPath = stampResult.OutputPath;
-        }
-
-        var imageDownload = new FirebaseStorageDownloadService();
-        var scaleImage = await imageDownload.DownloadScaleImageAsync(
-            job.Id,
-            instrument.SerialNumber,
-            instrument.ScaleImageUrl,
-            instrument.ScaleImageName,
-            instrument.ScaleImageContentType,
-            cancellationToken);
-
-        var preparedPhoto = DocaUploadImagePreparer.PrepareMachinePhotoForUpload(
-            scaleImage.LocalPath,
-            Path.GetDirectoryName(scaleImage.LocalPath)!,
-            _settings.DocaUploadImageMaxBytes,
-            _settings.DocaUploadImageMaxEdgePx);
-
-        await DocaViewVerificationService.UploadStampedCertificateAsync(
-            page,
-            _settings.DocaViewIcVerificationUrl,
-            job.SerialNumber,
-            stampedPdfPath,
-            preparedPhoto.Path,
-            instrument.Remarks,
-            cancellationToken);
-
-        var postUploadLogin = await TryEnsureLoggedInOnPageAsync(page, "run certification again", cancellationToken);
-        if (postUploadLogin is not null)
-        {
-            return postUploadLogin;
-        }
-
-        var firebaseToken = ResolveFirebaseIdToken is not null
-            ? await ResolveFirebaseIdToken(cancellationToken)
-            : firebaseIdToken;
-
-        await _firestoreService.MarkCertifiedWithSignedPdfAsync(
-            job.Id,
-            stampedPdfPath,
-            firebaseToken,
-            match.CertificateNumber,
-            cancellationToken);
-
-        var details = new List<string> { $"Serial {match.SerialNumber}" };
-        if (!string.IsNullOrWhiteSpace(match.ApplicationNumber))
-        {
-            details.Add($"Application {match.ApplicationNumber}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(match.CertificateNumber))
-        {
-            details.Add($"Certificate {match.CertificateNumber}");
-        }
-
-        var instrumentPhotoNote = instrument.ScaleImageUsesStampingFallback
-            ? "Instrument photo (stamping plate fallback)"
-            : "Instrument photo (scale)";
-
-        return new DocaOpenResult(
-            DocaSessionState.LoggedIn,
-            $"Certificate uploaded to DOCA, saved to Firebase Storage, and marked certified — {string.Join(" · ", details)}. " +
-            $"Signed PDF: {stampedPdfPath}. {instrumentPhotoNote}: {preparedPhoto.Summary}.",
-            VerificationApproved: true);
-    }
-
-    /// <summary>
-    /// Polls the GATC upload-certificate list until DOCA accepts the session (auto-login or manual).
-    /// Used by the Chrome 2 scraper so a failed captcha OCR does not abort the scrape run.
-    /// </summary>
-    public async Task<IPage> WaitForGatcListSessionAsync(
-        int loginProbeSeconds,
-        Func<string, Task>? reportWaitingAsync = null,
-        int chromeNumber = 2,
-        CancellationToken cancellationToken = default)
-    {
-        await EnsureBrowserReadyAsync(cancellationToken);
-        await OpenDocaWorkspaceAsync(chromeNumber, attemptAutoLogin: false, cancellationToken);
-
-        var probeSeconds = Math.Max(15, loginProbeSeconds);
-        var preferManualLogin = false;
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var page = await GetPageAsync();
-            await page.GotoAsync(_settings.DocaGatcUploadCertificateUrl, new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.Load,
-                Timeout = 90_000,
-            });
-
-            if (!await IsLoginPageAsync(page))
-            {
-                await page.BringToFrontAsync();
-                return page;
-            }
-
-            await page.BringToFrontAsync();
-            if (reportWaitingAsync is not null)
-            {
-                var hint = preferManualLogin
-                    ? $"DOCA login required on Chrome {chromeNumber} (scraper). Complete login manually — scrape will resume automatically."
-                    : $"DOCA login required on Chrome {chromeNumber} (scraper). Retrying AI captcha or complete login manually…";
-                await reportWaitingAsync(hint);
-            }
-
-            if (!preferManualLogin
-                && !string.IsNullOrWhiteSpace(DocaCredentials.Email)
-                && !string.IsNullOrWhiteSpace(DocaCredentials.Password))
-            {
-                try
-                {
-                    var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
-                    if (loginState == DocaSessionState.LoggedIn)
-                    {
-                        continue;
-                    }
-                }
-                catch (PlaywrightException ex) when (IsLoginAutomationTimeout(ex))
-                {
-                }
-                catch (TimeoutException)
-                {
-                }
-
-                preferManualLogin = true;
-                continue;
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(probeSeconds), cancellationToken);
-        }
-    }
-
-    private static bool IsLoginAutomationTimeout(Exception exception)
-    {
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current.Message.Contains("Timeout", StringComparison.OrdinalIgnoreCase)
-                || current.Message.Contains("captcha", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /// <summary>
     /// Opens (or focuses) the DOCA browser window so the operator can confirm login before bulk runs.
@@ -646,28 +272,62 @@ public sealed class AutomationService : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         await EnsureBrowserReadyAsync(cancellationToken);
-        var page = await GetPageAsync();
 
-        await page.GotoAsync(_settings.DocaLoginUrl, new PageGotoOptions
+        IPage page;
+        if (UsesSystemChromeProfile)
         {
-            WaitUntil = WaitUntilState.Load,
-            Timeout = 60_000,
-        });
-
-        // Scraper uses a separate profile — stay on the tab we navigated to login.
-        if (ScraperMode)
-        {
-            await page.BringToFrontAsync();
+            page = await GetPageAsync();
+            if (!IsEmaapPage(page.Url) && !IsDocaPage(page.Url))
+            {
+                page = await ResetToFreshWorkPageAsync();
+            }
         }
         else
         {
+            page = await GetPageAsync();
+        }
+
+        if (!IsEmaapPage(page.Url)
+            || !page.Url.Contains("/login", StringComparison.OrdinalIgnoreCase))
+        {
+            await page.GotoAsync(_settings.DocaLoginUrl, new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.DOMContentLoaded,
+                Timeout = 60_000,
+            });
+        }
+
+        await page.BringToFrontAsync();
+
+        if (!UsesSystemChromeProfile)
+        {
             page = await ConsolidateToSingleDocaPageAsync();
+        }
+
+        // React SPA — wait for login shell before probing / auto-login.
+        if (EmaapLoginAutomation.IsEmaapUrl(_settings.DocaLoginUrl))
+        {
+            try
+            {
+                await page.WaitForSelectorAsync(
+                    "input[name='email'], input[type='email'], .captcha-canvas",
+                    new PageWaitForSelectorOptions
+                    {
+                        State = WaitForSelectorState.Visible,
+                        Timeout = 45_000,
+                    });
+            }
+            catch (TimeoutException)
+            {
+                await page.BringToFrontAsync();
+                return DocaSessionState.LoginRequired;
+            }
         }
 
         try
         {
             await page.EvaluateAsync(
-                "document.title = " + System.Text.Json.JsonSerializer.Serialize($"YesGATC Chrome {chromeNumber} - DOCA"));
+                "document.title = " + System.Text.Json.JsonSerializer.Serialize($"YesGATC Chrome {chromeNumber} - eMAAP"));
         }
         catch (PlaywrightException)
         {
@@ -682,15 +342,24 @@ public sealed class AutomationService : IAsyncDisposable
                 return DocaSessionState.LoginRequired;
             }
 
-            return await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
+            // Re-bind settings credentials if UI sync was skipped.
+            var effective = EffectiveDocaCredentials();
+            if (!string.IsNullOrWhiteSpace(effective.Email)
+                && !string.IsNullOrWhiteSpace(effective.Password))
+            {
+                DocaCredentials = effective;
+            }
+
+            var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
+            await page.BringToFrontAsync();
+            return loginState;
         }
 
         return DocaSessionState.LoggedIn;
     }
 
     /// <summary>
-    /// On the first browser launch for this profile, open DOCA login and wait one minute so the
-    /// operator can solve captcha manually before any automatic login pipeline runs.
+    /// Legacy: first-launch 1-minute manual captcha pause. Disabled for eMAAP (AI captcha + OTP).
     /// </summary>
     private async Task ApplyInitialManualCaptchaWindowAsync(CancellationToken cancellationToken)
     {
@@ -700,6 +369,13 @@ public sealed class AutomationService : IAsyncDisposable
         }
 
         _initialManualCaptchaWaitDone = true;
+
+        // eMAAP uses canvas captcha OCR + email OTP — do not idle for a minute on an empty form.
+        if (EmaapLoginAutomation.IsEmaapUrl(_settings.DocaLoginUrl))
+        {
+            return;
+        }
+
         var page = await ConsolidateToSingleDocaPageAsync();
         await page.GotoAsync(_settings.DocaLoginUrl, new PageGotoOptions
         {
@@ -713,6 +389,18 @@ public sealed class AutomationService : IAsyncDisposable
     public async Task ClearSavedSessionAsync()
     {
         await DisposeAsync();
+
+        // Never wipe the real Chrome User Data; mirror is safe to delete.
+        if (UsesSystemChromeProfile)
+        {
+            var mirror = ChromeProfileMirror.MirrorUserDataDir;
+            if (Directory.Exists(mirror))
+            {
+                Directory.Delete(mirror, recursive: true);
+            }
+
+            return;
+        }
 
         if (Directory.Exists(BrowserProfileDirectory))
         {
@@ -770,33 +458,22 @@ public sealed class AutomationService : IAsyncDisposable
     private static bool IsDocaPage(string url) =>
         url.Contains("doca.gov.in", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Keep one work tab — prefer DOCA and close every blank/extra tab.</summary>
+    private static bool IsEmaapPage(string url) =>
+        url.Contains("emaap.gov.in", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsDeepSeekPage(string url) =>
+        url.Contains("chat.deepseek.com", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>eMAAP / DOCA work tabs — never prefer random restored Chrome tabs over these.</summary>
+    private static bool IsAutomationPortalPage(string url) =>
+        IsEmaapPage(url) || IsDocaPage(url);
+
+    /// <summary>Keep one work tab — prefer eMAAP/DOCA and close every blank/extra tab.</summary>
     private async Task<IPage> ConsolidateToSingleDocaPageAsync()
     {
         if (_context is null)
         {
             throw new InvalidOperationException("Browser context is not initialized.");
-        }
-
-        if (ScraperMode)
-        {
-            var pages = _context.Pages.ToList();
-            var listPage = pages.FirstOrDefault(page =>
-                page.Url.Contains("view-gn-uploadcertificate", StringComparison.OrdinalIgnoreCase));
-            if (listPage is not null)
-            {
-                await listPage.BringToFrontAsync();
-                return listPage;
-            }
-
-            var loaded = pages.FirstOrDefault(page => !IsBlankBrowserPage(page.Url));
-            if (loaded is not null)
-            {
-                await loaded.BringToFrontAsync();
-                return loaded;
-            }
-
-            return pages.Count > 0 ? pages[0] : await _context.NewPageAsync();
         }
 
         for (var pass = 0; pass < 4; pass++)
@@ -812,11 +489,12 @@ public sealed class AutomationService : IAsyncDisposable
                 return pages[0];
             }
 
-            var hasDocaOrLoadedPage = pages.Any(page => IsDocaPage(page.Url) || !IsBlankBrowserPage(page.Url));
+            var hasPortalOrLoadedPage = pages.Any(page =>
+                IsAutomationPortalPage(page.Url) || !IsBlankBrowserPage(page.Url));
 
             foreach (var page in pages)
             {
-                if (hasDocaOrLoadedPage && IsBlankBrowserPage(page.Url))
+                if (hasPortalOrLoadedPage && IsBlankBrowserPage(page.Url))
                 {
                     try
                     {
@@ -834,13 +512,19 @@ public sealed class AutomationService : IAsyncDisposable
                 break;
             }
 
-            var keeper = pages.FirstOrDefault(page => IsDocaPage(page.Url))
+            var keeper = pages.FirstOrDefault(page => IsAutomationPortalPage(page.Url))
                 ?? pages.FirstOrDefault(page => !IsBlankBrowserPage(page.Url))
                 ?? pages[0];
 
             foreach (var page in pages)
             {
                 if (ReferenceEquals(page, keeper))
+                {
+                    continue;
+                }
+
+                // Keep DeepSeek OCR tab — reopening it every captcha breaks OTP Login focus.
+                if (IsDeepSeekPage(page.Url))
                 {
                     continue;
                 }
@@ -863,11 +547,43 @@ public sealed class AutomationService : IAsyncDisposable
             return await _context.NewPageAsync();
         }
 
-        var primary = remaining.FirstOrDefault(page => IsDocaPage(page.Url))
+        var primary = remaining.FirstOrDefault(page => IsAutomationPortalPage(page.Url))
             ?? remaining.FirstOrDefault(page => !IsBlankBrowserPage(page.Url))
             ?? remaining[0];
         await primary.BringToFrontAsync();
         return primary;
+    }
+
+    /// <summary>
+    /// System Chrome restores previous tabs (Gmail, Zoho, …). Drop them and keep one fresh work tab.
+    /// </summary>
+    private async Task<IPage> ResetToFreshWorkPageAsync()
+    {
+        if (_context is null)
+        {
+            throw new InvalidOperationException("Browser context is not initialized.");
+        }
+
+        using var allowBlank = BrowserPageGuard.AllowTransientBlankPages();
+        var fresh = await _context.NewPageAsync();
+        foreach (var page in _context.Pages.ToList())
+        {
+            if (ReferenceEquals(page, fresh))
+            {
+                continue;
+            }
+
+            try
+            {
+                await page.CloseAsync();
+            }
+            catch (PlaywrightException)
+            {
+            }
+        }
+
+        await fresh.BringToFrontAsync();
+        return fresh;
     }
 
     private void AttachPageHandlers()
@@ -907,6 +623,12 @@ public sealed class AutomationService : IAsyncDisposable
                 return;
             }
 
+            // DeepSeek OCR opens a blank tab then navigates — do not kill it.
+            if (BrowserPageGuard.AllowsTransientBlankPages)
+            {
+                return;
+            }
+
             if (IsBlankBrowserPage(page.Url))
             {
                 await page.CloseAsync();
@@ -924,21 +646,61 @@ public sealed class AutomationService : IAsyncDisposable
             return;
         }
 
-        foreach (var lockName in new[] { "SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile" })
+        foreach (var name in new[] { "SingletonLock", "SingletonCookie", "SingletonSocket", "lockfile" })
         {
-            var lockPath = Path.Combine(profileDirectory, lockName);
-            if (!File.Exists(lockPath))
-            {
-                continue;
-            }
-
+            var path = Path.Combine(profileDirectory, name);
             try
             {
-                File.Delete(lockPath);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
             }
-            catch (IOException)
+            catch
             {
+                // ignore
             }
+        }
+    }
+
+    /// <summary>
+    /// Turn off Chrome password manager prompts ("Save password?") in the worker profile.
+    /// Creds are filled by automation — never offer to store them.
+    /// </summary>
+    private static void DisableChromePasswordSavingPrompts(string userDataDir)
+    {
+        try
+        {
+            var defaultDir = Path.Combine(userDataDir, "Default");
+            Directory.CreateDirectory(defaultDir);
+            var prefsPath = Path.Combine(defaultDir, "Preferences");
+
+            JsonObject root;
+            if (File.Exists(prefsPath))
+            {
+                var text = File.ReadAllText(prefsPath);
+                root = JsonNode.Parse(string.IsNullOrWhiteSpace(text) ? "{}" : text) as JsonObject
+                    ?? new JsonObject();
+            }
+            else
+            {
+                root = new JsonObject();
+            }
+
+            root["credentials_enable_service"] = false;
+
+            var profile = root["profile"] as JsonObject ?? new JsonObject();
+            profile["password_manager_enabled"] = false;
+            profile["password_manager_leak_detection"] = false;
+            root["profile"] = profile;
+
+            File.WriteAllText(
+                prefsPath,
+                root.ToJsonString(new JsonSerializerOptions { WriteIndented = false }));
+        }
+        catch
+        {
+            // Best-effort — launch args still reduce bubbles.
         }
     }
 
@@ -1002,9 +764,37 @@ public sealed class AutomationService : IAsyncDisposable
             _context = null;
         }
 
-        Directory.CreateDirectory(BrowserProfileDirectory);
+        if (UsesSystemChromeProfile)
+        {
+            EnsureSystemChromeReadyToLaunch();
+        }
+        else
+        {
+            Directory.CreateDirectory(BrowserProfileDirectory);
+        }
+
         var downloadsPath = Path.Combine(WorkerDataPaths.RootDirectory, "browser-downloads");
         Directory.CreateDirectory(downloadsPath);
+
+        var args = new List<string>
+        {
+            "--disable-session-crashed-bubble",
+            "--disable-restore-session-state",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--hide-crash-restore-bubble",
+            // Block Chrome "Save password?" bubble after eMAAP login.
+            "--disable-features=PasswordManagerOnboarding,PasswordLeakDetection,PasswordCheck",
+            "--password-store=basic",
+        };
+
+        // Mirror always uses Default profile folder inside chrome-system-mirror.
+        if (UsesSystemChromeProfile)
+        {
+            args.Add("--profile-directory=Default");
+        }
+
+        DisableChromePasswordSavingPrompts(BrowserProfileDirectory);
 
         var launchOptions = new BrowserTypeLaunchPersistentContextOptions
         {
@@ -1012,34 +802,105 @@ public sealed class AutomationService : IAsyncDisposable
             ViewportSize = ViewportSize.NoViewport,
             AcceptDownloads = true,
             DownloadsPath = downloadsPath,
-            Args =
-            [
-                "--disable-session-crashed-bubble",
-                "--disable-restore-session-state",
-                "--no-first-run",
-                "--no-default-browser-check",
-            ],
+            Args = args.ToArray(),
+            IgnoreDefaultArgs = ["--enable-automation", "--no-sandbox"],
         };
 
-        if (!string.IsNullOrWhiteSpace(_settings.BrowserChannel))
+        if (UsesSystemChromeProfile || !string.IsNullOrWhiteSpace(_settings.BrowserChannel))
         {
-            launchOptions.Channel = _settings.BrowserChannel.Trim();
+            launchOptions.Channel = UsesSystemChromeProfile
+                ? "chrome"
+                : _settings.BrowserChannel.Trim();
         }
 
         try
         {
             _context = await LaunchPersistentContextAsync(launchOptions);
             AttachPageHandlers();
-            await ConsolidateToSingleDocaPageAsync();
+            var workPage = UsesSystemChromeProfile
+                ? await ResetToFreshWorkPageAsync()
+                : await ConsolidateToSingleDocaPageAsync();
+
+            // Navigate immediately so we never leave a black about:blank window.
+            if (EmaapLoginAutomation.IsEmaapUrl(_settings.DocaLoginUrl)
+                || !string.IsNullOrWhiteSpace(_settings.DocaLoginUrl))
+            {
+                await workPage.GotoAsync(_settings.DocaLoginUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 90_000,
+                });
+                await workPage.BringToFrontAsync();
+            }
+
             await ApplyInitialManualCaptchaWindowAsync(cancellationToken);
         }
-        catch (PlaywrightException ex) when (!string.IsNullOrWhiteSpace(launchOptions.Channel))
+        catch (PlaywrightException ex) when (UsesSystemChromeProfile || !string.IsNullOrWhiteSpace(launchOptions.Channel))
         {
+            if (UsesSystemChromeProfile)
+            {
+                throw new InvalidOperationException(
+                    $"Could not launch Chrome mirror of profile '{SystemChromeProfileDirectoryName}'. " +
+                    "Close Chrome, set ResyncChromeProfile=true once if needed, then retry. " +
+                    $"Playwright error: {ex.Message}",
+                    ex);
+            }
+
             throw new InvalidOperationException(
-                $"Could not launch {_settings.BrowserChannel} for DOCA automation. " +
+                $"Could not launch {launchOptions.Channel} for DOCA automation. " +
                 "Install Google Chrome or set Automation:BrowserChannel to empty in appsettings.json. " +
                 $"Playwright error: {ex.Message}",
                 ex);
+        }
+    }
+
+    private void EnsureSystemChromeReadyToLaunch()
+    {
+        if (!ChromeProfilePreference.HasSelection)
+        {
+            throw new InvalidOperationException(
+                "No Chrome profile selected. Pick one in Account → Save profile, then retry.");
+        }
+
+        var source = SystemChromeSourceProfileDir;
+        if (!Directory.Exists(ResolveSystemChromeUserDataDir()))
+        {
+            throw new InvalidOperationException(
+                $"Chrome User Data not found at {ResolveSystemChromeUserDataDir()}. Install Google Chrome or disable UseSystemChromeProfile.");
+        }
+
+        if (!Directory.Exists(source))
+        {
+            throw new InvalidOperationException(
+                $"Chrome profile '{SystemChromeProfileDirectoryName}' not found under {ResolveSystemChromeUserDataDir()}. " +
+                "Set Automation:ChromeProfileDirectory to Default or Profile 1, etc.");
+        }
+
+        // Prefer Chrome closed so cookies copy cleanly; still try if open.
+        var chromeRunning = IsChromeProcessRunning();
+        try
+        {
+            ChromeProfileMirror.SyncFromSystemProfile(source, force: _settings.ResyncChromeProfile);
+        }
+        catch (Exception ex) when (chromeRunning)
+        {
+            throw new InvalidOperationException(
+                "Could not sync Chrome profile while Chrome is running. Close all Chrome windows, then retry.",
+                ex);
+        }
+
+        ClearStaleProfileLocks(ChromeProfileMirror.MirrorUserDataDir);
+    }
+
+    private static bool IsChromeProcessRunning()
+    {
+        try
+        {
+            return Process.GetProcessesByName("chrome").Length > 0;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -1051,23 +912,6 @@ public sealed class AutomationService : IAsyncDisposable
         }
 
         return await ConsolidateToSingleDocaPageAsync();
-    }
-
-    private async Task<bool> IsOnIcVerificationFormAsync(IPage page)
-    {
-        if (await IsLoginPageAsync(page))
-        {
-            return false;
-        }
-
-        var url = page.Url;
-        if (url.Contains("create-ic-verification", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var formHeading = page.GetByText("Instrument Generate Certificate", new PageGetByTextOptions { Exact = false });
-        return await formHeading.CountAsync() > 0;
     }
 
     private async Task<DocaSessionState> EnsureDocaLoggedInAsync(
@@ -1089,7 +933,214 @@ public sealed class AutomationService : IAsyncDisposable
         return await DocaLoginAutomation.TryLoginAsync(
             page,
             _settings,
-            DocaCredentials,
+            EffectiveDocaCredentials(),
+            cancellationToken,
+            CaptchaAttemptReporter is null
+                ? null
+                : report => CaptchaAttemptReporter(report),
+            Firebase,
+            ResolveFirebaseIdToken);
+    }
+
+    /// <summary>Complete eMAAP email OTP step (after Send OTP). Uses existing captcha OCR.</summary>
+    public async Task<DocaSessionState> SubmitEmaapOtpAsync(
+        string otp,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureBrowserReadyAsync(cancellationToken);
+        var page = await GetPageAsync();
+        await page.BringToFrontAsync();
+        return await EmaapLoginAutomation.SubmitOtpAsync(
+            page,
+            _settings,
+            otp,
+            cancellationToken,
+            CaptchaAttemptReporter is null
+                ? null
+                : report => CaptchaAttemptReporter(report));
+    }
+
+    /// <summary>Click eMAAP "Resend OTP" when the 5‑min countdown finishes.</summary>
+    public async Task<bool> TryResendEmaapOtpIfEnabledAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureBrowserReadyAsync(cancellationToken);
+        var page = await GetPageAsync();
+        return await EmaapLoginAutomation.TryClickResendOtpIfEnabledAsync(page);
+    }
+
+    /// <summary>
+    /// Logged-in eMAAP: fill form → submit → generate → download PDF → mark certified in Firebase.
+    /// </summary>
+    public async Task<string> FillEmaapCertificateGenerationAsync(
+        SiteCalibrationRecord job,
+        PartyContactDetails party,
+        InstrumentDetails instrument,
+        string firebaseIdToken,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureBrowserReadyAsync(cancellationToken);
+        var page = await GetPageAsync();
+        await page.BringToFrontAsync();
+
+        if (await IsLoginPageAsync(page) || !EmaapLoginAutomation.IsEmaapUrl(page.Url))
+        {
+            if (!string.IsNullOrWhiteSpace(_settings.DocaHomeUrl))
+            {
+                await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60_000,
+                });
+            }
+
+            if (await IsLoginPageAsync(page))
+            {
+                throw new InvalidOperationException(
+                    "eMAAP browser is on the login page. Sign in to eMAAP first, then retry Fill up in eMAAP.");
+            }
+        }
+
+        var imageDownload = new FirebaseStorageDownloadService();
+        var photoDir = WorkerDataPaths.StampingImagesDirectory;
+        var preparedPaths = new List<string>();
+
+        var slots = new (string Url, string Name, string ContentType, string Kind, string Label, string OutFile)[]
+        {
+            (instrument.StampingImageUrl, instrument.StampingImageName, instrument.StampingImageContentType,
+                "stamping", "Serial number plate photo", "emaap-photo-1-stamping.jpg"),
+            (instrument.ScaleImageUrl, instrument.ScaleImageName, instrument.ScaleImageContentType,
+                "scale", "Instrument photo", "emaap-photo-2-scale.jpg"),
+            (instrument.InstrumentRearImageUrl, instrument.InstrumentRearImageName, instrument.InstrumentRearImageContentType,
+                "rear", "Instrument rear photo", "emaap-photo-3-rear.jpg"),
+            (instrument.StandardWeightImageUrl, instrument.StandardWeightImageName, instrument.StandardWeightImageContentType,
+                "weights", "Standard weight photo", "emaap-photo-4-weights.jpg"),
+            (instrument.VerificationSealImageUrl, instrument.VerificationSealImageName, instrument.VerificationSealImageContentType,
+                "seal", "Verification seal photo", "emaap-photo-5-seal.jpg"),
+        };
+
+        foreach (var slot in slots)
+        {
+            var downloaded = await imageDownload.TryDownloadVerificationImageAsync(
+                job.Id,
+                instrument.SerialNumber,
+                slot.Url,
+                slot.Name,
+                slot.ContentType,
+                slot.Kind,
+                slot.Label,
+                cancellationToken);
+
+            if (downloaded is null)
+            {
+                preparedPaths.Add(string.Empty);
+                continue;
+            }
+
+            var prepared = DocaUploadImagePreparer.PrepareMachinePhotoForUpload(
+                downloaded.LocalPath,
+                Path.GetDirectoryName(downloaded.LocalPath) ?? photoDir,
+                _settings.DocaUploadImageMaxBytes,
+                _settings.DocaUploadImageMaxEdgePx,
+                outputFileName: slot.OutFile);
+            preparedPaths.Add(prepared.Path);
+        }
+
+        if (string.IsNullOrWhiteSpace(preparedPaths[0]) || !File.Exists(preparedPaths[0]))
+        {
+            throw new InvalidOperationException(
+                "Serial number plate photo is required for eMAAP machine photo upload.");
+        }
+
+        var filledCount = preparedPaths.Count(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p));
+        var weightsPath = preparedPaths.Count > 3 ? preparedPaths[3] : string.Empty;
+
+        // Weights photo is needed after Submit Certificate Details.
+        if (string.IsNullOrWhiteSpace(weightsPath) || !File.Exists(weightsPath))
+        {
+            throw new InvalidOperationException(
+                "Standard weight photo is missing on the verification record (needed after Submit Certificate Details).");
+        }
+
+        await EmaapCertificateGenerationAutomation.FillStarterFormAsync(
+            page,
+            party,
+            instrument,
+            preparedPaths,
+            weightsPath,
+            cancellationToken: cancellationToken);
+
+        // Submit/generate done — PDF download + Firebase certified are mandatory; failures halt the worker.
+        var token = ResolveFirebaseIdToken is not null
+            ? await ResolveFirebaseIdToken(cancellationToken)
+            : firebaseIdToken;
+
+        EmaapCertificateDownloadResult download;
+        try
+        {
+            download = await EmaapCertificatesIssuedAutomation.DownloadHighestMatchingAsync(
+                page,
+                party,
+                WorkerDataPaths.CertificatePdfDirectory(job.Id),
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new EmaapMandatoryStepException(
+                $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but PDF download failed: {ex.Message}",
+                ex);
+        }
+
+        if (string.IsNullOrWhiteSpace(download.CertificateNumber)
+            || string.IsNullOrWhiteSpace(download.LocalPdfPath)
+            || !File.Exists(download.LocalPdfPath))
+        {
+            throw new EmaapMandatoryStepException(
+                $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but certificate PDF is missing on disk.");
+        }
+
+        var pdfBytes = await File.ReadAllBytesAsync(download.LocalPdfPath, cancellationToken);
+        if (pdfBytes.Length < 5
+            || pdfBytes[0] != (byte)'%'
+            || pdfBytes[1] != (byte)'P'
+            || pdfBytes[2] != (byte)'D'
+            || pdfBytes[3] != (byte)'F')
+        {
+            throw new EmaapMandatoryStepException(
+                $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but downloaded file is not a valid PDF.");
+        }
+
+        try
+        {
+            await _firestoreService.MarkCertifiedWithSignedPdfAsync(
+                job.Id,
+                download.LocalPdfPath,
+                token,
+                download.CertificateNumber,
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new EmaapMandatoryStepException(
+                $"HALT — PDF downloaded ({download.CertificateNumber}) for serial {instrument.SerialNumber}, but mark certified / Firebase upload failed: {ex.Message}",
+                ex);
+        }
+
+        return
+            $"eMAAP certified {party.BelongToName} · serial {instrument.SerialNumber} · " +
+            $"{download.CertificateNumber} · uploaded {filledCount} photo(s) · PDF synced to Firebase.";
+    }
+
+    /// <summary>Try Automation:EmaapMasterOtp once (then caller may fall back to Firebase).</summary>
+    public async Task<DocaSessionState> TrySubmitMasterEmaapOtpAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureBrowserReadyAsync(cancellationToken);
+        var page = await GetPageAsync();
+        await page.BringToFrontAsync();
+        return await EmaapLoginAutomation.TrySubmitMasterOtpAsync(
+            page,
+            _settings,
             cancellationToken,
             CaptchaAttemptReporter is null
                 ? null
@@ -1114,7 +1165,7 @@ public sealed class AutomationService : IAsyncDisposable
         string retryHint,
         CancellationToken cancellationToken)
     {
-        var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken);
+        var loginState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
         if (loginState == DocaSessionState.LoggedIn)
         {
             return null;
@@ -1123,15 +1174,22 @@ public sealed class AutomationService : IAsyncDisposable
         await page.BringToFrontAsync();
 
         var captured = await CaptureDocaCredentialsFromBrowserAsync(page);
-        if (captured is not null)
+        if (captured is not null
+            && !string.IsNullOrWhiteSpace(captured.Email)
+            && !string.IsNullOrWhiteSpace(captured.Password))
         {
             DocaCredentials = captured;
             DocaCredentialsCaptured?.Invoke(captured);
         }
 
-        var message = _settings.AutoSolveCaptcha
-            ? $"DOCA auto-login failed after {_settings.CaptchaMaxAttempts} AI captcha attempt(s). Worker will keep retrying; check DOCA email/password if this persists."
-            : $"DOCA login required — complete login, then {retryHint}.";
+        var effective = EffectiveDocaCredentials();
+        var missingCreds = string.IsNullOrWhiteSpace(effective.Email)
+            || string.IsNullOrWhiteSpace(effective.Password);
+        var message = missingCreds
+            ? "eMAAP email/password missing — set Account fields or appsettings.local.json, Save Credentials, retry."
+            : _settings.AutoSolveCaptcha
+                ? $"eMAAP auto-login failed after {_settings.CaptchaMaxAttempts} captcha attempt(s). Check email/password / captcha; worker will retry."
+                : $"eMAAP login required — complete login, then {retryHint}.";
 
         return new DocaOpenResult(DocaSessionState.LoginRequired, message);
     }
@@ -1144,14 +1202,26 @@ public sealed class AutomationService : IAsyncDisposable
             return true;
         }
 
-        var captcha = page.Locator("input[placeholder*='Captcha' i], input[name*='captcha' i]");
+        if (await EmaapLoginAutomation.IsLoggedInAsync(page))
+        {
+            return false;
+        }
+
+        var captcha = page.Locator(
+            "input[placeholder*='Captcha' i], input[name*='captcha' i], input.captcha-input, .captcha-canvas");
         if (await captcha.CountAsync() > 0)
         {
             return true;
         }
 
         var loginButton = page.GetByRole(AriaRole.Button, new() { Name = "Login Now" });
-        return await loginButton.CountAsync() > 0;
+        if (await loginButton.CountAsync() > 0)
+        {
+            return true;
+        }
+
+        var sendOtp = page.GetByRole(AriaRole.Button, new() { Name = "Send OTP" });
+        return await sendOtp.CountAsync() > 0;
     }
 
     public async Task<DocaCredentialSettings?> CaptureDocaCredentialsFromBrowserAsync(IPage? page = null)

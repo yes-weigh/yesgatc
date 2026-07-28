@@ -7,7 +7,7 @@ import type {
   VerificationLocation,
 } from '../types';
 
-/** Fields read by the certificate worker for DOCA verification & charges. */
+/** Fields read by the certificate worker (eMAAP) for verification & charges. */
 export type VerificationDocaChargeFields = {
   verificationFeeBase: number;
   verificationFeeGst: number;
@@ -26,7 +26,7 @@ export function parseCarriageConveyanceFeeInput(value: string): number {
   return parseRupeeFeeInput(value);
 }
 
-/** App-only RV fees — stored on Firebase, not sent to DOCA automation. */
+/** App-only RV fees — stored on Firebase, not sent to the eMAAP certificate worker. */
 export function parseServiceFeeInput(value: string): number {
   return parseRupeeFeeInput(value);
 }
@@ -35,7 +35,7 @@ export function parseAdditionalFeeInput(value: string): number {
   return parseRupeeFeeInput(value);
 }
 
-/** Only RV verifications store fee breakdown on the record; OV leaves fields empty for DOCA automation. */
+/** Only RV verifications store fee breakdown on the record; OV leaves fields empty for the eMAAP certificate worker. */
 export function shouldPersistVerificationDocaCharges(verificationType: JobType | ''): boolean {
   return verificationType === 'RV';
 }

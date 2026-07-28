@@ -125,27 +125,6 @@ export function buildVerificationSubmitProgressDetails(
     ];
   }
 
-  if (stage === 'approved') {
-    const rows: VerificationProgressDetailRow[] = [
-      { id: 'application', label: 'Application No.', value: applicationNumber },
-      { id: 'instrument', label: 'Instrument', value: displayValue(record.productName) },
-      { id: 'capacity', label: 'Capacity', value: formatVerificationProgressCapacity(record) },
-      { id: 'location', label: 'Location', value: formatVerificationProgressLocation(record, customer) },
-    ];
-
-    if (certificateNumber !== '—') {
-      rows.push({ id: 'certificate', label: 'Certificate No.', value: certificateNumber });
-    }
-
-    rows.push({
-      id: 'approved-on',
-      label: 'Approved On',
-      value: formatVerificationProgressDateTime(record.approvedAt),
-    });
-
-    return rows;
-  }
-
   const rows: VerificationProgressDetailRow[] = [];
 
   if (certificateNumber !== '—') {
@@ -176,7 +155,7 @@ export function verificationSubmitProgressFooterMessage(
   stage: VerificationSubmitProgressStage,
 ): string | null {
   if (stage === 'submitted') {
-    return 'We will review your application and update you shortly.';
+    return 'Certificate generation is in progress on eMAAP.';
   }
   if (stage === 'certified') {
     return 'VERIFICATION SUCCESSFUL';

@@ -34,12 +34,10 @@ export type AutomationWorkerStatus = {
   statusMessage: string;
   autoWorkerEnabled: boolean;
   remotePaused: boolean;
-  docaFillOnly: boolean;
   docaSessionState: string;
   queueTotal: number;
   queueEligible: number;
   queueSubmitted: number;
-  queueApproved: number;
   jobsCompletedSession: number;
   jobsFailedSession: number;
   docaLoggedInAt: string;
@@ -52,7 +50,6 @@ export type AutomationWorkerRemoteControl = {
   commandRevision: number;
   credentialsRevision: number;
   autoWorkerEnabled: boolean;
-  docaFillOnly: boolean;
   pauseWorker: boolean;
   scrapeCommandRevision: number;
   scrapePause: boolean;
@@ -110,7 +107,6 @@ export const DEFAULT_AUTOMATION_WORKER_REMOTE: AutomationWorkerRemoteControl = {
   commandRevision: 0,
   credentialsRevision: 0,
   autoWorkerEnabled: true,
-  docaFillOnly: false,
   pauseWorker: false,
   scrapeCommandRevision: 0,
   scrapePause: true,
@@ -159,12 +155,10 @@ export function normalizeAutomationWorkerStatus(
     statusMessage: readString(data, 'statusMessage'),
     autoWorkerEnabled: readBool(data, 'autoWorkerEnabled', true),
     remotePaused: readBool(data, 'remotePaused'),
-    docaFillOnly: readBool(data, 'docaFillOnly'),
     docaSessionState: readString(data, 'docaSessionState'),
     queueTotal: readInt(data, 'queueTotal'),
     queueEligible: readInt(data, 'queueEligible'),
     queueSubmitted: readInt(data, 'queueSubmitted'),
-    queueApproved: readInt(data, 'queueApproved'),
     jobsCompletedSession: readInt(data, 'jobsCompletedSession'),
     jobsFailedSession: readInt(data, 'jobsFailedSession'),
     docaLoggedInAt: readString(data, 'docaLoggedInAt'),
@@ -182,7 +176,6 @@ export function normalizeAutomationWorkerRemote(
     commandRevision: readInt(data, 'commandRevision'),
     credentialsRevision: readInt(data, 'credentialsRevision'),
     autoWorkerEnabled: readBool(data, 'autoWorkerEnabled', true),
-    docaFillOnly: readBool(data, 'docaFillOnly'),
     pauseWorker: readBool(data, 'pauseWorker'),
     scrapeCommandRevision: readInt(data, 'scrapeCommandRevision'),
     scrapePause: readBool(data, 'scrapePause'),
@@ -375,7 +368,6 @@ export async function saveAutomationWorkerRemoteControl(
       commandRevision: nextCommandRevision,
       credentialsRevision: nextCredentialsRevision,
       autoWorkerEnabled: patch.autoWorkerEnabled ?? current.autoWorkerEnabled,
-      docaFillOnly: patch.docaFillOnly ?? current.docaFillOnly,
       pauseWorker: patch.pauseWorker ?? current.pauseWorker,
       scrapeCommandRevision: patch.scrapeCommandRevision ?? current.scrapeCommandRevision,
       scrapePause: patch.scrapePause ?? current.scrapePause,

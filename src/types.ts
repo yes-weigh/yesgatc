@@ -242,11 +242,11 @@ export interface FirestoreUserDoc {
   sealPath?: string;
   sealName?: string;
   sealContentType?: string;
-  /** RC laboratory seal ID — prefilled on verification devices (default IND/KL/26/04/B26). */
+  /** RC laboratory seal ID — prefilled on verification devices (default IND/GATC/KL/26/04/C26). */
   laboratorySealIdentification?: string;
   /** RC verification fee amounts by weight tier and location (in premise / in situ). */
   feesStructure?: RcFeesStructure;
-  /** Super Admin only — 3-letter code used in DOCA remarks (e.g. Original verification by ABC). */
+  /** Super Admin only — 3-letter code used in certificate remarks (e.g. Original verification by ABC). */
   rcCode?: string;
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
@@ -396,20 +396,20 @@ export interface SiteCalibration {
   status?: VerificationRequestStatus;
   submittedAt?: string;
   approvedAt?: string;
-  /** Set when the signed certificate is uploaded to DOCA. */
+  /** Set when the signed certificate is issued via the eMAAP certificate worker. */
   certifiedAt?: string;
   /** Filled by certificate server when approved. */
   certificateNumber?: string;
   /** Internal application reference — e.g. VC/26/1. Assigned at draft creation. */
   applicationNumber?: string;
-  /** Fee breakdown for DOCA Verification & Charges (INR, whole rupees). */
+  /** Fee breakdown for eMAAP Verification & Charges (INR, whole rupees). */
   verificationFeeBase?: number;
   verificationFeeGst?: number;
-  /** Verification fee incl. 18% GST — filled on DOCA as Verification Fee and Total deposited. */
+  /** Verification fee incl. 18% GST — filled on eMAAP as Verification Fee and Total deposited. */
   verificationFeeTotal?: number;
-  /** RV service fee (INR) — app-only; stored on Firebase, not used by certificate worker / DOCA. */
+  /** RV service fee (INR) — app-only; stored on Firebase, not used by certificate worker. */
   serviceFee?: number;
-  /** RV additional fee (INR) — app-only; stored on Firebase, not used by certificate worker / DOCA. */
+  /** RV additional fee (INR) — app-only; stored on Firebase, not used by certificate worker. */
   additionalFee?: number;
   /** RV wallet payment for administrative fees + GST. */
   rvPaymentStatus?: 'not_required' | 'pending' | 'paid';
@@ -456,7 +456,7 @@ export interface SiteCalibration {
   /** Set on the original when a resubmission was queued. */
   certificateQuality?: 'corrupted_qr' | 'certification_failed';
   supersededByResubmissionId?: string;
-  /** Last Phase 2 error from certificate worker (status stays approved). */
+  /** Last certification error from certificate worker (status stays approved). */
   certificationLastError?: string;
   /** Admin void or auto-void when a resubmission certifies — invalidates this certificate in the app. */
   certificateVoidedAt?: string;

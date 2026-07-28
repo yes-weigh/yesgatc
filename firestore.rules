@@ -429,6 +429,16 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // eMAAP OTP codes written by Cloud Function only; Super Admin worker reads + marks consumed.
+    match /emaapOtpInbox/{otpId} {
+      allow read: if isSuperAdmin();
+      allow create, delete: if false;
+      allow update: if isSuperAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['consumed', 'consumedAt'])
+        && request.resource.data.consumed == true
+        && resource.data.consumed == false;
+    }
+
     match /docaCertificates/{certId} {
       allow read, write: if isSuperAdmin();
     }

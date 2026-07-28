@@ -232,7 +232,7 @@ export function isVerificationFailedAtCertification(record: SiteCalibration): bo
   return false;
 }
 
-/** Approved on DOCA/Firebase but signed PDF upload never finished (worker retries exhausted). */
+/** Approved in Firebase but signed PDF upload never finished (eMAAP worker retries exhausted). */
 export function isVerificationStuckAtApproved(record: SiteCalibration): boolean {
   if (isVerificationRejected(record)) return false;
   if (normalizeVerificationStatus(record) !== 'approved') return false;
@@ -250,7 +250,7 @@ export function isVerificationRejected(record: VerificationStatusSource): boolea
   return record.status === 'rejected';
 }
 
-/** Incomplete certification — eligible for Super Admin DOCA resubmit. */
+/** Incomplete certification — eligible for Super Admin eMAAP resubmit. */
 export function isCertificationFailureResubmitSource(record: SiteCalibration): boolean {
   if (isVerificationRejected(record)) return false;
   if (isVerificationFullyCertified(record) || canDownloadVerificationCertificate(record)) {
@@ -259,7 +259,7 @@ export function isCertificationFailureResubmitSource(record: SiteCalibration): b
   return isVerificationFailedAtCertification(record);
 }
 
-/** True when Firestore is certified and DOCA issued a certificate number. */
+/** True when Firestore is certified and eMAAP issued a certificate number. */
 export function isVerificationCertifiedOnDoca(record: SiteCalibration): boolean {
   return (
     normalizeVerificationStatus(record) === 'certified' &&
@@ -289,14 +289,14 @@ export function verificationDisplayStatusLabel(record: SiteCalibration): string 
 
 export function verificationDisplayStatusTitle(record: SiteCalibration): string | undefined {
   if (isVerificationCertifiedOnDoca(record) && !record.certificatePdfUrl?.trim()) {
-    return 'Certified on DOCA — signed PDF is not stored in Firebase yet.';
+    return 'Certificate issued — signed PDF is not stored in Firebase yet.';
   }
   if (
     normalizeVerificationStatus(record) === 'certified'
     && !verificationCertificateNumber(record)
     && isValidVerificationIsoTimestamp(record.certifiedAt)
   ) {
-    return 'Certified in Firebase but certificate number not synced — use Pipeline recovery to re-queue DOCA sync.';
+    return 'Certified in Firebase but certificate number not synced — use Pipeline recovery to restore submitted so the eMAAP worker reprocesses it.';
   }
   const display = getVerificationDisplayStatus(record);
   if (display === 'failed_submit' || display === 'failed_certification') {
@@ -436,10 +436,10 @@ export function verificationStatusLabel(status: VerificationRequestStatus): stri
 
 export function verificationStatusDescription(status: VerificationRequestStatus): string {
   if (status === 'draft') return 'Open and edit before submitting for certificate generation.';
-  if (status === 'submitted') return 'Locked — awaiting certificate server processing.';
-  if (status === 'certified') return 'Signed certificate uploaded to DOCA.';
+  if (status === 'submitted') return 'Locked — awaiting eMAAP certificate generation.';
+  if (status === 'certified') return 'Certificate issued and stored in Firebase.';
   if (status === 'rejected') return 'Certification failed — closed; not retried by the worker.';
-  return 'Certificate generated and ready to download.';
+  return 'Legacy mid-state — eMAAP worker treats this like submitted once reset.';
 }
 
 export function verificationVctLabel(

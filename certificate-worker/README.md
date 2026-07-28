@@ -59,29 +59,32 @@ Or open `certificate-worker/Yesgatc.CertificateWorker.slnx` in Visual Studio and
 - Uses Firebase Auth REST API with `{aadhar}@yesgatc.auth` and verifies `role == super_admin` in Firestore
 - Reads all `siteCalibrations` where `status == submitted` (every RC)
 - Resolves customer/product data using each job's `rcId` (not the signed-in user)
-- Playwright automates the DOCA IC verification form
-- **DOCA session persistence:** Chromium profile at `%LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser`
-- **Local credentials:** Super Admin + DOCA saved at `%LOCALAPPDATA%\YesGATC\CertificateWorker\credentials.local.json`
+- Playwright automates the government portal (migrating from `doca.gov.in` → `emaap.gov.in/gatc`)
+- **eMAAP login (progressive):** canvas captcha via existing OpenAI OCR → **Send OTP** → paste email OTP in the worker UI → **Login**
+- **Job pickup:** set `AutoWorker.Enabled` to `false` in `appsettings.json` while the new portal is being mapped (default during migration)
+- **Browser profile:** `%LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser`
+- **Local credentials:** Super Admin + eMAAP/DOCA saved at `%LOCALAPPDATA%\YesGATC\CertificateWorker\credentials.local.json`
 
-### DOCA captcha OCR (optional AI)
+### Captcha OCR (Gemini by default)
 
-By default the worker uses **OpenAI vision** (`gpt-4o-mini`) when an API key is set, with **Tesseract fallback** if the API fails.
+By default the worker uses **Google Gemini** vision (`gemini-3.6-flash`) when an API key is set, with **Tesseract fallback** if the API fails.
 
 Add to `appsettings.local.json`:
 
 ```json
 "Automation": {
   "CaptchaOcr": {
-    "Provider": "OpenAI",
-    "ApiKey": "sk-...",
-    "Model": "gpt-4o-mini"
+    "Provider": "Gemini",
+    "ApiKey": "YOUR_GEMINI_API_KEY",
+    "Model": "gemini-3.6-flash"
   }
 }
 ```
 
-Or set environment variable `OPENAI_API_KEY`. Use `"Provider": "Tesseract"` for local-only OCR (no API).
+Or set environment variable `GEMINI_API_KEY` (aliases: `GOOGLE_API_KEY`).  
+You can also paste the key in the worker UI under **Captcha AI Key** → Save Credentials.
 
-OpenRouter and other OpenAI-compatible APIs: set `ApiBaseUrl` (e.g. `https://openrouter.ai/api/v1`).
+`"Provider": "OpenAI"` still works (needs `OPENAI_API_KEY`). `"Provider": "Tesseract"` = local-only.
 
 ## Windows Server (unattended)
 

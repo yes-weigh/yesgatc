@@ -24,8 +24,9 @@ public sealed class InstrumentDetails
     public string VerifiedAndStamped { get; init; } = "Yes";
     public string Remarks { get; init; } = string.Empty;
     public string ModelApprovalNo { get; init; } = string.Empty;
+    public string ApplicationNumber { get; init; } = string.Empty;
     public string MoneyReceiptNumber { get; init; } = string.Empty;
-    /// <summary>DOCA money receipt date (dd-MM-yy).</summary>
+    /// <summary>DOCA money receipt date (dd-MM-yy). Also used for eMAAP #date (converted).</summary>
     public string MoneyReceiptDated { get; init; } = string.Empty;
     /// <summary>Verification fee incl. GST (INR, whole rupees).</summary>
     public string VerificationFeeTotal { get; init; } = string.Empty;
@@ -42,4 +43,13 @@ public sealed class InstrumentDetails
     public string ScaleImageContentType { get; init; } = "image/jpeg";
     /// <summary>True when instrument photo was missing and stamping plate image is used instead.</summary>
     public bool ScaleImageUsesStampingFallback { get; init; }
+    public string InstrumentRearImageUrl { get; init; } = string.Empty;
+    public string InstrumentRearImageName { get; init; } = "Instrument rear image";
+    public string InstrumentRearImageContentType { get; init; } = "image/jpeg";
+    public string StandardWeightImageUrl { get; init; } = string.Empty;
+    public string StandardWeightImageName { get; init; } = "Standard weight image";
+    public string StandardWeightImageContentType { get; init; } = "image/jpeg";
+    public string VerificationSealImageUrl { get; init; } = string.Empty;
+    public string VerificationSealImageName { get; init; } = "Verification seal image";
+    public string VerificationSealImageContentType { get; init; } = "image/jpeg";
 }

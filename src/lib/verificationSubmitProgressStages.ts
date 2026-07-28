@@ -4,7 +4,8 @@ import {
   normalizeVerificationStatus,
 } from './verificationRequest';
 
-export type VerificationSubmitProgressStage = 'submitted' | 'approved' | 'certified';
+/** RC progress after submit: Submitted → Certified (eMAAP worker, one pass). */
+export type VerificationSubmitProgressStage = 'submitted' | 'certified';
 
 export const VERIFICATION_SUBMIT_PROGRESS_STAGES: {
   id: VerificationSubmitProgressStage;
@@ -15,14 +16,8 @@ export const VERIFICATION_SUBMIT_PROGRESS_STAGES: {
   {
     id: 'submitted',
     title: 'Application submitted',
-    message: 'Your application has been submitted successfully.',
+    message: 'Your application is with the certificate worker for eMAAP processing.',
     shortLabel: 'Submitted',
-  },
-  {
-    id: 'approved',
-    title: 'Application approved',
-    message: 'Your application has been approved. You can proceed to verification.',
-    shortLabel: 'Approved',
   },
   {
     id: 'certified',
@@ -37,7 +32,6 @@ export function resolveVerificationSubmitProgressStage(
 ): VerificationSubmitProgressStage {
   if (records.length === 0) return 'submitted';
 
-  const statuses = records.map(record => normalizeVerificationStatus(record));
   const allCertified = records.every(
     record =>
       isVerificationFullyCertified(record) ||
@@ -45,11 +39,6 @@ export function resolveVerificationSubmitProgressStage(
       normalizeVerificationStatus(record) === 'certified',
   );
   if (allCertified) return 'certified';
-
-  const allApprovedOrBeyond = statuses.every(
-    status => status === 'approved' || status === 'certified',
-  );
-  if (allApprovedOrBeyond) return 'approved';
 
   return 'submitted';
 }

@@ -53,7 +53,7 @@ export const VERIFICATION_CERTIFIED_ACTION_ORDER: VerificationCertifiedActionId[
   'gst-bill',
 ];
 
-/** URL for certificate preview / download — stored PDF preferred, else public DOCA page. */
+/** URL for certificate preview / download — stored Firebase PDF preferred, else public certificate view URL. */
 export function resolveCertificatePreviewUrl(record: SiteCalibration): string | null {
   const certificateNumber = record.certificateNumber?.trim() ?? '';
   const docaUrl = buildDocaCertificateViewUrl(certificateNumber);

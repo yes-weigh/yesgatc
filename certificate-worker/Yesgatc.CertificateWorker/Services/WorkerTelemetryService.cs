@@ -8,8 +8,6 @@ public sealed class WorkerTelemetryService
     private const string StatusCollection = "automationWorker";
     private const string StatusDocId = "status";
     private const string RemoteDocId = "remote";
-    private const string ScrapeDocId = "scrape";
-    private const string EnrichDocId = "enrich";
     private const string LogsCollection = "automationWorkerLogs";
     private const string CaptchaCollection = "automationWorkerCaptchaAttempts";
     private const string SessionsCollection = "automationWorkerSessions";
@@ -21,8 +19,6 @@ public sealed class WorkerTelemetryService
 
     private int _lastAppliedCommandRevision;
     private int _lastAppliedCredentialsRevision;
-    private int _lastAppliedScrapeCommandRevision;
-    private int _lastAppliedEnrichCommandRevision;
     private DateTimeOffset? _docaLoggedInAt;
     private DateTimeOffset? _lastSessionProbeAt;
     private string _lastSessionProbeResult = string.Empty;
@@ -217,12 +213,10 @@ public sealed class WorkerTelemetryService
                         : snapshot.StatusMessage,
                     ["autoWorkerEnabled"] = snapshot.AutoWorkerEnabled,
                     ["remotePaused"] = snapshot.RemotePaused,
-                    ["docaFillOnly"] = snapshot.DocaFillOnly,
                     ["docaSessionState"] = snapshot.DocaSessionState,
                     ["queueTotal"] = snapshot.QueueTotal,
                     ["queueEligible"] = snapshot.QueueEligible,
                     ["queueSubmitted"] = snapshot.QueueSubmitted,
-                    ["queueApproved"] = snapshot.QueueApproved,
                     ["jobsCompletedSession"] = snapshot.JobsCompletedSession,
                     ["jobsFailedSession"] = snapshot.JobsFailedSession,
                     ["docaLoggedInAt"] = _docaLoggedInAt?.ToString("O") ?? string.Empty,
@@ -263,183 +257,17 @@ public sealed class WorkerTelemetryService
                 AutoWorkerEnabled = fields.ContainsKey("autoWorkerEnabled")
                     ? FirestoreDocumentClient.ReadBool(fields, "autoWorkerEnabled")
                     : null,
-                DocaFillOnly = fields.ContainsKey("docaFillOnly")
-                    ? FirestoreDocumentClient.ReadBool(fields, "docaFillOnly")
-                    : null,
                 PauseWorker = FirestoreDocumentClient.ReadBool(fields, "pauseWorker"),
                 SuperAdminAadhar = FirestoreDocumentClient.ReadString(fields, "superAdminAadhar"),
                 SuperAdminPassword = FirestoreDocumentClient.ReadString(fields, "superAdminPassword"),
                 DocaEmail = FirestoreDocumentClient.ReadString(fields, "docaEmail"),
                 DocaPassword = FirestoreDocumentClient.ReadString(fields, "docaPassword"),
                 CaptchaApiKey = FirestoreDocumentClient.ReadString(fields, "captchaApiKey"),
-                ScrapeCommandRevision = FirestoreDocumentClient.ReadInt(fields, "scrapeCommandRevision"),
-                ScrapePause = FirestoreDocumentClient.ReadBool(fields, "scrapePause"),
-                ScrapeStartPage = FirestoreDocumentClient.ReadInt(fields, "scrapeStartPage"),
-                EnrichCommandRevision = FirestoreDocumentClient.ReadInt(fields, "enrichCommandRevision"),
-                EnrichPause = FirestoreDocumentClient.ReadBool(fields, "enrichPause"),
             };
         }
         catch
         {
             return null;
-        }
-    }
-
-    public bool ShouldApplyScrapeCommand(WorkerRemoteControlState remote) =>
-        remote.ScrapeCommandRevision > _lastAppliedScrapeCommandRevision;
-
-    public void MarkScrapeCommandApplied(int revision) => _lastAppliedScrapeCommandRevision = revision;
-
-    public bool ShouldApplyEnrichCommand(WorkerRemoteControlState remote) =>
-        remote.EnrichCommandRevision > _lastAppliedEnrichCommandRevision;
-
-    public void MarkEnrichCommandApplied(int revision) => _lastAppliedEnrichCommandRevision = revision;
-
-    public async Task PublishEnrichStateAsync(
-        DocaEnrichProgressState state,
-        Func<Task<string>> resolveIdToken,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var idToken = await resolveIdToken();
-            var fields = new Dictionary<string, object?>
-            {
-                ["status"] = state.Status,
-                ["statusMessage"] = state.StatusMessage.Length > 500 ? state.StatusMessage[..500] : state.StatusMessage,
-                ["totalRows"] = state.TotalRows,
-                ["processedRows"] = state.ProcessedRows,
-                ["parsedRows"] = state.ParsedRows,
-                ["skippedRows"] = state.SkippedRows,
-                ["failedRows"] = state.FailedRows,
-                ["startedAt"] = state.StartedAt,
-                ["lastProgressAt"] = state.LastProgressAt,
-                ["lastError"] = state.LastError,
-                ["machineName"] = Environment.MachineName,
-            };
-
-            if (state.LastProcessed is not null)
-            {
-                fields["lastProcessedCertificate"] = state.LastProcessed.Certificate;
-                fields["lastProcessedAction"] = state.LastProcessed.Action;
-                fields["lastProcessedAt"] = state.LastProcessed.ProcessedAt;
-                if (state.LastProcessed.Extract is not null)
-                {
-                    fields["lastExtract"] = state.LastProcessed.Extract.ToFirestoreMap();
-                }
-            }
-
-            var existing = await _documents.TryGetFieldsAsync(StatusCollection, EnrichDocId, idToken, cancellationToken);
-            if (existing.Count == 0)
-            {
-                await _documents.CreateDocumentWithIdAsync(StatusCollection, EnrichDocId, fields, idToken, cancellationToken);
-            }
-            else
-            {
-                await _documents.PatchFieldsAsync(StatusCollection, EnrichDocId, fields, idToken, cancellationToken);
-            }
-        }
-        catch (Exception ex)
-        {
-            LogDiagnostic?.Invoke($"DOCA enrich state publish failed: {ex.Message}");
-        }
-    }
-
-    public async Task ReportEnrichActivityAsync(
-        string message,
-        string level,
-        Func<Task<string>> resolveIdToken,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var idToken = await resolveIdToken();
-            await _documents.CreateDocumentAsync(
-                LogsCollection,
-                new Dictionary<string, object?>
-                {
-                    ["createdAt"] = DateTimeOffset.UtcNow.ToString("O"),
-                    ["message"] = message.Length > 500 ? message[..500] : message,
-                    ["level"] = level,
-                    ["category"] = "doca-enrich",
-                    ["machineName"] = Environment.MachineName,
-                },
-                idToken,
-                cancellationToken);
-        }
-        catch
-        {
-            // Non-fatal.
-        }
-    }
-
-    public async Task PublishScrapeStateAsync(
-        DocaScrapeProgressState state,
-        Func<Task<string>> resolveIdToken,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var idToken = await resolveIdToken();
-            var fields = new Dictionary<string, object?>
-            {
-                ["status"] = state.Status,
-                ["statusMessage"] = state.StatusMessage.Length > 500 ? state.StatusMessage[..500] : state.StatusMessage,
-                ["currentPage"] = state.CurrentPage,
-                ["totalPages"] = state.TotalPages,
-                ["totalEntries"] = state.TotalEntries,
-                ["processedRows"] = state.ProcessedRows,
-                ["uploadedRows"] = state.UploadedRows,
-                ["skippedRows"] = state.SkippedRows,
-                ["failedRows"] = state.FailedRows,
-                ["checkpointPage"] = state.CheckpointPage,
-                ["startedAt"] = state.StartedAt,
-                ["lastProgressAt"] = state.LastProgressAt,
-                ["lastError"] = state.LastError,
-                ["machineName"] = Environment.MachineName,
-            };
-
-            var existing = await _documents.TryGetFieldsAsync(StatusCollection, ScrapeDocId, idToken, cancellationToken);
-            if (existing.Count == 0)
-            {
-                await _documents.CreateDocumentWithIdAsync(StatusCollection, ScrapeDocId, fields, idToken, cancellationToken);
-            }
-            else
-            {
-                await _documents.PatchFieldsAsync(StatusCollection, ScrapeDocId, fields, idToken, cancellationToken);
-            }
-        }
-        catch (Exception ex)
-        {
-            LogDiagnostic?.Invoke($"DOCA scrape state publish failed: {ex.Message}");
-        }
-    }
-
-    public async Task ReportScrapeActivityAsync(
-        string message,
-        string level,
-        Func<Task<string>> resolveIdToken,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var idToken = await resolveIdToken();
-            await _documents.CreateDocumentAsync(
-                LogsCollection,
-                new Dictionary<string, object?>
-                {
-                    ["createdAt"] = DateTimeOffset.UtcNow.ToString("O"),
-                    ["message"] = message.Length > 500 ? message[..500] : message,
-                    ["level"] = level,
-                    ["category"] = "doca-scrape",
-                    ["machineName"] = Environment.MachineName,
-                },
-                idToken,
-                cancellationToken);
-        }
-        catch
-        {
-            // Non-fatal.
         }
     }
 

@@ -132,12 +132,12 @@ export function buildRvSubmitTestRevertMessage(
     }
 
     if (record.certificateNumber?.trim()) {
-      lines.push(`• DOCA certificate: ${record.certificateNumber.trim()} (remove in portal if issued)`);
+      lines.push(`• eMAAP certificate: ${record.certificateNumber.trim()} (remove in portal if issued)`);
     }
   });
 
   lines.push('');
-  lines.push('DOCA: no app action — ensure the certificate worker is in fill-only / offline mode during testing.');
+  lines.push('eMAAP: no app action — pause the certificate worker (keep it offline) during testing.');
 
   return lines.join('\n');
 }

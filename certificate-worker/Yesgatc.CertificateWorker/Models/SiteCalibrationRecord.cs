@@ -21,40 +21,27 @@ public sealed class SiteCalibrationRecord
 
     public bool IsSuperseded => !string.IsNullOrWhiteSpace(SupersededByResubmissionId);
     public bool IsVoided => !string.IsNullOrWhiteSpace(CertificateVoidedAt);
-    public bool IsEligibleForWorkerQueue => NeedsPipelineWork && !IsSuperseded && !IsVoided;
+
+    public bool IsRv =>
+        string.Equals(VerificationType, "RV", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsOv =>
+        string.Equals(VerificationType, "OV", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Submitted jobs only (OV + RV). eMAAP fill → certify → PDF in one pass.</summary>
+    public bool IsEligibleForWorkerQueue =>
+        NeedsPipelineWork && !IsSuperseded && !IsVoided;
 
     public bool IsDraft => string.Equals(Status, VerificationStatuses.Draft, StringComparison.OrdinalIgnoreCase);
     public bool IsSubmitted => string.Equals(Status, VerificationStatuses.Submitted, StringComparison.OrdinalIgnoreCase);
     public bool IsApproved => string.Equals(Status, VerificationStatuses.Approved, StringComparison.OrdinalIgnoreCase);
     public bool IsCertified => string.Equals(Status, VerificationStatuses.Certified, StringComparison.OrdinalIgnoreCase);
     public bool HasCertificate => IsCertified || !string.IsNullOrWhiteSpace(CertificatePdfUrl);
-    public bool IsReadyToCertify => IsApproved && !IsCertified;
-    public bool NeedsCertificatePdfUpload =>
-        string.IsNullOrWhiteSpace(CertificatePdfUrl) && (IsApproved || IsCertified);
-    public bool NeedsPipelineWork => IsSubmitted || IsReadyToCertify || NeedsCertificatePdfUpload;
 
-    public string NextStepLabel
-    {
-        get
-        {
-            if (IsSubmitted)
-            {
-                return "Phase 1 · Submit on DOCA";
-            }
+    /// <summary>Single production stage: Submitted → eMAAP fill+certify → PDF → Firebase certified.</summary>
+    public bool NeedsPipelineWork => IsSubmitted;
 
-            if (IsReadyToCertify)
-            {
-                return "Phase 2 · Certify on DOCA";
-            }
-
-            if (NeedsCertificatePdfUpload)
-            {
-                return "Upload PDF to Firebase";
-            }
-
-            return "Complete";
-        }
-    }
+    public string NextStepLabel => IsSubmitted ? "eMAAP · Fill & certify" : "Complete";
 
     public string PipelineDateDisplay =>
         IsSubmitted ? SubmittedAtDisplay
@@ -66,7 +53,9 @@ public sealed class SiteCalibrationRecord
             ? "PDF in Firebase"
             : IsCertified
                 ? "Certified (no PDF)"
-                : "Awaiting certify";
+                : IsSubmitted
+                    ? "Awaiting eMAAP"
+                    : "—";
 
     public string StatusLabel => VerificationStatuses.Label(Status);
 

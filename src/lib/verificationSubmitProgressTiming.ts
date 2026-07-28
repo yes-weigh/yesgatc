@@ -1,19 +1,20 @@
 import type { VerificationSubmitProgressStage } from './verificationSubmitProgressStages';
 
-/** Typical approval time from submit (certificate worker). */
-export const VERIFICATION_PROGRESS_APPROVAL_ETA_SECONDS = 35;
+/** Typical eMAAP fill → certify duration after submit. */
+export const VERIFICATION_PROGRESS_CERTIFICATION_ETA_SECONDS = 90;
 
-/** Typical certification time after approval. */
-export const VERIFICATION_PROGRESS_CERTIFICATION_ETA_SECONDS = 60;
+/** @deprecated Use VERIFICATION_PROGRESS_CERTIFICATION_ETA_SECONDS */
+export const VERIFICATION_PROGRESS_APPROVAL_ETA_SECONDS =
+  VERIFICATION_PROGRESS_CERTIFICATION_ETA_SECONDS;
 
 /** Typical end-to-end verification pipeline duration. */
-export const VERIFICATION_PROGRESS_TOTAL_ETA_SECONDS = 100;
+export const VERIFICATION_PROGRESS_TOTAL_ETA_SECONDS =
+  VERIFICATION_PROGRESS_CERTIFICATION_ETA_SECONDS;
 
 export function verificationProgressEtaSeconds(
   stage: VerificationSubmitProgressStage,
 ): number | null {
-  if (stage === 'submitted') return VERIFICATION_PROGRESS_APPROVAL_ETA_SECONDS;
-  if (stage === 'approved') return VERIFICATION_PROGRESS_CERTIFICATION_ETA_SECONDS;
+  if (stage === 'submitted') return VERIFICATION_PROGRESS_CERTIFICATION_ETA_SECONDS;
   return null;
 }
 
@@ -22,11 +23,6 @@ export function verificationProgressCountdownMessage(
   secondsLeft: number,
 ): string {
   if (stage === 'submitted') {
-    if (secondsLeft <= 0) return 'Approval landing any moment now…';
-    return `Your application will be approved in ${formatCountdownSeconds(secondsLeft)}`;
-  }
-
-  if (stage === 'approved') {
     if (secondsLeft <= 0) return 'Your certificate is almost ready…';
     return `Your certificate will be ready in ${formatCountdownSeconds(secondsLeft)}`;
   }

@@ -5,7 +5,7 @@ namespace Yesgatc.CertificateWorker.Services;
 
 public sealed class InstrumentDetailsService
 {
-    private const string DefaultLaboratorySealIdentification = "IND/KL/26/04/B26";
+    private const string DefaultLaboratorySealIdentification = "IND/GATC/KL/26/04/C26";
 
     private readonly FirestoreDocumentClient _documents;
 
@@ -77,6 +77,30 @@ public sealed class InstrumentDetailsService
             "Scale image");
         var scaleImageContentType = FirstNonEmpty(
             FirestoreFieldReader.ReadString(calibrationFields, "scaleImageContentType"),
+            "image/jpeg");
+
+        var instrumentRearImageUrl = FirestoreFieldReader.ReadString(calibrationFields, "instrumentRearImageUrl");
+        var instrumentRearImageName = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "instrumentRearImageName"),
+            "Instrument rear image");
+        var instrumentRearImageContentType = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "instrumentRearImageContentType"),
+            "image/jpeg");
+
+        var standardWeightImageUrl = FirestoreFieldReader.ReadString(calibrationFields, "standardWeightImageUrl");
+        var standardWeightImageName = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "standardWeightImageName"),
+            "Standard weight image");
+        var standardWeightImageContentType = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "standardWeightImageContentType"),
+            "image/jpeg");
+
+        var verificationSealImageUrl = FirestoreFieldReader.ReadString(calibrationFields, "verificationSealImageUrl");
+        var verificationSealImageName = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "verificationSealImageName"),
+            "Verification seal image");
+        var verificationSealImageContentType = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(calibrationFields, "verificationSealImageContentType"),
             "image/jpeg");
 
         var maxCapacity = FirstDouble(
@@ -241,6 +265,7 @@ public sealed class InstrumentDetailsService
             TypeOfInstrument = "Electronic",
             Manufacturer = manufacturer,
             YearOfManufacture = yearOfManufacture,
+            ApplicationNumber = applicationNumber,
             MoneyReceiptNumber = moneyReceiptNumber,
             MoneyReceiptDated = isOv ? string.Empty : moneyReceiptDated,
             VerificationFeeTotal = isOv ? string.Empty : charges.VerificationFeeTotalText,
@@ -270,6 +295,15 @@ public sealed class InstrumentDetailsService
             ScaleImageName = scaleImageName,
             ScaleImageContentType = scaleImageContentType,
             ScaleImageUsesStampingFallback = scaleImageUsesStampingFallback,
+            InstrumentRearImageUrl = instrumentRearImageUrl,
+            InstrumentRearImageName = instrumentRearImageName,
+            InstrumentRearImageContentType = instrumentRearImageContentType,
+            StandardWeightImageUrl = standardWeightImageUrl,
+            StandardWeightImageName = standardWeightImageName,
+            StandardWeightImageContentType = standardWeightImageContentType,
+            VerificationSealImageUrl = verificationSealImageUrl,
+            VerificationSealImageName = verificationSealImageName,
+            VerificationSealImageContentType = verificationSealImageContentType,
         };
     }
 

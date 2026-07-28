@@ -27,14 +27,13 @@ public sealed class FirestoreService
         CancellationToken cancellationToken = default) =>
         GetVerificationsByStatusAsync("approved", idToken, cancellationToken);
 
+    /// <summary>Single production stage: Submitted → eMAAP fill+certify → PDF → Firebase certified.</summary>
     public async Task<IReadOnlyList<SiteCalibrationRecord>> GetPendingCertificationQueueAsync(
         string idToken,
         CancellationToken cancellationToken = default)
     {
         var submitted = await GetAllSubmittedVerificationsAsync(idToken, cancellationToken);
-        var approved = await GetAllApprovedVerificationsAsync(idToken, cancellationToken);
-
-        return CertificationQueueFilter.Apply(submitted.Concat(approved));
+        return CertificationQueueFilter.Apply(submitted);
     }
 
     public async Task<SiteCalibrationRecord?> GetVerificationByIdAsync(
@@ -63,6 +62,103 @@ public sealed class FirestoreService
         {
             return null;
         }
+    }
+
+    /// <summary>Pretty-print all fields on a siteCalibrations document for the worker detail pane.</summary>
+    public async Task<string> FormatSiteCalibrationDocumentAsync(
+        string jobId,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return "No document selected.";
+        }
+
+        var documents = new FirestoreDocumentClient(_settings);
+        Dictionary<string, JsonElement> fields;
+        try
+        {
+            fields = await documents.GetFieldsAsync(
+                "siteCalibrations",
+                jobId,
+                idToken,
+                cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return $"Could not load siteCalibrations/{jobId}\n{ex.Message}";
+        }
+
+        var lines = new List<string>
+        {
+            $"siteCalibrations/{jobId}",
+            new string('─', 48),
+        };
+
+        foreach (var key in fields.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+        {
+            lines.Add($"{key}: {FormatFirestoreValue(fields[key])}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatFirestoreValue(JsonElement element, int depth = 0)
+    {
+        if (element.TryGetProperty("stringValue", out var s))
+        {
+            return s.GetString() ?? string.Empty;
+        }
+
+        if (element.TryGetProperty("integerValue", out var i))
+        {
+            return i.GetString() ?? i.ToString();
+        }
+
+        if (element.TryGetProperty("doubleValue", out var d))
+        {
+            return d.GetDouble().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (element.TryGetProperty("booleanValue", out var b))
+        {
+            return b.GetBoolean() ? "true" : "false";
+        }
+
+        if (element.TryGetProperty("timestampValue", out var ts))
+        {
+            return ts.GetString() ?? string.Empty;
+        }
+
+        if (element.TryGetProperty("nullValue", out _))
+        {
+            return "null";
+        }
+
+        if (element.TryGetProperty("referenceValue", out var rf))
+        {
+            return rf.GetString() ?? string.Empty;
+        }
+
+        if (element.TryGetProperty("arrayValue", out var arr)
+            && arr.TryGetProperty("values", out var values))
+        {
+            var parts = values.EnumerateArray().Select(v => FormatFirestoreValue(v, depth + 1));
+            return "[" + string.Join(", ", parts) + "]";
+        }
+
+        if (element.TryGetProperty("mapValue", out var map)
+            && map.TryGetProperty("fields", out var mapFields))
+        {
+            var indent = new string(' ', (depth + 1) * 2);
+            var parts = mapFields.EnumerateObject()
+                .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(p => $"{Environment.NewLine}{indent}{p.Name}: {FormatFirestoreValue(p.Value, depth + 1)}");
+            return "{" + string.Join("", parts) + Environment.NewLine + new string(' ', depth * 2) + "}";
+        }
+
+        return element.ToString();
     }
 
     public async Task ApproveVerificationAsync(

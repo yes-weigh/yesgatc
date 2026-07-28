@@ -1,7 +1,10 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Yesgatc.CertificateWorker.Models;
 using Yesgatc.CertificateWorker.Services;
@@ -23,7 +26,8 @@ public partial class MainWindow : Window
         bool Completed,
         bool LoginRequired,
         string Message,
-        bool BrowserDisconnected = false);
+        bool BrowserDisconnected = false,
+        bool HaltBatch = false);
 
     private sealed class ParallelBatchStats
     {
@@ -34,16 +38,13 @@ public partial class MainWindow : Window
     }
 
     private readonly ObservableCollection<CertificationQueueItem> _jobs = [];
-    private readonly ObservableCollection<string> _activityLog = [];
+    private readonly ObservableCollection<ActivityLogEntry> _activityLog = [];
     private readonly FirebaseAuthService _authService;
     private readonly FirestoreService _firestoreService;
     private readonly FirestoreQueueListener _queueListener;
     private readonly PartyDetailsService _partyDetailsService;
     private readonly InstrumentDetailsService _instrumentDetailsService;
     private readonly AutomationService _automationService;
-    private readonly AutomationService _scraperAutomationService;
-    private readonly DocaScrapeOrchestrator _scrapeOrchestrator;
-    private readonly DocaEnrichOrchestrator _enrichOrchestrator;
     private readonly LocalCredentialsStore _credentialStore = new();
     private readonly JobRetryTracker _jobRetries = new();
     private readonly WorkerTelemetryService _telemetry;
@@ -55,6 +56,11 @@ public partial class MainWindow : Window
     private bool _isBusy;
     private bool _autoWorkerEnabled;
     private bool _autoWorkerPausedForDoca;
+    /// <summary>Waiting on eMAAP OTP — stay on eMAAP, do not probe DOCA.</summary>
+    private bool _emaapOtpIdle;
+    private bool _emaapMasterOtpTried;
+    private DispatcherTimer? _emaapOtpPollTimer;
+    private bool _emaapOtpPollRunning;
     private bool _remotePaused;
     private bool _useRealtimeListener;
     private bool _realtimeListenerActive;
@@ -66,13 +72,6 @@ public partial class MainWindow : Window
     private bool _autoWorkerCyclePending;
     private bool _sessionProbeRunning;
     private int _docaSessionProbeMinutes;
-    private bool _remoteScrapePause;
-    private bool _remoteEnrichPause;
-    private readonly bool _docaScrapeEnabled;
-    private CancellationTokenSource? _scrapeCts;
-    private Task? _scrapeRunTask;
-    private CancellationTokenSource? _enrichCts;
-    private Task? _enrichRunTask;
     private Task _docaBrowserStartupTask = Task.CompletedTask;
     private StatusKind _lastStatusKind = StatusKind.Idle;
 
@@ -93,47 +92,16 @@ public partial class MainWindow : Window
         _partyDetailsService = new PartyDetailsService(settings.Firebase);
         _instrumentDetailsService = new InstrumentDetailsService(settings.Firebase);
         _telemetry = new WorkerTelemetryService(settings.Firebase);
-        _docaScrapeEnabled = settings.Automation.DocaScrape.Enabled;
         _automationService = new AutomationService(settings.Automation, _firestoreService);
+        _automationService.Firebase = settings.Firebase;
         _automationService.ResolveFirebaseIdToken = GetFreshIdTokenAsync;
         _automationService.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
         _automationService.DocaCredentialsCaptured = creds => SyncDocaCredentialsToAllAutomation(creds);
-        _scraperAutomationService = new AutomationService(settings.Automation, _firestoreService);
-        _scraperAutomationService.WorkerIndex = -2;
-        _scraperAutomationService.ScraperMode = true;
-        _scraperAutomationService.ResolveFirebaseIdToken = GetFreshIdTokenAsync;
-        _scraperAutomationService.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
-        var scrapeSync = new DocaScrapeSyncService(settings.Firebase);
-        _scrapeOrchestrator = new DocaScrapeOrchestrator(
-            settings.Automation,
-            _scraperAutomationService,
-            scrapeSync,
-            _telemetry);
-        _scrapeOrchestrator.ResolveFirebaseIdToken = () => GetFreshIdTokenAsync();
-        _scrapeOrchestrator.IsPauseRequested = () => _remoteScrapePause;
-        _scrapeOrchestrator.ResolveDocaCredentials = ResolveDocaCredentialsOnUiThread;
-        _scrapeOrchestrator.LoginProbeSeconds = settings.AutoWorker.DocaLoginProbeSeconds;
-        _scrapeOrchestrator.ReportActivity = message =>
-        {
-            if (Dispatcher.CheckAccess())
-            {
-                AddActivityEntry(message);
-                return;
-            }
-
-            Dispatcher.Invoke(() => AddActivityEntry(message));
-        };
-        var enrichService = new DocaCertificateEnrichService(settings.Firebase);
-        _enrichOrchestrator = new DocaEnrichOrchestrator(
-            settings.Automation,
-            enrichService,
-            _telemetry);
-        _enrichOrchestrator.ResolveFirebaseIdToken = () => GetFreshIdTokenAsync();
-        _enrichOrchestrator.IsPauseRequested = () => _remoteEnrichPause;
         App.AutomationService = _automationService;
 
         JobsGrid.ItemsSource = _jobs;
         ActivityLogList.ItemsSource = _activityLog;
+        LoadChromeProfilePicker(settings);
         LoadSavedCredentials(settings);
         ConfigureAutoWorkerFromSettings();
 
@@ -144,6 +112,20 @@ public partial class MainWindow : Window
     private SiteCalibrationRecord? SelectedJob => _selectedQueueItem?.Record;
 
     private void SetSelectedQueueItem(CertificationQueueItem? item) => _selectedQueueItem = item;
+
+    private void FocusWorkerTab()
+    {
+        if (MainTabs is not null)
+        {
+            MainTabs.SelectedIndex = 1;
+        }
+    }
+
+    private void ExpandAccountPanel()
+    {
+        FocusWorkerTab();
+        SignInExpander.IsExpanded = true;
+    }
 
     private void LoadSavedCredentials(WorkerSettings settings)
     {
@@ -167,19 +149,187 @@ public partial class MainWindow : Window
             saved.CaptchaApiKey,
             FirstNonEmpty(
                 settings.Automation.CaptchaOcr.ApiKey,
-                Environment.GetEnvironmentVariable("OPENAI_API_KEY") ?? string.Empty));
+                CaptchaOcrKeys.ResolveApiKey(settings.Automation.CaptchaOcr) ?? string.Empty));
         CaptchaApiKeyBox.Text = captchaKey;
-        OpenAiCaptchaOcr.RuntimeApiKeyOverride = string.IsNullOrWhiteSpace(captchaKey) ? null : captchaKey;
+        CaptchaOcrKeys.RuntimeApiKeyOverride = string.IsNullOrWhiteSpace(captchaKey) ? null : captchaKey;
         UpdateCaptchaApiKeyHint();
-
-        DocaFillOnlyCheckBox.IsChecked = saved.DocaFillOnly;
-        ApplyDocaFillOnlyToAutomationWorkers();
 
         _docaSessionProbeMinutes = saved.DocaSessionProbeMinutes ?? settings.AutoWorker.DocaSessionProbeMinutes;
         DocaSessionProbeMinutesBox.Text = _docaSessionProbeMinutes.ToString();
 
         SyncDocaCredentialsToAllAutomation();
+        PersistCredentials();
         UpdateSignInSummary();
+    }
+
+    private void LoadChromeProfilePicker(WorkerSettings settings)
+    {
+        var profiles = ChromeProfileCatalog.ListProfiles();
+        ChromeProfileCombo.ItemsSource = profiles;
+
+        var saved = _credentialStore.Load().ChromeProfileDirectory;
+        var fromSettings = settings.Automation.ChromeProfileDirectory;
+        var preferred = FirstNonEmpty(saved, fromSettings);
+
+        if (!string.IsNullOrWhiteSpace(preferred))
+        {
+            ChromeProfilePreference.RuntimeDirectory = preferred;
+            var match = profiles.FirstOrDefault(p =>
+                p.DirectoryName.Equals(preferred, StringComparison.OrdinalIgnoreCase));
+            ChromeProfileCombo.SelectedItem = match;
+            if (match is null)
+            {
+                // Prefer still usable for launch even if combo list missed it.
+                if (!profiles.Any(p =>
+                        p.DirectoryName.Equals(preferred, StringComparison.OrdinalIgnoreCase)))
+                {
+                    ChromeProfilePreference.Clear();
+                    preferred = string.Empty;
+                    ChromeProfileCombo.SelectedIndex = -1;
+                }
+            }
+        }
+        else
+        {
+            ChromeProfilePreference.Clear();
+            ChromeProfileCombo.SelectedIndex = -1;
+        }
+
+        UpdateChromeProfileHint();
+
+        if (settings.Automation.UseSystemChromeProfile && !ChromeProfilePreference.HasSelection)
+        {
+            ExpandAccountPanel();
+        }
+    }
+
+    private void UpdateChromeProfileHint()
+    {
+        if (!App.Settings.Automation.UseSystemChromeProfile)
+        {
+            ChromeProfileHint.Text = "System Chrome profile mirroring is off in settings.";
+            return;
+        }
+
+        if (ChromeProfilePreference.HasSelection)
+        {
+            ChromeProfileHint.Text =
+                $"Using saved profile: {ChromeProfilePreference.RuntimeDirectory}. Change anytime, then Save profile.";
+            return;
+        }
+
+        ChromeProfileHint.Text = "Pick a Chrome profile before launching the browser (saved for next runs).";
+    }
+
+    private string? SelectedChromeProfileDirectory()
+    {
+        if (ChromeProfileCombo.SelectedItem is ChromeProfileInfo info
+            && !string.IsNullOrWhiteSpace(info.DirectoryName))
+        {
+            return info.DirectoryName;
+        }
+
+        return ChromeProfilePreference.HasSelection
+            ? ChromeProfilePreference.RuntimeDirectory
+            : null;
+    }
+
+    private bool TryEnsureChromeProfileSelected(bool persist)
+    {
+        if (!App.Settings.Automation.UseSystemChromeProfile)
+        {
+            return true;
+        }
+
+        var directory = SelectedChromeProfileDirectory();
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            SetStatus("Pick a Chrome profile in Account before launching the browser.", StatusKind.Info);
+            ExpandAccountPanel();
+            UpdateChromeProfileHint();
+            return false;
+        }
+
+        ApplyChromeProfilePreference(directory, persist);
+        return true;
+    }
+
+    private void ApplyChromeProfilePreference(string directoryName, bool persist)
+    {
+        var previous = ChromeProfilePreference.RuntimeDirectory;
+        var next = directoryName.Trim();
+        ChromeProfilePreference.RuntimeDirectory = next;
+
+        if (!string.Equals(previous, next, StringComparison.OrdinalIgnoreCase))
+        {
+            ChromeProfileMirror.InvalidateMirror();
+            AddActivityEntry($"Chrome profile set to {next} (mirror will resync on next launch).");
+        }
+
+        if (persist)
+        {
+            PersistCredentials();
+        }
+
+        UpdateChromeProfileHint();
+    }
+
+    private void SaveChromeProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!TryEnsureChromeProfileSelected(persist: true))
+        {
+            return;
+        }
+
+        SetStatus(
+            $"Chrome profile saved: {ChromeProfilePreference.RuntimeDirectory}. Next launches use this profile.",
+            StatusKind.Success);
+    }
+
+    private async void ResetChromeProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        var confirm = MessageBox.Show(
+            "Clear the saved Chrome profile preference and restart the worker?\n\n"
+            + "You will pick a profile again before the browser opens.",
+            "Reset Chrome profile",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        ChromeProfilePreference.Clear();
+        ChromeProfileCombo.SelectedIndex = -1;
+        ChromeProfileMirror.InvalidateMirror();
+        PersistCredentials();
+        UpdateChromeProfileHint();
+        AddActivityEntry("Chrome profile preference cleared — restarting…");
+
+        try
+        {
+            await _automationService.DisposeAsync();
+        }
+        catch
+        {
+        }
+
+        RestartApplication();
+    }
+
+    private static void RestartApplication()
+    {
+        var exe = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(exe) && File.Exists(exe))
+        {
+            Process.Start(new ProcessStartInfo(exe)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = AppContext.BaseDirectory,
+            });
+        }
+
+        Application.Current.Shutdown();
     }
 
     private static string FirstNonEmpty(string primary, string fallback) =>
@@ -215,6 +365,16 @@ public partial class MainWindow : Window
             return fromStore;
         }
 
+        var fromSettings = App.Settings.Automation.DocaCredentials;
+        if (HasDocaLoginCredentials(fromSettings))
+        {
+            return new DocaCredentialSettings
+            {
+                Email = fromSettings.Email.Trim(),
+                Password = fromSettings.Password,
+            };
+        }
+
         return fromUi;
     }
 
@@ -227,37 +387,40 @@ public partial class MainWindow : Window
     {
         var resolved = credentials ?? ResolveDocaCredentials();
         _automationService.DocaCredentials = resolved;
-        _scraperAutomationService.DocaCredentials = resolved;
         foreach (var worker in _preparedBulkWorkers)
         {
             worker.DocaCredentials = resolved;
         }
     }
 
-    private bool DocaFillOnlyEnabled => DocaFillOnlyCheckBox.IsChecked == true;
-
     private int DocaSessionProbeMinutesSetting => _docaSessionProbeMinutes;
-
-    private void ApplyDocaFillOnlyToAutomationWorkers()
-    {
-        var fillOnly = DocaFillOnlyEnabled;
-        _automationService.DocaFillOnly = fillOnly;
-        foreach (var worker in _preparedBulkWorkers)
-        {
-            worker.DocaFillOnly = fillOnly;
-        }
-    }
 
     private void PersistCredentials()
     {
+        var chromeProfile = SelectedChromeProfileDirectory()
+            ?? ChromeProfilePreference.RuntimeDirectory
+            ?? string.Empty;
+        // Never wipe a saved profile when combo is empty (e.g. during ctor).
+        if (string.IsNullOrWhiteSpace(chromeProfile))
+        {
+            chromeProfile = _credentialStore.Load().ChromeProfileDirectory;
+        }
+
+        if (string.IsNullOrWhiteSpace(chromeProfile)
+            && !string.IsNullOrWhiteSpace(App.Settings.Automation.ChromeProfileDirectory))
+        {
+            chromeProfile = App.Settings.Automation.ChromeProfileDirectory.Trim();
+        }
+
         _credentialStore.SaveAll(
             AadharBox.Text,
             PasswordBox.Text,
             DocaEmailBox.Text,
             DocaPasswordBox.Text,
             CaptchaApiKeyBox.Text,
-            DocaFillOnlyEnabled,
-            _docaSessionProbeMinutes);
+            docaFillOnly: false,
+            _docaSessionProbeMinutes,
+            chromeProfile);
     }
 
     private bool TryApplyDocaSessionProbeMinutesFromUi(bool persist, bool restartWatchdog)
@@ -297,29 +460,29 @@ public partial class MainWindow : Window
         TryApplyDocaSessionProbeMinutesFromUi(persist: true, restartWatchdog: true);
     }
 
-    private void DocaFillOnlyCheckBox_Changed(object sender, RoutedEventArgs e)
-    {
-        ApplyDocaFillOnlyToAutomationWorkers();
-        PersistCredentials();
-        var mode = DocaFillOnlyEnabled ? "fill-only" : "full submit";
-        AddActivityEntry($"DOCA automation mode: {mode} (saved).");
-    }
-
     /// <summary>
     /// Shows the last 6 characters of the active key (e.g. "…8GcA") so the user
     /// can confirm which key is in use without exposing the full secret.
     /// </summary>
     private void UpdateCaptchaApiKeyHint()
     {
-        var active = OpenAiCaptchaOcr.ResolveApiKey(App.Settings.Automation.CaptchaOcr);
-        if (string.IsNullOrWhiteSpace(active))
+        var settings = App.Settings.Automation.CaptchaOcr;
+        if (CaptchaOcrKeys.IsDeepSeek(settings))
         {
-            CaptchaApiKeyHint.Text = "not set";
+            CaptchaApiKeyHint.Text = "DeepSeek chat (no API key)";
             return;
         }
 
+        var active = CaptchaOcrKeys.ResolveApiKey(settings);
+        if (string.IsNullOrWhiteSpace(active))
+        {
+            CaptchaApiKeyHint.Text = CaptchaOcrKeys.IsGemini(settings) ? "Gemini key not set" : "not set";
+            return;
+        }
+
+        var provider = CaptchaOcrKeys.IsGemini(settings) ? "Gemini" : settings.Provider;
         var tail = active.Length > 6 ? active[^6..] : active;
-        CaptchaApiKeyHint.Text = $"active: …{tail}";
+        CaptchaApiKeyHint.Text = $"{provider} …{tail}";
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -336,7 +499,7 @@ public partial class MainWindow : Window
 
         await StartDocaBrowserAsync();
 
-        SignInExpander.IsExpanded = true;
+        ExpandAccountPanel();
         SetStatus(
             _automationService.IsBrowserConnected
                 ? "DOCA browser is open. Enter Super Admin credentials and sign in."
@@ -355,27 +518,143 @@ public partial class MainWindow : Window
         try
         {
             SyncDocaCredentialsToAllAutomation();
-            SetStatus("Opening DOCA browser...", StatusKind.Working);
-            var state = await _automationService.OpenDocaWorkspaceAsync();
-
-            if (state == DocaSessionState.LoginRequired)
+            var creds = ResolveDocaCredentials();
+            if (!HasDocaLoginCredentials(creds))
             {
-                if (_autoWorkerEnabled)
-                {
-                    SetDocaLoginPaused(true);
-                }
-
-                SetStatus("DOCA auto-login failed — worker will retry with AI captcha. Check DOCA email/password in the app.", StatusKind.Info);
+                SetStatus(
+                    "Set eMAAP email/password in Account (or appsettings.local.json), Save Credentials, then sign in again.",
+                    StatusKind.Info);
+                ExpandAccountPanel();
                 return;
             }
 
-            SetStatus("DOCA browser open and logged in to DOCA.", StatusKind.Success);
+            // Keep Account boxes in sync so later Resolve doesn't see empty UI.
+            if (string.IsNullOrWhiteSpace(DocaEmailBox.Text))
+            {
+                DocaEmailBox.Text = creds.Email;
+            }
+
+            if (string.IsNullOrWhiteSpace(DocaPasswordBox.Text))
+            {
+                DocaPasswordBox.Text = creds.Password;
+            }
+
+            SyncDocaCredentialsToAllAutomation(creds);
+
+            if (!TryEnsureChromeProfileSelected(persist: true))
+            {
+                return;
+            }
+
+            if (CaptchaOcrKeys.RequiresApiKey(App.Settings.Automation.CaptchaOcr)
+                && string.IsNullOrWhiteSpace(CaptchaOcrKeys.ResolveApiKey(App.Settings.Automation.CaptchaOcr)))
+            {
+                SetStatus(
+                    "Captcha AI key missing — put ApiKey in appsettings.local.json or Captcha AI Key box, Save, retry.",
+                    StatusKind.Info);
+                ExpandAccountPanel();
+            }
+
+            var profileLabel = ChromeProfilePreference.RuntimeDirectory ?? "Default";
+            var ocrLabel = CaptchaOcrKeys.DescribeProvider(App.Settings.Automation.CaptchaOcr);
+            SetStatus(
+                $"Opening eMAAP (Chrome: {profileLabel}) — captcha via {ocrLabel}, OTP via Firebase inbox…",
+                StatusKind.Working);
+            var state = await _automationService.OpenDocaWorkspaceAsync();
+
+            if (state == DocaSessionState.OtpRequired)
+            {
+                _emaapOtpIdle = true;
+                _emaapMasterOtpTried = true; // already tried during login gate (or skipped)
+                SetDocaLoginPaused(true, startResumeProbe: false);
+                StartEmaapOtpIdlePoller();
+                var otpWhy = FirestoreEmaapOtpReader.LastFailureReason
+                    ?? GmailOtpReader.LastFailureReason;
+                SetStatus(
+                    string.IsNullOrWhiteSpace(otpWhy)
+                        ? "OTP sent. Waiting Firebase — keep Apps Script running, or paste OTP."
+                        : $"OTP idle (still polling Firebase): {otpWhy}",
+                    StatusKind.Info);
+                if (!string.IsNullOrWhiteSpace(otpWhy))
+                {
+                    AddActivityEntry(otpWhy);
+                }
+
+                ExpandAccountPanel();
+                return;
+            }
+
+            if (state == DocaSessionState.LoginRequired)
+            {
+                _emaapOtpIdle = false;
+                SetDocaLoginPaused(true, startResumeProbe: false);
+                SetStatus(
+                    "Login not finished — browser left open on eMAAP. Fix captcha/creds, then retry Sign in.",
+                    StatusKind.Info);
+                ExpandAccountPanel();
+                return;
+            }
+
+            _emaapOtpIdle = false;
+            SetStatus("Logged in to eMAAP.", StatusKind.Success);
             _telemetry.MarkDocaLoggedIn();
             StartDocaSessionWatchdogTimer();
+            if (_session is not null)
+            {
+                _ = LoadQueueAsync();
+            }
         }
         catch (Exception ex)
         {
-            SetStatus($"Could not open DOCA browser: {ex.Message}", ex, StatusKind.Error);
+            SetStatus($"eMAAP login error: {ex.Message}", ex, StatusKind.Error);
+            ExpandAccountPanel();
+        }
+    }
+
+    private async void SubmitEmaapOtpButton_Click(object sender, RoutedEventArgs e)
+    {
+        var otp = EmaapOtpBox.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(otp))
+        {
+            SetStatus("Paste the OTP from your email first.", StatusKind.Info);
+            return;
+        }
+
+        SubmitEmaapOtpButton.IsEnabled = false;
+        try
+        {
+            SyncDocaCredentialsToAllAutomation();
+            SetStatus("Submitting eMAAP OTP + solving captcha…", StatusKind.Working);
+            var state = await _automationService.SubmitEmaapOtpAsync(otp);
+            if (state == DocaSessionState.LoggedIn)
+            {
+                EmaapOtpBox.Text = string.Empty;
+                _emaapOtpIdle = false;
+                StopEmaapOtpIdlePoller();
+                SetDocaLoginPaused(false);
+                SetStatus("eMAAP login complete (OTP accepted).", StatusKind.Success);
+                _telemetry.MarkDocaLoggedIn();
+                StartDocaSessionWatchdogTimer();
+                if (_session is not null)
+                {
+                    _ = LoadQueueAsync();
+                }
+                return;
+            }
+
+            SetStatus(
+                state == DocaSessionState.OtpRequired
+                    ? "OTP not accepted yet — check code / captcha and try again."
+                    : "Still on login page — retry Send OTP from Chrome or restart browser open.",
+                StatusKind.Info);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"OTP submit failed: {ex.Message}", ex, StatusKind.Error);
+        }
+        finally
+        {
+            SubmitEmaapOtpButton.IsEnabled = true;
         }
     }
 
@@ -386,40 +665,88 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!_autoWorkerEnabled)
+        {
+            return;
+        }
+
         StartAutoWorkerTimers();
-        if (!_autoWorkerEnabled || _remotePaused)
+        if (_remotePaused)
         {
             return;
         }
 
         if (_autoWorkerPausedForDoca)
         {
-            _ = TryResumeAutoWorkerAfterDocaLoginAsync();
+            // OTP / login idle — do not hammer DOCA or eMAAP probes.
+            if (!_emaapOtpIdle)
+            {
+                _ = TryResumeAutoWorkerAfterDocaLoginAsync();
+            }
+
+            return;
         }
-        else
-        {
-            _ = RunAutoWorkerCycleAsync();
-        }
+
+        _ = RunAutoWorkerCycleAsync();
     }
 
     private async void MainWindow_Closed(object? sender, EventArgs e)
     {
         StopAutoWorkerTimers();
         StopTelemetryTimer();
-        _scrapeCts?.Cancel();
-        _enrichCts?.Cancel();
         await _queueListener.StopAsync();
         await DisposePreparedBulkWorkersAsync();
         await _automationService.DisposeAsync();
-        await _scraperAutomationService.DisposeAsync();
         _tokenLock.Dispose();
     }
+
+    private bool _suppressAutoRunCheckBoxEvent;
 
     private void ConfigureAutoWorkerFromSettings()
     {
         var settings = App.Settings.AutoWorker;
         _autoWorkerEnabled = settings.Enabled;
         _useRealtimeListener = settings.UseRealtimeListener;
+        _suppressAutoRunCheckBoxEvent = true;
+        try
+        {
+            AutoRunCheckBox.IsChecked = _autoWorkerEnabled;
+        }
+        finally
+        {
+            _suppressAutoRunCheckBoxEvent = false;
+        }
+
+        UpdateAutoWorkerStatusText();
+    }
+
+    private void AutoRunCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressAutoRunCheckBoxEvent)
+        {
+            return;
+        }
+
+        var on = AutoRunCheckBox.IsChecked == true;
+        _autoWorkerEnabled = on;
+        if (on)
+        {
+            if (_session is not null && !_remotePaused && !_autoWorkerPausedForDoca)
+            {
+                StartAutoWorkerTimers();
+                _ = RunAutoWorkerCycleAsync();
+            }
+
+            AddActivityEntry("Auto-run ON — batch processing enabled.");
+            SetStatus("Auto-run on — worker will process Submitted jobs unattended.", StatusKind.Info);
+        }
+        else
+        {
+            StopAutoWorkerTimers();
+            AddActivityEntry("Auto-run OFF — use Process all submitted.");
+            SetStatus("Auto-run off — use Process all submitted.", StatusKind.Info);
+        }
+
         UpdateAutoWorkerStatusText();
     }
 
@@ -591,6 +918,8 @@ public partial class MainWindow : Window
 
     private async Task ReportCaptchaAttemptAsync(CaptchaAttemptReport report)
     {
+        ShowCaptchaAttemptInActivity(report);
+
         if (_session is null)
         {
             lock (_pendingCaptchaReports)
@@ -602,6 +931,73 @@ public partial class MainWindow : Window
         }
 
         await _telemetry.ReportCaptchaAttemptAsync(report, () => GetFreshIdTokenAsync());
+    }
+
+    private void ShowCaptchaAttemptInActivity(CaptchaAttemptReport report)
+    {
+        void Add()
+        {
+            var resolved = string.IsNullOrWhiteSpace(report.ResolvedText)
+                ? "(unreadable)"
+                : report.ResolvedText.Trim();
+            var outcome = report.Success ? "ok" : report.Outcome;
+            var message =
+                $"{DateTime.Now:HH:mm:ss}  Captcha #{report.AttemptNumber} · {report.OcrProvider} → {resolved} ({outcome})";
+
+            byte[]? aiBytes = null;
+            try
+            {
+                // DeepSeek gets the original image; Gemini/OpenAI still use black-only preview.
+                aiBytes = CaptchaOcrKeys.IsDeepSeek(App.Settings.Automation.CaptchaOcr)
+                    ? report.ImageBytes
+                    : DocaCaptchaOcr.BuildBlackOnlyVisionPngBytes(report.ImageBytes);
+            }
+            catch
+            {
+                // preview still shows original
+            }
+
+            AddActivityEntry(new ActivityLogEntry
+            {
+                Text = message,
+                CaptchaImage = TryCreateCaptchaBitmap(report.ImageBytes),
+                CaptchaAiImage = TryCreateCaptchaBitmap(aiBytes ?? []),
+                CaptchaResolvedText = resolved,
+            });
+        }
+
+        if (Dispatcher.CheckAccess())
+        {
+            Add();
+        }
+        else
+        {
+            Dispatcher.Invoke(Add);
+        }
+    }
+
+    private static BitmapImage? TryCreateCaptchaBitmap(byte[] imageBytes)
+    {
+        if (imageBytes is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        try
+        {
+            using var stream = new MemoryStream(imageBytes);
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.StreamSource = stream;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task FlushPendingCaptchaReportsAsync()
@@ -632,7 +1028,6 @@ public partial class MainWindow : Window
         }
 
         var submitted = _jobs.Count(item => item.Record.IsSubmitted);
-        var approved = _jobs.Count(item => item.Record.IsReadyToCertify || item.Record.NeedsCertificatePdfUpload);
         var eligible = _jobs.Count(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id));
 
         var state = _lastStatusKind switch
@@ -656,12 +1051,10 @@ public partial class MainWindow : Window
                 StatusMessage = StatusText.Text,
                 AutoWorkerEnabled = _autoWorkerEnabled,
                 RemotePaused = _remotePaused,
-                DocaFillOnly = DocaFillOnlyEnabled,
                 DocaSessionState = _autoWorkerPausedForDoca ? "login_required" : "logged_in",
                 QueueTotal = _jobs.Count,
                 QueueEligible = eligible,
                 QueueSubmitted = submitted,
-                QueueApproved = approved,
                 JobsCompletedSession = _telemetry.JobsCompletedSession,
                 JobsFailedSession = _telemetry.JobsFailedSession,
                 LastSessionProbeAt = _telemetry.LastSessionProbeAt?.ToString("O") ?? string.Empty,
@@ -692,27 +1085,6 @@ public partial class MainWindow : Window
         if (_telemetry.ShouldApplyCommand(remote))
         {
             await ApplyRemoteCommandAsync(remote);
-        }
-
-        _remoteScrapePause = remote.ScrapePause;
-        _remoteEnrichPause = remote.EnrichPause;
-
-        if (_telemetry.ShouldApplyScrapeCommand(remote))
-        {
-            _telemetry.MarkScrapeCommandApplied(remote.ScrapeCommandRevision);
-            if (_docaScrapeEnabled && !remote.ScrapePause)
-            {
-                await StartDocaScrapeRunAsync(remote.ScrapeStartPage);
-            }
-        }
-
-        if (_telemetry.ShouldApplyEnrichCommand(remote))
-        {
-            _telemetry.MarkEnrichCommandApplied(remote.EnrichCommandRevision);
-            if (!remote.EnrichPause)
-            {
-                await StartDocaEnrichRunAsync();
-            }
         }
     }
 
@@ -747,7 +1119,7 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(remote.CaptchaApiKey))
         {
             CaptchaApiKeyBox.Text = remote.CaptchaApiKey.Trim();
-            OpenAiCaptchaOcr.RuntimeApiKeyOverride = remote.CaptchaApiKey.Trim();
+            CaptchaOcrKeys.RuntimeApiKeyOverride = remote.CaptchaApiKey.Trim();
             UpdateCaptchaApiKeyHint();
             changed = true;
         }
@@ -774,6 +1146,16 @@ public partial class MainWindow : Window
         if (remote.AutoWorkerEnabled.HasValue)
         {
             _autoWorkerEnabled = remote.AutoWorkerEnabled.Value;
+            _suppressAutoRunCheckBoxEvent = true;
+            try
+            {
+                AutoRunCheckBox.IsChecked = _autoWorkerEnabled;
+            }
+            finally
+            {
+                _suppressAutoRunCheckBoxEvent = false;
+            }
+
             if (_autoWorkerEnabled && _session is not null && !_remotePaused)
             {
                 StartAutoWorkerTimers();
@@ -783,14 +1165,6 @@ public partial class MainWindow : Window
                 StopAutoWorkerTimers();
                 StartTelemetryTimer();
             }
-        }
-
-        if (remote.DocaFillOnly.HasValue && remote.DocaFillOnly.Value != DocaFillOnlyEnabled)
-        {
-            DocaFillOnlyCheckBox.IsChecked = remote.DocaFillOnly.Value;
-            ApplyDocaFillOnlyToAutomationWorkers();
-            PersistCredentials();
-            AddActivityEntry($"Remote control set DOCA mode to {(remote.DocaFillOnly.Value ? "fill-only" : "full submit")}.");
         }
 
         var wasPaused = _remotePaused;
@@ -814,146 +1188,7 @@ public partial class MainWindow : Window
         await PublishWorkerStatusAsync();
     }
 
-    private async Task StartDocaScrapeRunAsync(int scrapeStartPage = 0)
-    {
-        if (_session is null || !_docaScrapeEnabled)
-        {
-            return;
-        }
-
-        _scrapeOrchestrator.ScrapeStartPage = scrapeStartPage > 1 ? scrapeStartPage : 1;
-
-        _scrapeCts?.Cancel();
-        if (_scrapeRunTask is not null)
-        {
-            try
-            {
-                await _scrapeRunTask.ConfigureAwait(true);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (Exception ex)
-            {
-                AddActivityEntry($"Previous DOCA scrape ended with error: {ex.Message}");
-            }
-        }
-
-        if (!_docaBrowserStartupTask.IsCompleted)
-        {
-            AddActivityEntry("Waiting for Chrome 1 DOCA login before starting scraper (Chrome 2)…");
-            SetStatus("Waiting for Chrome 1 DOCA login before scrape…", StatusKind.Working);
-            try
-            {
-                await _docaBrowserStartupTask.ConfigureAwait(true);
-            }
-            catch
-            {
-                // StartDocaBrowserCoreAsync already logged the failure.
-            }
-        }
-
-        SyncDocaCredentialsToAllAutomation();
-        _scrapeCts = new CancellationTokenSource();
-        var token = _scrapeCts.Token;
-
-        AddActivityEntry("DOCA GATC certificate scrape started (separate scraper browser).");
-        SetStatus("DOCA scrape running in Chrome 2…", StatusKind.Working);
-
-        _scrapeRunTask = Task.Run(async () =>
-        {
-            try
-            {
-                await _scrapeOrchestrator.RunAsync(token).ConfigureAwait(false);
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    AddActivityEntry("DOCA GATC certificate scrape finished.");
-                    SetStatus("DOCA scrape finished.", StatusKind.Success);
-                });
-            }
-            catch (OperationCanceledException)
-            {
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    AddActivityEntry("DOCA scrape paused or cancelled.");
-                    SetStatus("DOCA scrape paused.", StatusKind.Info);
-                });
-            }
-            catch (Exception ex)
-            {
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    AddActivityEntry($"DOCA scrape failed: {ex.Message}");
-                    SetStatus($"DOCA scrape failed: {ex.Message}", StatusKind.Error);
-                });
-            }
-        }, token);
-
-        await Task.CompletedTask;
-    }
-
-    private async Task StartDocaEnrichRunAsync()
-    {
-        if (_session is null)
-        {
-            return;
-        }
-
-        _enrichCts?.Cancel();
-        if (_enrichRunTask is not null)
-        {
-            try
-            {
-                await _enrichRunTask.ConfigureAwait(true);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (Exception ex)
-            {
-                AddActivityEntry($"Previous PDF enrich ended with error: {ex.Message}");
-            }
-        }
-
-        _enrichCts = new CancellationTokenSource();
-        var token = _enrichCts.Token;
-
-        AddActivityEntry("DOCA certificate PDF enrich started.");
-        SetStatus("Parsing GATC PDF details…", StatusKind.Working);
-
-        _enrichRunTask = Task.Run(async () =>
-        {
-            try
-            {
-                await _enrichOrchestrator.RunAsync(token).ConfigureAwait(false);
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    AddActivityEntry("DOCA certificate PDF enrich finished.");
-                    SetStatus("PDF enrich finished.", StatusKind.Success);
-                });
-            }
-            catch (OperationCanceledException)
-            {
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    AddActivityEntry("PDF enrich paused or cancelled.");
-                    SetStatus("PDF enrich paused.", StatusKind.Info);
-                });
-            }
-            catch (Exception ex)
-            {
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    AddActivityEntry($"PDF enrich failed: {ex.Message}");
-                    SetStatus($"PDF enrich failed: {ex.Message}", StatusKind.Error);
-                });
-            }
-        }, token);
-
-        await Task.CompletedTask;
-    }
-
-    private void SetDocaLoginPaused(bool paused, string logoutReason = "login_required")
+    private void SetDocaLoginPaused(bool paused, string logoutReason = "login_required", bool startResumeProbe = true)
     {
         var wasPaused = _autoWorkerPausedForDoca;
         _autoWorkerPausedForDoca = paused;
@@ -967,10 +1202,19 @@ public partial class MainWindow : Window
 
         if (paused)
         {
-            StartDocaProbeTimer();
+            if (startResumeProbe && !_emaapOtpIdle)
+            {
+                StartDocaProbeTimer();
+            }
+            else
+            {
+                StopDocaProbeTimer();
+            }
         }
         else
         {
+            _emaapOtpIdle = false;
+            StopEmaapOtpIdlePoller();
             StopDocaProbeTimer();
             _telemetry.MarkDocaLoggedIn();
             StartDocaSessionWatchdogTimer();
@@ -983,10 +1227,124 @@ public partial class MainWindow : Window
     private void ApplyManualDocaLoginWaitToAllAutomation(bool paused)
     {
         _automationService.ManualDocaLoginWait = paused;
-        _scraperAutomationService.ManualDocaLoginWait = false;
         foreach (var worker in _preparedBulkWorkers)
         {
             worker.ManualDocaLoginWait = paused;
+        }
+    }
+
+    private void StartEmaapOtpIdlePoller()
+    {
+        StopEmaapOtpIdlePoller();
+        _emaapOtpPollTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(5),
+        };
+        _emaapOtpPollTimer.Tick += EmaapOtpIdlePollTimer_Tick;
+        _emaapOtpPollTimer.Start();
+    }
+
+    private void StopEmaapOtpIdlePoller()
+    {
+        if (_emaapOtpPollTimer is null)
+        {
+            return;
+        }
+
+        _emaapOtpPollTimer.Stop();
+        _emaapOtpPollTimer.Tick -= EmaapOtpIdlePollTimer_Tick;
+        _emaapOtpPollTimer = null;
+    }
+
+    private async void EmaapOtpIdlePollTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!_emaapOtpIdle || _emaapOtpPollRunning || _session is null)
+        {
+            return;
+        }
+
+        var requestedAt = EmaapLoginAutomation.LastOtpRequestedAtUtc
+            ?? DateTimeOffset.UtcNow.AddMinutes(-5);
+        _emaapOtpPollRunning = true;
+        try
+        {
+            // After ~5 min countdown, auto-click Resend OTP so a fresh mail can arrive.
+            try
+            {
+                if (await _automationService.TryResendEmaapOtpIfEnabledAsync())
+                {
+                    AddActivityEntry("Clicked Resend OTP — trying master OTP, then Firebase…");
+                    SetStatus("Resend OTP clicked — trying master OTP…", StatusKind.Working);
+                    requestedAt = EmaapLoginAutomation.LastOtpRequestedAtUtc
+                        ?? DateTimeOffset.UtcNow;
+                    _emaapMasterOtpTried = false; // allow master again after resend
+                }
+            }
+            catch (Exception ex)
+            {
+                AddActivityEntry($"Resend OTP check: {ex.Message}");
+            }
+
+            if (!_emaapMasterOtpTried
+                && !string.IsNullOrWhiteSpace(App.Settings.Automation.EmaapMasterOtp))
+            {
+                _emaapMasterOtpTried = true;
+                AddActivityEntry("Trying master OTP…");
+                var masterState = await _automationService.TrySubmitMasterEmaapOtpAsync();
+                if (masterState == DocaSessionState.LoggedIn)
+                {
+                    EmaapOtpBox.Text = string.Empty;
+                    _emaapOtpIdle = false;
+                    StopEmaapOtpIdlePoller();
+                    SetDocaLoginPaused(false);
+                    SetStatus("eMAAP login complete (master OTP).", StatusKind.Success);
+                    _telemetry.MarkDocaLoggedIn();
+                    StartDocaSessionWatchdogTimer();
+                    _ = LoadQueueAsync();
+                    return;
+                }
+
+                AddActivityEntry("Master OTP failed — falling back to Firebase OTP.");
+            }
+
+            var code = await FirestoreEmaapOtpReader.TryClaimOnceAsync(
+                App.Settings.Firebase,
+                GetFreshIdTokenAsync,
+                requestedAt,
+                CancellationToken.None);
+            if (string.IsNullOrWhiteSpace(code) || !_emaapOtpIdle)
+            {
+                return;
+            }
+
+            AddActivityEntry($"Firebase OTP received ({code}) — submitting…");
+            SetStatus("Firebase OTP landed — submitting…", StatusKind.Working);
+            var state = await _automationService.SubmitEmaapOtpAsync(code);
+            if (state == DocaSessionState.LoggedIn)
+            {
+                EmaapOtpBox.Text = string.Empty;
+                _emaapOtpIdle = false;
+                StopEmaapOtpIdlePoller();
+                SetDocaLoginPaused(false);
+                SetStatus("eMAAP login complete (Firebase OTP).", StatusKind.Success);
+                _telemetry.MarkDocaLoggedIn();
+                StartDocaSessionWatchdogTimer();
+                _ = LoadQueueAsync();
+            }
+            else
+            {
+                SetStatus(
+                    "Firebase OTP submit did not finish — paste / retry Submit OTP.",
+                    StatusKind.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            AddActivityEntry($"OTP idle poll: {ex.Message}");
+        }
+        finally
+        {
+            _emaapOtpPollRunning = false;
         }
     }
 
@@ -1106,7 +1464,7 @@ public partial class MainWindow : Window
 
     private async void DocaProbeTimer_Tick(object? sender, EventArgs e)
     {
-        if (!_autoWorkerPausedForDoca || _session is null)
+        if (!_autoWorkerPausedForDoca || _session is null || _emaapOtpIdle)
         {
             return;
         }
@@ -1123,7 +1481,11 @@ public partial class MainWindow : Window
 
         if (_autoWorkerPausedForDoca)
         {
-            await TryResumeAutoWorkerAfterDocaLoginAsync();
+            if (!_emaapOtpIdle)
+            {
+                await TryResumeAutoWorkerAfterDocaLoginAsync();
+            }
+
             return;
         }
 
@@ -1150,9 +1512,22 @@ public partial class MainWindow : Window
 
     private async Task TryResumeAutoWorkerAfterDocaLoginAsync()
     {
+        if (_emaapOtpIdle)
+        {
+            return;
+        }
+
         try
         {
             var state = await _automationService.ProbeDocaSessionAsync();
+            if (state == DocaSessionState.OtpRequired)
+            {
+                _emaapOtpIdle = true;
+                StopDocaProbeTimer();
+                SetStatus("eMAAP waiting for OTP — idle (not opening DOCA).", StatusKind.Info);
+                return;
+            }
+
             if (state != DocaSessionState.LoggedIn)
             {
                 UpdateAutoWorkerStatusText();
@@ -1160,13 +1535,13 @@ public partial class MainWindow : Window
             }
 
             SetDocaLoginPaused(false);
-            SetStatus("DOCA session restored — auto worker resuming.", StatusKind.Success);
+            SetStatus("eMAAP session restored — auto worker resuming.", StatusKind.Success);
             UpdateAutoWorkerStatusText();
             await RunAutoWorkerCycleAsync();
         }
         catch (Exception ex)
         {
-            SetStatus($"Waiting for DOCA auto-login — {ex.Message}", ex, StatusKind.Info);
+            SetStatus($"Waiting for eMAAP login — {ex.Message}", ex, StatusKind.Info);
             UpdateAutoWorkerStatusText();
         }
     }
@@ -1219,10 +1594,9 @@ public partial class MainWindow : Window
         UpdateAutoWorkerStatusText();
     }
 
-    private int ResolveMaxRetriesFor(SiteCalibrationRecord job) =>
-        job.IsSubmitted
-            ? Math.Max(1, App.Settings.AutoWorker.MaxSubmitRetries)
-            : Math.Max(1, App.Settings.AutoWorker.MaxPostApprovalRetries);
+    /// <summary>Single stage — Submitted → eMAAP fill+certify. Only MaxSubmitRetries applies.</summary>
+    private static int ResolveMaxRetriesFor(SiteCalibrationRecord job) =>
+        Math.Max(1, App.Settings.AutoWorker.MaxSubmitRetries);
 
     private void ScheduleJobRetry(SiteCalibrationRecord job, string error)
     {
@@ -1237,18 +1611,7 @@ public partial class MainWindow : Window
     private async Task RecordPipelineFailureAsync(SiteCalibrationRecord job, string error, bool? exhausted = null)
     {
         var retryExhausted = exhausted ?? _jobRetries.IsExhausted(job.Id);
-        if (job.IsSubmitted)
-        {
-            await RecordSubmitFailureAsync(job, error, retryExhausted);
-            return;
-        }
-
-        await RecordPostApprovalFailureAsync(job, error, retryExhausted);
-    }
-
-    private async Task RecordSubmitFailureAsync(SiteCalibrationRecord job, string error, bool retryExhausted = false)
-    {
-        if (!job.IsSubmitted || !retryExhausted || _session is null)
+        if (!retryExhausted || _session is null)
         {
             return;
         }
@@ -1264,33 +1627,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task RecordPostApprovalFailureAsync(SiteCalibrationRecord job, string error, bool retryExhausted = false)
-    {
-        if (job.IsSubmitted || _session is null)
-        {
-            return;
-        }
-
-        try
-        {
-            var token = await GetFreshIdTokenAsync();
-            await _firestoreService.RecordCertificationFailureAsync(
-                job.Id,
-                error,
-                token,
-                retryExhausted);
-        }
-        catch
-        {
-            // Best-effort — Firebase status must stay approved even if this patch fails.
-        }
-    }
-
     private void UpdateAutoWorkerStatusText()
     {
         if (!_autoWorkerEnabled)
         {
-            AutoWorkerStatusText.Text = "Disabled in appsettings.json.";
+            AutoWorkerStatusText.Text = "Auto-run off — use Process all submitted.";
             return;
         }
 
@@ -1309,7 +1650,7 @@ public partial class MainWindow : Window
         if (_autoWorkerPausedForDoca)
         {
             AutoWorkerStatusText.Text =
-                "Paused for DOCA login — retrying AI auto-login every few seconds until session is restored.";
+                "Paused — eMAAP login / HALT. Finish login, then turn Auto-run on.";
             return;
         }
 
@@ -1319,7 +1660,7 @@ public partial class MainWindow : Window
             ? "watching Firestore live"
             : $"polling every {App.Settings.AutoWorker.PollIntervalSeconds}s";
         var probeMinutes = DocaSessionProbeMinutesSetting;
-        var probeNote = probeMinutes > 0 ? $" · DOCA session probe every {probeMinutes} min" : string.Empty;
+        var probeNote = probeMinutes > 0 ? $" · eMAAP session probe every {probeMinutes} min" : string.Empty;
         AutoWorkerStatusText.Text = waitingRetries > 0
             ? $"Running — {eligible} job(s) ready, {waitingRetries} waiting for retry ({watchMode}{probeNote})."
             : $"Running — {watchMode} · {eligible} job(s) ready{probeNote}.";
@@ -1344,7 +1685,7 @@ public partial class MainWindow : Window
 
         // Apply captcha key immediately so auto-login uses it without restart.
         var apiKey = CaptchaApiKeyBox.Text.Trim();
-        OpenAiCaptchaOcr.RuntimeApiKeyOverride = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey;
+        CaptchaOcrKeys.RuntimeApiKeyOverride = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey;
         UpdateCaptchaApiKeyHint();
 
         SetStatus("Credentials saved locally.", StatusKind.Success);
@@ -1355,7 +1696,7 @@ public partial class MainWindow : Window
         if (_session is null)
         {
             SetStatus("Sign in as Super Admin first to refresh.", StatusKind.Info);
-            SignInExpander.IsExpanded = true;
+            ExpandAccountPanel();
             return;
         }
 
@@ -1364,6 +1705,193 @@ public partial class MainWindow : Window
             SetStatus("Refreshing queue…", StatusKind.Working);
             await LoadQueueAsync();
         });
+    }
+
+    private async void JobsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var item = JobsGrid.SelectedItem as CertificationQueueItem;
+        SetSelectedQueueItem(item);
+        UpdateProcessSubmittedButtonVisibility();
+        await ShowSelectedJobDocumentAsync(item);
+    }
+
+    private void UpdateProcessSubmittedButtonVisibility()
+    {
+        var item = JobsGrid.SelectedItem as CertificationQueueItem;
+        var selectedSubmitted = item?.Record.IsSubmitted == true && _session is not null;
+        ProcessSelectedEmaapButton.Visibility = selectedSubmitted
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        var hasSubmitted = _jobs.Any(j => j.Record.IsSubmitted && _jobRetries.IsEligible(j.Id));
+        ProcessSubmittedEmaapButton.Visibility = hasSubmitted && _session is not null
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private async void ProcessSelectedEmaapButton_Click(object sender, RoutedEventArgs e)
+    {
+        var item = SelectedJob;
+        if (item is null || !item.IsSubmitted)
+        {
+            SetStatus("Select a Submitted job first.", StatusKind.Info);
+            return;
+        }
+
+        if (_session is null)
+        {
+            SetStatus("Sign in as Super Admin first.", StatusKind.Info);
+            ExpandAccountPanel();
+            return;
+        }
+
+        if (!_automationService.IsBrowserConnected)
+        {
+            SetStatus("Opening eMAAP browser…", StatusKind.Working);
+            await StartDocaBrowserAsync();
+            if (!_automationService.IsBrowserConnected)
+            {
+                SetStatus("eMAAP browser did not open. Pick Chrome profile in Account, then retry.", StatusKind.Info);
+                ExpandAccountPanel();
+                return;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(item.RcId))
+        {
+            SetStatus("RC id is missing for this job.", StatusKind.Info);
+            return;
+        }
+
+        ProcessSelectedEmaapButton.IsEnabled = false;
+        ProcessSubmittedEmaapButton.IsEnabled = false;
+        try
+        {
+            await RunWithBusyStateAsync(async () =>
+            {
+                SyncDocaCredentialsToAllAutomation();
+                SetStatus(
+                    $"eMAAP fill & certify for {item.CustomerName} · {item.SerialNumber}…",
+                    StatusKind.Working);
+                var token = await GetFreshIdTokenAsync();
+                var party = await _partyDetailsService.ResolveForJobAsync(item, item.RcId, token);
+                var instrument = await _instrumentDetailsService.ResolveForJobAsync(item, item.RcId, token);
+                AddActivityEntry(
+                    $"eMAAP fill+certify: {party.BelongToName} · {instrument.SerialNumber} · {item.VerificationTypeLabel}");
+                var message = await _automationService.FillEmaapCertificateGenerationAsync(
+                    item,
+                    party,
+                    instrument,
+                    token);
+                _jobRetries.Clear(item.Id);
+                await LoadQueueAsync();
+
+                SetStatus(message, StatusKind.Success);
+                AddActivityEntry(message);
+            });
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"eMAAP failed: {ex.Message}", ex, StatusKind.Error);
+            AddActivityEntry($"eMAAP failed: {ex.Message}");
+            if (ex is EmaapMandatoryStepException)
+            {
+                HaltWorkerPipeline(ex.Message);
+            }
+        }
+        finally
+        {
+            ProcessSelectedEmaapButton.IsEnabled = true;
+            ProcessSubmittedEmaapButton.IsEnabled = true;
+            UpdateProcessSubmittedButtonVisibility();
+        }
+    }
+
+    private async void ProcessSubmittedEmaapButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_session is null)
+        {
+            SetStatus("Sign in as Super Admin first.", StatusKind.Info);
+            ExpandAccountPanel();
+            return;
+        }
+
+        if (!_automationService.IsBrowserConnected)
+        {
+            SetStatus("Opening eMAAP browser…", StatusKind.Working);
+            await StartDocaBrowserAsync();
+            if (!_automationService.IsBrowserConnected)
+            {
+                SetStatus("eMAAP browser did not open. Pick Chrome profile in Account, then retry.", StatusKind.Info);
+                ExpandAccountPanel();
+                return;
+            }
+        }
+
+        var queue = _jobs
+            .Where(item => item.Record.IsSubmitted && _jobRetries.IsEligible(item.Id))
+            .Select(item => item.Record)
+            .ToList();
+
+        if (queue.Count == 0)
+        {
+            SetStatus("No eligible Submitted jobs in the queue.", StatusKind.Info);
+            return;
+        }
+
+        ProcessSubmittedEmaapButton.IsEnabled = false;
+        try
+        {
+            await RunWithBusyStateAsync(async () =>
+            {
+                SetStatus($"eMAAP fill+certify → PDF → certified — {queue.Count} job(s)…", StatusKind.Working);
+                AddActivityEntry($"eMAAP batch start — {queue.Count} submitted.");
+                await ProcessQueueInternalAsync(queue, sequentialOnly: true, fromAutoWorker: false);
+            });
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"eMAAP batch failed: {ex.Message}", ex, StatusKind.Error);
+            AddActivityEntry($"eMAAP batch failed: {ex.Message}");
+        }
+        finally
+        {
+            ProcessSubmittedEmaapButton.IsEnabled = true;
+            UpdateProcessSubmittedButtonVisibility();
+        }
+    }
+
+    private async Task ShowSelectedJobDocumentAsync(CertificationQueueItem? item)
+    {
+        if (item is null)
+        {
+            JobDetailBox.Text = "Select a job to view its Firestore document.";
+            return;
+        }
+
+        if (_session is null)
+        {
+            JobDetailBox.Text = "Sign in as Super Admin to load document details.";
+            return;
+        }
+
+        var jobId = item.Id;
+        JobDetailBox.Text = $"Loading siteCalibrations/{jobId}…";
+        try
+        {
+            var token = await GetFreshIdTokenAsync();
+            var text = await _firestoreService.FormatSiteCalibrationDocumentAsync(jobId, token);
+            // Selection may have changed while loading.
+            if (JobsGrid.SelectedItem is CertificationQueueItem selected
+                && string.Equals(selected.Id, jobId, StringComparison.Ordinal))
+            {
+                JobDetailBox.Text = text;
+            }
+        }
+        catch (Exception ex)
+        {
+            JobDetailBox.Text = $"Failed to load document:\n{ex.Message}";
+        }
     }
 
     private void ActivityLogList_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -1378,11 +1906,11 @@ public partial class MainWindow : Window
 
     private void CopySelectedLog()
     {
-        if (ActivityLogList.SelectedItem is string log)
+        if (ActivityLogList.SelectedItem is ActivityLogEntry entry)
         {
             try
             {
-                Clipboard.SetText(log);
+                Clipboard.SetText(FormatActivityLogForClipboard(entry));
             }
             catch
             {
@@ -1395,12 +1923,24 @@ public partial class MainWindow : Window
     {
         try
         {
-            var logs = string.Join(Environment.NewLine, _activityLog);
+            var logs = string.Join(
+                Environment.NewLine,
+                _activityLog.Select(FormatActivityLogForClipboard));
             Clipboard.SetText(logs);
         }
         catch
         {
         }
+    }
+
+    private static string FormatActivityLogForClipboard(ActivityLogEntry entry)
+    {
+        if (!entry.HasCaptchaPreview || string.IsNullOrWhiteSpace(entry.CaptchaResolvedText))
+        {
+            return entry.Text;
+        }
+
+        return $"{entry.Text} | resolved={entry.CaptchaResolvedText}";
     }
 
     private void OpenLogFile_Click(object sender, RoutedEventArgs e)
@@ -1468,6 +2008,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (result.HaltBatch)
+        {
+            ScheduleJobRetry(job, result.Message);
+            await RecordPipelineFailureAsync(job, result.Message);
+            _telemetry.RecordJobFailed();
+            HaltWorkerPipeline(result.Message);
+            await LoadQueueAsync();
+            SelectJobById(job.Id);
+            return;
+        }
+
         if (result.Completed)
         {
             _jobRetries.Clear(job.Id);
@@ -1481,13 +2032,9 @@ public partial class MainWindow : Window
         ScheduleJobRetry(job, result.Message);
         if (_jobRetries.IsExhausted(job.Id))
         {
-            var phase = job.IsSubmitted ? "submit" : "post-approval";
-            var statusNote = job.IsSubmitted
-                ? "status remains submitted in Firebase"
-                : "status remains approved in Firebase";
             await RecordPipelineFailureAsync(
                 job,
-                $"{result.Message} (worker stopped after {ResolveMaxRetriesFor(job)} {phase} retries; {statusNote})",
+                $"{result.Message} (worker stopped after {ResolveMaxRetriesFor(job)} submit retries; status remains submitted in Firebase)",
                 exhausted: true);
         }
         else
@@ -1508,6 +2055,17 @@ public partial class MainWindow : Window
     {
         try
         {
+            SyncDocaCredentialsToAllAutomation();
+            automation.DocaCredentials = ResolveDocaCredentials();
+            if (!HasDocaLoginCredentials(automation.DocaCredentials))
+            {
+                return new JobPipelineResult(
+                    false,
+                    true,
+                    "eMAAP email/password missing — set Account fields or appsettings.local.json, Save Credentials.");
+            }
+
+            await _docaBrowserStartupTask;
             await automation.EnsureBrowserReadyAsync();
 
             var sessionGate = await automation.EnsureDocaSessionForJobAsync();
@@ -1532,7 +2090,7 @@ public partial class MainWindow : Window
             return new JobPipelineResult(
                 false,
                 false,
-                "DOCA browser was closed or disconnected. Reopening Chrome on the next attempt.",
+                "eMAAP browser was closed or disconnected. Reopening Chrome on the next attempt.",
                 BrowserDisconnected: true);
         }
     }
@@ -1542,9 +2100,15 @@ public partial class MainWindow : Window
         bool sequentialOnly,
         bool fromAutoWorker)
     {
+        // eMAAP fill+certify must stay single-browser sequential.
+        if (sequentialOnly || queue.Any(job => job.IsSubmitted))
+        {
+            await ProcessAllJobsSequentiallyAsync(queue, fromAutoWorker);
+            return;
+        }
+
         var settings = App.Settings.Automation;
-        var useParallel = !sequentialOnly
-            && queue.Count > settings.ParallelBrowserThreshold
+        var useParallel = queue.Count > settings.ParallelBrowserThreshold
             && settings.ParallelBrowserCount > 1;
 
         if (useParallel)
@@ -1607,12 +2171,13 @@ public partial class MainWindow : Window
                 ScheduleJobRetry(job, ex.Message);
                 await RecordPipelineFailureAsync(job, ex.Message);
                 SetStatusSafe($"{batchLabel} failed · {ex.Message}", ex, StatusKind.Error);
+                AddActivityEntry($"{batchLabel} failed · {ex.Message}");
 
-                if (AutomationService.IsBrowserDisconnectedError(ex))
+                if (ex is EmaapMandatoryStepException
+                    || AutomationService.IsBrowserDisconnectedError(ex))
                 {
-                    SetStatusSafe(
-                        $"{batchLabel} — browser disconnected. Stopping batch; will retry on the next auto-worker cycle.",
-                        StatusKind.Info);
+                    HaltWorkerPipeline(
+                        $"{batchLabel} — halted. Fix the issue, then Process all submitted / resume auto worker.");
                     await LoadQueueAsync();
                     ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
                     return;
@@ -1646,7 +2211,7 @@ public partial class MainWindow : Window
 
             lastError = result.Message;
             SetStatusSafe(
-                $"{batchLabel} paused — DOCA auto-login required. Worker will retry until logged in.",
+                $"{batchLabel} paused — eMAAP login required. Sign in, then worker retries.",
                 StatusKind.Error);
             stopBatch = true;
             return true;
@@ -1657,9 +2222,19 @@ public partial class MainWindow : Window
             failed++;
             lastError = result.Message;
             ScheduleJobRetry(job, result.Message);
-            SetStatusSafe(
-                $"{batchLabel} — browser disconnected. Stopping batch; Chrome will reopen on the next cycle.",
-                StatusKind.Info);
+            HaltWorkerPipeline(
+                $"{batchLabel} — browser disconnected. Stopping batch; Chrome will reopen after resume.");
+            stopBatch = true;
+            return true;
+        }
+
+        if (result.HaltBatch)
+        {
+            failed++;
+            lastError = result.Message;
+            ScheduleJobRetry(job, result.Message);
+            _ = RecordPipelineFailureAsync(job, result.Message);
+            HaltWorkerPipeline($"{batchLabel} · {result.Message}");
             stopBatch = true;
             return true;
         }
@@ -1676,8 +2251,20 @@ public partial class MainWindow : Window
         lastError = result.Message;
         ScheduleJobRetry(job, result.Message);
         _ = RecordPipelineFailureAsync(job, result.Message);
-        SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Info);
+        // eMAAP fill/submit failures also halt — do not skip to next job with a half-done cert.
+        HaltWorkerPipeline($"{batchLabel} · {result.Message} — batch halted.");
+        stopBatch = true;
         return true;
+    }
+
+    /// <summary>Stop auto-worker cycles until operator resumes (login / Process all).</summary>
+    private void HaltWorkerPipeline(string message)
+    {
+        _autoWorkerPausedForDoca = true;
+        StopAutoWorkerTimers();
+        SetDocaLoginPaused(true, startResumeProbe: false);
+        SetStatusSafe(message, StatusKind.Error);
+        AddActivityEntry(message);
     }
 
     private async Task ProcessAllJobsInParallelAsync(
@@ -1881,7 +2468,7 @@ public partial class MainWindow : Window
         {
             WorkerIndex = workerIndex,
             DocaCredentials = ResolveDocaCredentials(),
-            DocaFillOnly = DocaFillOnlyEnabled,
+            Firebase = App.Settings.Firebase,
             ResolveFirebaseIdToken = GetFreshIdTokenAsync,
             ManualDocaLoginWait = _autoWorkerPausedForDoca,
         };
@@ -1955,281 +2542,57 @@ public partial class MainWindow : Window
         }
 
         automation.DocaCredentials = ResolveDocaCredentials();
-        automation.DocaFillOnly = DocaFillOnlyEnabled;
 
         var current = job;
-        var ranPhase1 = false;
-        var phase1DocaSucceeded = false;
 
-        if (current.IsSubmitted)
+        // Single production stage: Submitted → eMAAP fill+certify → PDF → Firebase certified.
+        if (!current.IsSubmitted)
         {
-            SetStatusSafe($"Phase 1 · Checking DOCA and submitting serial {current.SerialNumber}…", StatusKind.Working);
-            var submitResult = await SubmitJobToDocaAsync(current, automation, continueBrowserSession);
-
-            if (submitResult.State == DocaSessionState.LoginRequired)
-            {
-                return new JobPipelineResult(false, true, submitResult.Message);
-            }
-
-            if (submitResult.FillOnlyCompleted)
-            {
-                return new JobPipelineResult(
-                    false,
-                    false,
-                    submitResult.Message + " Job remains submitted in Firebase until you submit on DOCA manually or disable fill-only mode.");
-            }
-
-            if (submitResult.DuplicateOnDoca)
-            {
-                var token = await GetFreshIdTokenAsync();
-                await _firestoreService.ApproveVerificationAsync(current.Id, token);
-                SetStatusSafe(
-                    $"Serial {current.SerialNumber} already on DOCA — synced Firebase to approved, continuing to certify…",
-                    StatusKind.Info);
-                phase1DocaSucceeded = true;
-            }
-            else if (!submitResult.VerificationApproved)
-            {
-                return new JobPipelineResult(false, false, submitResult.Message);
-            }
-            else
-            {
-                phase1DocaSucceeded = true;
-            }
-
-            ranPhase1 = true;
-            current = await EnsureJobApprovedAfterDocaSubmitAsync(current);
-            if (phase1DocaSucceeded && !current.IsApproved)
-            {
-                return new JobPipelineResult(
-                    false,
-                    false,
-                    $"Serial {current.SerialNumber} — DOCA Phase 1 finished but Firebase status is still \"{current.StatusLabel}\". " +
-                    "Check Super Admin Firestore access, then retry.");
-            }
-        }
-
-        if (current.NeedsCertificatePdfUpload && !current.IsReadyToCertify)
-        {
-            var pdfPath = WorkerDataPaths.FindLatestStampedPdf(current.Id);
-            if (string.IsNullOrWhiteSpace(pdfPath))
-            {
-                return new JobPipelineResult(
-                    false,
-                    false,
-                    $"Serial {current.SerialNumber} needs a Firebase PDF upload but no local stamped PDF was found.");
-            }
-
-            SetStatusSafe($"Uploading signed PDF to Firebase for serial {current.SerialNumber}…", StatusKind.Working);
-            var token = await GetFreshIdTokenAsync();
-            await _firestoreService.MarkCertifiedWithSignedPdfAsync(
-                current.Id,
-                pdfPath,
-                token,
-                cancellationToken: CancellationToken.None);
-
             return new JobPipelineResult(
-                true,
                 false,
-                $"Serial {current.SerialNumber} — certificate PDF uploaded to Firebase.");
+                false,
+                $"No pipeline steps matched serial {current.SerialNumber} (Firebase status: {current.StatusLabel}).");
         }
 
-        if (current.IsReadyToCertify)
+        if (string.IsNullOrWhiteSpace(current.RcId))
         {
-            var existingStampedPdf = WorkerDataPaths.FindLatestStampedPdf(current.Id);
-            if (!string.IsNullOrWhiteSpace(existingStampedPdf))
-            {
-                var docaUploaded = false;
-                try
-                {
-                    docaUploaded = await automation.IsCertificateUploadedOnDocaAsync(current.SerialNumber);
-                }
-                catch (Exception ex) when (AutomationService.IsBrowserDisconnectedError(ex))
-                {
-                    return new JobPipelineResult(
-                        false,
-                        false,
-                        "DOCA browser was closed or disconnected. Reopening Chrome on the next attempt.",
-                        BrowserDisconnected: true);
-                }
-                catch (Exception ex)
-                {
-                    SetStatusSafe(
-                        $"Serial {current.SerialNumber} — could not verify DOCA upload status ({ex.Message}); continuing Phase 2…",
-                        StatusKind.Info);
-                }
-
-                if (docaUploaded)
-                {
-                    SetStatusSafe(
-                        $"Serial {current.SerialNumber} — DOCA shows Certificate Uploaded; syncing stamped PDF to Firebase…",
-                        StatusKind.Working);
-                    var token = await GetFreshIdTokenAsync();
-                    await _firestoreService.MarkCertifiedWithSignedPdfAsync(
-                        current.Id,
-                        existingStampedPdf,
-                        token,
-                        cancellationToken: CancellationToken.None);
-
-                    return new JobPipelineResult(
-                        true,
-                        false,
-                        $"Serial {current.SerialNumber} — DOCA already uploaded; synced saved stamped PDF and marked certified in Firebase.");
-                }
-
-                SetStatusSafe(
-                    $"Serial {current.SerialNumber} — local stamped PDF found but DOCA still needs upload; continuing Phase 2…",
-                    StatusKind.Working);
-            }
-
-            SetStatusSafe($"Phase 2 · Certifying serial {current.SerialNumber} on DOCA…", StatusKind.Working);
-            var certifyResult = await CertifyJobAsync(
-                current,
-                automation,
-                continueOnSamePage: ranPhase1 || continueBrowserSession);
-
-            if (certifyResult.State == DocaSessionState.LoginRequired)
-            {
-                return new JobPipelineResult(false, true, certifyResult.Message);
-            }
-
-            if (certifyResult.VerificationApproved)
-            {
-                return new JobPipelineResult(true, false, certifyResult.Message);
-            }
-
-            return new JobPipelineResult(false, false, certifyResult.Message);
+            return new JobPipelineResult(false, false, $"Serial {current.SerialNumber} — RC id is missing.");
         }
 
-        return new JobPipelineResult(
-            false,
-            false,
-            $"No pipeline steps matched serial {current.SerialNumber} (Firebase status: {current.StatusLabel}).");
-    }
+        SetStatusSafe(
+            $"eMAAP · Fill & certify serial {current.SerialNumber} ({current.CustomerName})…",
+            StatusKind.Working);
 
-    private async Task<SiteCalibrationRecord> EnsureJobApprovedAfterDocaSubmitAsync(SiteCalibrationRecord job)
-    {
-        if (!job.IsSubmitted)
-        {
-            return job;
-        }
-
-        for (var attempt = 1; attempt <= 5; attempt++)
-        {
-            var token = await GetFreshIdTokenAsync();
-            await _firestoreService.ApproveVerificationAsync(job.Id, token);
-
-            if (attempt < 5)
-            {
-                await Task.Delay(400 * attempt);
-            }
-
-            var reloaded = await ReloadJobAsync(job.Id);
-            if (reloaded is not null && reloaded.IsApproved)
-            {
-                return reloaded;
-            }
-        }
-
-        return await ReloadJobAsync(job.Id) ?? job;
-    }
-
-    private async Task<DocaOpenResult> SubmitJobToDocaAsync(
-        SiteCalibrationRecord job,
-        AutomationService automation,
-        bool continueOnSamePage)
-    {
-        if (_session is null)
-        {
-            throw new InvalidOperationException("Sign in as Super Admin first.");
-        }
-
-        if (!job.IsSubmitted)
-        {
-            throw new InvalidOperationException("Only submitted jobs can be sent to DOCA.");
-        }
-
-        if (string.IsNullOrWhiteSpace(job.RcId))
-        {
-            throw new InvalidOperationException("RC id is missing for this job.");
-        }
-
-        var docaCredentials = CurrentDocaCredentials();
-        automation.DocaCredentials = docaCredentials;
-        automation.DocaFillOnly = DocaFillOnlyEnabled;
-
-        var party = await _partyDetailsService.ResolveForJobAsync(job, job.RcId, _session.IdToken);
-        var instrument = await _instrumentDetailsService.ResolveForJobAsync(job, job.RcId, _session.IdToken);
-
-        var result = await automation.RunOvStarterAsync(
-            job,
-            party,
-            instrument,
-            _session.IdToken,
-            docaCredentials,
-            continueOnSamePage);
-
-        CaptureDocaCredentialsFromAutomation(automation);
-        return result;
-    }
-
-    private async Task<DocaOpenResult> CertifyJobAsync(
-        SiteCalibrationRecord job,
-        AutomationService automation,
-        bool continueOnSamePage)
-    {
-        if (_session is null)
-        {
-            throw new InvalidOperationException("Sign in as Super Admin first.");
-        }
-
-        if (string.IsNullOrWhiteSpace(job.SerialNumber))
-        {
-            throw new InvalidOperationException("Serial number is required for DOCA certification lookup.");
-        }
-
-        if (!job.IsApproved)
-        {
-            throw new InvalidOperationException("Only approved jobs can be certified on DOCA.");
-        }
-
-        if (string.IsNullOrWhiteSpace(job.RcId))
-        {
-            throw new InvalidOperationException("RC id is missing for this job.");
-        }
-
-        var docaCredentials = CurrentDocaCredentials();
-        automation.DocaCredentials = docaCredentials;
-
-        var instrument = await _instrumentDetailsService.ResolveForJobAsync(job, job.RcId, _session.IdToken);
         var token = await GetFreshIdTokenAsync();
+        var party = await _partyDetailsService.ResolveForJobAsync(current, current.RcId, token);
+        var instrument = await _instrumentDetailsService.ResolveForJobAsync(current, current.RcId, token);
 
-        var result = await automation.RunCertificationLookupAsync(
-            job,
-            instrument,
-            token,
-            docaCredentials,
-            continueOnSamePage);
+        AddActivityEntry(
+            $"eMAAP fill+certify: {party.BelongToName} · {instrument.SerialNumber} · " +
+            $"{current.VerificationTypeLabel} · {instrument.TypeOfInstrument} · Max {instrument.MaximumCapacity}");
 
-        CaptureDocaCredentialsFromAutomation(automation);
-        return result;
-    }
-
-    private void CaptureDocaCredentialsFromAutomation(AutomationService automation)
-    {
-        var captured = automation.DocaCredentials;
-        if (string.IsNullOrWhiteSpace(captured.Email) && string.IsNullOrWhiteSpace(captured.Password))
+        try
         {
-            return;
+            var message = await automation.FillEmaapCertificateGenerationAsync(
+                current,
+                party,
+                instrument,
+                token);
+            AddActivityEntry(message);
+            return new JobPipelineResult(true, false, message);
         }
-
-        DocaEmailBox.Text = captured.Email;
-        if (!string.IsNullOrWhiteSpace(captured.Password))
+        catch (EmaapMandatoryStepException ex)
         {
-            DocaPasswordBox.Text = captured.Password;
+            AddActivityEntry(ex.Message);
+            return new JobPipelineResult(false, false, ex.Message, HaltBatch: true);
         }
-
-        PersistCredentials();
+        catch (Exception ex) when (
+            ex.Message.Contains("login page", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Sign in to eMAAP", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("OTP", StringComparison.OrdinalIgnoreCase))
+        {
+            return new JobPipelineResult(false, true, ex.Message);
+        }
     }
 
     private async Task<string> GetFreshIdTokenAsync(CancellationToken cancellationToken = default)
@@ -2288,13 +2651,18 @@ public partial class MainWindow : Window
             await FlushPendingCaptchaReportsAsync();
 
             SetStatus("Signed in. Loading certification queue...", StatusKind.Working);
-            if (_useRealtimeListener)
+            if (_useRealtimeListener && _autoWorkerEnabled)
             {
                 await StartQueueListenerAsync();
             }
             else
             {
                 await LoadQueueAsync();
+            }
+
+            if (!_autoWorkerEnabled)
+            {
+                SetStatus("Signed in. Queue loaded — Auto worker off. Opening eMAAP next…", StatusKind.Working);
             }
         });
     }
@@ -2327,6 +2695,8 @@ public partial class MainWindow : Window
         RestoreSelection(previousId);
         UpdateQueueSummary();
         UpdateEmptyState();
+        UpdateProcessSubmittedButtonVisibility();
+        _ = ShowSelectedJobDocumentAsync(JobsGrid.SelectedItem as CertificationQueueItem);
 
         var pending = _jobs.Count(job => job.NeedsPipelineWork);
         var eligible = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
@@ -2347,10 +2717,9 @@ public partial class MainWindow : Window
     private void UpdateQueueSummary()
     {
         var submitted = _jobs.Count(job => job.Record.IsSubmitted);
-        var approved = _jobs.Count(job => job.Record.IsReadyToCertify);
         QueueCountText.Text = _jobs.Count == 0
             ? "0 jobs pending"
-            : $"{_jobs.Count} jobs · {submitted} to submit · {approved} to certify";
+            : $"{_jobs.Count} jobs · {submitted} to eMAAP-certify";
     }
 
     private void UpdateEmptyState()
@@ -2362,7 +2731,7 @@ public partial class MainWindow : Window
         EmptyStateTitleText.Text = "No pending verifications";
         EmptyStateBodyText.Text = _session is null
             ? "Sign in and refresh to load jobs from all RCs."
-            : "All submitted and approved jobs are certified.";
+            : "All submitted jobs are certified.";
     }
 
     private int SelectedJobIndex()
@@ -2535,13 +2904,24 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AddActivityEntry(string message)
-    {
-        _activityLog.Insert(0, $"{DateTime.Now:HH:mm:ss}  {message}");
+    private void AddActivityEntry(string message) =>
+        AddActivityEntry(new ActivityLogEntry
+        {
+            Text = $"{DateTime.Now:HH:mm:ss}  {message}",
+        });
 
-        while (_activityLog.Count > 30)
+    private void AddActivityEntry(ActivityLogEntry entry)
+    {
+        _activityLog.Insert(0, entry);
+
+        while (_activityLog.Count > 120)
         {
             _activityLog.RemoveAt(_activityLog.Count - 1);
+        }
+
+        if (_activityLog.Count > 0)
+        {
+            ActivityLogList.ScrollIntoView(_activityLog[0]);
         }
     }
 }

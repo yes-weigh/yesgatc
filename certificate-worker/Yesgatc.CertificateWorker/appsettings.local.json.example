@@ -6,12 +6,18 @@
   "Automation": {
     "DocaCredentials": {
       "Email": "admin@yesweigh.in",
-      "Password": "your-doca-password"
+      "Password": "your-emaap-password"
     },
     "CaptchaOcr": {
-      "Provider": "OpenAI",
-      "ApiKey": "sk-your-openai-key",
-      "Model": "gpt-4o-mini"
+      "Provider": "Gemini",
+      "ApiKey": "YOUR_GEMINI_API_KEY",
+      "Model": "gemini-3.6-flash",
+      "ApiBaseUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "FallbackToTesseract": true,
+      "CombineWithTesseract": false
     }
+  },
+  "AutoWorker": {
+    "Enabled": false
   }
 }

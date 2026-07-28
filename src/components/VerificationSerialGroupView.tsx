@@ -122,7 +122,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
         : '';
 
     const ok = await confirm({
-      title: certificationFailureSource ? 'Resubmit after certification failure?' : 'Resubmit on DOCA?',
+      title: certificationFailureSource ? 'Resubmit after certification failure?' : 'Resubmit for eMAAP?',
       message:
         `Queue a new verification for serial ${record.serialNumber?.trim() || '—'}?\n\n` +
         voidLine +
@@ -270,7 +270,7 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
                 ) : (
                   <RefreshCw size={16} aria-hidden />
                 )}
-                <span>Resubmit on DOCA</span>
+                <span>Resubmit for eMAAP</span>
               </button>
             )}
           </div>

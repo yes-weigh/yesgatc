@@ -30,7 +30,7 @@ public static class OpenAiCaptchaOcr
         CaptchaOcrSettings settings,
         CancellationToken cancellationToken = default)
     {
-        var apiKey = ResolveApiKey(settings);
+        var apiKey = CaptchaOcrKeys.ResolveApiKey(settings);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException(
@@ -41,7 +41,7 @@ public static class OpenAiCaptchaOcr
             ? "https://api.openai.com/v1"
             : settings.ApiBaseUrl.TrimEnd('/');
         var model = string.IsNullOrWhiteSpace(settings.Model) ? "gpt-4o" : settings.Model.Trim();
-        var visionBytes = DocaCaptchaOcr.BuildVisionApiPngBytes(imageBytes);
+        var visionBytes = DocaCaptchaOcr.BuildBlackOnlyVisionPngBytes(imageBytes);
         var imageBase64 = Convert.ToBase64String(visionBytes);
 
         var request = new ChatCompletionRequest
@@ -102,27 +102,15 @@ public static class OpenAiCaptchaOcr
         return CaptchaTextPattern.IsMatch(normalized) ? normalized : string.Empty;
     }
 
-    /// <summary>
-    /// Set at runtime from saved credentials so the key takes effect immediately
-    /// without requiring an app restart.
-    /// </summary>
-    public static string? RuntimeApiKeyOverride { get; set; }
-
-    public static string? ResolveApiKey(CaptchaOcrSettings settings)
+    /// <summary>Back-compat alias — prefer <see cref="CaptchaOcrKeys.RuntimeApiKeyOverride"/>.</summary>
+    public static string? RuntimeApiKeyOverride
     {
-        if (!string.IsNullOrWhiteSpace(RuntimeApiKeyOverride))
-        {
-            return RuntimeApiKeyOverride.Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(settings.ApiKey))
-        {
-            return settings.ApiKey.Trim();
-        }
-
-        var fromEnv = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-        return string.IsNullOrWhiteSpace(fromEnv) ? null : fromEnv.Trim();
+        get => CaptchaOcrKeys.RuntimeApiKeyOverride;
+        set => CaptchaOcrKeys.RuntimeApiKeyOverride = value;
     }
+
+    public static string? ResolveApiKey(CaptchaOcrSettings settings) =>
+        CaptchaOcrKeys.ResolveApiKey(settings);
 
     private static string TrimForError(string body)
     {

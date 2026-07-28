@@ -11,7 +11,7 @@ public sealed class WorkerSettings
 public sealed class AutoWorkerSettings
 {
     /// <summary>When true, the worker polls Firebase and processes jobs without manual clicks.</summary>
-    public bool Enabled { get; init; } = true;
+    public bool Enabled { get; init; } = false;
     /// <summary>
     /// When true, subscribe to Firestore snapshot listeners (onSnapshot-style) instead of polling.
     /// </summary>
@@ -23,15 +23,10 @@ public sealed class AutoWorkerSettings
     /// <summary>Wait time before retrying a failed job (seconds).</summary>
     public int RetryDelaySeconds { get; init; } = 15;
     /// <summary>
-    /// Max retries for submitted jobs (Phase 1 DOCA create / approve).
+    /// Max retries for the single production stage: Submitted → eMAAP fill+certify.
     /// After this, worker stops and marks pipelineFailedPhase=submit. Status stays submitted.
     /// </summary>
     public int MaxSubmitRetries { get; init; } = 3;
-    /// <summary>
-    /// Max retries for approved jobs (Phase 2 signed PDF upload to DOCA / Firebase).
-    /// Firebase status stays approved during retries.
-    /// </summary>
-    public int MaxPostApprovalRetries { get; init; } = 3;
     /// <summary>How often to refresh retry countdown badges in the queue (seconds).</summary>
     public int RetryBadgeRefreshSeconds { get; init; } = 15;
     /// <summary>When true, skip the confirmation dialog for Process all jobs.</summary>
@@ -55,16 +50,21 @@ public sealed class FirebaseSettings
 
 public sealed class AutomationSettings
 {
-    public string DocaLoginUrl { get; init; } = "https://doca.gov.in/user/login";
-    /// <summary>Checked first — if session is still valid, DOCA redirects away from login.</summary>
-    public string DocaHomeUrl { get; init; } = "https://doca.gov.in/user/dashboard";
-    public string DocaCreateIcVerificationUrl { get; init; } = "https://doca.gov.in/user/create-ic-verification";
-    public string DocaViewIcVerificationUrl { get; init; } = "https://doca.gov.in/user/view-ic-verification";
-    public string DocaGatcUploadCertificateUrl { get; init; } = "https://doca.gov.in/user/view-gn-uploadcertificate";
-    public DocaScrapeSettings DocaScrape { get; init; } = new();
-    public DocaEnrichSettings DocaEnrich { get; init; } = new();
+    public string DocaLoginUrl { get; init; } = "https://emaap.gov.in/gatc/login";
+    /// <summary>Checked first — if session is still valid, portal redirects away from login.</summary>
+    public string DocaHomeUrl { get; init; } = "https://emaap.gov.in/gatc/dashboard";
     /// <summary>Optional override. Default: %LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser</summary>
     public string BrowserProfilePath { get; init; } = string.Empty;
+    /// <summary>
+    /// When true, seed a YesGATC Chrome mirror from your Chrome profile (cookies/DeepSeek login).
+    /// Chrome blocks automating the real Default profile directly (stays on about:blank).
+    /// Close Chrome once to sync; after that the worker uses the mirror.
+    /// </summary>
+    public bool UseSystemChromeProfile { get; init; }
+    /// <summary>Chrome profile folder under User Data, e.g. Default or Profile 1.</summary>
+    public string ChromeProfileDirectory { get; init; } = "Default";
+    /// <summary>Force a full re-copy of the Chrome profile into the worker mirror on next launch.</summary>
+    public bool ResyncChromeProfile { get; init; }
     /// <summary>Use installed browser instead of Playwright Chromium. Leave empty for default.</summary>
     public string BrowserChannel { get; init; } = string.Empty;
     /// <summary>When pending job count exceeds this, batch processing uses multiple browser windows.</summary>
@@ -79,33 +79,16 @@ public sealed class AutomationSettings
     public bool AutoSolveCaptcha { get; init; } = true;
     /// <summary>Captcha OCR + login retries before pausing for manual login.</summary>
     public int CaptchaMaxAttempts { get; init; } = 5;
+    /// <summary>Poll Firebase emaapOtpInbox after Send OTP (webhook / Apps Script).</summary>
+    public bool EmaapOtpUseFirestore { get; init; } = true;
+    /// <summary>Seconds to wait for a Firestore OTP before falling back / idle.</summary>
+    public int EmaapOtpPollSeconds { get; init; } = 180;
+    /// <summary>Legacy Gmail tab scrape — off by default (Google blocks automation).</summary>
+    public bool EmaapOtpUseGmailFallback { get; init; }
+    /// <summary>Try this OTP first after Send OTP; on failure fall back to Firebase inbox.</summary>
+    public string EmaapMasterOtp { get; init; } = string.Empty;
     public CaptchaOcrSettings CaptchaOcr { get; init; } = new();
     public DocaCredentialSettings DocaCredentials { get; init; } = new();
-    public CertificateStampSettings CertificateStamp { get; init; } = new();
-}
-
-public sealed class CertificateStampSettings
-{
-    public string PrincipalOfficerName { get; init; } = "HARISH RAMANKUTTY";
-    public string TimeZoneId { get; init; } = "India Standard Time";
-    public string TimeZoneOffsetLabel { get; init; } = "+05'30'";
-    public double NameFontSize { get; init; } = 11;
-    public double DetailFontSize { get; init; } = 7.5;
-    /// <summary>Inset from the drawable page right edge to the stamp block right edge, in PDF points.</summary>
-    public double RightMargin { get; init; } = 14;
-    /// <summary>Move stamp left (negative) or right (positive) in PDF points.</summary>
-    public double OffsetX { get; init; } = 0;
-    /// <summary>Move stamp up (negative) or down (positive) in PDF points.</summary>
-    public double OffsetY { get; init; } = 14;
-    /// <summary>Gap between stamp block and the Signature of Principal Officer line.</summary>
-    public double GapAboveSignatureLabel { get; init; } = 14;
-    /// <summary>Move the large left name down (positive) or up (negative) in PDF points.</summary>
-    public double NameOffsetY { get; init; } = 4;
-    public string WatermarkPath { get; init; } = "adobelogo.png";
-    public double WatermarkHeight { get; init; } = 42;
-    public double WatermarkOpacity { get; init; } = 0.32;
-    /// <summary>Move watermark up (negative) or down (positive) in PDF points.</summary>
-    public double WatermarkOffsetY { get; init; } = -5;
 }
 
 public sealed class DocaCredentialSettings
@@ -114,46 +97,30 @@ public sealed class DocaCredentialSettings
     public string Password { get; init; } = string.Empty;
 }
 
-/// <summary>Captcha OCR — local Tesseract or OpenAI-compatible vision API.</summary>
+/// <summary>Captcha OCR — DeepSeek chat (default), Gemini, OpenAI, or local Tesseract.</summary>
 public sealed class CaptchaOcrSettings
 {
-    /// <summary>OpenAI (vision API) or Tesseract (local).</summary>
-    public string Provider { get; init; } = "OpenAI";
+    /// <summary>DeepSeek | Gemini | OpenAI | Tesseract.</summary>
+    public string Provider { get; init; } = "DeepSeek";
 
-    /// <summary>API key for OpenAI or any OpenAI-compatible endpoint. Env: OPENAI_API_KEY.</summary>
+    /// <summary>API key for Gemini/OpenAI. DeepSeek uses browser login (no key).</summary>
     public string ApiKey { get; init; } = string.Empty;
 
-    /// <summary>Chat model with vision support, e.g. gpt-4o.</summary>
-    public string Model { get; init; } = "gpt-4o";
+    /// <summary>Vision model for Gemini/OpenAI. Ignored for DeepSeek chat.</summary>
+    public string Model { get; init; } = string.Empty;
 
-    /// <summary>Default OpenAI. Set to https://openrouter.ai/api/v1 for OpenRouter, etc.</summary>
-    public string ApiBaseUrl { get; init; } = "https://api.openai.com/v1";
+    /// <summary>API base (Gemini/OpenAI) or chat URL hint (DeepSeek).</summary>
+    public string ApiBaseUrl { get; init; } = "https://chat.deepseek.com/";
 
     /// <summary>If the AI provider fails or returns garbage, retry with local Tesseract.</summary>
-    public bool FallbackToTesseract { get; init; } = true;
+    public bool FallbackToTesseract { get; init; }
 
-    /// <summary>Run Tesseract alongside AI and merge — fixes S/5-style single-char mistakes.</summary>
-    public bool CombineWithTesseract { get; init; } = true;
+    /// <summary>OpenAI only: merge with Tesseract. Ignored for case-sensitive eMAAP captchas.</summary>
+    public bool CombineWithTesseract { get; init; }
 }
 
 public sealed class CredentialSettings
 {
     public string Aadhar { get; init; } = string.Empty;
     public string Password { get; init; } = string.Empty;
-}
-
-public sealed class DocaScrapeSettings
-{
-    /// <summary>
-    /// When false, the worker never opens Chrome 2 (GATC list scraper). Certification uses Chrome 1 only.
-    /// </summary>
-    public bool Enabled { get; init; }
-    public int PageSize { get; init; } = 100;
-    public int DelayBetweenRowsMs { get; init; } = 400;
-    public int DelayBetweenPagesMs { get; init; } = 1200;
-}
-
-public sealed class DocaEnrichSettings
-{
-    public int DelayBetweenDocsMs { get; init; } = 300;
 }

@@ -47,6 +47,39 @@ public sealed class FirebaseStorageDownloadService
             "Instrument photo",
             cancellationToken);
 
+    public async Task<StampingImageDownload?> TryDownloadVerificationImageAsync(
+        string jobId,
+        string serialNumber,
+        string downloadUrl,
+        string fileName,
+        string contentType,
+        string imageKind,
+        string imageLabel,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(downloadUrl))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await DownloadVerificationImageAsync(
+                jobId,
+                serialNumber,
+                downloadUrl,
+                fileName,
+                contentType,
+                imageKind,
+                imageLabel,
+                cancellationToken);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private async Task<StampingImageDownload> DownloadVerificationImageAsync(
         string jobId,
         string serialNumber,

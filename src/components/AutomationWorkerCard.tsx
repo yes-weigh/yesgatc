@@ -37,7 +37,6 @@ import {
 import {
   diagnoseVerificationPipeline,
   findVerificationBySerial,
-  repairVerificationForPhase2,
   repairVerificationCertified,
   repairVerificationSubmitted,
   type PipelineRepairDiagnosis,
@@ -54,16 +53,16 @@ const RUNTIME_LABELS: Record<WorkerRuntimeState, string> = {
   idle: 'Idle',
   working: 'Processing jobs',
   paused: 'Paused',
-  login_required: 'DOCA login required',
+  login_required: 'eMAAP login required',
   error: 'Error',
   offline: 'Offline',
 };
 
 const RUNTIME_HINTS: Record<WorkerRuntimeState, string> = {
-  idle: 'Worker is online and waiting for queue jobs.',
-  working: 'Actively processing certificate jobs on DOCA.',
+  idle: 'Worker is online and waiting for Submitted jobs.',
+  working: 'Actively processing certificates on eMAAP.',
   paused: 'Remote pause is active — jobs will not run.',
-  login_required: 'DOCA session expired — worker needs a fresh login.',
+  login_required: 'eMAAP session expired — worker needs a fresh login.',
   error: 'Worker reported an error — check activity logs.',
   offline: 'No heartbeat received — server may be down or unreachable.',
 };
@@ -253,11 +252,6 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     );
   };
 
-  const handleToggleFillOnly = async () => {
-    if (!remote) return;
-    await pushRemote({ docaFillOnly: !remote.docaFillOnly }, { incrementCommand: true });
-  };
-
   const remoteReady = user?.role === 'super_admin';
 
   const handleLookupSerial = async (keepRepairMessage = false) => {
@@ -287,21 +281,6 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     try {
       await repairVerificationCertified(recordId, repairRecords.find(r => r.id === recordId));
       setRepairMessage('Record repaired — certified status and timestamps fixed in Firestore.');
-      await handleLookupSerial(true);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Repair failed.');
-    } finally {
-      setRepairLoading(false);
-    }
-  };
-
-  const handleRepairForPhase2 = async (recordId: string) => {
-    setError('');
-    setRepairMessage('');
-    setRepairLoading(true);
-    try {
-      await repairVerificationForPhase2(recordId, repairRecords.find(r => r.id === recordId));
-      setRepairMessage('Record repaired — status set to approved. The worker should pick it up for Phase 2 within ~30 seconds.');
       await handleLookupSerial(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Repair failed.');
@@ -382,7 +361,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
             </span>
             <span className={`cw-chip cw-chip--${docaLoggedIn ? 'ok' : 'warn'}`}>
               <ShieldCheck size={14} aria-hidden />
-              <span className="cw-chip-label">DOCA</span>
+              <span className="cw-chip-label">eMAAP</span>
               <strong>{docaLoggedIn ? 'Logged in' : 'Login required'}</strong>
             </span>
             <span className="cw-chip">
@@ -412,19 +391,6 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
             <RefreshCw size={16} aria-hidden />
             {remote?.autoWorkerEnabled === false ? 'Enable auto worker' : 'Disable auto worker'}
           </button>
-          <label className="cw-switch">
-            <input
-              type="checkbox"
-              checked={remote?.docaFillOnly ?? false}
-              disabled={!remoteReady || saving}
-              onChange={() => void handleToggleFillOnly()}
-            />
-            <span className="cw-switch-track" aria-hidden />
-            <span className="cw-switch-copy">
-              <strong>Fill only</strong>
-              <span>Fill DOCA forms without submitting</span>
-            </span>
-          </label>
         </div>
       </section>
 
@@ -440,13 +406,9 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
         <article className="cw-metric">
           <Layers size={18} aria-hidden />
           <div>
-            <p className="cw-metric-label">Queue breakdown</p>
-            <p className="cw-metric-value cw-metric-value--inline">
-              <span>{status?.queueSubmitted ?? '—'} submitted</span>
-              <span className="cw-metric-sep">·</span>
-              <span>{status?.queueApproved ?? '—'} approved</span>
-            </p>
-            <p className="cw-metric-sub">Firestore pipeline stages</p>
+            <p className="cw-metric-label">Submitted queue</p>
+            <p className="cw-metric-value">{status?.queueSubmitted ?? '—'}</p>
+            <p className="cw-metric-sub">eMAAP fill &amp; certify</p>
           </div>
         </article>
         <article className="cw-metric">
@@ -466,7 +428,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
         <article className="cw-metric">
           <Clock size={18} aria-hidden />
           <div>
-            <p className="cw-metric-label">DOCA session</p>
+            <p className="cw-metric-label">eMAAP session</p>
             <p className="cw-metric-value">
               {status?.docaSessionAgeSeconds ? formatDuration(status.docaSessionAgeSeconds) : '—'}
             </p>
@@ -504,7 +466,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
           {([
             ['activity', 'Activity', logs.length] as const,
             ['captcha', 'Captcha OCR', captchaAttempts.length] as const,
-            ['sessions', 'DOCA sessions', sessions.length] as const,
+            ['sessions', 'eMAAP sessions', sessions.length] as const,
           ]).map(([id, label, count]) => (
             <button
               key={id}
@@ -617,7 +579,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
         {activeLogTab === 'sessions' && (
           <div role="tabpanel" className="cw-log-panel">
             {sessions.length === 0 ? (
-              <p className="cw-log-empty">No DOCA session logout events yet. Sessions are recorded when the worker detects a logout.</p>
+              <p className="cw-log-empty">No eMAAP session logout events yet. Sessions are recorded when the worker detects a logout.</p>
             ) : (
               <ul className="cw-session-list">
                 {sessions.map(session => (
@@ -643,7 +605,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
           <Wrench size={16} aria-hidden />
           <span>
             <strong>Pipeline recovery</strong>
-            <span className="cw-recovery-hint">Fix serials when DOCA and Firestore are out of sync</span>
+            <span className="cw-recovery-hint">Fix serials when eMAAP and Firestore are out of sync</span>
           </span>
           <ChevronDown size={16} className="cw-recovery-chevron" aria-hidden />
         </summary>
@@ -683,7 +645,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                   </div>
                   <dl className="cw-recovery-kv">
                     <div><dt>Firebase status</dt><dd>{diagnosis.status}</dd></div>
-                    <div><dt>Expected DOCA phase</dt><dd>{diagnosis.docaExpectedPhase.replace('_', ' ')}</dd></div>
+                    <div><dt>Expected stage</dt><dd>{diagnosis.expectedPhase}</dd></div>
                     <div><dt>Worker queue</dt><dd>{diagnosis.queueEligible ? 'Eligible' : 'Not listed'}</dd></div>
                     <div><dt>Document ID</dt><dd className="text-mono">{diagnosis.recordId}</dd></div>
                   </dl>
@@ -703,16 +665,6 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                         onClick={() => void handleRepairCertified(diagnosis.recordId)}
                       >
                         Fix certified fields
-                      </button>
-                    )}
-                    {diagnosis.repairAction === 'set_approved' && (
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        disabled={repairLoading}
-                        onClick={() => void handleRepairForPhase2(diagnosis.recordId)}
-                      >
-                        Mark approved → sync / Phase 2
                       </button>
                     )}
                     {diagnosis.repairAction === 'set_submitted' && (

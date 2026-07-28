@@ -13,11 +13,9 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
     private readonly int _tokenRefreshMinutes;
     private readonly object _gate = new();
     private readonly Dictionary<string, SiteCalibrationRecord> _submitted = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, SiteCalibrationRecord> _approved = new(StringComparer.Ordinal);
 
     private FirestoreDb? _db;
     private FirestoreChangeListener? _submittedListener;
-    private FirestoreChangeListener? _approvedListener;
     private Dictionary<string, string> _rcNames = new(StringComparer.Ordinal);
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _lifetimeCts;
@@ -78,7 +76,6 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         lock (_gate)
         {
             _submitted.Clear();
-            _approved.Clear();
         }
 
         CancelDebounce();
@@ -104,22 +101,14 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         lock (_gate)
         {
             _submitted.Clear();
-            _approved.Clear();
         }
 
         var submittedQuery = _db.Collection("siteCalibrations")
             .WhereEqualTo("status", VerificationStatuses.Submitted);
-        var approvedQuery = _db.Collection("siteCalibrations")
-            .WhereEqualTo("status", VerificationStatuses.Approved);
 
         _submittedListener = submittedQuery.Listen((snapshot, _) =>
         {
             HandleSnapshot(snapshot, _submitted);
-            return Task.CompletedTask;
-        });
-        _approvedListener = approvedQuery.Listen((snapshot, _) =>
-        {
-            HandleSnapshot(snapshot, _approved);
             return Task.CompletedTask;
         });
     }
@@ -212,7 +201,7 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
     {
         lock (_gate)
         {
-            return CertificationQueueFilter.Apply(_submitted.Values.Concat(_approved.Values));
+            return CertificationQueueFilter.Apply(_submitted.Values);
         }
     }
 
@@ -255,12 +244,6 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         {
             await _submittedListener.StopAsync(CancellationToken.None);
             _submittedListener = null;
-        }
-
-        if (_approvedListener is not null)
-        {
-            await _approvedListener.StopAsync(CancellationToken.None);
-            _approvedListener = null;
         }
 
         _db = null;

@@ -33,3 +33,5 @@ certificate-worker/publish/
 # Firebase Admin service account (never commit)
 *service-account*.json
 *firebase-adminsdk*.json
+certificate-worker/_build_check/
+certificate-worker/_build_check2/

@@ -129,7 +129,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
               aria-describedby="rc-code-hint"
             />
             <p id="rc-code-hint" className="text-muted text-xs mt-1 mb-0">
-              Used in DOCA remarks — e.g. Original verification by {values.rcCode || 'ABC'}
+              Used in certificate remarks — e.g. Original verification by {values.rcCode || 'ABC'}
             </p>
           </div>
           <div className="form-group mb-0">

@@ -48,9 +48,10 @@ export type PipelineRepairDiagnosis = {
   serialNumber: string;
   status: string;
   isCorrupted: boolean;
-  docaExpectedPhase: 'phase1_pending' | 'phase2_pending' | 'complete' | 'unknown';
+  /** Worker queue stage expectation (eMAAP: submitted → certified). */
+  expectedPhase: 'pending' | 'complete' | 'unknown';
   queueEligible: boolean;
-  repairAction: 'set_approved' | 'set_submitted' | 'fix_certified' | 'none';
+  repairAction: 'set_submitted' | 'fix_certified' | 'none';
   notes: string[];
 };
 
@@ -73,55 +74,48 @@ export function diagnoseVerificationPipeline(record: SiteCalibration): PipelineR
     );
   }
 
-  let docaExpectedPhase: PipelineRepairDiagnosis['docaExpectedPhase'] = 'unknown';
+  let expectedPhase: PipelineRepairDiagnosis['expectedPhase'] = 'unknown';
   if (hasPdf && hasCertNumber && inferredStatus === 'certified') {
-    docaExpectedPhase = 'complete';
-  } else if (inferredStatus === 'approved' || (inferredStatus === 'submitted' && isValidVerificationIsoTimestamp(record.approvedAt))) {
-    docaExpectedPhase = 'phase2_pending';
-  } else if (inferredStatus === 'submitted') {
-    docaExpectedPhase = 'phase1_pending';
+    expectedPhase = 'complete';
+  } else if (inferredStatus === 'submitted' || inferredStatus === 'approved') {
+    expectedPhase = 'pending';
   }
 
-  let queueEligible = inferredStatus === 'submitted' || inferredStatus === 'approved';
+  let queueEligible = inferredStatus === 'submitted';
   if (corrupted) {
     queueEligible = false;
   }
+  if (inferredStatus === 'approved') {
+    notes.push(
+      'Approved is a legacy mid-state. Reset to submitted so the eMAAP worker can fill & certify.',
+    );
+  }
   if (inferredStatus === 'certified' && !hasPdf) {
-    notes.push('Certified in Firebase but PDF missing — worker queue ignores this today.');
+    notes.push('Certified in Firebase but PDF missing — reset to submitted to re-run eMAAP.');
     queueEligible = false;
   }
   if (corrupted && inferredStatus === 'certified' && !hasCertNumber) {
-    notes.push('Certificate number field is corrupted or missing — repair clears it; re-sync from DOCA if needed.');
+    notes.push('Certificate number field is corrupted or missing — repair clears it; re-run eMAAP if needed.');
   }
 
   let repairAction: PipelineRepairDiagnosis['repairAction'] = 'none';
-  if (corrupted && inferredStatus === 'certified') {
+  if (corrupted && inferredStatus === 'certified' && hasPdf && hasCertNumber) {
     repairAction = 'fix_certified';
-    notes.push(
-      'Repair writes valid certified status and timestamps. If PDF or cert number is still missing, set approved and re-queue worker sync after repair.',
-    );
-    docaExpectedPhase = hasPdf && hasCertNumber ? 'complete' : 'unknown';
-  } else if (corrupted && inferredStatus === 'submitted' && isValidVerificationIsoTimestamp(record.submittedAt) && !hasPdf) {
-    repairAction = 'set_approved';
-    notes.push(
-      'Repair sets approved so the worker can sync. If DOCA IC Verification shows "Certificate Uploaded", the worker downloads the PDF and marks Firebase certified — it will not re-upload to DOCA.',
-    );
-    docaExpectedPhase = 'phase2_pending';
+    notes.push('Repair writes valid certified status and timestamps.');
+    expectedPhase = 'complete';
+  } else if (
+    corrupted
+    || inferredStatus === 'approved'
+    || (inferredStatus === 'certified' && (!hasPdf || !hasCertNumber))
+    || (!validStatus && !corrupted)
+  ) {
+    repairAction = 'set_submitted';
+    notes.push('Repair restores status to submitted so the eMAAP worker can process the job.');
+    expectedPhase = 'pending';
   } else if (corrupted && inferredStatus === 'submitted') {
     repairAction = 'set_submitted';
-    notes.push('Repair will restore status to submitted so the worker can continue Phase 1.');
-  } else if (corrupted && inferredStatus === 'approved') {
-    repairAction = 'set_approved';
-    notes.push('Repair will set status to approved so Phase 2 can run (DOCA Upload Certificate or Firebase sync).');
-  } else if (!validStatus && !corrupted) {
-    repairAction = 'set_submitted';
-    notes.push('Status value is invalid — repair will reset to submitted.');
-  } else if (inferredStatus === 'certified' && !hasCertNumber) {
-    repairAction = 'set_approved';
-    notes.push(
-      'Certificate number missing after cleanup. Repair sets approved so worker v1.0.19+ can sync cert number and PDF from DOCA (Certificate Uploaded).',
-    );
-    docaExpectedPhase = 'phase2_pending';
+    notes.push('Repair will restore status to submitted so the worker can continue.');
+    expectedPhase = 'pending';
   }
 
   return {
@@ -129,7 +123,7 @@ export function diagnoseVerificationPipeline(record: SiteCalibration): PipelineR
     serialNumber: record.serialNumber,
     status,
     isCorrupted: corrupted,
-    docaExpectedPhase,
+    expectedPhase,
     queueEligible,
     repairAction,
     notes,
@@ -150,22 +144,6 @@ export async function findVerificationBySerial(serialNumber: string): Promise<Si
     id: docSnap.id,
     ...(docSnap.data() as Omit<SiteCalibration, 'id'>),
   }));
-}
-
-export async function repairVerificationForPhase2(
-  recordId: string,
-  record?: Pick<SiteCalibration, 'certificateNumber' | 'approvedAt' | 'updatedAt' | 'certifiedAt' | 'submittedAt'>,
-): Promise<void> {
-  const now = new Date().toISOString();
-  await updateDoc(doc(db, 'siteCalibrations', recordId), {
-    ...(record ? corruptedFieldCleanupPatch(record) : {}),
-    status: 'approved' satisfies VerificationRequestStatus,
-    approvedAt: now,
-    updatedAt: now,
-    pipelineFailedPhase: deleteField(),
-    pipelineFailureMessage: deleteField(),
-    pipelineFailedAt: deleteField(),
-  });
 }
 
 export async function repairVerificationCertified(
@@ -206,6 +184,9 @@ export async function repairVerificationSubmitted(
     submittedAt: resolvedSubmittedAt,
     updatedAt: now,
     approvedAt: deleteField(),
+    certifiedAt: deleteField(),
+    certificatePdfUrl: deleteField(),
+    certificateNumber: deleteField(),
     pipelineFailedPhase: deleteField(),
     pipelineFailureMessage: deleteField(),
     pipelineFailedAt: deleteField(),

@@ -93,7 +93,7 @@ export function buildVerificationLabelData(
 
   const verifyUrl = buildDocaCertificateViewUrl(certificateNumber);
   if (!verifyUrl) {
-    missingFields.push('DOCA verify URL');
+    missingFields.push('Certificate view URL');
   }
 
   const rcPhoneDisplay = formatVerificationLabelPhone(rcPhone);

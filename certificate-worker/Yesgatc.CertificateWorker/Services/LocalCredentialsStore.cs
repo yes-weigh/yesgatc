@@ -58,7 +58,8 @@ public sealed class LocalCredentialsStore
         string docaPassword,
         string captchaApiKey = "",
         bool docaFillOnly = false,
-        int? docaSessionProbeMinutes = null)
+        int? docaSessionProbeMinutes = null,
+        string? chromeProfileDirectory = null)
     {
         Save(new StoredCredentials
         {
@@ -67,6 +68,7 @@ public sealed class LocalCredentialsStore
             CaptchaApiKey = captchaApiKey.Trim(),
             DocaFillOnly = docaFillOnly,
             DocaSessionProbeMinutes = docaSessionProbeMinutes,
+            ChromeProfileDirectory = chromeProfileDirectory?.Trim() ?? string.Empty,
         });
     }
 }
@@ -85,6 +87,9 @@ public sealed class StoredCredentials
     /// 0 disables probing.
     /// </summary>
     public int? DocaSessionProbeMinutes { get; set; }
+
+    /// <summary>Chrome profile folder under User Data (Default, Profile 1, …). Empty = not chosen.</summary>
+    public string ChromeProfileDirectory { get; set; } = string.Empty;
 
     [JsonPropertyName("rc")]
     public CredentialSettings? LegacyRc { get; set; }

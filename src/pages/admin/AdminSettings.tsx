@@ -4,12 +4,10 @@ import { Plug } from 'lucide-react';
 import { AutomationWorkerCard } from '../../components/AutomationWorkerCard';
 import { AdminRazorpayTestCard } from '../../components/AdminRazorpayTestCard';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
-import { OvInterweighOnlySwitch } from '../../components/OvInterweighOnlySwitch';
 import { RazorpaySettingsCard } from '../../components/RazorpaySettingsCard';
 import { ZohoSettingsCard } from '../../components/ZohoSettingsCard';
-import { AdminDocaScraping } from './AdminDocaScraping';
 
-type IntegrationsTab = 'zoho' | 'razorpay' | 'whatsapp' | 'doca' | 'worker' | 'openai';
+type IntegrationsTab = 'zoho' | 'razorpay' | 'whatsapp' | 'worker' | 'openai';
 
 const INTEGRATIONS_TABS: {
   id: IntegrationsTab;
@@ -40,16 +38,9 @@ const INTEGRATIONS_TABS: {
     brandClass: 'admin-integrations-tab--whatsapp',
   },
   {
-    id: 'doca',
-    label: 'DOCA',
-    subtitle: 'Certificate portal settings',
-    logoSrc: '/integrations/doca.svg',
-    brandClass: 'admin-integrations-tab--doca',
-  },
-  {
     id: 'worker',
     label: 'Certificate Worker',
-    subtitle: 'Remote DOCA server — queue, scraping & logs',
+    subtitle: 'eMAAP queue, remote control & logs',
     logoSrc: '/integrations/certificate-worker.png',
     brandClass: 'admin-integrations-tab--worker',
   },
@@ -78,14 +69,8 @@ function renderIntegrationContent(tabId: IntegrationsTab): React.ReactNode {
         </>
       );
     case 'worker':
-      return (
-        <>
-          <AutomationWorkerCard className="admin-integrations-section" />
-          <AdminDocaScraping embedded />
-        </>
-      );
+      return <AutomationWorkerCard className="admin-integrations-section" />;
     case 'whatsapp':
-    case 'doca':
     case 'openai':
       return (
         <p className="text-muted text-sm m-0">
@@ -135,8 +120,6 @@ const AdminIntegrationsHub: React.FC = () => {
           </button>
         ))}
       </div>
-
-      <OvInterweighOnlySwitch className="admin-integrations-ov-interweigh" />
     </>
   );
 };

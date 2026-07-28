@@ -135,12 +135,6 @@ import { RvLegacyZohoInvoiceSection } from '../../components/RvLegacyZohoInvoice
 import { RvLegacyZohoSettlementSection } from '../../components/RvLegacyZohoSettlementSection';
 import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
-import {
-  buildInterweighOvSession,
-  getOvInterweighGpsCoords,
-  isOvInterweighOnlyEnabled,
-  OV_INTERWEIGH_GPS_REQUIRED_MESSAGE,
-} from '../../lib/interweighOvMode';
 import { isRvPaymentRequired } from '../../lib/appSettings';
 import {
   buildRvPaymentFirestorePatch,
@@ -255,7 +249,6 @@ export const RCSiteCalibration: React.FC = () => {
   const { user } = useAuth();
   const { products } = useAppContext();
   const { appSettings } = useAppSettings();
-  const ovInterweighOnly = isOvInterweighOnlyEnabled(appSettings);
   const confirm = useConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
   const [records, setRecords] = useState<SiteCalibration[]>([]);
@@ -520,31 +513,15 @@ export const RCSiteCalibration: React.FC = () => {
 
   const desktopVerification =
     (isRcAdmin || isVct) && !isVerificationCaptureDevice();
-  const interweighGpsCoords = useMemo(
-    () => getOvInterweighGpsCoords(appSettings),
-    [appSettings.ovInterweighLatitude, appSettings.ovInterweighLongitude],
-  );
   const rcProfileGeoStampCoords = useMemo(() => {
-    if (ovInterweighOnly) return interweighGpsCoords;
     const lat = rcProfile?.location?.lat;
     const lng = rcProfile?.location?.lng;
     if (lat == null || lng == null) return null;
     return { lat, lng };
-  }, [
-    ovInterweighOnly,
-    interweighGpsCoords,
-    rcProfile?.location?.lat,
-    rcProfile?.location?.lng,
-  ]);
-  const rcProfileGpsReady = ovInterweighOnly
-    ? interweighGpsCoords != null
-    : !desktopVerification || rcProfileGeoStampCoords != null;
-  const gpsRequiredMessage = ovInterweighOnly
-    ? OV_INTERWEIGH_GPS_REQUIRED_MESSAGE
-    : RC_PROFILE_GPS_REQUIRED_MESSAGE;
-  const showGpsRequiredNotice = ovInterweighOnly
-    ? !rcProfileGpsReady
-    : desktopVerification && !rcProfileGpsReady;
+  }, [rcProfile?.location?.lat, rcProfile?.location?.lng]);
+  const rcProfileGpsReady = !desktopVerification || rcProfileGeoStampCoords != null;
+  const gpsRequiredMessage = RC_PROFILE_GPS_REQUIRED_MESSAGE;
+  const showGpsRequiredNotice = desktopVerification && !rcProfileGpsReady;
 
   useEffect(() => {
     void refreshRcVerificationGates();
@@ -1237,10 +1214,6 @@ export const RCSiteCalibration: React.FC = () => {
       setError('You do not have permission to start verifications.');
       return;
     }
-    if (ovInterweighOnly && sessionValues.verificationType !== 'OV') {
-      setError('OV Interweigh mode is on — only Original Verification is allowed.');
-      return;
-    }
     const gateMsg = verificationCreateGateBlockMessage(
       rcHasWeightsCert,
       rcHasVehicle,
@@ -1251,11 +1224,11 @@ export const RCSiteCalibration: React.FC = () => {
       setError(gateMsg);
       return;
     }
-    // Interweigh GPS always required when mode is on; centre GPS only for desktop submit. Drafts may save without it.
+    // Centre GPS only required for desktop submit. Drafts may save without it.
     if (
       submitAfterSave
       && !rcProfileGpsReady
-      && (ovInterweighOnly || desktopVerification)
+      && desktopVerification
     ) {
       setError(gpsRequiredMessage);
       return;
@@ -1851,18 +1824,12 @@ export const RCSiteCalibration: React.FC = () => {
         setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
         return;
       }
-      const nextSession =
-        ovInterweighOnly
-          ? buildInterweighOvSession(
-              session.devices[0]?.sealIdentificationNumber || laboratorySealId,
-            )
-          : session;
       setEditingId(null);
       setError('');
       setListError('');
       setRvPaymentOpen(false);
       setRvSessionPayment(null);
-      setSessionValues(nextSession);
+      setSessionValues(session);
       const firstDeviceId = session.devices[0]?.localId;
       setDeviceImages(
         firstDeviceId ? { [firstDeviceId]: emptyDeviceVerificationImagesState() } : {},
@@ -1875,7 +1842,7 @@ export const RCSiteCalibration: React.FC = () => {
       setVerificationDeclarationAccepted(false);
       setShowAddForm(true);
     },
-    [user?.role, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError, ovInterweighOnly, laboratorySealId],
+    [user?.role, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError],
   );
 
   const handleStartAdd = () => {
@@ -1897,10 +1864,6 @@ export const RCSiteCalibration: React.FC = () => {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
       return;
     }
-    if (ovInterweighOnly) {
-      openNewVerificationSession(buildInterweighOvSession(laboratorySealId));
-      return;
-    }
     if (rcUid && rcProfile) {
       openNewVerificationSession(
         buildSelfVerificationSession(rcProfile, rcUid, laboratorySealId),
@@ -1920,11 +1883,6 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     if (!pendingCustomerId || loading || !canCreateVerification(user?.role)) return;
-    if (ovInterweighOnly) {
-      openNewVerificationSession(buildInterweighOvSession(laboratorySealId));
-      setSearchParams({}, { replace: true });
-      return;
-    }
     const customer = customers.find(c => c.id === pendingCustomerId);
     if (!customer) return;
 
@@ -1940,7 +1898,6 @@ export const RCSiteCalibration: React.FC = () => {
     openNewVerificationSession,
     setSearchParams,
     user?.role,
-    ovInterweighOnly,
   ]);
 
   useEffect(() => {
@@ -2482,11 +2439,10 @@ export const RCSiteCalibration: React.FC = () => {
                       rcUid={rcUid ?? undefined}
                       actorUid={actorUid ?? undefined}
                       submitting={formBusy}
-                      lockCustomer={isEditMode || (ovInterweighOnly && showAddForm)}
+                      lockCustomer={isEditMode}
                       readOnly={isViewMode}
-                      allowPerformerAssignment={!isVct && !isViewMode && !(ovInterweighOnly && showAddForm)}
+                      allowPerformerAssignment={!isVct && !isViewMode}
                       assignableVcts={assignableVcts}
-                      interweighOvOnly={ovInterweighOnly && showAddForm}
                       geoStampCoords={rcProfileGeoStampCoords}
                       laboratorySealIdentification={laboratorySealId}
                       onWizardStepChange={handleWizardStepChange}
@@ -2529,19 +2485,12 @@ export const RCSiteCalibration: React.FC = () => {
           )}
           {showGpsRequiredNotice && (
             <div className="rc-vehicle-required-notice" role="status">
-              <p className="rc-vehicle-required-notice__title">
-                {ovInterweighOnly ? 'Interweigh GPS required' : 'Centre GPS required'}
-              </p>
+              <p className="rc-vehicle-required-notice__title">Centre GPS required</p>
               <p className="rc-vehicle-required-notice__text mb-0">
-                {gpsRequiredMessage}
-                {!ovInterweighOnly ? (
-                  <>
-                    {' '}
-                    {isRcAdmin
-                      ? RC_PROFILE_GPS_REQUIRED_RC_HINT
-                      : RC_PROFILE_GPS_REQUIRED_VCT_HINT}
-                  </>
-                ) : null}
+                {gpsRequiredMessage}{' '}
+                {isRcAdmin
+                  ? RC_PROFILE_GPS_REQUIRED_RC_HINT
+                  : RC_PROFILE_GPS_REQUIRED_VCT_HINT}
               </p>
             </div>
           )}

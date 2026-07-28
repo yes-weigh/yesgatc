@@ -3,318 +3,485 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="YesGATC Certificate Worker"
         Height="720"
-        Width="1100"
+        Width="1280"
         MinHeight="520"
-        MinWidth="880"
+        MinWidth="900"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource BgAppBrush}"
         FontFamily="Segoe UI">
-    <Grid Margin="20">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="2*"/>
-            <ColumnDefinition Width="16"/>
-            <ColumnDefinition Width="320"/>
-        </Grid.ColumnDefinitions>
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-        <!-- Queue -->
-        <Border Grid.Column="0"
-                Style="{StaticResource GlassPanel}"
-                Padding="0">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
+        <TabControl x:Name="MainTabs"
+                    Grid.Row="0"
+                    Style="{StaticResource MainTabControl}">
 
-                <DockPanel Grid.Row="0" Margin="18,16,18,6">
-                    <Button x:Name="RefreshButton"
-                            Content="Refresh"
-                            Style="{StaticResource SecondaryButton}"
-                            DockPanel.Dock="Right"
-                            Margin="10,0,0,0"
-                            Click="RefreshButton_Click"/>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Queue" Style="{StaticResource SectionTitle}"/>
-                        <TextBlock Text="Submitted and approved jobs across all RCs"
+            <!-- Queue -->
+            <TabItem Header="Queue" Style="{StaticResource MainTabItem}">
+                <Border Style="{StaticResource GlassPanel}" Padding="0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*" MinHeight="160"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="1.1*" MinHeight="140"/>
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" Margin="18,16,18,6">
+                            <Button x:Name="RefreshButton"
+                                    Content="Refresh"
+                                    Style="{StaticResource SecondaryButton}"
+                                    DockPanel.Dock="Right"
+                                    Margin="10,0,0,0"
+                                    Click="RefreshButton_Click"/>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Queue" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock Text="Submitted jobs across all RCs"
+                                           FontSize="12"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </DockPanel>
+
+                        <TextBlock x:Name="QueueCountText"
+                                   Grid.Row="1"
+                                   Margin="18,0,18,8"
                                    FontSize="12"
                                    Foreground="{StaticResource TextMutedBrush}"
-                                   Margin="0,2,0,0"/>
-                    </StackPanel>
-                </DockPanel>
+                                   Text="0 jobs pending"/>
 
-                <TextBlock x:Name="QueueCountText"
-                           Grid.Row="1"
-                           Margin="18,0,18,8"
-                           FontSize="12"
-                           Foreground="{StaticResource TextMutedBrush}"
-                           Text="0 jobs pending"/>
+                        <DataGrid x:Name="JobsGrid"
+                                  Grid.Row="2"
+                                  Margin="12,0,12,8"
+                                  IsReadOnly="True"
+                                  RowStyle="{StaticResource QueueDataGridRow}"
+                                  SelectionChanged="JobsGrid_SelectionChanged">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="RC"
+                                                    Binding="{Binding RcCenterName}"
+                                                    Width="*"
+                                                    ElementStyle="{StaticResource DataGridCellText}"/>
+                                <DataGridTextColumn Header="Customer"
+                                                    Binding="{Binding CustomerName}"
+                                                    Width="1.2*"
+                                                    ElementStyle="{StaticResource DataGridCellText}"/>
+                                <DataGridTextColumn Header="Serial"
+                                                    Binding="{Binding SerialNumber}"
+                                                    Width="0.9*"
+                                                    ElementStyle="{StaticResource DataGridCellMono}"/>
+                                <DataGridTextColumn Header="Status"
+                                                    Binding="{Binding StatusLabel}"
+                                                    Width="0.8*"
+                                                    ElementStyle="{StaticResource DataGridCellMuted}"/>
+                                <DataGridTextColumn Header="Next"
+                                                    Binding="{Binding NextStepLabel}"
+                                                    Width="1*"
+                                                    ElementStyle="{StaticResource DataGridCellMuted}"/>
+                                <DataGridTextColumn Header="Retry"
+                                                    Binding="{Binding RetryBadge}"
+                                                    Width="0.7*"
+                                                    ElementStyle="{StaticResource DataGridCellRetryBadge}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
 
-                <DataGrid x:Name="JobsGrid"
-                          Grid.Row="2"
-                          Margin="12,0,12,14"
-                          IsReadOnly="True"
-                          RowStyle="{StaticResource QueueDataGridRow}">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="RC"
-                                            Binding="{Binding RcCenterName}"
-                                            Width="*"
-                                            ElementStyle="{StaticResource DataGridCellText}"/>
-                        <DataGridTextColumn Header="Customer"
-                                            Binding="{Binding CustomerName}"
-                                            Width="1.2*"
-                                            ElementStyle="{StaticResource DataGridCellText}"/>
-                        <DataGridTextColumn Header="Serial"
-                                            Binding="{Binding SerialNumber}"
-                                            Width="0.9*"
-                                            ElementStyle="{StaticResource DataGridCellMono}"/>
-                        <DataGridTextColumn Header="Status"
-                                            Binding="{Binding StatusLabel}"
-                                            Width="0.8*"
-                                            ElementStyle="{StaticResource DataGridCellMuted}"/>
-                        <DataGridTextColumn Header="Next"
-                                            Binding="{Binding NextStepLabel}"
-                                            Width="1*"
-                                            ElementStyle="{StaticResource DataGridCellMuted}"/>
-                        <DataGridTextColumn Header="Retry"
-                                            Binding="{Binding RetryBadge}"
-                                            Width="0.7*"
-                                            ElementStyle="{StaticResource DataGridCellRetryBadge}"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-
-                <StackPanel x:Name="EmptyStateText"
-                            Grid.Row="2"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Margin="24"
-                            Visibility="Collapsed">
-                    <TextBlock x:Name="EmptyStateTitleText"
-                               Text="No pending jobs"
-                               FontSize="16"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource TextMainBrush}"
-                               HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="EmptyStateBodyText"
-                               Text="Sign in to load the queue."
-                               FontSize="13"
-                               Foreground="{StaticResource TextMutedBrush}"
-                               HorizontalAlignment="Center"
-                               Margin="0,6,0,0"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <!-- Sidebar -->
-        <StackPanel Grid.Column="2">
-            <TextBlock Text="Certificate Worker"
-                       FontSize="20"
-                       FontWeight="SemiBold"
-                       Foreground="{StaticResource TitleGradientBrush}"
-                       Margin="0,0,0,14"/>
-
-            <Border Style="{StaticResource GlassPanel}"
-                    Padding="16"
-                    Margin="0,0,0,12">
-                <Expander x:Name="SignInExpander"
-                          Style="{StaticResource GlassExpander}"
-                          IsExpanded="False">
-                    <Expander.Header>
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse x:Name="SignInStatusDot"
-                                     Style="{StaticResource StatusDot}"
-                                     Margin="0,0,8,0"/>
-                            <StackPanel>
-                                <TextBlock Text="Account"
-                                           FontSize="11"
-                                           Foreground="{StaticResource TextMutedBrush}"/>
-                                <TextBlock x:Name="SignInSummaryText"
-                                           Text="Not signed in"
-                                           FontSize="13"
-                                           FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextMainBrush}"/>
-                            </StackPanel>
+                        <StackPanel x:Name="EmptyStateText"
+                                    Grid.Row="2"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Margin="24"
+                                    Visibility="Collapsed">
+                            <TextBlock x:Name="EmptyStateTitleText"
+                                       Text="No pending jobs"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextMainBrush}"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="EmptyStateBodyText"
+                                       Text="Sign in to load the queue."
+                                       FontSize="13"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,6,0,0"/>
                         </StackPanel>
-                    </Expander.Header>
 
-                    <StackPanel Margin="0,6,0,0">
-                        <TextBlock Text="YesGATC" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                        <Grid Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="8"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="AadharBox"
-                                     Grid.Column="0"
-                                     Style="{StaticResource GlassTextBox}"/>
-                            <TextBox x:Name="PasswordBox"
-                                     Grid.Column="2"
-                                     Style="{StaticResource GlassTextBox}"/>
-                        </Grid>
-
-                        <Button x:Name="SignInButton"
-                                Content="Sign in"
-                                Style="{StaticResource PrimaryButton}"
-                                HorizontalAlignment="Stretch"
-                                Margin="0,0,0,14"
-                                Click="SignInButton_Click"/>
-
-                        <TextBlock Text="DOCA" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                        <TextBox x:Name="DocaEmailBox"
-                                 Style="{StaticResource GlassTextBox}"
-                                 Margin="0,0,0,8"/>
-                        <TextBox x:Name="DocaPasswordBox"
-                                 Style="{StaticResource GlassTextBox}"
-                                 Margin="0,0,0,14"/>
-
-                        <DockPanel Margin="0,0,0,4">
-                            <TextBlock x:Name="CaptchaApiKeyHint"
-                                       DockPanel.Dock="Right"
-                                       FontSize="11"
+                        <DockPanel Grid.Row="3" Margin="18,4,18,4">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button x:Name="ProcessSubmittedEmaapButton"
+                                        Content="Process all submitted"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Padding="14,6"
+                                        Visibility="Collapsed"
+                                        Click="ProcessSubmittedEmaapButton_Click"/>
+                            </StackPanel>
+                            <TextBlock FontSize="12"
+                                       FontWeight="SemiBold"
                                        Foreground="{StaticResource TextMutedBrush}"
                                        VerticalAlignment="Center"
-                                       Text=""/>
-                            <TextBlock Text="Captcha AI Key"
-                                       Style="{StaticResource FieldLabel}"/>
+                                       Text="Document details"/>
                         </DockPanel>
-                        <TextBox x:Name="CaptchaApiKeyBox"
-                                 Style="{StaticResource GlassTextBox}"
-                                 Margin="0,0,0,12"/>
 
-                        <Button x:Name="SaveCredsButton"
-                                Content="Save Credentials"
-                                Style="{StaticResource SecondaryButton}"
-                                HorizontalAlignment="Stretch"
-                                Click="SaveCredsButton_Click"/>
-                    </StackPanel>
-                </Expander>
-            </Border>
+                        <Border Grid.Row="4"
+                                Margin="12,0,12,14"
+                                Background="#14000000"
+                                BorderBrush="#33475569"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="10">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto">
+                                <TextBox x:Name="JobDetailBox"
+                                         IsReadOnly="True"
+                                         TextWrapping="NoWrap"
+                                         AcceptsReturn="True"
+                                         BorderThickness="0"
+                                         Background="Transparent"
+                                         Foreground="{StaticResource TextMainBrush}"
+                                         FontFamily="Consolas"
+                                         FontSize="12"
+                                         Text="Select a job to view its Firestore document."/>
+                            </ScrollViewer>
+                        </Border>
+                    </Grid>
+                </Border>
+            </TabItem>
 
-            <Border Style="{StaticResource GlassPanel}"
-                    Padding="16"
-                    Margin="0,0,0,12">
-                <StackPanel>
-                    <TextBlock Text="Auto worker"
-                               FontSize="11"
-                               FontWeight="SemiBold"
-                               Foreground="{StaticResource TextMutedBrush}"/>
-                    <TextBlock x:Name="AutoWorkerStatusText"
-                               Text="Waiting to sign in…"
-                               FontSize="12"
-                               Foreground="{StaticResource TextMainBrush}"
-                               TextWrapping="Wrap"
-                               Margin="0,6,0,0"/>
-                    <CheckBox x:Name="DocaFillOnlyCheckBox"
-                              Content="Fill only (do not submit on DOCA)"
-                              Margin="0,10,0,0"
-                              FontSize="12"
-                              Foreground="{StaticResource TextMainBrush}"
-                              Checked="DocaFillOnlyCheckBox_Changed"
-                              Unchecked="DocaFillOnlyCheckBox_Changed"/>
-                    <TextBlock Text="When checked, automation fills the IC form but does not click Generate Certificate or update Firebase. Uncheck for full runs."
-                               FontSize="10"
-                               Foreground="{StaticResource TextMutedBrush}"
-                               TextWrapping="Wrap"
-                               Margin="22,4,0,0"/>
-                    <TextBlock Text="Session probe (minutes)"
-                               Style="{StaticResource FieldLabel}"
-                               Margin="0,12,0,4"/>
-                    <TextBox x:Name="DocaSessionProbeMinutesBox"
-                             Style="{StaticResource GlassTextBox}"
-                             LostFocus="DocaSessionProbeMinutesBox_LostFocus"/>
-                    <TextBlock Text="While logged in, open IC verification on this interval to detect DOCA logout and measure session length. 0 = disabled."
-                               FontSize="10"
-                               Foreground="{StaticResource TextMutedBrush}"
-                               TextWrapping="Wrap"
-                               Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource GlassPanel}"
-                    Padding="16"
-                    VerticalAlignment="Stretch">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                        <Ellipse x:Name="StatusStateDot"
-                                 Style="{StaticResource StatusDot}"
-                                 Margin="0,0,8,0"/>
-                        <TextBlock x:Name="StatusStateText"
-                                   Text="Idle"
-                                   FontSize="12"
+            <!-- Worker / Account -->
+            <TabItem Header="Worker" Style="{StaticResource MainTabItem}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="0,0,4,0">
+                    <StackPanel MaxWidth="720" HorizontalAlignment="Left">
+                        <TextBlock Text="Certificate Worker"
+                                   FontSize="20"
                                    FontWeight="SemiBold"
-                                   VerticalAlignment="Center"/>
-                        <TextBlock x:Name="StatusTimestampText"
-                                   FontSize="11"
-                                   Foreground="{StaticResource TextMutedBrush}"
-                                   VerticalAlignment="Center"
-                                   Margin="8,0,0,0"/>
+                                   Foreground="{StaticResource TitleGradientBrush}"
+                                   Margin="0,0,0,14"/>
+
+                        <Border Style="{StaticResource GlassPanel}"
+                                Padding="16"
+                                Margin="0,0,0,12">
+                            <Expander x:Name="SignInExpander"
+                                      Style="{StaticResource GlassExpander}"
+                                      IsExpanded="False">
+                                <Expander.Header>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse x:Name="SignInStatusDot"
+                                                 Style="{StaticResource StatusDot}"
+                                                 Margin="0,0,8,0"/>
+                                        <StackPanel>
+                                            <TextBlock Text="Account"
+                                                       FontSize="11"
+                                                       Foreground="{StaticResource TextMutedBrush}"/>
+                                            <TextBlock x:Name="SignInSummaryText"
+                                                       Text="Not signed in"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextMainBrush}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Expander.Header>
+
+                                <StackPanel Margin="0,6,0,0">
+                                    <TextBlock Text="YesGATC" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="8"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="AadharBox"
+                                                 Grid.Column="0"
+                                                 Style="{StaticResource GlassTextBox}"/>
+                                        <TextBox x:Name="PasswordBox"
+                                                 Grid.Column="2"
+                                                 Style="{StaticResource GlassTextBox}"/>
+                                    </Grid>
+
+                                    <Button x:Name="SignInButton"
+                                            Content="Sign in"
+                                            Style="{StaticResource PrimaryButton}"
+                                            HorizontalAlignment="Stretch"
+                                            Margin="0,0,0,14"
+                                            Click="SignInButton_Click"/>
+
+                                    <TextBlock Text="Chrome profile (DeepSeek / cookies)"
+                                               Style="{StaticResource FieldLabel}"
+                                               Margin="0,0,0,4"/>
+                                    <ComboBox x:Name="ChromeProfileCombo"
+                                              Margin="0,0,0,6"
+                                              MinHeight="32"
+                                              DisplayMemberPath="Label"
+                                              ToolTip="Chrome profile used for eMAAP + DeepSeek. Saved for next launches."/>
+                                    <TextBlock x:Name="ChromeProfileHint"
+                                               FontSize="11"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               TextWrapping="Wrap"
+                                               Margin="0,0,0,8"
+                                               Text="Pick a profile before launching the browser."/>
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="8"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button x:Name="SaveChromeProfileButton"
+                                                Grid.Column="0"
+                                                Content="Save profile"
+                                                Style="{StaticResource SecondaryButton}"
+                                                HorizontalAlignment="Stretch"
+                                                Click="SaveChromeProfileButton_Click"/>
+                                        <Button x:Name="ResetChromeProfileButton"
+                                                Grid.Column="2"
+                                                Content="Reset &amp; restart"
+                                                Style="{StaticResource SecondaryButton}"
+                                                HorizontalAlignment="Stretch"
+                                                ToolTip="Clear saved Chrome profile preference and restart the worker."
+                                                Click="ResetChromeProfileButton_Click"/>
+                                    </Grid>
+
+                                    <TextBlock Text="eMAAP / DOCA login" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
+                                    <TextBox x:Name="DocaEmailBox"
+                                             Style="{StaticResource GlassTextBox}"
+                                             Margin="0,0,0,8"/>
+                                    <TextBox x:Name="DocaPasswordBox"
+                                             Style="{StaticResource GlassTextBox}"
+                                             Margin="0,0,0,14"/>
+
+                                    <TextBlock Text="eMAAP email OTP"
+                                               Style="{StaticResource FieldLabel}"
+                                               Margin="0,0,0,4"/>
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="10"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="EmaapOtpBox"
+                                                 Grid.Column="0"
+                                                 Style="{StaticResource GlassTextBox}"
+                                                 MaxLength="8"
+                                                 ToolTip="Paste the 6-digit OTP from admin@yesweigh.in"/>
+                                        <Button x:Name="SubmitEmaapOtpButton"
+                                                Grid.Column="2"
+                                                Content="Submit OTP"
+                                                Style="{StaticResource SecondaryButton}"
+                                                Padding="12,6"
+                                                Click="SubmitEmaapOtpButton_Click"/>
+                                    </Grid>
+
+                                    <DockPanel Margin="0,0,0,4">
+                                        <TextBlock x:Name="CaptchaApiKeyHint"
+                                                   DockPanel.Dock="Right"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Text=""/>
+                                        <TextBlock Text="Captcha AI Key (Gemini/OpenAI)"
+                                                   Style="{StaticResource FieldLabel}"/>
+                                    </DockPanel>
+                                    <TextBox x:Name="CaptchaApiKeyBox"
+                                             Style="{StaticResource GlassTextBox}"
+                                             Margin="0,0,0,12"/>
+
+                                    <Button x:Name="SaveCredsButton"
+                                            Content="Save Credentials"
+                                            Style="{StaticResource SecondaryButton}"
+                                            HorizontalAlignment="Stretch"
+                                            Click="SaveCredsButton_Click"/>
+                                </StackPanel>
+                            </Expander>
+                        </Border>
+
+                        <Border Style="{StaticResource GlassPanel}"
+                                Padding="16"
+                                Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Auto worker"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextMutedBrush}"/>
+                                <CheckBox x:Name="AutoRunCheckBox"
+                                          Content="Auto-run batch (process Submitted queue unattended)"
+                                          Margin="0,8,0,0"
+                                          FontSize="12"
+                                          FontWeight="SemiBold"
+                                          Foreground="{StaticResource TextMainBrush}"
+                                          Checked="AutoRunCheckBox_Changed"
+                                          Unchecked="AutoRunCheckBox_Changed"/>
+                                <TextBlock Text="Off = use Process all submitted. On = auto-process Submitted queue."
+                                           FontSize="10"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="22,4,0,8"/>
+                                <TextBlock x:Name="AutoWorkerStatusText"
+                                           Text="Waiting to sign in…"
+                                           FontSize="12"
+                                           Foreground="{StaticResource TextMainBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,0"/>
+                                <Button x:Name="ProcessSelectedEmaapButton"
+                                        Content="Process selected"
+                                        Style="{StaticResource PrimaryButton}"
+                                        Margin="0,12,0,0"
+                                        Padding="14,6"
+                                        HorizontalAlignment="Left"
+                                        Visibility="Collapsed"
+                                        Click="ProcessSelectedEmaapButton_Click"/>
+                                <TextBlock Text="Session probe (minutes)"
+                                           Style="{StaticResource FieldLabel}"
+                                           Margin="0,12,0,4"/>
+                                <TextBox x:Name="DocaSessionProbeMinutesBox"
+                                         Style="{StaticResource GlassTextBox}"
+                                         LostFocus="DocaSessionProbeMinutesBox_LostFocus"/>
+                                <TextBlock Text="While logged in, open IC verification on this interval to detect eMAAP logout and measure session length. 0 = disabled."
+                                           FontSize="10"
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
+                </ScrollViewer>
+            </TabItem>
 
-                    <TextBlock x:Name="StatusText"
-                               Grid.Row="1"
-                               Text="Sign in to start."
-                               TextWrapping="Wrap"
-                               FontSize="13"
-                               LineHeight="19"
-                               Foreground="{StaticResource TextMainBrush}"
-                               Margin="0,0,0,10"/>
+            <!-- Activity -->
+            <TabItem Header="Activity" Style="{StaticResource MainTabItem}">
+                <Border Style="{StaticResource GlassPanel}" Padding="16">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="2"
-                               Text="Activity"
-                               FontSize="11"
+                        <TextBlock Grid.Row="0"
+                                   Text="Activity · latest on top"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   Margin="0,0,0,8"/>
+
+                        <ListBox x:Name="ActivityLogList"
+                                 Grid.Row="1"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.CanContentScroll="False"
+                                 VirtualizingPanel.IsVirtualizing="False"
+                                 FontSize="12"
+                                 Foreground="{StaticResource TextMutedBrush}"
+                                 MouseDoubleClick="ActivityLogList_MouseDoubleClick">
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy Selected" Click="CopyLogItem_Click"/>
+                                    <MenuItem Header="Copy All Logs" Click="CopyAllLogs_Click"/>
+                                    <MenuItem Header="Open Log File" Click="OpenLogFile_Click"/>
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0,4"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <ContentPresenter/>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Setter Property="ToolTip" Value="{Binding Text}"/>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,2">
+                                        <TextBlock Text="{Binding Text}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{StaticResource TextMutedBrush}"/>
+                                        <Border x:Name="CaptchaPreviewBorder"
+                                                Visibility="Collapsed"
+                                                Margin="0,6,0,2"
+                                                Padding="8"
+                                                CornerRadius="8"
+                                                Background="#221E293B"
+                                                BorderBrush="#33475569"
+                                                BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding CaptchaResolvedText, StringFormat=Resolved: {0}}"
+                                                           FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="#A7F3D0"
+                                                           Margin="0,0,0,8"/>
+                                                <TextBlock Text="Original"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           Margin="0,0,0,4"/>
+                                                <Image Source="{Binding CaptchaImage}"
+                                                       MaxHeight="96"
+                                                       Stretch="Uniform"
+                                                       HorizontalAlignment="Left"
+                                                       RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                                                <TextBlock Text="Sent to AI"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           Margin="0,10,0,4"/>
+                                                <Image Source="{Binding CaptchaAiImage}"
+                                                       MaxHeight="96"
+                                                       Stretch="Uniform"
+                                                       HorizontalAlignment="Left"
+                                                       RenderOptions.BitmapScalingMode="NearestNeighbor"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding HasCaptchaPreview}" Value="True">
+                                            <Setter TargetName="CaptchaPreviewBorder" Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </Border>
+            </TabItem>
+        </TabControl>
+
+        <!-- Always-visible status strip -->
+        <Border Grid.Row="1"
+                Style="{StaticResource GlassPanel}"
+                Padding="14,10"
+                Margin="0,12,0,0">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Margin="0,0,12,0">
+                    <Ellipse x:Name="StatusStateDot"
+                             Style="{StaticResource StatusDot}"
+                             Margin="0,0,8,0"/>
+                    <TextBlock x:Name="StatusStateText"
+                               Text="Idle"
+                               FontSize="12"
                                FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                    <TextBlock x:Name="StatusTimestampText"
+                               FontSize="11"
                                Foreground="{StaticResource TextMutedBrush}"
-                               Margin="0,0,0,4"/>
-
-                    <ListBox x:Name="ActivityLogList"
-                             Grid.Row="3"
-                             MinHeight="120"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             FontSize="12"
-                             Foreground="{StaticResource TextMutedBrush}"
-                             MouseDoubleClick="ActivityLogList_MouseDoubleClick">
-                        <ListBox.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Copy Selected" Click="CopyLogItem_Click"/>
-                                <MenuItem Header="Copy All Logs" Click="CopyAllLogs_Click"/>
-                                <MenuItem Header="Open Log File" Click="OpenLogFile_Click"/>
-                            </ContextMenu>
-                        </ListBox.ContextMenu>
-                        <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
-                                <Setter Property="Padding" Value="0,2"/>
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="ListBoxItem">
-                                            <ContentPresenter/>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Setter Property="ToolTip" Value="{Binding}"/>
-                            </Style>
-                        </ListBox.ItemContainerStyle>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding}" TextWrapping="Wrap"/>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </Grid>
-            </Border>
-        </StackPanel>
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="StatusText"
+                           Text="Sign in to start."
+                           TextWrapping="Wrap"
+                           FontSize="13"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextMainBrush}"
+                           TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+        </Border>
     </Grid>
 </Window>

@@ -70,11 +70,6 @@ import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import { VerificationPerformerPhotoFields } from './VerificationPerformerPhotoFields';
 import { requiresPerformerIdentityPhotos } from '../../lib/verificationPerformerPhotos';
 import type { PerformerPhotoKind, PerformerPhotosState } from '../../lib/verificationPerformerPhotos';
-import {
-  INTERWEIGH_OV_PARTY,
-  OV_INTERWEIGH_ONLY_HINT,
-  interweighOvPartyForm,
-} from '../../lib/interweighOvMode';
 
 type VerificationSessionFieldsProps = {
   values: VerificationSessionValues;
@@ -108,8 +103,6 @@ type VerificationSessionFieldsProps = {
   /** RC admin can assign draft verifications to a linked VCT. */
   allowPerformerAssignment?: boolean;
   assignableVcts?: AssignableVctOption[];
-  /** Global mode: OV only at fixed Interweighing Cochin address. */
-  interweighOvOnly?: boolean;
   /** RC centre GPS for desktop photo geo-stamp. */
   geoStampCoords?: GeoStampCoordinates | null;
   laboratorySealIdentification?: string;
@@ -168,7 +161,6 @@ export const VerificationSessionFields = forwardRef<
   readOnly = false,
   allowPerformerAssignment = false,
   assignableVcts = [],
-  interweighOvOnly = false,
   geoStampCoords = null,
   laboratorySealIdentification = '',
   onWizardStepChange,
@@ -486,8 +478,7 @@ export const VerificationSessionFields = forwardRef<
     () => ({
       persistPartyChanges: async (options) => {
         if (readOnly) return { error: null };
-        // Edit lock skips party writes. Interweigh lock still must create/link the fixed customer.
-        if (lockCustomer && !interweighOvOnly) return { error: null };
+        if (lockCustomer) return { error: null };
         return persistVerificationPartyProfile(
           {
             isSelf,
@@ -512,7 +503,6 @@ export const VerificationSessionFields = forwardRef<
     [
       readOnly,
       lockCustomer,
-      interweighOvOnly,
       isSelf,
       values.customerId,
       customerPartyForm,
@@ -583,28 +573,6 @@ export const VerificationSessionFields = forwardRef<
 
   useEffect(() => {
     if (isSelf) return;
-    if (interweighOvOnly) {
-      setCustomerPartyForm(prev => {
-        const next = interweighOvPartyForm(geoStampCoords);
-        if (
-          prev.name === next.name
-          && prev.phone === next.phone
-          && prev.pincode === next.pincode
-          && prev.address === next.address
-          && prev.district === next.district
-          && prev.state === next.state
-          && prev.latitude === next.latitude
-          && prev.longitude === next.longitude
-        ) {
-          return prev;
-        }
-        return next;
-      });
-      if (values.customerName !== INTERWEIGH_OV_PARTY.name) {
-        onChange({ customerName: INTERWEIGH_OV_PARTY.name });
-      }
-      return;
-    }
     if (!values.customerId) {
       // Pending new customer — keep typed form; do not wipe on parent re-renders.
       return;
@@ -630,10 +598,7 @@ export const VerificationSessionFields = forwardRef<
     isSelf,
     values.customerId,
     values.customerName,
-    interweighOvOnly,
     customers,
-    geoStampCoords?.lat,
-    geoStampCoords?.lng,
   ]);
 
   useEffect(() => {
@@ -765,11 +730,10 @@ export const VerificationSessionFields = forwardRef<
     rcProfile?.pincode,
     rcProfile?.location?.lat,
     rcProfile?.location?.lng,
-    interweighOvOnly,
   ]);
 
   const handleSubjectChange = (subject: VerificationSubject) => {
-    if (interweighOvOnly || lockCustomer || subject === values.verificationSubject) return;
+    if (lockCustomer || subject === values.verificationSubject) return;
     if (subject === 'self') {
       lastWeatherKeyRef.current = '';
       applySelfSubject();
@@ -788,7 +752,7 @@ export const VerificationSessionFields = forwardRef<
   }, [readOnly, lockCustomer, values.verificationSubject, values.verificationType, rcProfile, rcUid]);
 
   const handleVerificationTypeChange = (verificationType: JobType) => {
-    if (locked || interweighOvOnly || verificationType === values.verificationType) return;
+    if (locked || verificationType === values.verificationType) return;
     if (verificationType === 'RV' && values.verificationSubject === 'self') {
       lastWeatherKeyRef.current = '';
       onCustomerChange('', '', []);
@@ -841,7 +805,7 @@ export const VerificationSessionFields = forwardRef<
     handleCustomerSelect({ customerId: customer.id, customerName: customer.name });
   };
 
-  const partyFormDisabled = locked || lockCustomer || interweighOvOnly;
+  const partyFormDisabled = locked || lockCustomer;
   const partyLocationCapture = !partyFormDisabled;
 
   const stepper = (
@@ -933,46 +897,33 @@ export const VerificationSessionFields = forwardRef<
         >
           {currentStep.id === 'setup' && (
             <div className="verification-setup-step">
-              {interweighOvOnly ? (
-                <p className="verification-interweigh-banner" role="status">
-                  {OV_INTERWEIGH_ONLY_HINT}
-                </p>
-              ) : null}
               <div className="verification-setup-toggles">
                 <div className="verification-setup-toggle-field">
                   <span className="verification-setup-toggle-label">Type</span>
-                  {interweighOvOnly ? (
-                    <span className="verification-setup-type-fixed">OV</span>
-                  ) : (
-                    <SegmentToggle
-                      ariaLabel="Verification type"
-                      value={values.verificationType === 'RV' ? 'RV' : 'OV'}
-                      options={VERIFICATION_TYPE_OPTIONS.map(opt => ({
-                        value: opt.value,
-                        label: opt.label,
-                      }))}
-                      onChange={handleVerificationTypeChange}
-                      disabled={locked}
-                    />
-                  )}
+                  <SegmentToggle
+                    ariaLabel="Verification type"
+                    value={values.verificationType === 'RV' ? 'RV' : 'OV'}
+                    options={VERIFICATION_TYPE_OPTIONS.map(opt => ({
+                      value: opt.value,
+                      label: opt.label,
+                    }))}
+                    onChange={handleVerificationTypeChange}
+                    disabled={locked}
+                  />
                 </div>
                 <div className="verification-setup-toggle-field">
                   <span className="verification-setup-toggle-label">Party</span>
-                  {interweighOvOnly ? (
-                    <span className="verification-setup-type-fixed">Interweigh</span>
-                  ) : (
-                    <SegmentToggle
-                      ariaLabel="Verification party"
-                      value={values.verificationSubject === 'customer' ? 'customer' : 'self'}
-                      options={SUBJECT_OPTIONS.map(opt => ({
-                        value: opt.value,
-                        label: opt.label,
-                        disabled: lockCustomer,
-                      }))}
-                      onChange={handleSubjectChange}
-                      disabled={locked || lockCustomer}
-                    />
-                  )}
+                  <SegmentToggle
+                    ariaLabel="Verification party"
+                    value={values.verificationSubject === 'customer' ? 'customer' : 'self'}
+                    options={SUBJECT_OPTIONS.map(opt => ({
+                      value: opt.value,
+                      label: opt.label,
+                      disabled: lockCustomer,
+                    }))}
+                    onChange={handleSubjectChange}
+                    disabled={locked || lockCustomer}
+                  />
                 </div>
               </div>
 

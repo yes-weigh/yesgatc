@@ -7,7 +7,6 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock3,
-  FileCheck,
   FileText,
   MapPin,
   Scale,
@@ -42,8 +41,6 @@ function stageIcon(stage: VerificationSubmitProgressStage) {
   switch (stage) {
     case 'submitted':
       return FileText;
-    case 'approved':
-      return FileCheck;
     case 'certified':
       return ShieldCheck;
   }
@@ -85,7 +82,7 @@ function VerificationProgressQr({ certificateNumber }: { certificateNumber?: str
       target="_blank"
       rel="noopener noreferrer"
       className="verification-submit-progress-qr"
-      aria-label={`View DOCA certificate ${certificateNumber?.trim()}`}
+      aria-label={`View certificate ${certificateNumber?.trim()}`}
     >
       <QRCode
         value={url}
