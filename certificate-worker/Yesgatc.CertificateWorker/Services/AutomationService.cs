@@ -1005,6 +1005,28 @@ public sealed class AutomationService : IAsyncDisposable
         var photoDir = WorkerDataPaths.StampingImagesDirectory;
         var preparedPaths = new List<string>();
 
+        var token = ResolveFirebaseIdToken is not null
+            ? await ResolveFirebaseIdToken(cancellationToken)
+            : firebaseIdToken;
+
+        var pendingCert = FirstNonEmpty(
+            job.EmaapIssuedCertificateNumber,
+            FirestoreService.TryExtractEmaapCertificateNumber(job.PipelineFailureMessage));
+
+        // Resume: eMAAP already generated this cert — download PDF only (do not re-submit).
+        if (!string.IsNullOrWhiteSpace(pendingCert))
+        {
+            return await DownloadIssuedPdfAndMarkCertifiedAsync(
+                page,
+                job,
+                party,
+                instrument,
+                token,
+                pendingCert,
+                filledPhotoCount: 0,
+                cancellationToken);
+        }
+
         var slots = new (string Url, string Name, string ContentType, string Kind, string Label, string OutFile)[]
         {
             (instrument.StampingImageUrl, instrument.StampingImageName, instrument.StampingImageContentType,
@@ -1070,11 +1092,27 @@ public sealed class AutomationService : IAsyncDisposable
             weightsPath,
             cancellationToken: cancellationToken);
 
-        // Submit/generate done — PDF download + Firebase certified are mandatory; failures halt the worker.
-        var token = ResolveFirebaseIdToken is not null
-            ? await ResolveFirebaseIdToken(cancellationToken)
-            : firebaseIdToken;
+        return await DownloadIssuedPdfAndMarkCertifiedAsync(
+            page,
+            job,
+            party,
+            instrument,
+            token,
+            preferCertificateNumber: null,
+            filledPhotoCount: filledCount,
+            cancellationToken);
+    }
 
+    private async Task<string> DownloadIssuedPdfAndMarkCertifiedAsync(
+        IPage page,
+        SiteCalibrationRecord job,
+        PartyContactDetails party,
+        InstrumentDetails instrument,
+        string firebaseIdToken,
+        string? preferCertificateNumber,
+        int filledPhotoCount,
+        CancellationToken cancellationToken)
+    {
         EmaapCertificateDownloadResult download;
         try
         {
@@ -1082,7 +1120,26 @@ public sealed class AutomationService : IAsyncDisposable
                 page,
                 party,
                 WorkerDataPaths.CertificatePdfDirectory(job.Id),
-                cancellationToken);
+                cancellationToken,
+                preferCertificateNumber,
+                onCertificateMatchedAsync: async cert =>
+                {
+                    try
+                    {
+                        var fresh = ResolveFirebaseIdToken is not null
+                            ? await ResolveFirebaseIdToken(cancellationToken)
+                            : firebaseIdToken;
+                        await _firestoreService.SetEmaapIssuedCertificateNumberAsync(
+                            job.Id,
+                            cert,
+                            fresh,
+                            cancellationToken);
+                    }
+                    catch
+                    {
+                        // Best-effort — resume still works from HALT message later.
+                    }
+                });
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1115,7 +1172,7 @@ public sealed class AutomationService : IAsyncDisposable
             await _firestoreService.MarkCertifiedWithSignedPdfAsync(
                 job.Id,
                 download.LocalPdfPath,
-                token,
+                firebaseIdToken,
                 download.CertificateNumber,
                 cancellationToken);
         }
@@ -1126,9 +1183,26 @@ public sealed class AutomationService : IAsyncDisposable
                 ex);
         }
 
+        var photoNote = filledPhotoCount > 0
+            ? $" · uploaded {filledPhotoCount} photo(s)"
+            : " · PDF resume (no re-submit)";
+
         return
             $"eMAAP certified {party.BelongToName} · serial {instrument.SerialNumber} · " +
-            $"{download.CertificateNumber} · uploaded {filledCount} photo(s) · PDF synced to Firebase.";
+            $"{download.CertificateNumber}{photoNote} · PDF synced to Firebase.";
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Try Automation:EmaapMasterOtp once (then caller may fall back to Firebase).</summary>

@@ -17,6 +17,7 @@
     "backfill:remove-rv-gateway-fees": "node scripts/backfill-remove-rv-gateway-fees.mjs",
     "backfill:rv-payment-per-record": "node scripts/backfill-rv-payment-per-record.mjs",
     "backfill:seal-id": "node scripts/backfill-laboratory-seal-id.mjs",
+    "backfill:drafts-to-submitted": "node scripts/backfill-drafts-to-submitted.mjs",
     "reconcile:rc-wallet-balances": "node scripts/reconcile-rc-wallet-balances.mjs",
     "cleanup:ghost-auth": "node scripts/cleanup-ghost-auth.mjs",
     "worker:dev": "powershell -ExecutionPolicy Bypass -File certificate-worker/scripts/run-dev.ps1"

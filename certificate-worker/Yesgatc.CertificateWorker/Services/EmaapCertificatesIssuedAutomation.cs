@@ -279,7 +279,9 @@ public static class EmaapCertificatesIssuedAutomation
         IPage page,
         PartyContactDetails party,
         string downloadDirectory,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? preferCertificateNumber = null,
+        Func<string, Task>? onCertificateMatchedAsync = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(party);
@@ -299,16 +301,30 @@ public static class EmaapCertificatesIssuedAutomation
 
         await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
 
+        var preferNormalized = NormalizeCertificateNumber(preferCertificateNumber);
         EmaapIssuedRowMatch? best = null;
         for (var attempt = 0; attempt < 12; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            best = await FindHighestMatchingRowAsync(page, wantBelong, wantMobile);
-            if (best is not null)
+
+            if (!string.IsNullOrWhiteSpace(preferNormalized))
+            {
+                best = await FindRowByCertificateNumberAsync(page, preferNormalized);
+            }
+
+            best ??= await FindHighestMatchingRowAsync(page, wantBelong, wantMobile);
+
+            if (best is not null
+                && (string.IsNullOrWhiteSpace(preferNormalized)
+                    || string.Equals(
+                        best.CertificateNumber,
+                        preferNormalized,
+                        StringComparison.OrdinalIgnoreCase)))
             {
                 break;
             }
 
+            best = null;
             await page.WaitForTimeoutAsync(600);
             if (attempt == 2)
             {
@@ -330,38 +346,151 @@ public static class EmaapCertificatesIssuedAutomation
         if (best is null)
         {
             var sample = await SampleCertificateRowsAsync(page);
+            var preferHint = string.IsNullOrWhiteSpace(preferNormalized)
+                ? string.Empty
+                : $" Preferred cert '{preferNormalized}' not found.";
             throw new InvalidOperationException(
-                $"No Certificates Issued row matched Belongs to '{party.BelongToName}' and Mobile '{party.Mobile}'. " +
+                $"No Certificates Issued row matched Belongs to '{party.BelongToName}' and Mobile '{party.Mobile}'.{preferHint} " +
                 $"Visible sample: {sample}");
+        }
+
+        if (onCertificateMatchedAsync is not null)
+        {
+            try
+            {
+                await onCertificateMatchedAsync(best.CertificateNumber);
+            }
+            catch
+            {
+                // Best-effort persist — download must still proceed.
+            }
         }
 
         Directory.CreateDirectory(downloadDirectory);
         var safeCert = SanitizeFileSegment(best.CertificateNumber);
         var savePath = Path.Combine(downloadDirectory, $"{safeCert}.pdf");
 
-        await SaveCertificatePdfViaDownloadClickAsync(
-            page,
-            best,
-            party.BelongToName,
-            savePath,
-            cancellationToken);
-
-        var bytes = await File.ReadAllBytesAsync(savePath, cancellationToken);
-        if (bytes.Length < 5
-            || bytes[0] != (byte)'%'
-            || bytes[1] != (byte)'P'
-            || bytes[2] != (byte)'D'
-            || bytes[3] != (byte)'F')
+        Exception? lastError = null;
+        for (var attempt = 1; attempt <= 5; attempt++)
         {
-            throw new InvalidOperationException(
-                $"Downloaded file for {best.CertificateNumber} is not a valid PDF.");
+            cancellationToken.ThrowIfCancellationRequested();
+            TryDeleteFile(savePath);
+
+            try
+            {
+                await SaveCertificatePdfViaDownloadClickAsync(
+                    page,
+                    best,
+                    party.BelongToName,
+                    savePath,
+                    cancellationToken);
+
+                if (await IsValidPdfFileAsync(savePath, cancellationToken))
+                {
+                    return new EmaapCertificateDownloadResult(best.CertificateNumber, savePath);
+                }
+
+                lastError = new InvalidOperationException(
+                    $"Downloaded file for {best.CertificateNumber} is not a valid PDF" +
+                    DescribeFileSniff(savePath) +
+                    $" (attempt {attempt}/5).");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastError = ex;
+            }
+
+            // eMAAP sometimes serves HTML / empty until the certificate blob is ready.
+            await page.WaitForTimeoutAsync(1_200 * attempt);
+            await OpenCertificatesIssuedAsync(page, cancellationToken);
+            await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(preferNormalized))
+            {
+                var again = await FindRowByCertificateNumberAsync(page, preferNormalized);
+                if (again is not null)
+                {
+                    best = again;
+                }
+            }
+            else
+            {
+                best = await FindHighestMatchingRowAsync(page, wantBelong, wantMobile) ?? best;
+            }
         }
 
-        return new EmaapCertificateDownloadResult(best.CertificateNumber, savePath);
+        throw new InvalidOperationException(
+            lastError?.Message
+            ?? $"Downloaded file for {best.CertificateNumber} is not a valid PDF.");
+    }
+
+    private static async Task<EmaapIssuedRowMatch?> FindRowByCertificateNumberAsync(
+        IPage page,
+        string certificateNumber)
+    {
+        var want = NormalizeCertificateNumber(certificateNumber);
+        if (string.IsNullOrWhiteSpace(want))
+        {
+            return null;
+        }
+
+        var json = await page.EvaluateAsync<string>(
+            """
+            (wantCert) => {
+              const norm = (s) => String(s || '').replace(/\s+/g, '');
+              const want = norm(wantCert).toUpperCase();
+              const seq = want.split('/').pop();
+              const trs = Array.from(document.querySelectorAll('table tbody tr, table tr'));
+              for (let index = 0; index < trs.length; index++) {
+                const tr = trs[index];
+                const text = (tr.innerText || '').replace(/\s+/g, ' ').trim();
+                const compact = norm(text).toUpperCase();
+                if (!compact.includes(want) && !(seq && compact.includes('26/04/26/' + seq))) continue;
+                const m = text.match(/IND\s*\/\s*GATC\s*\/\s*KL\s*\/\s*26\s*\/\s*04\s*\/\s*26\s*\/\s*([\d\s]+)/i);
+                if (!m) continue;
+                const seqStr = m[1].replace(/\s+/g, '');
+                const mobileMatch = text.match(/\b([6-9]\d{9})\b/);
+                return JSON.stringify({
+                  index,
+                  certificateNumber: 'IND/GATC/KL/26/04/26/' + seqStr,
+                  belongTo: '',
+                  mobile: mobileMatch ? mobileMatch[1] : '',
+                  sequence: parseInt(seqStr, 10) || 0
+                });
+              }
+              return '';
+            }
+            """,
+            want);
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            var dto = JsonSerializer.Deserialize<IssuedMatchDto>(json);
+            if (dto is null || string.IsNullOrWhiteSpace(dto.CertificateNumber))
+            {
+                return null;
+            }
+
+            return new EmaapIssuedRowMatch(
+                dto.Index,
+                NormalizeCertificateNumber(dto.CertificateNumber),
+                dto.BelongTo ?? string.Empty,
+                NormalizeMobile(dto.Mobile),
+                dto.Sequence > 0 ? dto.Sequence : ParseSequence(dto.CertificateNumber));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
     /// eMAAP Download often opens PDF in a new tab (not a file download). Capture either path.
+    /// Never accept bytes that are not %PDF — Chrome sometimes yields HTML/error bodies.
     /// Uses in-browser fetch (Chrome TLS) — Playwright APIRequest fails with "local issuer certificate".
     /// </summary>
     private static async Task SaveCertificatePdfViaDownloadClickAsync(
@@ -389,22 +518,26 @@ public static class EmaapCertificatesIssuedAutomation
             foreach (var existing in page.Context.Pages)
             {
                 var existingUrl = existing.Url ?? string.Empty;
-                if (!IsEmaapCertificatePdfUrl(existingUrl))
+                if (!IsEmaapCertificatePdfUrl(existingUrl)
+                    && !LooksLikeChromePdfViewer(existingUrl))
                 {
                     continue;
                 }
 
-                await SavePdfBytesFromBrowserTabAsync(existing, existingUrl, savePath, cancellationToken);
-                try
+                if (await TrySaveValidPdfFromBrowserTabAsync(
+                        existing, existingUrl, savePath, cancellationToken))
                 {
-                    await existing.CloseAsync();
-                }
-                catch (PlaywrightException)
-                {
-                }
+                    try
+                    {
+                        await existing.CloseAsync();
+                    }
+                    catch (PlaywrightException)
+                    {
+                    }
 
-                await page.BringToFrontAsync();
-                return;
+                    await page.BringToFrontAsync();
+                    return;
+                }
             }
 
             downloadTask = page.WaitForDownloadAsync(new PageWaitForDownloadOptions { Timeout = 120_000 });
@@ -424,12 +557,20 @@ public static class EmaapCertificatesIssuedAutomation
                 if (downloadTask is not null && downloadTask.IsCompletedSuccessfully)
                 {
                     var download = await downloadTask;
+                    var tempPath = savePath + ".download";
                     try
                     {
-                        await download.SaveAsAsync(savePath);
+                        TryDeleteFile(tempPath);
+                        await download.SaveAsAsync(tempPath);
+                        if (await IsValidPdfFileAsync(tempPath, cancellationToken))
+                        {
+                            File.Copy(tempPath, savePath, overwrite: true);
+                            return;
+                        }
                     }
                     finally
                     {
+                        TryDeleteFile(tempPath);
                         try
                         {
                             await download.DeleteAsync();
@@ -439,7 +580,8 @@ public static class EmaapCertificatesIssuedAutomation
                         }
                     }
 
-                    return;
+                    // Invalid download body — keep waiting for tab/response paths.
+                    downloadTask = null;
                 }
 
                 if (downloadTask is not null
@@ -451,9 +593,9 @@ public static class EmaapCertificatesIssuedAutomation
                 if (pdfResponseBodyTask is not null && pdfResponseBodyTask.IsCompletedSuccessfully)
                 {
                     var body = await pdfResponseBodyTask;
-                    if (body is { Length: > 4 })
+                    if (IsPdfBytes(body))
                     {
-                        await File.WriteAllBytesAsync(savePath, body, cancellationToken);
+                        await File.WriteAllBytesAsync(savePath, body!, cancellationToken);
                         if (pdfPage is not null)
                         {
                             try
@@ -468,6 +610,9 @@ public static class EmaapCertificatesIssuedAutomation
                         await page.BringToFrontAsync();
                         return;
                     }
+
+                    // Non-PDF response — try print fallback on the tab if still open.
+                    pdfResponseBodyTask = null;
                 }
 
                 if (pdfPage is not null)
@@ -483,19 +628,22 @@ public static class EmaapCertificatesIssuedAutomation
                     }
 
                     var url = pdfPage.Url ?? string.Empty;
-                    if (IsEmaapCertificatePdfUrl(url))
+                    if (IsEmaapCertificatePdfUrl(url) || LooksLikeChromePdfViewer(url))
                     {
-                        await SavePdfBytesFromBrowserTabAsync(pdfPage, url, savePath, cancellationToken);
-                        try
+                        if (await TrySaveValidPdfFromBrowserTabAsync(
+                                pdfPage, url, savePath, cancellationToken))
                         {
-                            await pdfPage.CloseAsync();
-                        }
-                        catch (PlaywrightException)
-                        {
-                        }
+                            try
+                            {
+                                await pdfPage.CloseAsync();
+                            }
+                            catch (PlaywrightException)
+                            {
+                            }
 
-                        await page.BringToFrontAsync();
-                        return;
+                            await page.BringToFrontAsync();
+                            return;
+                        }
                     }
                 }
 
@@ -527,7 +675,7 @@ public static class EmaapCertificatesIssuedAutomation
     }
 
     /// <summary>Pull PDF bytes via Chrome navigation (TLS/cookies) — not Playwright APIRequest.</summary>
-    private static async Task SavePdfBytesFromBrowserTabAsync(
+    private static async Task<bool> TrySaveValidPdfFromBrowserTabAsync(
         IPage browserPage,
         string url,
         string savePath,
@@ -550,19 +698,15 @@ public static class EmaapCertificatesIssuedAutomation
                 });
             var response = await responseTask;
             var body = await response.BodyAsync();
-            if (body.Length >= 5
-                && body[0] == (byte)'%'
-                && body[1] == (byte)'P'
-                && body[2] == (byte)'D'
-                && body[3] == (byte)'F')
+            if (IsPdfBytes(body))
             {
                 await File.WriteAllBytesAsync(savePath, body, cancellationToken);
-                return;
+                return true;
             }
         }
         catch (Exception)
         {
-            // fall through to in-page fetch
+            // fall through
         }
         finally
         {
@@ -578,31 +722,63 @@ public static class EmaapCertificatesIssuedAutomation
             }
         }
 
-        // 2) fetch() inside an already-open tab (Chrome TLS).
-        var b64 = await browserPage.EvaluateAsync<string>(
-            """
-            async (targetUrl) => {
-              const target = targetUrl || location.href;
-              const r = await fetch(target, { credentials: 'include', cache: 'force-cache' });
-              if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + target);
-              const buf = await r.arrayBuffer();
-              const bytes = new Uint8Array(buf);
-              let binary = '';
-              for (let i = 0; i < bytes.length; i += 0x8000) {
-                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-              }
-              return btoa(binary);
-            }
-            """,
-            url);
-
-        if (string.IsNullOrWhiteSpace(b64))
+        // 2) fetch() inside an already-open tab (Chrome TLS). Avoid force-cache — can return stale HTML.
+        try
         {
-            throw new InvalidOperationException($"Browser fetch returned empty PDF for {url}");
+            var b64 = await browserPage.EvaluateAsync<string>(
+                """
+                async (targetUrl) => {
+                  const target = targetUrl || location.href;
+                  const r = await fetch(target, { credentials: 'include', cache: 'no-store' });
+                  if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + target);
+                  const buf = await r.arrayBuffer();
+                  const bytes = new Uint8Array(buf);
+                  let binary = '';
+                  for (let i = 0; i < bytes.length; i += 0x8000) {
+                    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+                  }
+                  return btoa(binary);
+                }
+                """,
+                url);
+
+            if (!string.IsNullOrWhiteSpace(b64))
+            {
+                var fetched = Convert.FromBase64String(b64);
+                if (IsPdfBytes(fetched))
+                {
+                    await File.WriteAllBytesAsync(savePath, fetched, cancellationToken);
+                    return true;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // fall through to print-to-PDF
         }
 
-        var fetched = Convert.FromBase64String(b64);
-        await File.WriteAllBytesAsync(savePath, fetched, cancellationToken);
+        // 3) Chrome PDF viewer: network body often unavailable — print the rendered tab.
+        try
+        {
+            await browserPage.BringToFrontAsync();
+            await browserPage.WaitForTimeoutAsync(800);
+            var printed = await browserPage.PdfAsync(new PagePdfOptions
+            {
+                PrintBackground = true,
+                PreferCSSPageSize = true,
+            });
+            if (IsPdfBytes(printed))
+            {
+                await File.WriteAllBytesAsync(savePath, printed, cancellationToken);
+                return true;
+            }
+        }
+        catch (Exception)
+        {
+            // ignore
+        }
+
+        return false;
     }
 
     private static bool IsEmaapCertificatePdfUrl(string url) =>
@@ -611,6 +787,69 @@ public static class EmaapCertificatesIssuedAutomation
         || (url.Contains("gatcapi", StringComparison.OrdinalIgnoreCase)
             && url.Contains(".pdf", StringComparison.OrdinalIgnoreCase));
 
+    private static bool LooksLikeChromePdfViewer(string url) =>
+        url.Contains("chrome-extension://", StringComparison.OrdinalIgnoreCase)
+        || url.Contains("blob:", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsPdfBytes(byte[]? bytes) =>
+        bytes is { Length: >= 5 }
+        && bytes[0] == (byte)'%'
+        && bytes[1] == (byte)'P'
+        && bytes[2] == (byte)'D'
+        && bytes[3] == (byte)'F';
+
+    private static async Task<bool> IsValidPdfFileAsync(string path, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return false;
+        }
+
+        var bytes = await File.ReadAllBytesAsync(path, cancellationToken);
+        return IsPdfBytes(bytes);
+    }
+
+    private static string DescribeFileSniff(string path)
+    {
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return " (file missing)";
+            }
+
+            var bytes = File.ReadAllBytes(path);
+            if (bytes.Length == 0)
+            {
+                return " (empty file)";
+            }
+
+            var take = Math.Min(80, bytes.Length);
+            var text = System.Text.Encoding.ASCII.GetString(bytes, 0, take)
+                .Replace('\r', ' ')
+                .Replace('\n', ' ');
+            return $" (len={bytes.Length}, head={text.Trim()})";
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+    }
     private static async Task<bool> ClickIssuedDownloadAsync(
         IPage page,
         EmaapIssuedRowMatch best,

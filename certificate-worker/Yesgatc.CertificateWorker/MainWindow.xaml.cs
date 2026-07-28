@@ -1610,7 +1610,11 @@ public partial class MainWindow : Window
 
     private async Task RecordPipelineFailureAsync(SiteCalibrationRecord job, string error, bool? exhausted = null)
     {
-        var retryExhausted = exhausted ?? _jobRetries.IsExhausted(job.Id);
+        // HALT / mandatory eMAAP failures must persist even when retries are not exhausted,
+        // so PDF resume can pick up emaapIssuedCertificateNumber from the message.
+        var retryExhausted = exhausted
+            ?? (error.Contains("HALT", StringComparison.OrdinalIgnoreCase)
+                || _jobRetries.IsExhausted(job.Id));
         if (!retryExhausted || _session is null)
         {
             return;

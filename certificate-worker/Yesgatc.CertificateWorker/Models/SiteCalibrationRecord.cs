@@ -14,6 +14,10 @@ public sealed class SiteCalibrationRecord
     public string? ApprovedAt { get; init; }
     public string? CertifiedAt { get; init; }
     public string? CertificatePdfUrl { get; init; }
+    public string? CertificateNumber { get; init; }
+    /// <summary>Set when eMAAP generated a cert but PDF sync failed — resume download-only.</summary>
+    public string? EmaapIssuedCertificateNumber { get; init; }
+    public string? PipelineFailureMessage { get; init; }
     public string? ResubmittedFromId { get; init; }
     public string? SupersededByResubmissionId { get; init; }
     public string? CertificateVoidedAt { get; init; }

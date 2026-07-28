@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Yesgatc.CertificateWorker.Models;
 
 namespace Yesgatc.CertificateWorker.Services;
@@ -340,6 +341,12 @@ public sealed class FirestoreService
             ["updatedAt"] = now,
         };
 
+        var pendingCert = TryExtractEmaapCertificateNumber(trimmed);
+        if (!string.IsNullOrWhiteSpace(pendingCert))
+        {
+            fields["emaapIssuedCertificateNumber"] = pendingCert;
+        }
+
         var documents = new FirestoreDocumentClient(_settings);
         await documents.PatchStringFieldsAsync(
             "siteCalibrations",
@@ -347,6 +354,50 @@ public sealed class FirestoreService
             fields,
             idToken,
             cancellationToken);
+    }
+
+    public async Task SetEmaapIssuedCertificateNumberAsync(
+        string jobId,
+        string certificateNumber,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId) || string.IsNullOrWhiteSpace(certificateNumber))
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow.ToString("O");
+        var documents = new FirestoreDocumentClient(_settings);
+        await documents.PatchStringFieldsAsync(
+            "siteCalibrations",
+            jobId,
+            new Dictionary<string, string>
+            {
+                ["emaapIssuedCertificateNumber"] = certificateNumber.Trim(),
+                ["updatedAt"] = now,
+            },
+            idToken,
+            cancellationToken);
+    }
+
+    public static string? TryExtractEmaapCertificateNumber(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var m = Regex.Match(
+            text,
+            @"IND\s*/\s*GATC\s*/\s*KL\s*/\s*26\s*/\s*04\s*/\s*26\s*/\s*(\d+)",
+            RegexOptions.IgnoreCase);
+        if (!m.Success)
+        {
+            return null;
+        }
+
+        return $"IND/GATC/KL/26/04/26/{m.Groups[1].Value}";
     }
 
     public async Task RecordCertificationFailureAsync(
@@ -528,6 +579,9 @@ public sealed class FirestoreService
             ApprovedAt = FirestoreFieldReader.ReadString(fields, "approvedAt"),
             CertifiedAt = FirestoreFieldReader.ReadString(fields, "certifiedAt"),
             CertificatePdfUrl = FirestoreFieldReader.ReadString(fields, "certificatePdfUrl"),
+            CertificateNumber = FirestoreFieldReader.ReadString(fields, "certificateNumber"),
+            EmaapIssuedCertificateNumber = FirestoreFieldReader.ReadString(fields, "emaapIssuedCertificateNumber"),
+            PipelineFailureMessage = FirestoreFieldReader.ReadString(fields, "pipelineFailureMessage"),
             ResubmittedFromId = FirestoreFieldReader.ReadString(fields, "resubmittedFromId"),
             SupersededByResubmissionId = FirestoreFieldReader.ReadString(fields, "supersededByResubmissionId"),
             CertificateVoidedAt = FirestoreFieldReader.ReadString(fields, "certificateVoidedAt"),
