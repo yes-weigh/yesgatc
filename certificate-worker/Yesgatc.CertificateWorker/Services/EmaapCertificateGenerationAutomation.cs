@@ -225,7 +225,7 @@ public static class EmaapCertificateGenerationAutomation
         await page.Locator("#type_of_instrument").WaitForAsync(new LocatorWaitForOptions
         {
             State = WaitForSelectorState.Visible,
-            Timeout = 15_000,
+            Timeout = 45_000,
         });
         cancellationToken.ThrowIfCancellationRequested();
 

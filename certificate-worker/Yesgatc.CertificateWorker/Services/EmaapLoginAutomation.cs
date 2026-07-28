@@ -141,6 +141,25 @@ public static class EmaapLoginAutomation
                 return DocaSessionState.LoggedIn;
             }
 
+            // Already on OTP step after prior Send OTP / session bounce — poll Firebase (or Gmail).
+            var since = LastOtpRequestedAtUtc ?? DateTimeOffset.UtcNow.AddMinutes(-10);
+            var emailOtp = await TryReadEmailOtpAsync(
+                page,
+                settings,
+                firebase,
+                resolveFirebaseIdToken,
+                since,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(emailOtp))
+            {
+                return await SubmitOtpAsync(
+                    page,
+                    settings,
+                    emailOtp,
+                    cancellationToken,
+                    reportAttemptAsync);
+            }
+
             return DocaSessionState.OtpRequired;
         }
 
@@ -273,55 +292,13 @@ public static class EmaapLoginAutomation
             }
 
             string? emailOtp = null;
-            if (settings.EmaapOtpUseFirestore
-                && firebase is not null
-                && resolveFirebaseIdToken is not null)
-            {
-                try
-                {
-                    emailOtp = await FirestoreEmaapOtpReader.WaitForOtpAsync(
-                        firebase,
-                        resolveFirebaseIdToken,
-                        otpRequestedAt,
-                        cancellationToken,
-                        timeoutSeconds: settings.EmaapOtpPollSeconds);
-                }
-                catch when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    FirestoreEmaapOtpReader.LastFailureReason ??= ex.Message;
-                    emailOtp = null;
-                }
-            }
-            else if (settings.EmaapOtpUseFirestore)
-            {
-                FirestoreEmaapOtpReader.LastFailureReason =
-                    "Firebase OTP enabled but worker has no id token resolver — Sign in to YESGATC first.";
-            }
-
-            if (string.IsNullOrWhiteSpace(emailOtp) && settings.EmaapOtpUseGmailFallback)
-            {
-                try
-                {
-                    emailOtp = await GmailOtpReader.TryReadRecentOtpAsync(
-                        page.Context,
-                        otpRequestedAt,
-                        cancellationToken,
-                        report: null);
-                }
-                catch when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    GmailOtpReader.LastFailureReason ??= ex.Message;
-                    emailOtp = null;
-                }
-            }
+            emailOtp = await TryReadEmailOtpAsync(
+                page,
+                settings,
+                firebase,
+                resolveFirebaseIdToken,
+                otpRequestedAt,
+                cancellationToken);
 
             await page.BringToFrontAsync();
             await TryDismissOtpSentDialogIfVisibleAsync(page);
@@ -341,6 +318,68 @@ public static class EmaapLoginAutomation
         }
 
         return DocaSessionState.LoginRequired;
+    }
+
+    private static async Task<string?> TryReadEmailOtpAsync(
+        IPage page,
+        AutomationSettings settings,
+        FirebaseSettings? firebase,
+        Func<CancellationToken, Task<string>>? resolveFirebaseIdToken,
+        DateTimeOffset otpRequestedAt,
+        CancellationToken cancellationToken)
+    {
+        string? emailOtp = null;
+        if (settings.EmaapOtpUseFirestore
+            && firebase is not null
+            && resolveFirebaseIdToken is not null)
+        {
+            try
+            {
+                emailOtp = await FirestoreEmaapOtpReader.WaitForOtpAsync(
+                    firebase,
+                    resolveFirebaseIdToken,
+                    otpRequestedAt,
+                    cancellationToken,
+                    timeoutSeconds: settings.EmaapOtpPollSeconds);
+            }
+            catch when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                FirestoreEmaapOtpReader.LastFailureReason ??= ex.Message;
+                emailOtp = null;
+            }
+        }
+        else if (settings.EmaapOtpUseFirestore)
+        {
+            FirestoreEmaapOtpReader.LastFailureReason =
+                "Firebase OTP enabled but worker has no id token resolver — Sign in to YESGATC first.";
+        }
+
+        if (string.IsNullOrWhiteSpace(emailOtp) && settings.EmaapOtpUseGmailFallback)
+        {
+            try
+            {
+                emailOtp = await GmailOtpReader.TryReadRecentOtpAsync(
+                    page.Context,
+                    otpRequestedAt,
+                    cancellationToken,
+                    report: null);
+            }
+            catch when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                GmailOtpReader.LastFailureReason ??= ex.Message;
+                emailOtp = null;
+            }
+        }
+
+        return emailOtp;
     }
 
     private static bool IsConfiguredMasterOtp(AutomationSettings settings)

@@ -1188,11 +1188,16 @@ public partial class MainWindow : Window
         await PublishWorkerStatusAsync();
     }
 
-    private void SetDocaLoginPaused(bool paused, string logoutReason = "login_required", bool startResumeProbe = true)
+    private void SetDocaLoginPaused(
+        bool paused,
+        string logoutReason = "login_required",
+        bool startResumeProbe = true,
+        bool blockAutoLogin = false)
     {
         var wasPaused = _autoWorkerPausedForDoca;
         _autoWorkerPausedForDoca = paused;
-        ApplyManualDocaLoginWaitToAllAutomation(paused);
+        // Only block auto-login when operator is typing credentials manually.
+        ApplyManualDocaLoginWaitToAllAutomation(paused && blockAutoLogin);
 
         if (paused && !wasPaused)
         {
@@ -1524,7 +1529,9 @@ public partial class MainWindow : Window
             {
                 _emaapOtpIdle = true;
                 StopDocaProbeTimer();
-                SetStatus("eMAAP waiting for OTP — idle (not opening DOCA).", StatusKind.Info);
+                StartEmaapOtpIdlePoller();
+                SetStatus("eMAAP waiting for OTP — polling Firebase / master OTP…", StatusKind.Info);
+                AddActivityEntry("eMAAP signed out — auto re-login waiting for OTP.");
                 return;
             }
 
@@ -1536,6 +1543,7 @@ public partial class MainWindow : Window
 
             SetDocaLoginPaused(false);
             SetStatus("eMAAP session restored — auto worker resuming.", StatusKind.Success);
+            AddActivityEntry("eMAAP session restored — auto worker resuming.");
             UpdateAutoWorkerStatusText();
             await RunAutoWorkerCycleAsync();
         }
@@ -1991,7 +1999,17 @@ public partial class MainWindow : Window
         {
             if (fromAutoWorker || _autoWorkerEnabled)
             {
-                SetDocaLoginPaused(true, logoutReason: "job_failure");
+                var otp = result.Message.Contains("OTP", StringComparison.OrdinalIgnoreCase);
+                if (otp)
+                {
+                    _emaapOtpIdle = true;
+                    SetDocaLoginPaused(true, logoutReason: "otp_required", startResumeProbe: false, blockAutoLogin: false);
+                    StartEmaapOtpIdlePoller();
+                }
+                else
+                {
+                    SetDocaLoginPaused(true, logoutReason: "job_failure", blockAutoLogin: false);
+                }
             }
 
             SetStatus(result.Message, StatusKind.Error);
@@ -2005,6 +2023,7 @@ public partial class MainWindow : Window
             {
                 ScheduleJobRetry(job, result.Message);
                 await RecordPipelineFailureAsync(job, result.Message);
+                SetDocaLoginPaused(true, logoutReason: "browser_disconnected", blockAutoLogin: false);
             }
 
             await LoadQueueAsync();
@@ -2075,28 +2094,63 @@ public partial class MainWindow : Window
             var sessionGate = await automation.EnsureDocaSessionForJobAsync();
             if (sessionGate is not null)
             {
-                return new JobPipelineResult(false, true, sessionGate.Message);
+                return await HandleSessionGateResultAsync(sessionGate);
             }
 
             return await ProcessJobThroughPipelineAsync(job, automation, continueBrowserSession);
         }
         catch (Exception ex) when (AutomationService.IsBrowserDisconnectedError(ex))
         {
+            AddActivityEntry("eMAAP browser disconnected — reopening Chrome and auto-signing in…");
             try
             {
                 await automation.EnsureBrowserReadyAsync();
-            }
-            catch
-            {
-                // Fall through with a friendly retry message.
-            }
+                var gate = await automation.EnsureDocaSessionForJobAsync();
+                if (gate is not null)
+                {
+                    return await HandleSessionGateResultAsync(gate);
+                }
 
-            return new JobPipelineResult(
-                false,
-                false,
-                "eMAAP browser was closed or disconnected. Reopening Chrome on the next attempt.",
-                BrowserDisconnected: true);
+                // Browser back + logged in — retry this job once in the same cycle.
+                return await ProcessJobThroughPipelineAsync(job, automation, continueBrowserSession: true);
+            }
+            catch (Exception reopenEx) when (AutomationService.IsBrowserDisconnectedError(reopenEx))
+            {
+                return new JobPipelineResult(
+                    false,
+                    false,
+                    "eMAAP browser was closed or disconnected. Reopening Chrome on the next attempt.",
+                    BrowserDisconnected: true);
+            }
+            catch (Exception reopenEx)
+            {
+                if (reopenEx.Message.Contains("login", StringComparison.OrdinalIgnoreCase)
+                    || reopenEx.Message.Contains("OTP", StringComparison.OrdinalIgnoreCase)
+                    || reopenEx.Message.Contains("Sign in to eMAAP", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new JobPipelineResult(false, true, reopenEx.Message);
+                }
+
+                return new JobPipelineResult(
+                    false,
+                    false,
+                    "eMAAP browser was closed or disconnected. Reopening Chrome on the next attempt.",
+                    BrowserDisconnected: true);
+            }
         }
+    }
+
+    private async Task<JobPipelineResult> HandleSessionGateResultAsync(DocaOpenResult sessionGate)
+    {
+        if (sessionGate.State == DocaSessionState.OtpRequired)
+        {
+            _emaapOtpIdle = true;
+            SetDocaLoginPaused(true, logoutReason: "otp_required", startResumeProbe: false, blockAutoLogin: false);
+            StartEmaapOtpIdlePoller();
+            AddActivityEntry("eMAAP signed out — OTP sent; waiting Firebase / master OTP, then auto-resume.");
+        }
+
+        return new JobPipelineResult(false, true, sessionGate.Message);
     }
 
     private async Task ProcessQueueInternalAsync(
@@ -2210,12 +2264,23 @@ public partial class MainWindow : Window
         {
             if (fromAutoWorker || _autoWorkerEnabled)
             {
-                SetDocaLoginPaused(true, logoutReason: "job_failure");
+                var otp = result.Message.Contains("OTP", StringComparison.OrdinalIgnoreCase);
+                if (otp)
+                {
+                    _emaapOtpIdle = true;
+                    SetDocaLoginPaused(true, logoutReason: "otp_required", startResumeProbe: false, blockAutoLogin: false);
+                    StartEmaapOtpIdlePoller();
+                }
+                else
+                {
+                    // Keep auto-login enabled — probe timer will captcha+OTP and resume.
+                    SetDocaLoginPaused(true, logoutReason: "job_failure", blockAutoLogin: false);
+                }
             }
 
             lastError = result.Message;
             SetStatusSafe(
-                $"{batchLabel} paused — eMAAP login required. Sign in, then worker retries.",
+                $"{batchLabel} paused — eMAAP re-login in progress (captcha + OTP). Worker resumes when signed in.",
                 StatusKind.Error);
             stopBatch = true;
             return true;
@@ -2226,7 +2291,16 @@ public partial class MainWindow : Window
             failed++;
             lastError = result.Message;
             ScheduleJobRetry(job, result.Message);
-            HaltWorkerPipeline(
+            // Do not permanent-halt: reopen + auto-login on next auto-worker cycle.
+            if (fromAutoWorker || _autoWorkerEnabled)
+            {
+                SetDocaLoginPaused(true, logoutReason: "browser_disconnected", blockAutoLogin: false);
+            }
+
+            SetStatusSafe(
+                $"{batchLabel} — browser disconnected. Reopening Chrome + auto sign-in on next cycle.",
+                StatusKind.Info);
+            AddActivityEntry(
                 $"{batchLabel} — browser disconnected. Stopping batch; Chrome will reopen after resume.");
             stopBatch = true;
             return true;
@@ -2261,12 +2335,12 @@ public partial class MainWindow : Window
         return true;
     }
 
-    /// <summary>Stop auto-worker cycles until operator resumes (login / Process all).</summary>
+    /// <summary>Stop auto-worker cycles until session restored (auto re-login / OTP).</summary>
     private void HaltWorkerPipeline(string message)
     {
         _autoWorkerPausedForDoca = true;
         StopAutoWorkerTimers();
-        SetDocaLoginPaused(true, startResumeProbe: false);
+        SetDocaLoginPaused(true, startResumeProbe: true, blockAutoLogin: false);
         SetStatusSafe(message, StatusKind.Error);
         AddActivityEntry(message);
     }

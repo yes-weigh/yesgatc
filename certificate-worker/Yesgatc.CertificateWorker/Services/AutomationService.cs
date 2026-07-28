@@ -126,7 +126,7 @@ public sealed class AutomationService : IAsyncDisposable
         }
     }
 
-    /// <summary>Before processing a job: launch Chrome if needed and confirm DOCA session is usable.</summary>
+    /// <summary>Before processing a job: launch Chrome if needed and confirm eMAAP session is usable.</summary>
     public async Task<DocaOpenResult?> EnsureDocaSessionForJobAsync(CancellationToken cancellationToken = default)
     {
         // Always attempt auto-login when processing jobs (credentials + captcha + OTP).
@@ -136,6 +136,14 @@ public sealed class AutomationService : IAsyncDisposable
         if (probe.State == DocaSessionState.LoggedIn)
         {
             return null;
+        }
+
+        if (probe.AttemptedAutoLogin)
+        {
+            var msg = probe.State == DocaSessionState.OtpRequired
+                ? "eMAAP OTP required after auto-login — waiting Firebase / master OTP."
+                : "eMAAP auto-login did not finish — will retry captcha + OTP.";
+            return new DocaOpenResult(probe.State, msg);
         }
 
         var page = await GetPageAsync();
@@ -167,7 +175,8 @@ public sealed class AutomationService : IAsyncDisposable
             return new DocaSessionProbeResult { State = DocaSessionState.LoggedIn };
         }
 
-        if (await EmaapLoginAutomation.IsOtpStepAsync(page) || ManualDocaLoginWait)
+        // Manual password entry — do not steal focus / auto-submit.
+        if (ManualDocaLoginWait && !forceAutoLogin)
         {
             await page.BringToFrontAsync();
             return new DocaSessionProbeResult
@@ -181,9 +190,15 @@ public sealed class AutomationService : IAsyncDisposable
         if (!forceAutoLogin)
         {
             await page.BringToFrontAsync();
-            return new DocaSessionProbeResult { State = DocaSessionState.LoginRequired };
+            return new DocaSessionProbeResult
+            {
+                State = await EmaapLoginAutomation.IsOtpStepAsync(page)
+                    ? DocaSessionState.OtpRequired
+                    : DocaSessionState.LoginRequired,
+            };
         }
 
+        // forceAutoLogin: complete captcha + OTP (incl. already-on-OTP-step) via Firebase/master.
         var emaapState = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
         await page.BringToFrontAsync();
         return new DocaSessionProbeResult
@@ -919,7 +934,7 @@ public sealed class AutomationService : IAsyncDisposable
         CancellationToken cancellationToken = default,
         bool forceAutoLogin = false)
     {
-        if (!await IsLoginPageAsync(page))
+        if (!await IsLoginPageAsync(page) && await EmaapLoginAutomation.IsLoggedInAsync(page))
         {
             return DocaSessionState.LoggedIn;
         }
@@ -928,6 +943,37 @@ public sealed class AutomationService : IAsyncDisposable
         {
             await page.BringToFrontAsync();
             return DocaSessionState.LoginRequired;
+        }
+
+        if (!forceAutoLogin)
+        {
+            await page.BringToFrontAsync();
+            return await IsLoginPageAsync(page) || await EmaapLoginAutomation.IsOtpStepAsync(page)
+                ? (await EmaapLoginAutomation.IsOtpStepAsync(page)
+                    ? DocaSessionState.OtpRequired
+                    : DocaSessionState.LoginRequired)
+                : DocaSessionState.LoginRequired;
+        }
+
+        // Signed out / OTP step / unknown — full captcha + OTP gate.
+        if (!await IsLoginPageAsync(page) && !await EmaapLoginAutomation.IsOtpStepAsync(page))
+        {
+            if (!string.IsNullOrWhiteSpace(_settings.DocaLoginUrl))
+            {
+                await page.GotoAsync(_settings.DocaLoginUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60_000,
+                });
+            }
+            else if (!string.IsNullOrWhiteSpace(_settings.DocaHomeUrl))
+            {
+                await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60_000,
+                });
+            }
         }
 
         return await DocaLoginAutomation.TryLoginAsync(
@@ -971,6 +1017,7 @@ public sealed class AutomationService : IAsyncDisposable
 
     /// <summary>
     /// Logged-in eMAAP: fill form → submit → generate → download PDF → mark certified in Firebase.
+    /// Auto re-login (captcha + OTP) if session expired.
     /// </summary>
     public async Task<string> FillEmaapCertificateGenerationAsync(
         SiteCalibrationRecord job,
@@ -983,23 +1030,7 @@ public sealed class AutomationService : IAsyncDisposable
         var page = await GetPageAsync();
         await page.BringToFrontAsync();
 
-        if (await IsLoginPageAsync(page) || !EmaapLoginAutomation.IsEmaapUrl(page.Url))
-        {
-            if (!string.IsNullOrWhiteSpace(_settings.DocaHomeUrl))
-            {
-                await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
-                {
-                    WaitUntil = WaitUntilState.DOMContentLoaded,
-                    Timeout = 60_000,
-                });
-            }
-
-            if (await IsLoginPageAsync(page))
-            {
-                throw new InvalidOperationException(
-                    "eMAAP browser is on the login page. Sign in to eMAAP first, then retry Fill up in eMAAP.");
-            }
-        }
+        await EnsureEmaapLoggedInForWorkAsync(page, cancellationToken);
 
         var imageDownload = new FirebaseStorageDownloadService();
         var photoDir = WorkerDataPaths.StampingImagesDirectory;
@@ -1084,13 +1115,13 @@ public sealed class AutomationService : IAsyncDisposable
                 "Standard weight photo is missing on the verification record (needed after Submit Certificate Details).");
         }
 
-        await EmaapCertificateGenerationAutomation.FillStarterFormAsync(
+        await FillStarterFormWithSessionRetryAsync(
             page,
             party,
             instrument,
             preparedPaths,
             weightsPath,
-            cancellationToken: cancellationToken);
+            cancellationToken);
 
         return await DownloadIssuedPdfAndMarkCertifiedAsync(
             page,
@@ -1101,6 +1132,108 @@ public sealed class AutomationService : IAsyncDisposable
             preferCertificateNumber: null,
             filledPhotoCount: filledCount,
             cancellationToken);
+    }
+
+    /// <summary>Navigate home if needed; auto captcha+OTP when signed out.</summary>
+    private async Task EnsureEmaapLoggedInForWorkAsync(IPage page, CancellationToken cancellationToken)
+    {
+        if (!EmaapLoginAutomation.IsEmaapUrl(page.Url) || await IsLoginPageAsync(page))
+        {
+            if (!string.IsNullOrWhiteSpace(_settings.DocaHomeUrl))
+            {
+                await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 60_000,
+                });
+            }
+        }
+
+        if (await EmaapLoginAutomation.IsLoggedInAsync(page) && !await IsLoginPageAsync(page))
+        {
+            return;
+        }
+
+        var state = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
+        if (state == DocaSessionState.LoggedIn)
+        {
+            return;
+        }
+
+        if (state == DocaSessionState.OtpRequired)
+        {
+            throw new InvalidOperationException(
+                "eMAAP OTP required — waiting for Firebase OTP / master OTP. Worker will retry after login.");
+        }
+
+        throw new InvalidOperationException(
+            "eMAAP browser is on the login page. Sign in to eMAAP first, then retry Fill up in eMAAP.");
+    }
+
+    private async Task FillStarterFormWithSessionRetryAsync(
+        IPage page,
+        PartyContactDetails party,
+        InstrumentDetails instrument,
+        IReadOnlyList<string> preparedPaths,
+        string weightsPath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await EmaapCertificateGenerationAutomation.FillStarterFormAsync(
+                page,
+                party,
+                instrument,
+                preparedPaths,
+                weightsPath,
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not EmaapMandatoryStepException)
+        {
+            // Session often dies mid-batch: form field timeouts or redirect to login.
+            if (!await IsLoginPageAsync(page) && !LooksLikeSessionLoss(ex))
+            {
+                throw;
+            }
+
+            // Bounce through home so eMAAP re-auth redirect is visible, then full auto-login.
+            if (!string.IsNullOrWhiteSpace(_settings.DocaHomeUrl))
+            {
+                try
+                {
+                    await page.GotoAsync(_settings.DocaHomeUrl, new PageGotoOptions
+                    {
+                        WaitUntil = WaitUntilState.DOMContentLoaded,
+                        Timeout = 60_000,
+                    });
+                }
+                catch (PlaywrightException)
+                {
+                    // Browser may be mid-crash — EnsureEmaapLoggedIn will surface it.
+                }
+            }
+
+            await EnsureEmaapLoggedInForWorkAsync(page, cancellationToken);
+            await EmaapCertificateGenerationAutomation.FillStarterFormAsync(
+                page,
+                party,
+                instrument,
+                preparedPaths,
+                weightsPath,
+                cancellationToken: cancellationToken);
+        }
+    }
+
+    private static bool LooksLikeSessionLoss(Exception ex)
+    {
+        var msg = ex.Message ?? string.Empty;
+        return msg.Contains("Timeout", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("type_of_instrument", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("instrument_type", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("login", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("navigat", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("Target closed", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("Execution context was destroyed", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<string> DownloadIssuedPdfAndMarkCertifiedAsync(
