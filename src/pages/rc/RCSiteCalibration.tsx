@@ -1880,6 +1880,35 @@ export const RCSiteCalibration: React.FC = () => {
   const pendingStatusFilter = searchParams.get('status');
   const pendingOpenId = searchParams.get('open');
   const pendingFocusSearch = searchParams.get('focus') === 'search';
+  const pendingNewType = searchParams.get('new');
+
+  useEffect(() => {
+    if (pendingNewType !== 'OV' && pendingNewType !== 'RV') return;
+    if (loading || !canCreateVerification(user?.role)) return;
+    if (!rcUid || !rcProfile) return;
+
+    openNewVerificationSession({
+      ...buildSelfVerificationSession(rcProfile, rcUid, laboratorySealId),
+      verificationType: pendingNewType,
+    });
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('new');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [
+    pendingNewType,
+    loading,
+    rcUid,
+    rcProfile,
+    laboratorySealId,
+    openNewVerificationSession,
+    setSearchParams,
+    user?.role,
+  ]);
 
   useEffect(() => {
     if (!pendingCustomerId || loading || !canCreateVerification(user?.role)) return;

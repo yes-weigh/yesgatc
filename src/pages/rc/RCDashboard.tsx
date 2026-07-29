@@ -6,17 +6,13 @@ import {
   LayoutGrid,
   FileText,
   Send,
-  ShieldCheck,
   Award,
   XCircle,
   FilePenLine,
   BarChart3,
   Plus,
-  ScanLine,
-  Search,
-  RefreshCw,
-  Download,
   ChevronRight,
+  UploadCloud,
 } from 'lucide-react';
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
 import { db } from '../../firebase';
@@ -27,7 +23,6 @@ import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
-  canDownloadVerificationCertificate,
   getVerificationDisplayStatus,
   sanitizeVerificationDisplayText,
   tallyVerificationStatusFilters,
@@ -70,15 +65,6 @@ function certifiedThisMonthCount(records: SiteCalibration[]): number {
   }).length;
 }
 
-function statusIconTone(record: SiteCalibration): StageTone {
-  const status = getVerificationDisplayStatus(record);
-  if (status === 'draft') return 'violet';
-  if (status === 'submitted' || status === 'approved') return 'blue';
-  if (status === 'certified') return 'green';
-  if (status === 'rejected') return 'orange';
-  return 'red';
-}
-
 export const RCDashboard: React.FC = () => {
   const { rcUid, actorUid, isVct, isRcAdmin } = useRcScope();
   const basePath = useRoleBasePath();
@@ -89,7 +75,6 @@ export const RCDashboard: React.FC = () => {
   const [walletBalance, setWalletBalance] = useState(0);
   const [pendingTopUps, setPendingTopUps] = useState(0);
   const [walletLoading, setWalletLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
   const fetchVerifications = useCallback(async () => {
     if (!rcUid) return;
@@ -162,42 +147,42 @@ export const RCDashboard: React.FC = () => {
         label: 'All Stages',
         count: tally.all,
         tone: 'blue',
-        icon: <LayoutGrid size={20} strokeWidth={1.9} />,
+        icon: <LayoutGrid size={18} strokeWidth={1.9} />,
       },
       {
         key: 'draft',
         label: 'Draft',
         count: tally.draft,
         tone: 'violet',
-        icon: <FileText size={20} strokeWidth={1.9} />,
+        icon: <FileText size={18} strokeWidth={1.9} />,
       },
       {
         key: 'submitted',
         label: 'Submitted',
         count: tally.submitted,
         tone: 'blue',
-        icon: <Send size={20} strokeWidth={1.9} />,
+        icon: <Send size={18} strokeWidth={1.9} />,
+      },
+      {
+        key: 'failed_submit',
+        label: 'Failed at Submission',
+        count: tally.failed_submit,
+        tone: 'red',
+        icon: <UploadCloud size={18} strokeWidth={1.9} />,
       },
       {
         key: 'certified',
         label: 'Certified',
         count: tally.certified,
         tone: 'green',
-        icon: <Award size={20} strokeWidth={1.9} />,
-      },
-      {
-        key: 'failed_submit',
-        label: 'Failed at Submit',
-        count: tally.failed_submit,
-        tone: 'red',
-        icon: <XCircle size={20} strokeWidth={1.9} />,
+        icon: <Award size={18} strokeWidth={1.9} />,
       },
       {
         key: 'rejected',
         label: 'Rejected',
         count: tally.rejected,
         tone: 'orange',
-        icon: <XCircle size={20} strokeWidth={1.9} />,
+        icon: <XCircle size={18} strokeWidth={1.9} />,
       },
     ],
     [tally],
@@ -223,15 +208,6 @@ export const RCDashboard: React.FC = () => {
     status && status !== 'all'
       ? `${basePath}/verification?status=${encodeURIComponent(status)}`
       : `${basePath}/verification`;
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await fetchVerifications();
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   const openRecord = (record: SiteCalibration) => {
     navigate(`${basePath}/verification?open=${encodeURIComponent(record.id)}`);
@@ -275,6 +251,29 @@ export const RCDashboard: React.FC = () => {
         )
       ) : null}
 
+      <section className="wl-primary" aria-label="Start verification">
+        <Link to={`${basePath}/verification?new=OV`} className="wl-primary__card wl-primary__card--ov">
+          <span className="wl-primary__badge" aria-hidden>
+            OV
+          </span>
+          <span className="wl-primary__copy">
+            <span className="wl-primary__type">OV</span>
+            <span className="wl-primary__title">New Verification</span>
+            <span className="wl-primary__sub">Original Verification</span>
+          </span>
+        </Link>
+        <Link to={`${basePath}/verification?new=RV`} className="wl-primary__card wl-primary__card--rv">
+          <span className="wl-primary__badge" aria-hidden>
+            RV
+          </span>
+          <span className="wl-primary__copy">
+            <span className="wl-primary__type">RV</span>
+            <span className="wl-primary__title">Reverification</span>
+            <span className="wl-primary__sub">Reverification of existing instrument</span>
+          </span>
+        </Link>
+      </section>
+
       <section className="wl-stages-panel" aria-labelledby="wl-stages-title">
         <div className="wl-section__head">
           <h2 id="wl-stages-title" className="wl-section__title">
@@ -289,9 +288,7 @@ export const RCDashboard: React.FC = () => {
             <Link
               key={stage.key}
               to={verificationHref(stage.key)}
-              className={`wl-stage wl-stage--${stage.tone}${
-                stage.key === 'draft' ? ' wl-stage--draft' : ''
-              }`}
+              className={`wl-stage wl-stage--${stage.tone}`}
             >
               <span className="wl-stage__icon" aria-hidden>
                 {stage.icon}
@@ -312,7 +309,7 @@ export const RCDashboard: React.FC = () => {
             <FilePenLine size={18} strokeWidth={2} />
           </span>
           <div className="wl-quick__body">
-            <p className="wl-quick__label">Verifications · Draft</p>
+            <p className="wl-quick__label">Draft Verifications</p>
             <p className="wl-quick__value">{loadingVerifications ? '—' : tally.draft}</p>
             <p className="wl-quick__sub">Saved as draft</p>
           </div>
@@ -346,7 +343,7 @@ export const RCDashboard: React.FC = () => {
         ) : recent.length === 0 ? (
           <div className="wl-recent__empty">
             <p>No verification records yet.</p>
-            <Link to={`${basePath}/verification`} className="wl-wallet__cta">
+            <Link to={`${basePath}/verification?new=OV`} className="wl-wallet__cta">
               <Plus size={14} aria-hidden />
               New Verification
             </Link>
@@ -354,106 +351,47 @@ export const RCDashboard: React.FC = () => {
         ) : (
           <ul className="wl-recent">
             {recent.map(record => {
-              const tone = statusIconTone(record);
-              const showDownload = canDownloadVerificationCertificate(record);
+              const typeLabel = record.verificationType === 'RV' ? 'RV' : 'OV';
               return (
                 <li key={record.id}>
-                  <article className={`wl-recent__card wl-recent__card--${tone}`}>
-                    <div className="wl-recent__main">
-                      <button
-                        type="button"
-                        className="wl-recent__open"
-                        onClick={() => openRecord(record)}
-                      >
-                        <span className={`wl-recent__status wl-recent__status--${tone}`} aria-hidden>
-                          {tone === 'violet' ? (
-                            <FileText size={20} strokeWidth={2} />
-                          ) : tone === 'red' || tone === 'orange' ? (
-                            <XCircle size={20} strokeWidth={2} />
-                          ) : (
-                            <ShieldCheck size={20} strokeWidth={2} />
-                          )}
-                        </span>
+                  <button
+                    type="button"
+                    className="wl-recent__card"
+                    onClick={() => openRecord(record)}
+                  >
+                    <span className="wl-recent__status wl-recent__status--violet" aria-hidden>
+                      <FileText size={20} strokeWidth={2} />
+                    </span>
+                    <span className="wl-recent__body">
+                      <span className="wl-recent__top">
                         <span className="wl-recent__info">
                           <span className="wl-recent__name">
                             {record.customerName?.trim() || '—'}
                           </span>
                           <span className="wl-recent__id">{recordListId(record)}</span>
                         </span>
-                      </button>
-                      <span className="wl-recent__meta-right">
                         <span
                           className={`wl-recent__type${
-                            record.verificationType === 'RV' ? ' wl-recent__type--rv' : ''
+                            typeLabel === 'RV' ? ' wl-recent__type--rv' : ''
                           }`}
                         >
-                          {record.verificationType === 'RV' ? 'RV' : 'OV'}
+                          {typeLabel}
                         </span>
-                        {showDownload && record.certificatePdfUrl ? (
-                          <a
-                            className="wl-recent__download"
-                            href={record.certificatePdfUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            aria-label="Download certificate"
-                            title="Download certificate"
-                          >
-                            <Download size={16} strokeWidth={2.25} />
-                          </a>
-                        ) : null}
                       </span>
-                    </div>
-                    <button
-                      type="button"
-                      className="wl-recent__footer"
-                      onClick={() => openRecord(record)}
-                    >
-                      <span>Serial: {record.serialNumber?.trim() || '—'}</span>
-                      <span>Date: {formatVerificationListDate(record.createdAt)}</span>
-                      <span>VCT: {record.vctName?.trim() || '—'}</span>
-                    </button>
-                  </article>
+                      <span className="wl-recent__footer">
+                        <span>Serial: {record.serialNumber?.trim() || '—'}</span>
+                        <span>Date: {formatVerificationListDate(record.createdAt)}</span>
+                        <span>VCT: {record.vctName?.trim() || '—'}</span>
+                      </span>
+                    </span>
+                    <ChevronRight className="wl-recent__chevron" size={18} aria-hidden />
+                  </button>
                 </li>
               );
             })}
           </ul>
         )}
       </section>
-
-      <nav className="wl-actions" aria-label="Dashboard quick actions">
-        <Link to={`${basePath}/verification`} className="wl-actions__btn wl-actions__btn--violet">
-          <span className="wl-actions__icon" aria-hidden>
-            <Plus size={20} strokeWidth={2.4} />
-          </span>
-          <span>New Verification</span>
-        </Link>
-        <Link to={`${basePath}/verification`} className="wl-actions__btn wl-actions__btn--blue">
-          <span className="wl-actions__icon" aria-hidden>
-            <ScanLine size={20} strokeWidth={2.2} />
-          </span>
-          <span>Scan QR / Label</span>
-        </Link>
-        <Link
-          to={`${basePath}/verification?focus=search`}
-          className="wl-actions__btn wl-actions__btn--green"
-        >
-          <span className="wl-actions__icon" aria-hidden>
-            <Search size={20} strokeWidth={2.2} />
-          </span>
-          <span>Search Verification</span>
-        </Link>
-        <button
-          type="button"
-          className="wl-actions__btn wl-actions__btn--orange"
-          onClick={() => void handleRefresh()}
-          disabled={refreshing}
-        >
-          <span className={`wl-actions__icon${refreshing ? ' wl-actions__icon--spin' : ''}`} aria-hidden>
-            <RefreshCw size={20} strokeWidth={2.2} />
-          </span>
-          <span>{refreshing ? 'Syncing…' : 'Sync / Refresh'}</span>
-        </button>
-      </nav>
     </div>
   );
 };
