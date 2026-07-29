@@ -56,6 +56,11 @@ async function resolvePathFromBuckets(
   return null;
 }
 
+/**
+ * Resolve a displayable image URL.
+ * Prefer the stored https download URL (works without SDK). Re-resolve via path only
+ * when URL is missing or caller asks for a refresh after a load error.
+ */
 export async function resolveStorageFileUrl(
   url?: string | null,
   path?: string | null,
@@ -68,12 +73,18 @@ export async function resolveStorageFileUrl(
     storagePath = storagePathFromDownloadUrl(trimmedUrl) ?? '';
   }
 
+  // Fast path: use the Firestore download URL as-is (token already embedded).
+  if (!options?.refresh && trimmedUrl && isDirectImageUrl(trimmedUrl)) {
+    return trimmedUrl;
+  }
+
   if (storagePath) {
     const resolved = await resolvePathFromBuckets(storagePath, options?.refresh);
     if (resolved) return resolved;
   }
 
-  if (!options?.refresh && trimmedUrl && isDirectImageUrl(trimmedUrl)) {
+  // After a failed refresh, still fall back to the original download URL.
+  if (trimmedUrl && isDirectImageUrl(trimmedUrl)) {
     return trimmedUrl;
   }
 
