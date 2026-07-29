@@ -319,13 +319,19 @@ export function verificationStatusFilterBucket(
   record: SiteCalibration,
 ): Exclude<VerificationStatusFilter, 'all' | 'duplicates'> {
   if (isVerificationRejected(record)) return 'rejected';
-  if (isVerificationFailedAtSubmit(record)) return 'failed_submit';
-  if (isVerificationFailedAtCertification(record)) return 'failed_certification';
   if (isVerificationFullyCertified(record)) return 'certified';
   const status = normalizeVerificationStatus(record);
-  if (status === 'certified') return 'certified';
-  if (status === 'approved') return 'approved';
-  if (status === 'submitted') return 'submitted';
+  if (status === 'draft') return 'draft';
+  // Legacy approved / pipeline-failed / incomplete certified → still in eMAAP queue.
+  if (
+    status === 'submitted'
+    || status === 'approved'
+    || status === 'certified'
+    || isVerificationFailedAtSubmit(record)
+    || isVerificationFailedAtCertification(record)
+  ) {
+    return 'submitted';
+  }
   return 'draft';
 }
 
@@ -340,14 +346,11 @@ export function matchesVerificationStatusFilter(
   if (filter === 'rejected') return isVerificationRejected(record);
   if (filter === 'certified') return isVerificationFullyCertified(record);
   if (filter === 'submitted') {
-    return normalizeVerificationStatus(record) === 'submitted' && !isVerificationFailedAtSubmit(record);
+    return verificationStatusFilterBucket(record) === 'submitted';
   }
   if (filter === 'approved') {
-    return (
-      normalizeVerificationStatus(record) === 'approved'
-      && !isVerificationFailedAtCertification(record)
-      && !isVerificationRejected(record)
-    );
+    // Legacy deep-link — same as submitted (approved mid-state retired).
+    return verificationStatusFilterBucket(record) === 'submitted';
   }
   return normalizeVerificationStatus(record) === filter;
 }
@@ -409,20 +412,12 @@ export function tallyVerificationStatusFilters(
 export function buildVerificationStatusFilterOptions(
   counts: VerificationStatusFilterCounts,
 ): { value: VerificationStatusFilter; label: string; count: number }[] {
+  // eMAAP pipeline: Draft → Submitted → Certified only (legacy stages hidden).
   return [
     { value: 'all', label: 'All stages', count: counts.all },
     { value: 'draft', label: 'Draft', count: counts.draft },
     { value: 'submitted', label: 'Submitted', count: counts.submitted },
-    { value: 'approved', label: 'Approved', count: counts.approved },
     { value: 'certified', label: 'Certified', count: counts.certified },
-    { value: 'failed_submit', label: 'Failed at submit', count: counts.failed_submit },
-    {
-      value: 'failed_certification',
-      label: 'Failed at certification',
-      count: counts.failed_certification,
-    },
-    { value: 'rejected', label: 'Rejected', count: counts.rejected },
-    { value: 'duplicates', label: 'Duplicates', count: counts.duplicates },
   ];
 }
 
