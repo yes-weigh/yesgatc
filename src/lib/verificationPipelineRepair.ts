@@ -187,6 +187,7 @@ export async function repairVerificationSubmitted(
     certifiedAt: deleteField(),
     certificatePdfUrl: deleteField(),
     certificateNumber: deleteField(),
+    emaapCertificatePdfUrl: deleteField(),
     pipelineFailedPhase: deleteField(),
     pipelineFailureMessage: deleteField(),
     pipelineFailedAt: deleteField(),

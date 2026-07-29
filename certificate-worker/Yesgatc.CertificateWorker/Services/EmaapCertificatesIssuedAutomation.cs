@@ -7,7 +7,10 @@ using Yesgatc.CertificateWorker.Models;
 
 namespace Yesgatc.CertificateWorker.Services;
 
-public sealed record EmaapCertificateDownloadResult(string CertificateNumber, string LocalPdfPath);
+public sealed record EmaapCertificateDownloadResult(
+    string CertificateNumber,
+    string LocalPdfPath,
+    string? EmaapPdfUrl = null);
 
 /// <summary>
 /// eMAAP Certificates Issued: dismiss success OK, open list, match Belongs to + Mobile,
@@ -378,7 +381,7 @@ public static class EmaapCertificatesIssuedAutomation
 
             try
             {
-                await SaveCertificatePdfViaDownloadClickAsync(
+                var emaapPdfUrl = await SaveCertificatePdfViaDownloadClickAsync(
                     page,
                     best,
                     party.BelongToName,
@@ -387,7 +390,10 @@ public static class EmaapCertificatesIssuedAutomation
 
                 if (await IsValidPdfFileAsync(savePath, cancellationToken))
                 {
-                    return new EmaapCertificateDownloadResult(best.CertificateNumber, savePath);
+                    return new EmaapCertificateDownloadResult(
+                        best.CertificateNumber,
+                        savePath,
+                        NormalizeEmaapCertificatePdfUrl(emaapPdfUrl));
                 }
 
                 lastError = new InvalidOperationException(
@@ -493,7 +499,8 @@ public static class EmaapCertificatesIssuedAutomation
     /// Never accept bytes that are not %PDF — Chrome sometimes yields HTML/error bodies.
     /// Uses in-browser fetch (Chrome TLS) — Playwright APIRequest fails with "local issuer certificate".
     /// </summary>
-    private static async Task SaveCertificatePdfViaDownloadClickAsync(
+    /// <returns>Public eMAAP gatcapi PDF URL when observed during download; otherwise null.</returns>
+    private static async Task<string?> SaveCertificatePdfViaDownloadClickAsync(
         IPage page,
         EmaapIssuedRowMatch best,
         string belongToName,
@@ -501,12 +508,13 @@ public static class EmaapCertificatesIssuedAutomation
         CancellationToken cancellationToken)
     {
         IPage? pdfPage = null;
-        Task<byte[]?>? pdfResponseBodyTask = null;
+        Task<(string? Url, byte[]? Body)>? pdfResponseBodyTask = null;
+        string? emaapPdfUrl = null;
 
         void OnPage(object? _, IPage newPage)
         {
             pdfPage ??= newPage;
-            pdfResponseBodyTask ??= CapturePdfResponseBodyAsync(newPage);
+            pdfResponseBodyTask ??= CapturePdfResponseAsync(newPage);
         }
 
         page.Context.Page += OnPage;
@@ -524,9 +532,19 @@ public static class EmaapCertificatesIssuedAutomation
                     continue;
                 }
 
-                if (await TrySaveValidPdfFromBrowserTabAsync(
-                        existing, existingUrl, savePath, cancellationToken))
+                if (IsEmaapCertificatePdfUrl(existingUrl))
                 {
+                    emaapPdfUrl = existingUrl;
+                }
+
+                if (await TrySaveValidPdfFromBrowserTabAsync(
+                        existing, existingUrl, savePath, cancellationToken) is { Ok: true } savedExisting)
+                {
+                    if (!string.IsNullOrWhiteSpace(savedExisting.EmaapUrl))
+                    {
+                        emaapPdfUrl = savedExisting.EmaapUrl;
+                    }
+
                     try
                     {
                         await existing.CloseAsync();
@@ -536,7 +554,7 @@ public static class EmaapCertificatesIssuedAutomation
                     }
 
                     await page.BringToFrontAsync();
-                    return;
+                    return emaapPdfUrl;
                 }
             }
 
@@ -557,6 +575,11 @@ public static class EmaapCertificatesIssuedAutomation
                 if (downloadTask is not null && downloadTask.IsCompletedSuccessfully)
                 {
                     var download = await downloadTask;
+                    if (IsEmaapCertificatePdfUrl(download.Url))
+                    {
+                        emaapPdfUrl = download.Url;
+                    }
+
                     var tempPath = savePath + ".download";
                     try
                     {
@@ -565,7 +588,7 @@ public static class EmaapCertificatesIssuedAutomation
                         if (await IsValidPdfFileAsync(tempPath, cancellationToken))
                         {
                             File.Copy(tempPath, savePath, overwrite: true);
-                            return;
+                            return emaapPdfUrl;
                         }
                     }
                     finally
@@ -592,10 +615,16 @@ public static class EmaapCertificatesIssuedAutomation
 
                 if (pdfResponseBodyTask is not null && pdfResponseBodyTask.IsCompletedSuccessfully)
                 {
-                    var body = await pdfResponseBodyTask;
-                    if (IsPdfBytes(body))
+                    var captured = await pdfResponseBodyTask;
+                    if (!string.IsNullOrWhiteSpace(captured.Url)
+                        && IsEmaapCertificatePdfUrl(captured.Url))
                     {
-                        await File.WriteAllBytesAsync(savePath, body!, cancellationToken);
+                        emaapPdfUrl = captured.Url;
+                    }
+
+                    if (IsPdfBytes(captured.Body))
+                    {
+                        await File.WriteAllBytesAsync(savePath, captured.Body!, cancellationToken);
                         if (pdfPage is not null)
                         {
                             try
@@ -608,7 +637,7 @@ public static class EmaapCertificatesIssuedAutomation
                         }
 
                         await page.BringToFrontAsync();
-                        return;
+                        return emaapPdfUrl;
                     }
 
                     // Non-PDF response — try print fallback on the tab if still open.
@@ -628,11 +657,21 @@ public static class EmaapCertificatesIssuedAutomation
                     }
 
                     var url = pdfPage.Url ?? string.Empty;
+                    if (IsEmaapCertificatePdfUrl(url))
+                    {
+                        emaapPdfUrl = url;
+                    }
+
                     if (IsEmaapCertificatePdfUrl(url) || LooksLikeChromePdfViewer(url))
                     {
                         if (await TrySaveValidPdfFromBrowserTabAsync(
-                                pdfPage, url, savePath, cancellationToken))
+                                pdfPage, url, savePath, cancellationToken) is { Ok: true } savedTab)
                         {
+                            if (!string.IsNullOrWhiteSpace(savedTab.EmaapUrl))
+                            {
+                                emaapPdfUrl = savedTab.EmaapUrl;
+                            }
+
                             try
                             {
                                 await pdfPage.CloseAsync();
@@ -642,7 +681,7 @@ public static class EmaapCertificatesIssuedAutomation
                             }
 
                             await page.BringToFrontAsync();
-                            return;
+                            return emaapPdfUrl;
                         }
                     }
                 }
@@ -659,23 +698,24 @@ public static class EmaapCertificatesIssuedAutomation
         }
     }
 
-    private static async Task<byte[]?> CapturePdfResponseBodyAsync(IPage pdfPage)
+    private static async Task<(string? Url, byte[]? Body)> CapturePdfResponseAsync(IPage pdfPage)
     {
         try
         {
             var response = await pdfPage.WaitForResponseAsync(
                 static r => IsEmaapCertificatePdfUrl(r.Url) && r.Ok,
                 new PageWaitForResponseOptions { Timeout = 90_000 });
-            return await response.BodyAsync();
+            var body = await response.BodyAsync();
+            return (response.Url, body);
         }
         catch (PlaywrightException)
         {
-            return null;
+            return (null, null);
         }
     }
 
     /// <summary>Pull PDF bytes via Chrome navigation (TLS/cookies) — not Playwright APIRequest.</summary>
-    private static async Task<bool> TrySaveValidPdfFromBrowserTabAsync(
+    private static async Task<(bool Ok, string? EmaapUrl)> TrySaveValidPdfFromBrowserTabAsync(
         IPage browserPage,
         string url,
         string savePath,
@@ -701,7 +741,7 @@ public static class EmaapCertificatesIssuedAutomation
             if (IsPdfBytes(body))
             {
                 await File.WriteAllBytesAsync(savePath, body, cancellationToken);
-                return true;
+                return (true, IsEmaapCertificatePdfUrl(response.Url) ? response.Url : null);
             }
         }
         catch (Exception)
@@ -748,7 +788,7 @@ public static class EmaapCertificatesIssuedAutomation
                 if (IsPdfBytes(fetched))
                 {
                     await File.WriteAllBytesAsync(savePath, fetched, cancellationToken);
-                    return true;
+                    return (true, IsEmaapCertificatePdfUrl(url) ? url : null);
                 }
             }
         }
@@ -770,7 +810,7 @@ public static class EmaapCertificatesIssuedAutomation
             if (IsPdfBytes(printed))
             {
                 await File.WriteAllBytesAsync(savePath, printed, cancellationToken);
-                return true;
+                return (true, IsEmaapCertificatePdfUrl(url) ? url : null);
             }
         }
         catch (Exception)
@@ -778,14 +818,28 @@ public static class EmaapCertificatesIssuedAutomation
             // ignore
         }
 
-        return false;
+        return (false, null);
     }
 
-    private static bool IsEmaapCertificatePdfUrl(string url) =>
-        url.Contains("thirPartyCertificate", StringComparison.OrdinalIgnoreCase)
-        || url.Contains("thirdPartyCertificate", StringComparison.OrdinalIgnoreCase)
-        || (url.Contains("gatcapi", StringComparison.OrdinalIgnoreCase)
-            && url.Contains(".pdf", StringComparison.OrdinalIgnoreCase));
+    private static bool IsEmaapCertificatePdfUrl(string? url) =>
+        !string.IsNullOrWhiteSpace(url)
+        && (url.Contains("thirPartyCertificate", StringComparison.OrdinalIgnoreCase)
+            || url.Contains("thirdPartyCertificate", StringComparison.OrdinalIgnoreCase)
+            || (url.Contains("gatcapi", StringComparison.OrdinalIgnoreCase)
+                && url.Contains(".pdf", StringComparison.OrdinalIgnoreCase)));
+
+    private static string? NormalizeEmaapCertificatePdfUrl(string? url)
+    {
+        var trimmed = url?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed) || !IsEmaapCertificatePdfUrl(trimmed))
+        {
+            return null;
+        }
+
+        // Drop fragment; keep query if present (eMAAP usually has none).
+        var hash = trimmed.IndexOf('#');
+        return hash >= 0 ? trimmed[..hash] : trimmed;
+    }
 
     private static bool LooksLikeChromePdfViewer(string url) =>
         url.Contains("chrome-extension://", StringComparison.OrdinalIgnoreCase)

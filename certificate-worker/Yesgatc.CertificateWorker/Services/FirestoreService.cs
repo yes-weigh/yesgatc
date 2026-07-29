@@ -187,6 +187,7 @@ public sealed class FirestoreService
         string idToken,
         CertificatePdfUploadResult? certificatePdf = null,
         string? certificateNumber = null,
+        string? emaapCertificatePdfUrl = null,
         CancellationToken cancellationToken = default)
     {
         var verification = await GetVerificationByIdAsync(jobId, idToken, cancellationToken);
@@ -217,6 +218,11 @@ public sealed class FirestoreService
         if (!string.IsNullOrWhiteSpace(certificateNumber))
         {
             fields["certificateNumber"] = certificateNumber.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(emaapCertificatePdfUrl))
+        {
+            fields["emaapCertificatePdfUrl"] = emaapCertificatePdfUrl.Trim();
         }
 
         var documents = new FirestoreDocumentClient(_settings);
@@ -266,6 +272,7 @@ public sealed class FirestoreService
         string signedPdfPath,
         string idToken,
         string? certificateNumber = null,
+        string? emaapCertificatePdfUrl = null,
         CancellationToken cancellationToken = default)
     {
         var uploader = new FirebaseStorageUploadService(_settings);
@@ -280,6 +287,7 @@ public sealed class FirestoreService
             idToken,
             certificatePdf,
             certificateNumber,
+            emaapCertificatePdfUrl,
             cancellationToken);
     }
 

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { db } from '../firebase';
-import { buildDocaCertificateViewUrl } from '../lib/docaCertificateUrl';
+import { buildCertificateVerifyUrl } from '../lib/certificateVerifyUrl';
 import { playVerificationSuccessSound } from '../lib/playVerificationSuccessSound';
 import {
   buildVerificationSubmitProgressDetails,
@@ -72,8 +72,12 @@ function detailRowIcon(rowId: string) {
   }
 }
 
-function VerificationProgressQr({ certificateNumber }: { certificateNumber?: string | null }) {
-  const url = useMemo(() => buildDocaCertificateViewUrl(certificateNumber), [certificateNumber]);
+function VerificationProgressQr({ record }: { record: SiteCalibration }) {
+  const url = useMemo(
+    () => buildCertificateVerifyUrl(record),
+    [record.emaapCertificatePdfUrl],
+  );
+  const certificateNumber = record.certificateNumber?.trim();
   if (!url) return null;
 
   return (
@@ -82,7 +86,7 @@ function VerificationProgressQr({ certificateNumber }: { certificateNumber?: str
       target="_blank"
       rel="noopener noreferrer"
       className="verification-submit-progress-qr"
-      aria-label={`View certificate ${certificateNumber?.trim()}`}
+      aria-label={`View certificate ${certificateNumber ?? ''}`.trim()}
     >
       <QRCode
         value={url}
@@ -282,7 +286,7 @@ export const VerificationSubmitProgressOverlay: React.FC<
               record={primaryRecord}
               className="verification-certified-actions--progress"
             />
-            <VerificationProgressQr certificateNumber={primaryRecord.certificateNumber} />
+            <VerificationProgressQr record={primaryRecord} />
             <p className="verification-submit-progress-signatory mb-0">Authorised Signatory</p>
           </div>
         )}

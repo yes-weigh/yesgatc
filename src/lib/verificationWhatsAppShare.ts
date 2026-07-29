@@ -1,5 +1,5 @@
 import { normalizePhone } from './contactFields';
-import { buildDocaCertificateViewUrl } from './docaCertificateUrl';
+import { buildCertificateVerifyUrl } from './certificateVerifyUrl';
 
 export function buildVerificationWhatsAppShareMessage(
   record: {
@@ -7,9 +7,10 @@ export function buildVerificationWhatsAppShareMessage(
     certificateNumber?: string;
     applicationNumber?: string;
     serialNumber?: string;
+    emaapCertificatePdfUrl?: string;
   },
 ): string {
-  const certificateViewUrl = buildDocaCertificateViewUrl(record.certificateNumber);
+  const certificateViewUrl = buildCertificateVerifyUrl(record);
   const lines = ['Certificate of Verification'];
   if (record.customerName?.trim()) {
     lines.push(`Customer: ${record.customerName.trim()}`);

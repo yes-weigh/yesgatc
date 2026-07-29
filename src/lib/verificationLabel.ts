@@ -1,5 +1,5 @@
 import { normalizePhone } from './contactFields';
-import { buildDocaCertificateViewUrl } from './docaCertificateUrl';
+import { buildCertificateVerifyUrl } from './certificateVerifyUrl';
 import type { SiteCalibration } from '../types';
 
 /** Sticker canvas — 40 × 60 mm portrait at print. */
@@ -91,9 +91,9 @@ export function buildVerificationLabelData(
     missingFields.push('Certification date (for valid till)');
   }
 
-  const verifyUrl = buildDocaCertificateViewUrl(certificateNumber);
+  const verifyUrl = buildCertificateVerifyUrl(record);
   if (!verifyUrl) {
-    missingFields.push('Certificate view URL');
+    missingFields.push('eMAAP certificate PDF URL');
   }
 
   const rcPhoneDisplay = formatVerificationLabelPhone(rcPhone);

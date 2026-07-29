@@ -25,6 +25,7 @@ const CERTIFICATE_OUTCOME_FIELDS = [
   'certificatePdfPath',
   'certificatePdfName',
   'certificatePdfContentType',
+  'emaapCertificatePdfUrl',
   'pipelineFailedPhase',
   'pipelineFailureMessage',
   'pipelineFailedAt',

@@ -1307,6 +1307,7 @@ public sealed class AutomationService : IAsyncDisposable
                 download.LocalPdfPath,
                 firebaseIdToken,
                 download.CertificateNumber,
+                download.EmaapPdfUrl,
                 cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
