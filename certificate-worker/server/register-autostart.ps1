@@ -1,4 +1,4 @@
-# Register Windows Scheduled Task so Certificate Worker starts after sign-in and after VM reboot.
+# Register Windows Scheduled Task + HKCU Run so Certificate Worker starts after sign-in / reboot.
 #
 # Example (run once on the server as the same user you use for RDP + DOCA):
 #   powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\register-autostart.ps1
@@ -28,7 +28,7 @@ if (-not (Test-Path $startScript)) {
 $currentUser = "$env:USERDOMAIN\$env:USERNAME"
 $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$startScript`" -InstallPath `"$InstallPath`"" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`" -InstallPath `"$InstallPath`"" `
     -WorkingDirectory $InstallPath
 
 $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
@@ -56,8 +56,17 @@ Register-ScheduledTask `
     -Principal $principal `
     -Force | Out-Null
 
+# Belt-and-suspenders: also start at user logon via Run key (survives if task is disabled).
+$runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+$runCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`" -InstallPath `"$InstallPath`""
+if (-not (Test-Path $runKey)) {
+    New-Item -Path $runKey -Force | Out-Null
+}
+Set-ItemProperty -Path $runKey -Name $TaskName -Value $runCommand -Type String -Force
+
 Write-Host "Registered scheduled task '$TaskName' for $currentUser" -ForegroundColor Green
 Write-Host "  - At logon (RDP sign-in)" -ForegroundColor DarkGray
 Write-Host "  - At startup (+ $StartupDelayMinutes min delay, after VM reboot when this user has a session)" -ForegroundColor DarkGray
+Write-Host "  - HKCU Run key (logon)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "After a host/node reboot: sign in via RDP once, or configure Windows auto-logon for unattended restart." -ForegroundColor Yellow

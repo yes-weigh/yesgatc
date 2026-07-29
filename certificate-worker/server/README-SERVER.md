@@ -101,7 +101,13 @@ powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-updat
   -Start
 ```
 
-**After auto-start script changes**, add `-EnsureAutoStart`:
+**After auto-start script changes**, or any `-Start` pull (now auto-registers):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -Start
+```
+
+Or explicitly:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -EnsureAutoStart

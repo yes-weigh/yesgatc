@@ -132,6 +132,7 @@ Auto worker settings (`AutoWorker` section in `appsettings.json`):
 | `RetryDelaySeconds` | 15 | Wait after a failed job before retry |
 | `MaxSubmitRetries` | 3 | Max attempts for **submitted** jobs. On exhaustion → `pipelineFailedPhase=submit` (**Failed at submit**). Permanent data errors → `status=rejected`. |
 | Auto-run checkbox | persisted | Last value saved in `%LOCALAPPDATA%\YesGATC\CertificateWorker\credentials.local.json` (`autoWorkerEnabled`). Overrides `AutoWorker.Enabled` after first toggle. |
+| Start with Windows | default on | App registers HKCU Run + scheduled task on launch. After reboot: RDP sign-in or Windows auto-logon required (headed Chrome). `pull-update.ps1 -Start` also runs `register-autostart.ps1`. |
 | `MaxPostApprovalRetries` | 3 | Max retries for **approved** jobs (Phase 2 signed PDF upload). Status stays `approved` in Firebase. |
 | `SkipBatchConfirmation` | true | No dialog when processing batches |
 

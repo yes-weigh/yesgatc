@@ -57,6 +57,8 @@ public partial class MainWindow : Window
     private bool _isBusy;
     private bool _autoWorkerEnabled;
     private bool _autoWorkerPausedForDoca;
+    private bool _startWithWindows = true;
+    private bool _suppressStartWithWindowsCheckBoxEvent;
     /// <summary>Waiting on eMAAP OTP — stay on eMAAP, do not probe DOCA.</summary>
     private bool _emaapOtpIdle;
     private bool _emaapMasterOtpTried;
@@ -105,6 +107,7 @@ public partial class MainWindow : Window
         LoadChromeProfilePicker(settings);
         LoadSavedCredentials(settings);
         ConfigureAutoWorkerFromSettings();
+        ConfigureStartWithWindowsFromStore();
 
         Loaded += MainWindow_Loaded;
         Closed += MainWindow_Closed;
@@ -421,7 +424,8 @@ public partial class MainWindow : Window
             docaFillOnly: false,
             _docaSessionProbeMinutes,
             chromeProfile,
-            autoWorkerEnabled: _autoWorkerEnabled);
+            autoWorkerEnabled: _autoWorkerEnabled,
+            startWithWindows: _startWithWindows);
     }
 
     private bool TryApplyDocaSessionProbeMinutesFromUi(bool persist, bool restartWatchdog)
@@ -489,6 +493,19 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         _telemetry.LogDiagnostic = message => LogToFile($"[telemetry] {message}");
+
+        // Re-assert autostart on every launch (install path / scripts may have been updated).
+        if (_startWithWindows)
+        {
+            try
+            {
+                WindowsAutostartService.EnsureRegistered();
+            }
+            catch (Exception ex)
+            {
+                LogToFile($"[autostart] ensure failed: {ex.Message}", ex);
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(AadharBox.Text) && !string.IsNullOrWhiteSpace(PasswordBox.Text))
         {
@@ -721,6 +738,75 @@ public partial class MainWindow : Window
         }
 
         UpdateAutoWorkerStatusText();
+    }
+
+    private void ConfigureStartWithWindowsFromStore()
+    {
+        var saved = _credentialStore.Load();
+        // Default ON so server reboots bring the worker back after logon.
+        _startWithWindows = saved.StartWithWindows ?? true;
+        _suppressStartWithWindowsCheckBoxEvent = true;
+        try
+        {
+            StartWithWindowsCheckBox.IsChecked = _startWithWindows;
+        }
+        finally
+        {
+            _suppressStartWithWindowsCheckBoxEvent = false;
+        }
+
+        ApplyStartWithWindowsPreference(persist: true, announce: false);
+    }
+
+    private void StartWithWindowsCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressStartWithWindowsCheckBoxEvent)
+        {
+            return;
+        }
+
+        _startWithWindows = StartWithWindowsCheckBox.IsChecked == true;
+        ApplyStartWithWindowsPreference(persist: true, announce: true);
+    }
+
+    private void ApplyStartWithWindowsPreference(bool persist, bool announce)
+    {
+        try
+        {
+            if (_startWithWindows)
+            {
+                WindowsAutostartService.EnsureRegistered();
+                if (announce)
+                {
+                    AddActivityEntry("Start with Windows ON — registered for logon / reboot.");
+                    SetStatus(
+                        "Start with Windows enabled. After reboot, sign in (or use auto-logon) and the worker starts.",
+                        StatusKind.Success);
+                }
+            }
+            else
+            {
+                WindowsAutostartService.Unregister();
+                if (announce)
+                {
+                    AddActivityEntry("Start with Windows OFF — removed from startup.");
+                    SetStatus("Start with Windows disabled.", StatusKind.Info);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LogToFile($"[autostart] {ex.Message}", ex);
+            if (announce)
+            {
+                SetStatus($"Could not update Start with Windows: {ex.Message}", ex, StatusKind.Error);
+            }
+        }
+
+        if (persist)
+        {
+            PersistCredentials();
+        }
     }
 
     private void AutoRunCheckBox_Changed(object sender, RoutedEventArgs e)

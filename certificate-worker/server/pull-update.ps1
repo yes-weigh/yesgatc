@@ -339,6 +339,10 @@ if ($Start -and $shouldInstall) {
     }
 }
 
+if ($Start) {
+    $EnsureAutoStart = $true
+}
+
 if ($EnsureAutoStart -or ($CreateLogonTask -and -not $shouldInstall)) {
     $registerScript = Join-Path $InstallPath "register-autostart.ps1"
     if (-not (Test-Path $registerScript)) {
@@ -346,7 +350,7 @@ if ($EnsureAutoStart -or ($CreateLogonTask -and -not $shouldInstall)) {
     }
     if (Test-Path $registerScript) {
         Write-Host ""
-        Write-Host "Ensuring auto-start scheduled task ..." -ForegroundColor Cyan
+        Write-Host "Ensuring auto-start scheduled task + Run key ..." -ForegroundColor Cyan
         & powershell -ExecutionPolicy Bypass -File $registerScript -InstallPath $InstallPath
     }
     else {

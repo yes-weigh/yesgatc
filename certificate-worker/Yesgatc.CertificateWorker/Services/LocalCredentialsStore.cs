@@ -60,7 +60,8 @@ public sealed class LocalCredentialsStore
         bool docaFillOnly = false,
         int? docaSessionProbeMinutes = null,
         string? chromeProfileDirectory = null,
-        bool? autoWorkerEnabled = null)
+        bool? autoWorkerEnabled = null,
+        bool? startWithWindows = null)
     {
         var existing = Load();
         Save(new StoredCredentials
@@ -72,6 +73,7 @@ public sealed class LocalCredentialsStore
             DocaSessionProbeMinutes = docaSessionProbeMinutes,
             ChromeProfileDirectory = chromeProfileDirectory?.Trim() ?? string.Empty,
             AutoWorkerEnabled = autoWorkerEnabled ?? existing.AutoWorkerEnabled,
+            StartWithWindows = startWithWindows ?? existing.StartWithWindows,
         });
     }
 }
@@ -98,6 +100,11 @@ public sealed class StoredCredentials
     /// Last Auto-run batch checkbox value. Null = fall back to appsettings AutoWorker.Enabled.
     /// </summary>
     public bool? AutoWorkerEnabled { get; set; }
+
+    /// <summary>
+    /// Start Certificate Worker when Windows starts / user logs on. Null = default true.
+    /// </summary>
+    public bool? StartWithWindows { get; set; }
 
     [JsonPropertyName("rc")]
     public CredentialSettings? LegacyRc { get; set; }
