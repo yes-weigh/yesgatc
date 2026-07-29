@@ -23,6 +23,10 @@ public static class DeepSeekChatCaptchaOcr
         @"^(analys|analyz|thinking|searching|search|vision|deepthink|loading|typing|generat|process|wait|answer|reply|reading|look)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly object RecentAnswersLock = new();
+    private static readonly Queue<string> RecentAnswers = new();
+    private const int RecentAnswerCapacity = 12;
+
     private const string Prompt =
         """
         This image is a CASE-SENSITIVE website login captcha.
@@ -63,28 +67,13 @@ public static class DeepSeekChatCaptchaOcr
             {
                 deepseek = await browserContext.NewPageAsync();
                 createdDeepSeek = true;
-                await deepseek.GotoAsync(
-                    ChatUrl,
-                    new PageGotoOptions
-                    {
-                        WaitUntil = WaitUntilState.DOMContentLoaded,
-                        Timeout = 90_000,
-                    });
-            }
-            else if (!deepseek.Url.Contains("chat.deepseek.com", StringComparison.OrdinalIgnoreCase))
-            {
-                await deepseek.GotoAsync(
-                    ChatUrl,
-                    new PageGotoOptions
-                    {
-                        WaitUntil = WaitUntilState.DOMContentLoaded,
-                        Timeout = 90_000,
-                    });
             }
 
             // Keep OCR off to the side — do not steal focus from eMAAP longer than needed.
-            // BringToFront only for interact; restore portal in finally.
             await deepseek.BringToFrontAsync();
+
+            // Always hard-reset chat so prior captcha images/answers cannot leak into this OCR.
+            await ForceFreshChatAsync(deepseek, cancellationToken);
 
             if (await LooksLikeLoginGateAsync(deepseek))
             {
@@ -92,25 +81,71 @@ public static class DeepSeekChatCaptchaOcr
                     "DeepSeek login required — sign in once at chat.deepseek.com in this browser, then retry captcha.");
             }
 
-            await EnsureChatReadyAsync(deepseek, cancellationToken);
-            await EnsureFreshChatAsync(deepseek, cancellationToken);
-
-            // Snapshot prior answer so we never reuse the previous captcha OCR result.
+            var forbidden = SnapshotRecentAnswers();
             var previousReply = SanitizeCaptcha(await ExtractLatestAssistantTextAsync(deepseek));
-            var baselineFingerprints = await CollectAssistantFingerprintsAsync(deepseek);
+            if (!string.IsNullOrWhiteSpace(previousReply))
+            {
+                forbidden.Add(previousReply);
+            }
 
+            var baselineFingerprints = await CollectAssistantFingerprintsAsync(deepseek);
+            foreach (var fp in baselineFingerprints)
+            {
+                var clean = SanitizeCaptcha(fp);
+                if (!string.IsNullOrWhiteSpace(clean))
+                {
+                    forbidden.Add(clean);
+                }
+            }
+
+            await ClearComposerAttachmentsAsync(deepseek);
             await AttachImageAsync(deepseek, tempPath, visionBytes, cancellationToken);
-            // DeepSeek OCR fails on captcha PNGs — must switch to Vision (wait as before).
-            await EnsureVisionModeAsync(deepseek, cancellationToken);
+            if (!await EnsureSingleComposerAttachmentAsync(deepseek, tempPath, visionBytes, cancellationToken))
+            {
+                return string.Empty;
+            }
+
+            // Captcha PNGs fail DeepSeek text OCR — Vision must be active before send.
+            if (!await EnsureVisionModeAsync(deepseek, cancellationToken))
+            {
+                return string.Empty;
+            }
+
             await SendPromptAsync(deepseek, cancellationToken);
+
+            // Vision hint reappearing after send = model never saw the image.
+            if (await PageHasVisionHintAsync(deepseek))
+            {
+                if (!await TryClickVisionAsync(deepseek) || await PageHasVisionHintAsync(deepseek))
+                {
+                    return string.Empty;
+                }
+
+                await deepseek.WaitForTimeoutAsync(800);
+            }
 
             var raw = await WaitForAssistantReplyAsync(
                 deepseek,
                 cancellationToken,
                 previousReply,
-                baselineFingerprints);
+                baselineFingerprints,
+                forbidden);
             var normalized = SanitizeCaptcha(raw);
-            return CaptchaTextPattern.IsMatch(normalized) ? normalized : string.Empty;
+            if (!CaptchaTextPattern.IsMatch(normalized) || IsRecentAnswer(normalized))
+            {
+                return string.Empty;
+            }
+
+            RememberAnswer(normalized);
+            return normalized;
+        }
+        catch (PlaywrightException ex) when (
+            ex.Message.Contains("Execution context was destroyed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Frame was detached", StringComparison.OrdinalIgnoreCase))
+        {
+            // eMAAP/DeepSeek navigated mid-OCR — treat as failed attempt, refresh + retry.
+            return string.Empty;
         }
         finally
         {
@@ -141,6 +176,44 @@ public static class DeepSeekChatCaptchaOcr
             }
 
             await RestorePortalPageAsync(browserContext, returnToPage);
+        }
+    }
+
+    private static HashSet<string> SnapshotRecentAnswers()
+    {
+        lock (RecentAnswersLock)
+        {
+            return new HashSet<string>(RecentAnswers, StringComparer.Ordinal);
+        }
+    }
+
+    private static bool IsRecentAnswer(string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer))
+        {
+            return false;
+        }
+
+        lock (RecentAnswersLock)
+        {
+            return RecentAnswers.Any(x => x.Equals(answer, StringComparison.Ordinal));
+        }
+    }
+
+    private static void RememberAnswer(string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer))
+        {
+            return;
+        }
+
+        lock (RecentAnswersLock)
+        {
+            RecentAnswers.Enqueue(answer);
+            while (RecentAnswers.Count > RecentAnswerCapacity)
+            {
+                RecentAnswers.Dequeue();
+            }
         }
     }
 
@@ -244,36 +317,127 @@ public static class DeepSeekChatCaptchaOcr
         cancellationToken.ThrowIfCancellationRequested();
     }
 
-    private static async Task EnsureFreshChatAsync(IPage page, CancellationToken cancellationToken)
+    private static async Task ForceFreshChatAsync(IPage page, CancellationToken cancellationToken)
     {
+        // Hard navigation clears stacked attachments + prior assistant tokens.
+        await page.GotoAsync(
+            ChatUrl,
+            new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.DOMContentLoaded,
+                Timeout = 90_000,
+            });
+        await EnsureChatReadyAsync(page, cancellationToken);
         await TryStartNewChatAsync(page);
-        await page.WaitForTimeoutAsync(700);
+        await page.WaitForTimeoutAsync(500);
+        await ClearComposerAttachmentsAsync(page);
         cancellationToken.ThrowIfCancellationRequested();
+    }
 
-        // Old thread still showing a short captcha answer → hard reset to new chat URL.
-        var leftover = SanitizeCaptcha(await ExtractLatestAssistantTextAsync(page));
-        if (!CaptchaTextPattern.IsMatch(leftover))
+    private static async Task ClearComposerAttachmentsAsync(IPage page)
+    {
+        for (var round = 0; round < 10; round++)
         {
-            return;
-        }
+            int removed;
+            try
+            {
+                removed = await page.EvaluateAsync<int>(
+                    """
+                    () => {
+                      let n = 0;
+                      const floor = window.innerHeight * 0.4;
+                      const nodes = Array.from(document.querySelectorAll(
+                        'button, [role="button"], span, div, a'));
+                      for (const el of nodes) {
+                        const label = (
+                          el.getAttribute('aria-label')
+                          || el.getAttribute('title')
+                          || el.innerText
+                          || ''
+                        ).trim();
+                        if (!label) continue;
+                        const isRemove =
+                          /^(remove|delete|close|×|✕|x)$/i.test(label)
+                          || /remove (file|image|attachment)|delete (file|image|attachment)/i.test(label);
+                        if (!isRemove) continue;
+                        const r = el.getBoundingClientRect();
+                        if (r.width <= 0 || r.height <= 0 || r.bottom < floor) continue;
+                        el.click();
+                        n++;
+                      }
+                      return n;
+                    }
+                    """);
+            }
+            catch (PlaywrightException)
+            {
+                return;
+            }
 
+            if (removed <= 0)
+            {
+                break;
+            }
+
+            await page.WaitForTimeoutAsync(200);
+        }
+    }
+
+    private static async Task<int> CountComposerAttachmentsAsync(IPage page)
+    {
         try
         {
-            await page.GotoAsync(
-                ChatUrl,
-                new PageGotoOptions
-                {
-                    WaitUntil = WaitUntilState.DOMContentLoaded,
-                    Timeout = 60_000,
-                });
-            await EnsureChatReadyAsync(page, cancellationToken);
-            await TryStartNewChatAsync(page);
-            await page.WaitForTimeoutAsync(500);
+            return await page.EvaluateAsync<int>(
+                """
+                () => {
+                  const floor = window.innerHeight * 0.45;
+                  const imgs = Array.from(document.querySelectorAll(
+                    'img[src*="blob"], img[src*="data:image"], img[src*="deepseek"]'));
+                  let count = 0;
+                  for (const img of imgs) {
+                    const r = img.getBoundingClientRect();
+                    if (r.width >= 24 && r.height >= 24 && r.bottom >= floor) count++;
+                  }
+                  return count;
+                }
+                """);
         }
         catch (PlaywrightException)
         {
-            // continue with exclude-previous logic
+            return 0;
         }
+    }
+
+    private static async Task<bool> EnsureSingleComposerAttachmentAsync(
+        IPage page,
+        string tempPath,
+        byte[] visionBytes,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(8);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var count = await CountComposerAttachmentsAsync(page);
+            if (count == 1)
+            {
+                return true;
+            }
+
+            if (count > 1)
+            {
+                await ClearComposerAttachmentsAsync(page);
+                await AttachImageAsync(page, tempPath, visionBytes, cancellationToken);
+            }
+            else if (count == 0)
+            {
+                await AttachImageAsync(page, tempPath, visionBytes, cancellationToken);
+            }
+
+            await page.WaitForTimeoutAsync(250);
+        }
+
+        return await CountComposerAttachmentsAsync(page) == 1;
     }
 
     private static async Task TryStartNewChatAsync(IPage page)
@@ -364,7 +528,8 @@ public static class DeepSeekChatCaptchaOcr
         IPage page,
         CancellationToken cancellationToken,
         string previousSanitized,
-        HashSet<string> baselineFingerprints)
+        HashSet<string> baselineFingerprints,
+        HashSet<string> forbiddenAnswers)
     {
         var deadline = DateTime.UtcNow.AddSeconds(90);
         string stableCandidate = string.Empty;
@@ -376,7 +541,14 @@ public static class DeepSeekChatCaptchaOcr
 
             if (await PageHasVisionHintAsync(page))
             {
-                await TryClickVisionAsync(page);
+                if (!await TryClickVisionAsync(page))
+                {
+                    // Vision still required but click failed — do not accept any short token.
+                    await page.WaitForTimeoutAsync(400);
+                    continue;
+                }
+
+                await page.WaitForTimeoutAsync(600);
             }
 
             // Still generating ("Analysing…") — do not scrape yet.
@@ -406,12 +578,14 @@ public static class DeepSeekChatCaptchaOcr
                 continue;
             }
 
-            var isOld =
-                (!string.IsNullOrWhiteSpace(previousSanitized)
-                 && sanitized.Equals(previousSanitized, StringComparison.OrdinalIgnoreCase))
-                || baselineFingerprints.Contains(sanitized);
+            var isForbidden =
+                forbiddenAnswers.Contains(sanitized)
+                || (!string.IsNullOrWhiteSpace(previousSanitized)
+                    && sanitized.Equals(previousSanitized, StringComparison.OrdinalIgnoreCase))
+                || baselineFingerprints.Contains(sanitized)
+                || IsRecentAnswer(sanitized);
 
-            if (isOld)
+            if (isForbidden)
             {
                 stableCandidate = string.Empty;
                 stableHits = 0;
@@ -425,6 +599,16 @@ public static class DeepSeekChatCaptchaOcr
                 stableHits++;
                 if (stableHits >= 2)
                 {
+                    // Final Vision gate — never accept answer while OCR fallback banner is up.
+                    if (await PageHasVisionHintAsync(page))
+                    {
+                        stableCandidate = string.Empty;
+                        stableHits = 0;
+                        await TryClickVisionAsync(page);
+                        await page.WaitForTimeoutAsync(500);
+                        continue;
+                    }
+
                     return sanitized;
                 }
             }
@@ -678,16 +862,19 @@ public static class DeepSeekChatCaptchaOcr
 
     /// <summary>
     /// After image upload DeepSeek shows "No text found. Try Vision." — click Vision and wait for it.
+    /// Returns false if the Vision banner is still visible (OCR would be garbage).
     /// </summary>
-    private static async Task EnsureVisionModeAsync(IPage page, CancellationToken cancellationToken)
+    private static async Task<bool> EnsureVisionModeAsync(IPage page, CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(12);
+        var clickedVision = false;
+        var deadline = DateTime.UtcNow.AddSeconds(15);
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             if (await TryClickVisionAsync(page))
             {
+                clickedVision = true;
                 // Wait for Vision to process the attachment (do not rush the answer path).
                 await page.WaitForTimeoutAsync(1_200);
                 if (await PageHasVisionHintAsync(page))
@@ -696,28 +883,54 @@ public static class DeepSeekChatCaptchaOcr
                     await page.WaitForTimeoutAsync(800);
                 }
 
-                return;
+                break;
             }
 
             if (!await PageHasVisionHintAsync(page)
-                && await page.Locator("img[src*='blob'], img[src*='data:image'], [class*='file'], [class*='attachment']").CountAsync() > 0)
+                && await CountComposerAttachmentsAsync(page) == 1)
             {
-                // Image attached, no Vision hint yet — keep waiting briefly.
+                // Image attached, no Vision hint yet — keep waiting briefly for banner.
                 await page.WaitForTimeoutAsync(300);
                 continue;
             }
 
             await page.WaitForTimeoutAsync(250);
         }
+
+        // Fail hard: banner still up means text-OCR path (wrong / invented glyphs).
+        if (await PageHasVisionHintAsync(page))
+        {
+            return false;
+        }
+
+        // Prefer an explicit Vision click; if banner never appeared, allow proceed only with one image.
+        return clickedVision || await CountComposerAttachmentsAsync(page) == 1;
     }
 
     private static async Task<bool> PageHasVisionHintAsync(IPage page)
     {
-        var body = page.Locator("body");
-        var text = await body.InnerTextAsync();
-        return text.Contains("Try Vision", StringComparison.OrdinalIgnoreCase)
-            || text.Contains("No text found", StringComparison.OrdinalIgnoreCase)
-            || text.Contains("No text extract", StringComparison.OrdinalIgnoreCase);
+        try
+        {
+            return await page.EvaluateAsync<bool>(
+                """
+                () => {
+                  const floor = window.innerHeight * 0.35;
+                  const nodes = Array.from(document.querySelectorAll('div,span,p,a,button'));
+                  for (const el of nodes) {
+                    const t = (el.innerText || el.textContent || '').trim();
+                    if (!t || t.length > 90) continue;
+                    if (!/Try Vision|No text found|No text extract/i.test(t)) continue;
+                    const r = el.getBoundingClientRect();
+                    if (r.width > 0 && r.height > 0 && r.bottom >= floor) return true;
+                  }
+                  return false;
+                }
+                """);
+        }
+        catch (PlaywrightException)
+        {
+            return false;
+        }
     }
 
     private static async Task<bool> TryClickVisionAsync(IPage page)
