@@ -1878,6 +1878,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   const pendingCustomerId = searchParams.get('customerId');
   const pendingStatusFilter = searchParams.get('status');
+  const pendingTypeFilter = searchParams.get('type');
   const pendingOpenId = searchParams.get('open');
   const pendingFocusSearch = searchParams.get('focus') === 'search';
   const pendingNewType = searchParams.get('new');
@@ -1954,6 +1955,21 @@ export const RCSiteCalibration: React.FC = () => {
       { replace: true },
     );
   }, [pendingStatusFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (pendingTypeFilter !== 'OV' && pendingTypeFilter !== 'RV' && pendingTypeFilter !== 'all') {
+      return;
+    }
+    setTypeFilter(pendingTypeFilter);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('type');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingTypeFilter, setSearchParams]);
 
   useEffect(() => {
     if (!pendingFocusSearch) return;

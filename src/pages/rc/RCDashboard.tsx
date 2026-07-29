@@ -26,6 +26,7 @@ import {
   getVerificationDisplayStatus,
   sanitizeVerificationDisplayText,
   tallyVerificationStatusFilters,
+  tallyVerificationTypeFilters,
   type VerificationStatusFilter,
 } from '../../lib/verificationRequest';
 import type { SiteCalibration } from '../../types';
@@ -139,6 +140,7 @@ export const RCDashboard: React.FC = () => {
   }, [rcUid, isVct]);
 
   const tally = useMemo(() => tallyVerificationStatusFilters(verifications), [verifications]);
+  const typeTally = useMemo(() => tallyVerificationTypeFilters(verifications), [verifications]);
 
   const stages = useMemo<StageCard[]>(
     () => [
@@ -251,25 +253,35 @@ export const RCDashboard: React.FC = () => {
         )
       ) : null}
 
-      <section className="wl-primary" aria-label="Start verification">
-        <Link to={`${basePath}/verification?new=OV`} className="wl-primary__card wl-primary__card--ov">
+      <section className="wl-primary" aria-label="Verification types">
+        <Link
+          to={`${basePath}/verification?type=OV`}
+          className="wl-primary__card wl-primary__card--ov"
+          aria-label={`Original Verification, ${typeTally.OV} total`}
+        >
           <span className="wl-primary__badge" aria-hidden>
             OV
           </span>
-          <span className="wl-primary__copy">
-            <span className="wl-primary__type">OV</span>
-            <span className="wl-primary__title">New Verification</span>
+          <span className="wl-primary__body">
+            <span className="wl-primary__stat-value">
+              {loadingVerifications ? '—' : typeTally.OV}
+            </span>
             <span className="wl-primary__sub">Original Verification</span>
           </span>
         </Link>
-        <Link to={`${basePath}/verification?new=RV`} className="wl-primary__card wl-primary__card--rv">
+        <Link
+          to={`${basePath}/verification?type=RV`}
+          className="wl-primary__card wl-primary__card--rv"
+          aria-label={`Re Verification, ${typeTally.RV} total`}
+        >
           <span className="wl-primary__badge" aria-hidden>
             RV
           </span>
-          <span className="wl-primary__copy">
-            <span className="wl-primary__type">RV</span>
-            <span className="wl-primary__title">Reverification</span>
-            <span className="wl-primary__sub">Reverification of existing instrument</span>
+          <span className="wl-primary__body">
+            <span className="wl-primary__stat-value">
+              {loadingVerifications ? '—' : typeTally.RV}
+            </span>
+            <span className="wl-primary__sub">Re Verification</span>
           </span>
         </Link>
       </section>
