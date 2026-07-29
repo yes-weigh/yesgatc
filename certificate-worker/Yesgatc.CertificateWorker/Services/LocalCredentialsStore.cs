@@ -59,8 +59,10 @@ public sealed class LocalCredentialsStore
         string captchaApiKey = "",
         bool docaFillOnly = false,
         int? docaSessionProbeMinutes = null,
-        string? chromeProfileDirectory = null)
+        string? chromeProfileDirectory = null,
+        bool? autoWorkerEnabled = null)
     {
+        var existing = Load();
         Save(new StoredCredentials
         {
             SuperAdmin = new CredentialSettings { Aadhar = aadhar.Trim(), Password = password },
@@ -69,6 +71,7 @@ public sealed class LocalCredentialsStore
             DocaFillOnly = docaFillOnly,
             DocaSessionProbeMinutes = docaSessionProbeMinutes,
             ChromeProfileDirectory = chromeProfileDirectory?.Trim() ?? string.Empty,
+            AutoWorkerEnabled = autoWorkerEnabled ?? existing.AutoWorkerEnabled,
         });
     }
 }
@@ -90,6 +93,11 @@ public sealed class StoredCredentials
 
     /// <summary>Chrome profile folder under User Data (Default, Profile 1, …). Empty = not chosen.</summary>
     public string ChromeProfileDirectory { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Last Auto-run batch checkbox value. Null = fall back to appsettings AutoWorker.Enabled.
+    /// </summary>
+    public bool? AutoWorkerEnabled { get; set; }
 
     [JsonPropertyName("rc")]
     public CredentialSettings? LegacyRc { get; set; }

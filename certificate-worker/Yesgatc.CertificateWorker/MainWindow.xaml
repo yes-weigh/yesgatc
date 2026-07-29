@@ -370,8 +370,9 @@
                                  BorderThickness="0"
                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                 ScrollViewer.CanContentScroll="False"
-                                 VirtualizingPanel.IsVirtualizing="False"
+                                 ScrollViewer.CanContentScroll="True"
+                                 VirtualizingPanel.IsVirtualizing="True"
+                                 VirtualizingPanel.VirtualizationMode="Recycling"
                                  FontSize="12"
                                  Foreground="{StaticResource TextMutedBrush}"
                                  MouseDoubleClick="ActivityLogList_MouseDoubleClick">

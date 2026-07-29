@@ -60,9 +60,9 @@
 
     <DropShadowEffect x:Key="GlassShadow"
                       Color="#000000"
-                      BlurRadius="32"
+                      BlurRadius="10"
                       ShadowDepth="0"
-                      Opacity="0.37"/>
+                      Opacity="0.22"/>
 
     <DropShadowEffect x:Key="PrimaryButtonShadow"
                       Color="#3B82F6"

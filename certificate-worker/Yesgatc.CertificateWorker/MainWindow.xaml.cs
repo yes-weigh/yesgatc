@@ -50,6 +50,7 @@ public partial class MainWindow : Window
     private readonly WorkerTelemetryService _telemetry;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private readonly List<AutomationService> _preparedBulkWorkers = [];
+    private DateTimeOffset _lastStatusPublishUtc = DateTimeOffset.MinValue;
 
     private FirebaseSignInResult? _session;
     private CertificationQueueItem? _selectedQueueItem;
@@ -158,7 +159,6 @@ public partial class MainWindow : Window
         DocaSessionProbeMinutesBox.Text = _docaSessionProbeMinutes.ToString();
 
         SyncDocaCredentialsToAllAutomation();
-        PersistCredentials();
         UpdateSignInSummary();
     }
 
@@ -420,7 +420,8 @@ public partial class MainWindow : Window
             CaptchaApiKeyBox.Text,
             docaFillOnly: false,
             _docaSessionProbeMinutes,
-            chromeProfile);
+            chromeProfile,
+            autoWorkerEnabled: _autoWorkerEnabled);
     }
 
     private bool TryApplyDocaSessionProbeMinutesFromUi(bool persist, bool restartWatchdog)
@@ -705,7 +706,9 @@ public partial class MainWindow : Window
     private void ConfigureAutoWorkerFromSettings()
     {
         var settings = App.Settings.AutoWorker;
-        _autoWorkerEnabled = settings.Enabled;
+        var saved = _credentialStore.Load();
+        // Persist last checkbox choice; fall back to appsettings when never saved.
+        _autoWorkerEnabled = saved.AutoWorkerEnabled ?? settings.Enabled;
         _useRealtimeListener = settings.UseRealtimeListener;
         _suppressAutoRunCheckBoxEvent = true;
         try
@@ -729,24 +732,35 @@ public partial class MainWindow : Window
 
         var on = AutoRunCheckBox.IsChecked == true;
         _autoWorkerEnabled = on;
+        PersistCredentials();
+
         if (on)
         {
+            AddActivityEntry("Auto-run ON — batch processing enabled.");
+            SetStatus("Auto-run on — worker will process Submitted jobs unattended.", StatusKind.Info);
+            UpdateAutoWorkerStatusText();
+
             if (_session is not null && !_remotePaused && !_autoWorkerPausedForDoca)
             {
                 StartAutoWorkerTimers();
-                _ = RunAutoWorkerCycleAsync();
+                // Defer cycle so checkbox paint / tab input stay responsive.
+                _ = Dispatcher.BeginInvoke(
+                    DispatcherPriority.ApplicationIdle,
+                    new Action(() =>
+                    {
+                        if (_autoWorkerEnabled && _session is not null && !_remotePaused && !_autoWorkerPausedForDoca)
+                        {
+                            _ = RunAutoWorkerCycleAsync();
+                        }
+                    }));
             }
 
-            AddActivityEntry("Auto-run ON — batch processing enabled.");
-            SetStatus("Auto-run on — worker will process Submitted jobs unattended.", StatusKind.Info);
-        }
-        else
-        {
-            StopAutoWorkerTimers();
-            AddActivityEntry("Auto-run OFF — use Process all submitted.");
-            SetStatus("Auto-run off — use Process all submitted.", StatusKind.Info);
+            return;
         }
 
+        StopAutoWorkerTimers();
+        AddActivityEntry("Auto-run OFF — use Process all submitted.");
+        SetStatus("Auto-run off — use Process all submitted.", StatusKind.Info);
         UpdateAutoWorkerStatusText();
     }
 
@@ -784,7 +798,7 @@ public partial class MainWindow : Window
     {
         _ = Dispatcher.InvokeAsync(async () =>
         {
-            ApplyQueueRecords(records, "Queue updated from Firestore.");
+            ApplyQueueRecords(records, "Queue updated from Firestore.", quietStatus: true);
             if (!_autoWorkerEnabled || _autoWorkerPausedForDoca)
             {
                 return;
@@ -797,7 +811,7 @@ public partial class MainWindow : Window
             }
 
             await RunAutoWorkerCycleAsync();
-        });
+        }, DispatcherPriority.Background);
     }
 
     private void OnQueueListenerError(string message)
@@ -972,7 +986,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            Dispatcher.Invoke(Add);
+            _ = Dispatcher.InvokeAsync(Add, DispatcherPriority.Background);
         }
     }
 
@@ -1156,6 +1170,8 @@ public partial class MainWindow : Window
                 _suppressAutoRunCheckBoxEvent = false;
             }
 
+            PersistCredentials();
+
             if (_autoWorkerEnabled && _session is not null && !_remotePaused)
             {
                 StartAutoWorkerTimers();
@@ -1194,6 +1210,12 @@ public partial class MainWindow : Window
         bool startResumeProbe = true,
         bool blockAutoLogin = false)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(() => SetDocaLoginPaused(paused, logoutReason, startResumeProbe, blockAutoLogin));
+            return;
+        }
+
         var wasPaused = _autoWorkerPausedForDoca;
         _autoWorkerPausedForDoca = paused;
         // Only block auto-login when operator is typing credentials manually.
@@ -1240,6 +1262,12 @@ public partial class MainWindow : Window
 
     private void StartEmaapOtpIdlePoller()
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(StartEmaapOtpIdlePoller);
+            return;
+        }
+
         StopEmaapOtpIdlePoller();
         _emaapOtpPollTimer = new DispatcherTimer
         {
@@ -1569,36 +1597,42 @@ public partial class MainWindow : Window
 
         if (!_realtimeListenerActive)
         {
-            await LoadQueueAsync();
+            await LoadQueueAsync().ConfigureAwait(false);
         }
 
-        var queue = _jobs
+        var queue = await RunOnUiAsync(() => _jobs
             .Where(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id))
             .Select(item => item.Record)
-            .ToList();
+            .ToList()).ConfigureAwait(false);
 
         if (queue.Count == 0)
         {
-            UpdateAutoWorkerStatusText();
+            await RunOnUiAsync(UpdateAutoWorkerStatusText).ConfigureAwait(false);
             return;
         }
 
         await RunWithBusyStateAsync(async () =>
         {
-            SetStatus($"Auto worker — processing {queue.Count} eligible job(s)…", StatusKind.Working);
-            await ProcessQueueInternalAsync(queue, sequentialOnly: true, fromAutoWorker: true);
-            UpdateAutoWorkerStatusText();
-        });
+            SetStatusSafe($"Auto worker — processing {queue.Count} eligible job(s)…", StatusKind.Working);
+            await ProcessQueueInternalAsync(queue, sequentialOnly: true, fromAutoWorker: true)
+                .ConfigureAwait(false);
+            await RunOnUiAsync(UpdateAutoWorkerStatusText).ConfigureAwait(false);
+        }, offUiThread: true).ConfigureAwait(false);
     }
 
     private void RefreshRetryBadges()
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.InvokeAsync(RefreshRetryBadges, DispatcherPriority.Background);
+            return;
+        }
+
         foreach (var item in _jobs)
         {
             item.RetryBadge = _jobRetries.BadgeFor(item.Id);
         }
 
-        JobsGrid.Items.Refresh();
         UpdateAutoWorkerStatusText();
     }
 
@@ -1663,6 +1697,12 @@ public partial class MainWindow : Window
 
     private void UpdateAutoWorkerStatusText()
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.InvokeAsync(UpdateAutoWorkerStatusText, DispatcherPriority.Background);
+            return;
+        }
+
         if (!_autoWorkerEnabled)
         {
             AutoWorkerStatusText.Text = "Auto-run off — use Process all submitted.";
@@ -1803,26 +1843,27 @@ public partial class MainWindow : Window
         {
             await RunWithBusyStateAsync(async () =>
             {
-                SyncDocaCredentialsToAllAutomation();
-                SetStatus(
+                await RunOnUiAsync(() => SyncDocaCredentialsToAllAutomation());
+                SetStatusSafe(
                     $"eMAAP fill & certify for {item.CustomerName} · {item.SerialNumber}…",
                     StatusKind.Working);
-                var token = await GetFreshIdTokenAsync();
-                var party = await _partyDetailsService.ResolveForJobAsync(item, item.RcId, token);
-                var instrument = await _instrumentDetailsService.ResolveForJobAsync(item, item.RcId, token);
+                var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+                var party = await _partyDetailsService.ResolveForJobAsync(item, item.RcId, token).ConfigureAwait(false);
+                var instrument = await _instrumentDetailsService.ResolveForJobAsync(item, item.RcId, token)
+                    .ConfigureAwait(false);
                 AddActivityEntry(
                     $"eMAAP fill+certify: {party.BelongToName} · {instrument.SerialNumber} · {item.VerificationTypeLabel}");
                 var message = await _automationService.FillEmaapCertificateGenerationAsync(
                     item,
                     party,
                     instrument,
-                    token);
+                    token).ConfigureAwait(false);
                 _jobRetries.Clear(item.Id);
-                await LoadQueueAsync();
+                await LoadQueueAsync().ConfigureAwait(false);
 
-                SetStatus(message, StatusKind.Success);
+                SetStatusSafe(message, StatusKind.Success);
                 AddActivityEntry(message);
-            });
+            }, offUiThread: true);
         }
         catch (Exception ex)
         {
@@ -1878,10 +1919,10 @@ public partial class MainWindow : Window
         {
             await RunWithBusyStateAsync(async () =>
             {
-                SetStatus($"eMAAP fill+certify → PDF → certified — {queue.Count} job(s)…", StatusKind.Working);
+                SetStatusSafe($"eMAAP fill+certify → PDF → certified — {queue.Count} job(s)…", StatusKind.Working);
                 AddActivityEntry($"eMAAP batch start — {queue.Count} submitted.");
                 await ProcessQueueInternalAsync(queue, sequentialOnly: true, fromAutoWorker: false);
-            });
+            }, offUiThread: true);
         }
         catch (Exception ex)
         {
@@ -2101,8 +2142,9 @@ public partial class MainWindow : Window
     {
         try
         {
-            SyncDocaCredentialsToAllAutomation();
-            automation.DocaCredentials = ResolveDocaCredentials();
+            var creds = await ResolveDocaCredentialsAsync().ConfigureAwait(false);
+            automation.DocaCredentials = creds;
+            _automationService.DocaCredentials = creds;
             if (!HasDocaLoginCredentials(automation.DocaCredentials))
             {
                 return new JobPipelineResult(
@@ -2111,16 +2153,17 @@ public partial class MainWindow : Window
                     "eMAAP email/password missing — set Account fields or appsettings.local.json, Save Credentials.");
             }
 
-            await _docaBrowserStartupTask;
-            await automation.EnsureBrowserReadyAsync();
+            await _docaBrowserStartupTask.ConfigureAwait(false);
+            await automation.EnsureBrowserReadyAsync().ConfigureAwait(false);
 
-            var sessionGate = await automation.EnsureDocaSessionForJobAsync();
+            var sessionGate = await automation.EnsureDocaSessionForJobAsync().ConfigureAwait(false);
             if (sessionGate is not null)
             {
-                return await HandleSessionGateResultAsync(sessionGate);
+                return await HandleSessionGateResultAsync(sessionGate).ConfigureAwait(false);
             }
 
-            return await ProcessJobThroughPipelineAsync(job, automation, continueBrowserSession);
+            return await ProcessJobThroughPipelineAsync(job, automation, continueBrowserSession)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (AutomationService.IsBrowserDisconnectedError(ex))
         {
@@ -2361,10 +2404,16 @@ public partial class MainWindow : Window
     /// <summary>Stop auto-worker cycles until session restored (auto re-login / OTP).</summary>
     private void HaltWorkerPipeline(string message)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(() => HaltWorkerPipeline(message));
+            return;
+        }
+
         _autoWorkerPausedForDoca = true;
         StopAutoWorkerTimers();
         SetDocaLoginPaused(true, startResumeProbe: true, blockAutoLogin: false);
-        SetStatusSafe(message, StatusKind.Error);
+        SetStatus(message, StatusKind.Error);
         AddActivityEntry(message);
     }
 
@@ -2613,7 +2662,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        Dispatcher.Invoke(() => SetStatus(message, ex, kind));
+        _ = Dispatcher.InvokeAsync(() => SetStatus(message, ex, kind), DispatcherPriority.Normal);
     }
 
     private void SelectJobOnUiThread(string jobId)
@@ -2624,8 +2673,36 @@ public partial class MainWindow : Window
             return;
         }
 
-        Dispatcher.Invoke(() => SelectJobById(jobId));
+        _ = Dispatcher.InvokeAsync(() => SelectJobById(jobId), DispatcherPriority.Background);
     }
+
+    private Task RunOnUiAsync(Action action)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        return Dispatcher.InvokeAsync(action).Task;
+    }
+
+    private async Task<T> RunOnUiAsync<T>(Func<T> func)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            return func();
+        }
+
+        return await Dispatcher.InvokeAsync(func);
+    }
+
+    private Task<DocaCredentialSettings> ResolveDocaCredentialsAsync() =>
+        RunOnUiAsync(() =>
+        {
+            SyncDocaCredentialsToAllAutomation();
+            return ResolveDocaCredentials();
+        });
 
     private async Task<JobPipelineResult> ProcessJobThroughPipelineAsync(
         SiteCalibrationRecord job,
@@ -2642,7 +2719,7 @@ public partial class MainWindow : Window
             return new JobPipelineResult(false, false, "No pending pipeline steps for this job.");
         }
 
-        automation.DocaCredentials = ResolveDocaCredentials();
+        automation.DocaCredentials = await ResolveDocaCredentialsAsync().ConfigureAwait(false);
 
         var current = job;
 
@@ -2775,22 +2852,57 @@ public partial class MainWindow : Window
             return;
         }
 
-        var records = await _firestoreService.GetPendingCertificationQueueAsync(_session.IdToken);
-        ApplyQueueRecords(records, $"Loaded {records.Count} job(s) from Firestore.");
+        var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+        var records = await _firestoreService.GetPendingCertificationQueueAsync(token).ConfigureAwait(false);
+        await RunOnUiAsync(() =>
+            ApplyQueueRecords(records, $"Loaded {records.Count} job(s) from Firestore."));
     }
 
-    private void ApplyQueueRecords(IReadOnlyList<SiteCalibrationRecord> records, string statusMessage)
+    private void ApplyQueueRecords(
+        IReadOnlyList<SiteCalibrationRecord> records,
+        string statusMessage,
+        bool quietStatus = false)
     {
-        var previousId = _selectedQueueItem?.Id;
-
-        _jobs.Clear();
-        foreach (var record in records)
+        if (!Dispatcher.CheckAccess())
         {
-            var item = new CertificationQueueItem(record)
+            Dispatcher.Invoke(() => ApplyQueueRecords(records, statusMessage, quietStatus));
+            return;
+        }
+
+        var previousId = _selectedQueueItem?.Id;
+        var sameIds = _jobs.Count == records.Count;
+        if (sameIds)
+        {
+            for (var i = 0; i < records.Count; i++)
             {
-                RetryBadge = _jobRetries.BadgeFor(record.Id),
-            };
-            _jobs.Add(item);
+                if (!string.Equals(_jobs[i].Id, records[i].Id, StringComparison.Ordinal))
+                {
+                    sameIds = false;
+                    break;
+                }
+            }
+        }
+
+        if (sameIds)
+        {
+            for (var i = 0; i < records.Count; i++)
+            {
+                _jobs[i] = new CertificationQueueItem(records[i])
+                {
+                    RetryBadge = _jobRetries.BadgeFor(records[i].Id),
+                };
+            }
+        }
+        else
+        {
+            _jobs.Clear();
+            foreach (var record in records)
+            {
+                _jobs.Add(new CertificationQueueItem(record)
+                {
+                    RetryBadge = _jobRetries.BadgeFor(record.Id),
+                });
+            }
         }
 
         RestoreSelection(previousId);
@@ -2801,7 +2913,11 @@ public partial class MainWindow : Window
 
         var pending = _jobs.Count(job => job.NeedsPipelineWork);
         var eligible = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
-        SetStatus($"{statusMessage} ({eligible}/{pending} ready in pipeline).", StatusKind.Success);
+        if (!quietStatus)
+        {
+            SetStatus($"{statusMessage} ({eligible}/{pending} ready in pipeline).", StatusKind.Success);
+        }
+
         UpdateAutoWorkerStatusText();
     }
 
@@ -2896,7 +3012,7 @@ public partial class MainWindow : Window
         SignInStatusDot.Fill = (Brush)FindResource("AccentGreenBrush");
     }
 
-    private async Task RunWithBusyStateAsync(Func<Task> action)
+    private async Task RunWithBusyStateAsync(Func<Task> action, bool offUiThread = false)
     {
         if (_isBusy)
         {
@@ -2904,29 +3020,46 @@ public partial class MainWindow : Window
         }
 
         _isBusy = true;
-        SignInButton.IsEnabled = false;
-        RefreshButton.IsEnabled = false;
+        await RunOnUiAsync(() =>
+        {
+            SignInButton.IsEnabled = false;
+            RefreshButton.IsEnabled = false;
+        });
 
         try
         {
-            await action();
+            if (offUiThread)
+            {
+                // Playwright + Firestore pipeline off the WPF dispatcher so tabs/checkboxes stay responsive.
+                await Task.Run(async () => await action().ConfigureAwait(false)).ConfigureAwait(true);
+            }
+            else
+            {
+                await action();
+            }
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, ex, StatusKind.Error);
-            MessageBox.Show(this, ex.Message, "Certificate Worker", MessageBoxButton.OK, MessageBoxImage.Warning);
+            await RunOnUiAsync(() =>
+            {
+                SetStatus(ex.Message, ex, StatusKind.Error);
+                MessageBox.Show(this, ex.Message, "Certificate Worker", MessageBoxButton.OK, MessageBoxImage.Warning);
+            });
         }
         finally
         {
-            _isBusy = false;
-            SignInButton.IsEnabled = true;
-            RefreshButton.IsEnabled = true;
-
-            if (_autoWorkerCyclePending && _autoWorkerEnabled && !_autoWorkerPausedForDoca && _session is not null)
+            await RunOnUiAsync(() =>
             {
-                _autoWorkerCyclePending = false;
-                _ = RunAutoWorkerCycleAsync();
-            }
+                _isBusy = false;
+                SignInButton.IsEnabled = true;
+                RefreshButton.IsEnabled = true;
+
+                if (_autoWorkerCyclePending && _autoWorkerEnabled && !_autoWorkerPausedForDoca && _session is not null)
+                {
+                    _autoWorkerCyclePending = false;
+                    _ = RunAutoWorkerCycleAsync();
+                }
+            });
         }
     }
 
@@ -2960,6 +3093,12 @@ public partial class MainWindow : Window
 
     private void SetStatus(string message, Exception? ex, StatusKind kind = StatusKind.Info)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.InvokeAsync(() => SetStatus(message, ex, kind));
+            return;
+        }
+
         _lastStatusKind = kind;
         StatusText.Text = message;
         StatusTimestampText.Text = DateTime.Now.ToString("HH:mm:ss");
@@ -2991,16 +3130,28 @@ public partial class MainWindow : Window
         AddActivityEntry(message);
         LogToFile(message, ex);
 
-        if (_session is not null)
+        if (_session is null)
+        {
+            return;
+        }
+
+        // Working spam floods Firestore + UI; throttle heartbeats.
+        var shouldPublish = kind is StatusKind.Error or StatusKind.Success
+            || (DateTimeOffset.UtcNow - _lastStatusPublishUtc).TotalSeconds >= 20;
+        if (kind != StatusKind.Working)
         {
             var level = kind switch
             {
                 StatusKind.Error => "error",
                 StatusKind.Success => "success",
-                StatusKind.Working => "working",
                 _ => "info",
             };
             _ = _telemetry.ReportActivityAsync(message, level, () => GetFreshIdTokenAsync());
+        }
+
+        if (shouldPublish)
+        {
+            _lastStatusPublishUtc = DateTimeOffset.UtcNow;
             _ = PublishWorkerStatusAsync();
         }
     }
@@ -3013,6 +3164,12 @@ public partial class MainWindow : Window
 
     private void AddActivityEntry(ActivityLogEntry entry)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.InvokeAsync(() => AddActivityEntry(entry), DispatcherPriority.Background);
+            return;
+        }
+
         _activityLog.Insert(0, entry);
 
         while (_activityLog.Count > 120)
@@ -3020,7 +3177,7 @@ public partial class MainWindow : Window
             _activityLog.RemoveAt(_activityLog.Count - 1);
         }
 
-        if (_activityLog.Count > 0)
+        if (_activityLog.Count > 0 && ActivityLogList.IsVisible)
         {
             ActivityLogList.ScrollIntoView(_activityLog[0]);
         }
