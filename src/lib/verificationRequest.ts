@@ -319,17 +319,12 @@ export function verificationStatusFilterBucket(
   record: SiteCalibration,
 ): Exclude<VerificationStatusFilter, 'all' | 'duplicates'> {
   if (isVerificationRejected(record)) return 'rejected';
+  if (isVerificationFailedAtSubmit(record)) return 'failed_submit';
   if (isVerificationFullyCertified(record)) return 'certified';
   const status = normalizeVerificationStatus(record);
   if (status === 'draft') return 'draft';
-  // Legacy approved / pipeline-failed / incomplete certified → still in eMAAP queue.
-  if (
-    status === 'submitted'
-    || status === 'approved'
-    || status === 'certified'
-    || isVerificationFailedAtSubmit(record)
-    || isVerificationFailedAtCertification(record)
-  ) {
+  // Submitted queue (incl. legacy approved / incomplete certified awaiting repair).
+  if (status === 'submitted' || status === 'approved' || status === 'certified') {
     return 'submitted';
   }
   return 'draft';
@@ -349,7 +344,6 @@ export function matchesVerificationStatusFilter(
     return verificationStatusFilterBucket(record) === 'submitted';
   }
   if (filter === 'approved') {
-    // Legacy deep-link — same as submitted (approved mid-state retired).
     return verificationStatusFilterBucket(record) === 'submitted';
   }
   return normalizeVerificationStatus(record) === filter;
@@ -412,12 +406,13 @@ export function tallyVerificationStatusFilters(
 export function buildVerificationStatusFilterOptions(
   counts: VerificationStatusFilterCounts,
 ): { value: VerificationStatusFilter; label: string; count: number }[] {
-  // eMAAP pipeline: Draft → Submitted → Certified only (legacy stages hidden).
   return [
     { value: 'all', label: 'All stages', count: counts.all },
     { value: 'draft', label: 'Draft', count: counts.draft },
     { value: 'submitted', label: 'Submitted', count: counts.submitted },
     { value: 'certified', label: 'Certified', count: counts.certified },
+    { value: 'failed_submit', label: 'Failed at submit', count: counts.failed_submit },
+    { value: 'rejected', label: 'Rejected', count: counts.rejected },
   ];
 }
 

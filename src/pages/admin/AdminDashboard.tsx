@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { Link } from 'react-router-dom';
-import { ShieldCheck, AlertTriangle, Clock, Users, Building2, Wallet } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, Clock, Users, Building2, Wallet, XCircle } from 'lucide-react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { tallyVerificationStatusFilters } from '../../lib/verificationRequest';
@@ -130,23 +130,23 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
         <div className="stat-card glass">
-          <div className="stat-icon text-violet"><Clock /></div>
+          <div className="stat-icon text-red"><XCircle /></div>
           <div className="stat-content">
-            <h3>Draft</h3>
+            <h3>Failed at Submit</h3>
             <p className="stat-value">
-              {loadingVerifications ? '—' : verificationTally.draft}
+              {loadingVerifications ? '—' : verificationTally.failed_submit}
             </p>
-            <p className="stat-sub">Not yet submitted for eMAAP</p>
+            <p className="stat-sub">eMAAP retries exhausted</p>
           </div>
         </div>
         <div className="stat-card glass">
-          <div className="stat-icon text-blue"><AlertTriangle /></div>
+          <div className="stat-icon text-orange"><AlertTriangle /></div>
           <div className="stat-content">
-            <h3>Submitted</h3>
+            <h3>Rejected</h3>
             <p className="stat-value">
-              {loadingVerifications ? '—' : verificationTally.submitted}
+              {loadingVerifications ? '—' : verificationTally.rejected}
             </p>
-            <p className="stat-sub">Awaiting eMAAP fill & certify</p>
+            <p className="stat-sub">Closed — not retried by worker</p>
           </div>
         </div>
       </div>

@@ -6,8 +6,9 @@ public static class VerificationStatuses
     public const string Submitted = "submitted";
     public const string Approved = "approved";
     public const string Certified = "certified";
+    public const string Rejected = "rejected";
 
-    public static readonly string[] All = [Draft, Submitted, Approved, Certified];
+    public static readonly string[] All = [Draft, Submitted, Approved, Certified, Rejected];
 
     public static string Normalize(string? status) =>
         All.FirstOrDefault(value => string.Equals(value, status?.Trim(), StringComparison.OrdinalIgnoreCase))
@@ -18,6 +19,7 @@ public static class VerificationStatuses
         Submitted => "Submitted",
         Approved => "Approved",
         Certified => "Certified",
+        Rejected => "Rejected",
         _ => "Draft",
     };
 }

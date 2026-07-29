@@ -21,4 +21,9 @@
     <ProjectReference Include="..\Yesgatc.CertificateWorker\Yesgatc.CertificateWorker.csproj" />
   </ItemGroup>
 
+  <!-- Parser removed from worker; keep file for reference until reintroduced. -->
+  <ItemGroup>
+    <Compile Remove="GatcCertificatePdfParserTests.cs" />
+  </ItemGroup>
+
 </Project>

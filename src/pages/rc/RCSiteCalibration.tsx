@@ -1907,18 +1907,14 @@ export const RCSiteCalibration: React.FC = () => {
       'draft',
       'submitted',
       'certified',
-    ];
-    const legacyToSubmitted = new Set([
-      'approved',
       'failed_submit',
-      'failed_certification',
       'rejected',
-    ]);
+    ];
     const raw = pendingStatusFilter as VerificationStatusFilter;
     if (allowed.includes(raw)) {
       setStatusFilter(raw);
-    } else if (legacyToSubmitted.has(raw)) {
-      setStatusFilter('submitted');
+    } else if (raw === 'approved' || raw === 'failed_certification') {
+      setStatusFilter(raw === 'failed_certification' ? 'failed_submit' : 'submitted');
     }
     setSearchParams(
       prev => {

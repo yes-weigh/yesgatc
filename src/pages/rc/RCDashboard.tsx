@@ -185,6 +185,20 @@ export const RCDashboard: React.FC = () => {
         tone: 'green',
         icon: <Award size={20} strokeWidth={1.9} />,
       },
+      {
+        key: 'failed_submit',
+        label: 'Failed at Submit',
+        count: tally.failed_submit,
+        tone: 'red',
+        icon: <XCircle size={20} strokeWidth={1.9} />,
+      },
+      {
+        key: 'rejected',
+        label: 'Rejected',
+        count: tally.rejected,
+        tone: 'orange',
+        icon: <XCircle size={20} strokeWidth={1.9} />,
+      },
     ],
     [tally],
   );

@@ -17,6 +17,7 @@ public sealed class SiteCalibrationRecord
     public string? CertificateNumber { get; init; }
     /// <summary>Set when eMAAP generated a cert but PDF sync failed — resume download-only.</summary>
     public string? EmaapIssuedCertificateNumber { get; init; }
+    public string? PipelineFailedPhase { get; init; }
     public string? PipelineFailureMessage { get; init; }
     public string? ResubmittedFromId { get; init; }
     public string? SupersededByResubmissionId { get; init; }
@@ -32,9 +33,22 @@ public sealed class SiteCalibrationRecord
     public bool IsOv =>
         string.Equals(VerificationType, "OV", StringComparison.OrdinalIgnoreCase);
 
+    public bool IsRejected =>
+        string.Equals(Status, VerificationStatuses.Rejected, StringComparison.OrdinalIgnoreCase);
+
+    public bool IsFailedAtSubmit =>
+        IsSubmitted
+        && string.Equals(PipelineFailedPhase, "submit", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Failed-at-submit blocks the queue unless a pending eMAAP cert number means PDF-only resume.
+    /// </summary>
+    public bool HasBlockingSubmitFailure =>
+        IsFailedAtSubmit && string.IsNullOrWhiteSpace(EmaapIssuedCertificateNumber);
+
     /// <summary>Submitted jobs only (OV + RV). eMAAP fill → certify → PDF in one pass.</summary>
     public bool IsEligibleForWorkerQueue =>
-        NeedsPipelineWork && !IsSuperseded && !IsVoided;
+        NeedsPipelineWork && !IsSuperseded && !IsVoided && !HasBlockingSubmitFailure;
 
     public bool IsDraft => string.Equals(Status, VerificationStatuses.Draft, StringComparison.OrdinalIgnoreCase);
     public bool IsSubmitted => string.Equals(Status, VerificationStatuses.Submitted, StringComparison.OrdinalIgnoreCase);

@@ -1608,6 +1608,13 @@ public partial class MainWindow : Window
 
     private void ScheduleJobRetry(SiteCalibrationRecord job, string error)
     {
+        if (PipelineFailureClassifier.IsPermanentDataFailure(error))
+        {
+            _jobRetries.MarkExhausted(job.Id, error, ResolveMaxRetriesFor(job));
+            RefreshRetryBadges();
+            return;
+        }
+
         _jobRetries.Schedule(
             job.Id,
             error,
@@ -1618,12 +1625,18 @@ public partial class MainWindow : Window
 
     private async Task RecordPipelineFailureAsync(SiteCalibrationRecord job, string error, bool? exhausted = null)
     {
-        // HALT / mandatory eMAAP failures must persist even when retries are not exhausted,
-        // so PDF resume can pick up emaapIssuedCertificateNumber from the message.
+        if (_session is null)
+        {
+            return;
+        }
+
+        // HALT / mandatory eMAAP failures persist immediately (PDF resume needs cert #).
         var retryExhausted = exhausted
             ?? (error.Contains("HALT", StringComparison.OrdinalIgnoreCase)
                 || _jobRetries.IsExhausted(job.Id));
-        if (!retryExhausted || _session is null)
+
+        var outcome = PipelineFailureClassifier.Classify(error, retryExhausted);
+        if (outcome == PipelineFailureClassifier.Outcome.Retry)
         {
             return;
         }
@@ -1631,11 +1644,20 @@ public partial class MainWindow : Window
         try
         {
             var token = await GetFreshIdTokenAsync();
-            await _firestoreService.RecordSubmitFailureAsync(job.Id, error, token, retryExhausted: true);
+            if (outcome == PipelineFailureClassifier.Outcome.Rejected)
+            {
+                await _firestoreService.RecordRejectionAsync(job.Id, error, token);
+                _jobRetries.MarkExhausted(job.Id, error, ResolveMaxRetriesFor(job));
+                RefreshRetryBadges();
+            }
+            else
+            {
+                await _firestoreService.RecordSubmitFailureAsync(job.Id, error, token, retryExhausted: true);
+            }
         }
         catch
         {
-            // Best-effort — status stays submitted even if this patch fails.
+            // Best-effort Firebase patch — local retry state still applies.
         }
     }
 
@@ -2053,12 +2075,13 @@ public partial class MainWindow : Window
         }
 
         ScheduleJobRetry(job, result.Message);
-        if (_jobRetries.IsExhausted(job.Id))
+        if (_jobRetries.IsExhausted(job.Id)
+            || PipelineFailureClassifier.IsPermanentDataFailure(result.Message))
         {
-            await RecordPipelineFailureAsync(
-                job,
-                $"{result.Message} (worker stopped after {ResolveMaxRetriesFor(job)} submit retries; status remains submitted in Firebase)",
-                exhausted: true);
+            var suffix = PipelineFailureClassifier.IsPermanentDataFailure(result.Message)
+                ? " (permanent data error — marked Rejected)"
+                : $" (worker stopped after {ResolveMaxRetriesFor(job)} submit retries — marked Failed at submit)";
+            await RecordPipelineFailureAsync(job, $"{result.Message}{suffix}", exhausted: true);
         }
         else
         {

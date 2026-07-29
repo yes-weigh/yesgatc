@@ -193,11 +193,17 @@ public sealed class FirestoreService
         var resubmittedFromId = verification?.ResubmittedFromId?.Trim();
 
         var now = DateTime.UtcNow.ToString("O");
-        var fields = new Dictionary<string, string>
+        var fields = new Dictionary<string, object?>
         {
             ["status"] = VerificationStatuses.Certified,
             ["certifiedAt"] = now,
             ["updatedAt"] = now,
+            // Clear prior failure markers so UI leaves Failed at submit / Rejected buckets.
+            ["pipelineFailedPhase"] = null,
+            ["pipelineFailureMessage"] = null,
+            ["pipelineFailedAt"] = null,
+            ["certificationLastError"] = null,
+            ["emaapIssuedCertificateNumber"] = null,
         };
 
         if (certificatePdf is not null)
@@ -214,7 +220,7 @@ public sealed class FirestoreService
         }
 
         var documents = new FirestoreDocumentClient(_settings);
-        await documents.PatchStringFieldsAsync(
+        await documents.PatchFieldsAsync(
             "siteCalibrations",
             jobId,
             fields,
@@ -326,7 +332,7 @@ public sealed class FirestoreService
         }
 
         var verification = await GetVerificationByIdAsync(jobId, idToken, cancellationToken);
-        if (verification is null || !verification.IsSubmitted)
+        if (verification is null || !verification.IsSubmitted || verification.IsRejected)
         {
             return;
         }
@@ -352,6 +358,45 @@ public sealed class FirestoreService
             "siteCalibrations",
             jobId,
             fields,
+            idToken,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Permanent data failure — status=rejected. Worker will not pick the job again.
+    /// </summary>
+    public async Task RecordRejectionAsync(
+        string jobId,
+        string error,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId) || string.IsNullOrWhiteSpace(error))
+        {
+            return;
+        }
+
+        var verification = await GetVerificationByIdAsync(jobId, idToken, cancellationToken);
+        if (verification is null || verification.IsCertified || verification.IsRejected)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow.ToString("O");
+        var trimmed = error.Trim()[..Math.Min(error.Trim().Length, 500)];
+        var documents = new FirestoreDocumentClient(_settings);
+        await documents.PatchStringFieldsAsync(
+            "siteCalibrations",
+            jobId,
+            new Dictionary<string, string>
+            {
+                ["status"] = VerificationStatuses.Rejected,
+                ["pipelineFailedPhase"] = "submit",
+                ["pipelineFailureMessage"] = trimmed,
+                ["pipelineFailedAt"] = now,
+                ["rejectedAt"] = now,
+                ["updatedAt"] = now,
+            },
             idToken,
             cancellationToken);
     }
@@ -581,6 +626,7 @@ public sealed class FirestoreService
             CertificatePdfUrl = FirestoreFieldReader.ReadString(fields, "certificatePdfUrl"),
             CertificateNumber = FirestoreFieldReader.ReadString(fields, "certificateNumber"),
             EmaapIssuedCertificateNumber = FirestoreFieldReader.ReadString(fields, "emaapIssuedCertificateNumber"),
+            PipelineFailedPhase = FirestoreFieldReader.ReadString(fields, "pipelineFailedPhase"),
             PipelineFailureMessage = FirestoreFieldReader.ReadString(fields, "pipelineFailureMessage"),
             ResubmittedFromId = FirestoreFieldReader.ReadString(fields, "resubmittedFromId"),
             SupersededByResubmissionId = FirestoreFieldReader.ReadString(fields, "supersededByResubmissionId"),

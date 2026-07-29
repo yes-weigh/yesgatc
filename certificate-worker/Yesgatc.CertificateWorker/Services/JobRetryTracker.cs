@@ -16,7 +16,8 @@ public sealed class JobRetryTracker
         var attempt = _states.TryGetValue(jobId, out var existing) ? existing.Attempt + 1 : 1;
         var effectiveMax = maxRetries < 1 ? int.MaxValue : maxRetries;
 
-        if (attempt > effectiveMax)
+        // Exhaust on the last allowed attempt (attempt >= max), not one past it.
+        if (attempt >= effectiveMax)
         {
             _states[jobId] = new JobRetryState(
                 attempt,
@@ -32,6 +33,20 @@ public sealed class JobRetryTracker
             DateTimeOffset.Now.Add(delay),
             error,
             Exhausted: false,
+            effectiveMax);
+    }
+
+    public void MarkExhausted(string jobId, string error, int maxRetries = 0)
+    {
+        var effectiveMax = maxRetries < 1 ? 0 : maxRetries;
+        var attempt = _states.TryGetValue(jobId, out var existing)
+            ? Math.Max(existing.Attempt, effectiveMax)
+            : effectiveMax;
+        _states[jobId] = new JobRetryState(
+            attempt,
+            DateTimeOffset.MaxValue,
+            error,
+            Exhausted: true,
             effectiveMax);
     }
 

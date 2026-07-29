@@ -14,15 +14,25 @@ public sealed class JobRetryTrackerTests
         tracker.Schedule("job-1", "fail 1", delay, maxRetries: 3);
         Assert.True(tracker.IsEligible("job-1"));
         Assert.Equal("Retry #1", tracker.BadgeFor("job-1"));
-
-        tracker.Schedule("job-1", "fail 2", delay, maxRetries: 3);
-        tracker.Schedule("job-1", "fail 3", delay, maxRetries: 3);
         Assert.False(tracker.IsExhausted("job-1"));
 
-        tracker.Schedule("job-1", "fail 4", delay, maxRetries: 3);
+        tracker.Schedule("job-1", "fail 2", delay, maxRetries: 3);
+        Assert.False(tracker.IsExhausted("job-1"));
+
+        // Exhaust on the last allowed attempt (3), not one past it.
+        tracker.Schedule("job-1", "fail 3", delay, maxRetries: 3);
         Assert.True(tracker.IsExhausted("job-1"));
         Assert.False(tracker.IsEligible("job-1"));
         Assert.Equal("Max retries (3)", tracker.BadgeFor("job-1"));
+    }
+
+    [Fact]
+    public void MarkExhausted_blocks_eligibility()
+    {
+        var tracker = new JobRetryTracker();
+        tracker.MarkExhausted("job-x", "permanent", maxRetries: 3);
+        Assert.True(tracker.IsExhausted("job-x"));
+        Assert.False(tracker.IsEligible("job-x"));
     }
 
     [Fact]
