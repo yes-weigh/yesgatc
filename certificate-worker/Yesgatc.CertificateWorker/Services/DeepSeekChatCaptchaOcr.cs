@@ -99,8 +99,7 @@ public static class DeepSeekChatCaptchaOcr
             }
 
             await ClearComposerAttachmentsAsync(deepseek);
-            await AttachImageAsync(deepseek, tempPath, visionBytes, cancellationToken);
-            if (!await EnsureSingleComposerAttachmentAsync(deepseek, tempPath, visionBytes, cancellationToken))
+            if (!await AttachCaptchaImageOnceAsync(deepseek, tempPath, visionBytes, cancellationToken))
             {
                 return string.Empty;
             }
@@ -336,7 +335,7 @@ public static class DeepSeekChatCaptchaOcr
 
     private static async Task ClearComposerAttachmentsAsync(IPage page)
     {
-        for (var round = 0; round < 10; round++)
+        for (var round = 0; round < 12; round++)
         {
             int removed;
             try
@@ -345,7 +344,12 @@ public static class DeepSeekChatCaptchaOcr
                     """
                     () => {
                       let n = 0;
-                      const floor = window.innerHeight * 0.4;
+                      const floor = window.innerHeight * 0.38;
+                      const click = (el) => {
+                        try { el.click(); n++; } catch {}
+                      };
+
+                      // 1) Explicit remove/close controls in the composer band.
                       const nodes = Array.from(document.querySelectorAll(
                         'button, [role="button"], span, div, a'));
                       for (const el of nodes) {
@@ -362,8 +366,31 @@ public static class DeepSeekChatCaptchaOcr
                         if (!isRemove) continue;
                         const r = el.getBoundingClientRect();
                         if (r.width <= 0 || r.height <= 0 || r.bottom < floor) continue;
-                        el.click();
-                        n++;
+                        click(el);
+                      }
+
+                      // 2) X button near each composer thumbnail (DeepSeek often has no aria-label).
+                      const imgs = Array.from(document.querySelectorAll('img'));
+                      for (const img of imgs) {
+                        const ir = img.getBoundingClientRect();
+                        if (ir.width < 16 || ir.height < 16 || ir.bottom < floor) continue;
+                        if (ir.width > 180 || ir.height > 180) continue;
+                        let host = img.parentElement;
+                        for (let d = 0; d < 4 && host; d++, host = host.parentElement) {
+                          const btns = Array.from(host.querySelectorAll('button, [role="button"]'));
+                          for (const b of btns) {
+                            const br = b.getBoundingClientRect();
+                            if (br.width <= 0 || br.height <= 0) continue;
+                            // Small control overlapping / beside the thumb.
+                            if (br.width > 40 || br.height > 40) continue;
+                            const near =
+                              Math.abs(br.left - ir.right) < 28
+                              || Math.abs(br.right - ir.right) < 28
+                              || (br.left >= ir.left - 8 && br.top <= ir.top + 8);
+                            if (!near) continue;
+                            click(b);
+                          }
+                        }
                       }
                       return n;
                     }
@@ -379,7 +406,17 @@ public static class DeepSeekChatCaptchaOcr
                 break;
             }
 
-            await page.WaitForTimeoutAsync(200);
+            await page.WaitForTimeoutAsync(180);
+        }
+
+        // Escape can dismiss leftover chips.
+        try
+        {
+            await page.Keyboard.PressAsync("Escape");
+            await page.WaitForTimeoutAsync(120);
+        }
+        catch (PlaywrightException)
+        {
         }
     }
 
@@ -390,13 +427,16 @@ public static class DeepSeekChatCaptchaOcr
             return await page.EvaluateAsync<int>(
                 """
                 () => {
-                  const floor = window.innerHeight * 0.45;
-                  const imgs = Array.from(document.querySelectorAll(
-                    'img[src*="blob"], img[src*="data:image"], img[src*="deepseek"]'));
+                  const floor = window.innerHeight * 0.38;
+                  const imgs = Array.from(document.querySelectorAll('img'));
                   let count = 0;
                   for (const img of imgs) {
                     const r = img.getBoundingClientRect();
-                    if (r.width >= 24 && r.height >= 24 && r.bottom >= floor) count++;
+                    // Composer thumbs are small squares near the input; skip avatars / heroes.
+                    if (r.width < 16 || r.height < 16) continue;
+                    if (r.width > 180 || r.height > 180) continue;
+                    if (r.bottom < floor) continue;
+                    count++;
                   }
                   return count;
                 }
@@ -408,13 +448,20 @@ public static class DeepSeekChatCaptchaOcr
         }
     }
 
-    private static async Task<bool> EnsureSingleComposerAttachmentAsync(
+    /// <summary>
+    /// Attach exactly once. Never re-attach while count==0 (upload lag caused 8× paste spam).
+    /// </summary>
+    private static async Task<bool> AttachCaptchaImageOnceAsync(
         IPage page,
         string tempPath,
         byte[] visionBytes,
         CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(8);
+        await ClearComposerAttachmentsAsync(page);
+        await AttachImageAsync(page, tempPath, visionBytes, cancellationToken);
+
+        var sawOne = false;
+        var deadline = DateTime.UtcNow.AddSeconds(6);
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -426,18 +473,33 @@ public static class DeepSeekChatCaptchaOcr
 
             if (count > 1)
             {
+                // Stacked from a prior buggy attempt or SetInputFiles append — wipe and one retry.
                 await ClearComposerAttachmentsAsync(page);
+                if (await CountComposerAttachmentsAsync(page) > 0)
+                {
+                    // Clear failed — hard reset chat composer.
+                    await ForceFreshChatAsync(page, cancellationToken);
+                }
+
                 await AttachImageAsync(page, tempPath, visionBytes, cancellationToken);
-            }
-            else if (count == 0)
-            {
-                await AttachImageAsync(page, tempPath, visionBytes, cancellationToken);
+                await page.WaitForTimeoutAsync(600);
+                count = await CountComposerAttachmentsAsync(page);
+                return count <= 1;
             }
 
-            await page.WaitForTimeoutAsync(250);
+            if (count == 0)
+            {
+                // Wait only — do NOT attach again (that stacked identical thumbs).
+                await page.WaitForTimeoutAsync(250);
+                continue;
+            }
+
+            sawOne = true;
+            break;
         }
 
-        return await CountComposerAttachmentsAsync(page) == 1;
+        // Detection can miss DeepSeek's DOM; after a single attach, proceed if Vision path can run.
+        return sawOne || await CountComposerAttachmentsAsync(page) <= 1;
     }
 
     private static async Task TryStartNewChatAsync(IPage page)
@@ -791,14 +853,14 @@ public static class DeepSeekChatCaptchaOcr
         byte[] visionBytes,
         CancellationToken cancellationToken)
     {
-        // Prefer hidden file input (most reliable).
+        // Prefer hidden file input (most reliable). SetInputFiles replaces — never call twice per OCR.
         var fileInput = page.Locator("input[type='file']").First;
         if (await fileInput.CountAsync() > 0)
         {
             try
             {
                 await fileInput.SetInputFilesAsync(tempPath);
-                await page.WaitForTimeoutAsync(120);
+                await page.WaitForTimeoutAsync(350);
                 cancellationToken.ThrowIfCancellationRequested();
                 return;
             }
@@ -821,7 +883,7 @@ public static class DeepSeekChatCaptchaOcr
                 if (await fileInput.CountAsync() > 0)
                 {
                     await fileInput.SetInputFilesAsync(tempPath);
-                    await page.WaitForTimeoutAsync(120);
+                    await page.WaitForTimeoutAsync(350);
                     return;
                 }
             }
@@ -855,8 +917,8 @@ public static class DeepSeekChatCaptchaOcr
         var composer = page.Locator("textarea, [contenteditable='true']").Last;
         await composer.ClickAsync();
         await page.Keyboard.PressAsync("Control+v");
-        // Paste → prompt ASAP (caller sends prompt next).
-        await page.WaitForTimeoutAsync(120);
+        // Single paste only — caller must not re-invoke on upload lag.
+        await page.WaitForTimeoutAsync(350);
         cancellationToken.ThrowIfCancellationRequested();
     }
 
