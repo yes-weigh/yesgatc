@@ -1,13 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
+import { Send } from 'lucide-react';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import {
   buildVerificationStatusFilterOptions,
   buildVerificationTypeFilterOptions,
   canDeleteVerification,
+  canSubmitVerification,
   matchesVerificationTypeFilter,
+  normalizeVerificationStatus,
   tallyVerificationTypeFilters,
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
@@ -41,7 +45,23 @@ import {
   canMoveFailedSubmitToDraft,
   moveFailedSubmitVerificationToDraft,
 } from '../../lib/verificationPipelineRepair';
+import {
+  isSiteCalibrationSubmittable,
+  siteCalibrationSubmitBlockReason,
+} from '../../lib/siteCalibrationProfileFields';
+import {
+  submitVerificationRecord,
+  submitVerificationRecords,
+  type VerificationSubmitOptions,
+} from '../../lib/verificationSubmit';
+import { formatZohoInvoiceGateError, isZohoInvoiceGateError } from '../../lib/zohoRvInvoice';
+import { isZohoRvInvoicingEnabled } from '../../lib/zohoRvSubmit';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
+
+type RcListProfile = Pick<
+  FirestoreUserDoc,
+  'profilePhotoUrl' | 'profilePhotoPath' | 'contactPerson' | 'pincode' | 'zohoId'
+>;
 
 interface VerificationRow extends SiteCalibration {
   rcCenterName: string;
@@ -50,12 +70,11 @@ interface VerificationRow extends SiteCalibration {
 export const AdminVerificationList: React.FC = () => {
   const { user } = useAuth();
   const confirm = useConfirm();
+  const { appSettings } = useAppSettings();
   const isSuperAdmin = user?.role === 'super_admin';
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
-  const [rcUsersById, setRcUsersById] = useState<
-    Map<string, Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath' | 'contactPerson'>>
-  >(() => new Map());
+  const [rcUsersById, setRcUsersById] = useState<Map<string, RcListProfile>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
@@ -67,7 +86,15 @@ export const AdminVerificationList: React.FC = () => {
   const [rowHighlightFlashId, setRowHighlightFlashId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [movingToDraftId, setMovingToDraftId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
   const [listError, setListError] = useState('');
+  const selectAllDraftsRef = useRef<HTMLInputElement | null>(null);
+
+  const submitOptions = useMemo<VerificationSubmitOptions>(
+    () => ({ zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings) }),
+    [appSettings],
+  );
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -80,10 +107,7 @@ export const AdminVerificationList: React.FC = () => {
       ]);
 
       const rcByUid = new Map<string, string>();
-      const rcProfiles = new Map<
-        string,
-        Pick<FirestoreUserDoc, 'profilePhotoUrl' | 'profilePhotoPath' | 'contactPerson'>
-      >();
+      const rcProfiles = new Map<string, RcListProfile>();
       userSnap.docs.forEach(d => {
         const data = d.data() as FirestoreUserDoc;
         if (data.role === 'rc_admin') {
@@ -92,6 +116,8 @@ export const AdminVerificationList: React.FC = () => {
             profilePhotoUrl: data.profilePhotoUrl,
             profilePhotoPath: data.profilePhotoPath,
             contactPerson: data.contactPerson,
+            pincode: data.pincode,
+            zohoId: data.zohoId,
           });
         }
       });
@@ -359,6 +385,153 @@ export const AdminVerificationList: React.FC = () => {
     }
   };
 
+  const recordSubmitOptions = useCallback(
+    (record: SiteCalibration) => {
+      const listedCustomer = record.customerId
+        ? customersById.get(record.customerId) ?? null
+        : null;
+      const rcProfile = record.rcId ? rcUsersById.get(record.rcId) ?? null : null;
+      return {
+        customerPincode: listedCustomer?.pincode ?? null,
+        rcPincode: rcProfile?.pincode ?? null,
+        rcZohoId: rcProfile?.zohoId,
+        zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
+        requireUploadedImages: true,
+      };
+    },
+    [customersById, rcUsersById, appSettings],
+  );
+
+  const draftSubmitMeta = useMemo(() => {
+    const meta = new Map<string, { submittable: boolean; blockReason: string | null }>();
+    for (const record of filteredRecords) {
+      if (normalizeVerificationStatus(record) !== 'draft') continue;
+      const blockReason = siteCalibrationSubmitBlockReason(record, recordSubmitOptions(record));
+      meta.set(record.id, { submittable: !blockReason, blockReason });
+    }
+    return meta;
+  }, [filteredRecords, recordSubmitOptions]);
+
+  const selectableDraftIds = useMemo(
+    () => [...draftSubmitMeta.entries()].filter(([, value]) => value.submittable).map(([id]) => id),
+    [draftSubmitMeta],
+  );
+
+  const allSelectableDraftsSelected =
+    selectableDraftIds.length > 0 && selectableDraftIds.every(id => selectedDraftIds.has(id));
+
+  const someSelectableDraftsSelected =
+    selectableDraftIds.some(id => selectedDraftIds.has(id)) && !allSelectableDraftsSelected;
+
+  useEffect(() => {
+    setSelectedDraftIds(new Set());
+  }, [statusFilter, typeFilter, rcFilter, searchTerm]);
+
+  useEffect(() => {
+    if (selectAllDraftsRef.current) {
+      selectAllDraftsRef.current.indeterminate = someSelectableDraftsSelected;
+    }
+  }, [someSelectableDraftsSelected, selectableDraftIds.length]);
+
+  const toggleDraftSelection = (id: string, submittable: boolean) => {
+    if (!submittable) return;
+    setSelectedDraftIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllDrafts = () => {
+    setSelectedDraftIds(prev => {
+      if (allSelectableDraftsSelected) {
+        const next = new Set(prev);
+        selectableDraftIds.forEach(id => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...selectableDraftIds]);
+    });
+  };
+
+  const handleSubmitRecord = async (record: SiteCalibration) => {
+    if (!isSuperAdmin || !canSubmitVerification(record)) return;
+
+    const validationError = siteCalibrationSubmitBlockReason(record, recordSubmitOptions(record));
+    if (validationError) {
+      setListError(validationError);
+      return;
+    }
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await submitVerificationRecord(
+        {
+          id: record.id,
+          verificationType: record.verificationType,
+        },
+        db,
+        submitOptions,
+      );
+      setSelectedDraftIds(prev => {
+        if (!prev.has(record.id)) return prev;
+        const next = new Set(prev);
+        next.delete(record.id);
+        return next;
+      });
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(
+        isZohoInvoiceGateError(err)
+          ? formatZohoInvoiceGateError(err)
+          : err instanceof Error
+            ? err.message
+            : 'Failed to submit verification.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkSubmitRecords = async () => {
+    if (!isSuperAdmin) return;
+
+    const selectedRecords = filteredRecords.filter(
+      r => selectedDraftIds.has(r.id) && isSiteCalibrationSubmittable(r, recordSubmitOptions(r)),
+    );
+
+    if (selectedRecords.length === 0) {
+      setListError('None of the selected drafts are ready to submit. Complete required fields and images first.');
+      return;
+    }
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await submitVerificationRecords(
+        selectedRecords.map(record => ({
+          id: record.id,
+          verificationType: record.verificationType,
+        })),
+        db,
+        submitOptions,
+      );
+      setSelectedDraftIds(new Set());
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(
+        isZohoInvoiceGateError(err)
+          ? formatZohoInvoiceGateError(err)
+          : err instanceof Error
+            ? err.message
+            : 'Failed to submit selected verifications.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const filterOptions = buildVerificationStatusFilterOptions(counts);
   const rowOffset = (page - 1) * VERIFICATION_TABLE_PAGE_SIZE;
   const walletPaymentDueRecordIds = useMemo(() => {
@@ -410,6 +583,36 @@ export const AdminVerificationList: React.FC = () => {
             refreshing={loading}
           />
 
+          {isSuperAdmin && selectedDraftIds.size > 0 && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {selectedDraftIds.size} draft{selectedDraftIds.size !== 1 ? 's' : ''} selected
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleBulkSubmitRecords()}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <span className="spinner-inline" />
+                ) : (
+                  <>
+                    <Send size={16} /> Submit for certification
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3"
+                onClick={() => setSelectedDraftIds(new Set())}
+                disabled={submitting}
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex justify-center py-16">
               <span className="spinner-inline large" />
@@ -440,8 +643,27 @@ export const AdminVerificationList: React.FC = () => {
                 adminMoveFailedSubmitEnabled={isSuperAdmin}
                 onDelete={record => void handleDelete(record as VerificationRow)}
                 onMoveToDraft={record => void handleMoveToDraft(record as VerificationRow)}
+                onSubmit={
+                  isSuperAdmin
+                    ? record => void handleSubmitRecord(record)
+                    : undefined
+                }
                 deletingId={deletingId}
                 movingToDraftId={movingToDraftId}
+                submitting={submitting}
+                bulkSelect={
+                  isSuperAdmin
+                    ? {
+                        selectedDraftIds,
+                        draftSubmitMeta,
+                        selectAllDraftsRef,
+                        selectableDraftIds,
+                        allSelectableDraftsSelected,
+                        onToggleDraftSelection: toggleDraftSelection,
+                        onToggleSelectAllDrafts: toggleSelectAllDrafts,
+                      }
+                    : undefined
+                }
               />
               <TablePagination
                 page={page}

@@ -179,7 +179,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
 }) => {
   const { appSettings } = useAppSettings();
   const { products } = useAppContext();
-  const showBulkSelect = mode === 'rc' && bulkSelect;
+  const showBulkSelect = Boolean(bulkSelect);
   const showRcCentre = mode === 'admin';
   const showVctColumn = !hideVctColumn;
   const rvWalletListEnabled = isRvWalletPaymentRequired('RV');
@@ -215,7 +215,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const openDetails = () => onView(record);
             const detailTitle = editable ? 'Edit draft verification' : 'View verification details';
             const showEdit = mode === 'rc' && editable && onEdit;
-            const showSubmit = mode === 'rc' && canSubmitVerification(record) && onSubmit;
+            const showSubmit = canSubmitVerification(record) && Boolean(onSubmit);
             const showDownload = canDownloadVerificationCertificate(record);
             const showDelete =
               onDelete

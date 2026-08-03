@@ -16,9 +16,10 @@ import {
   canResubmitRejectedVerification,
   findSerialRvWalletPayment,
   getVerificationSerialGroup,
-  rejectedResubmitNeedsFreshWalletCharge,
+  type RejectedResubmitReusableRvPayment,
   resubmitRejectedVerification,
 } from '../lib/verificationResubmit';
+import { isRvWalletPaymentRequired } from '../lib/appSettings';
 import type { FirestoreUserDoc, SiteCalibration } from '../types';
 import { RvWalletPaymentPanel } from './RvWalletPaymentPanel';
 
@@ -44,6 +45,10 @@ export const RejectedResubmitSection: React.FC<RejectedResubmitSectionProps> = (
   const [error, setError] = useState('');
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
+  const [reusablePayment, setReusablePayment] = useState<RejectedResubmitReusableRvPayment | null>(
+    null,
+  );
+  const [paymentCheckDone, setPaymentCheckDone] = useState(false);
 
   const isSuperAdmin = user?.role === 'super_admin';
   const group = useMemo(
@@ -52,11 +57,33 @@ export const RejectedResubmitSection: React.FC<RejectedResubmitSectionProps> = (
   );
 
   const eligible = canResubmitRejectedVerification(record, group, isSuperAdmin);
-  const reusablePayment = useMemo(
-    () => findSerialRvWalletPayment(record, group),
-    [record, group],
-  );
-  const needsFreshWallet = rejectedResubmitNeedsFreshWalletCharge(record, group);
+  const isRv = isRvWalletPaymentRequired(record.verificationType ?? '');
+  const needsFreshWallet = isRv && paymentCheckDone && reusablePayment == null;
+
+  useEffect(() => {
+    if (!eligible || !isRv) {
+      setReusablePayment(null);
+      setPaymentCheckDone(true);
+      return;
+    }
+
+    let cancelled = false;
+    setPaymentCheckDone(false);
+    void (async () => {
+      try {
+        const active = await findSerialRvWalletPayment(record, group);
+        if (!cancelled) setReusablePayment(active);
+      } catch {
+        if (!cancelled) setReusablePayment(null);
+      } finally {
+        if (!cancelled) setPaymentCheckDone(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [eligible, isRv, record, group]);
 
   useEffect(() => {
     if (!eligible || !needsFreshWallet) {
@@ -143,6 +170,11 @@ export const RejectedResubmitSection: React.FC<RejectedResubmitSectionProps> = (
   const handleResubmitClick = async () => {
     setError('');
 
+    if (!paymentCheckDone) {
+      setError('Checking wallet payment status…');
+      return;
+    }
+
     if (needsFreshWallet) {
       if (!record.rcId?.trim()) {
         setError('Rejected RV has no RC centre — cannot debit wallet.');
@@ -158,7 +190,7 @@ export const RejectedResubmitSection: React.FC<RejectedResubmitSectionProps> = (
         message: [
           `Queue a new verification for App ${appNo} (serial ${serial})?`,
           '',
-          `No prior wallet payment for this serial — RC wallet will be debited ₹${Math.round(breakdown.total)}.`,
+          `Prior wallet payment was refunded or missing — RC wallet will be debited ₹${Math.round(breakdown.total)}.`,
           'The rejected record stays closed; the worker picks up the new submission.',
         ].join('\n'),
         messageFormat: 'preline',
@@ -190,11 +222,13 @@ export const RejectedResubmitSection: React.FC<RejectedResubmitSectionProps> = (
     await completeResubmit();
   };
 
-  const helpText = needsFreshWallet
-    ? 'New run — wallet will be charged.'
-    : reusablePayment
-      ? `New run — reuses ₹${Math.round(reusablePayment.amountInr)} wallet payment.`
-      : 'New run for certificate worker.';
+  const helpText = !paymentCheckDone
+    ? 'Checking wallet…'
+    : needsFreshWallet
+      ? 'New run — wallet will be charged.'
+      : reusablePayment
+        ? `New run — reuses ₹${Math.round(reusablePayment.amountInr)} wallet payment.`
+        : 'New run for certificate worker.';
 
   return (
     <div className={`rejected-resubmit ${className}`.trim()}>
@@ -212,7 +246,7 @@ export const RejectedResubmitSection: React.FC<RejectedResubmitSectionProps> = (
         <button
           type="button"
           className="btn btn-secondary btn-sm"
-          disabled={busy}
+          disabled={busy || !paymentCheckDone}
           onClick={() => void handleResubmitClick()}
         >
           <RefreshCw size={14} aria-hidden />

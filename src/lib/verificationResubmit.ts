@@ -1,6 +1,7 @@
 import { collection, doc, setDoc, updateDoc, type Firestore } from 'firebase/firestore';
 import { isRvWalletPaymentRequired } from './appSettings';
 import { allocateVerificationApplicationNumber } from './verificationApplicationNumber';
+import { isActiveRvWalletPayment } from './rcWallet';
 import { buildRvPaymentFirestorePatch } from './rvPaymentAmount';
 import {
   canDownloadVerificationCertificate,
@@ -316,11 +317,14 @@ export type RejectedResubmitReusableRvPayment = {
   sourceRecordId: string;
 };
 
-/** Paid RV wallet entry already on this serial — reuse, do not debit again. */
-export function findSerialRvWalletPayment(
+/**
+ * Active (non-refunded) RV wallet payment on this serial — reuse, do not debit again.
+ * Refunded ledger entries are skipped so resubmit charges wallet again.
+ */
+export async function findSerialRvWalletPayment(
   record: SiteCalibration,
   group: SiteCalibration[],
-): RejectedResubmitReusableRvPayment | null {
+): Promise<RejectedResubmitReusableRvPayment | null> {
   if (!isRvWalletPaymentRequired(record.verificationType ?? '')) return null;
 
   const candidates = [record, ...group.filter(r => r.id !== record.id)];
@@ -331,6 +335,7 @@ export function findSerialRvWalletPayment(
     if (!paymentId) continue;
     const amountInr = candidate.rvPaymentAmount;
     if (amountInr == null || !(amountInr > 0)) continue;
+    if (!(await isActiveRvWalletPayment(paymentId))) continue;
     return {
       paymentId,
       amountInr,
@@ -341,13 +346,13 @@ export function findSerialRvWalletPayment(
   return null;
 }
 
-/** True when RV and this serial has no prior wallet payment to carry forward. */
-export function rejectedResubmitNeedsFreshWalletCharge(
+/** True when RV and this serial has no active (non-refunded) wallet payment to carry forward. */
+export async function rejectedResubmitNeedsFreshWalletCharge(
   record: SiteCalibration,
   group: SiteCalibration[],
-): boolean {
+): Promise<boolean> {
   if (!isRvWalletPaymentRequired(record.verificationType ?? '')) return false;
-  return findSerialRvWalletPayment(record, group) == null;
+  return (await findSerialRvWalletPayment(record, group)) == null;
 }
 
 export type ResubmitVerificationResult = {
@@ -430,7 +435,7 @@ export async function resubmitRejectedVerification(
 
   const group = options?.group?.length ? options.group : [source];
   const isRv = isRvWalletPaymentRequired(source.verificationType ?? '');
-  const reusablePayment = isRv ? findSerialRvWalletPayment(source, group) : null;
+  const reusablePayment = isRv ? await findSerialRvWalletPayment(source, group) : null;
   const freshPayment = options?.rvPayment;
 
   if (isRv && !reusablePayment) {

@@ -116,6 +116,34 @@ export function isWalletPaymentId(paymentId: string | undefined | null): boolean
   return typeof paymentId === 'string' && paymentId.startsWith('wallet:');
 }
 
+export function ledgerIdFromWalletPaymentId(paymentId: string | undefined | null): string | null {
+  if (!isWalletPaymentId(paymentId)) return null;
+  const ledgerId = paymentId!.slice('wallet:'.length).trim();
+  return ledgerId || null;
+}
+
+/**
+ * True when wallet RV debit is still settled (not refunded).
+ * Non-wallet payment ids are treated as settled when present.
+ */
+export async function isActiveRvWalletPayment(
+  paymentId: string | null | undefined,
+): Promise<boolean> {
+  const id = paymentId?.trim();
+  if (!id) return false;
+  if (!isWalletPaymentId(id)) return true;
+
+  const ledgerId = ledgerIdFromWalletPaymentId(id);
+  if (!ledgerId) return false;
+
+  const snap = await getDoc(doc(db, WALLET_LEDGER_COLLECTION, ledgerId));
+  if (!snap.exists()) return false;
+
+  const entry = snap.data() as WalletLedgerEntry;
+  if (entry.type !== 'rv_payment') return false;
+  return entry.status !== 'refunded';
+}
+
 async function resolveSubmitWalletTopUpUrl(): Promise<string> {
   if (cachedSubmitTopUpUrl) return cachedSubmitTopUpUrl;
 
