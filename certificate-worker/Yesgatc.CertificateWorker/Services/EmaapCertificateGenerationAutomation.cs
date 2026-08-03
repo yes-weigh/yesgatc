@@ -28,7 +28,7 @@ public static class EmaapCertificateGenerationAutomation
     /// </summary>
     public const string DefaultTypeOfInstrumentLabel = "Counter Scale";
 
-    public const string PrincipalOfficerName = "Harish Ramankutty";
+    public const string PrincipalOfficerName = "HARISH RAMANKUTTY";
 
     public static async Task FillStarterFormAsync(
         IPage page,
@@ -52,9 +52,13 @@ public static class EmaapCertificateGenerationAutomation
 
         await SelectInstrumentTypeAsync(page, cancellationToken);
 
-        // Basic details (#belongs_to, #mobile, #address, #state_id, #district_id, #pincode)
-        await FillByIdAsync(page, "#belongs_to", party.BelongToName);
-        await FillByIdAsync(page, "#mobile", party.Mobile);
+        // After instrument type, eMAAP auto-fills #gatc_user / #mobile / #belongs_to (Self Manufacture).
+        // Skip GATC; overwrite mobile + belongs_to from the job.
+        await ClearAndFillByIdAsync(page, "#mobile", party.Mobile);
+        await ClearAndFillByIdAsync(
+            page,
+            "#belongs_to",
+            TruncateForEmaapField(party.BelongToName, maxLength: 50));
         await FillByIdAsync(page, "#address", party.Address);
         await SelectByIdLabelAsync(page, "#state_id", party.State, invokeOnchange: true);
         await page.WaitForTimeoutAsync(800);
@@ -69,19 +73,20 @@ public static class EmaapCertificateGenerationAutomation
         await FillVerificationDecisionBlockAsync(page, instrument);
         await FillChargesBlockAsync(page, instrument, machinePhotoLocalPaths);
 
-        // Fill-only test mode: leave the form filled so portal UI changes can be inspected.
-        if (fillOnly)
-        {
-            await page.BringToFrontAsync();
-            return;
-        }
-
         await ClickSubmitCertificateDetailsAsync(page, cancellationToken);
         await FillInstrumentCertificateUploadBlockAsync(
             page,
             instrument,
             standardWeightPhotoLocalPath,
             cancellationToken);
+
+        // Fill-only: stop after Instrument Certificate Upload — do not click Generate Certificate.
+        if (fillOnly)
+        {
+            await page.BringToFrontAsync();
+            return;
+        }
+
         await ClickGenerateCertificateAsync(page, cancellationToken);
 
         await page.BringToFrontAsync();
@@ -132,6 +137,7 @@ public static class EmaapCertificateGenerationAutomation
 
     /// <summary>
     /// Post-submit Instrument Certificate Upload: br_upload (standard weights), br_remark, name_of_officer.
+    /// Section is hidden until Submit Certificate Details succeeds.
     /// </summary>
     private static async Task FillInstrumentCertificateUploadBlockAsync(
         IPage page,
@@ -139,11 +145,22 @@ public static class EmaapCertificateGenerationAutomation
         string? standardWeightPhotoLocalPath,
         CancellationToken cancellationToken)
     {
+        // Wait for post-submit section to unhide.
+        var uploadSection = page.Locator("#group-br_instrument_certificate_upload-0").First;
+        if (await uploadSection.CountAsync() > 0)
+        {
+            await uploadSection.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 45_000,
+            });
+        }
+
         var upload = page.Locator("#br_upload_file, input[name='br_upload']").First;
         await upload.WaitForAsync(new LocatorWaitForOptions
         {
-            State = WaitForSelectorState.Attached,
-            Timeout = 30_000,
+            State = WaitForSelectorState.Visible,
+            Timeout = 45_000,
         });
         await upload.ScrollIntoViewIfNeededAsync();
         cancellationToken.ThrowIfCancellationRequested();
@@ -158,23 +175,10 @@ public static class EmaapCertificateGenerationAutomation
         await upload.SetInputFilesAsync(standardWeightPhotoLocalPath);
 
         var remarks = string.IsNullOrWhiteSpace(instrument.Remarks) ? "Nill" : instrument.Remarks.Trim();
-        await FillByIdAsync(page, "#br_remark", remarks);
-        await FillByIdAsync(page, "#name_of_officer", PrincipalOfficerName);
+        await ClearAndFillByIdAsync(page, "#br_remark", remarks);
 
-        // Ensure principal officer field is visible / committed.
-        var officer = page.Locator("#name_of_officer").First;
-        if (await officer.CountAsync() > 0)
-        {
-            await officer.ScrollIntoViewIfNeededAsync();
-            await officer.FillAsync(PrincipalOfficerName);
-            await officer.EvaluateAsync(
-                """
-                el => {
-                  el.dispatchEvent(new Event('input', { bubbles: true }));
-                  el.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                """);
-        }
+        // Portal prefills GATC company name — always overwrite with principal officer.
+        await ClearAndFillByIdAsync(page, "#name_of_officer", PrincipalOfficerName);
 
         cancellationToken.ThrowIfCancellationRequested();
     }
@@ -536,6 +540,55 @@ public static class EmaapCertificateGenerationAutomation
         return string.Empty;
     }
 
+    private static string TruncateForEmaapField(string? value, int maxLength)
+    {
+        var trimmed = value?.Trim() ?? string.Empty;
+        if (maxLength <= 0 || trimmed.Length <= maxLength)
+        {
+            return trimmed;
+        }
+
+        return trimmed[..maxLength];
+    }
+
+    /// <summary>Clear autofilled value, then type job data (and fire eMAAP input hooks).</summary>
+    private static async Task ClearAndFillByIdAsync(IPage page, string selector, string value)
+    {
+        var el = page.Locator(selector).First;
+        await el.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 10_000,
+        });
+
+        await el.FillAsync(string.Empty);
+        await el.EvaluateAsync(
+            """
+            el => {
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            """);
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        await el.FillAsync(value.Trim());
+        await el.EvaluateAsync(
+            """
+            el => {
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              const hook = (el.getAttribute('data-input') || '').toLowerCase();
+              if (hook.includes('changebtvalue') && typeof changebtvalue === 'function') {
+                try { changebtvalue(); } catch (_) {}
+              }
+            }
+            """);
+    }
+
     private static async Task FillByIdAsync(IPage page, string selector, string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -721,8 +774,21 @@ public static class EmaapCertificateGenerationAutomation
         cancellationToken.ThrowIfCancellationRequested();
 
         await SetSelectValueAsync(select, InstrumentTypeValue, InstrumentTypeLabel, callShblocks: true);
-        await page.WaitForTimeoutAsync(500);
 
+        // Portal auto-populates Select GATC (#gatc_user), Mobile, Belongs to after instrument type.
+        await page.WaitForTimeoutAsync(2_000);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await page.Locator("#gatc_user").WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 10_000,
+        });
+        await page.Locator("#mobile").WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 10_000,
+        });
         await page.Locator("#belongs_to").WaitForAsync(new LocatorWaitForOptions
         {
             State = WaitForSelectorState.Visible,

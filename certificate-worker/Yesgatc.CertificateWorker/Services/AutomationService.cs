@@ -1017,7 +1017,8 @@ public sealed class AutomationService : IAsyncDisposable
 
     /// <summary>
     /// Logged-in eMAAP: fill form → submit → generate → download PDF → mark certified in Firebase.
-    /// When <paramref name="fillOnly"/> is true, fills the generate form and stops (no submit/certify/Firebase).
+    /// When <paramref name="fillOnly"/> is true: fill form → Submit Certificate Details → fill upload section,
+    /// then stop (no Generate Certificate / PDF / Firebase certify).
     /// Auto re-login (captcha + OTP) if session expired.
     /// </summary>
     public async Task<string> FillEmaapCertificateGenerationAsync(
@@ -1111,8 +1112,8 @@ public sealed class AutomationService : IAsyncDisposable
         var filledCount = preparedPaths.Count(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p));
         var weightsPath = preparedPaths.Count > 3 ? preparedPaths[3] : string.Empty;
 
-        // Weights photo is needed after Submit Certificate Details (full pipeline only).
-        if (!fillOnly && (string.IsNullOrWhiteSpace(weightsPath) || !File.Exists(weightsPath)))
+        // Weights photo is needed after Submit Certificate Details (upload step).
+        if (string.IsNullOrWhiteSpace(weightsPath) || !File.Exists(weightsPath))
         {
             throw new InvalidOperationException(
                 "Standard weight photo is missing on the verification record (needed after Submit Certificate Details).");
@@ -1130,7 +1131,7 @@ public sealed class AutomationService : IAsyncDisposable
         if (fillOnly)
         {
             return $"eMAAP fill-only complete for {instrument.SerialNumber} " +
-                   $"({filledCount} photo slot(s) prepared). Form left open — no submit/certify.";
+                   $"({filledCount} photo slot(s) prepared). Submitted details + upload filled — Generate Certificate not clicked.";
         }
 
         return await DownloadIssuedPdfAndMarkCertifiedAsync(
