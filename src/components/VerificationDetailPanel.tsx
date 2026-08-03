@@ -9,6 +9,7 @@ import { RvLegacyZohoInvoiceSection } from './RvLegacyZohoInvoiceSection';
 import { RvLegacyZohoSettlementSection } from './RvLegacyZohoSettlementSection';
 import { RvSubmitTestRevertSection } from './RvSubmitTestRevertSection';
 import { FailedSubmitMoveToDraftSection } from './FailedSubmitMoveToDraftSection';
+import { RejectedResubmitSection } from './RejectedResubmitSection';
 import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import { VerificationZohoInvoiceSection } from './VerificationZohoInvoiceSection';
 import { canResubmitSerialGroup, getVerificationSerialGroup } from '../lib/verificationResubmit';
@@ -188,6 +189,15 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               onMoved={async () => {
                 await onRecordsChanged?.();
                 onClose();
+              }}
+              className="mt-3"
+            />
+            <RejectedResubmitSection
+              record={record}
+              allRecords={allRecords}
+              rcCenterName={rcCenterName}
+              onResubmitted={async newRecordId => {
+                await onRecordsChanged?.(newRecordId);
               }}
               className="mt-3"
             />

@@ -95,6 +95,7 @@ import {
 } from '../../components/VerificationListFilters';
 import {
   buildDuplicatePrimaryIdSet,
+  buildSerialGroupMap,
   buildVerificationListDisplay,
   matchesVerificationListStatusFilter,
   tallyVerificationStatusFiltersCollapsed,
@@ -2145,17 +2146,26 @@ export const RCSiteCalibration: React.FC = () => {
   const canSubmitFromForm = !submitBlockReason;
 
   const duplicatePrimaryIds = useMemo(() => buildDuplicatePrimaryIdSet(records), [records]);
+  const serialGroups = useMemo(() => buildSerialGroupMap(records), [records]);
 
   const filteredRecords = useMemo(() => {
     const filtered = records.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
-      if (!matchesVerificationListStatusFilter(record, statusFilter, records, duplicatePrimaryIds)) {
+      if (
+        !matchesVerificationListStatusFilter(
+          record,
+          statusFilter,
+          records,
+          duplicatePrimaryIds,
+          serialGroups,
+        )
+      ) {
         return false;
       }
       return matchesVerificationTypeFilter(record, typeFilter);
     });
     return buildVerificationListDisplay(filtered, records, statusFilter);
-  }, [records, statusFilter, typeFilter, searchTerm, duplicatePrimaryIds]);
+  }, [records, statusFilter, typeFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),

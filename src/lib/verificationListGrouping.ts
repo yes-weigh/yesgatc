@@ -11,7 +11,6 @@ import {
   matchesVerificationStatusFilter,
   matchesVerificationTypeFilter,
   normalizeVerificationStatus,
-  verificationStatusFilterBucket,
   type VerificationStatusFilter,
   type VerificationTypeFilter,
   type VerificationStatusFilterCounts,
@@ -136,6 +135,15 @@ function recordRecencyKey(record: SiteCalibration): string {
   );
 }
 
+/** Best row to represent a serial in list views (active cert first, void copies last). */
+export function pickPrimaryListRecord(group: SiteCalibration[]): SiteCalibration {
+  return [...group].sort((a, b) => {
+    const scoreDiff = listRecordScore(a) - listRecordScore(b);
+    if (scoreDiff !== 0) return scoreDiff;
+    return recordRecencyKey(b).localeCompare(recordRecencyKey(a));
+  })[0];
+}
+
 /** Primary row id per RC + serial group (and every record without a serial key). */
 export function buildDuplicatePrimaryIdSet(allRecords: SiteCalibration[]): Set<string> {
   const primaryIds = new Set<string>();
@@ -162,21 +170,56 @@ export function isVerificationListDuplicate(
   return Boolean(key && !primaryIds.has(record.id));
 }
 
+/** True when this verification (or a sibling in the same RC+serial) already has an issued cert. */
+function hasIssuedCertificate(record: SiteCalibration): boolean {
+  const cert = record.certificateNumber?.trim();
+  if (!cert) return false;
+  const status = normalizeVerificationStatus(record);
+  return (
+    status === 'certified' ||
+    Boolean(record.certificatePdfUrl?.trim()) ||
+    canShowVerificationCertifiedActions(record)
+  );
+}
+
+function serialGroupHasIssuedCertificate(
+  record: SiteCalibration,
+  allRecords: SiteCalibration[],
+  groups: Map<string, SiteCalibration[]>,
+): boolean {
+  const key = serialGroupKey(record);
+  if (!key) return hasIssuedCertificate(record);
+  const group = groups.get(key) ?? buildSerialGroupMap(allRecords).get(key);
+  if (!group?.length) return hasIssuedCertificate(record);
+  return group.some(hasIssuedCertificate);
+}
+
 export function matchesVerificationListStatusFilter(
   record: SiteCalibration,
   filter: VerificationStatusFilter,
-  _allRecords: SiteCalibration[],
+  allRecords: SiteCalibration[],
   primaryIds: Set<string>,
-  _groups: Map<string, SiteCalibration[]> = new Map(),
+  groups: Map<string, SiteCalibration[]> = new Map(),
 ): boolean {
   if (filter === 'duplicates') {
     return isVerificationListDuplicate(record, primaryIds);
   }
   if (filter === 'all') return true;
 
-  // Match this row's own stage — not the serial-group primary — so Draft/Submitted/etc.
-  // chips stay aligned with rows that actually appear after collapse.
-  return matchesVerificationStatusFilter(record, filter);
+  if (!matchesVerificationStatusFilter(record, filter)) {
+    return false;
+  }
+
+  // Rejected but same serial later certified with a certificate — not a live rejection.
+  if (
+    filter === 'rejected' &&
+    isVerificationRejected(record) &&
+    serialGroupHasIssuedCertificate(record, allRecords, groups)
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export function countVerificationDuplicates(
@@ -213,15 +256,6 @@ export function buildVerificationListDisplay(
   }
 
   return collapseVerificationsForListDisplay(filtered, allRecords);
-}
-
-/** Best row to represent a serial in list views (active cert first, void copies last). */
-export function pickPrimaryListRecord(group: SiteCalibration[]): SiteCalibration {
-  return [...group].sort((a, b) => {
-    const scoreDiff = listRecordScore(a) - listRecordScore(b);
-    if (scoreDiff !== 0) return scoreDiff;
-    return recordRecencyKey(b).localeCompare(recordRecencyKey(a));
-  })[0];
 }
 
 /**
@@ -269,20 +303,30 @@ export function collapseVerificationsForListDisplay(
   return sortVerificationsByCertificateDesc(collapsed);
 }
 
-/** Status dropdown counts — one row per RC + serial; stage buckets partition All. */
+/** Status dropdown counts — one collapsed row per RC + serial per filter (matches list rows). */
 export function tallyVerificationStatusFiltersCollapsed(
   allRecords: SiteCalibration[],
   filters: VerificationListActiveFilters,
 ): VerificationStatusFilterCounts {
-  const collapsed = verificationListCollapsedForCounts(
-    allRecords,
-    { ...filters, statusFilter: 'all' },
-    'status',
-  );
-  const groups = buildSerialGroupMap(allRecords);
+  const statusBuckets: Exclude<VerificationStatusFilter, 'all' | 'duplicates'>[] = [
+    'draft',
+    'submitted',
+    'approved',
+    'certified',
+    'failed_submit',
+    'failed_certification',
+    'rejected',
+  ];
+
+  // Omit type/rc/search only — each bucket must apply its own statusFilter (omit 'status' = ignore it).
+  const countOmit: VerificationListCountOmitFilter[] = ['type', 'rc', 'search'];
 
   const tally: VerificationStatusFilterCounts = {
-    all: collapsed.length,
+    all: verificationListCollapsedForCounts(
+      allRecords,
+      { ...filters, statusFilter: 'all' },
+      'status',
+    ).length,
     draft: 0,
     submitted: 0,
     approved: 0,
@@ -293,18 +337,18 @@ export function tallyVerificationStatusFiltersCollapsed(
     duplicates: 0,
   };
 
-  for (const row of collapsed) {
-    const key = serialGroupKey(row);
-    const group = key ? groups.get(key) : null;
-    // Same row the All-stages list shows for this serial.
-    const primary = group?.length ? pickPrimaryListRecord(group) : row;
-    tally[verificationStatusFilterBucket(primary)] += 1;
+  for (const bucket of statusBuckets) {
+    tally[bucket] = verificationListCollapsedForCounts(
+      allRecords,
+      { ...filters, statusFilter: bucket },
+      countOmit,
+    ).length;
   }
 
   const duplicateRecords = verificationListRecordsForFilterCounts(
     allRecords,
     { ...filters, statusFilter: 'duplicates' },
-    'status',
+    countOmit,
   );
   tally.duplicates = countVerificationDuplicates(duplicateRecords, allRecords);
 

@@ -1,10 +1,13 @@
 import { collection, doc, setDoc, updateDoc, type Firestore } from 'firebase/firestore';
+import { isRvWalletPaymentRequired } from './appSettings';
 import { allocateVerificationApplicationNumber } from './verificationApplicationNumber';
+import { buildRvPaymentFirestorePatch } from './rvPaymentAmount';
 import {
   canDownloadVerificationCertificate,
   isVerificationCertifiedOnDoca,
   isVerificationFullyCertified,
   isCertificationFailureResubmitSource,
+  isVerificationRejected,
   normalizeVerificationStatus,
 } from './verificationRequest';
 import {
@@ -231,6 +234,37 @@ export function verificationVersionSubtitle(record: SiteCalibration): string {
   return parts.join(' · ');
 }
 
+const REJECTED_RESUBMIT_CLEAR_FIELDS = [
+  'rejectedAt',
+  'rvPaymentStatus',
+  'rvPaymentId',
+  'rvPaymentAmount',
+  'rvPaidAt',
+  'zohoInvoiceId',
+  'zohoInvoiceNumber',
+  'zohoInvoiceStatus',
+  'zohoCustomerId',
+  'zohoCustomerName',
+  'zohoInvoiceTotal',
+  'zohoOrganizationId',
+  'zohoPushStatus',
+  'zohoPushedAt',
+  'zohoPushError',
+  'zohoCustomerPaymentId',
+  'zohoCustomerPaymentStatus',
+  'zohoCustomerPaymentAmountInr',
+  'zohoExpenseId',
+  'zohoExpenseStatus',
+  'zohoExpenseAmountInr',
+  'zohoSettlementStatus',
+  'zohoSettlementError',
+  'zohoSettledAt',
+  'zohoInvoiceReferenceNumber',
+  'zohoInvoiceReferenceSynced',
+  'zohoInvoiceReferenceSyncedAt',
+  'zohoInvoiceReferenceSyncError',
+] as const;
+
 function stripCertificateOutcomeFields(
   data: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -249,6 +283,71 @@ function stripCertificateOutcomeFields(
   delete next.resubmittedAt;
   delete next.id;
   return next;
+}
+
+function stripRejectedResubmitFields(
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = stripCertificateOutcomeFields(data);
+  for (const key of REJECTED_RESUBMIT_CLEAR_FIELDS) {
+    delete next[key];
+  }
+  return next;
+}
+
+/** Super Admin may queue a fresh DOCA run from a permanently rejected verification. */
+export function canResubmitRejectedVerification(
+  record: SiteCalibration,
+  group: SiteCalibration[],
+  isSuperAdmin: boolean,
+): boolean {
+  if (!isSuperAdmin) return false;
+  if (!isVerificationRejected(record)) return false;
+  if (isVerificationCertificateVoided(record)) return false;
+  if (record.supersededByResubmissionId?.trim()) return false;
+  if (hasPendingResubmission(record.id, group)) return false;
+  return true;
+}
+
+export type RejectedResubmitReusableRvPayment = {
+  paymentId: string;
+  amountInr: number;
+  paidAt?: string;
+  sourceRecordId: string;
+};
+
+/** Paid RV wallet entry already on this serial — reuse, do not debit again. */
+export function findSerialRvWalletPayment(
+  record: SiteCalibration,
+  group: SiteCalibration[],
+): RejectedResubmitReusableRvPayment | null {
+  if (!isRvWalletPaymentRequired(record.verificationType ?? '')) return null;
+
+  const candidates = [record, ...group.filter(r => r.id !== record.id)];
+  for (const candidate of candidates) {
+    if (candidate.verificationType !== 'RV') continue;
+    if (candidate.rvPaymentStatus !== 'paid') continue;
+    const paymentId = candidate.rvPaymentId?.trim();
+    if (!paymentId) continue;
+    const amountInr = candidate.rvPaymentAmount;
+    if (amountInr == null || !(amountInr > 0)) continue;
+    return {
+      paymentId,
+      amountInr,
+      paidAt: candidate.rvPaidAt?.trim() || undefined,
+      sourceRecordId: candidate.id,
+    };
+  }
+  return null;
+}
+
+/** True when RV and this serial has no prior wallet payment to carry forward. */
+export function rejectedResubmitNeedsFreshWalletCharge(
+  record: SiteCalibration,
+  group: SiteCalibration[],
+): boolean {
+  if (!isRvWalletPaymentRequired(record.verificationType ?? '')) return false;
+  return findSerialRvWalletPayment(record, group) == null;
 }
 
 export type ResubmitVerificationResult = {
@@ -296,6 +395,95 @@ export async function resubmitVerificationForDoca(
     certificateQuality: certificationFailed
       ? ('certification_failed' satisfies CertificateQuality)
       : ('corrupted_qr' satisfies CertificateQuality),
+    supersededByResubmissionId: newRef.id,
+    updatedAt: now,
+  });
+
+  return { newRecordId: newRef.id, applicationNumber };
+}
+
+export type RejectedResubmitRvPayment = {
+  paymentId: string;
+  amountInr: number;
+};
+
+/**
+ * Clones a rejected verification into `submitted` for the certificate worker.
+ * RV reuses an existing serial wallet payment when present; only unpaid serials debit again.
+ */
+export async function resubmitRejectedVerification(
+  firestore: Firestore,
+  source: SiteCalibration,
+  resubmittedByUid: string,
+  options?: {
+    group?: SiteCalibration[];
+    /** Fresh wallet debit — only when serial has no prior paid RV payment. */
+    rvPayment?: RejectedResubmitRvPayment;
+  },
+): Promise<ResubmitVerificationResult> {
+  if (!isVerificationRejected(source)) {
+    throw new Error('Only rejected verifications can use this resubmit path.');
+  }
+  if (source.supersededByResubmissionId?.trim()) {
+    throw new Error('This rejected verification was already resubmitted.');
+  }
+
+  const group = options?.group?.length ? options.group : [source];
+  const isRv = isRvWalletPaymentRequired(source.verificationType ?? '');
+  const reusablePayment = isRv ? findSerialRvWalletPayment(source, group) : null;
+  const freshPayment = options?.rvPayment;
+
+  if (isRv && !reusablePayment) {
+    if (!freshPayment?.paymentId?.trim() || !(freshPayment.amountInr > 0)) {
+      throw new Error('RV rejected resubmit requires a wallet payment for this serial.');
+    }
+  }
+
+  const now = new Date().toISOString();
+  const newRef = doc(collection(firestore, 'siteCalibrations'));
+  const applicationNumber = await allocateVerificationApplicationNumber(firestore);
+
+  const rootId = source.resubmissionRootId?.trim() || source.id;
+  const ordinal = (source.resubmissionOrdinal ?? 1) + 1;
+
+  const base = stripRejectedResubmitFields(
+    source as unknown as Record<string, unknown>,
+  );
+
+  let paymentFields: Record<string, unknown>;
+  if (!isRv) {
+    paymentFields = { rvPaymentStatus: 'not_required' as const };
+  } else if (reusablePayment) {
+    paymentFields = {
+      rvPaymentStatus: 'paid' as const,
+      rvPaymentId: reusablePayment.paymentId,
+      rvPaymentAmount: reusablePayment.amountInr,
+      rvPaidAt: reusablePayment.paidAt || now,
+    };
+  } else if (freshPayment) {
+    paymentFields = buildRvPaymentFirestorePatch(freshPayment.paymentId, freshPayment.amountInr);
+  } else {
+    throw new Error('RV rejected resubmit requires a wallet payment for this serial.');
+  }
+
+  await setDoc(newRef, {
+    ...base,
+    ...paymentFields,
+    status: 'submitted',
+    submittedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    applicationNumber,
+    resubmittedFromId: source.id,
+    resubmissionRootId: rootId,
+    resubmissionOrdinal: ordinal,
+    resubmittedByUid,
+    resubmittedAt: now,
+    createdByUid: resubmittedByUid,
+    zohoPushStatus: 'skipped',
+  });
+
+  await updateDoc(doc(firestore, 'siteCalibrations', source.id), {
     supersededByResubmissionId: newRef.id,
     updatedAt: now,
   });

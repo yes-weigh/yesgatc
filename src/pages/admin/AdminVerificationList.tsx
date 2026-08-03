@@ -14,6 +14,7 @@ import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   buildDuplicatePrimaryIdSet,
+  buildSerialGroupMap,
   buildVerificationListDisplay,
   matchesVerificationListStatusFilter,
   tallyVerificationStatusFiltersCollapsed,
@@ -134,13 +135,22 @@ export const AdminVerificationList: React.FC = () => {
   }, [records, viewingRecord?.id]);
 
   const duplicatePrimaryIds = useMemo(() => buildDuplicatePrimaryIdSet(records), [records]);
+  const serialGroups = useMemo(() => buildSerialGroupMap(records), [records]);
 
   const filteredRecords = useMemo(() => {
     const filtered = records.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm, { rcCenterName: record.rcCenterName })) {
         return false;
       }
-      if (!matchesVerificationListStatusFilter(record, statusFilter, records, duplicatePrimaryIds)) {
+      if (
+        !matchesVerificationListStatusFilter(
+          record,
+          statusFilter,
+          records,
+          duplicatePrimaryIds,
+          serialGroups,
+        )
+      ) {
         return false;
       }
       if (!matchesVerificationTypeFilter(record, typeFilter)) {
@@ -152,7 +162,7 @@ export const AdminVerificationList: React.FC = () => {
       return true;
     });
     return buildVerificationListDisplay(filtered, records, statusFilter);
-  }, [records, statusFilter, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds]);
+  }, [records, statusFilter, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
