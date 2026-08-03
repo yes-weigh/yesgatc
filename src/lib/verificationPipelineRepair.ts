@@ -14,6 +14,7 @@ import {
   isCorruptedFirestoreString,
   isCorruptedVerificationRecord,
   isVerificationFailedAtSubmit,
+  isVerificationRejected,
   isValidVerificationIsoTimestamp,
 } from './verificationRequest';
 import type { SiteCalibration, VerificationRequestStatus } from '../types';
@@ -194,16 +195,18 @@ export async function repairVerificationSubmitted(
   });
 }
 
-/** Super Admin only — failed-at-submit → draft so RC/VCT can fix and resubmit. */
+/** Super Admin only — failed-at-submit or rejected → draft so RC/VCT can fix and resubmit. */
 export function canMoveFailedSubmitToDraft(
   record: SiteCalibration,
   isSuperAdmin: boolean,
 ): boolean {
-  return isSuperAdmin && isVerificationFailedAtSubmit(record);
+  if (!isSuperAdmin) return false;
+  if (record.supersededByResubmissionId?.trim()) return false;
+  return isVerificationFailedAtSubmit(record) || isVerificationRejected(record);
 }
 
 /**
- * Reverts a failed-at-submit record to draft.
+ * Reverts a failed-at-submit or rejected record to draft.
  * Keeps applicationNumber and evidence fields; clears submit/pipeline failure markers.
  */
 export async function moveFailedSubmitVerificationToDraft(recordId: string): Promise<void> {
@@ -218,5 +221,6 @@ export async function moveFailedSubmitVerificationToDraft(recordId: string): Pro
     pipelineFailureMessage: deleteField(),
     pipelineFailedAt: deleteField(),
     certificationLastError: deleteField(),
+    rejectedAt: deleteField(),
   });
 }

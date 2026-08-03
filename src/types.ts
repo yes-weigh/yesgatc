@@ -466,6 +466,8 @@ export interface SiteCalibration {
   pipelineFailedPhase?: 'submit' | 'certification';
   pipelineFailureMessage?: string;
   pipelineFailedAt?: string;
+  /** Set when status becomes rejected (permanent worker close). */
+  rejectedAt?: string;
   certificatePdfUrl?: string;
   certificatePdfPath?: string;
   certificatePdfName?: string;

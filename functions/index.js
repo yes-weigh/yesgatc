@@ -26,6 +26,9 @@ const {
   reconcileZohoOutstandingHandler,
   reconcileZohoOutstandingScheduledHandler,
 } = require('./zohoReconcile');
+const {
+  moveStaleFailedVerificationsToDraftHandler,
+} = require('./verificationStaleToDraft');
 const { pushLegacyRvZohoSettlementHandler } = require('./zohoRvSettlement');
 const { migrateRcZohoExpenseAccountFieldsHandler } = require('./migrateRcZohoExpenseAccount');
 const {
@@ -206,6 +209,17 @@ exports.reconcileZohoOutstandingScheduled = onSchedule(
     memory: '512MiB',
   },
   async () => reconcileZohoOutstandingScheduledHandler(adminDb()),
+);
+
+/** Every 15 minutes — reopen rejected / failed-at-submit drafts after 12 hours. */
+exports.moveStaleFailedVerificationsToDraft = onSchedule(
+  {
+    schedule: 'every 15 minutes',
+    region: CALLABLE_REGION,
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async () => moveStaleFailedVerificationsToDraftHandler(adminDb()),
 );
 
 /** Super Admin on-demand sweep for unpushed Zoho RV invoices and wallet transfers. */

@@ -63,13 +63,8 @@ export const FailedSubmitMoveToDraftSection: React.FC<FailedSubmitMoveToDraftSec
           <p className="failed-submit-move-draft__label text-muted text-xs mb-1">Super Admin</p>
           <p className="failed-submit-move-draft__title mb-0">Move to draft</p>
           <p className="text-muted text-sm mb-0">
-            Lets RC/VCT fix missing photos or pincode, then resubmit. Keeps application number.
+            Reopen for RC/VCT fix and resubmit. Keeps application number.
           </p>
-          {record.pipelineFailureMessage?.trim() && (
-            <p className="text-muted text-xs mb-0 mt-2" role="status">
-              Failure: {record.pipelineFailureMessage.trim()}
-            </p>
-          )}
           {error && (
             <p className="form-error text-sm mb-0 mt-2" role="alert">
               {error}

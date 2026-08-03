@@ -179,7 +179,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
 }) => {
   const { appSettings } = useAppSettings();
   const { products } = useAppContext();
-  const showBulkSelect = Boolean(bulkSelect);
+  const bulk = bulkSelect;
   const showRcCentre = mode === 'admin';
   const showVctColumn = !hideVctColumn;
   const rvWalletListEnabled = isRvWalletPaymentRequired('RV');
@@ -187,14 +187,14 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
 
   return (
     <div className="verification-list-cards-wrap">
-      {showBulkSelect && bulkSelect.selectableDraftIds.length > 0 && (
+      {bulk && bulk.selectableDraftIds.length > 0 && (
         <div className="verification-list-card-select-all">
           <label className="verification-device-check verification-device-check--header">
             <input
-              ref={bulkSelect.selectAllDraftsRef}
+              ref={bulk.selectAllDraftsRef}
               type="checkbox"
-              checked={bulkSelect.allSelectableDraftsSelected}
-              onChange={bulkSelect.onToggleSelectAllDrafts}
+              checked={bulk.allSelectableDraftsSelected}
+              onChange={bulk.onToggleSelectAllDrafts}
               disabled={submitting}
               aria-label="Select all submittable drafts"
             />
@@ -209,7 +209,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
         <div className="verification-list-cards">
           {records.map(record => {
             const editable = mode === 'rc' && isVerificationEditable(record);
-            const draftMeta = bulkSelect?.draftSubmitMeta.get(record.id);
+            const draftMeta = bulk?.draftSubmitMeta.get(record.id);
             const isDraft = normalizeVerificationStatus(record) === 'draft';
             const submitBlockReason = draftMeta?.blockReason ?? null;
             const openDetails = () => onView(record);
@@ -260,7 +260,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   .join(' ')}
               >
                 <div className="verification-list-card-leading">
-                  {showBulkSelect && isDraft && (
+                  {bulk && isDraft && (
                     <label
                       className="verification-list-card-select verification-device-check"
                       title={submitBlockReason ?? 'Select for bulk submit'}
@@ -268,9 +268,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                     >
                       <input
                         type="checkbox"
-                        checked={bulkSelect.selectedDraftIds.has(record.id)}
+                        checked={bulk.selectedDraftIds.has(record.id)}
                         onChange={() =>
-                          bulkSelect.onToggleDraftSelection(
+                          bulk.onToggleDraftSelection(
                             record.id,
                             draftMeta?.submittable ?? false,
                           )
