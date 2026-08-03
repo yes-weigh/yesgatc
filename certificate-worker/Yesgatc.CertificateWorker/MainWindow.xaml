@@ -110,6 +110,14 @@
 
                         <DockPanel Grid.Row="3" Margin="18,4,18,4">
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button x:Name="FillOnlySelectedEmaapButton"
+                                        Content="Fill only"
+                                        Style="{StaticResource SecondaryButton}"
+                                        Padding="14,6"
+                                        Margin="0,0,8,0"
+                                        Visibility="Collapsed"
+                                        ToolTip="Fill eMAAP form for the selected job — no submit, generate, or Firebase certify (test mode)."
+                                        Click="FillOnlySelectedEmaapButton_Click"/>
                                 <Button x:Name="ProcessSubmittedEmaapButton"
                                         Content="Process all submitted"
                                         Style="{StaticResource PrimaryButton}"

@@ -36,6 +36,7 @@ public static class EmaapCertificateGenerationAutomation
         InstrumentDetails instrument,
         IReadOnlyList<string>? machinePhotoLocalPaths = null,
         string? standardWeightPhotoLocalPath = null,
+        bool fillOnly = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
@@ -67,6 +68,13 @@ public static class EmaapCertificateGenerationAutomation
         await FillSealingBlockAsync(page, instrument);
         await FillVerificationDecisionBlockAsync(page, instrument);
         await FillChargesBlockAsync(page, instrument, machinePhotoLocalPaths);
+
+        // Fill-only test mode: leave the form filled so portal UI changes can be inspected.
+        if (fillOnly)
+        {
+            await page.BringToFrontAsync();
+            return;
+        }
 
         await ClickSubmitCertificateDetailsAsync(page, cancellationToken);
         await FillInstrumentCertificateUploadBlockAsync(

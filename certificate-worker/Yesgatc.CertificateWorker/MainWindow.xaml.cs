@@ -1882,6 +1882,9 @@ public partial class MainWindow : Window
         ProcessSelectedEmaapButton.Visibility = selectedSubmitted
             ? Visibility.Visible
             : Visibility.Collapsed;
+        FillOnlySelectedEmaapButton.Visibility = selectedSubmitted
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
         var hasSubmitted = _jobs.Any(j => j.Record.IsSubmitted && _jobRetries.IsEligible(j.Id));
         ProcessSubmittedEmaapButton.Visibility = hasSubmitted && _session is not null
@@ -1925,6 +1928,7 @@ public partial class MainWindow : Window
 
         ProcessSelectedEmaapButton.IsEnabled = false;
         ProcessSubmittedEmaapButton.IsEnabled = false;
+        FillOnlySelectedEmaapButton.IsEnabled = false;
         try
         {
             await RunWithBusyStateAsync(async () =>
@@ -1964,6 +1968,87 @@ public partial class MainWindow : Window
         {
             ProcessSelectedEmaapButton.IsEnabled = true;
             ProcessSubmittedEmaapButton.IsEnabled = true;
+            FillOnlySelectedEmaapButton.IsEnabled = true;
+            UpdateProcessSubmittedButtonVisibility();
+        }
+    }
+
+    private async void FillOnlySelectedEmaapButton_Click(object sender, RoutedEventArgs e)
+    {
+        var item = SelectedJob;
+        if (item is null || !item.IsSubmitted)
+        {
+            SetStatus("Select a Submitted job first.", StatusKind.Info);
+            return;
+        }
+
+        if (_session is null)
+        {
+            SetStatus("Sign in as Super Admin first.", StatusKind.Info);
+            ExpandAccountPanel();
+            return;
+        }
+
+        if (!_automationService.IsBrowserConnected)
+        {
+            SetStatus("Opening eMAAP browser…", StatusKind.Working);
+            await StartDocaBrowserAsync();
+            if (!_automationService.IsBrowserConnected)
+            {
+                SetStatus("eMAAP browser did not open. Pick Chrome profile in Account, then retry.", StatusKind.Info);
+                ExpandAccountPanel();
+                return;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(item.RcId))
+        {
+            SetStatus("RC id is missing for this job.", StatusKind.Info);
+            return;
+        }
+
+        ProcessSelectedEmaapButton.IsEnabled = false;
+        ProcessSubmittedEmaapButton.IsEnabled = false;
+        FillOnlySelectedEmaapButton.IsEnabled = false;
+        try
+        {
+            await RunWithBusyStateAsync(async () =>
+            {
+                await RunOnUiAsync(() => SyncDocaCredentialsToAllAutomation());
+                SetStatusSafe(
+                    $"eMAAP fill only for {item.CustomerName} · {item.SerialNumber}…",
+                    StatusKind.Working);
+                var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+                var party = await _partyDetailsService.ResolveForJobAsync(item, item.RcId, token).ConfigureAwait(false);
+                var instrument = await _instrumentDetailsService.ResolveForJobAsync(item, item.RcId, token)
+                    .ConfigureAwait(false);
+                AddActivityEntry(
+                    $"eMAAP fill-only: {party.BelongToName} · {instrument.SerialNumber} · {item.VerificationTypeLabel}");
+                var message = await _automationService.FillEmaapCertificateGenerationAsync(
+                    item,
+                    party,
+                    instrument,
+                    token,
+                    fillOnly: true).ConfigureAwait(false);
+
+                SetStatusSafe(message, StatusKind.Success);
+                AddActivityEntry(message);
+            }, offUiThread: true);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"eMAAP fill-only failed: {ex.Message}", ex, StatusKind.Error);
+            AddActivityEntry($"eMAAP fill-only failed: {ex.Message}");
+            if (ex is EmaapMandatoryStepException)
+            {
+                HaltWorkerPipeline(ex.Message);
+            }
+        }
+        finally
+        {
+            ProcessSelectedEmaapButton.IsEnabled = true;
+            ProcessSubmittedEmaapButton.IsEnabled = true;
+            FillOnlySelectedEmaapButton.IsEnabled = true;
             UpdateProcessSubmittedButtonVisibility();
         }
     }
@@ -2001,6 +2086,8 @@ public partial class MainWindow : Window
         }
 
         ProcessSubmittedEmaapButton.IsEnabled = false;
+        FillOnlySelectedEmaapButton.IsEnabled = false;
+        ProcessSelectedEmaapButton.IsEnabled = false;
         try
         {
             await RunWithBusyStateAsync(async () =>
@@ -2018,6 +2105,8 @@ public partial class MainWindow : Window
         finally
         {
             ProcessSubmittedEmaapButton.IsEnabled = true;
+            FillOnlySelectedEmaapButton.IsEnabled = true;
+            ProcessSelectedEmaapButton.IsEnabled = true;
             UpdateProcessSubmittedButtonVisibility();
         }
     }
