@@ -26,7 +26,7 @@ public sealed class InstrumentDetails
     public string ModelApprovalNo { get; init; } = string.Empty;
     public string ApplicationNumber { get; init; } = string.Empty;
     public string MoneyReceiptNumber { get; init; } = string.Empty;
-    /// <summary>DOCA money receipt date (dd-MM-yy). Also used for eMAAP #date (converted).</summary>
+    /// <summary>DOCA money receipt date (dd-MM-yy). Also used for eMAAP #next_verification_due / #date (converted).</summary>
     public string MoneyReceiptDated { get; init; } = string.Empty;
     /// <summary>Verification fee incl. GST (INR, whole rupees).</summary>
     public string VerificationFeeTotal { get; init; } = string.Empty;

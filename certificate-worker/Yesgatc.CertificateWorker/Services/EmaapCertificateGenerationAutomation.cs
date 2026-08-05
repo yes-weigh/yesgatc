@@ -326,7 +326,13 @@ public static class EmaapCertificateGenerationAutomation
             : FirstNonEmpty(
                 ToHtmlDate(instrument.MoneyReceiptDated),
                 DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-        await FillByIdAsync(page, "#date", isoDate);
+        // eMAAP renamed #date → #next_verification_due (label still "Date").
+        await FillFirstMatchingAsync(
+            page,
+            isoDate,
+            "#next_verification_due",
+            "#date",
+            "input[name='next_verification_due']");
 
         var fee = FirstNonEmpty(instrument.VerificationFeeTotal, "0");
         await FillByIdAsync(page, "#verification_fee", fee);
@@ -602,6 +608,48 @@ public static class EmaapCertificateGenerationAutomation
             State = WaitForSelectorState.Visible,
             Timeout = 10_000,
         });
+        await FillLocatorAsync(el, value);
+    }
+
+    /// <summary>Try selectors in order (site field renames). First visible wins.</summary>
+    private static async Task FillFirstMatchingAsync(IPage page, string value, params string[] selectors)
+    {
+        if (string.IsNullOrWhiteSpace(value) || selectors.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var selector in selectors)
+        {
+            var el = page.Locator(selector).First;
+            if (await el.CountAsync() == 0)
+            {
+                continue;
+            }
+
+            try
+            {
+                await el.WaitForAsync(new LocatorWaitForOptions
+                {
+                    State = WaitForSelectorState.Visible,
+                    Timeout = 3_000,
+                });
+            }
+            catch (PlaywrightException)
+            {
+                continue;
+            }
+
+            await FillLocatorAsync(el, value);
+            return;
+        }
+
+        throw new TimeoutException(
+            $"eMAAP date field not found. Tried: {string.Join(", ", selectors)}");
+    }
+
+    private static async Task FillLocatorAsync(ILocator el, string value)
+    {
         await el.FillAsync(value);
         await el.EvaluateAsync(
             """
