@@ -14,6 +14,15 @@
     ],
     "headers": [
       {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Content-Security-Policy",
+            "value": "frame-ancestors 'self' https://service.yesweigh.in https://yesweigh-service.web.app https://yesweigh-service.firebaseapp.com http://localhost:5173 http://localhost:5174 http://127.0.0.1:5173"
+          }
+        ]
+      },
+      {
         "source": "/manifest.webmanifest",
         "headers": [
           {

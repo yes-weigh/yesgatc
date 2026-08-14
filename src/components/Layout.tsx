@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
+import { embedVerificationPath, isEmbedSession, rememberEmbedMode } from '../lib/embedMode';
 import type { FirestoreUserDoc } from '../types';
 
 type NavItem = {
@@ -64,6 +65,20 @@ export const Layout: React.FC = () => {
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  useEffect(() => {
+    rememberEmbedMode();
+    if (!isEmbedSession()) return undefined;
+    document.body.classList.add('embed-mode');
+    return () => document.body.classList.remove('embed-mode');
+  }, []);
+
+  useEffect(() => {
+    if (!isEmbedSession()) return;
+    if (location.pathname === '/rc' || location.pathname === '/rc/') {
+      navigate(embedVerificationPath(), { replace: true });
+    }
+  }, [location.pathname, navigate]);
 
   useEffect(() => {
     setSuppressSidebarOverlayHistory(true);
@@ -284,8 +299,10 @@ export const Layout: React.FC = () => {
     </>
   );
 
+  const embed = isEmbedSession();
+
   return (
-    <div className="app-wrapper">
+    <div className={`app-wrapper${embed ? ' embed-mode' : ''}`}>
       {!isMobile && (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
           {sidebarContent(false)}

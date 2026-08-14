@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { isEmbedSession } from '../lib/embedMode';
 import type { Role } from '../types';
 
 interface ProtectedRouteProps {
@@ -18,7 +19,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to={isEmbedSession() ? '/login?embed=1' : '/login'} replace />;
 
   if (!allowedRoles.includes(user.role)) {
     if (user.role === 'super_admin') return <Navigate to="/admin" replace />;

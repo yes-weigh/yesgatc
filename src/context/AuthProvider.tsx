@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  signInWithCustomToken,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
@@ -13,6 +14,7 @@ import {
   isValidAadhar,
   normalizeAadhar,
 } from '../lib/aadharAuth';
+import { clearEmbedToken, takeEmbedTokenFromLocation } from '../lib/embedMode';
 import { isVctApproved, isVctActive, VCT_INACTIVE_LOGIN_MESSAGE, VCT_PENDING_LOGIN_MESSAGE } from '../lib/vctApproval';
 import type { User, Role, FirestoreUserDoc } from '../types';
 import { AuthContext } from './auth-context';
@@ -52,16 +54,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    const embedToken = takeEmbedTokenFromLocation();
+    const embedSignIn = embedToken
+      ? signInWithCustomToken(auth, embedToken)
+          .then(() => {
+            clearEmbedToken();
+          })
+          .catch(err => {
+            console.error('Embed sign-in failed', err);
+            if (!cancelled) {
+              setError('Could not open the embedded verification session.');
+            }
+          })
+      : Promise.resolve();
+
     const unsub = onAuthStateChanged(auth, async fbUser => {
-      if (fbUser) {
-        const resolved = await resolveUser(fbUser);
+      await embedSignIn;
+      if (cancelled) return;
+      const activeUser = auth.currentUser ?? fbUser;
+      if (activeUser) {
+        const resolved = await resolveUser(activeUser);
         setUser(resolved);
       } else {
         setUser(null);
       }
       setLoading(false);
     });
-    return unsub;
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   const login = async (aadharInput: string, password: string) => {

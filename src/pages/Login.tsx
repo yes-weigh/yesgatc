@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { CreditCard, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
 import { isValidAadhar, normalizeAadhar } from '../lib/aadharAuth';
+import { embedVerificationPath, isEmbedSession, rememberEmbedMode } from '../lib/embedMode';
 
 export const Login: React.FC = () => {
   const { login, user, loading } = useAuth();
@@ -15,7 +16,15 @@ export const Login: React.FC = () => {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    rememberEmbedMode();
+  }, []);
+
+  useEffect(() => {
     if (!loading && user) {
+      if (isEmbedSession()) {
+        navigate(embedVerificationPath(), { replace: true });
+        return;
+      }
       if (user.role === 'super_admin') navigate('/admin', { replace: true });
       else if (user.role === 'rc_admin') navigate('/rc', { replace: true });
       else navigate('/vct', { replace: true });

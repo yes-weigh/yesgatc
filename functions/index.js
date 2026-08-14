@@ -1,11 +1,13 @@
 const { onDocumentDeleted, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 
 const razorpayKeyId = defineSecret('RAZORPAY_KEY_ID');
 const razorpayKeySecret = defineSecret('RAZORPAY_KEY_SECRET');
 const emaapOtpWebhookSecret = defineSecret('EMAAP_OTP_WEBHOOK_SECRET');
+const yesweighEmbedSecret = defineSecret('YESWEIGH_EMBED_SECRET');
+const yesweighEmbedRcAadhar = defineString('YESWEIGH_EMBED_RC_AADHAR', { default: '788971879465' });
 const { razorpayWebhookHandler } = require('./razorpayRv');
 const {
   createWalletTopUpOrderHandler,
@@ -39,6 +41,7 @@ const { revertRvSubmitTestHandler } = require('./rvSubmitTestRevert');
 const { devDeleteSubmittedVerificationHandler } = require('./verificationDevDelete');
 const { downloadStorageFileBytesHandler } = require('./docaStorageDownload');
 const { emaapOtpWebhookHandler } = require('./emaapOtpInbox');
+const { mintYesweighEmbedTokenHandler } = require('./yesweighEmbed');
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -455,4 +458,27 @@ exports.emaapOtpWebhook = onRequest(
     secrets: [emaapOtpWebhookSecret],
   },
   async (req, res) => emaapOtpWebhookHandler(req, res, adminDb(), emaapOtpWebhookSecret.value()),
+);
+
+/**
+ * YesWeigh Service iframe — mint a custom token for the configured RC account.
+ * Shared secret must match yesweigh-service YESWEIGH_EMBED_SECRET.
+ * Set before deploy: firebase functions:secrets:set YESWEIGH_EMBED_SECRET --project yesgatc
+ */
+exports.mintYesweighEmbedToken = onRequest(
+  {
+    region: CALLABLE_REGION,
+    cors: true,
+    invoker: 'public',
+    secrets: [yesweighEmbedSecret],
+    timeoutSeconds: 30,
+    memory: '256MiB',
+  },
+  async (req, res) =>
+    mintYesweighEmbedTokenHandler(
+      req,
+      res,
+      yesweighEmbedSecret.value(),
+      yesweighEmbedRcAadhar.value(),
+    ),
 );
