@@ -4213,6 +4213,58 @@ select.input-field option {
   box-shadow: 0 0 14px rgba(59, 130, 246, 0.35);
 }
 
+.emaap-status-shortcut {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top, 0px));
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  z-index: 100;
+}
+
+.emaap-status-shortcut__text {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.emaap-status-shortcut__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.emaap-status-shortcut--ok {
+  color: #22c55e;
+}
+
+.emaap-status-shortcut--ok .emaap-status-shortcut__mark {
+  border: 2px solid rgba(34, 197, 94, 0.7);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.28);
+}
+
+.emaap-status-shortcut--warn {
+  color: #ef4444;
+}
+
+.emaap-status-shortcut--warn .emaap-status-shortcut__mark {
+  border: 2px solid rgba(239, 68, 68, 0.75);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.28);
+}
+
 .mobile-profile-shortcut-img {
   width: 100%;
   height: 100%;

@@ -7,6 +7,7 @@ import { formatContactSubtitle } from '../lib/contactFields';
 import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
 import { vctProfilePhotoFromUser } from '../lib/vctProfileFields';
 import { MobileAppBarBrandIcon } from './MobileAppBarBrandIcon';
+import { EmaapStatusShortcut } from './EmaapStatusShortcut';
 import { StorageImage } from './StorageImage';
 import { VehicleLogoMark } from './VehicleLogoMark';
 import {
@@ -380,7 +381,9 @@ export const Layout: React.FC = () => {
             )}
             {isLaboratoryPage ? (
               <div className="mobile-app-bar-actions">
-                {profilePath ? (
+                {user.role === 'super_admin' ? (
+                  <EmaapStatusShortcut />
+                ) : profilePath ? (
                   <button
                     type="button"
                     className={`mobile-profile-shortcut${location.pathname === profilePath ? ' mobile-profile-shortcut--active' : ''}`}
@@ -418,6 +421,8 @@ export const Layout: React.FC = () => {
                   </button>
                 )}
               </div>
+            ) : user.role === 'super_admin' ? (
+              <EmaapStatusShortcut />
             ) : profilePath ? (
               <button
                 type="button"
@@ -439,11 +444,7 @@ export const Layout: React.FC = () => {
                   </span>
                 )}
               </button>
-            ) : (
-              <span className="mobile-profile-shortcut mobile-profile-shortcut--static" aria-hidden>
-                <UserCircle size={22} className="text-blue" />
-              </span>
-            )}
+            ) : null}
           </header>
         )}
         {!isMobile && (
