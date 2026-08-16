@@ -35,6 +35,7 @@ import {
 import { VCTProfile } from './pages/vct/VCTProfile';
 import { VCTTraining } from './pages/vct/VCTMenuPages';
 import { Certificates } from './pages/vct/Certificates';
+import { CertificateSign } from './pages/vct/CertificateSign';
 import { ManualPdf } from './pages/shared/ManualPdf';
 import { Reports } from './pages/shared/Reports';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
@@ -90,6 +91,7 @@ const App: React.FC = () => {
                 <Route path="vehicles" element={<RCVehicles />} />
                 <Route path="laboratory" element={<RCLaboratory />} />
                 <Route path="certificates" element={<Certificates />} />
+                <Route path="certificates/:recordId" element={<CertificateSign />} />
                 <Route path="manual-pdf" element={<ManualPdf />} />
                 <Route path="quality-management" element={<Navigate to="/rc/manual-pdf" replace />} />
                 <Route path="notifications" element={<RCNotifications />} />
@@ -108,12 +110,16 @@ const App: React.FC = () => {
                 <Route path="verification" element={<RCSiteCalibration />} />
                 <Route path="customers" element={<RCCustomers />} />
                 <Route path="products" element={<RCProducts />} />
+                <Route path="vehicles" element={<RCVehicles />} />
+                <Route path="laboratory" element={<RCLaboratory />} />
+                <Route path="certificates" element={<Certificates />} />
+                <Route path="certificates/:recordId" element={<CertificateSign />} />
                 <Route path="manual-pdf" element={<ManualPdf />} />
+                <Route path="quality-management" element={<Navigate to="/vct/manual-pdf" replace />} />
                 <Route path="training" element={<VCTTraining />} />
                 <Route path="notifications" element={<RCNotifications />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<VCTProfile />} />
-                <Route path="certificates" element={<Certificates />} />
                 <Route path="queue" element={<Navigate to="/vct/new-job" replace />} />
               </Route>
             </Route>

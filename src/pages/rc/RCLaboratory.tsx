@@ -1,20 +1,23 @@
 import React, { useState } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { LaboratorySettingsForm } from '../../components/LaboratorySettingsForm';
+import { useRcScope, useRoleBasePath } from '../../lib/roleScope';
 
 export const RCLaboratory: React.FC = () => {
-  const { user } = useAuth();
+  const { rcUid } = useRcScope();
+  const basePath = useRoleBasePath();
   const [, setLoading] = useState(true);
 
-  if (!user?.uid) return null;
+  if (!rcUid) return null;
+
+  const bottomNavBasePath = basePath === '/admin' ? '/admin' : basePath === '/vct' ? '/vct' : '/rc';
 
   return (
     <div className="fade-in page-content page-content--laboratory-dashboard">
       <LaboratorySettingsForm
-        userId={user.uid}
+        userId={rcUid}
         configSubtitle="Centre seal ID — shown on verifications and certificates (read-only)."
         showBottomNav
-        bottomNavBasePath="/rc"
+        bottomNavBasePath={bottomNavBasePath}
         onLoadingChange={setLoading}
       />
     </div>

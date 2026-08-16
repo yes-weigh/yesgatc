@@ -1,22 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { Award, Download, Filter, Search, Upload, X } from 'lucide-react';
+import { Award, Filter, Search, Share2 } from 'lucide-react';
 import { db } from '../../firebase';
 import { TablePagination } from '../../components/TablePagination';
-import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
-import { useRcScope } from '../../lib/roleScope';
+import { CertificatePdfShareViewer } from '../../components/CertificatePdfShareViewer';
+import { useRcScope, useRoleBasePath } from '../../lib/roleScope';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { isVerificationCertifiedOnDoca } from '../../lib/verificationRequest';
 import { inferVerificationSubject } from '../../lib/siteCalibrationProfileFields';
-import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import {
-  certificateRequiresSignedUpload,
   certificateSignStatus,
   resolveCertificateDownloadUrl,
-  uploadSignedCertificatePdf,
+  resolveCertificatePdfFileUrl,
   type CertificateSignStatus,
 } from '../../lib/signedCertificatePdf';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
@@ -43,11 +41,32 @@ function recordType(record: SiteCalibration): 'OV' | 'RV' {
   return record.verificationType === 'RV' ? 'RV' : 'OV';
 }
 
+function compactSearchToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s/-]+/g, '');
+}
+
+/** RC certificates search: full certificate number or machine serial only. */
+function matchesCertificateOrMachine(record: SiteCalibration, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+
+  const qCompact = compactSearchToken(q);
+  const cert = record.certificateNumber?.trim().toLowerCase() ?? '';
+  const certTail = cert.split('/').pop() ?? '';
+  const serial = record.serialNumber?.trim().toLowerCase() ?? '';
+
+  if (cert.includes(q) || compactSearchToken(cert).includes(qCompact)) return true;
+  if (certTail === q || certTail.startsWith(q)) return true;
+  if (serial.includes(q) || compactSearchToken(serial).includes(qCompact)) return true;
+  return false;
+}
+
 export const Certificates: React.FC = () => {
-  const { rcUid, actorUid, isVct, isRcAdmin } = useRcScope();
+  const { rcUid, actorUid, isVct } = useRcScope();
+  const basePath = useRoleBasePath();
+  const navigate = useNavigate();
   const filterRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const signedInputRef = useRef<HTMLInputElement>(null);
   const [records, setRecords] = useState<SiteCalibration[]>([]);
   const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
   const [rcPlace, setRcPlace] = useState('');
@@ -58,10 +77,7 @@ export const Certificates: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<CertTypeFilter>('all');
   const [statusFilter, setStatusFilter] = useState<CertStatusFilter>('all');
-  const [signingRecord, setSigningRecord] = useState<SiteCalibration | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState('');
+  const [viewingRecord, setViewingRecord] = useState<SiteCalibration | null>(null);
 
   const fetchRecords = useCallback(async () => {
     if (!rcUid) {
@@ -116,17 +132,13 @@ export const Certificates: React.FC = () => {
   );
 
   const filtered = useMemo(() => {
-    const q = searchTerm.trim().toLowerCase();
     return issued.filter(record => {
       if (typeFilter !== 'all' && recordType(record) !== typeFilter) return false;
       const signStatus = certificateSignStatus(record);
       if (statusFilter !== 'all' && signStatus !== statusFilter) return false;
-      if (!q) return true;
-      if (matchesVerificationSearch(record, searchTerm)) return true;
-      const loc = certLocation(record, customersById, rcPlace);
-      return [loc.place, loc.district].join(' ').toLowerCase().includes(q);
+      return matchesCertificateOrMachine(record, searchTerm);
     });
-  }, [issued, searchTerm, typeFilter, statusFilter, customersById, rcPlace]);
+  }, [issued, searchTerm, typeFilter, statusFilter]);
 
   useEffect(() => {
     setPage(1);
@@ -140,43 +152,15 @@ export const Certificates: React.FC = () => {
   const filterActive = typeFilter !== 'all' || statusFilter !== 'all';
   const searchVisible = searchOpen || Boolean(searchTerm.trim());
 
-  const closeSigning = useCallback(() => {
-    if (uploading) return;
-    setSigningRecord(null);
-    setUploadError('');
-    setUploadProgress(0);
-  }, [uploading]);
-
-  useHistoryOverlay(Boolean(signingRecord), closeSigning);
-
-  const handleDownload = (record: SiteCalibration) => {
-    const href = resolveCertificateDownloadUrl(record);
-    if (href) window.open(href, '_blank', 'noopener,noreferrer');
-    if (isRcAdmin && certificateRequiresSignedUpload(record)) {
-      setUploadError('');
-      setSigningRecord(record);
-    }
+  const openSignPage = (record: SiteCalibration) => {
+    navigate(`${basePath}/certificates/${record.id}`);
   };
 
-  const handleSignedFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || !signingRecord) return;
-    setUploading(true);
-    setUploadError('');
-    setUploadProgress(0);
-    try {
-      const patch = await uploadSignedCertificatePdf(signingRecord.id, file, setUploadProgress);
-      setRecords(prev =>
-        prev.map(row => (row.id === signingRecord.id ? { ...row, ...patch } : row)),
-      );
-      setSigningRecord(null);
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed.');
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
+  const handlePhoneShare = (record: SiteCalibration, event: React.MouseEvent) => {
+    event.stopPropagation();
+    const href = resolveCertificateDownloadUrl(record);
+    if (!href) return;
+    setViewingRecord(record);
   };
 
   return (
@@ -262,7 +246,7 @@ export const Certificates: React.FC = () => {
               ref={searchInputRef}
               type="search"
               className="search-input"
-              placeholder="Search certificate no, name, place…"
+              placeholder="Certificate no or machine no"
               value={searchTerm}
               onChange={event => setSearchTerm(event.target.value)}
               aria-label="Search certificates"
@@ -284,12 +268,74 @@ export const Certificates: React.FC = () => {
           </div>
         ) : (
           <>
-            <div className="table-scroll-wrap">
+            <ul className="wl-cert-cards wl-cert-phone">
+                {pageRows.map((record, index) => {
+                  const href = resolveCertificateDownloadUrl(record);
+                  const certNo = record.certificateNumber?.trim() || '—';
+                  const loc = certLocation(record, customersById, rcPlace);
+                  const signStatus = certificateSignStatus(record);
+                  const placeLine = [loc.place, loc.district].filter(Boolean).join(', ');
+                  return (
+                    <li key={record.id}>
+                      <article className="wl-cert-card">
+                        <button
+                          type="button"
+                          className="wl-cert-card__main"
+                          onClick={() => openSignPage(record)}
+                        >
+                          <span className="wl-cert-card__sl">{rowOffset + index + 1}</span>
+                          <span className="wl-cert-card__body">
+                            <span className="wl-cert-card__no">{certNo}</span>
+                            <span className="wl-cert-card__name">
+                              {record.customerName?.trim() || '—'}
+                            </span>
+                            <span className="wl-cert-card__sub">
+                              {formatVerificationListDate(record.certifiedAt || record.approvedAt)}
+                              {record.serialNumber?.trim() ? ` · ${record.serialNumber.trim()}` : ''}
+                              {placeLine ? ` · ${placeLine}` : ''}
+                            </span>
+                            <span
+                              className={`wl-cert-table__badge${
+                                signStatus === 'voided'
+                                  ? ' wl-cert-table__badge--void'
+                                  : signStatus === 'not_signed'
+                                    ? ' wl-cert-table__badge--unsigned'
+                                    : ''
+                              }`}
+                            >
+                              {signStatus === 'voided'
+                                ? 'Voided'
+                                : signStatus === 'signed'
+                                  ? 'Signed'
+                                  : 'Not signed'}
+                            </span>
+                          </span>
+                        </button>
+                        {href ? (
+                          <button
+                            type="button"
+                            className="wl-recent__download"
+                            onClick={event => handlePhoneShare(record, event)}
+                            aria-label={`Share certificate ${certNo}`}
+                            title="Share"
+                          >
+                            <Share2 size={18} strokeWidth={2} aria-hidden />
+                          </button>
+                        ) : null}
+                      </article>
+                    </li>
+                  );
+                })}
+              </ul>
+            <div className="table-scroll-wrap wl-cert-desktop">
               <table className="wl-cert-table">
                 <colgroup>
                   <col className="wl-cert-col-sl" />
                   <col className="wl-cert-col-cert" />
+                  <col className="wl-cert-col-serial" />
+                  <col className="wl-cert-col-type" />
                   <col className="wl-cert-col-name" />
+                  <col className="wl-cert-col-date" />
                   <col className="wl-cert-col-status" />
                   <col className="wl-cert-col-dl" />
                 </colgroup>
@@ -297,7 +343,10 @@ export const Certificates: React.FC = () => {
                   <tr>
                     <th>Sl</th>
                     <th>Certificate No.</th>
+                    <th className="wl-cert-col-hide-phone">Serial</th>
+                    <th className="wl-cert-col-hide-phone">Type</th>
                     <th>Name</th>
+                    <th className="wl-cert-col-hide-phone">Date</th>
                     <th>Status</th>
                     <th>
                       <span className="sr-only">Download</span>
@@ -306,26 +355,27 @@ export const Certificates: React.FC = () => {
                 </thead>
                 <tbody>
                   {pageRows.map((record, index) => {
-                    const href = resolveCertificateDownloadUrl(record);
                     const certNo = record.certificateNumber?.trim() || '—';
                     const loc = certLocation(record, customersById, rcPlace);
                     const signStatus = certificateSignStatus(record);
                     const placeLine = [loc.place, loc.district].filter(Boolean).join(', ');
+                    const type = recordType(record);
                     return (
-                      <tr key={record.id}>
+                      <tr
+                        key={record.id}
+                        className="wl-cert-table__row"
+                        onClick={() => openSignPage(record)}
+                      >
                         <td className="wl-cert-table__sl">{rowOffset + index + 1}</td>
                         <td className="wl-cert-table__cert">
                           <span className="wl-cert-table__no">{certNo}</span>
-                          <span className="wl-cert-table__sub">
-                            {formatVerificationListDate(record.certifiedAt || record.approvedAt)}
-                            {record.serialNumber?.trim() ? (
-                              <>
-                                <span className="wl-cert-table__sep" aria-hidden>
-                                  ·
-                                </span>
-                                {record.serialNumber.trim()}
-                              </>
-                            ) : null}
+                        </td>
+                        <td className="wl-cert-col-hide-phone wl-cert-table__mono">
+                          {record.serialNumber?.trim() || '—'}
+                        </td>
+                        <td className="wl-cert-col-hide-phone">
+                          <span className={`wl-cert-sign-type wl-cert-sign-type--${type.toLowerCase()}`}>
+                            {type}
                           </span>
                         </td>
                         <td className="wl-cert-table__name">
@@ -333,6 +383,9 @@ export const Certificates: React.FC = () => {
                             {record.customerName?.trim() || '—'}
                           </span>
                           {placeLine ? <span className="wl-cert-table__sub">{placeLine}</span> : null}
+                        </td>
+                        <td className="wl-cert-col-hide-phone">
+                          {formatVerificationListDate(record.certifiedAt || record.approvedAt)}
                         </td>
                         <td>
                           <span
@@ -348,35 +401,10 @@ export const Certificates: React.FC = () => {
                               ? 'Voided'
                               : signStatus === 'signed'
                                 ? 'Signed'
-                                : (
-                                  <>
-                                    Not
-                                    <br />
-                                    signed
-                                  </>
-                                )}
+                                : 'Not signed'}
                           </span>
                         </td>
-                        <td className="wl-cert-table__dl">
-                          {href ? (
-                            <button
-                              type="button"
-                              className="wl-recent__download"
-                              onClick={() => handleDownload(record)}
-                              aria-label={`Download certificate ${certNo}`}
-                              title="Download PDF"
-                            >
-                              <Download size={18} strokeWidth={2} aria-hidden />
-                            </button>
-                          ) : (
-                            <span
-                              className="wl-recent__download wl-recent__download--disabled"
-                              aria-hidden
-                            >
-                              <Download size={18} strokeWidth={2} />
-                            </span>
-                          )}
-                        </td>
+                        <td className="wl-cert-table__dl" />
                       </tr>
                     );
                   })}
@@ -392,59 +420,12 @@ export const Certificates: React.FC = () => {
           </>
         )}
       </section>
-      {signingRecord && typeof document !== 'undefined'
-        ? createPortal(
-            <div
-              className="modal-overlay"
-              onClick={() => closeSigning()}
-            >
-              <div
-                className="modal-dialog wl-cert-sign-dialog glass"
-                role="dialog"
-                aria-labelledby="wl-cert-sign-title"
-                onClick={event => event.stopPropagation()}
-              >
-                <div className="wl-cert-sign-dialog__head">
-                  <h2 id="wl-cert-sign-title">Upload signed PDF</h2>
-                  <button
-                    type="button"
-                    className="wl-cert-icon-btn"
-                    onClick={closeSigning}
-                    disabled={uploading}
-                    aria-label="Close"
-                  >
-                    <X size={18} strokeWidth={2} />
-                  </button>
-                </div>
-                <p className="wl-cert-sign-dialog__copy">
-                  Download the certificate, apply your Digital Signature (DSC), then upload the
-                  signed PDF. Status changes to Signed only after upload.
-                </p>
-                <p className="wl-cert-sign-dialog__cert">
-                  {signingRecord.certificateNumber?.trim() || '—'}
-                </p>
-                {uploadError ? <p className="form-error mb-3">{uploadError}</p> : null}
-                <input
-                  ref={signedInputRef}
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  hidden
-                  onChange={event => void handleSignedFile(event)}
-                />
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={uploading}
-                  onClick={() => signedInputRef.current?.click()}
-                >
-                  <Upload size={16} aria-hidden />
-                  {uploading ? `Uploading ${uploadProgress}%` : 'Upload signed PDF'}
-                </button>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      <CertificatePdfShareViewer
+        open={Boolean(viewingRecord)}
+        record={viewingRecord}
+        url={viewingRecord ? resolveCertificatePdfFileUrl(viewingRecord) : null}
+        onClose={() => setViewingRecord(null)}
+      />
     </div>
   );
 };

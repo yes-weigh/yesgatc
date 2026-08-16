@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { BarChart3, MoreHorizontal, Scale, ShieldCheck } from 'lucide-react';
 
 type LaboratoryBottomNavProps = {
-  basePath: '/rc' | '/admin';
+  basePath: '/rc' | '/admin' | '/vct';
 };
 
 const RC_TABS = [
@@ -11,6 +11,13 @@ const RC_TABS = [
   { id: 'verifications', label: 'Verifications', path: '/rc/verification', icon: ShieldCheck },
   { id: 'reports', label: 'Reports', path: '/rc/reports', icon: BarChart3 },
   { id: 'more', label: 'More', path: '/rc', icon: MoreHorizontal },
+] as const;
+
+const VCT_TABS = [
+  { id: 'laboratory', label: 'Laboratory', path: '/vct/laboratory', icon: Scale },
+  { id: 'verifications', label: 'Verifications', path: '/vct/verification', icon: ShieldCheck },
+  { id: 'reports', label: 'Reports', path: '/vct/reports', icon: BarChart3 },
+  { id: 'more', label: 'More', path: '/vct', icon: MoreHorizontal },
 ] as const;
 
 const ADMIN_TABS = [
@@ -22,7 +29,7 @@ const ADMIN_TABS = [
 
 export const LaboratoryBottomNav: React.FC<LaboratoryBottomNavProps> = ({ basePath }) => {
   const location = useLocation();
-  const tabs = basePath === '/admin' ? ADMIN_TABS : RC_TABS;
+  const tabs = basePath === '/admin' ? ADMIN_TABS : basePath === '/vct' ? VCT_TABS : RC_TABS;
 
   return (
     <nav className="laboratory-bottom-nav" aria-label="Laboratory dashboard navigation">

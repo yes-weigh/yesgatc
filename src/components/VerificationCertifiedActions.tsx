@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { Award, BarChart3, Receipt, ScrollText, Tag } from 'lucide-react';
+import { useMobileViewport } from '../hooks/useMobileViewport';
 import {
   buildVerificationCertifiedActions,
   type VerificationCertifiedAction,
   type VerificationCertifiedActionId,
 } from '../lib/verificationCertifiedActions';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
+import { resolveCertificatePdfFileUrl } from '../lib/signedCertificatePdf';
+import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
 import { VerificationGstBillModal } from './VerificationGstBillModal';
 import { VerificationLabelModal } from './VerificationLabelModal';
 import { VerificationReceiptModal } from './VerificationReceiptModal';
@@ -44,11 +47,15 @@ function ActionTileContent({ action }: { action: VerificationCertifiedAction }) 
 
 function CertifiedActionTile({
   action,
+  isPhone,
+  onCertificateOpen,
   onLabelOpen,
   onGstBillOpen,
   onReceiptOpen,
 }: {
   action: VerificationCertifiedAction;
+  isPhone: boolean;
+  onCertificateOpen: () => void;
   onLabelOpen: () => void;
   onGstBillOpen: () => void;
   onReceiptOpen: () => void;
@@ -95,6 +102,7 @@ function CertifiedActionTile({
   }
 
   if (action.kind === 'print-placeholder') {
+    if (isPhone) return null;
     return (
       <button
         type="button"
@@ -102,6 +110,19 @@ function CertifiedActionTile({
         disabled
         title="Printer printing — coming soon"
         aria-label={`${action.label} — printer printing coming soon`}
+      >
+        <ActionTileContent action={action} />
+      </button>
+    );
+  }
+
+  if (isPhone) {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={onCertificateOpen}
+        aria-label="View certificate"
       >
         <ActionTileContent action={action} />
       </button>
@@ -124,9 +145,11 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
   record,
   className = '',
 }) => {
+  const isPhone = useMobileViewport();
   const [labelOpen, setLabelOpen] = useState(false);
   const [gstBillOpen, setGstBillOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [certificateOpen, setCertificateOpen] = useState(false);
 
   if (!canShowVerificationCertifiedActions(record)) return null;
 
@@ -144,6 +167,8 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
           <CertifiedActionTile
             key={action.id}
             action={action}
+            isPhone={isPhone}
+            onCertificateOpen={() => setCertificateOpen(true)}
             onLabelOpen={() => setLabelOpen(true)}
             onGstBillOpen={() => setGstBillOpen(true)}
             onReceiptOpen={() => setReceiptOpen(true)}
@@ -167,6 +192,13 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
         open={receiptOpen}
         record={record}
         onClose={() => setReceiptOpen(false)}
+      />
+
+      <CertificatePdfShareViewer
+        open={certificateOpen}
+        record={record}
+        url={resolveCertificatePdfFileUrl(record)}
+        onClose={() => setCertificateOpen(false)}
       />
     </>
   );

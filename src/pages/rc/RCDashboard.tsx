@@ -287,7 +287,7 @@ export const RCDashboard: React.FC = () => {
         count: vehicleCount,
         tone: 'cyan',
         icon: <Car size={18} strokeWidth={1.9} />,
-        href: isRcAdmin ? `${basePath}/vehicles` : verificationHref(),
+        href: `${basePath}/vehicles`,
       },
       {
         key: 'vcts',

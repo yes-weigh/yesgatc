@@ -1,6 +1,7 @@
 import { doc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from '../firebase';
+import { isEmaapCertificatePdfUrl } from './certificateVerifyUrl';
 import { parseCertificateSequenceNumber } from './certificateSequence';
 import { isVerificationCertificateVoided } from './verificationCertificateVoid';
 import { resolveCertificatePreviewUrl } from './verificationCertifiedActions';
@@ -29,8 +30,35 @@ export function certificateSignStatus(record: SiteCalibration): CertificateSignS
   return 'not_signed';
 }
 
+export function markCertificatePdfDownloaded(recordId: string): void {
+  try {
+    localStorage.setItem(`yesgatc.certPdfDownloaded.${recordId}`, new Date().toISOString());
+  } catch {
+    /* ignore */
+  }
+}
+
+export function certificatePdfDownloadedAt(recordId: string): string | null {
+  try {
+    return localStorage.getItem(`yesgatc.certPdfDownloaded.${recordId}`);
+  } catch {
+    return null;
+  }
+}
+
 export function resolveCertificateDownloadUrl(record: SiteCalibration): string | null {
   return record.signedCertificatePdfUrl?.trim() || resolveCertificatePreviewUrl(record);
+}
+
+/** Direct PDF file for in-app view / native share (Epson, WhatsApp). */
+export function resolveCertificatePdfFileUrl(record: SiteCalibration): string | null {
+  const signed = record.signedCertificatePdfUrl?.trim();
+  if (signed) return signed;
+  const emaap = record.emaapCertificatePdfUrl?.trim();
+  if (emaap && isEmaapCertificatePdfUrl(emaap)) return emaap;
+  const stored = record.certificatePdfUrl?.trim();
+  if (stored) return stored;
+  return resolveCertificateDownloadUrl(record);
 }
 
 export function validateSignedCertificatePdf(file: File): string | null {

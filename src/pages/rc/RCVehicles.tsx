@@ -3,8 +3,8 @@ import {
   collection, getDocs, doc, setDoc, updateDoc, query, where, deleteField,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useRcScope } from '../../lib/roleScope';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { VehicleLogoMark } from '../../components/VehicleLogoMark';
@@ -128,7 +128,8 @@ function VehicleDateStat({
 }
 
 export const RCVehicles: React.FC = () => {
-  const { user } = useAuth();
+  const { rcUid, actorUid, isRcAdmin } = useRcScope();
+  const canManage = isRcAdmin;
   const confirm = useConfirm();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -147,11 +148,11 @@ export const RCVehicles: React.FC = () => {
   const [listError, setListError] = useState('');
 
   const fetchVehicles = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!rcUid) return;
     setLoading(true);
     setListError('');
     try {
-      const q = query(collection(db, 'vehicles'), where('rcId', '==', user.uid));
+      const q = query(collection(db, 'vehicles'), where('rcId', '==', rcUid));
       const snap = await getDocs(q);
       const rows = snap.docs
         .map(d => ({ id: d.id, ...(d.data() as Omit<Vehicle, 'id'>) }))
@@ -173,7 +174,7 @@ export const RCVehicles: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [user?.uid]);
+  }, [rcUid]);
 
   useEffect(() => {
     Promise.resolve().then(() => fetchVehicles());
@@ -336,6 +337,7 @@ export const RCVehicles: React.FC = () => {
   };
 
   const handleCreate = async () => {
+    if (!canManage || !rcUid) return;
     setError('');
     const validationError = validateForm();
     if (validationError) {
@@ -351,9 +353,9 @@ export const RCVehicles: React.FC = () => {
       const photoFields = await uploadPhoto(vehicleId);
 
       const record: Omit<Vehicle, 'id'> = {
-        rcId: user!.uid,
+        rcId: rcUid!,
         createdAt: new Date().toISOString(),
-        createdByUid: user?.uid,
+        createdByUid: actorUid ?? undefined,
         active: true,
         ...buildVehicleProfileFields(formValues),
         ...docFields,
@@ -371,6 +373,7 @@ export const RCVehicles: React.FC = () => {
   };
 
   const handleSaveEdit = async (vehicleId: string) => {
+    if (!canManage) return;
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
@@ -400,12 +403,14 @@ export const RCVehicles: React.FC = () => {
   };
 
   const handleStartAdd = () => {
+    if (!canManage) return;
     setEditingId(null);
     resetForm();
     setShowAddForm(true);
   };
 
   const startEdit = (v: Vehicle) => {
+    if (!canManage) return;
     setShowAddForm(false);
     setEditingId(v.id);
     setFormValues(vehicleFormFromRecord(v));
@@ -431,14 +436,14 @@ export const RCVehicles: React.FC = () => {
       confirmLabel: activating ? 'Enable' : 'Disable',
       destructive: !activating,
     });
-    if (!ok || !user?.uid) return;
+    if (!ok || !canManage || !actorUid) return;
 
     const updates: Record<string, unknown> = activating
       ? { active: true, deactivatedAt: deleteField(), deactivatedByUid: deleteField() }
       : {
           active: false,
           deactivatedAt: new Date().toISOString(),
-          deactivatedByUid: user.uid,
+          deactivatedByUid: actorUid,
         };
 
     await updateDoc(doc(db, 'vehicles', v.id), updates);
@@ -535,15 +540,17 @@ export const RCVehicles: React.FC = () => {
               </p>
             </div>
             <div className="rc-vehicles-summary-actions">
-              <button
-                type="button"
-                className="rc-vehicles-add-btn"
-                onClick={handleStartAdd}
-                aria-label="Add Vehicle"
-              >
-                <Plus size={16} strokeWidth={2.5} aria-hidden />
-                <span className="rc-vehicles-add-btn-label">Add Vehicle</span>
-              </button>
+              {canManage ? (
+                <button
+                  type="button"
+                  className="rc-vehicles-add-btn"
+                  onClick={handleStartAdd}
+                  aria-label="Add Vehicle"
+                >
+                  <Plus size={16} strokeWidth={2.5} aria-hidden />
+                  <span className="rc-vehicles-add-btn-label">Add Vehicle</span>
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="rc-vehicles-refresh-btn"
@@ -571,17 +578,21 @@ export const RCVehicles: React.FC = () => {
               <VehicleLogoMark size="lg" />
               <p>At least one vehicle is required for your centre.</p>
               <p className="text-muted text-sm mb-0">
-                Technicians cannot start new verifications until you register a vehicle.
+                {canManage
+                  ? 'Technicians cannot start new verifications until you register a vehicle.'
+                  : 'Ask RC Admin to register a vehicle for this centre.'}
               </p>
-              <button
-                type="button"
-                className="rc-vehicles-add-btn"
-                onClick={handleStartAdd}
-                aria-label="Add Vehicle"
-              >
-                <Plus size={16} strokeWidth={2.5} aria-hidden />
-                <span className="rc-vehicles-add-btn-label">Add Vehicle</span>
-              </button>
+              {canManage ? (
+                <button
+                  type="button"
+                  className="rc-vehicles-add-btn"
+                  onClick={handleStartAdd}
+                  aria-label="Add Vehicle"
+                >
+                  <Plus size={16} strokeWidth={2.5} aria-hidden />
+                  <span className="rc-vehicles-add-btn-label">Add Vehicle</span>
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="rc-list-cards">
@@ -602,7 +613,7 @@ export const RCVehicles: React.FC = () => {
                         type="button"
                         className="rc-list-card-main"
                         onClick={() => startEdit(v)}
-                        aria-label={`Edit ${disableLabel}`}
+                        aria-label={canManage ? `Edit ${disableLabel}` : disableLabel}
                       >
                         <RcListPhoto
                           url={photo?.url}
@@ -612,7 +623,7 @@ export const RCVehicles: React.FC = () => {
                         <span className="rc-list-card-info">
                           <span className="rc-list-card-name-row">
                             <span className="rc-list-card-name">{vehicleTitle(v)}</span>
-                            <RcListEditHint />
+                            {canManage ? <RcListEditHint /> : null}
                           </span>
                           <span className="rc-list-meta-chips">
                             {plate ? (
@@ -642,14 +653,16 @@ export const RCVehicles: React.FC = () => {
                           </span>
                         </span>
                       </button>
-                      <RcListCardToggle
-                        className={active ? '' : 'rc-list-card-toggle--enable'}
-                        onClick={() => void handleToggleActive(v)}
-                        title={active ? 'Disable vehicle' : 'Enable vehicle'}
-                        ariaLabel={active ? `Disable ${disableLabel}` : `Enable ${disableLabel}`}
-                      >
-                        {active ? <UserX size={20} strokeWidth={1.75} /> : <UserCheck size={20} strokeWidth={1.75} />}
-                      </RcListCardToggle>
+                      {canManage ? (
+                        <RcListCardToggle
+                          className={active ? '' : 'rc-list-card-toggle--enable'}
+                          onClick={() => void handleToggleActive(v)}
+                          title={active ? 'Disable vehicle' : 'Enable vehicle'}
+                          ariaLabel={active ? `Disable ${disableLabel}` : `Enable ${disableLabel}`}
+                        >
+                          {active ? <UserX size={20} strokeWidth={1.75} /> : <UserCheck size={20} strokeWidth={1.75} />}
+                        </RcListCardToggle>
+                      ) : null}
                     </div>
 
                     <div className="rc-vehicle-card-divider" aria-hidden />

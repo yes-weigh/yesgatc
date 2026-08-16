@@ -196,9 +196,10 @@ export const Layout: React.FC = () => {
           { path: '/vct/certificates', icon: <Award size={20} />, label: 'Certificates' },
           { path: '/vct/customers', icon: <UserRound size={20} />, label: 'Customers' },
           { path: '/vct/products', icon: <Package size={20} />, label: 'Product' },
+          { path: '/vct/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
+          { path: '/vct/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
           { path: '/vct/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
           { path: '/vct/training', icon: <GraduationCap size={20} />, label: 'Training' },
-          { path: '/vct/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
           { path: '/vct/profile', icon: <Settings size={20} />, label: 'My Profile' },
         ];

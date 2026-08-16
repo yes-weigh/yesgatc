@@ -17,7 +17,7 @@ type LaboratorySettingsFormProps = {
   idPrefix?: string;
   configSubtitle: string;
   showBottomNav?: boolean;
-  bottomNavBasePath?: '/rc' | '/admin';
+  bottomNavBasePath?: '/rc' | '/admin' | '/vct';
   onLoadingChange?: (loading: boolean) => void;
   configExtras?: React.ReactNode;
 };
