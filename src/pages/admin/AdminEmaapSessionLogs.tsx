@@ -43,6 +43,7 @@ import {
   formatHeartbeatAge,
   formatLogoutReason,
   formatSessionDateTime,
+  formatSessionStamp,
   formatSessionTime,
   tallyEmaapDurationLast24h,
   tallyEmaapSessionFilters,
@@ -54,8 +55,8 @@ import {
 import { clampPage, paginateItems } from '../../lib/tablePagination';
 
 const PERIODS: { id: EmaapPeriodFilter; label: string }[] = [
-  { id: 'month', label: 'This month' },
   { id: 'today', label: 'Today' },
+  { id: 'month', label: 'This month' },
   { id: 'year', label: 'This year' },
   { id: 'custom', label: 'Custom' },
 ];
@@ -107,17 +108,17 @@ function SessionCard({ row }: { row: EmaapSessionRecord }) {
   const secondLabel = failed ? 'Login' : 'Ended';
   const firstValue = failed
     ? row.endedAt
-      ? formatSessionTime(row.endedAt)
+      ? formatSessionStamp(row.endedAt)
       : '—'
-    : formatSessionTime(row.startedAt);
+    : formatSessionStamp(row.startedAt);
   const secondValue = failed
     ? row.nextStartedAt
-      ? formatSessionTime(row.nextStartedAt)
+      ? formatSessionStamp(row.nextStartedAt)
       : row.startedAt
-        ? formatSessionTime(row.startedAt)
+        ? formatSessionStamp(row.startedAt)
         : '—'
     : row.endedAt
-      ? formatSessionTime(row.endedAt)
+      ? formatSessionStamp(row.endedAt)
       : '—';
   const durationValue = failed && row.downtimeSeconds != null
     ? formatDuration(row.downtimeSeconds)
@@ -174,7 +175,7 @@ export const AdminEmaapSessionLogs: React.FC = () => {
   const [captcha, setCaptcha] = useState<AutomationWorkerCaptchaAttempt[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<EmaapSessionFilter>('all');
-  const [period, setPeriod] = useState<EmaapPeriodFilter>('today');
+  const [period, setPeriod] = useState<EmaapPeriodFilter>('month');
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -186,6 +187,17 @@ export const AdminEmaapSessionLogs: React.FC = () => {
 
   const hydratedWindows = useRef(new Set<string>());
   const inflightWindows = useRef(new Set<string>());
+
+  const selectPeriod = (next: EmaapPeriodFilter) => {
+    setPeriod(next);
+    if (next !== 'custom' || customFrom || customTo) return;
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const iso = (date: Date) =>
+      `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    setCustomFrom(iso(new Date(now.getFullYear(), now.getMonth(), 1)));
+    setCustomTo(iso(now));
+  };
 
   useEffect(() => subscribeAutomationWorkerStatus(setStatus), []);
 
@@ -260,7 +272,6 @@ export const AdminEmaapSessionLogs: React.FC = () => {
     [filtered, page],
   );
   const selected = sessionId ? records.find(row => row.id === sessionId) : undefined;
-  const filterActive = period !== 'today';
 
   useEffect(() => {
     setPage(1);
@@ -519,7 +530,7 @@ export const AdminEmaapSessionLogs: React.FC = () => {
           <div className="esl-filter" ref={filterRef}>
             <button
               type="button"
-              className={`esl-icon-btn${filterOpen || filterActive ? ' esl-icon-btn--on' : ''}`}
+              className={`esl-icon-btn${filterOpen ? ' esl-icon-btn--on' : ''}`}
               aria-label="Filters"
               aria-expanded={filterOpen}
               onClick={() => {
@@ -531,28 +542,6 @@ export const AdminEmaapSessionLogs: React.FC = () => {
             </button>
             {filterOpen && (
               <div className="esl-filter__pop" role="dialog" aria-label="Session filters">
-                <label className="esl-filter__label" htmlFor="esl-period">
-                  Period
-                </label>
-                <select
-                  id="esl-period"
-                  className="esl-filter__select"
-                  value={period}
-                  onChange={event => setPeriod(event.target.value as EmaapPeriodFilter)}
-                >
-                  {PERIODS.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                {period === 'custom' && (
-                  <div className="esl-filter__custom">
-                    <input type="date" value={customFrom} onChange={event => setCustomFrom(event.target.value)} />
-                    <span aria-hidden>–</span>
-                    <input type="date" value={customTo} onChange={event => setCustomTo(event.target.value)} />
-                  </div>
-                )}
                 <button type="button" className="esl-export" onClick={() => exportEmaapSessionsCsv(filtered)}>
                   <Download size={15} aria-hidden />
                   Export
@@ -561,6 +550,25 @@ export const AdminEmaapSessionLogs: React.FC = () => {
             )}
           </div>
         </div>
+        <div className="esl-pills" role="tablist" aria-label="Period">
+          {PERIODS.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              className={`esl-pill${period === item.id ? ' esl-pill--active' : ''}`}
+              onClick={() => selectPeriod(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        {period === 'custom' ? (
+          <div className="esl-filter__custom esl-head__custom">
+            <input type="date" value={customFrom} onChange={event => setCustomFrom(event.target.value)} />
+            <span aria-hidden>–</span>
+            <input type="date" value={customTo} onChange={event => setCustomTo(event.target.value)} />
+          </div>
+        ) : null}
         <div className="esl-pills" role="tablist" aria-label="Session status">
           {STATUS_FILTERS.map(item => (
             <button

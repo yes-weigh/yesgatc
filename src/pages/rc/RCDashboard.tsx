@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getDocs } from 'firebase/firestore';
+import { doc, getDoc, getDocs } from 'firebase/firestore';
 import {
   Wallet,
   LayoutGrid,
@@ -35,7 +35,7 @@ import {
   tallyVerificationTypeFilters,
   type VerificationStatusFilter,
 } from '../../lib/verificationRequest';
-import type { SiteCalibration } from '../../types';
+import type { FirestoreUserDoc, SiteCalibration } from '../../types';
 
 type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange' | 'slate' | 'cyan';
 
@@ -131,6 +131,7 @@ export const RCDashboard: React.FC = () => {
   const [vctCount, setVctCount] = useState(0);
   const [vctById, setVctById] = useState<Map<string, VctDashProfile>>(() => new Map());
   const [rcRank, setRcRank] = useState<number | null>(null);
+  const [rcCompanyName, setRcCompanyName] = useState('');
 
   const fetchVerifications = useCallback(async () => {
     if (!rcUid) return;
@@ -184,11 +185,22 @@ export const RCDashboard: React.FC = () => {
   useEffect(() => {
     if (!rcUid) {
       setRcRank(null);
+      setRcCompanyName('');
       return;
     }
-    return subscribeRcCertificationRanks(ranks => {
+    let cancelled = false;
+    void getDoc(doc(db, 'users', rcUid)).then(snap => {
+      if (cancelled || !snap.exists()) return;
+      const data = snap.data() as FirestoreUserDoc;
+      setRcCompanyName(data.companyName?.trim() || data.username?.trim() || '');
+    });
+    const unsub = subscribeRcCertificationRanks(ranks => {
       setRcRank(rankOfRc(ranks, rcUid));
     });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, [rcUid]);
 
   useEffect(() => {
@@ -301,12 +313,13 @@ export const RCDashboard: React.FC = () => {
         key: 'rc_rank',
         label: 'RC Ranking',
         count: rcRank != null ? `#${rcRank}` : '—',
+        sublabel: rcCompanyName || undefined,
         tone: 'blue',
         icon: <Trophy size={18} strokeWidth={1.9} />,
         href: verificationHref('certified'),
       },
     ],
-    [tally, vehicleCount, vctCount, rcRank, isRcAdmin, basePath],
+    [tally, vehicleCount, vctCount, rcRank, rcCompanyName, isRcAdmin, basePath],
   );
 
   const recent = useMemo(
@@ -428,7 +441,11 @@ export const RCDashboard: React.FC = () => {
               <span className="wl-stage__count">
                 {loadingVerifications ? '—' : stage.count}
               </span>
-              {stage.sublabel ? <span className="wl-stage__sub">{stage.sublabel}</span> : null}
+              {stage.sublabel ? (
+                <span className={`wl-stage__sub${stage.key === 'rc_rank' ? ' wl-stage__sub--name' : ''}`}>
+                  {stage.sublabel}
+                </span>
+              ) : null}
               <span className="wl-stage__bar" aria-hidden />
             </Link>
           ))}

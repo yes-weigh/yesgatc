@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import {
   LayoutGrid,
@@ -12,13 +12,25 @@ import {
   UploadCloud,
   Building2,
   CalendarDays,
-  Wrench,
   MapPin,
   Car,
-  Trophy,
+  ShieldCheck,
+  UserCircle,
+  Activity,
+  CheckCircle2,
 } from 'lucide-react';
+import { StorageImage } from '../../components/StorageImage';
 import { db } from '../../firebase';
+import {
+  subscribeAutomationWorkerLogs,
+  type AutomationWorkerLogEntry,
+} from '../../lib/automationWorker';
 import { LAST_CERTIFICATE_SEQUENCE_FLOOR } from '../../lib/certificateSequence';
+import {
+  displayEmaapText,
+  EMAAP_SESSIONS_PATH,
+  formatSessionStamp,
+} from '../../lib/emaapSessionHistory';
 import { isVctOperational } from '../../lib/vctApproval';
 import { VctOfficerMark } from '../../components/VctOfficerMark';
 import {
@@ -26,10 +38,8 @@ import {
   saveRcCertificationRanks,
 } from '../../lib/rcCertificationRank';
 import { maxCertificateSequenceNumber } from '../../lib/verificationListSort';
-import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   getVerificationDisplayStatus,
-  sanitizeVerificationDisplayText,
   tallyVerificationStatusFilters,
   tallyVerificationTypeFilters,
   type VerificationStatusFilter,
@@ -137,16 +147,10 @@ type StageCard = {
   href: string;
 };
 
-function recordListId(record: SiteCalibration): string {
-  for (const value of [
-    record.certificateNumber,
-    record.applicationNumber,
-    record.sealIdentificationNumber,
-  ]) {
-    const text = sanitizeVerificationDisplayText(value);
-    if (text !== '—') return text;
-  }
-  return '—';
+function activityLevelIcon(level: string): React.ReactNode {
+  if (level === 'error') return <XCircle size={16} strokeWidth={2.1} />;
+  if (level === 'success') return <CheckCircle2 size={16} strokeWidth={2.1} />;
+  return <Activity size={16} strokeWidth={2.1} />;
 }
 
 function certifiedInMonth(records: SiteCalibration[], offsetMonths: number): number {
@@ -181,10 +185,11 @@ function recordDistrict(
 const VERIFICATION_PATH = '/admin/verifications';
 
 export const AdminDashboard: React.FC = () => {
-  const navigate = useNavigate();
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
   const [rcUsers, setRcUsers] = useState<{ id: string; name: string; district: string }[]>([]);
-  const [vctUsers, setVctUsers] = useState<{ id: string; name: string; rcId: string }[]>([]);
+  const [vctUsers, setVctUsers] = useState<
+    { id: string; name: string; rcId: string; photoUrl?: string; photoPath?: string }[]
+  >([]);
   const [vctTotal, setVctTotal] = useState(0);
   const [vehicleCount, setVehicleCount] = useState(0);
   const [customerDistrictById, setCustomerDistrictById] = useState<Map<string, string>>(
@@ -194,6 +199,8 @@ export const AdminDashboard: React.FC = () => {
   const [period, setPeriod] = useState<Period>('lifetime');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [activityLogs, setActivityLogs] = useState<AutomationWorkerLogEntry[]>([]);
+  const [loadingActivity, setLoadingActivity] = useState(true);
 
   useEffect(() => {
     const load = async () => {
@@ -209,7 +216,13 @@ export const AdminDashboard: React.FC = () => {
       }));
       setVerifications(loaded);
       const rcs: { id: string; name: string; district: string }[] = [];
-      const vcts: { id: string; name: string; rcId: string }[] = [];
+      const vcts: {
+        id: string;
+        name: string;
+        rcId: string;
+        photoUrl?: string;
+        photoPath?: string;
+      }[] = [];
       let vctCount = 0;
       userSnap.docs.forEach(d => {
         const data = d.data() as FirestoreUserDoc;
@@ -228,6 +241,8 @@ export const AdminDashboard: React.FC = () => {
           id: d.id,
           name: data.username?.trim() || data.contactPerson?.trim() || '—',
           rcId: data.rcId?.trim() || '',
+          photoUrl: data.profilePhotoUrl?.trim() || undefined,
+          photoPath: data.profilePhotoPath?.trim() || undefined,
         });
       });
       const districts = new Map<string, string>();
@@ -248,6 +263,19 @@ export const AdminDashboard: React.FC = () => {
     };
     void load();
   }, []);
+
+  useEffect(
+    () =>
+      subscribeAutomationWorkerLogs(
+        rows => {
+          setActivityLogs(rows);
+          setLoadingActivity(false);
+        },
+        () => setLoadingActivity(false),
+        12,
+      ),
+    [],
+  );
 
   const scopedVerifications = useMemo(
     () => verifications.filter(record => recordInPeriod(record, period, customFrom, customTo)),
@@ -284,16 +312,6 @@ export const AdminDashboard: React.FC = () => {
       rank: index + 1,
     }));
   }, [scopedVerifications, rcUsers]);
-
-  const topRc = useMemo(() => {
-    const first = rankRcsByCertifiedCount(
-      verifications,
-      rcUsers.map(rc => rc.id),
-    )[0];
-    if (!first || first.certified <= 0) return undefined;
-    const rc = rcUsers.find(row => row.id === first.rcId);
-    return { name: rc?.name || 'Unknown RC', count: first.certified };
-  }, [verifications, rcUsers]);
 
   const stages = useMemo<StageCard[]>(
     () => [
@@ -362,16 +380,15 @@ export const AdminDashboard: React.FC = () => {
         href: '/admin/technicians',
       },
       {
-        key: 'rc_rank',
-        label: 'RC Ranking',
-        count: topRc ? `#1` : '—',
-        sublabel: topRc?.name,
-        tone: 'blue',
-        icon: <Trophy size={18} strokeWidth={1.9} />,
-        href: '/admin/rc',
+        key: 'emaap',
+        label: 'eMaap',
+        sublabel: 'session logs',
+        tone: 'green',
+        icon: <ShieldCheck size={18} strokeWidth={1.9} />,
+        href: EMAAP_SESSIONS_PATH,
       },
     ],
-    [tally, lastCertificateNumber, vehicleCount, vctTotal, topRc],
+    [tally, lastCertificateNumber, vehicleCount, vctTotal],
   );
 
   const certifiedLastMonth = useMemo(() => certifiedInMonth(verifications, -1), [verifications]);
@@ -391,6 +408,8 @@ export const AdminDashboard: React.FC = () => {
         name: vct.name,
         rcName: (vct.rcId && rcNameById.get(vct.rcId)) || '—',
         count: counts.get(vct.id) || 0,
+        photoUrl: vct.photoUrl,
+        photoPath: vct.photoPath,
       }))
       .filter(row => row.count > 0)
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
@@ -415,14 +434,6 @@ export const AdminDashboard: React.FC = () => {
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   }, [scopedVerifications, customerDistrictById, rcUsers]);
 
-  const recent = useMemo(
-    () =>
-      [...scopedVerifications]
-        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
-        .slice(0, 6),
-    [scopedVerifications],
-  );
-
   const selectPeriod = (next: Period) => {
     setPeriod(next);
     if (next !== 'custom' || customFrom || customTo) return;
@@ -436,10 +447,6 @@ export const AdminDashboard: React.FC = () => {
       return `${VERIFICATION_PATH}?status=${encodeURIComponent(status)}`;
     }
     return VERIFICATION_PATH;
-  };
-
-  const openRecord = (record: SiteCalibration) => {
-    navigate(`${VERIFICATION_PATH}?open=${encodeURIComponent(record.id)}`);
   };
 
   return (
@@ -537,16 +544,19 @@ export const AdminDashboard: React.FC = () => {
             <Link
               key={stage.key}
               to={stage.href}
-              className={`wl-stage wl-stage--${stage.tone}`}
+              className={`wl-stage wl-stage--${stage.tone}${stage.sublabel ? ' wl-stage--wordmark' : ''}`}
             >
               <span className="wl-stage__icon" aria-hidden>
                 {stage.icon}
               </span>
               <span className="wl-stage__label">{stage.label}</span>
-              <span className="wl-stage__count">
-                {loadingVerifications ? '—' : stage.count}
-              </span>
-              {stage.sublabel ? <span className="wl-stage__sub">{stage.sublabel}</span> : null}
+              {stage.sublabel ? (
+                <span className="wl-stage__sub">{stage.sublabel}</span>
+              ) : (
+                <span className="wl-stage__count">
+                  {loadingVerifications ? '—' : stage.count}
+                </span>
+              )}
               <span className="wl-stage__bar" aria-hidden />
             </Link>
           ))}
@@ -622,7 +632,7 @@ export const AdminDashboard: React.FC = () => {
       <section className="wl-section" aria-labelledby="wl-admin-vct-title">
         <div className="wl-section__head">
           <h2 id="wl-admin-vct-title" className="wl-section__title">
-            Active Technicians
+            Verification Officer
           </h2>
           <Link to="/admin/technicians" className="wl-section__link">
             View All <ChevronRight size={14} aria-hidden />
@@ -634,15 +644,21 @@ export const AdminDashboard: React.FC = () => {
           </div>
         ) : vctRows.length === 0 ? (
           <div className="wl-recent__empty">
-            <p>No active technicians with verifications.</p>
+            <p>No verification officers with verifications.</p>
           </div>
         ) : (
           <ul className="wl-rc">
             {vctRows.map(vct => (
               <li key={vct.id}>
                 <div className="wl-rc__card">
-                  <span className="wl-rc__icon wl-rc__icon--vct" aria-hidden>
-                    <Wrench size={18} strokeWidth={2} />
+                  <span className="wl-rc__photo" aria-hidden>
+                    {vct.photoUrl || vct.photoPath ? (
+                      <StorageImage url={vct.photoUrl} path={vct.photoPath} alt="" />
+                    ) : (
+                      <span className="wl-rc__photo-fallback">
+                        <UserCircle size={22} strokeWidth={1.6} />
+                      </span>
+                    )}
                   </span>
                   <span className="wl-rc__body">
                     <span className="wl-rc__name">{vct.name}</span>
@@ -690,65 +706,42 @@ export const AdminDashboard: React.FC = () => {
         )}
       </section>
 
-      <section className="wl-section" aria-labelledby="wl-admin-recent-title">
+      <section className="wl-section" aria-labelledby="wl-admin-activity-title">
         <div className="wl-section__head">
-          <h2 id="wl-admin-recent-title" className="wl-section__title">
-            Recent Verifications
+          <h2 id="wl-admin-activity-title" className="wl-section__title">
+            Activity Logs
           </h2>
-          <Link to={verificationHref()} className="wl-section__link">
+          <Link to={EMAAP_SESSIONS_PATH} className="wl-section__link">
             View All <ChevronRight size={14} aria-hidden />
           </Link>
         </div>
 
-        {loadingVerifications ? (
+        {loadingActivity ? (
           <div className="wl-recent__loading">
             <span className="spinner-inline" aria-hidden />
           </div>
-        ) : recent.length === 0 ? (
+        ) : activityLogs.length === 0 ? (
           <div className="wl-recent__empty">
-            <p>No verification records yet.</p>
+            <p>No eMaap activity yet.</p>
           </div>
         ) : (
-          <ul className="wl-recent">
-            {recent.map(record => {
-              const typeLabel = record.verificationType === 'RV' ? 'RV' : 'OV';
-              return (
-                <li key={record.id}>
-                  <button
-                    type="button"
-                    className="wl-recent__card"
-                    onClick={() => openRecord(record)}
-                  >
-                    <span className="wl-recent__status wl-recent__status--violet" aria-hidden>
-                      <FileText size={20} strokeWidth={2} />
+          <ul className="wl-activity">
+            {activityLogs.map(entry => (
+              <li key={entry.id}>
+                <Link to={EMAAP_SESSIONS_PATH} className={`wl-activity__card wl-activity__card--${entry.level}`}>
+                  <span className="wl-activity__icon" aria-hidden>
+                    {activityLevelIcon(entry.level)}
+                  </span>
+                  <span className="wl-activity__body">
+                    <span className="wl-activity__msg">{displayEmaapText(entry.message)}</span>
+                    <span className="wl-activity__meta">
+                      {formatSessionStamp(entry.createdAt)}
+                      {entry.machineName ? ` · ${entry.machineName}` : ''}
                     </span>
-                    <span className="wl-recent__body">
-                      <span className="wl-recent__top">
-                        <span className="wl-recent__info">
-                          <span className="wl-recent__name">
-                            {record.customerName?.trim() || '—'}
-                          </span>
-                          <span className="wl-recent__id">{recordListId(record)}</span>
-                        </span>
-                        <span
-                          className={`wl-recent__type${
-                            typeLabel === 'RV' ? ' wl-recent__type--rv' : ''
-                          }`}
-                        >
-                          {typeLabel}
-                        </span>
-                      </span>
-                      <span className="wl-recent__footer">
-                        <span>Serial: {record.serialNumber?.trim() || '—'}</span>
-                        <span>Date: {formatVerificationListDate(record.createdAt)}</span>
-                        <span>VCT: {record.vctName?.trim() || '—'}</span>
-                      </span>
-                    </span>
-                    <ChevronRight className="wl-recent__chevron" size={18} aria-hidden />
-                  </button>
-                </li>
-              );
-            })}
+                  </span>
+                </Link>
+              </li>
+            ))}
           </ul>
         )}
       </section>

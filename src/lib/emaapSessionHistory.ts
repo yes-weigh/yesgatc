@@ -110,6 +110,20 @@ export function formatSessionTime(iso: string): string {
   });
 }
 
+export function formatSessionStamp(iso: string): string {
+  if (!iso) return '—';
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) return iso;
+  return new Date(parsed).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 export function formatSessionDay(iso: string): string {
   if (!iso) return '—';
   const parsed = Date.parse(iso);
