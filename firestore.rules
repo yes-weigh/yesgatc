@@ -360,6 +360,22 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'approvedAt', 'updatedAt']);
 
+      // RC uploads DSC-signed certificate PDF (Certificates list).
+      allow update: if isRCAdmin()
+        && resource.data.rcId == request.auth.uid
+        && request.resource.data.rcId == resource.data.rcId
+        && verificationRecordStatus(resource.data) == 'certified'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly([
+               'signedCertificatePdfUrl',
+               'signedCertificatePdfPath',
+               'signedCertificatePdfName',
+               'signedCertificatePdfContentType',
+               'signedCertificateUploadedAt',
+               'signedCertificateUploadedByUid',
+               'updatedAt'
+             ]);
+
       allow delete: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
         && verificationRecordStatus(resource.data) == 'draft';
@@ -405,6 +421,12 @@ service cloud.firestore {
 
     // ── app settings (global toggles) ─────────────────────────────
     match /appSettings/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // Super Admin uploads manuals; RC + VCT read only.
+    match /manualPdfs/{docId} {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }

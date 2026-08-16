@@ -68,5 +68,11 @@ service firebase.storage {
       allow read: if isSuperAdmin();
       allow write: if isSuperAdmin();
     }
+
+    // Manual PDFs — Super Admin upload; signed-in RC / VCT view.
+    match /manualPdfs/{fileId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
   }
 }

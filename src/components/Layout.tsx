@@ -10,12 +10,12 @@ import { MobileAppBarBrandIcon } from './MobileAppBarBrandIcon';
 import { EmaapStatusShortcut } from './EmaapStatusShortcut';
 import { StorageImage } from './StorageImage';
 import { VehicleLogoMark } from './VehicleLogoMark';
+import { VctOfficerMark } from './VctOfficerMark';
 import {
   LayoutDashboard,
   Building2,
   Package,
   BarChart3,
-  ClipboardList,
   Menu,
   X,
   UserCircle,
@@ -23,15 +23,14 @@ import {
   Plug,
   Settings,
   UserRound,
-  Wrench,
   Scale,
-  ClipboardCheck,
+  FileText,
   Bell,
-  UserPlus,
   Sparkles,
   GraduationCap,
   LogOut,
   Wallet,
+  Award,
 } from 'lucide-react';
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
@@ -156,16 +155,16 @@ export const Layout: React.FC = () => {
           },
           { path: '/admin/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
           { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
-          { path: '/admin/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Vehicle' },
+          { path: '/admin/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
           { path: '/admin/rc', icon: <Building2 size={20} />, label: 'Regional Centers' },
           {
             path: '/admin/technicians',
-            icon: <Wrench size={20} />,
-            label: 'Technician',
+            icon: <VctOfficerMark />,
+            label: 'VCT',
             pageTitle: 'Verification and Calibration Technician',
           },
           { path: '/admin/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
-          { path: '/admin/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
+          { path: '/admin/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
           { path: '/admin/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
           { path: '/admin/integrations', icon: <Plug size={20} />, label: 'Integrations' },
@@ -173,37 +172,35 @@ export const Layout: React.FC = () => {
       case 'rc_admin':
         return [
           { path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/rc/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
-          { path: '/rc/leads', icon: <UserPlus size={20} />, label: 'Leads' },
-          { path: '/rc/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
           { path: '/rc/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
-          { path: '/rc/customers', icon: <UserRound size={20} />, label: 'Customer' },
+          { path: '/rc/certificates', icon: <Award size={20} />, label: 'Certificates' },
+          { path: '/rc/customers', icon: <UserRound size={20} />, label: 'Customers' },
+          { path: '/rc/wallet', icon: <Wallet size={20} />, label: 'Wallets' },
           { path: '/rc/products', icon: <Package size={20} />, label: 'Product' },
           {
             path: '/rc/vct',
-            icon: <Wrench size={20} />,
-            label: 'Technician',
+            icon: <VctOfficerMark />,
+            label: 'VCT',
             pageTitle: 'Verification and Calibration Technician',
           },
-          { path: '/rc/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Vehicle' },
+          { path: '/rc/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
           { path: '/rc/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
-          { path: '/rc/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
-          { path: '/rc/notifications', icon: <Bell size={20} />, label: 'Notifications' },
-          { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Report' },
-          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My profile' },
+          { path: '/rc/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
+          { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My Profile' },
         ];
       case 'vct':
         return [
           { path: '/vct', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/vct/leads', icon: <UserPlus size={20} />, label: 'Leads' },
-          { path: '/vct/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
           { path: '/vct/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
-          { path: '/vct/customers', icon: <UserRound size={20} />, label: 'Customer' },
+          { path: '/vct/certificates', icon: <Award size={20} />, label: 'Certificates' },
+          { path: '/vct/customers', icon: <UserRound size={20} />, label: 'Customers' },
           { path: '/vct/products', icon: <Package size={20} />, label: 'Product' },
+          { path: '/vct/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
           { path: '/vct/training', icon: <GraduationCap size={20} />, label: 'Training' },
           { path: '/vct/notifications', icon: <Bell size={20} />, label: 'Notifications' },
-          { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Report' },
-          { path: '/vct/profile', icon: <Settings size={20} />, label: 'My profile' },
+          { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/vct/profile', icon: <Settings size={20} />, label: 'My Profile' },
         ];
       default:
         return [];
