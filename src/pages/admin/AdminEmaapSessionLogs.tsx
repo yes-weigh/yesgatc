@@ -483,30 +483,15 @@ export const AdminEmaapSessionLogs: React.FC = () => {
 
   return (
     <div className="fade-in page-content esl-page">
-      <ListViewBackBar onBack={() => navigate('/admin/integrations/worker')} label="Back to integrations" />
+      <ListViewBackBar onBack={() => navigate('/admin')} label="Back to dashboard" />
 
       <header className="esl-head">
-        <div>
+        <div className="esl-head__copy">
           <p className="esl-kicker">
             <ShieldCheck size={16} aria-hidden />
             eMaap
           </p>
           <h1 className="esl-title">Session Logs</h1>
-          <div className="esl-pills" role="tablist" aria-label="Session status">
-            {STATUS_FILTERS.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                className={`esl-pill${filter === item.id ? ' esl-pill--active' : ''}${
-                  item.id === 'success' ? ' esl-pill--ok' : item.id === 'failed' ? ' esl-pill--bad' : ''
-                }`}
-                onClick={() => setFilter(item.id)}
-              >
-                {item.label}
-                {item.id === 'all' ? ` ${counts.all}` : ` ${counts[item.id]}`}
-              </button>
-            ))}
-          </div>
         </div>
         <div className="esl-head__tools">
           <div className="esl-totals" aria-label="Total session duration">
@@ -575,6 +560,21 @@ export const AdminEmaapSessionLogs: React.FC = () => {
               </div>
             )}
           </div>
+        </div>
+        <div className="esl-pills" role="tablist" aria-label="Session status">
+          {STATUS_FILTERS.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              className={`esl-pill${filter === item.id ? ' esl-pill--active' : ''}${
+                item.id === 'success' ? ' esl-pill--ok' : item.id === 'failed' ? ' esl-pill--bad' : ''
+              }`}
+              onClick={() => setFilter(item.id)}
+            >
+              {item.label}
+              {item.id === 'all' ? ` ${counts.all}` : ` ${counts[item.id]}`}
+            </button>
+          ))}
         </div>
       </header>
 
