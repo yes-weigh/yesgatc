@@ -218,6 +218,15 @@ html {
   white-space: nowrap;
 }
 
+.sidebar-app-version {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  line-height: 1;
+  margin-top: 0.2rem;
+}
+
 .logo-icon {
   width: 32px; height: 32px;
   background: linear-gradient(135deg, var(--accent-primary), #60a5fa);
@@ -418,6 +427,16 @@ html {
   border-left: none;
   border-right: none;
   border-top: none;
+}
+
+.top-bar-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.top-bar .emaap-status-shortcut {
+  position: static;
 }
 
 .page-title {
@@ -1066,6 +1085,14 @@ select.input-field option {
   height: auto;
   margin: 0 auto 1.5rem;
   display: block;
+}
+
+.login-header p.login-version {
+  margin: -0.75rem 0 1.15rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
 }
 
 .login-header h2 {
@@ -21501,6 +21528,22 @@ body.verification-photo-viewer-open {
   flex-shrink: 0;
   object-fit: contain;
   display: block;
+}
+
+.wl-brand-mark-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 0.1rem;
+}
+
+.wl-brand-version {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  color: #94a3b8;
 }
 
 .wl-brand-title {

@@ -411,7 +411,8 @@ service cloud.firestore {
 
     // ── certificate automation worker (remote control + telemetry) ─
     match /automationWorker/{docId} {
-      allow read, write: if isSuperAdmin();
+      allow read: if isSuperAdmin() || (isAuthenticated() && docId == 'status');
+      allow write: if isSuperAdmin();
     }
 
     match /automationWorkerLogs/{logId} {

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { CreditCard, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
 import { isValidAadhar, normalizeAadhar } from '../lib/aadharAuth';
 import { embedVerificationPath, isEmbedSession, rememberEmbedMode } from '../lib/embedMode';
+import { APP_VERSION } from '../lib/appVersion';
 
 export const Login: React.FC = () => {
   const { login, user, loading } = useAuth();
@@ -67,6 +68,7 @@ export const Login: React.FC = () => {
       <div className="login-box glass">
         <div className="login-header">
           <img src="/brand/logo-dark.png" alt="YES LAB" className="login-logo" />
+          <p className="login-version">{APP_VERSION}</p>
           <p>Sign in with your Aadhar number</p>
         </div>
 

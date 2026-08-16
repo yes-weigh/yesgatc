@@ -36,6 +36,7 @@ import {
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { embedVerificationPath, isEmbedSession, rememberEmbedMode } from '../lib/embedMode';
+import { APP_VERSION } from '../lib/appVersion';
 import type { FirestoreUserDoc } from '../types';
 
 type NavItem = {
@@ -246,7 +247,8 @@ export const Layout: React.FC = () => {
           className="logo-area"
           style={{
             display: 'flex',
-            alignItems: 'center',
+            flexDirection: 'column',
+            alignItems: !mobile && collapsed ? 'center' : 'flex-start',
             width: '100%',
             justifyContent: !mobile && collapsed ? 'center' : 'flex-start',
           }}
@@ -260,6 +262,7 @@ export const Layout: React.FC = () => {
                 : { maxHeight: '40px', maxWidth: '160px', objectFit: 'contain' }
             }
           />
+          <span className="sidebar-app-version">{APP_VERSION}</span>
         </div>
       </div>
 
@@ -345,14 +348,17 @@ export const Layout: React.FC = () => {
             </button>
             {isHomeDashboard ? (
               <div className="mobile-app-bar-brand mobile-app-bar-brand--home">
-                <img
-                  className="wl-brand-mark"
-                  src="/brand/weighlab-logo-dark.png"
-                  alt=""
-                  width={40}
-                  height={40}
-                  decoding="async"
-                />
+                <div className="wl-brand-mark-wrap">
+                  <img
+                    className="wl-brand-mark"
+                    src="/brand/weighlab-logo-dark.png"
+                    alt=""
+                    width={40}
+                    height={40}
+                    decoding="async"
+                  />
+                  <span className="wl-brand-version">{APP_VERSION}</span>
+                </div>
                 <div className="mobile-app-bar-text">
                   <h1 className="mobile-app-bar-title wl-brand-title">
                     <span className="wl-brand-title__weigh">WEIGH</span>
@@ -381,34 +387,7 @@ export const Layout: React.FC = () => {
             )}
             {isLaboratoryPage ? (
               <div className="mobile-app-bar-actions">
-                {user.role === 'super_admin' ? (
-                  <EmaapStatusShortcut />
-                ) : profilePath ? (
-                  <button
-                    type="button"
-                    className={`mobile-profile-shortcut${location.pathname === profilePath ? ' mobile-profile-shortcut--active' : ''}`}
-                    onClick={() => navigate(profilePath)}
-                    title="My profile"
-                    aria-label="Open my profile"
-                  >
-                    {profilePhoto?.url || profilePhoto?.path ? (
-                      <StorageImage
-                        url={profilePhoto.url}
-                        path={profilePhoto.path}
-                        alt=""
-                        className="mobile-profile-shortcut-img"
-                      />
-                    ) : (
-                      <span className="mobile-profile-shortcut-placeholder" aria-hidden>
-                        <UserCircle size={22} className="text-blue" />
-                      </span>
-                    )}
-                  </button>
-                ) : (
-                  <span className="mobile-profile-shortcut mobile-profile-shortcut--static" aria-hidden>
-                    <UserCircle size={22} className="text-blue" />
-                  </span>
-                )}
+                <EmaapStatusShortcut />
                 {user.role !== 'super_admin' && (
                   <button
                     type="button"
@@ -421,66 +400,48 @@ export const Layout: React.FC = () => {
                   </button>
                 )}
               </div>
-            ) : user.role === 'super_admin' ? (
+            ) : (
               <EmaapStatusShortcut />
-            ) : profilePath ? (
-              <button
-                type="button"
-                className={`mobile-profile-shortcut${location.pathname === profilePath ? ' mobile-profile-shortcut--active' : ''}`}
-                onClick={() => navigate(profilePath)}
-                title="My profile"
-                aria-label="Open my profile"
-              >
-                {profilePhoto?.url || profilePhoto?.path ? (
-                  <StorageImage
-                    url={profilePhoto.url}
-                    path={profilePhoto.path}
-                    alt=""
-                    className="mobile-profile-shortcut-img"
-                  />
-                ) : (
-                  <span className="mobile-profile-shortcut-placeholder" aria-hidden>
-                    <UserCircle size={22} className="text-blue" />
-                  </span>
-                )}
-              </button>
-            ) : null}
+            )}
           </header>
         )}
         {!isMobile && (
           <header className="top-bar glass">
             <h1 className="page-title">{pageTitle}</h1>
-            {profilePath ? (
-              <button
-                type="button"
-                className="user-chip user-chip--profile-link"
-                onClick={() => navigate(profilePath)}
-                title="My profile"
-              >
-                {profilePhoto?.url || profilePhoto?.path ? (
-                  <StorageImage
-                    url={profilePhoto.url}
-                    path={profilePhoto.path}
-                    alt=""
-                    className="user-chip-avatar"
-                  />
-                ) : (
+            <div className="top-bar-end">
+              <EmaapStatusShortcut />
+              {profilePath ? (
+                <button
+                  type="button"
+                  className="user-chip user-chip--profile-link"
+                  onClick={() => navigate(profilePath)}
+                  title="My profile"
+                >
+                  {profilePhoto?.url || profilePhoto?.path ? (
+                    <StorageImage
+                      url={profilePhoto.url}
+                      path={profilePhoto.path}
+                      alt=""
+                      className="user-chip-avatar"
+                    />
+                  ) : (
+                    <UserCircle size={20} className="text-blue" />
+                  )}
+                  <div className="user-info">
+                    <span className="user-name">{user.username}</span>
+                    <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
+                  </div>
+                </button>
+              ) : (
+                <div className="user-chip">
                   <UserCircle size={20} className="text-blue" />
-                )}
-                <div className="user-info">
-                  <span className="user-name">{user.username}</span>
-                  <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
+                  <div className="user-info">
+                    <span className="user-name">{user.username}</span>
+                    <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
+                  </div>
                 </div>
-              </button>
-            ) : (
-              <div className="user-chip">
-                <UserCircle size={20} className="text-blue" />
-                <div className="user-info">
-                  <span className="user-name">{user.username}</span>
-                  <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
-                </div>
-              </div>
-            )}
+              )}
+            </div>
           </header>
         )}
         <div className="content-area">
