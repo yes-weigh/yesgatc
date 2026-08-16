@@ -454,7 +454,7 @@ public partial class MainWindow : Window
 
             UpdateAutoWorkerStatusText();
             var label = minutes == 0 ? "disabled" : $"every {minutes} min";
-            AddActivityEntry($"DOCA session probe {label} (saved).");
+            AddActivityEntry($"eMaap session probe {label} (saved).");
         }
 
         return true;
@@ -520,7 +520,7 @@ public partial class MainWindow : Window
         ExpandAccountPanel();
         SetStatus(
             _automationService.IsBrowserConnected
-                ? "DOCA browser is open. Enter Super Admin credentials and sign in."
+                ? "eMaap browser is open. Enter Super Admin credentials and sign in."
                 : "Enter Super Admin credentials and sign in to load the queue.",
             StatusKind.Idle);
     }
@@ -1569,7 +1569,7 @@ public partial class MainWindow : Window
 
             _telemetry.RecordSessionProbe("expired");
             await _telemetry.ReportActivityAsync(
-                "DOCA session expired (detected by periodic IC verification probe). Retrying auto-login…",
+                "eMaap session expired (detected by periodic IC verification probe). Retrying auto-login…",
                 "warning",
                 () => GetFreshIdTokenAsync());
             SetDocaLoginPaused(true, logoutReason: "session_probe");
@@ -2680,7 +2680,7 @@ public partial class MainWindow : Window
                             SetDocaLoginPaused(true, logoutReason: "job_failure");
                         }
 
-                        SetStatusSafe($"{label} — DOCA login required in Chrome {workerIndex + 1}.", StatusKind.Error);
+                        SetStatusSafe($"{label} — eMaap login required in Chrome {workerIndex + 1}.", StatusKind.Error);
                         return;
                     }
 
@@ -2805,7 +2805,7 @@ public partial class MainWindow : Window
         if (loginStopped)
         {
             SetStatusSafe(
-                $"Batch paused — DOCA auto-login in progress. {completed} completed so far. {lastError}",
+                $"Batch paused — eMaap auto-login in progress. {completed} completed so far. {lastError}",
                 StatusKind.Error);
             return;
         }

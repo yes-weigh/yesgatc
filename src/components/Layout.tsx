@@ -58,6 +58,8 @@ export const Layout: React.FC = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [profilePhoto, setProfilePhoto] = useState<{ url?: string; path?: string } | null>(null);
   const [pageRefreshKey, setPageRefreshKey] = useState(0);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [suppressAccountOverlayHistory, setSuppressAccountOverlayHistory] = useState(true);
 
   const profilePath =
     user?.role === 'rc_admin' ? '/rc/profile' : user?.role === 'vct' ? '/vct/profile' : null;
@@ -84,11 +86,17 @@ export const Layout: React.FC = () => {
 
   useEffect(() => {
     setSuppressSidebarOverlayHistory(true);
+    setSuppressAccountOverlayHistory(true);
     setMobileOpen(false);
+    setAccountOpen(false);
   }, [location.pathname]);
 
   useHistoryOverlay(isMobile && mobileOpen, () => setMobileOpen(false), {
     suppressHistoryBackWhenInactive: suppressSidebarOverlayHistory,
+  });
+
+  useHistoryOverlay(accountOpen, () => setAccountOpen(false), {
+    suppressHistoryBackWhenInactive: suppressAccountOverlayHistory,
   });
 
   useEffect(() => {
@@ -119,6 +127,8 @@ export const Layout: React.FC = () => {
   if (!user) return null;
 
   const handleLogout = async () => {
+    setSuppressAccountOverlayHistory(true);
+    setAccountOpen(false);
     await logout();
     navigate('/login', { replace: true });
   };
@@ -210,7 +220,10 @@ export const Layout: React.FC = () => {
     }
     return location.pathname.startsWith(`${item.path}/`);
   });
-  const pageTitle = currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
+  const isEmaapSessions = location.pathname.includes('/integrations/worker/sessions');
+  const pageTitle = isEmaapSessions
+    ? 'Session Logs'
+    : currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
@@ -282,23 +295,26 @@ export const Layout: React.FC = () => {
 
       {user.role === 'super_admin' && (
         <div className={`sidebar-mobile-account${!mobile && collapsed ? ' sidebar-mobile-account--collapsed' : ''}`}>
-          {(!collapsed || mobile) && (
-            <div className="sidebar-mobile-user">
-              <UserCircle size={28} className="text-blue shrink-0" />
-              <div className="sidebar-mobile-user-text">
-                <div className="sidebar-mobile-user-name">{user.username}</div>
-                <div className="sidebar-mobile-user-meta text-muted">{roleLabel}</div>
-              </div>
-            </div>
-          )}
           <button
             type="button"
-            className="sidebar-mobile-logout"
-            onClick={() => void handleLogout()}
-            title={!mobile && collapsed ? 'Logout' : undefined}
+            className="sidebar-mobile-user sidebar-mobile-user--account"
+            onClick={() => {
+              setMobileOpen(false);
+              setSuppressAccountOverlayHistory(false);
+              setAccountOpen(true);
+            }}
+            title="Account"
+            aria-label="Open account"
           >
-            <LogOut size={16} aria-hidden />
-            <span className="sidebar-logout-label">Logout</span>
+            <span className="sidebar-mobile-user-icon" aria-hidden>
+              <UserCircle size={28} className="text-blue shrink-0" />
+            </span>
+            {(!collapsed || mobile) && (
+              <span className="sidebar-mobile-user-text">
+                <span className="sidebar-mobile-user-name">{user.username}</span>
+                <span className="sidebar-mobile-user-meta text-muted">{roleLabel}</span>
+              </span>
+            )}
           </button>
         </div>
       )}
@@ -330,7 +346,7 @@ export const Layout: React.FC = () => {
       >
         {isMobile && (
           <header
-            className={`mobile-app-bar${useShieldBrand ? ' mobile-app-bar--sticky' : ''}${
+            className={`mobile-app-bar${useShieldBrand || isHomeDashboard || isEmaapSessions ? ' mobile-app-bar--sticky' : ''}${
               isHomeDashboard ? ' mobile-app-bar--home' : ''
             }`}
           >
@@ -448,6 +464,42 @@ export const Layout: React.FC = () => {
           <Outlet key={`${location.pathname}-${pageRefreshKey}`} />
         </div>
       </main>
+      {accountOpen && (
+        <div
+          className="modal-overlay sidebar-account-overlay"
+          onClick={() => setAccountOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="sidebar-account-panel glass"
+            role="dialog"
+            aria-labelledby="sidebar-account-title"
+            onClick={event => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="sidebar-account-panel__close"
+              onClick={() => setAccountOpen(false)}
+              aria-label="Close account"
+            >
+              <X size={18} />
+            </button>
+            <UserCircle size={48} className="text-blue sidebar-account-panel__avatar" />
+            <h2 id="sidebar-account-title" className="sidebar-account-panel__name">
+              {user.username}
+            </h2>
+            <p className="sidebar-account-panel__role text-muted">{roleLabel}</p>
+            <button
+              type="button"
+              className="sidebar-account-panel__logout"
+              onClick={() => void handleLogout()}
+            >
+              <LogOut size={16} aria-hidden />
+              Logout
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Activity,
   CheckCircle2,
@@ -34,6 +35,7 @@ import {
   type WorkerRuntimeState,
   DEFAULT_AUTOMATION_WORKER_REMOTE,
 } from '../lib/automationWorker';
+import { displayEmaapText } from '../lib/emaapSessionHistory';
 import {
   diagnoseVerificationPipeline,
   findVerificationBySerial,
@@ -349,7 +351,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
               <p className="cw-hero-label">Worker status</p>
               <h2 className="cw-hero-title">{RUNTIME_LABELS[runtimeState]}</h2>
               <p className="cw-hero-message">
-                {status?.statusMessage || RUNTIME_HINTS[runtimeState]}
+                {displayEmaapText(status?.statusMessage || RUNTIME_HINTS[runtimeState])}
               </p>
             </div>
           </div>
@@ -492,7 +494,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                   <li key={entry.id} className={`cw-log-item cw-log-item--${entry.level}`}>
                     <span className="cw-log-level">{logLevelIcon(entry.level)}</span>
                     <time dateTime={entry.createdAt}>{formatCompactTimestamp(entry.createdAt)}</time>
-                    <span className="cw-log-message">{entry.message}</span>
+                    <span className="cw-log-message">{displayEmaapText(entry.message)}</span>
                   </li>
                 ))}
               </ul>
@@ -579,9 +581,20 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
         {activeLogTab === 'sessions' && (
           <div role="tabpanel" className="cw-log-panel">
             {sessions.length === 0 ? (
-              <p className="cw-log-empty">No eMAAP session logout events yet. Sessions are recorded when the worker detects a logout.</p>
+              <p className="cw-log-empty">
+                No eMAAP session logout events yet.{' '}
+                <Link to="/admin/integrations/worker/sessions" className="cw-session-link">
+                  Open session history
+                </Link>
+              </p>
             ) : (
-              <ul className="cw-session-list">
+              <>
+                <p className="cw-session-link-wrap">
+                  <Link to="/admin/integrations/worker/sessions" className="cw-session-link">
+                    Open session history
+                  </Link>
+                </p>
+                <ul className="cw-session-list">
                 {sessions.map(session => (
                   <li key={session.id} className="cw-session-item">
                     <div className="cw-session-duration">
@@ -594,7 +607,8 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                     </div>
                   </li>
                 ))}
-              </ul>
+                </ul>
+              </>
             )}
           </div>
         )}

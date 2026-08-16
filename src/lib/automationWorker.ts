@@ -1,11 +1,14 @@
 import {
   collection,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
   query,
   setDoc,
+  where,
+  type Query,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -16,6 +19,11 @@ export const AUTOMATION_WORKER_REMOTE_DOC = 'remote';
 export const AUTOMATION_WORKER_LOGS_COLLECTION = 'automationWorkerLogs';
 export const AUTOMATION_WORKER_CAPTCHA_COLLECTION = 'automationWorkerCaptchaAttempts';
 export const AUTOMATION_WORKER_SESSIONS_COLLECTION = 'automationWorkerSessions';
+
+export const EMAAP_HISTORY_SESSION_LIMIT = 400;
+export const EMAAP_HISTORY_LOG_LIMIT = 2500;
+export const EMAAP_HISTORY_CAPTCHA_LIMIT = 1500;
+export const EMAAP_HISTORY_WINDOW_LIMIT = 800;
 
 export type WorkerRuntimeState =
   | 'idle'
@@ -93,7 +101,83 @@ export type AutomationWorkerSessionEvent = {
   durationSeconds: number;
   logoutReason: string;
   machineName: string;
+  jobsCompleted?: number;
+  jobsFailed?: number;
+  workerName?: string;
 };
+
+export function mapAutomationWorkerSession(
+  id: string,
+  data: Record<string, unknown>,
+): AutomationWorkerSessionEvent {
+  return {
+    id,
+    loggedInAt: readString(data, 'loggedInAt'),
+    loggedOutAt: readString(data, 'loggedOutAt'),
+    durationSeconds: readInt(data, 'durationSeconds'),
+    logoutReason: readString(data, 'logoutReason'),
+    machineName: readString(data, 'machineName'),
+    jobsCompleted: readOptionalInt(data, 'jobsCompleted'),
+    jobsFailed: readOptionalInt(data, 'jobsFailed'),
+    workerName: readString(data, 'workerName') || undefined,
+  };
+}
+
+export function mapAutomationWorkerLog(
+  id: string,
+  data: Record<string, unknown>,
+): AutomationWorkerLogEntry {
+  return {
+    id,
+    createdAt: readString(data, 'createdAt'),
+    message: readString(data, 'message'),
+    level: readString(data, 'level', 'info'),
+    category: readString(data, 'category'),
+    machineName: readString(data, 'machineName'),
+  };
+}
+
+export function mapAutomationWorkerCaptcha(
+  id: string,
+  data: Record<string, unknown>,
+): AutomationWorkerCaptchaAttempt {
+  return {
+    id,
+    createdAt: readString(data, 'createdAt'),
+    resolvedText: readString(data, 'resolvedText'),
+    ocrProvider: readString(data, 'ocrProvider'),
+    attemptNumber: readInt(data, 'attemptNumber'),
+    success: readBool(data, 'success'),
+    outcome: readString(data, 'outcome'),
+    imageUrl: readString(data, 'imageUrl'),
+    machineName: readString(data, 'machineName'),
+  };
+}
+
+function activityQuery(collectionName: string, maxEntries: number, sinceIso?: string, untilIso?: string): Query {
+  if (sinceIso && untilIso) {
+    return query(
+      collection(db, collectionName),
+      where('createdAt', '>=', sinceIso),
+      where('createdAt', '<=', untilIso),
+      orderBy('createdAt', 'desc'),
+      limit(maxEntries),
+    );
+  }
+  if (sinceIso) {
+    return query(
+      collection(db, collectionName),
+      where('createdAt', '>=', sinceIso),
+      orderBy('createdAt', 'desc'),
+      limit(maxEntries),
+    );
+  }
+  return query(
+    collection(db, collectionName),
+    orderBy('createdAt', 'desc'),
+    limit(maxEntries),
+  );
+}
 
 export type AutomationWorkerCredentialsForm = {
   superAdminAadhar: string;
@@ -140,6 +224,12 @@ export function readInt(data: Record<string, unknown> | undefined, key: string, 
   if (!data) return fallback;
   const value = data[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+export function readOptionalInt(data: Record<string, unknown> | undefined, key: string): number | undefined {
+  if (!data) return undefined;
+  const value = data[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 export function normalizeAutomationWorkerStatus(
@@ -253,27 +343,15 @@ export function subscribeAutomationWorkerLogs(
   onData: (logs: AutomationWorkerLogEntry[]) => void,
   onError?: (error: Error) => void,
   maxEntries = 50,
+  sinceIso?: string,
 ): Unsubscribe {
-  const q = query(
-    collection(db, AUTOMATION_WORKER_LOGS_COLLECTION),
-    orderBy('createdAt', 'desc'),
-    limit(maxEntries),
-  );
   return onSnapshot(
-    q,
+    activityQuery(AUTOMATION_WORKER_LOGS_COLLECTION, maxEntries, sinceIso),
     snapshot => {
       onData(
-        snapshot.docs.map(docSnap => {
-          const data = docSnap.data() as Record<string, unknown>;
-          return {
-            id: docSnap.id,
-            createdAt: readString(data, 'createdAt'),
-            message: readString(data, 'message'),
-            level: readString(data, 'level', 'info'),
-            category: readString(data, 'category'),
-            machineName: readString(data, 'machineName'),
-          };
-        }),
+        snapshot.docs.map(docSnap =>
+          mapAutomationWorkerLog(docSnap.id, docSnap.data() as Record<string, unknown>),
+        ),
       );
     },
     error => onError?.(error),
@@ -284,30 +362,15 @@ export function subscribeAutomationWorkerCaptchaAttempts(
   onData: (attempts: AutomationWorkerCaptchaAttempt[]) => void,
   onError?: (error: Error) => void,
   maxEntries = 100,
+  sinceIso?: string,
 ): Unsubscribe {
-  const q = query(
-    collection(db, AUTOMATION_WORKER_CAPTCHA_COLLECTION),
-    orderBy('createdAt', 'desc'),
-    limit(maxEntries),
-  );
   return onSnapshot(
-    q,
+    activityQuery(AUTOMATION_WORKER_CAPTCHA_COLLECTION, maxEntries, sinceIso),
     snapshot => {
       onData(
-        snapshot.docs.map(docSnap => {
-          const data = docSnap.data() as Record<string, unknown>;
-          return {
-            id: docSnap.id,
-            createdAt: readString(data, 'createdAt'),
-            resolvedText: readString(data, 'resolvedText'),
-            ocrProvider: readString(data, 'ocrProvider'),
-            attemptNumber: readInt(data, 'attemptNumber'),
-            success: readBool(data, 'success'),
-            outcome: readString(data, 'outcome'),
-            imageUrl: readString(data, 'imageUrl'),
-            machineName: readString(data, 'machineName'),
-          };
-        }),
+        snapshot.docs.map(docSnap =>
+          mapAutomationWorkerCaptcha(docSnap.id, docSnap.data() as Record<string, unknown>),
+        ),
       );
     },
     error => onError?.(error),
@@ -328,20 +391,73 @@ export function subscribeAutomationWorkerSessions(
     q,
     snapshot => {
       onData(
-        snapshot.docs.map(docSnap => {
-          const data = docSnap.data() as Record<string, unknown>;
-          return {
-            id: docSnap.id,
-            loggedInAt: readString(data, 'loggedInAt'),
-            loggedOutAt: readString(data, 'loggedOutAt'),
-            durationSeconds: readInt(data, 'durationSeconds'),
-            logoutReason: readString(data, 'logoutReason'),
-            machineName: readString(data, 'machineName'),
-          };
-        }),
+        snapshot.docs.map(docSnap =>
+          mapAutomationWorkerSession(docSnap.id, docSnap.data() as Record<string, unknown>),
+        ),
       );
     },
     error => onError?.(error),
+  );
+}
+
+export async function fetchAutomationWorkerSessions(maxEntries = 300): Promise<AutomationWorkerSessionEvent[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, AUTOMATION_WORKER_SESSIONS_COLLECTION),
+      orderBy('loggedOutAt', 'desc'),
+      limit(maxEntries),
+    ),
+  );
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerSession(docSnap.id, docSnap.data() as Record<string, unknown>),
+  );
+}
+
+export async function fetchAutomationWorkerLogs(
+  maxEntries = 400,
+  sinceIso?: string,
+): Promise<AutomationWorkerLogEntry[]> {
+  const snap = await getDocs(activityQuery(AUTOMATION_WORKER_LOGS_COLLECTION, maxEntries, sinceIso));
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerLog(docSnap.id, docSnap.data() as Record<string, unknown>),
+  );
+}
+
+export async function fetchAutomationWorkerLogsInRange(
+  fromIso: string,
+  toIso: string,
+  maxEntries = EMAAP_HISTORY_WINDOW_LIMIT,
+): Promise<AutomationWorkerLogEntry[]> {
+  if (!fromIso) return [];
+  const snap = await getDocs(
+    activityQuery(AUTOMATION_WORKER_LOGS_COLLECTION, maxEntries, fromIso, toIso || '9999-12-31T23:59:59.999Z'),
+  );
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerLog(docSnap.id, docSnap.data() as Record<string, unknown>),
+  );
+}
+
+export async function fetchAutomationWorkerCaptchaAttempts(
+  maxEntries = 400,
+  sinceIso?: string,
+): Promise<AutomationWorkerCaptchaAttempt[]> {
+  const snap = await getDocs(activityQuery(AUTOMATION_WORKER_CAPTCHA_COLLECTION, maxEntries, sinceIso));
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerCaptcha(docSnap.id, docSnap.data() as Record<string, unknown>),
+  );
+}
+
+export async function fetchAutomationWorkerCaptchaAttemptsInRange(
+  fromIso: string,
+  toIso: string,
+  maxEntries = EMAAP_HISTORY_WINDOW_LIMIT,
+): Promise<AutomationWorkerCaptchaAttempt[]> {
+  if (!fromIso) return [];
+  const snap = await getDocs(
+    activityQuery(AUTOMATION_WORKER_CAPTCHA_COLLECTION, maxEntries, fromIso, toIso || '9999-12-31T23:59:59.999Z'),
+  );
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerCaptcha(docSnap.id, docSnap.data() as Record<string, unknown>),
   );
 }
 

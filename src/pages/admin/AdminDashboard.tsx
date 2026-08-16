@@ -15,16 +15,14 @@ import {
   CalendarDays,
   Wrench,
   MapPin,
-  Copy,
-  Ban,
+  Car,
+  ShieldCheck,
 } from 'lucide-react';
 import { db } from '../../firebase';
+import { LAST_CERTIFICATE_SEQUENCE_FLOOR } from '../../lib/certificateSequence';
 import { isVctOperational } from '../../lib/vctApproval';
-import { isVerificationCertificateVoided } from '../../lib/verificationCertificateVoid';
-import {
-  countVerificationDuplicates,
-  verificationListCollapsedForCounts,
-} from '../../lib/verificationListGrouping';
+import { verificationListCollapsedForCounts } from '../../lib/verificationListGrouping';
+import { maxCertificateSequenceNumber } from '../../lib/verificationListSort';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   getVerificationDisplayStatus,
@@ -123,16 +121,16 @@ function recordInPeriod(
   return Boolean(from || to);
 }
 
-type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange' | 'slate';
-
-type StageKey = VerificationStatusFilter | 'void';
+type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange' | 'slate' | 'cyan';
 
 type StageCard = {
-  key: StageKey;
+  key: string;
   label: string;
-  count: number;
+  count?: number;
+  sublabel?: string;
   tone: StageTone;
   icon: React.ReactNode;
+  href: string;
 };
 
 function recordListId(record: SiteCalibration): string {
@@ -182,6 +180,8 @@ export const AdminDashboard: React.FC = () => {
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
   const [rcUsers, setRcUsers] = useState<{ id: string; name: string; district: string }[]>([]);
   const [vctUsers, setVctUsers] = useState<{ id: string; name: string; rcId: string }[]>([]);
+  const [vctTotal, setVctTotal] = useState(0);
+  const [vehicleCount, setVehicleCount] = useState(0);
   const [customerDistrictById, setCustomerDistrictById] = useState<Map<string, string>>(
     () => new Map(),
   );
@@ -192,10 +192,11 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     const load = async () => {
-      const [calibrationSnap, userSnap, customerSnap] = await Promise.all([
+      const [calibrationSnap, userSnap, customerSnap, vehicleSnap] = await Promise.all([
         getDocs(collection(db, 'siteCalibrations')),
         getDocs(collection(db, 'users')),
         getDocs(collection(db, 'customers')),
+        getDocs(collection(db, 'vehicles')),
       ]);
       setVerifications(
         calibrationSnap.docs.map(d => ({
@@ -205,6 +206,7 @@ export const AdminDashboard: React.FC = () => {
       );
       const rcs: { id: string; name: string; district: string }[] = [];
       const vcts: { id: string; name: string; rcId: string }[] = [];
+      let vctCount = 0;
       userSnap.docs.forEach(d => {
         const data = d.data() as FirestoreUserDoc;
         if (data.role === 'rc_admin') {
@@ -215,13 +217,14 @@ export const AdminDashboard: React.FC = () => {
           });
           return;
         }
-        if (data.role === 'vct' && isVctOperational(data)) {
-          vcts.push({
-            id: d.id,
-            name: data.username?.trim() || data.contactPerson?.trim() || '—',
-            rcId: data.rcId?.trim() || '',
-          });
-        }
+        if (data.role !== 'vct') return;
+        vctCount += 1;
+        if (!isVctOperational(data)) return;
+        vcts.push({
+          id: d.id,
+          name: data.username?.trim() || data.contactPerson?.trim() || '—',
+          rcId: data.rcId?.trim() || '',
+        });
       });
       const districts = new Map<string, string>();
       customerSnap.docs.forEach(d => {
@@ -231,6 +234,8 @@ export const AdminDashboard: React.FC = () => {
       });
       setRcUsers(rcs);
       setVctUsers(vcts);
+      setVctTotal(vctCount);
+      setVehicleCount(vehicleSnap.size);
       setCustomerDistrictById(districts);
       setLoadingVerifications(false);
     };
@@ -250,37 +255,23 @@ export const AdminDashboard: React.FC = () => {
     () => tallyVerificationTypeFilters(scopedVerifications),
     [scopedVerifications],
   );
-  const duplicateCount = useMemo(
-    () => countVerificationDuplicates(scopedVerifications, scopedVerifications),
-    [scopedVerifications],
+  const lastCertificateNumber = useMemo(
+    () =>
+      Math.max(
+        LAST_CERTIFICATE_SEQUENCE_FLOOR,
+        maxCertificateSequenceNumber(verifications) ?? 0,
+      ),
+    [verifications],
   );
-  const voidCount = useMemo(
-    () => scopedVerifications.filter(isVerificationCertificateVoided).length,
-    [scopedVerifications],
-  );
-
   const stages = useMemo<StageCard[]>(
     () => [
-      {
-        key: 'all',
-        label: 'All Stages',
-        count: tally.all,
-        tone: 'blue',
-        icon: <LayoutGrid size={18} strokeWidth={1.9} />,
-      },
-      {
-        key: 'draft',
-        label: 'Draft',
-        count: tally.draft,
-        tone: 'violet',
-        icon: <FileText size={18} strokeWidth={1.9} />,
-      },
       {
         key: 'submitted',
         label: 'Submitted',
         count: tally.submitted,
         tone: 'blue',
         icon: <Send size={18} strokeWidth={1.9} />,
+        href: `${VERIFICATION_PATH}?status=submitted`,
       },
       {
         key: 'failed_submit',
@@ -288,6 +279,15 @@ export const AdminDashboard: React.FC = () => {
         count: tally.failed_submit,
         tone: 'red',
         icon: <UploadCloud size={18} strokeWidth={1.9} />,
+        href: `${VERIFICATION_PATH}?status=failed_submit`,
+      },
+      {
+        key: 'draft',
+        label: 'Draft',
+        count: tally.draft,
+        tone: 'violet',
+        icon: <FileText size={18} strokeWidth={1.9} />,
+        href: `${VERIFICATION_PATH}?status=draft`,
       },
       {
         key: 'certified',
@@ -295,6 +295,7 @@ export const AdminDashboard: React.FC = () => {
         count: tally.certified,
         tone: 'green',
         icon: <Award size={18} strokeWidth={1.9} />,
+        href: `${VERIFICATION_PATH}?status=certified`,
       },
       {
         key: 'rejected',
@@ -302,23 +303,42 @@ export const AdminDashboard: React.FC = () => {
         count: tally.rejected,
         tone: 'orange',
         icon: <XCircle size={18} strokeWidth={1.9} />,
+        href: `${VERIFICATION_PATH}?status=rejected`,
       },
       {
-        key: 'duplicates',
-        label: 'Duplicates',
-        count: duplicateCount,
-        tone: 'violet',
-        icon: <Copy size={18} strokeWidth={1.9} />,
+        key: 'all',
+        label: 'Total Certified',
+        count: lastCertificateNumber,
+        tone: 'blue',
+        icon: <LayoutGrid size={18} strokeWidth={1.9} />,
+        href: VERIFICATION_PATH,
       },
       {
-        key: 'void',
-        label: 'Void',
-        count: voidCount,
+        key: 'cars',
+        label: 'Total Car Count',
+        count: vehicleCount,
+        tone: 'cyan',
+        icon: <Car size={18} strokeWidth={1.9} />,
+        href: '/admin/vehicles',
+      },
+      {
+        key: 'vcts',
+        label: 'Total VCT',
+        count: vctTotal,
         tone: 'slate',
-        icon: <Ban size={18} strokeWidth={1.9} />,
+        icon: <Wrench size={18} strokeWidth={1.9} />,
+        href: '/admin/technicians',
+      },
+      {
+        key: 'emaap',
+        label: 'eMaap',
+        sublabel: 'session logs',
+        tone: 'green',
+        icon: <ShieldCheck size={18} strokeWidth={1.9} />,
+        href: '/admin/integrations/worker/sessions',
       },
     ],
-    [tally, duplicateCount, voidCount],
+    [tally, lastCertificateNumber, vehicleCount, vctTotal],
   );
 
   const certifiedHighlight = useMemo(() => {
@@ -433,8 +453,7 @@ export const AdminDashboard: React.FC = () => {
     setCustomTo(toInputDate(now));
   };
 
-  const verificationHref = (status?: StageKey) => {
-    if (status === 'void') return `${VERIFICATION_PATH}?void=1`;
+  const verificationHref = (status?: VerificationStatusFilter) => {
     if (status && status !== 'all') {
       return `${VERIFICATION_PATH}?status=${encodeURIComponent(status)}`;
     }
@@ -539,16 +558,20 @@ export const AdminDashboard: React.FC = () => {
           {stages.map(stage => (
             <Link
               key={stage.key}
-              to={verificationHref(stage.key)}
-              className={`wl-stage wl-stage--${stage.tone}`}
+              to={stage.href}
+              className={`wl-stage wl-stage--${stage.tone}${stage.sublabel ? ' wl-stage--wordmark' : ''}`}
             >
               <span className="wl-stage__icon" aria-hidden>
                 {stage.icon}
               </span>
               <span className="wl-stage__label">{stage.label}</span>
-              <span className="wl-stage__count">
-                {loadingVerifications ? '—' : stage.count}
-              </span>
+              {stage.sublabel ? (
+                <span className="wl-stage__sub">{stage.sublabel}</span>
+              ) : (
+                <span className="wl-stage__count">
+                  {loadingVerifications ? '—' : stage.count}
+                </span>
+              )}
               <span className="wl-stage__bar" aria-hidden />
             </Link>
           ))}

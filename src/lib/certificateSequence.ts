@@ -3,6 +3,9 @@ export const CERTIFICATE_SEQUENCE_PREFIX = 'IND/GATC/KL/26/04/26/';
 
 export const DEFAULT_CERTIFICATE_SEQUENCE_MAX = 1366;
 
+/** Last sequence issued outside this app. All Stages uses max(this, highest in Firestore). */
+export const LAST_CERTIFICATE_SEQUENCE_FLOOR = 3258;
+
 /** Trailing numeric segment (IND/GATC/KL/26/04/26/1365 → 1365). */
 export function parseCertificateSequenceNumber(value?: string | null): number | null {
   const trimmed = value?.trim();
