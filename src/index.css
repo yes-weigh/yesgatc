@@ -22093,8 +22093,8 @@ body.verification-photo-viewer-open {
 }
 
 .wl-stage__sub {
-  margin-top: auto;
-  padding-top: 0.35rem;
+  margin-top: 0.12rem;
+  padding-top: 0;
   font-size: 0.72rem;
   font-weight: 600;
   line-height: 1.15;
@@ -22136,6 +22136,16 @@ body.verification-photo-viewer-open {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.wl-rc__rank {
+  flex-shrink: 0;
+  min-width: 1.85rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #93c5fd;
+  font-variant-numeric: tabular-nums;
 }
 
 .wl-rc__card {

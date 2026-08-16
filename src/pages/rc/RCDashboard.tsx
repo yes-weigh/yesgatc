@@ -13,10 +13,15 @@ import {
   Plus,
   ChevronRight,
   UploadCloud,
+  Car,
+  Wrench,
+  Trophy,
 } from 'lucide-react';
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
 import { db } from '../../firebase';
 import { fetchRcVehicles, rcHasRegisteredVehicle } from '../../lib/rcVehicles';
+import { fetchRcVctUsers } from '../../lib/rcVctMembers';
+import { rankOfRc, subscribeRcCertificationRanks } from '../../lib/rcCertificationRank';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import { subscribeRcWalletBalance, subscribeWalletTopUps } from '../../lib/rcWallet';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
@@ -31,14 +36,16 @@ import {
 } from '../../lib/verificationRequest';
 import type { SiteCalibration } from '../../types';
 
-type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange';
+type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange' | 'slate' | 'cyan';
 
 type StageCard = {
-  key: VerificationStatusFilter;
+  key: string;
   label: string;
-  count: number;
+  count: number | string;
   tone: StageTone;
   icon: React.ReactNode;
+  href: string;
+  sublabel?: string;
 };
 
 function recordListId(record: SiteCalibration): string {
@@ -76,6 +83,9 @@ export const RCDashboard: React.FC = () => {
   const [walletBalance, setWalletBalance] = useState(0);
   const [pendingTopUps, setPendingTopUps] = useState(0);
   const [walletLoading, setWalletLoading] = useState(true);
+  const [vehicleCount, setVehicleCount] = useState(0);
+  const [vctCount, setVctCount] = useState(0);
+  const [rcRank, setRcRank] = useState<number | null>(null);
 
   const fetchVerifications = useCallback(async () => {
     if (!rcUid) return;
@@ -94,18 +104,33 @@ export const RCDashboard: React.FC = () => {
   }, [fetchVerifications]);
 
   useEffect(() => {
-    if (!rcUid || !isRcAdmin) {
+    if (!rcUid) {
+      setVehicleCount(0);
+      setVctCount(0);
       setRcHasVehicle(null);
       return;
     }
     let cancelled = false;
-    void fetchRcVehicles(rcUid).then(vehicles => {
-      if (!cancelled) setRcHasVehicle(rcHasRegisteredVehicle(vehicles));
+    void Promise.all([fetchRcVehicles(rcUid), fetchRcVctUsers(rcUid)]).then(([vehicles, vcts]) => {
+      if (cancelled) return;
+      setVehicleCount(vehicles.length);
+      setVctCount(vcts.length);
+      if (isRcAdmin) setRcHasVehicle(rcHasRegisteredVehicle(vehicles));
     });
     return () => {
       cancelled = true;
     };
   }, [rcUid, isRcAdmin]);
+
+  useEffect(() => {
+    if (!rcUid) {
+      setRcRank(null);
+      return;
+    }
+    return subscribeRcCertificationRanks(ranks => {
+      setRcRank(rankOfRc(ranks, rcUid));
+    });
+  }, [rcUid]);
 
   useEffect(() => {
     if (!rcUid) {
@@ -142,28 +167,20 @@ export const RCDashboard: React.FC = () => {
   const tally = useMemo(() => tallyVerificationStatusFilters(verifications), [verifications]);
   const typeTally = useMemo(() => tallyVerificationTypeFilters(verifications), [verifications]);
 
+  const verificationHref = (status?: VerificationStatusFilter) =>
+    status && status !== 'all'
+      ? `${basePath}/verification?status=${encodeURIComponent(status)}`
+      : `${basePath}/verification`;
+
   const stages = useMemo<StageCard[]>(
     () => [
-      {
-        key: 'all',
-        label: 'All Stages',
-        count: tally.all,
-        tone: 'blue',
-        icon: <LayoutGrid size={18} strokeWidth={1.9} />,
-      },
-      {
-        key: 'draft',
-        label: 'Draft',
-        count: tally.draft,
-        tone: 'violet',
-        icon: <FileText size={18} strokeWidth={1.9} />,
-      },
       {
         key: 'submitted',
         label: 'Submitted',
         count: tally.submitted,
         tone: 'blue',
         icon: <Send size={18} strokeWidth={1.9} />,
+        href: verificationHref('submitted'),
       },
       {
         key: 'failed_submit',
@@ -171,6 +188,15 @@ export const RCDashboard: React.FC = () => {
         count: tally.failed_submit,
         tone: 'red',
         icon: <UploadCloud size={18} strokeWidth={1.9} />,
+        href: verificationHref('failed_submit'),
+      },
+      {
+        key: 'draft',
+        label: 'Draft',
+        count: tally.draft,
+        tone: 'violet',
+        icon: <FileText size={18} strokeWidth={1.9} />,
+        href: verificationHref('draft'),
       },
       {
         key: 'certified',
@@ -178,6 +204,7 @@ export const RCDashboard: React.FC = () => {
         count: tally.certified,
         tone: 'green',
         icon: <Award size={18} strokeWidth={1.9} />,
+        href: verificationHref('certified'),
       },
       {
         key: 'rejected',
@@ -185,12 +212,44 @@ export const RCDashboard: React.FC = () => {
         count: tally.rejected,
         tone: 'orange',
         icon: <XCircle size={18} strokeWidth={1.9} />,
+        href: verificationHref('rejected'),
+      },
+      {
+        key: 'total_certified',
+        label: 'Total Certified',
+        count: tally.certified,
+        tone: 'blue',
+        icon: <LayoutGrid size={18} strokeWidth={1.9} />,
+        href: verificationHref('certified'),
+      },
+      {
+        key: 'cars',
+        label: 'Car Count',
+        count: vehicleCount,
+        tone: 'cyan',
+        icon: <Car size={18} strokeWidth={1.9} />,
+        href: isRcAdmin ? `${basePath}/vehicles` : verificationHref(),
+      },
+      {
+        key: 'vcts',
+        label: 'VCT Count',
+        count: vctCount,
+        tone: 'slate',
+        icon: <Wrench size={18} strokeWidth={1.9} />,
+        href: isRcAdmin ? `${basePath}/vct` : verificationHref(),
+      },
+      {
+        key: 'rc_rank',
+        label: 'RC Ranking',
+        count: rcRank != null ? `#${rcRank}` : '—',
+        tone: 'blue',
+        icon: <Trophy size={18} strokeWidth={1.9} />,
+        href: verificationHref('certified'),
+        sublabel: `${tally.certified} certified`,
       },
     ],
-    [tally],
+    [tally, vehicleCount, vctCount, rcRank, isRcAdmin, basePath],
   );
-
-  const certifiedMonth = useMemo(() => certifiedThisMonthCount(verifications), [verifications]);
 
   const recent = useMemo(
     () =>
@@ -206,10 +265,7 @@ export const RCDashboard: React.FC = () => {
       ? `${pendingTopUps} top-up${pendingTopUps === 1 ? '' : 's'} awaiting approval`
       : 'Add payment screenshot to top up';
 
-  const verificationHref = (status?: VerificationStatusFilter) =>
-    status && status !== 'all'
-      ? `${basePath}/verification?status=${encodeURIComponent(status)}`
-      : `${basePath}/verification`;
+  const certifiedMonth = useMemo(() => certifiedThisMonthCount(verifications), [verifications]);
 
   const openRecord = (record: SiteCalibration) => {
     navigate(`${basePath}/verification?open=${encodeURIComponent(record.id)}`);
@@ -299,7 +355,7 @@ export const RCDashboard: React.FC = () => {
           {stages.map(stage => (
             <Link
               key={stage.key}
-              to={verificationHref(stage.key)}
+              to={stage.href}
               className={`wl-stage wl-stage--${stage.tone}`}
             >
               <span className="wl-stage__icon" aria-hidden>
@@ -309,6 +365,7 @@ export const RCDashboard: React.FC = () => {
               <span className="wl-stage__count">
                 {loadingVerifications ? '—' : stage.count}
               </span>
+              {stage.sublabel ? <span className="wl-stage__sub">{stage.sublabel}</span> : null}
               <span className="wl-stage__bar" aria-hidden />
             </Link>
           ))}

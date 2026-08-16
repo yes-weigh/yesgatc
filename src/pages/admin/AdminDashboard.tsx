@@ -16,12 +16,15 @@ import {
   Wrench,
   MapPin,
   Car,
-  ShieldCheck,
+  Trophy,
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { LAST_CERTIFICATE_SEQUENCE_FLOOR } from '../../lib/certificateSequence';
 import { isVctOperational } from '../../lib/vctApproval';
-import { verificationListCollapsedForCounts } from '../../lib/verificationListGrouping';
+import {
+  rankRcsByCertifiedCount,
+  saveRcCertificationRanks,
+} from '../../lib/rcCertificationRank';
 import { maxCertificateSequenceNumber } from '../../lib/verificationListSort';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
@@ -40,6 +43,7 @@ type RcRow = {
   name: string;
   district: string;
   count: number;
+  rank: number;
 };
 
 const PERIODS: { key: Period; label: string }[] = [
@@ -126,7 +130,7 @@ type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange' | 'slate' | 'cya
 type StageCard = {
   key: string;
   label: string;
-  count?: number;
+  count?: number | string;
   sublabel?: string;
   tone: StageTone;
   icon: React.ReactNode;
@@ -198,12 +202,11 @@ export const AdminDashboard: React.FC = () => {
         getDocs(collection(db, 'customers')),
         getDocs(collection(db, 'vehicles')),
       ]);
-      setVerifications(
-        calibrationSnap.docs.map(d => ({
-          id: d.id,
-          ...(d.data() as Omit<SiteCalibration, 'id'>),
-        })),
-      );
+      const loaded = calibrationSnap.docs.map(d => ({
+        id: d.id,
+        ...(d.data() as Omit<SiteCalibration, 'id'>),
+      }));
+      setVerifications(loaded);
       const rcs: { id: string; name: string; district: string }[] = [];
       const vcts: { id: string; name: string; rcId: string }[] = [];
       let vctCount = 0;
@@ -237,6 +240,9 @@ export const AdminDashboard: React.FC = () => {
       setVctTotal(vctCount);
       setVehicleCount(vehicleSnap.size);
       setCustomerDistrictById(districts);
+      void saveRcCertificationRanks(rankRcsByCertifiedCount(loaded, rcs.map(rc => rc.id))).catch(
+        () => undefined,
+      );
       setLoadingVerifications(false);
     };
     void load();
@@ -263,6 +269,31 @@ export const AdminDashboard: React.FC = () => {
       ),
     [verifications],
   );
+
+  const rcRows = useMemo<RcRow[]>(() => {
+    const rcById = new Map(rcUsers.map(rc => [rc.id, rc]));
+    return rankRcsByCertifiedCount(
+      scopedVerifications,
+      rcUsers.map(rc => rc.id),
+    ).map((row, index) => ({
+      id: row.rcId,
+      name: rcById.get(row.rcId)?.name || 'Unknown RC',
+      district: rcById.get(row.rcId)?.district || '—',
+      count: row.certified,
+      rank: index + 1,
+    }));
+  }, [scopedVerifications, rcUsers]);
+
+  const topRc = useMemo(() => {
+    const first = rankRcsByCertifiedCount(
+      verifications,
+      rcUsers.map(rc => rc.id),
+    )[0];
+    if (!first || first.certified <= 0) return undefined;
+    const rc = rcUsers.find(row => row.id === first.rcId);
+    return { name: rc?.name || 'Unknown RC', count: first.certified };
+  }, [verifications, rcUsers]);
+
   const stages = useMemo<StageCard[]>(
     () => [
       {
@@ -315,7 +346,7 @@ export const AdminDashboard: React.FC = () => {
       },
       {
         key: 'cars',
-        label: 'Total Car Count',
+        label: 'Car Count',
         count: vehicleCount,
         tone: 'cyan',
         icon: <Car size={18} strokeWidth={1.9} />,
@@ -323,22 +354,23 @@ export const AdminDashboard: React.FC = () => {
       },
       {
         key: 'vcts',
-        label: 'Total VCT',
+        label: 'VCT Count',
         count: vctTotal,
         tone: 'slate',
         icon: <Wrench size={18} strokeWidth={1.9} />,
         href: '/admin/technicians',
       },
       {
-        key: 'emaap',
-        label: 'eMaap',
-        sublabel: 'session logs',
-        tone: 'green',
-        icon: <ShieldCheck size={18} strokeWidth={1.9} />,
-        href: '/admin/integrations/worker/sessions',
+        key: 'rc_rank',
+        label: 'RC Ranking',
+        count: topRc ? `#1` : '—',
+        sublabel: topRc ? `${topRc.name} · ${topRc.count}` : undefined,
+        tone: 'blue',
+        icon: <Trophy size={18} strokeWidth={1.9} />,
+        href: '/admin/rc',
       },
     ],
-    [tally, lastCertificateNumber, vehicleCount, vctTotal],
+    [tally, lastCertificateNumber, vehicleCount, vctTotal, topRc],
   );
 
   const certifiedHighlight = useMemo(() => {
@@ -366,38 +398,6 @@ export const AdminDashboard: React.FC = () => {
           : period === 'custom'
             ? 'In selected range'
             : 'Total certified';
-
-  const rcMenuRows = useMemo(
-    () =>
-      verificationListCollapsedForCounts(
-        verifications,
-        { statusFilter: 'all', typeFilter: 'all' },
-        'rc',
-      ).filter(record => recordInPeriod(record, period, customFrom, customTo)),
-    [verifications, period, customFrom, customTo],
-  );
-
-  const rcRows = useMemo<RcRow[]>(() => {
-    const counts = new Map<string, number>();
-    for (const record of rcMenuRows) {
-      const id = record.rcId?.trim();
-      if (!id) continue;
-      counts.set(id, (counts.get(id) || 0) + 1);
-    }
-    const rcById = new Map(rcUsers.map(rc => [rc.id, rc]));
-    return [...counts.entries()]
-      .map(([id, count]) => {
-        const rc = rcById.get(id);
-        return {
-          id,
-          name: rc?.name || 'Unknown RC',
-          district: rc?.district || '—',
-          count,
-        };
-      })
-      .filter(row => row.count > 0)
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }, [rcMenuRows, rcUsers]);
 
   const vctRows = useMemo(() => {
     const rcNameById = new Map(rcUsers.map(rc => [rc.id, rc.name]));
@@ -559,19 +559,16 @@ export const AdminDashboard: React.FC = () => {
             <Link
               key={stage.key}
               to={stage.href}
-              className={`wl-stage wl-stage--${stage.tone}${stage.sublabel ? ' wl-stage--wordmark' : ''}`}
+              className={`wl-stage wl-stage--${stage.tone}`}
             >
               <span className="wl-stage__icon" aria-hidden>
                 {stage.icon}
               </span>
               <span className="wl-stage__label">{stage.label}</span>
-              {stage.sublabel ? (
-                <span className="wl-stage__sub">{stage.sublabel}</span>
-              ) : (
-                <span className="wl-stage__count">
-                  {loadingVerifications ? '—' : stage.count}
-                </span>
-              )}
+              <span className="wl-stage__count">
+                {loadingVerifications ? '—' : stage.count}
+              </span>
+              {stage.sublabel ? <span className="wl-stage__sub">{stage.sublabel}</span> : null}
               <span className="wl-stage__bar" aria-hidden />
             </Link>
           ))}
@@ -626,6 +623,9 @@ export const AdminDashboard: React.FC = () => {
                   to={`${VERIFICATION_PATH}?rc=${encodeURIComponent(rc.id)}`}
                   className="wl-rc__card"
                 >
+                  <span className="wl-rc__rank" aria-label={`Rank ${rc.rank}`}>
+                    #{rc.rank}
+                  </span>
                   <span className="wl-rc__icon" aria-hidden>
                     <Building2 size={18} strokeWidth={2} />
                   </span>
