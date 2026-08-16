@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { Send } from 'lucide-react';
 import { db } from '../../firebase';
@@ -33,6 +34,7 @@ import {
 import { TablePagination } from '../../components/TablePagination';
 import { VerificationDetailPanel } from '../../components/VerificationDetailPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
+import { isVerificationCertificateVoided } from '../../lib/verificationCertificateVoid';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
 import { isRvWalletPaymentOutstanding } from '../../lib/rvPaymentAmount';
 import {
@@ -71,12 +73,19 @@ export const AdminVerificationList: React.FC = () => {
   const { user } = useAuth();
   const confirm = useConfirm();
   const { appSettings } = useAppSettings();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isSuperAdmin = user?.role === 'super_admin';
+  const pendingStatusFilter = searchParams.get('status');
+  const pendingTypeFilter = searchParams.get('type');
+  const pendingRcFilter = searchParams.get('rc');
+  const pendingVoidFilter = searchParams.get('void') === '1';
+  const pendingOpenId = searchParams.get('open');
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
   const [rcUsersById, setRcUsersById] = useState<Map<string, RcListProfile>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
+  const [voidOnly, setVoidOnly] = useState(false);
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
   const [rcFilter, setRcFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -153,6 +162,92 @@ export const AdminVerificationList: React.FC = () => {
   }, [fetchRecords]);
 
   useEffect(() => {
+    if (!pendingStatusFilter) return;
+    const allowed: VerificationStatusFilter[] = [
+      'all',
+      'draft',
+      'submitted',
+      'certified',
+      'failed_submit',
+      'rejected',
+      'duplicates',
+    ];
+    const raw = pendingStatusFilter as VerificationStatusFilter;
+    if (allowed.includes(raw)) {
+      setStatusFilter(raw);
+      setVoidOnly(false);
+    } else if (raw === 'approved' || raw === 'failed_certification') {
+      setStatusFilter(raw === 'failed_certification' ? 'failed_submit' : 'submitted');
+      setVoidOnly(false);
+    }
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('status');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingStatusFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingVoidFilter) return;
+    setVoidOnly(true);
+    setStatusFilter('all');
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('void');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingVoidFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (pendingTypeFilter !== 'OV' && pendingTypeFilter !== 'RV' && pendingTypeFilter !== 'all') {
+      return;
+    }
+    setTypeFilter(pendingTypeFilter);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('type');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingTypeFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingRcFilter) return;
+    setRcFilter(pendingRcFilter);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('rc');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingRcFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingOpenId || loading) return;
+    const record = records.find(entry => entry.id === pendingOpenId);
+    if (!record) return;
+    setViewingRecord(record);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('open');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingOpenId, loading, records, setSearchParams]);
+
+  useEffect(() => {
     if (!viewingRecord) return;
     const fresh = records.find(r => r.id === viewingRecord.id);
     if (fresh) {
@@ -165,6 +260,9 @@ export const AdminVerificationList: React.FC = () => {
 
   const filteredRecords = useMemo(() => {
     const filtered = records.filter(record => {
+      if (voidOnly && !isVerificationCertificateVoided(record)) {
+        return false;
+      }
       if (!matchesVerificationSearch(record, searchTerm, { rcCenterName: record.rcCenterName })) {
         return false;
       }
@@ -188,7 +286,7 @@ export const AdminVerificationList: React.FC = () => {
       return true;
     });
     return buildVerificationListDisplay(filtered, records, statusFilter);
-  }, [records, statusFilter, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+  }, [records, statusFilter, voidOnly, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -282,7 +380,8 @@ export const AdminVerificationList: React.FC = () => {
 
     const centres = [...byRc.entries()]
       .map(([value, { label, count }]) => ({ value, label, count }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+      .filter(row => row.count > 0)
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
     return [
       { value: 'all', label: 'All RC', count: collapsed.length },
@@ -571,7 +670,10 @@ export const AdminVerificationList: React.FC = () => {
             onSearchTermChange={setSearchTerm}
             searchPlaceholder="Search verification…"
             statusFilter={statusFilter}
-            onStatusFilterChange={setStatusFilter}
+            onStatusFilterChange={value => {
+              setVoidOnly(false);
+              setStatusFilter(value);
+            }}
             statusOptions={filterOptions}
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}

@@ -21501,6 +21501,110 @@ body.verification-photo-viewer-open {
   width: 100%;
 }
 
+.wl-period-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.75rem 0.7rem 0.7rem;
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 42%),
+    #101522;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 10px 28px rgba(2, 6, 23, 0.28);
+}
+
+.wl-period-card__label {
+  margin: 0;
+  padding: 0 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #60a5fa;
+}
+
+.wl-period {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.38rem;
+}
+
+.wl-period__btn {
+  min-width: 0;
+  min-height: 2.2rem;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #94a3b8;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 0.42rem 0.28rem;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.wl-period__btn:hover:not(.wl-period__btn--active) {
+  background: rgba(148, 163, 184, 0.1);
+  color: #e2e8f0;
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.wl-period__btn--active {
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.32);
+}
+
+.wl-period__custom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.wl-period__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+}
+
+.wl-period__field span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.wl-period__field input {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: #0b101b;
+  color: #fff;
+  border-radius: 10px;
+  padding: 0.55rem 0.6rem;
+  font: inherit;
+  font-size: 0.78rem;
+  color-scheme: dark;
+}
+
+.wl-period__field input:focus {
+  outline: none;
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+}
+
 .wl-wallet {
   display: flex;
   align-items: center;
@@ -21800,6 +21904,10 @@ body.verification-photo-viewer-open {
 .wl-stage--orange .wl-stage__count,
 .wl-stage--orange .wl-stage__bar { color: #f97316; }
 
+.wl-stage--slate .wl-stage__icon,
+.wl-stage--slate .wl-stage__count,
+.wl-stage--slate .wl-stage__bar { color: #94a3b8; }
+
 @media (max-width: 380px) {
   .wl-stages {
     gap: 0.35rem;
@@ -21822,6 +21930,84 @@ body.verification-photo-viewer-open {
     left: 0.5rem;
     right: 0.5rem;
   }
+}
+
+.wl-rc {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wl-rc__card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  background: var(--wl-card);
+  border: 1px solid var(--wl-card-border);
+  text-decoration: none;
+  color: inherit;
+}
+
+.wl-rc__card:hover {
+  border-color: rgba(96, 165, 250, 0.35);
+}
+
+.wl-rc__icon {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #dbeafe;
+  background: linear-gradient(145deg, rgba(59, 130, 246, 0.5), rgba(37, 99, 235, 0.85));
+}
+
+.wl-rc__icon--vct {
+  color: #dcfce7;
+  background: linear-gradient(145deg, rgba(34, 197, 94, 0.5), rgba(21, 128, 61, 0.88));
+}
+
+.wl-rc__icon--district {
+  color: #ffedd5;
+  background: linear-gradient(145deg, rgba(249, 115, 22, 0.55), rgba(194, 65, 12, 0.88));
+}
+
+.wl-rc__body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.wl-rc__name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-rc__meta {
+  font-size: 0.68rem;
+  color: var(--wl-muted);
+}
+
+.wl-rc__count {
+  flex-shrink: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #93c5fd;
 }
 
 .wl-quick {

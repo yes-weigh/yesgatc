@@ -213,7 +213,9 @@ export const Layout: React.FC = () => {
   const useShieldBrand = location.pathname.includes('verification');
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
   const isHomeDashboard =
-    location.pathname === '/rc' || location.pathname === '/vct';
+    location.pathname === '/rc' ||
+    location.pathname === '/vct' ||
+    location.pathname === '/admin';
 
   const roleLabel = {
     super_admin: 'Super Admin',
@@ -437,7 +439,11 @@ export const Layout: React.FC = () => {
                   </span>
                 )}
               </button>
-            ) : null}
+            ) : (
+              <span className="mobile-profile-shortcut mobile-profile-shortcut--static" aria-hidden>
+                <UserCircle size={22} className="text-blue" />
+              </span>
+            )}
           </header>
         )}
         {!isMobile && (
