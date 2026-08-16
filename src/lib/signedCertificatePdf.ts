@@ -58,7 +58,11 @@ export function resolveCertificatePdfFileUrl(record: SiteCalibration): string | 
   if (emaap && isEmaapCertificatePdfUrl(emaap)) return emaap;
   const stored = record.certificatePdfUrl?.trim();
   if (stored) return stored;
-  return resolveCertificateDownloadUrl(record);
+  return null;
+}
+
+export function resolveCertificatePdfStoragePath(record: SiteCalibration): string | null {
+  return record.signedCertificatePdfPath?.trim() || record.certificatePdfPath?.trim() || null;
 }
 
 export function validateSignedCertificatePdf(file: File): string | null {

@@ -26,6 +26,7 @@ import {
   certificateSignStatus,
   markCertificatePdfDownloaded,
   resolveCertificatePdfFileUrl,
+  resolveCertificatePdfStoragePath,
   uploadSignedCertificatePdf,
   validateSignedCertificatePdf,
 } from '../../lib/signedCertificatePdf';
@@ -443,6 +444,7 @@ export const CertificateSign: React.FC = () => {
         open={viewingPdf}
         record={record}
         url={pdfUrl}
+        storagePath={record ? resolveCertificatePdfStoragePath(record) : null}
         onClose={() => setViewingPdf(false)}
       />
     </div>

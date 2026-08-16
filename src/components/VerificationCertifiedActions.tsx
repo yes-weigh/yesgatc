@@ -7,7 +7,7 @@ import {
   type VerificationCertifiedActionId,
 } from '../lib/verificationCertifiedActions';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
-import { resolveCertificatePdfFileUrl } from '../lib/signedCertificatePdf';
+import { resolveCertificatePdfFileUrl, resolveCertificatePdfStoragePath } from '../lib/signedCertificatePdf';
 import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
 import { VerificationGstBillModal } from './VerificationGstBillModal';
 import { VerificationLabelModal } from './VerificationLabelModal';
@@ -198,6 +198,7 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
         open={certificateOpen}
         record={record}
         url={resolveCertificatePdfFileUrl(record)}
+        storagePath={resolveCertificatePdfStoragePath(record)}
         onClose={() => setCertificateOpen(false)}
       />
     </>

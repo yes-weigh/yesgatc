@@ -13,8 +13,8 @@ import { inferVerificationSubject } from '../../lib/siteCalibrationProfileFields
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import {
   certificateSignStatus,
-  resolveCertificateDownloadUrl,
   resolveCertificatePdfFileUrl,
+  resolveCertificatePdfStoragePath,
   type CertificateSignStatus,
 } from '../../lib/signedCertificatePdf';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
@@ -158,8 +158,7 @@ export const Certificates: React.FC = () => {
 
   const handlePhoneShare = (record: SiteCalibration, event: React.MouseEvent) => {
     event.stopPropagation();
-    const href = resolveCertificateDownloadUrl(record);
-    if (!href) return;
+    if (!resolveCertificatePdfFileUrl(record) && !resolveCertificatePdfStoragePath(record)) return;
     setViewingRecord(record);
   };
 
@@ -270,11 +269,14 @@ export const Certificates: React.FC = () => {
           <>
             <ul className="wl-cert-cards wl-cert-phone">
                 {pageRows.map((record, index) => {
-                  const href = resolveCertificateDownloadUrl(record);
+                  const pdfUrl = resolveCertificatePdfFileUrl(record);
+                  const pdfPath = resolveCertificatePdfStoragePath(record);
                   const certNo = record.certificateNumber?.trim() || '—';
                   const loc = certLocation(record, customersById, rcPlace);
                   const signStatus = certificateSignStatus(record);
+                  const type = recordType(record);
                   const placeLine = [loc.place, loc.district].filter(Boolean).join(', ');
+                  const vctName = record.vctName?.trim() || '—';
                   return (
                     <li key={record.id}>
                       <article className="wl-cert-card">
@@ -285,33 +287,41 @@ export const Certificates: React.FC = () => {
                         >
                           <span className="wl-cert-card__sl">{rowOffset + index + 1}</span>
                           <span className="wl-cert-card__body">
-                            <span className="wl-cert-card__no">{certNo}</span>
-                            <span className="wl-cert-card__name">
-                              {record.customerName?.trim() || '—'}
+                            <span className="wl-cert-card__headline">
+                              <span className="wl-cert-card__name">
+                                {record.customerName?.trim() || '—'}
+                              </span>
+                              <span className="wl-cert-card__tags">
+                                <span className={`wl-cert-sign-type wl-cert-sign-type--${type.toLowerCase()}`}>
+                                  {type}
+                                </span>
+                                <span
+                                  className={`wl-cert-table__badge${
+                                    signStatus === 'voided'
+                                      ? ' wl-cert-table__badge--void'
+                                      : signStatus === 'not_signed'
+                                        ? ' wl-cert-table__badge--unsigned'
+                                        : ''
+                                  }`}
+                                >
+                                  {signStatus === 'voided'
+                                    ? 'Voided'
+                                    : signStatus === 'signed'
+                                      ? 'Signed'
+                                      : 'Not signed'}
+                                </span>
+                              </span>
                             </span>
+                            <span className="wl-cert-card__no">{certNo}</span>
                             <span className="wl-cert-card__sub">
                               {formatVerificationListDate(record.certifiedAt || record.approvedAt)}
                               {record.serialNumber?.trim() ? ` · ${record.serialNumber.trim()}` : ''}
                               {placeLine ? ` · ${placeLine}` : ''}
-                            </span>
-                            <span
-                              className={`wl-cert-table__badge${
-                                signStatus === 'voided'
-                                  ? ' wl-cert-table__badge--void'
-                                  : signStatus === 'not_signed'
-                                    ? ' wl-cert-table__badge--unsigned'
-                                    : ''
-                              }`}
-                            >
-                              {signStatus === 'voided'
-                                ? 'Voided'
-                                : signStatus === 'signed'
-                                  ? 'Signed'
-                                  : 'Not signed'}
+                              {` · VCT: ${vctName}`}
                             </span>
                           </span>
                         </button>
-                        {href ? (
+                        {pdfUrl || pdfPath ? (
                           <button
                             type="button"
                             className="wl-recent__download"
@@ -319,7 +329,7 @@ export const Certificates: React.FC = () => {
                             aria-label={`Share certificate ${certNo}`}
                             title="Share"
                           >
-                            <Share2 size={18} strokeWidth={2} aria-hidden />
+                            <Share2 size={16} strokeWidth={2} aria-hidden />
                           </button>
                         ) : null}
                       </article>
@@ -382,7 +392,10 @@ export const Certificates: React.FC = () => {
                           <span className="wl-cert-table__primary">
                             {record.customerName?.trim() || '—'}
                           </span>
-                          {placeLine ? <span className="wl-cert-table__sub">{placeLine}</span> : null}
+                          <span className="wl-cert-table__sub">
+                            VCT: {record.vctName?.trim() || '—'}
+                            {placeLine ? ` · ${placeLine}` : ''}
+                          </span>
                         </td>
                         <td className="wl-cert-col-hide-phone">
                           {formatVerificationListDate(record.certifiedAt || record.approvedAt)}
@@ -424,6 +437,7 @@ export const Certificates: React.FC = () => {
         open={Boolean(viewingRecord)}
         record={viewingRecord}
         url={viewingRecord ? resolveCertificatePdfFileUrl(viewingRecord) : null}
+        storagePath={viewingRecord ? resolveCertificatePdfStoragePath(viewingRecord) : null}
         onClose={() => setViewingRecord(null)}
       />
     </div>
