@@ -8,16 +8,17 @@ import {
   Send,
   Award,
   XCircle,
-  FilePenLine,
   BarChart3,
   Plus,
   ChevronRight,
   UploadCloud,
   Car,
-  Wrench,
   Trophy,
+  UserCircle,
 } from 'lucide-react';
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
+import { StorageImage } from '../../components/StorageImage';
+import { VctOfficerMark } from '../../components/VctOfficerMark';
 import { db } from '../../firebase';
 import { fetchRcVehicles, rcHasRegisteredVehicle } from '../../lib/rcVehicles';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
@@ -60,17 +61,60 @@ function recordListId(record: SiteCalibration): string {
   return '—';
 }
 
-function certifiedThisMonthCount(records: SiteCalibration[]): number {
+function certifiedInMonth(records: SiteCalibration[], offsetMonths: number): number {
   const now = new Date();
-  const month = now.getMonth();
-  const year = now.getFullYear();
+  const date = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1);
+  const month = date.getMonth();
+  const year = date.getFullYear();
   return records.filter(record => {
     if (getVerificationDisplayStatus(record) !== 'certified') return false;
     const raw = record.certifiedAt || record.approvedAt || record.createdAt;
     if (!raw) return false;
-    const date = new Date(raw);
-    return date.getMonth() === month && date.getFullYear() === year;
+    const parsed = new Date(raw);
+    return parsed.getMonth() === month && parsed.getFullYear() === year;
   }).length;
+}
+
+type VctDashProfile = {
+  name: string;
+  phone?: string;
+  photoUrl?: string;
+  photoPath?: string;
+};
+
+type VctCertRow = {
+  id: string;
+  name: string;
+  phone?: string;
+  count: number;
+  photoUrl?: string;
+  photoPath?: string;
+};
+
+function rankVctsByCertified(
+  records: SiteCalibration[],
+  profiles: Map<string, VctDashProfile>,
+): VctCertRow[] {
+  const rows = new Map<string, VctCertRow>();
+  for (const record of records) {
+    if (getVerificationDisplayStatus(record) !== 'certified') continue;
+    const id = record.vctId?.trim();
+    if (!id) continue;
+    const profile = profiles.get(id);
+    const prev = rows.get(id);
+    const name = profile?.name || prev?.name || record.vctName?.trim() || 'VCT';
+    rows.set(id, {
+      id,
+      name: name === 'VCT' && record.vctName?.trim() ? record.vctName.trim() : name,
+      phone: profile?.phone || prev?.phone,
+      count: (prev?.count || 0) + 1,
+      photoUrl: profile?.photoUrl || prev?.photoUrl,
+      photoPath: profile?.photoPath || prev?.photoPath,
+    });
+  }
+  return [...rows.values()]
+    .filter(row => row.count > 0)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
 export const RCDashboard: React.FC = () => {
@@ -85,6 +129,7 @@ export const RCDashboard: React.FC = () => {
   const [walletLoading, setWalletLoading] = useState(true);
   const [vehicleCount, setVehicleCount] = useState(0);
   const [vctCount, setVctCount] = useState(0);
+  const [vctById, setVctById] = useState<Map<string, VctDashProfile>>(() => new Map());
   const [rcRank, setRcRank] = useState<number | null>(null);
 
   const fetchVerifications = useCallback(async () => {
@@ -107,6 +152,7 @@ export const RCDashboard: React.FC = () => {
     if (!rcUid) {
       setVehicleCount(0);
       setVctCount(0);
+      setVctById(new Map());
       setRcHasVehicle(null);
       return;
     }
@@ -115,6 +161,19 @@ export const RCDashboard: React.FC = () => {
       if (cancelled) return;
       setVehicleCount(vehicles.length);
       setVctCount(vcts.length);
+      setVctById(
+        new Map(
+          vcts.map(vct => [
+            vct.uid,
+            {
+              name: vct.username?.trim() || vct.uid,
+              phone: vct.phone?.trim() || undefined,
+              photoUrl: vct.profilePhotoUrl?.trim() || undefined,
+              photoPath: vct.profilePhotoPath?.trim() || undefined,
+            },
+          ]),
+        ),
+      );
       if (isRcAdmin) setRcHasVehicle(rcHasRegisteredVehicle(vehicles));
     });
     return () => {
@@ -224,7 +283,7 @@ export const RCDashboard: React.FC = () => {
       },
       {
         key: 'cars',
-        label: 'Car Count',
+        label: 'Car',
         count: vehicleCount,
         tone: 'cyan',
         icon: <Car size={18} strokeWidth={1.9} />,
@@ -232,10 +291,10 @@ export const RCDashboard: React.FC = () => {
       },
       {
         key: 'vcts',
-        label: 'VCT Count',
+        label: 'VCT',
         count: vctCount,
         tone: 'slate',
-        icon: <Wrench size={18} strokeWidth={1.9} />,
+        icon: <VctOfficerMark />,
         href: isRcAdmin ? `${basePath}/vct` : verificationHref(),
       },
       {
@@ -245,7 +304,6 @@ export const RCDashboard: React.FC = () => {
         tone: 'blue',
         icon: <Trophy size={18} strokeWidth={1.9} />,
         href: verificationHref('certified'),
-        sublabel: `${tally.certified} certified`,
       },
     ],
     [tally, vehicleCount, vctCount, rcRank, isRcAdmin, basePath],
@@ -265,7 +323,12 @@ export const RCDashboard: React.FC = () => {
       ? `${pendingTopUps} top-up${pendingTopUps === 1 ? '' : 's'} awaiting approval`
       : 'Add payment screenshot to top up';
 
-  const certifiedMonth = useMemo(() => certifiedThisMonthCount(verifications), [verifications]);
+  const certifiedLastMonth = useMemo(() => certifiedInMonth(verifications, -1), [verifications]);
+  const certifiedThisMonth = useMemo(() => certifiedInMonth(verifications, 0), [verifications]);
+  const vctCertRows = useMemo(
+    () => rankVctsByCertified(verifications, vctById),
+    [verifications, vctById],
+  );
 
   const openRecord = (record: SiteCalibration) => {
     navigate(`${basePath}/verification?open=${encodeURIComponent(record.id)}`);
@@ -373,26 +436,74 @@ export const RCDashboard: React.FC = () => {
       </section>
 
       <section className="wl-quick" aria-label="Quick stats">
-        <Link to={verificationHref('draft')} className="wl-quick__card wl-quick__card--violet">
-          <span className="wl-quick__icon" aria-hidden>
-            <FilePenLine size={18} strokeWidth={2} />
-          </span>
-          <div className="wl-quick__body">
-            <p className="wl-quick__label">Draft Verifications</p>
-            <p className="wl-quick__value">{loadingVerifications ? '—' : tally.draft}</p>
-            <p className="wl-quick__sub">Saved as draft</p>
-          </div>
-        </Link>
         <Link to={verificationHref('certified')} className="wl-quick__card wl-quick__card--orange">
           <span className="wl-quick__icon" aria-hidden>
             <BarChart3 size={18} strokeWidth={2} />
           </span>
           <div className="wl-quick__body">
-            <p className="wl-quick__label">Certified This Month</p>
-            <p className="wl-quick__value">{loadingVerifications ? '—' : certifiedMonth}</p>
-            <p className="wl-quick__sub">Total certified</p>
+            <p className="wl-quick__label">Total Certified</p>
+            <p className="wl-quick__value">{loadingVerifications ? '—' : certifiedLastMonth}</p>
+            <p className="wl-quick__sub">Last month</p>
           </div>
         </Link>
+        <Link to={verificationHref('certified')} className="wl-quick__card wl-quick__card--green">
+          <span className="wl-quick__icon" aria-hidden>
+            <Award size={18} strokeWidth={2} />
+          </span>
+          <div className="wl-quick__body">
+            <p className="wl-quick__label">Total Certified</p>
+            <p className="wl-quick__value">{loadingVerifications ? '—' : certifiedThisMonth}</p>
+            <p className="wl-quick__sub">This month</p>
+          </div>
+        </Link>
+      </section>
+
+      <section className="wl-section" aria-labelledby="wl-vct-cert-title">
+        <div className="wl-section__head">
+          <h2 id="wl-vct-cert-title" className="wl-section__title">
+            Verification Officer
+          </h2>
+          {isRcAdmin ? (
+            <Link to={`${basePath}/vct`} className="wl-section__link">
+              View All <ChevronRight size={14} aria-hidden />
+            </Link>
+          ) : null}
+        </div>
+        {loadingVerifications ? (
+          <div className="wl-recent__loading">
+            <span className="spinner-inline" aria-hidden />
+          </div>
+        ) : vctCertRows.length === 0 ? (
+          <div className="wl-recent__empty">
+            <p>No VCT certifications yet.</p>
+          </div>
+        ) : (
+          <ul className="wl-rc">
+            {vctCertRows.map(vct => (
+              <li key={vct.id}>
+                <Link
+                  to={verificationHref('certified')}
+                  className="wl-rc__card"
+                >
+                  <span className="wl-rc__photo" aria-hidden>
+                    {vct.photoUrl || vct.photoPath ? (
+                      <StorageImage url={vct.photoUrl} path={vct.photoPath} alt="" />
+                    ) : (
+                      <span className="wl-rc__photo-fallback">
+                        <UserCircle size={22} strokeWidth={1.6} />
+                      </span>
+                    )}
+                  </span>
+                  <span className="wl-rc__body">
+                    <span className="wl-rc__name">{vct.name}</span>
+                    {vct.phone ? <span className="wl-rc__meta">{vct.phone}</span> : null}
+                  </span>
+                  <span className="wl-rc__count">{vct.count}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="wl-section" aria-labelledby="wl-recent-title">

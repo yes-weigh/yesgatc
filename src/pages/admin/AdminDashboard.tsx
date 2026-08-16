@@ -7,7 +7,6 @@ import {
   Send,
   Award,
   XCircle,
-  FilePenLine,
   BarChart3,
   ChevronRight,
   UploadCloud,
@@ -21,6 +20,7 @@ import {
 import { db } from '../../firebase';
 import { LAST_CERTIFICATE_SEQUENCE_FLOOR } from '../../lib/certificateSequence';
 import { isVctOperational } from '../../lib/vctApproval';
+import { VctOfficerMark } from '../../components/VctOfficerMark';
 import {
   rankRcsByCertifiedCount,
   saveRcCertificationRanks,
@@ -149,16 +149,17 @@ function recordListId(record: SiteCalibration): string {
   return '—';
 }
 
-function certifiedThisMonthCount(records: SiteCalibration[]): number {
+function certifiedInMonth(records: SiteCalibration[], offsetMonths: number): number {
   const now = new Date();
-  const month = now.getMonth();
-  const year = now.getFullYear();
+  const date = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1);
+  const month = date.getMonth();
+  const year = date.getFullYear();
   return records.filter(record => {
     if (getVerificationDisplayStatus(record) !== 'certified') return false;
     const raw = record.certifiedAt || record.approvedAt || record.createdAt;
     if (!raw) return false;
-    const date = new Date(raw);
-    return date.getMonth() === month && date.getFullYear() === year;
+    const parsed = new Date(raw);
+    return parsed.getMonth() === month && parsed.getFullYear() === year;
   }).length;
 }
 
@@ -346,7 +347,7 @@ export const AdminDashboard: React.FC = () => {
       },
       {
         key: 'cars',
-        label: 'Car Count',
+        label: 'Car',
         count: vehicleCount,
         tone: 'cyan',
         icon: <Car size={18} strokeWidth={1.9} />,
@@ -354,17 +355,17 @@ export const AdminDashboard: React.FC = () => {
       },
       {
         key: 'vcts',
-        label: 'VCT Count',
+        label: 'VCT',
         count: vctTotal,
         tone: 'slate',
-        icon: <Wrench size={18} strokeWidth={1.9} />,
+        icon: <VctOfficerMark />,
         href: '/admin/technicians',
       },
       {
         key: 'rc_rank',
         label: 'RC Ranking',
         count: topRc ? `#1` : '—',
-        sublabel: topRc ? `${topRc.name} · ${topRc.count}` : undefined,
+        sublabel: topRc?.name,
         tone: 'blue',
         icon: <Trophy size={18} strokeWidth={1.9} />,
         href: '/admin/rc',
@@ -373,31 +374,8 @@ export const AdminDashboard: React.FC = () => {
     [tally, lastCertificateNumber, vehicleCount, vctTotal, topRc],
   );
 
-  const certifiedHighlight = useMemo(() => {
-    if (period === 'lifetime') return certifiedThisMonthCount(verifications);
-    return tally.certified;
-  }, [period, verifications, tally.certified]);
-
-  const certifiedLabel =
-    period === 'year'
-      ? 'Certified This Year'
-      : period === 'quarter'
-        ? 'Certified This Quarter'
-        : period === 'prevMonth'
-          ? 'Certified Previous Month'
-          : period === 'custom'
-            ? 'Certified'
-            : 'Certified This Month';
-  const certifiedSub =
-    period === 'year'
-      ? 'This year'
-      : period === 'quarter'
-        ? 'This quarter'
-        : period === 'prevMonth'
-          ? 'Last month'
-          : period === 'custom'
-            ? 'In selected range'
-            : 'Total certified';
+  const certifiedLastMonth = useMemo(() => certifiedInMonth(verifications, -1), [verifications]);
+  const certifiedThisMonth = useMemo(() => certifiedInMonth(verifications, 0), [verifications]);
 
   const vctRows = useMemo(() => {
     const rcNameById = new Map(rcUsers.map(rc => [rc.id, rc.name]));
@@ -576,24 +554,24 @@ export const AdminDashboard: React.FC = () => {
       </section>
 
       <section className="wl-quick" aria-label="Quick stats">
-        <Link to={verificationHref('draft')} className="wl-quick__card wl-quick__card--violet">
-          <span className="wl-quick__icon" aria-hidden>
-            <FilePenLine size={18} strokeWidth={2} />
-          </span>
-          <div className="wl-quick__body">
-            <p className="wl-quick__label">Draft Verifications</p>
-            <p className="wl-quick__value">{loadingVerifications ? '—' : tally.draft}</p>
-            <p className="wl-quick__sub">Saved as draft</p>
-          </div>
-        </Link>
         <Link to={verificationHref('certified')} className="wl-quick__card wl-quick__card--orange">
           <span className="wl-quick__icon" aria-hidden>
             <BarChart3 size={18} strokeWidth={2} />
           </span>
           <div className="wl-quick__body">
-            <p className="wl-quick__label">{certifiedLabel}</p>
-            <p className="wl-quick__value">{loadingVerifications ? '—' : certifiedHighlight}</p>
-            <p className="wl-quick__sub">{certifiedSub}</p>
+            <p className="wl-quick__label">Total Certified</p>
+            <p className="wl-quick__value">{loadingVerifications ? '—' : certifiedLastMonth}</p>
+            <p className="wl-quick__sub">Last month</p>
+          </div>
+        </Link>
+        <Link to={verificationHref('certified')} className="wl-quick__card wl-quick__card--green">
+          <span className="wl-quick__icon" aria-hidden>
+            <Award size={18} strokeWidth={2} />
+          </span>
+          <div className="wl-quick__body">
+            <p className="wl-quick__label">Total Certified</p>
+            <p className="wl-quick__value">{loadingVerifications ? '—' : certifiedThisMonth}</p>
+            <p className="wl-quick__sub">This month</p>
           </div>
         </Link>
       </section>
