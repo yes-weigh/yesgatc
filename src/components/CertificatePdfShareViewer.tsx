@@ -112,11 +112,11 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
       <header className="wl-cert-pdf-viewer__bar">
         <button
           type="button"
-          className="wl-cert-pdf-viewer__icon-btn"
+          className="wl-cert-pdf-viewer__close"
           onClick={onClose}
-          aria-label="Close"
         >
-          <X size={22} strokeWidth={2} aria-hidden />
+          <X size={18} strokeWidth={2.2} aria-hidden />
+          Close
         </button>
         <h2 className="wl-cert-pdf-viewer__title">{title}</h2>
         <button

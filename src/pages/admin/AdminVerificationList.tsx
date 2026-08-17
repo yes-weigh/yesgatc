@@ -16,6 +16,10 @@ import {
   tallyVerificationTypeFilters,
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
+import {
+  matchesVerificationDurationFilter,
+  type VerificationDurationFilter,
+} from '../../lib/verificationListDuration';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   buildDuplicatePrimaryIdSet,
@@ -87,6 +91,7 @@ export const AdminVerificationList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
   const [voidOnly, setVoidOnly] = useState(false);
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
+  const [durationFilter, setDurationFilter] = useState<VerificationDurationFilter>('all');
   const [rcFilter, setRcFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
@@ -258,8 +263,13 @@ export const AdminVerificationList: React.FC = () => {
   const duplicatePrimaryIds = useMemo(() => buildDuplicatePrimaryIdSet(records), [records]);
   const serialGroups = useMemo(() => buildSerialGroupMap(records), [records]);
 
+  const durationScoped = useMemo(
+    () => records.filter(record => matchesVerificationDurationFilter(record, durationFilter)),
+    [records, durationFilter],
+  );
+
   const filteredRecords = useMemo(() => {
-    const filtered = records.filter(record => {
+    const filtered = durationScoped.filter(record => {
       if (voidOnly && !isVerificationCertificateVoided(record)) {
         return false;
       }
@@ -270,7 +280,7 @@ export const AdminVerificationList: React.FC = () => {
         !matchesVerificationListStatusFilter(
           record,
           statusFilter,
-          records,
+          durationScoped,
           duplicatePrimaryIds,
           serialGroups,
         )
@@ -285,8 +295,8 @@ export const AdminVerificationList: React.FC = () => {
       }
       return true;
     });
-    return buildVerificationListDisplay(filtered, records, statusFilter);
-  }, [records, statusFilter, voidOnly, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+    return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
+  }, [durationScoped, statusFilter, voidOnly, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -304,7 +314,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, typeFilter, rcFilter, searchTerm]);
+  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter]);
 
   useEffect(() => {
     if (viewingRecord || !rowHighlightFlashId) return;
@@ -352,20 +362,20 @@ export const AdminVerificationList: React.FC = () => {
   );
 
   const counts = useMemo(
-    () => tallyVerificationStatusFiltersCollapsed(records, listFilters),
-    [records, listFilters],
+    () => tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters),
+    [durationScoped, listFilters],
   );
   const typeCounts = useMemo(
     () =>
       tallyVerificationTypeFilters(
-        verificationListCollapsedForCounts(records, listFilters, 'type'),
+        verificationListCollapsedForCounts(durationScoped, listFilters, 'type'),
       ),
-    [records, listFilters],
+    [durationScoped, listFilters],
   );
   const typeFilterOptions = buildVerificationTypeFilterOptions(typeCounts);
 
   const rcFilterOptions = useMemo(() => {
-    const collapsed = verificationListCollapsedForCounts(records, listFilters, 'rc');
+    const collapsed = verificationListCollapsedForCounts(durationScoped, listFilters, 'rc');
     const byRc = new Map<string, { label: string; count: number }>();
     for (const record of collapsed) {
       const rcId = record.rcId?.trim() || 'unknown';
@@ -387,7 +397,7 @@ export const AdminVerificationList: React.FC = () => {
       { value: 'all', label: 'All RC', count: collapsed.length },
       ...centres,
     ];
-  }, [records, listFilters, rcCenterNameByRcId]);
+  }, [durationScoped, listFilters, rcCenterNameByRcId]);
 
   const handleDelete = async (record: VerificationRow) => {
     const isDevSubmittedDelete = canDevDeleteSubmittedVerification(record, isSuperAdmin);
@@ -524,7 +534,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
-  }, [statusFilter, typeFilter, rcFilter, searchTerm]);
+  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter]);
 
   useEffect(() => {
     if (selectAllDraftsRef.current) {
@@ -678,6 +688,8 @@ export const AdminVerificationList: React.FC = () => {
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
             typeOptions={typeFilterOptions}
+            durationFilter={durationFilter}
+            onDurationFilterChange={setDurationFilter}
             rcFilter={rcFilter}
             onRcFilterChange={setRcFilter}
             rcOptions={rcFilterOptions}

@@ -62,14 +62,19 @@ export function printCertificateUrl(url: string): void {
 }
 
 export async function shareCertificatePdfFile(file: File, title: string): Promise<void> {
+  const pdf =
+    file.type === 'application/pdf' ? file : new File([file], file.name, { type: 'application/pdf' });
   if (typeof navigator.share !== 'function') {
-    throw new Error('Share not supported on this phone. Use an installed share app from Chrome.');
+    throw new Error('Share not supported on this phone. Open in Chrome and retry.');
   }
-  const payload: ShareData = { files: [file], title, text: title };
-  if (typeof navigator.canShare === 'function' && !navigator.canShare({ files: [file] })) {
-    throw new Error('This phone cannot share PDF files. Update Chrome and retry.');
+  const filePayload: ShareData = { files: [pdf], title };
+  const canShareFiles =
+    typeof navigator.canShare !== 'function' || navigator.canShare({ files: [pdf] });
+  if (canShareFiles) {
+    await navigator.share(filePayload);
+    return;
   }
-  await navigator.share(payload);
+  await navigator.share({ title, text: title });
 }
 
 async function tryShareCertificateFile(url: string, fileName: string): Promise<boolean> {

@@ -107,6 +107,10 @@ import {
   type VerificationSubmitOptions,
 } from '../../lib/verificationSubmit';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
+import {
+  matchesVerificationDurationFilter,
+  type VerificationDurationFilter,
+} from '../../lib/verificationListDuration';
 import type {
   Customer,
   FirestoreUserDoc,
@@ -279,6 +283,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [listError, setListError] = useState('');
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
+  const [durationFilter, setDurationFilter] = useState<VerificationDurationFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
@@ -2148,14 +2153,19 @@ export const RCSiteCalibration: React.FC = () => {
   const duplicatePrimaryIds = useMemo(() => buildDuplicatePrimaryIdSet(records), [records]);
   const serialGroups = useMemo(() => buildSerialGroupMap(records), [records]);
 
+  const durationScoped = useMemo(
+    () => records.filter(record => matchesVerificationDurationFilter(record, durationFilter)),
+    [records, durationFilter],
+  );
+
   const filteredRecords = useMemo(() => {
-    const filtered = records.filter(record => {
+    const filtered = durationScoped.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
       if (
         !matchesVerificationListStatusFilter(
           record,
           statusFilter,
-          records,
+          durationScoped,
           duplicatePrimaryIds,
           serialGroups,
         )
@@ -2164,8 +2174,8 @@ export const RCSiteCalibration: React.FC = () => {
       }
       return matchesVerificationTypeFilter(record, typeFilter);
     });
-    return buildVerificationListDisplay(filtered, records, statusFilter);
-  }, [records, statusFilter, typeFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+    return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
+  }, [durationScoped, statusFilter, typeFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -2191,15 +2201,15 @@ export const RCSiteCalibration: React.FC = () => {
     [statusFilter, typeFilter, searchTerm],
   );
   const statusCounts = useMemo(
-    () => tallyVerificationStatusFiltersCollapsed(records, listFilters),
-    [records, listFilters],
+    () => tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters),
+    [durationScoped, listFilters],
   );
   const typeCounts = useMemo(
     () =>
       tallyVerificationTypeFilters(
-        verificationListCollapsedForCounts(records, listFilters, 'type'),
+        verificationListCollapsedForCounts(durationScoped, listFilters, 'type'),
       ),
-    [records, listFilters],
+    [durationScoped, listFilters],
   );
 
   const statusFilterOptions = buildVerificationStatusFilterOptions(statusCounts);
@@ -2230,7 +2240,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, typeFilter, searchTerm]);
+  }, [statusFilter, typeFilter, searchTerm, durationFilter]);
 
   useEffect(() => {
     if (showForm || !rowHighlightFlashId) return;
@@ -2588,6 +2598,8 @@ export const RCSiteCalibration: React.FC = () => {
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
             typeOptions={typeFilterOptions}
+            durationFilter={durationFilter}
+            onDurationFilterChange={setDurationFilter}
             onNewClick={
               canStartNewVerification
                 ? handleStartAdd

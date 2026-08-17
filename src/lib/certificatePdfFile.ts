@@ -59,7 +59,7 @@ export async function fetchCertificatePdfFile(
   if (!blob) throw new Error('Certificate PDF is not available.');
   if (looksLikeHtml(blob)) throw new Error('Certificate file is not a PDF.');
 
-  return new File([blob], fileName, { type: blob.type || 'application/pdf' });
+  return new File([blob], fileName, { type: 'application/pdf' });
 }
 
 export async function renderCertificatePdfPages(file: File): Promise<string[]> {

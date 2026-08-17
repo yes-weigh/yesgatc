@@ -4,7 +4,6 @@ import {
   Download,
   ExternalLink,
   FileText,
-  Filter,
   Globe2,
   ImageIcon,
   Pause,
@@ -13,6 +12,7 @@ import {
   Search,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { FilterIcon } from '../../components/FilterIcon';
 import {
   DEFAULT_AUTOMATION_WORKER_REMOTE,
   subscribeAutomationWorkerRemote,
@@ -433,7 +433,7 @@ export const AdminDocaScraping: React.FC<{ embedded?: boolean }> = ({ embedded =
               aria-pressed={hideVerificationDuplicates}
               onClick={() => setHideVerificationDuplicates(active => !active)}
             >
-              <Filter size={16} aria-hidden />
+              <FilterIcon size={16} />
               Hide duplicates from verification
             </button>
             <label className="doca-scraping-sort">

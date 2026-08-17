@@ -401,7 +401,6 @@ export const Layout: React.FC = () => {
             )}
             {isLaboratoryPage ? (
               <div className="mobile-app-bar-actions">
-                <EmaapStatusShortcut />
                 {user.role !== 'super_admin' && (
                   <button
                     type="button"
@@ -414,16 +413,19 @@ export const Layout: React.FC = () => {
                   </button>
                 )}
               </div>
-            ) : (
+            ) : isHomeDashboard ? (
               <EmaapStatusShortcut />
-            )}
+            ) : useShieldBrand ? (
+              <div id="verification-filter-slot-mobile" className="mobile-app-bar-actions" />
+            ) : null}
           </header>
         )}
         {!isMobile && (
           <header className="top-bar glass">
             <h1 className="page-title">{pageTitle}</h1>
             <div className="top-bar-end">
-              <EmaapStatusShortcut />
+              {isHomeDashboard ? <EmaapStatusShortcut /> : null}
+              {useShieldBrand ? <div id="verification-filter-slot-desktop" /> : null}
               {profilePath ? (
                 <button
                   type="button"

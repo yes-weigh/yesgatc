@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import { Award, Filter, Search, Share2 } from 'lucide-react';
+import { Award, Search, Share2 } from 'lucide-react';
+import { FilterIcon } from '../../components/FilterIcon';
 import { db } from '../../firebase';
 import { TablePagination } from '../../components/TablePagination';
 import { CertificatePdfShareViewer } from '../../components/CertificatePdfShareViewer';
@@ -201,8 +202,7 @@ export const Certificates: React.FC = () => {
                   setSearchOpen(false);
                 }}
               >
-                <Filter size={16} strokeWidth={2} aria-hidden />
-                Filter
+                <FilterIcon size={18} />
               </button>
               {filterOpen ? (
                 <div className="wl-cert-filter__pop" role="dialog" aria-label="Certificate filters">

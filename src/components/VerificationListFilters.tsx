@@ -1,6 +1,11 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import React, { useLayoutEffect, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, LayoutGrid, Plus, RefreshCw, Search } from 'lucide-react';
+import { Plus, RefreshCw, Search, X } from 'lucide-react';
+import { FilterIcon } from './FilterIcon';
+import {
+  VERIFICATION_DURATION_OPTIONS,
+  type VerificationDurationFilter,
+} from '../lib/verificationListDuration';
 import type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
 
 export type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
@@ -23,176 +28,6 @@ export interface VerificationTypeFilterOption {
   count: number;
 }
 
-interface FilterSelectOption {
-  value: string;
-  label: string;
-  count: number;
-}
-
-type MenuPosition = { top: number; left: number; width: number };
-
-interface FullWidthFilterSelectProps {
-  id: string;
-  label: string;
-  value: string;
-  options: FilterSelectOption[];
-  onChange: (value: string) => void;
-  variant?: 'primary' | 'secondary';
-}
-
-const FullWidthFilterSelect: React.FC<FullWidthFilterSelectProps> = ({
-  id,
-  label,
-  value,
-  options,
-  onChange,
-  variant = 'primary',
-}) => {
-  const listId = useId();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [menuStyle, setMenuStyle] = useState<MenuPosition | null>(null);
-
-  const selected = options.find(opt => opt.value === value) ?? options[0];
-
-  const updateMenuPosition = useCallback(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setMenuStyle({
-      top: rect.bottom + 6,
-      left: rect.left,
-      width: rect.width,
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocMouseDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (rootRef.current?.contains(target)) return;
-      if ((target as Element).closest?.('.verification-stage-menu--portal')) return;
-      setOpen(false);
-    };
-    document.addEventListener('mousedown', onDocMouseDown);
-    return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) {
-      setMenuStyle(null);
-      return;
-    }
-    updateMenuPosition();
-    window.addEventListener('scroll', updateMenuPosition, true);
-    window.addEventListener('resize', updateMenuPosition);
-    return () => {
-      window.removeEventListener('scroll', updateMenuPosition, true);
-      window.removeEventListener('resize', updateMenuPosition);
-    };
-  }, [open, updateMenuPosition, options.length]);
-
-  useEffect(() => {
-    if (!open) return;
-    const index = options.findIndex(opt => opt.value === value);
-    setActiveIndex(index >= 0 ? index : 0);
-  }, [open, options, value]);
-
-  const pickOption = (opt: FilterSelectOption) => {
-    onChange(opt.value);
-    setOpen(false);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      if (!open) {
-        setOpen(true);
-        return;
-      }
-      setActiveIndex(prev => (prev + 1) % options.length);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      if (!open) {
-        setOpen(true);
-        return;
-      }
-      setActiveIndex(prev => (prev - 1 + options.length) % options.length);
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      if (!open) {
-        setOpen(true);
-        return;
-      }
-      const pick = options[activeIndex];
-      if (pick) pickOption(pick);
-    } else if (e.key === 'Escape') {
-      setOpen(false);
-    }
-  };
-
-  const menuPortal =
-    open && menuStyle
-      ? createPortal(
-          <ul
-            id={listId}
-            className="verification-stage-menu verification-stage-menu--portal"
-            style={{
-              top: menuStyle.top,
-              left: menuStyle.left,
-              width: menuStyle.width,
-            }}
-            role="listbox"
-            aria-label={label}
-          >
-            {options.map((opt, index) => (
-              <li key={opt.value} role="presentation">
-                <button
-                  type="button"
-                  className={`verification-stage-option${
-                    index === activeIndex ? ' verification-stage-option--active' : ''
-                  }${opt.value === value ? ' verification-stage-option--selected' : ''}`}
-                  role="option"
-                  aria-selected={opt.value === value}
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => pickOption(opt)}
-                >
-                  <span className="verification-stage-option-label">{opt.label}</span>
-                  <span className="verification-stage-option-count">{opt.count}</span>
-                </button>
-              </li>
-            ))}
-          </ul>,
-          document.body,
-        )
-      : null;
-
-  return (
-    <div
-      className={`verification-stage-select verification-stage-select--${variant}`}
-      ref={rootRef}
-    >
-      <button
-        id={id}
-        type="button"
-        className={`verification-stage-bar${open ? ' verification-stage-bar--open' : ''}`}
-        onClick={() => setOpen(prev => !prev)}
-        onKeyDown={handleKeyDown}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-label={`${label}: ${selected?.label ?? value}`}
-      >
-        <LayoutGrid size={18} className="verification-stage-bar-icon" aria-hidden />
-        <span className="verification-stage-bar-label">{selected?.label ?? value}</span>
-        <ChevronDown size={18} className="verification-stage-bar-chevron" aria-hidden />
-      </button>
-      {menuPortal}
-    </div>
-  );
-};
-
 interface VerificationListFiltersProps {
   statusFilter: VerificationStatusFilter;
   onStatusFilterChange: (value: VerificationStatusFilter) => void;
@@ -200,6 +35,8 @@ interface VerificationListFiltersProps {
   typeFilter?: VerificationTypeFilter;
   onTypeFilterChange?: (value: VerificationTypeFilter) => void;
   typeOptions?: VerificationTypeFilterOption[];
+  durationFilter?: VerificationDurationFilter;
+  onDurationFilterChange?: (value: VerificationDurationFilter) => void;
   rcFilter?: string;
   onRcFilterChange?: (value: string) => void;
   rcOptions?: VerificationRcFilterOption[];
@@ -211,6 +48,11 @@ interface VerificationListFiltersProps {
   refreshing?: boolean;
 }
 
+function typeLabel(value: VerificationTypeFilter, options?: VerificationTypeFilterOption[]): string {
+  if (value === 'all') return 'All';
+  return options?.find(opt => opt.value === value)?.label || value;
+}
+
 export const VerificationListFilters: React.FC<VerificationListFiltersProps> = ({
   statusFilter,
   onStatusFilterChange,
@@ -218,6 +60,8 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
   typeFilter = 'all',
   onTypeFilterChange,
   typeOptions,
+  durationFilter = 'all',
+  onDurationFilterChange,
   rcFilter,
   onRcFilterChange,
   rcOptions,
@@ -230,61 +74,208 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
 }) => {
   const showRcFilter = Boolean(rcOptions?.length && rcOptions.length > 1 && onRcFilterChange);
   const showSearch = Boolean(onSearchTermChange);
+  const showType = Boolean(typeOptions?.length && onTypeFilterChange);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draftStatus, setDraftStatus] = useState(statusFilter);
+  const [draftType, setDraftType] = useState(typeFilter);
+  const [draftDuration, setDraftDuration] = useState(durationFilter);
+  const [draftRc, setDraftRc] = useState(rcFilter ?? 'all');
+  const filterRef = useRef<HTMLDivElement>(null);
+  const [slots, setSlots] = useState<{ mobile: HTMLElement | null; desktop: HTMLElement | null }>({
+    mobile: null,
+    desktop: null,
+  });
 
-  const rcSelectOptions: FilterSelectOption[] = (rcOptions ?? []).map(opt => ({
-    value: opt.value,
-    label: opt.value === 'all' ? 'All RC' : opt.label,
-    count: opt.count,
-  }));
+  const filterActive =
+    statusFilter !== 'all' ||
+    typeFilter !== 'all' ||
+    durationFilter !== 'all' ||
+    (rcFilter != null && rcFilter !== 'all');
 
-  const showTypeBadges = Boolean(typeOptions?.length && onTypeFilterChange);
+  useLayoutEffect(() => {
+    setSlots({
+      mobile: document.getElementById('verification-filter-slot-mobile'),
+      desktop: document.getElementById('verification-filter-slot-desktop'),
+    });
+  }, []);
 
-  const statusSelectOptions: FilterSelectOption[] = statusOptions.map(opt => ({
-    value: opt.value,
-    label: opt.label,
-    count: opt.count,
-  }));
+  useEffect(() => {
+    if (!filterOpen) return;
+    setDraftStatus(statusFilter);
+    setDraftType(typeFilter);
+    setDraftDuration(durationFilter);
+    setDraftRc(rcFilter ?? 'all');
+  }, [filterOpen, statusFilter, typeFilter, durationFilter, rcFilter]);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onDoc = (event: MouseEvent) => {
+      const target = event.target;
+      if (filterRef.current?.contains(target as Node)) return;
+      if (target instanceof HTMLElement && (target.tagName === 'OPTION' || target.closest('select'))) {
+        return;
+      }
+      setFilterOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [filterOpen]);
+
+  const filterControl = (
+    <div className="verification-app-filter" ref={filterRef}>
+      <button
+        type="button"
+        className={`verification-app-filter__btn${filterOpen || filterActive ? ' verification-app-filter__btn--on' : ''}`}
+        aria-label="Filter verifications"
+        aria-expanded={filterOpen}
+        onClick={() => setFilterOpen(open => !open)}
+      >
+        <FilterIcon size={18} />
+      </button>
+      {filterOpen ? (
+        <div className="verification-app-filter__pop" role="dialog" aria-label="Verification filters">
+          <div className="verification-app-filter__head">
+            <p className="verification-app-filter__title">Filters</p>
+            <button
+              type="button"
+              className="verification-app-filter__close"
+              onClick={() => setFilterOpen(false)}
+              aria-label="Close filters"
+            >
+              <X size={16} strokeWidth={2.2} aria-hidden />
+            </button>
+          </div>
+
+          <div className="verification-app-filter__body">
+            <label className="verification-app-filter__label" htmlFor="verification-filter-stage">
+              Stages
+            </label>
+            <div className="verification-app-filter__select-wrap">
+              <select
+                id="verification-filter-stage"
+                className="verification-app-filter__select"
+                value={draftStatus}
+                onChange={event => setDraftStatus(event.target.value as VerificationStatusFilter)}
+              >
+                {statusOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label.replace(/^All stages$/, 'All')} ({opt.count})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {showType ? (
+              <>
+                <label className="verification-app-filter__label" htmlFor="verification-filter-type">
+                  Type
+                </label>
+                <div className="verification-app-filter__select-wrap">
+                  <select
+                    id="verification-filter-type"
+                    className="verification-app-filter__select"
+                    value={draftType}
+                    onChange={event => setDraftType(event.target.value as VerificationTypeFilter)}
+                  >
+                    {typeOptions!.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        {typeLabel(opt.value, typeOptions)} ({opt.count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : null}
+
+            {onDurationFilterChange ? (
+              <>
+                <label className="verification-app-filter__label" htmlFor="verification-filter-duration">
+                  Duration
+                </label>
+                <div className="verification-app-filter__select-wrap">
+                  <select
+                    id="verification-filter-duration"
+                    className="verification-app-filter__select"
+                    value={draftDuration}
+                    onChange={event =>
+                      setDraftDuration(event.target.value as VerificationDurationFilter)
+                    }
+                  >
+                    {VERIFICATION_DURATION_OPTIONS.map(opt => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : null}
+
+            {showRcFilter ? (
+              <>
+                <label className="verification-app-filter__label" htmlFor="verification-filter-rc">
+                  Regional centre
+                </label>
+                <div className="verification-app-filter__select-wrap">
+                  <select
+                    id="verification-filter-rc"
+                    className="verification-app-filter__select"
+                    value={draftRc}
+                    onChange={event => setDraftRc(event.target.value)}
+                  >
+                    {rcOptions!.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.value === 'all' ? 'All RC' : opt.label} ({opt.count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          <div className="verification-app-filter__foot">
+            <button
+              type="button"
+              className="verification-app-filter__clear"
+              onClick={() => {
+                setDraftStatus('all');
+                setDraftType('all');
+                setDraftDuration('all');
+                setDraftRc('all');
+                onStatusFilterChange('all');
+                onTypeFilterChange?.('all');
+                onDurationFilterChange?.('all');
+                onRcFilterChange?.('all');
+                setFilterOpen(false);
+              }}
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              className="verification-app-filter__apply"
+              onClick={() => {
+                onStatusFilterChange(draftStatus);
+                onTypeFilterChange?.(draftType);
+                onDurationFilterChange?.(draftDuration);
+                onRcFilterChange?.(draftRc);
+                setFilterOpen(false);
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const slot = slots.mobile ?? slots.desktop;
 
   return (
     <div className="verification-list-toolbar-ref">
-      <FullWidthFilterSelect
-        id="verification-status-filter"
-        label="Stage"
-        value={statusFilter}
-        options={statusSelectOptions}
-        onChange={value => onStatusFilterChange(value as VerificationStatusFilter)}
-        variant="primary"
-      />
-
-      {showRcFilter && (
-        <FullWidthFilterSelect
-          id="verification-rc-filter"
-          label="RC centre"
-          value={rcFilter ?? 'all'}
-          options={rcSelectOptions}
-          onChange={onRcFilterChange!}
-          variant="secondary"
-        />
-      )}
-
-      {showTypeBadges && (
-        <div className="verification-type-badges" role="group" aria-label="Verification type">
-          {typeOptions!.map(opt => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`verification-type-badge${
-                typeFilter === opt.value ? ' verification-type-badge--active' : ''
-              }`}
-              aria-pressed={typeFilter === opt.value}
-              onClick={() => onTypeFilterChange!(opt.value)}
-            >
-              {opt.label}
-              <span className="badge-count">{opt.count}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {slot ? createPortal(filterControl, slot) : null}
 
       <div className="verification-list-actions-row">
         {onNewClick && (
@@ -317,6 +308,8 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
             />
           </div>
         )}
+
+        {!slot ? filterControl : null}
 
         {onRefresh && (
           <button

@@ -24,39 +24,42 @@ export const TablePagination: React.FC<TablePaginationProps> = ({
   }
 
   return (
-    <div className={`table-pagination${placement === 'top' ? ' table-pagination--top' : ''}`}>
-      <span className="table-pagination-summary text-muted text-sm">
+    <nav
+      className={`table-pagination${placement === 'top' ? ' table-pagination--top' : ''}`}
+      aria-label="Pagination"
+    >
+      <span className="table-pagination-summary">
         {totalItems <= pageSize
           ? `${totalItems} row${totalItems !== 1 ? 's' : ''}`
-          : `Showing ${start}–${end} of ${totalItems}`}
+          : `${start}–${end} of ${totalItems}`}
       </span>
-      {totalPages > 1 && (
+      {totalPages > 1 ? (
         <div className="table-pagination-controls">
           <button
             type="button"
-            className="btn btn-secondary btn-sm table-pagination-btn"
+            className="table-pagination-btn"
             onClick={() => onPageChange(safePage - 1)}
             disabled={safePage <= 1}
             aria-label="Previous page"
           >
-            <ChevronLeft size={16} />
-            Prev
+            <ChevronLeft size={16} strokeWidth={2.2} aria-hidden />
           </button>
-          <span className="table-pagination-page text-sm">
-            Page {safePage} of {totalPages}
+          <span className="table-pagination-page">
+            {safePage}
+            <span className="table-pagination-page__sep">/</span>
+            {totalPages}
           </span>
           <button
             type="button"
-            className="btn btn-secondary btn-sm table-pagination-btn"
+            className="table-pagination-btn"
             onClick={() => onPageChange(safePage + 1)}
             disabled={safePage >= totalPages}
             aria-label="Next page"
           >
-            Next
-            <ChevronRight size={16} />
+            <ChevronRight size={16} strokeWidth={2.2} aria-hidden />
           </button>
         </div>
-      )}
-    </div>
+      ) : null}
+    </nav>
   );
 };
