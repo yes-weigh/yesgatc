@@ -243,8 +243,10 @@ export function buildReportPdf(input: ReportPdfInput): File {
   });
 
   const bytes = assemblePdf(pages);
+  const payload = new Uint8Array(bytes.byteLength);
+  payload.set(bytes);
   const name = `${fileSlug(input.rcName)}-${input.view === 'revenue_share' ? 'revenue-share' : 'day-summary'}.pdf`;
-  return new File([bytes], name, { type: 'application/pdf' });
+  return new File([payload], name, { type: 'application/pdf' });
 }
 
 export async function shareReportPdf(file: File, title: string): Promise<void> {
