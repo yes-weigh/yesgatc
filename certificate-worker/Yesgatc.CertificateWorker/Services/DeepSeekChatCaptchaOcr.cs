@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Microsoft.Playwright;
 using Yesgatc.CertificateWorker.Models;
 
@@ -25,6 +26,7 @@ public static class DeepSeekChatCaptchaOcr
 
     private static readonly object RecentAnswersLock = new();
     private static readonly Queue<string> RecentAnswers = new();
+    private static readonly SemaphoreSlim OcrGate = new(1, 1);
     private const int RecentAnswerCapacity = 12;
 
     private const string Prompt =
@@ -55,9 +57,10 @@ public static class DeepSeekChatCaptchaOcr
 
         IPage? deepseek = null;
         var createdDeepSeek = false;
-        using var allowBlank = BrowserPageGuard.AllowTransientBlankPages();
+        await OcrGate.WaitAsync(cancellationToken);
         try
         {
+            using var allowBlank = BrowserPageGuard.AllowTransientBlankPages();
             await browserContext.GrantPermissionsAsync(
                 ["clipboard-read", "clipboard-write"],
                 new BrowserContextGrantPermissionsOptions { Origin = "https://chat.deepseek.com" });
@@ -99,7 +102,7 @@ public static class DeepSeekChatCaptchaOcr
             }
 
             await ClearComposerAttachmentsAsync(deepseek);
-            if (!await AttachCaptchaImageOnceAsync(deepseek, tempPath, visionBytes, cancellationToken))
+            if (!await AttachCaptchaImageOnceAsync(deepseek, tempPath, cancellationToken))
             {
                 return string.Empty;
             }
@@ -175,6 +178,7 @@ public static class DeepSeekChatCaptchaOcr
             }
 
             await RestorePortalPageAsync(browserContext, returnToPage);
+            OcrGate.Release();
         }
     }
 
@@ -449,18 +453,19 @@ public static class DeepSeekChatCaptchaOcr
     }
 
     /// <summary>
-    /// Attach exactly once. Never re-attach while count==0 (upload lag caused 8× paste spam).
+    /// Attach exactly one file via the file input. Never clipboard paste (Control+V stacked images).
     /// </summary>
     private static async Task<bool> AttachCaptchaImageOnceAsync(
         IPage page,
         string tempPath,
-        byte[] visionBytes,
         CancellationToken cancellationToken)
     {
-        await ClearComposerAttachmentsAsync(page);
-        await AttachImageAsync(page, tempPath, visionBytes, cancellationToken);
+        await WaitUntilComposerClearAsync(page, cancellationToken);
+        if (!await AttachImageOnceViaFileInputAsync(page, tempPath, cancellationToken))
+        {
+            return false;
+        }
 
-        var sawOne = false;
         var deadline = DateTime.UtcNow.AddSeconds(6);
         while (DateTime.UtcNow < deadline)
         {
@@ -473,33 +478,38 @@ public static class DeepSeekChatCaptchaOcr
 
             if (count > 1)
             {
-                // Stacked from a prior buggy attempt or SetInputFiles append — wipe and one retry.
-                await ClearComposerAttachmentsAsync(page);
-                if (await CountComposerAttachmentsAsync(page) > 0)
+                await ForceFreshChatAsync(page, cancellationToken);
+                await WaitUntilComposerClearAsync(page, cancellationToken);
+                if (!await AttachImageOnceViaFileInputAsync(page, tempPath, cancellationToken))
                 {
-                    // Clear failed — hard reset chat composer.
-                    await ForceFreshChatAsync(page, cancellationToken);
+                    return false;
                 }
 
-                await AttachImageAsync(page, tempPath, visionBytes, cancellationToken);
-                await page.WaitForTimeoutAsync(600);
-                count = await CountComposerAttachmentsAsync(page);
-                return count <= 1;
+                await page.WaitForTimeoutAsync(500);
+                return await CountComposerAttachmentsAsync(page) == 1;
             }
 
-            if (count == 0)
-            {
-                // Wait only — do NOT attach again (that stacked identical thumbs).
-                await page.WaitForTimeoutAsync(250);
-                continue;
-            }
-
-            sawOne = true;
-            break;
+            await page.WaitForTimeoutAsync(200);
         }
 
-        // Detection can miss DeepSeek's DOM; after a single attach, proceed if Vision path can run.
-        return sawOne || await CountComposerAttachmentsAsync(page) <= 1;
+        // File input was set once. Composer thumbs are not always <img> — do not re-paste.
+        return await CountComposerAttachmentsAsync(page) <= 1;
+    }
+
+    private static async Task WaitUntilComposerClearAsync(IPage page, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(3);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await ClearComposerAttachmentsAsync(page);
+            if (await CountComposerAttachmentsAsync(page) == 0)
+            {
+                return;
+            }
+
+            await page.WaitForTimeoutAsync(120);
+        }
     }
 
     private static async Task TryStartNewChatAsync(IPage page)
@@ -847,79 +857,52 @@ public static class DeepSeekChatCaptchaOcr
         return all;
     }
 
-    private static async Task AttachImageAsync(
+    /// <summary>
+    /// One SetInputFiles on a single file input. Never Control+V — clipboard paste stacks thumbs.
+    /// </summary>
+    private static async Task<bool> AttachImageOnceViaFileInputAsync(
         IPage page,
         string tempPath,
-        byte[] visionBytes,
         CancellationToken cancellationToken)
     {
-        // Prefer hidden file input (most reliable). SetInputFiles replaces — never call twice per OCR.
-        var fileInput = page.Locator("input[type='file']").First;
-        if (await fileInput.CountAsync() > 0)
+        var fileInputs = page.Locator("input[type='file']");
+        var n = await fileInputs.CountAsync();
+        if (n > 0)
         {
             try
             {
-                await fileInput.SetInputFilesAsync(tempPath);
-                await page.WaitForTimeoutAsync(350);
+                await fileInputs.Nth(n - 1).SetInputFilesAsync(tempPath);
+                await page.WaitForTimeoutAsync(300);
                 cancellationToken.ThrowIfCancellationRequested();
-                return;
+                return true;
             }
             catch (PlaywrightException)
             {
-                // fall through to clipboard paste
+                // try chooser path
             }
         }
 
-        // Click attach / upload affordance, then set files again if a new input appears.
-        var attach = page.Locator(
-            "button[aria-label*='upload' i], button[aria-label*='attach' i], button[aria-label*='image' i], button:has(svg):near(textarea)").First;
-        if (await attach.CountAsync() > 0 && await attach.IsVisibleAsync())
+        try
         {
-            try
+            var chooserTask = page.WaitForFileChooserAsync(new PageWaitForFileChooserOptions { Timeout = 3_000 });
+            var attach = page.Locator(
+                "button[aria-label*='upload' i], button[aria-label*='attach' i], button[aria-label*='image' i]").First;
+            if (await attach.CountAsync() == 0 || !await attach.IsVisibleAsync())
             {
-                await attach.ClickAsync(new LocatorClickOptions { Timeout = 2_000 });
-                await page.WaitForTimeoutAsync(100);
-                fileInput = page.Locator("input[type='file']").First;
-                if (await fileInput.CountAsync() > 0)
-                {
-                    await fileInput.SetInputFilesAsync(tempPath);
-                    await page.WaitForTimeoutAsync(350);
-                    return;
-                }
+                return false;
             }
-            catch (PlaywrightException)
-            {
-                // clipboard fallback
-            }
+
+            await attach.ClickAsync(new LocatorClickOptions { Timeout = 2_000 });
+            var chooser = await chooserTask;
+            await chooser.SetFilesAsync(tempPath);
+            await page.WaitForTimeoutAsync(300);
+            cancellationToken.ThrowIfCancellationRequested();
+            return true;
         }
-
-        await PasteImageFromClipboardAsync(page, visionBytes, cancellationToken);
-    }
-
-    private static async Task PasteImageFromClipboardAsync(
-        IPage page,
-        byte[] visionBytes,
-        CancellationToken cancellationToken)
-    {
-        var b64 = Convert.ToBase64String(visionBytes);
-        await page.EvaluateAsync(
-            """
-            async (b64) => {
-              const binary = atob(b64);
-              const bytes = new Uint8Array(binary.length);
-              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-              const blob = new Blob([bytes], { type: 'image/png' });
-              await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-            }
-            """,
-            b64);
-
-        var composer = page.Locator("textarea, [contenteditable='true']").Last;
-        await composer.ClickAsync();
-        await page.Keyboard.PressAsync("Control+v");
-        // Single paste only — caller must not re-invoke on upload lag.
-        await page.WaitForTimeoutAsync(350);
-        cancellationToken.ThrowIfCancellationRequested();
+        catch (PlaywrightException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

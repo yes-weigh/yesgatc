@@ -69,6 +69,7 @@ public partial class MainWindow : Window
     private bool _realtimeListenerActive;
     private DispatcherTimer? _pollFallbackTimer;
     private DispatcherTimer? _retryBadgeTimer;
+    private DispatcherTimer? _retryDueTimer;
     private DispatcherTimer? _docaProbeTimer;
     private DispatcherTimer? _docaSessionWatchdogTimer;
     private DispatcherTimer? _telemetryTimer;
@@ -159,6 +160,11 @@ public partial class MainWindow : Window
         UpdateCaptchaApiKeyHint();
 
         _docaSessionProbeMinutes = saved.DocaSessionProbeMinutes ?? settings.AutoWorker.DocaSessionProbeMinutes;
+        if (_docaSessionProbeMinutes == 10)
+        {
+            // Old default probed Chrome every 10 min — kills 4 GB VPS. Event-based queue instead.
+            _docaSessionProbeMinutes = 0;
+        }
         DocaSessionProbeMinutesBox.Text = _docaSessionProbeMinutes.ToString();
 
         SyncDocaCredentialsToAllAutomation();
@@ -583,7 +589,7 @@ public partial class MainWindow : Window
             if (state == DocaSessionState.OtpRequired)
             {
                 _emaapOtpIdle = true;
-                _emaapMasterOtpTried = true; // already tried during login gate (or skipped)
+                _emaapMasterOtpTried = false;
                 SetDocaLoginPaused(true, startResumeProbe: false);
                 StartEmaapOtpIdlePoller();
                 var otpWhy = FirestoreEmaapOtpReader.LastFailureReason
@@ -828,16 +834,22 @@ public partial class MainWindow : Window
 
             if (_session is not null && !_remotePaused && !_autoWorkerPausedForDoca)
             {
-                StartAutoWorkerTimers();
-                // Defer cycle so checkbox paint / tab input stay responsive.
                 _ = Dispatcher.BeginInvoke(
                     DispatcherPriority.ApplicationIdle,
-                    new Action(() =>
+                    new Action(async () =>
                     {
-                        if (_autoWorkerEnabled && _session is not null && !_remotePaused && !_autoWorkerPausedForDoca)
+                        if (!_autoWorkerEnabled || _session is null || _remotePaused || _autoWorkerPausedForDoca)
                         {
-                            _ = RunAutoWorkerCycleAsync();
+                            return;
                         }
+
+                        if (_useRealtimeListener && !_realtimeListenerActive)
+                        {
+                            await StartQueueListenerAsync();
+                        }
+
+                        StartAutoWorkerTimers();
+                        await RunAutoWorkerCycleAsync();
                     }));
             }
 
@@ -957,6 +969,65 @@ public partial class MainWindow : Window
         _retryBadgeTimer.Start();
     }
 
+    private void StopRetryDueTimer()
+    {
+        if (_retryDueTimer is null)
+        {
+            return;
+        }
+
+        _retryDueTimer.Tick -= RetryDueTimer_Tick;
+        _retryDueTimer.Stop();
+        _retryDueTimer = null;
+    }
+
+    private void ArmRetryDueTimer()
+    {
+        StopRetryDueTimer();
+        DateTimeOffset? next = null;
+        foreach (var state in _jobRetries.Snapshot().Values)
+        {
+            if (state.Exhausted || state.RetryAt == DateTimeOffset.MaxValue)
+            {
+                continue;
+            }
+
+            if (next is null || state.RetryAt < next)
+            {
+                next = state.RetryAt;
+            }
+        }
+
+        if (next is null)
+        {
+            return;
+        }
+
+        var delay = next.Value - DateTimeOffset.Now;
+        if (delay < TimeSpan.FromMilliseconds(50))
+        {
+            delay = TimeSpan.FromMilliseconds(50);
+        }
+
+        _retryDueTimer = new DispatcherTimer
+        {
+            Interval = delay,
+        };
+        _retryDueTimer.Tick += RetryDueTimer_Tick;
+        _retryDueTimer.Start();
+    }
+
+    private async void RetryDueTimer_Tick(object? sender, EventArgs e)
+    {
+        StopRetryDueTimer();
+        if (_autoWorkerEnabled && _session is not null && !_isBusy && !_autoWorkerPausedForDoca && !_remotePaused)
+        {
+            await RunAutoWorkerCycleAsync();
+        }
+
+        ArmRetryDueTimer();
+    }
+
     private void StopAutoWorkerTimers()
     {
         if (_pollFallbackTimer is not null)
@@ -973,6 +1044,7 @@ public partial class MainWindow : Window
             _retryBadgeTimer = null;
         }
 
+        StopRetryDueTimer();
         StopDocaProbeTimer();
         StopDocaSessionWatchdogTimer();
     }
@@ -1361,6 +1433,9 @@ public partial class MainWindow : Window
         };
         _emaapOtpPollTimer.Tick += EmaapOtpIdlePollTimer_Tick;
         _emaapOtpPollTimer.Start();
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            new Action(() => EmaapOtpIdlePollTimer_Tick(_emaapOtpPollTimer, EventArgs.Empty)));
     }
 
     private void StopEmaapOtpIdlePoller()
@@ -1620,13 +1695,6 @@ public partial class MainWindow : Window
     private async void RetryBadgeTimer_Tick(object? sender, EventArgs e)
     {
         RefreshRetryBadges();
-
-        if (!_autoWorkerEnabled || _session is null || _isBusy || _autoWorkerPausedForDoca)
-        {
-            return;
-        }
-
-        await RunAutoWorkerCycleAsync();
     }
 
     private async Task TryResumeAutoWorkerAfterDocaLoginAsync()
@@ -1741,6 +1809,7 @@ public partial class MainWindow : Window
             TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds),
             ResolveMaxRetriesFor(job));
         RefreshRetryBadges();
+        ArmRetryDueTimer();
     }
 
     private async Task RecordPipelineFailureAsync(SiteCalibrationRecord job, string error, bool? exhausted = null)
@@ -3004,11 +3073,12 @@ public partial class MainWindow : Window
             await FlushPendingCaptchaReportsAsync();
 
             SetStatus("Signed in. Loading certification queue...", StatusKind.Working);
-            if (_useRealtimeListener && _autoWorkerEnabled)
+            if (_useRealtimeListener)
             {
                 await StartQueueListenerAsync();
             }
-            else
+
+            if (!_realtimeListenerActive)
             {
                 await LoadQueueAsync();
             }

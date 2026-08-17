@@ -19,7 +19,7 @@ public sealed class AutoWorkerSettings
     /// <summary>Restart the Firestore listener before the auth token expires (minutes).</summary>
     public int ListenerTokenRefreshMinutes { get; init; } = 45;
     /// <summary>Fallback poll interval when UseRealtimeListener is false (seconds).</summary>
-    public int PollIntervalSeconds { get; init; } = 5;
+    public int PollIntervalSeconds { get; init; } = 30;
     /// <summary>Wait time before retrying a failed job (seconds).</summary>
     public int RetryDelaySeconds { get; init; } = 15;
     /// <summary>
@@ -35,9 +35,9 @@ public sealed class AutoWorkerSettings
     public int DocaLoginProbeSeconds { get; init; } = 30;
     /// <summary>
     /// While logged in and idle, navigate to a protected DOCA page this often (minutes) to detect silent logout.
-    /// Set to 0 to disable.
+    /// 0 = off (event-based only — better for 4 GB VPS).
     /// </summary>
-    public int DocaSessionProbeMinutes { get; init; } = 10;
+    public int DocaSessionProbeMinutes { get; init; }
 }
 
 public sealed class FirebaseSettings
@@ -68,9 +68,9 @@ public sealed class AutomationSettings
     /// <summary>Use installed browser instead of Playwright Chromium. Leave empty for default.</summary>
     public string BrowserChannel { get; init; } = string.Empty;
     /// <summary>When pending job count exceeds this, batch processing uses multiple browser windows.</summary>
-    public int ParallelBrowserThreshold { get; init; } = 40;
-    /// <summary>Number of parallel Chrome windows for large batches.</summary>
-    public int ParallelBrowserCount { get; init; } = 4;
+    public int ParallelBrowserThreshold { get; init; } = 9999;
+    /// <summary>Number of parallel Chrome windows for large batches. Keep 1 on 4 GB VPS.</summary>
+    public int ParallelBrowserCount { get; init; } = 1;
     /// <summary>Max machine photo size for DOCA create-ic-verification form (bytes).</summary>
     public long DocaUploadImageMaxBytes { get; init; } = 350 * 1024;
     /// <summary>Longest edge in pixels for machine photos uploaded to DOCA.</summary>

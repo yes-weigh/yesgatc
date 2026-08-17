@@ -214,47 +214,12 @@ public static class EmaapLoginAutomation
 
             var hasMasterOtp = IsConfiguredMasterOtp(settings);
             SendOtpOutcome sendOutcome;
+            var otpVisible = false;
+            var incorrectCaptcha = false;
+
             if (hasMasterOtp)
             {
-                // Master OTP: dismiss "OTP Sent" OK then fill+login immediately — no second wait loop.
-                sendOutcome = await WaitForSendOtpReadyFastAsync(page, cancellationToken, maxSeconds: 3);
-            }
-            else
-            {
-                await WaitAndDismissOtpSentDialogAsync(page, maxSeconds: 15);
-                sendOutcome = await WaitForSendOtpOutcomeAsync(
-                    page,
-                    cancellationToken,
-                    maxSeconds: 20);
-            }
-
-            var otpVisible = sendOutcome == SendOtpOutcome.OtpStep;
-            var incorrectCaptcha = sendOutcome == SendOtpOutcome.IncorrectCaptcha;
-
-            if (sendOutcome == SendOtpOutcome.LoggedIn)
-            {
-                if (reportAttemptAsync is not null)
-                {
-                    await reportAttemptAsync(new CaptchaAttemptReport(
-                        imageBytes,
-                        captchaText,
-                        ocrProvider,
-                        attempt,
-                        true,
-                        "otp_sent"));
-                }
-
-                return DocaSessionState.LoggedIn;
-            }
-
-            if (hasMasterOtp && !incorrectCaptcha)
-            {
-                // Straight to master OTP as soon as OK is gone / OTP field exists (or timed soft-ready).
-                await page.BringToFrontAsync();
-                await TryDismissOtpSentDialogIfVisibleAsync(page);
-                await WaitForOtpFieldVisibleAsync(page, timeoutMs: 1_500);
-
-                var afterMaster = await TrySubmitMasterOtpAsync(
+                var afterMaster = await TrySubmitMasterOtpImmediateAsync(
                     page,
                     settings,
                     cancellationToken,
@@ -275,9 +240,42 @@ public static class EmaapLoginAutomation
                     return DocaSessionState.LoggedIn;
                 }
 
+                incorrectCaptcha = await IsIncorrectCaptchaErrorAsync(page);
                 otpVisible = await IsOtpStepAsync(page);
+                sendOutcome = incorrectCaptcha
+                    ? SendOtpOutcome.IncorrectCaptcha
+                    : otpVisible
+                        ? SendOtpOutcome.OtpStep
+                        : SendOtpOutcome.Timeout;
             }
-            else if (otpVisible)
+            else
+            {
+                await WaitAndDismissOtpSentDialogAsync(page, maxSeconds: 15);
+                sendOutcome = await WaitForSendOtpOutcomeAsync(
+                    page,
+                    cancellationToken,
+                    maxSeconds: 20);
+                otpVisible = sendOutcome == SendOtpOutcome.OtpStep;
+                incorrectCaptcha = sendOutcome == SendOtpOutcome.IncorrectCaptcha;
+            }
+
+            if (sendOutcome == SendOtpOutcome.LoggedIn)
+            {
+                if (reportAttemptAsync is not null)
+                {
+                    await reportAttemptAsync(new CaptchaAttemptReport(
+                        imageBytes,
+                        captchaText,
+                        ocrProvider,
+                        attempt,
+                        true,
+                        "otp_sent"));
+                }
+
+                return DocaSessionState.LoggedIn;
+            }
+
+            if (!hasMasterOtp && otpVisible)
             {
                 // Email OTP path — captcha accepted; dismiss OK then wait for inbox code.
                 await page.BringToFrontAsync();
@@ -404,6 +402,59 @@ public static class EmaapLoginAutomation
         }
 
         return emailOtp;
+    }
+
+    /// <summary>
+    /// After Send OTP: dismiss OK and fill master OTP the instant the OTP field appears.
+    /// </summary>
+    private static async Task<DocaSessionState> TrySubmitMasterOtpImmediateAsync(
+        IPage page,
+        AutomationSettings settings,
+        CancellationToken cancellationToken,
+        Func<CaptchaAttemptReport, Task>? reportAttemptAsync,
+        int maxSeconds = 8)
+    {
+        if (!IsConfiguredMasterOtp(settings))
+        {
+            return DocaSessionState.OtpRequired;
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(Math.Max(1, maxSeconds));
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (await IsIncorrectCaptchaErrorAsync(page))
+            {
+                return DocaSessionState.OtpRequired;
+            }
+
+            if (await IsLoggedInAsync(page))
+            {
+                return DocaSessionState.LoggedIn;
+            }
+
+            await TryDismissOtpSentDialogIfVisibleAsync(page);
+            await TryDismissLoginFailedDialogIfVisibleAsync(page);
+
+            if (await IsOtpStepAsync(page))
+            {
+                return await TrySubmitMasterOtpAsync(
+                    page,
+                    settings,
+                    cancellationToken,
+                    reportAttemptAsync);
+            }
+
+            await page.WaitForTimeoutAsync(40);
+        }
+
+        await TryDismissOtpSentDialogIfVisibleAsync(page);
+        return await TrySubmitMasterOtpAsync(
+            page,
+            settings,
+            cancellationToken,
+            reportAttemptAsync);
     }
 
     private static bool IsConfiguredMasterOtp(AutomationSettings settings)
@@ -735,81 +786,6 @@ public static class EmaapLoginAutomation
         }
 
         await TryDismissOtpSentDialogIfVisibleAsync(page);
-    }
-
-    /// <summary>
-    /// Master OTP path after Send OTP: one fast loop — click OK the instant it appears,
-    /// return as soon as the OTP field is usable. No stacked multi-second waits.
-    /// </summary>
-    private static async Task<SendOtpOutcome> WaitForSendOtpReadyFastAsync(
-        IPage page,
-        CancellationToken cancellationToken,
-        int maxSeconds = 3)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(Math.Max(1, maxSeconds));
-        while (DateTime.UtcNow < deadline)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (await IsIncorrectCaptchaErrorAsync(page))
-            {
-                return SendOtpOutcome.IncorrectCaptcha;
-            }
-
-            if (await IsOtpSentDialogVisibleAsync(page))
-            {
-                await TryDismissOtpSentDialogIfVisibleAsync(page);
-            }
-
-            if (await IsOtpStepAsync(page))
-            {
-                return SendOtpOutcome.OtpStep;
-            }
-
-            if (await IsLoggedInAsync(page))
-            {
-                return SendOtpOutcome.LoggedIn;
-            }
-
-            await page.WaitForTimeoutAsync(50);
-        }
-
-        if (await IsIncorrectCaptchaErrorAsync(page))
-        {
-            return SendOtpOutcome.IncorrectCaptcha;
-        }
-
-        await TryDismissOtpSentDialogIfVisibleAsync(page);
-
-        if (await IsOtpStepAsync(page))
-        {
-            return SendOtpOutcome.OtpStep;
-        }
-
-        if (await IsLoggedInAsync(page))
-        {
-            return SendOtpOutcome.LoggedIn;
-        }
-
-        // Soft-ready: dialog may have closed without OTP field detect — still try master fill.
-        return SendOtpOutcome.OtpStep;
-    }
-
-    private static async Task WaitForOtpFieldVisibleAsync(IPage page, int timeoutMs = 1_500)
-    {
-        try
-        {
-            await page.Locator("input[name='otp'], input[placeholder*='OTP' i]").First.WaitForAsync(
-                new LocatorWaitForOptions
-                {
-                    State = WaitForSelectorState.Visible,
-                    Timeout = Math.Max(200, timeoutMs),
-                });
-        }
-        catch (PlaywrightException)
-        {
-            // Master fill will re-check IsOtpStepAsync.
-        }
     }
 
     /// <summary>Click OK only if OTP-sent dialog already showing. Never throws.</summary>
