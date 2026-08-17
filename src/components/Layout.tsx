@@ -224,11 +224,15 @@ export const Layout: React.FC = () => {
     : currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
+  const isCertificatesList = /\/(rc|vct)\/certificates\/?$/.test(location.pathname);
+  const isCustomersList = /\/(rc|vct)\/customers\/?$/.test(location.pathname);
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
   const isHomeDashboard =
     location.pathname === '/rc' ||
     location.pathname === '/vct' ||
     location.pathname === '/admin';
+  const showAppFilterSlot = useShieldBrand || isCertificatesList || isCustomersList;
+  const stickyMobileAppBar = showAppFilterSlot || isHomeDashboard || isEmaapSessions;
 
   const roleLabel = {
     super_admin: 'Super Admin',
@@ -344,7 +348,7 @@ export const Layout: React.FC = () => {
       >
         {isMobile && (
           <header
-            className={`mobile-app-bar${useShieldBrand || isHomeDashboard || isEmaapSessions ? ' mobile-app-bar--sticky' : ''}${
+            className={`mobile-app-bar${stickyMobileAppBar ? ' mobile-app-bar--sticky' : ''}${
               isHomeDashboard ? ' mobile-app-bar--home' : ''
             }`}
           >
@@ -415,7 +419,7 @@ export const Layout: React.FC = () => {
               </div>
             ) : isHomeDashboard ? (
               <EmaapStatusShortcut />
-            ) : useShieldBrand ? (
+            ) : showAppFilterSlot ? (
               <div id="verification-filter-slot-mobile" className="mobile-app-bar-actions" />
             ) : null}
           </header>
@@ -425,7 +429,6 @@ export const Layout: React.FC = () => {
             <h1 className="page-title">{pageTitle}</h1>
             <div className="top-bar-end">
               {isHomeDashboard ? <EmaapStatusShortcut /> : null}
-              {useShieldBrand ? <div id="verification-filter-slot-desktop" /> : null}
               {profilePath ? (
                 <button
                   type="button"
@@ -457,6 +460,7 @@ export const Layout: React.FC = () => {
                   </div>
                 </div>
               )}
+              {showAppFilterSlot ? <div id="verification-filter-slot-desktop" /> : null}
             </div>
           </header>
         )}

@@ -110,24 +110,26 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
   return createPortal(
     <div className="wl-cert-pdf-viewer" role="dialog" aria-modal="true" aria-label={title}>
       <header className="wl-cert-pdf-viewer__bar">
-        <button
-          type="button"
-          className="wl-cert-pdf-viewer__close"
-          onClick={onClose}
-        >
-          <X size={18} strokeWidth={2.2} aria-hidden />
-          Close
-        </button>
         <h2 className="wl-cert-pdf-viewer__title">{title}</h2>
-        <button
-          type="button"
-          className="wl-cert-pdf-viewer__share"
-          onClick={() => void handleShare()}
-          disabled={sharing || (!file && !url)}
-        >
-          <Share2 size={18} strokeWidth={2} aria-hidden />
-          Share
-        </button>
+        <div className="wl-cert-pdf-viewer__actions">
+          <button
+            type="button"
+            className="wl-cert-pdf-viewer__close"
+            onClick={onClose}
+          >
+            <X size={18} strokeWidth={2.2} aria-hidden />
+            Close
+          </button>
+          <button
+            type="button"
+            className="wl-cert-pdf-viewer__share"
+            onClick={() => void handleShare()}
+            disabled={sharing || (!file && !url)}
+          >
+            <Share2 size={18} strokeWidth={2} aria-hidden />
+            Share
+          </button>
+        </div>
       </header>
       <div className="wl-cert-pdf-viewer__body">
         {loading ? <p className="wl-cert-pdf-viewer__status">Loading certificate…</p> : null}

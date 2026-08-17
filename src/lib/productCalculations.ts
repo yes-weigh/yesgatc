@@ -1,6 +1,6 @@
 /** Derived scale fields from manual Maximum Capacity (kg) and Verification Scale Interval e (g). */
 
-import type { Product } from '../types';
+import type { Product, SiteCalibration } from '../types';
 
 export const PRODUCT_CALC_TOOLTIPS = {
   minimumCapacity: 'Minimum Capacity (Min) = Verification Scale Interval (e) × 20',
@@ -142,4 +142,19 @@ export function formatProductBriefSummary(product: Product | null | undefined): 
   const mpe = formatProductMpe(product.maximumPermissibleError);
   if (mpe !== '—') parts.push(`MPE ${mpe}`);
   return parts.join(' · ');
+}
+
+export function formatVerificationInstrumentFields(
+  record: Pick<SiteCalibration, 'maximumCapacity' | 'unitOfMeasurement' | 'verificationScaleInterval'>,
+  product?: Product | null,
+): { max: string; min: string; e: string } {
+  const max = formatProductMaximumCapacity({
+    maximumCapacity: record.maximumCapacity ?? product?.maximumCapacity ?? 0,
+    unitOfMeasurement: record.unitOfMeasurement ?? product?.unitOfMeasurement ?? 'kg',
+  });
+  const eValue = record.verificationScaleInterval ?? product?.verificationScaleInterval;
+  const min = product
+    ? formatProductMinimumCapacity(product)
+    : formatProductGramValue(eValue != null ? eValue * 20 : undefined);
+  return { max, min, e: formatProductGramValue(eValue) };
 }

@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { Award, Search, Share2 } from 'lucide-react';
@@ -8,7 +9,9 @@ import { TablePagination } from '../../components/TablePagination';
 import { CertificatePdfShareViewer } from '../../components/CertificatePdfShareViewer';
 import { useRcScope, useRoleBasePath } from '../../lib/roleScope';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
-import { formatVerificationListDate } from '../../lib/verificationListFormat';
+import { formatVerificationListDate, formatVerificationListTime } from '../../lib/verificationListFormat';
+import { formatVerificationInstrumentFields } from '../../lib/productCalculations';
+import { useAppContext } from '../../context/AppContext';
 import { isVerificationCertifiedOnDoca } from '../../lib/verificationRequest';
 import { inferVerificationSubject } from '../../lib/siteCalibrationProfileFields';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
@@ -64,6 +67,7 @@ function matchesCertificateOrMachine(record: SiteCalibration, query: string): bo
 
 export const Certificates: React.FC = () => {
   const { rcUid, actorUid, isVct } = useRcScope();
+  const { products } = useAppContext();
   const basePath = useRoleBasePath();
   const navigate = useNavigate();
   const filterRef = useRef<HTMLDivElement>(null);
@@ -79,6 +83,10 @@ export const Certificates: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<CertTypeFilter>('all');
   const [statusFilter, setStatusFilter] = useState<CertStatusFilter>('all');
   const [viewingRecord, setViewingRecord] = useState<SiteCalibration | null>(null);
+  const [filterSlots, setFilterSlots] = useState<{
+    mobile: HTMLElement | null;
+    desktop: HTMLElement | null;
+  }>({ mobile: null, desktop: null });
 
   const fetchRecords = useCallback(async () => {
     if (!rcUid) {
@@ -124,6 +132,13 @@ export const Certificates: React.FC = () => {
     if (searchOpen) searchInputRef.current?.focus();
   }, [searchOpen]);
 
+  useLayoutEffect(() => {
+    setFilterSlots({
+      mobile: document.getElementById('verification-filter-slot-mobile'),
+      desktop: document.getElementById('verification-filter-slot-desktop'),
+    });
+  }, []);
+
   const issued = useMemo(
     () =>
       records
@@ -163,8 +178,60 @@ export const Certificates: React.FC = () => {
     setViewingRecord(record);
   };
 
+  const filterSlot = filterSlots.mobile ?? filterSlots.desktop;
+  const filterControl = (
+    <div className="wl-cert-filter verification-app-filter" ref={filterRef}>
+      <button
+        type="button"
+        className={`wl-cert-filter-btn verification-app-filter__btn${
+          filterOpen || filterActive ? ' wl-cert-filter-btn--on verification-app-filter__btn--on' : ''
+        }`}
+        aria-label="Filter certificates"
+        aria-expanded={filterOpen}
+        onClick={() => {
+          setFilterOpen(open => !open);
+          setSearchOpen(false);
+        }}
+      >
+        <FilterIcon size={18} />
+      </button>
+      {filterOpen ? (
+        <div className="wl-cert-filter__pop" role="dialog" aria-label="Certificate filters">
+          <label className="wl-cert-filter__label" htmlFor="wl-cert-type">
+            Type
+          </label>
+          <select
+            id="wl-cert-type"
+            className="wl-cert-filter__select"
+            value={typeFilter}
+            onChange={event => setTypeFilter(event.target.value as CertTypeFilter)}
+          >
+            <option value="all">All</option>
+            <option value="OV">OV</option>
+            <option value="RV">RV</option>
+          </select>
+          <label className="wl-cert-filter__label" htmlFor="wl-cert-status">
+            Status
+          </label>
+          <select
+            id="wl-cert-status"
+            className="wl-cert-filter__select"
+            value={statusFilter}
+            onChange={event => setStatusFilter(event.target.value as CertStatusFilter)}
+          >
+            <option value="all">All</option>
+            <option value="signed">Signed</option>
+            <option value="not_signed">Not signed</option>
+            <option value="voided">Voided</option>
+          </select>
+        </div>
+      ) : null}
+    </div>
+  );
+
   return (
     <div className="fade-in wl-cert-page">
+      {filterSlot ? createPortal(filterControl, filterSlot) : null}
       <section className="wl-section" aria-label="Certificates">
         <div className="wl-cert-toolbar">
           <div className="wl-cert-toolbar__pager">
@@ -191,51 +258,7 @@ export const Certificates: React.FC = () => {
             >
               <Search size={18} strokeWidth={2} aria-hidden />
             </button>
-            <div className="wl-cert-filter" ref={filterRef}>
-              <button
-                type="button"
-                className={`wl-cert-filter-btn${filterOpen || filterActive ? ' wl-cert-filter-btn--on' : ''}`}
-                aria-label="Filter certificates"
-                aria-expanded={filterOpen}
-                onClick={() => {
-                  setFilterOpen(open => !open);
-                  setSearchOpen(false);
-                }}
-              >
-                <FilterIcon size={18} />
-              </button>
-              {filterOpen ? (
-                <div className="wl-cert-filter__pop" role="dialog" aria-label="Certificate filters">
-                  <label className="wl-cert-filter__label" htmlFor="wl-cert-type">
-                    Type
-                  </label>
-                  <select
-                    id="wl-cert-type"
-                    className="wl-cert-filter__select"
-                    value={typeFilter}
-                    onChange={event => setTypeFilter(event.target.value as CertTypeFilter)}
-                  >
-                    <option value="all">All</option>
-                    <option value="OV">OV</option>
-                    <option value="RV">RV</option>
-                  </select>
-                  <label className="wl-cert-filter__label" htmlFor="wl-cert-status">
-                    Status
-                  </label>
-                  <select
-                    id="wl-cert-status"
-                    className="wl-cert-filter__select"
-                    value={statusFilter}
-                    onChange={event => setStatusFilter(event.target.value as CertStatusFilter)}
-                  >
-                    <option value="all">All</option>
-                    <option value="signed">Signed</option>
-                    <option value="not_signed">Not signed</option>
-                    <option value="voided">Voided</option>
-                  </select>
-                </div>
-              ) : null}
-            </div>
+            {!filterSlot ? filterControl : null}
           </div>
         </div>
         {searchVisible ? (
@@ -272,10 +295,20 @@ export const Certificates: React.FC = () => {
                   const pdfUrl = resolveCertificatePdfFileUrl(record);
                   const pdfPath = resolveCertificatePdfStoragePath(record);
                   const certNo = record.certificateNumber?.trim() || '—';
-                  const loc = certLocation(record, customersById, rcPlace);
                   const signStatus = certificateSignStatus(record);
                   const type = recordType(record);
-                  const placeLine = [loc.place, loc.district].filter(Boolean).join(', ');
+                  const product = products.find(item => item.id === record.productId);
+                  const specs = formatVerificationInstrumentFields(record, product);
+                  const serial = record.serialNumber?.trim() || '—';
+                  const stamp = record.certifiedAt || record.approvedAt;
+                  const dateLabel = formatVerificationListDate(stamp);
+                  const timeLabel = formatVerificationListTime(stamp);
+                  const dateTime =
+                    dateLabel === '—'
+                      ? '—'
+                      : timeLabel === '—'
+                        ? dateLabel
+                        : `${dateLabel}  ${timeLabel}`;
                   const vctName = record.vctName?.trim() || '—';
                   return (
                     <li key={record.id}>
@@ -312,12 +345,32 @@ export const Certificates: React.FC = () => {
                                 </span>
                               </span>
                             </span>
-                            <span className="wl-cert-card__no">{certNo}</span>
-                            <span className="wl-cert-card__sub">
-                              {formatVerificationListDate(record.certifiedAt || record.approvedAt)}
-                              {record.serialNumber?.trim() ? ` · ${record.serialNumber.trim()}` : ''}
-                              {placeLine ? ` · ${placeLine}` : ''}
-                              {` · VCT: ${vctName}`}
+                            <span className="wl-cert-card__meta">
+                              <span className="wl-cert-card__specs">
+                                <span className="wl-cert-card__kv">
+                                  <em>Max</em>
+                                  {specs.max}
+                                </span>
+                                <span className="wl-cert-card__kv">
+                                  <em>Min</em>
+                                  {specs.min}
+                                </span>
+                                <span className="wl-cert-card__kv">
+                                  <em className="wl-cert-card__e">e</em>
+                                  {specs.e}
+                                </span>
+                                <span className="wl-cert-card__kv">
+                                  <em>Serial</em>
+                                  <span className="text-mono">{serial}</span>
+                                </span>
+                              </span>
+                              <span className="wl-cert-card__session">
+                                <span className="wl-cert-card__when">{dateTime}</span>
+                                <span className="wl-cert-card__kv wl-cert-card__vct" title={vctName}>
+                                  <em>VCT</em>
+                                  {vctName}
+                                </span>
+                              </span>
                             </span>
                           </span>
                         </button>

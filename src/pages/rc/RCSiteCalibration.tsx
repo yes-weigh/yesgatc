@@ -14,10 +14,6 @@ import {
   VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE,
 } from '../../lib/rcActivation';
 import { fetchRcVehicles, rcHasRegisteredVehicle, VCT_RC_VEHICLE_REQUIRED_MESSAGE } from '../../lib/rcVehicles';
-import {
-  RcStandardWeightsCertVctNotice,
-  RcVehicleRequiredNotice,
-} from '../../components/RcVehicleRequiredNotice';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
@@ -2559,34 +2555,11 @@ export const RCSiteCalibration: React.FC = () => {
               </p>
             </div>
           )}
-          {(isVct || isRcAdmin) && gatesLoading ? (
-            <div className="rc-vehicle-required-notice" role="status">
-              <p className="rc-vehicle-required-notice__title">Checking centre setup</p>
-              <p className="rc-vehicle-required-notice__text mb-0">
-                Verifying standard weights certificate and vehicle registration…
-              </p>
-            </div>
-          ) : null}
           {(isVct || isRcAdmin) && gatesError ? (
             <div className="rc-vehicle-required-notice" role="alert">
               <p className="rc-vehicle-required-notice__title">Cannot start verification</p>
               <p className="rc-vehicle-required-notice__text mb-0">{gatesError}</p>
             </div>
-          ) : null}
-          {(isVct || isRcAdmin) && !gatesLoading && !gatesError && rcHasWeightsCert === false ? (
-            isRcAdmin ? (
-              <div className="rc-vehicle-required-notice" role="status">
-                <p className="rc-vehicle-required-notice__title">Standard weights certificate required</p>
-                <p className="rc-vehicle-required-notice__text mb-0">
-                  {VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE} Upload it under Profile → Edit.
-                </p>
-              </div>
-            ) : (
-              <RcStandardWeightsCertVctNotice />
-            )
-          ) : null}
-          {(isVct || isRcAdmin) && !gatesLoading && !gatesError && rcHasVehicle === false ? (
-            <RcVehicleRequiredNotice variant={isRcAdmin ? 'rc' : 'vct'} />
           ) : null}
           <VerificationListFilters
             searchTerm={searchTerm}

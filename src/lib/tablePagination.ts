@@ -1,4 +1,5 @@
 export const VERIFICATION_TABLE_PAGE_SIZE = 30;
+export const CUSTOMER_LIST_PAGE_SIZE = 15;
 export const DOCA_SCRAPING_TABLE_PAGE_SIZE = 100;
 
 export function getTotalPages(totalItems: number, pageSize: number): number {
