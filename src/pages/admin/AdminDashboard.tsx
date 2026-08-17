@@ -11,7 +11,6 @@ import {
   ChevronRight,
   UploadCloud,
   Building2,
-  CalendarDays,
   MapPin,
   Car,
   ShieldCheck,
@@ -33,6 +32,9 @@ import {
 } from '../../lib/emaapSessionHistory';
 import { isVctOperational } from '../../lib/vctApproval';
 import { VctOfficerMark } from '../../components/VctOfficerMark';
+import { DashboardPeriodFilter } from '../../components/DashboardPeriodFilter';
+import { DashboardWorkerLiveCard } from '../../components/DashboardWorkerLiveCard';
+import { recordInDashboardPeriod, type DashboardPeriod } from '../../lib/dashboardPeriod';
 import {
   rankRcsByCertifiedCount,
   saveRcCertificationRanks,
@@ -46,8 +48,6 @@ import {
 } from '../../lib/verificationRequest';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
-type Period = 'lifetime' | 'year' | 'quarter' | 'month' | 'prevMonth' | 'custom';
-
 type RcRow = {
   id: string;
   name: string;
@@ -55,85 +55,6 @@ type RcRow = {
   count: number;
   rank: number;
 };
-
-const PERIODS: { key: Period; label: string }[] = [
-  { key: 'lifetime', label: 'Lifetime' },
-  { key: 'year', label: 'This year' },
-  { key: 'quarter', label: 'This Quarter' },
-  { key: 'month', label: 'This month' },
-  { key: 'prevMonth', label: 'Previous month' },
-  { key: 'custom', label: 'Custom' },
-];
-
-function startOfQuarter(date: Date): Date {
-  return new Date(date.getFullYear(), Math.floor(date.getMonth() / 3) * 3, 1);
-}
-
-function startOfPreviousMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth() - 1, 1);
-}
-
-function endOfPreviousMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 0, 23, 59, 59, 999);
-}
-
-function padDatePart(value: number): string {
-  return String(value).padStart(2, '0');
-}
-
-function toInputDate(date: Date): string {
-  return `${date.getFullYear()}-${padDatePart(date.getMonth() + 1)}-${padDatePart(date.getDate())}`;
-}
-
-function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function endOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
-}
-
-function parseInputDate(value: string, end: boolean): Date | null {
-  if (!value) return null;
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  return end ? endOfDay(date) : startOfDay(date);
-}
-
-function recordCreatedAt(record: SiteCalibration): Date | null {
-  if (!record.createdAt) return null;
-  const date = new Date(record.createdAt);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function recordInPeriod(
-  record: SiteCalibration,
-  period: Period,
-  customFrom: string,
-  customTo: string,
-): boolean {
-  if (period === 'lifetime') return true;
-  const created = recordCreatedAt(record);
-  if (!created) return false;
-  const now = new Date();
-  if (period === 'year') {
-    return created >= new Date(now.getFullYear(), 0, 1) && created <= now;
-  }
-  if (period === 'quarter') {
-    return created >= startOfQuarter(now) && created <= now;
-  }
-  if (period === 'month') {
-    return created >= new Date(now.getFullYear(), now.getMonth(), 1) && created <= now;
-  }
-  if (period === 'prevMonth') {
-    return created >= startOfPreviousMonth(now) && created <= endOfPreviousMonth(now);
-  }
-  const from = parseInputDate(customFrom, false);
-  const to = parseInputDate(customTo, true);
-  if (from && created < from) return false;
-  if (to && created > to) return false;
-  return Boolean(from || to);
-}
 
 type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange' | 'slate' | 'cyan';
 
@@ -196,11 +117,11 @@ export const AdminDashboard: React.FC = () => {
     () => new Map(),
   );
   const [loadingVerifications, setLoadingVerifications] = useState(true);
-  const [period, setPeriod] = useState<Period>('lifetime');
-  const [customFrom, setCustomFrom] = useState('');
-  const [customTo, setCustomTo] = useState('');
   const [activityLogs, setActivityLogs] = useState<AutomationWorkerLogEntry[]>([]);
   const [loadingActivity, setLoadingActivity] = useState(true);
+  const [period, setPeriod] = useState<DashboardPeriod>('month');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -278,10 +199,12 @@ export const AdminDashboard: React.FC = () => {
   );
 
   const scopedVerifications = useMemo(
-    () => verifications.filter(record => recordInPeriod(record, period, customFrom, customTo)),
+    () =>
+      verifications.filter(record =>
+        recordInDashboardPeriod(record, period, customFrom, customTo),
+      ),
     [verifications, period, customFrom, customTo],
   );
-
   const tally = useMemo(
     () => tallyVerificationStatusFilters(scopedVerifications),
     [scopedVerifications],
@@ -434,14 +357,6 @@ export const AdminDashboard: React.FC = () => {
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   }, [scopedVerifications, customerDistrictById, rcUsers]);
 
-  const selectPeriod = (next: Period) => {
-    setPeriod(next);
-    if (next !== 'custom' || customFrom || customTo) return;
-    const now = new Date();
-    setCustomFrom(toInputDate(new Date(now.getFullYear(), now.getMonth(), 1)));
-    setCustomTo(toInputDate(now));
-  };
-
   const verificationHref = (status?: VerificationStatusFilter) => {
     if (status && status !== 'all') {
       return `${VERIFICATION_PATH}?status=${encodeURIComponent(status)}`;
@@ -451,51 +366,7 @@ export const AdminDashboard: React.FC = () => {
 
   return (
     <div className="fade-in wl-dash">
-      <section className="wl-period-card" aria-label="Date range">
-        <p className="wl-period-card__label">Period</p>
-        <div className="wl-period" role="tablist" aria-label="Date range">
-          {PERIODS.map(option => (
-            <button
-              key={option.key}
-              type="button"
-              role="tab"
-              aria-selected={period === option.key}
-              className={`wl-period__btn${period === option.key ? ' wl-period__btn--active' : ''}`}
-              onClick={() => selectPeriod(option.key)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        {period === 'custom' ? (
-          <div className="wl-period__custom">
-            <label className="wl-period__field">
-              <span>
-                <CalendarDays size={12} aria-hidden />
-                From
-              </span>
-              <input
-                type="date"
-                value={customFrom}
-                max={customTo || undefined}
-                onChange={event => setCustomFrom(event.target.value)}
-              />
-            </label>
-            <label className="wl-period__field">
-              <span>
-                <CalendarDays size={12} aria-hidden />
-                To
-              </span>
-              <input
-                type="date"
-                value={customTo}
-                min={customFrom || undefined}
-                onChange={event => setCustomTo(event.target.value)}
-              />
-            </label>
-          </div>
-        ) : null}
-      </section>
+      <DashboardWorkerLiveCard />
 
       <section className="wl-primary" aria-label="Verification types">
         <Link
@@ -510,7 +381,6 @@ export const AdminDashboard: React.FC = () => {
             <span className="wl-primary__stat-value">
               {loadingVerifications ? '—' : typeTally.OV}
             </span>
-            <span className="wl-primary__sub">Original Verification</span>
           </span>
         </Link>
         <Link
@@ -525,9 +395,16 @@ export const AdminDashboard: React.FC = () => {
             <span className="wl-primary__stat-value">
               {loadingVerifications ? '—' : typeTally.RV}
             </span>
-            <span className="wl-primary__sub">Re Verification</span>
           </span>
         </Link>
+        <DashboardPeriodFilter
+          period={period}
+          customFrom={customFrom}
+          customTo={customTo}
+          onPeriodChange={setPeriod}
+          onCustomFromChange={setCustomFrom}
+          onCustomToChange={setCustomTo}
+        />
       </section>
 
       <section className="wl-stages-panel" aria-labelledby="wl-admin-stages-title">
@@ -684,7 +561,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
         ) : districtRows.length === 0 ? (
           <div className="wl-recent__empty">
-            <p>No district verifications in this period.</p>
+            <p>No district verifications.</p>
           </div>
         ) : (
           <ul className="wl-rc">

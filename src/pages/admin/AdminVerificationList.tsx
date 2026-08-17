@@ -20,6 +20,7 @@ import {
   matchesVerificationDurationFilter,
   type VerificationDurationFilter,
 } from '../../lib/verificationListDuration';
+import { rewriteOutOfKeralaJobsToRcName } from '../../lib/verificationRcFiling';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   buildDuplicatePrimaryIdSet,
@@ -62,11 +63,20 @@ import {
 } from '../../lib/verificationSubmit';
 import { formatZohoInvoiceGateError, isZohoInvoiceGateError } from '../../lib/zohoRvInvoice';
 import { isZohoRvInvoicingEnabled } from '../../lib/zohoRvSubmit';
+import { useAppContext } from '../../context/AppContext';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 type RcListProfile = Pick<
   FirestoreUserDoc,
-  'profilePhotoUrl' | 'profilePhotoPath' | 'contactPerson' | 'pincode' | 'zohoId'
+  | 'profilePhotoUrl'
+  | 'profilePhotoPath'
+  | 'contactPerson'
+  | 'pincode'
+  | 'zohoId'
+  | 'address'
+  | 'place'
+  | 'phone'
+  | 'companyName'
 >;
 
 interface VerificationRow extends SiteCalibration {
@@ -75,6 +85,7 @@ interface VerificationRow extends SiteCalibration {
 
 export const AdminVerificationList: React.FC = () => {
   const { user } = useAuth();
+  const { products } = useAppContext();
   const confirm = useConfirm();
   const { appSettings } = useAppSettings();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -132,6 +143,10 @@ export const AdminVerificationList: React.FC = () => {
             contactPerson: data.contactPerson,
             pincode: data.pincode,
             zohoId: data.zohoId,
+            address: data.address,
+            place: data.place,
+            phone: data.phone,
+            companyName: data.companyName,
           });
         }
       });
@@ -143,16 +158,32 @@ export const AdminVerificationList: React.FC = () => {
       setCustomersById(customerMap);
       setRcUsersById(rcProfiles);
 
-      const rows: VerificationRow[] = calibrationSnap.docs.map(d => {
-        const data = d.data() as Omit<SiteCalibration, 'id'>;
-        return {
-          id: d.id,
-          ...data,
-          rcCenterName: (data.rcId && rcByUid.get(data.rcId)) || '—',
-        };
-      });
+      const toRows = (docs: typeof calibrationSnap.docs): VerificationRow[] =>
+        docs
+          .map(d => {
+            const data = d.data() as Omit<SiteCalibration, 'id'>;
+            return {
+              id: d.id,
+              ...data,
+              rcCenterName: (data.rcId && rcByUid.get(data.rcId)) || '—',
+            };
+          })
+          .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
-      rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      let rows = toRows(calibrationSnap.docs);
+
+      if (isSuperAdmin) {
+        const rewritten = await rewriteOutOfKeralaJobsToRcName({
+          records: rows,
+          customersById: customerMap,
+          rcNameByUid: rcByUid,
+        });
+        if (rewritten > 0) {
+          const refreshed = await getDocs(collection(db, 'siteCalibrations'));
+          rows = toRows(refreshed.docs);
+        }
+      }
+
       setRecords(rows);
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to load verifications.');
@@ -160,7 +191,7 @@ export const AdminVerificationList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     void fetchRecords();
@@ -661,6 +692,15 @@ export const AdminVerificationList: React.FC = () => {
             viewingRecord.rcId
               ? rcUsersById.get(viewingRecord.rcId)?.contactPerson
               : null
+          }
+          customer={
+            viewingRecord.customerId
+              ? customersById.get(viewingRecord.customerId) ?? null
+              : null
+          }
+          product={products.find(item => item.id === viewingRecord.productId) ?? null}
+          rcProfile={
+            viewingRecord.rcId ? rcUsersById.get(viewingRecord.rcId) ?? null : null
           }
           onClose={closeVerificationDetails}
           onRecordsChanged={async () => {

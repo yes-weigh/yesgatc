@@ -1,4 +1,5 @@
 using Yesgatc.CertificateWorker.Models;
+
 namespace Yesgatc.CertificateWorker.Services;
 
 public sealed class PartyDetailsService
@@ -25,70 +26,73 @@ public sealed class PartyDetailsService
         var performedBy = FirestoreFieldReader.ReadString(calibrationFields, "performedBy");
         var vctId = FirestoreFieldReader.ReadString(calibrationFields, "vctId");
         var customerName = FirestoreFieldReader.ReadString(calibrationFields, "customerName", job.CustomerName);
+        var fileCertificateAsRc = FirestoreFieldReader.ReadBool(calibrationFields, "fileCertificateAsRc");
 
         var isSelf = verificationSubject == "self"
             || (!string.IsNullOrWhiteSpace(customerId) && customerId == rcId);
 
-        string name;
-        string address;
-        string pincode;
-        string storedState;
-        string storedDistrict;
-
-        if (isSelf)
-        {
-            var rcFields = await _documents.GetFieldsAsync("users", rcUserId, idToken, cancellationToken);
-            name = FirstNonEmpty(
-                FirestoreFieldReader.ReadString(rcFields, "companyName"),
-                FirestoreFieldReader.ReadString(rcFields, "username"),
-                customerName);
-            address = FirestoreFieldReader.ReadString(rcFields, "address");
-            pincode = FirestoreFieldReader.ReadString(rcFields, "pincode");
-            storedState = string.Empty;
-            storedDistrict = string.Empty;
-        }
-        else
-        {
-            if (string.IsNullOrWhiteSpace(customerId))
-            {
-                throw new InvalidOperationException("Verification is missing customerId.");
-            }
-
-            var customerFields = await _documents.GetFieldsAsync("customers", customerId, idToken, cancellationToken);
-            name = FirstNonEmpty(
-                FirestoreFieldReader.ReadString(customerFields, "name"),
-                customerName);
-            address = FirestoreFieldReader.ReadString(customerFields, "address");
-            pincode = FirestoreFieldReader.ReadString(customerFields, "pincode");
-            storedState = FirestoreFieldReader.ReadString(customerFields, "state");
-            storedDistrict = FirestoreFieldReader.ReadString(customerFields, "district");
-        }
-
-        // Never submit end-customer phone to DOCA — use the performing VCT or RC contact instead.
         var mobile = await ResolvePerformerMobileAsync(
             performedBy, vctId, rcId, rcUserId, idToken, cancellationToken);
 
-        pincode = PincodeLookupService.NormalizePincode(pincode);
+        PartyProfile profile;
+        var filedUnderRc = false;
+
+        if (isSelf)
+        {
+            profile = await LoadRcProfileAsync(rcUserId, customerName, idToken, cancellationToken);
+        }
+        else
+        {
+            profile = await LoadCustomerProfileAsync(customerId, customerName, idToken, cancellationToken);
+            var customerPin = PincodeLookupService.NormalizePincode(profile.Pincode);
+            var pinOutsideKerala = PincodeLookupService.IsValidPincode(customerPin)
+                && !KeralaRegion.IsKeralaPincode(customerPin);
+            if (fileCertificateAsRc || pinOutsideKerala)
+            {
+                var originalCustomerId = customerId;
+                var originalCustomerName = profile.Name;
+                profile = await LoadRcProfileAsync(rcUserId, customerName, idToken, cancellationToken);
+                filedUnderRc = true;
+                await TryStampRcFilingAsync(
+                    job.Id,
+                    rcUserId,
+                    profile.Name,
+                    originalCustomerId,
+                    originalCustomerName,
+                    idToken,
+                    cancellationToken);
+            }
+        }
+
+        var pincode = PincodeLookupService.NormalizePincode(profile.Pincode);
         if (!PincodeLookupService.IsValidPincode(pincode))
         {
             throw new InvalidOperationException(
                 "A valid 6-digit postal code is required on the customer (or RC profile for self verification).");
         }
 
-        if (string.IsNullOrWhiteSpace(name))
+        if (string.IsNullOrWhiteSpace(profile.Name))
         {
             throw new InvalidOperationException("Customer / RC name is missing.");
         }
 
-        if (string.IsNullOrWhiteSpace(address))
+        if (string.IsNullOrWhiteSpace(profile.Address))
         {
             throw new InvalidOperationException("Address is missing on the customer / RC profile.");
         }
 
         var lookup = await _pincodeLookup.LookupAsync(pincode, cancellationToken);
-        var state = FirstNonEmpty(storedState, lookup?.State ?? string.Empty);
+        var state = FirstNonEmpty(profile.State, lookup?.State ?? string.Empty);
         var district = DocaDistrictAliases.NormalizeForDoca(
-            FirstNonEmpty(storedDistrict, lookup?.District ?? string.Empty));
+            FirstNonEmpty(profile.District, lookup?.District ?? string.Empty));
+
+        if (isSelf || filedUnderRc || KeralaRegion.IsKeralaPincode(pincode))
+        {
+            if (!KeralaRegion.IsKeralaState(state))
+            {
+                state = KeralaRegion.StateName;
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(state) || string.IsNullOrWhiteSpace(district))
         {
@@ -98,14 +102,96 @@ public sealed class PartyDetailsService
 
         return new PartyContactDetails
         {
-            BelongToName = name.Trim(),
-            Address = address.Trim(),
+            BelongToName = profile.Name.Trim(),
+            Address = profile.Address.Trim(),
             Pincode = pincode,
             State = state.Trim(),
             District = district.Trim(),
             Mobile = mobile,
             IsSelfVerification = isSelf,
+            FiledUnderRc = filedUnderRc,
         };
+    }
+
+    private async Task<PartyProfile> LoadRcProfileAsync(
+        string rcUserId,
+        string customerNameFallback,
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        var rcFields = await _documents.GetFieldsAsync("users", rcUserId, idToken, cancellationToken);
+        return new PartyProfile(
+            FirstNonEmpty(
+                FirestoreFieldReader.ReadString(rcFields, "companyName"),
+                FirestoreFieldReader.ReadString(rcFields, "username"),
+                customerNameFallback),
+            FirestoreFieldReader.ReadString(rcFields, "address"),
+            FirestoreFieldReader.ReadString(rcFields, "pincode"),
+            string.Empty,
+            string.Empty);
+    }
+
+    private async Task<PartyProfile> LoadCustomerProfileAsync(
+        string customerId,
+        string customerNameFallback,
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(customerId))
+        {
+            throw new InvalidOperationException("Verification is missing customerId.");
+        }
+
+        var customerFields = await _documents.GetFieldsAsync("customers", customerId, idToken, cancellationToken);
+        return new PartyProfile(
+            FirstNonEmpty(
+                FirestoreFieldReader.ReadString(customerFields, "name"),
+                customerNameFallback),
+            FirestoreFieldReader.ReadString(customerFields, "address"),
+            FirestoreFieldReader.ReadString(customerFields, "pincode"),
+            FirestoreFieldReader.ReadString(customerFields, "state"),
+            FirestoreFieldReader.ReadString(customerFields, "district"));
+    }
+
+    private async Task TryStampRcFilingAsync(
+        string jobId,
+        string rcUserId,
+        string rcCompanyName,
+        string originalCustomerId,
+        string originalCustomerName,
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var fields = new Dictionary<string, object?>
+            {
+                ["fileCertificateAsRc"] = true,
+                ["verificationSubject"] = "self",
+                ["customerId"] = rcUserId,
+                ["customerName"] = rcCompanyName.Trim(),
+            };
+            if (!string.IsNullOrWhiteSpace(originalCustomerId) && originalCustomerId != rcUserId)
+            {
+                fields["sourceCustomerId"] = originalCustomerId.Trim();
+            }
+            if (!string.IsNullOrWhiteSpace(originalCustomerName)
+                && !string.Equals(originalCustomerName.Trim(), rcCompanyName.Trim(), StringComparison.Ordinal))
+            {
+                fields["sourceCustomerName"] = originalCustomerName.Trim();
+            }
+
+            await _documents.PatchFieldsAsync(
+                "siteCalibrations",
+                jobId,
+                fields,
+                idToken,
+                cancellationToken);
+        }
+        catch (Exception)
+        {
+            // Best-effort. eMAAP still files under RC for this run.
+        }
     }
 
     private async Task<string> ResolvePerformerMobileAsync(
@@ -168,4 +254,11 @@ public sealed class PartyDetailsService
         var digits = new string(phone.Where(char.IsDigit).Take(10).ToArray());
         return digits.Length == 10 ? digits : string.Empty;
     }
+
+    private sealed record PartyProfile(
+        string Name,
+        string Address,
+        string Pincode,
+        string State,
+        string District);
 }

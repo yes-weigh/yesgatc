@@ -20,6 +20,7 @@ export function matchesVerificationSearch(
   const haystack = [
     record.id,
     record.customerName,
+    record.sourceCustomerName,
     record.serialNumber,
     record.certificateNumber,
     record.applicationNumber,

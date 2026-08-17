@@ -1,18 +1,4 @@
 import React from 'react';
-import {
-  Award,
-  Barcode,
-  Calendar,
-  CalendarCheck,
-  ClipboardCheck,
-  Droplets,
-  MapPin,
-  Package,
-  Shield,
-  Target,
-  Thermometer,
-  Users,
-} from 'lucide-react';
 import { formatProductMpe } from '../lib/productCalculations';
 import {
   inferVerificationSubject,
@@ -23,15 +9,21 @@ import {
   formatVerificationCapAcc,
   verificationVctLabel,
 } from '../lib/verificationRequest';
-import { ProductSpecIconTile } from './ProductSpecIconTile';
-import type { SiteCalibration } from '../types';
+import {
+  resolveVerificationParty,
+  resolveVerificationProduct,
+  type VerificationRcPartyProfile,
+} from '../lib/verificationPartyDetails';
+import { shouldFileCertificateAsRc } from '../lib/keralaRegion';
+import type { Customer, Product, SiteCalibration } from '../types';
 
 export type VerificationDetailSpecsProps = {
   record: SiteCalibration;
+  customer?: Customer | null;
+  product?: Product | null;
+  rcProfile?: VerificationRcPartyProfile | null;
   /** Hide fields already shown in the summary chrome (app, cert, zoho, serial, customer). */
   omitChromeFields?: boolean;
-  /** Wide submitted / certified tiles below the grid. */
-  includeTimeline?: boolean;
   /** RC contact person fallback when performedBy is rc and record has no stamped name. */
   rcContactPerson?: string | null;
   className?: string;
@@ -41,19 +33,6 @@ function displayText(value: string | number | null | undefined): string {
   if (value == null) return '—';
   const text = String(value).trim();
   return text || '—';
-}
-
-function formatSummaryDate(iso?: string): string {
-  if (!iso?.trim()) return '—';
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return iso;
-  }
 }
 
 function formatTemperature(value?: string): string {
@@ -68,166 +47,90 @@ function formatHumidity(value?: string): string {
   return trimmed.endsWith('%') ? trimmed : `${trimmed} %`;
 }
 
-function verificationSubjectLabel(record: SiteCalibration): string {
-  return inferVerificationSubject(record) === 'self' ? 'Self' : 'Customer';
+function Field({
+  label,
+  value,
+  full = false,
+  mono = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  full?: boolean;
+  mono?: boolean;
+}) {
+  return (
+    <div className={`vd-field${full ? ' vd-field--full' : ''}`}>
+      <span className="vd-field__label">{label}</span>
+      <span className={`vd-field__value${mono ? ' vd-field__value--mono' : ''}`}>{value ?? '—'}</span>
+    </div>
+  );
 }
 
 export const VerificationDetailSpecs: React.FC<VerificationDetailSpecsProps> = ({
   record,
-  omitChromeFields = false,
-  includeTimeline = false,
+  customer = null,
+  product = null,
+  rcProfile = null,
+  omitChromeFields: _omitChromeFields = false,
   rcContactPerson = null,
   className = '',
 }) => {
-  const tiles: React.ReactNode[] = [];
-
-  if (!omitChromeFields) {
-    const app = record.applicationNumber?.trim();
-    const serial = record.serialNumber?.trim();
-    if (app) {
-      tiles.push(
-        <ProductSpecIconTile
-          key="application"
-          label="Application"
-          value={app}
-          icon={Award}
-          tone="sky"
-          mono
-        />,
-      );
-    }
-    if (serial) {
-      tiles.push(
-        <ProductSpecIconTile
-          key="serial"
-          label="Serial"
-          value={serial}
-          icon={Barcode}
-          tone="blue"
-          mono
-        />,
-      );
-    }
-  }
-
-  tiles.push(
-    <ProductSpecIconTile
-      key="type"
-      label="Type"
-      value={verificationTypeLabel(record.verificationType)}
-      icon={ClipboardCheck}
-      tone="violet"
-    />,
-    <ProductSpecIconTile
-      key="vct"
-      label="VCT"
-      value={verificationVctLabel(record, { rcContactPerson })}
-      icon={Shield}
-      tone="violet"
-    />,
-    <ProductSpecIconTile
-      key="belongs"
-      label="Belongs to"
-      value={verificationSubjectLabel(record)}
-      icon={Users}
-      tone="emerald"
-    />,
-    <ProductSpecIconTile
-      key="location"
-      label="Location"
-      value={verificationLocationLabel(record.verificationLocation)}
-      icon={MapPin}
-      tone="emerald"
-    />,
-    <ProductSpecIconTile
-      key="product"
-      label="Product"
-      value={displayText(record.productName)}
-      icon={Package}
-      tone="orange"
-    />,
-    <ProductSpecIconTile
-      key="cap-acc"
-      label="Cap / accuracy"
-      value={formatVerificationCapAcc(record)}
-      icon={Target}
-      tone="orange"
-    />,
-    <ProductSpecIconTile
-      key="mpe"
-      label="MPE"
-      value={formatProductMpe(record.maximumPermissibleError)}
-      icon={Target}
-      tone="rose"
-    />,
-    <ProductSpecIconTile
-      key="temperature"
-      label="Temperature"
-      value={formatTemperature(record.ambientTemperature)}
-      icon={Thermometer}
-      tone="rose"
-    />,
-    <ProductSpecIconTile
-      key="humidity"
-      label="Humidity"
-      value={formatHumidity(record.relativeHumidity)}
-      icon={Droplets}
-      tone="cyan"
-    />,
-    <ProductSpecIconTile
-      key="seal"
-      label="Seal ID"
-      value={displayText(record.sealIdentificationNumber)}
-      icon={Shield}
-      tone="indigo"
-      mono
-    />,
-  );
-
-  if (record.verificationType === 'RV' && record.manufacturingYear != null) {
-    tiles.push(
-      <ProductSpecIconTile
-        key="mfg-year"
-        label="Mfg year"
-        value={String(record.manufacturingYear)}
-        icon={Calendar}
-        tone="lime"
-      />,
-    );
-  }
+  const party = resolveVerificationParty(record, { customer, rc: rcProfile });
+  const productInfo = resolveVerificationProduct(record, product);
+  const subject = inferVerificationSubject(record);
+  const climate = `${formatTemperature(record.ambientTemperature)} · ${formatHumidity(record.relativeHumidity)}`;
+  const filesUnderRc =
+    Boolean(record.fileCertificateAsRc)
+    || shouldFileCertificateAsRc({
+      verificationSubject: subject,
+      pincode: party.pincode,
+    });
 
   return (
-    <div className={`verification-ref-details-stack${className ? ` ${className}` : ''}`}>
-      <div className="details-specs-icon-grid verification-ref-details-grid">
-        {tiles}
-      </div>
-
-      {includeTimeline && (
-        <div className="verification-ref-timeline" aria-label="Submission and certification dates">
-          <div className="verification-ref-timeline-tile verification-ref-timeline-tile--submitted">
-            <span className="verification-ref-timeline-icon" aria-hidden>
-              <Calendar size={18} strokeWidth={2} />
-            </span>
-            <div className="verification-ref-timeline-body">
-              <span className="verification-ref-timeline-label">Submitted on</span>
-              <span className="verification-ref-timeline-value">
-                {formatSummaryDate(record.submittedAt)}
-              </span>
-            </div>
-          </div>
-          <div className="verification-ref-timeline-tile verification-ref-timeline-tile--certified">
-            <span className="verification-ref-timeline-icon" aria-hidden>
-              <CalendarCheck size={18} strokeWidth={2} />
-            </span>
-            <div className="verification-ref-timeline-body">
-              <span className="verification-ref-timeline-label">Certified on</span>
-              <span className="verification-ref-timeline-value">
-                {formatSummaryDate(record.certifiedAt || record.approvedAt)}
-              </span>
-            </div>
-          </div>
+    <div className={`vd-sheet${className ? ` ${className}` : ''}`}>
+      <section className="vd-block" aria-label="Customer">
+        <h3 className="vd-block__title">
+          {filesUnderRc || subject === 'self' ? 'RC centre' : 'Customer'}
+        </h3>
+        {filesUnderRc ? (
+          <p className="vd-kerala-note" role="status">
+            Certificate files under RC centre — customer PIN is outside Kerala.
+          </p>
+        ) : null}
+        <div className="vd-fields">
+          <Field label="Name" value={displayText(party.name)} />
+          <Field label="Phone" value={displayText(party.phone)} />
+          <Field label="Address" value={displayText(party.address)} full />
+          <Field label="Pincode" value={displayText(party.pincode)} mono />
+          <Field label="District" value={displayText(party.district)} />
+          <Field label="State" value={displayText(party.state)} />
+          {record.sourceCustomerName?.trim() ? (
+            <Field label="Original customer" value={displayText(record.sourceCustomerName)} full />
+          ) : null}
         </div>
-      )}
+      </section>
+
+      <section className="vd-block" aria-label="Instrument">
+        <h3 className="vd-block__title">Instrument</h3>
+        <div className="vd-fields">
+          <Field label="Type" value={verificationTypeLabel(record.verificationType)} />
+          <Field label="Location" value={verificationLocationLabel(record.verificationLocation)} />
+          <Field label="Product" value={displayText(productInfo.name)} full />
+          <Field label="Manufacturer" value={displayText(productInfo.manufacturer)} />
+          <Field label="Model approval" value={displayText(productInfo.modelApprovalNo)} mono />
+          <Field label="Cap / e" value={formatVerificationCapAcc(record)} />
+          <Field
+            label="Class / MPE"
+            value={`${displayText(productInfo.accuracyClass || 'III')} / ${formatProductMpe(record.maximumPermissibleError)}`}
+          />
+          {record.verificationType === 'RV' && record.manufacturingYear != null ? (
+            <Field label="Mfg year" value={String(record.manufacturingYear)} />
+          ) : null}
+          <Field label="VCT" value={verificationVctLabel(record, { rcContactPerson })} full />
+          <Field label="Seal ID" value={displayText(record.sealIdentificationNumber)} mono full />
+          <Field label="Climate" value={climate} />
+        </div>
+      </section>
     </div>
   );
 };

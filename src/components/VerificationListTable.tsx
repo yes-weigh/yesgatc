@@ -42,6 +42,7 @@ import {
 } from '../lib/productCalculations';
 import { formatVerificationListTime } from '../lib/verificationListFormat';
 import { resolveCertificatePdfFileUrl, resolveCertificatePdfStoragePath } from '../lib/signedCertificatePdf';
+import { verificationListPartyName } from '../lib/verificationPartyDetails';
 import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
 import type { Product, SiteCalibration, VerificationRequestStatus } from '../types';
 
@@ -360,7 +361,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                 >
                   <div className="verification-list-card-header">
                     <div className="verification-list-card-header-main">
-                      <h3 className="verification-list-card-title">{record.customerName || '—'}</h3>
+                      <h3 className="verification-list-card-title">
+                        {verificationListPartyName(record, record.rcCenterName)}
+                      </h3>
                       {walletPaymentDue && (
                         <span className="verification-list-wallet-due-badge">Payment due</span>
                       )}

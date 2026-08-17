@@ -392,6 +392,11 @@ export interface SiteCalibration {
   verificationLocation?: VerificationLocation;
   /** Self (RC centre) vs customer verification. */
   verificationSubject?: 'self' | 'customer';
+  /** eMAAP belong-to is RC because customer PIN is outside Kerala. */
+  fileCertificateAsRc?: boolean;
+  /** Original customer when the record was rewritten to RC name. */
+  sourceCustomerId?: string;
+  sourceCustomerName?: string;
   /** Request workflow — omitted on legacy records (treated as draft). */
   status?: VerificationRequestStatus;
   submittedAt?: string;

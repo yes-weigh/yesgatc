@@ -17,6 +17,9 @@ import {
   UserCircle,
 } from 'lucide-react';
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
+import { DashboardPeriodFilter } from '../../components/DashboardPeriodFilter';
+import { DashboardWorkerLiveCard } from '../../components/DashboardWorkerLiveCard';
+import { recordInDashboardPeriod, type DashboardPeriod } from '../../lib/dashboardPeriod';
 import { StorageImage } from '../../components/StorageImage';
 import { VctOfficerMark } from '../../components/VctOfficerMark';
 import { db } from '../../firebase';
@@ -132,6 +135,9 @@ export const RCDashboard: React.FC = () => {
   const [vctById, setVctById] = useState<Map<string, VctDashProfile>>(() => new Map());
   const [rcRank, setRcRank] = useState<number | null>(null);
   const [rcCompanyName, setRcCompanyName] = useState('');
+  const [period, setPeriod] = useState<DashboardPeriod>('month');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
   const fetchVerifications = useCallback(async () => {
     if (!rcUid) return;
@@ -235,8 +241,21 @@ export const RCDashboard: React.FC = () => {
     };
   }, [rcUid, isVct]);
 
-  const tally = useMemo(() => tallyVerificationStatusFilters(verifications), [verifications]);
-  const typeTally = useMemo(() => tallyVerificationTypeFilters(verifications), [verifications]);
+  const scopedVerifications = useMemo(
+    () =>
+      verifications.filter(record =>
+        recordInDashboardPeriod(record, period, customFrom, customTo),
+      ),
+    [verifications, period, customFrom, customTo],
+  );
+  const tally = useMemo(
+    () => tallyVerificationStatusFilters(scopedVerifications),
+    [scopedVerifications],
+  );
+  const typeTally = useMemo(
+    () => tallyVerificationTypeFilters(scopedVerifications),
+    [scopedVerifications],
+  );
 
   const verificationHref = (status?: VerificationStatusFilter) =>
     status && status !== 'all'
@@ -324,10 +343,10 @@ export const RCDashboard: React.FC = () => {
 
   const recent = useMemo(
     () =>
-      [...verifications]
+      [...scopedVerifications]
         .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
         .slice(0, 6),
-    [verifications],
+    [scopedVerifications],
   );
 
   const walletSub = isVct
@@ -339,8 +358,8 @@ export const RCDashboard: React.FC = () => {
   const certifiedLastMonth = useMemo(() => certifiedInMonth(verifications, -1), [verifications]);
   const certifiedThisMonth = useMemo(() => certifiedInMonth(verifications, 0), [verifications]);
   const vctCertRows = useMemo(
-    () => rankVctsByCertified(verifications, vctById),
-    [verifications, vctById],
+    () => rankVctsByCertified(scopedVerifications, vctById),
+    [scopedVerifications, vctById],
   );
 
   const openRecord = (record: SiteCalibration) => {
@@ -385,6 +404,8 @@ export const RCDashboard: React.FC = () => {
         )
       ) : null}
 
+      <DashboardWorkerLiveCard />
+
       <section className="wl-primary" aria-label="Verification types">
         <Link
           to={`${basePath}/verification?type=OV`}
@@ -398,7 +419,6 @@ export const RCDashboard: React.FC = () => {
             <span className="wl-primary__stat-value">
               {loadingVerifications ? '—' : typeTally.OV}
             </span>
-            <span className="wl-primary__sub">Original Verification</span>
           </span>
         </Link>
         <Link
@@ -413,9 +433,16 @@ export const RCDashboard: React.FC = () => {
             <span className="wl-primary__stat-value">
               {loadingVerifications ? '—' : typeTally.RV}
             </span>
-            <span className="wl-primary__sub">Re Verification</span>
           </span>
         </Link>
+        <DashboardPeriodFilter
+          period={period}
+          customFrom={customFrom}
+          customTo={customTo}
+          onPeriodChange={setPeriod}
+          onCustomFromChange={setCustomFrom}
+          onCustomToChange={setCustomTo}
+        />
       </section>
 
       <section className="wl-stages-panel" aria-labelledby="wl-stages-title">

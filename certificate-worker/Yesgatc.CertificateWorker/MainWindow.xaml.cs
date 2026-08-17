@@ -2010,6 +2010,11 @@ public partial class MainWindow : Window
                 var party = await _partyDetailsService.ResolveForJobAsync(item, item.RcId, token).ConfigureAwait(false);
                 var instrument = await _instrumentDetailsService.ResolveForJobAsync(item, item.RcId, token)
                     .ConfigureAwait(false);
+                if (party.FiledUnderRc)
+                {
+                    AddActivityEntry(
+                        $"PIN outside Kerala — filing serial {instrument.SerialNumber} under RC name {party.BelongToName}");
+                }
                 AddActivityEntry(
                     $"eMAAP fill+certify: {party.BelongToName} · {instrument.SerialNumber} · {item.VerificationTypeLabel}");
                 var message = await _automationService.FillEmaapCertificateGenerationAsync(
@@ -2091,6 +2096,11 @@ public partial class MainWindow : Window
                 var party = await _partyDetailsService.ResolveForJobAsync(item, item.RcId, token).ConfigureAwait(false);
                 var instrument = await _instrumentDetailsService.ResolveForJobAsync(item, item.RcId, token)
                     .ConfigureAwait(false);
+                if (party.FiledUnderRc)
+                {
+                    AddActivityEntry(
+                        $"PIN outside Kerala — filing serial {instrument.SerialNumber} under RC name {party.BelongToName}");
+                }
                 AddActivityEntry(
                     $"eMAAP fill-only: {party.BelongToName} · {instrument.SerialNumber} · {item.VerificationTypeLabel}");
                 var message = await _automationService.FillEmaapCertificateGenerationAsync(
@@ -2988,6 +2998,12 @@ public partial class MainWindow : Window
         var token = await GetFreshIdTokenAsync();
         var party = await _partyDetailsService.ResolveForJobAsync(current, current.RcId, token);
         var instrument = await _instrumentDetailsService.ResolveForJobAsync(current, current.RcId, token);
+
+        if (party.FiledUnderRc)
+        {
+            AddActivityEntry(
+                $"PIN outside Kerala — filing serial {current.SerialNumber} under RC name {party.BelongToName}");
+        }
 
         AddActivityEntry(
             $"eMAAP fill+certify: {party.BelongToName} · {instrument.SerialNumber} · " +

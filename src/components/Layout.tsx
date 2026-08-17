@@ -3,6 +3,10 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import {
+  ReportsAppBarContext,
+  type ReportsAppBarChrome,
+} from '../context/ReportsAppBarContext';
 import { formatContactSubtitle } from '../lib/contactFields';
 import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
 import { vctProfilePhotoFromUser } from '../lib/vctProfileFields';
@@ -31,6 +35,7 @@ import {
   LogOut,
   Wallet,
   Award,
+  Share2,
 } from 'lucide-react';
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
@@ -59,6 +64,7 @@ export const Layout: React.FC = () => {
   const [pageRefreshKey, setPageRefreshKey] = useState(0);
   const [accountOpen, setAccountOpen] = useState(false);
   const [suppressAccountOverlayHistory, setSuppressAccountOverlayHistory] = useState(true);
+  const [reportsChrome, setReportsChrome] = useState<ReportsAppBarChrome | null>(null);
 
   const profilePath =
     user?.role === 'rc_admin' ? '/rc/profile' : user?.role === 'vct' ? '/vct/profile' : null;
@@ -82,6 +88,12 @@ export const Layout: React.FC = () => {
       navigate(embedVerificationPath(), { replace: true });
     }
   }, [location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!/\/(admin|rc|vct)\/reports\/?$/.test(location.pathname)) {
+      setReportsChrome(null);
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     setSuppressSidebarOverlayHistory(true);
@@ -226,12 +238,14 @@ export const Layout: React.FC = () => {
   const useShieldBrand = location.pathname.includes('verification');
   const isCertificatesList = /\/(rc|vct)\/certificates\/?$/.test(location.pathname);
   const isCustomersList = /\/(rc|vct)\/customers\/?$/.test(location.pathname);
+  const isReportsList = /\/(admin|rc|vct)\/reports\/?$/.test(location.pathname);
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
   const isHomeDashboard =
     location.pathname === '/rc' ||
     location.pathname === '/vct' ||
     location.pathname === '/admin';
-  const showAppFilterSlot = useShieldBrand || isCertificatesList || isCustomersList;
+  const showAppFilterSlot =
+    useShieldBrand || isCertificatesList || isCustomersList || isReportsList;
   const stickyMobileAppBar = showAppFilterSlot || isHomeDashboard || isEmaapSessions;
 
   const roleLabel = {
@@ -326,6 +340,7 @@ export const Layout: React.FC = () => {
   const embed = isEmbedSession();
 
   return (
+    <ReportsAppBarContext.Provider value={setReportsChrome}>
     <div className={`app-wrapper${embed ? ' embed-mode' : ''}`}>
       {!isMobile && (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -344,7 +359,7 @@ export const Layout: React.FC = () => {
       )}
 
       <main
-        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}${useShieldBrand ? ' mobile-verification' : ''}${isMobile && isLaboratoryPage ? ' mobile-laboratory-dashboard' : ''}${isMobile && isHomeDashboard ? ' mobile-home-dashboard' : ''}`}
+        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}${useShieldBrand ? ' mobile-verification' : ''}${isMobile && isLaboratoryPage ? ' mobile-laboratory-dashboard' : ''}${isMobile && isHomeDashboard ? ' mobile-home-dashboard' : ''}${isMobile && isReportsList ? ' mobile-reports' : ''}`}
       >
         {isMobile && (
           <header
@@ -393,13 +408,35 @@ export const Layout: React.FC = () => {
                   {!useShieldBrand ? pageIcon : null}
                 </MobileAppBarBrandIcon>
                 <div className="mobile-app-bar-text">
-                  <h1 className="mobile-app-bar-title">{pageTitle}</h1>
-                  {currentNavItem?.mobileSubtitle && (
+                  {isReportsList ? (
+                    <div className="reports-app-title-row">
+                      <h1 className="mobile-app-bar-title mobile-app-bar-title--reports">
+                        <span className="reports-app-title">{reportsChrome?.title ?? pageTitle}</span>
+                      </h1>
+                      {reportsChrome?.onShare ? (
+                        <button
+                          type="button"
+                          className="reports-share-btn"
+                          onClick={reportsChrome.onShare}
+                          disabled={reportsChrome.sharing}
+                          aria-label="Share report PDF"
+                          title="Share PDF"
+                        >
+                          <Share2 size={15} strokeWidth={2.2} aria-hidden />
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <h1 className="mobile-app-bar-title">{pageTitle}</h1>
+                  )}
+                  {isReportsList ? (
+                    <p className="mobile-app-bar-subtitle">{reportsChrome?.period}</p>
+                  ) : currentNavItem?.mobileSubtitle ? (
                     <p className="mobile-app-bar-subtitle">
                       <Sparkles size={14} className="mobile-app-bar-subtitle-icon" aria-hidden />
                       {currentNavItem.mobileSubtitle}
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
             )}
@@ -426,7 +463,32 @@ export const Layout: React.FC = () => {
         )}
         {!isMobile && (
           <header className="top-bar glass">
-            <h1 className="page-title">{pageTitle}</h1>
+            <div className="top-bar-title-wrap">
+              {isReportsList ? (
+                <>
+                  <div className="reports-app-title-row">
+                    <h1 className="page-title page-title--reports">
+                      <span className="reports-app-title">{reportsChrome?.title ?? pageTitle}</span>
+                    </h1>
+                    {reportsChrome?.onShare ? (
+                      <button
+                        type="button"
+                        className="reports-share-btn"
+                        onClick={reportsChrome.onShare}
+                        disabled={reportsChrome.sharing}
+                        aria-label="Share report PDF"
+                        title="Share PDF"
+                      >
+                        <Share2 size={16} strokeWidth={2.2} aria-hidden />
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="top-bar-period reports-app-period">{reportsChrome?.period}</p>
+                </>
+              ) : (
+                <h1 className="page-title">{pageTitle}</h1>
+              )}
+            </div>
             <div className="top-bar-end">
               {isHomeDashboard ? <EmaapStatusShortcut /> : null}
               {profilePath ? (
@@ -505,5 +567,6 @@ export const Layout: React.FC = () => {
         </div>
       )}
     </div>
+    </ReportsAppBarContext.Provider>
   );
 };

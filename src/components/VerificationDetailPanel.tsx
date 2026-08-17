@@ -25,13 +25,17 @@ import {
   normalizeVerificationStatus,
   verificationCertificateNumber,
 } from '../lib/verificationRequest';
-import type { SiteCalibration } from '../types';
+import type { Customer, Product, SiteCalibration } from '../types';
+import type { VerificationRcPartyProfile } from '../lib/verificationPartyDetails';
 
 interface VerificationDetailPanelProps {
   record: SiteCalibration;
   allRecords?: SiteCalibration[];
   rcCenterName?: string;
   rcContactPerson?: string | null;
+  customer?: Customer | null;
+  product?: Product | null;
+  rcProfile?: VerificationRcPartyProfile | null;
   onClose: () => void;
   onRecordsChanged?: (newRecordId?: string) => void | Promise<void>;
 }
@@ -76,6 +80,9 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
   allRecords = [],
   rcCenterName,
   rcContactPerson,
+  customer = null,
+  product = null,
+  rcProfile = null,
   onClose,
   onRecordsChanged,
 }) => {
@@ -106,6 +113,9 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             record={record}
             allRecords={allRecords.length ? allRecords : [record]}
             rcCenterName={rcCenterName}
+            customer={customer}
+            product={product}
+            rcProfile={rcProfile}
             onClose={onClose}
             onResubmitted={onRecordsChanged}
             onPaymentRecorded={onRecordsChanged}
@@ -207,23 +217,14 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
         <div className="verification-detail-body">
           <VerificationDetailSpecs
             record={record}
+            customer={customer}
+            product={product}
+            rcProfile={rcProfile}
             omitChromeFields
-            includeTimeline
             rcContactPerson={rcContactPerson}
           />
 
           <VerificationZohoInvoiceSection record={record} />
-
-          <VerificationDetailSpecSection title="Record">
-            <VerificationDetailSpecRow
-              label="Record ID"
-              value={<span className="text-mono text-sm">{record.id}</span>}
-              mono
-              full
-            />
-            <VerificationDetailSpecRow label="Created" value={formatDateTime(record.createdAt)} />
-            <VerificationDetailSpecRow label="Approved" value={formatDateTime(record.approvedAt)} />
-          </VerificationDetailSpecSection>
 
           {(record.pipelineFailedPhase || record.pipelineFailureMessage || record.certificationLastError) && (
             <VerificationDetailSpecSection title="Pipeline">
@@ -245,6 +246,11 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
               />
             </VerificationDetailSpecSection>
           )}
+
+          <p className="vd-meta">
+            <span className="vd-meta__id">{record.id}</span>
+            <span>Created {formatDateTime(record.createdAt)}</span>
+          </p>
 
           {(record.performerSelfieIdImageUrl?.trim()
             || record.performerSelfieIdImagePath?.trim()

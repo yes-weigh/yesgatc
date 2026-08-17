@@ -46,6 +46,22 @@ internal static class FirestoreFieldReader
         return fallback;
     }
 
+    public static bool ReadBool(IReadOnlyDictionary<string, JsonElement> fields, string key, bool fallback = false)
+    {
+        if (!fields.TryGetValue(key, out var value) || value.ValueKind != JsonValueKind.Object)
+        {
+            return fallback;
+        }
+
+        if (value.TryGetProperty("booleanValue", out var booleanValue)
+            && booleanValue.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            return booleanValue.GetBoolean();
+        }
+
+        return fallback;
+    }
+
     public static double? ReadDouble(IReadOnlyDictionary<string, JsonElement> fields, string key)
     {
         if (!fields.TryGetValue(key, out var value) || value.ValueKind != JsonValueKind.Object)

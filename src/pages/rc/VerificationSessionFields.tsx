@@ -42,6 +42,7 @@ import {
   lookupWeatherByPincode,
 } from '../../lib/pincodeWeatherLookup';
 import { isValidPincode, normalizePincode } from '../../lib/contactFields';
+import { shouldFileCertificateAsRc } from '../../lib/keralaRegion';
 import {
   persistVerificationPartyProfile,
   type PersistVerificationPartyResult,
@@ -358,6 +359,10 @@ export const VerificationSessionFields = forwardRef<
   };
 
   const isSelf = values.verificationSubject === 'self';
+  const fileCertificateAsRc = shouldFileCertificateAsRc({
+    verificationSubject: values.verificationSubject,
+    pincode: customerPartyForm.pincode,
+  });
   const showDevices =
     isSelf || Boolean(values.customerId) || isPendingNewCustomerParty(customerPartyForm);
 
@@ -986,6 +991,14 @@ export const VerificationSessionFields = forwardRef<
                             selectedCustomerId: values.customerId,
                             onSelectCustomer: handleSelectCustomerFromLookup,
                           }
+                    }
+                    footer={
+                      fileCertificateAsRc ? (
+                        <p className="verification-kerala-notice" role="status">
+                          GATC certificates are Kerala-only. This PIN is outside Kerala — the
+                          record and eMAAP certificate will use the RC centre name.
+                        </p>
+                      ) : null
                     }
                   />
                 )}

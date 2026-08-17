@@ -9,4 +9,5 @@ public sealed class PartyContactDetails
     public string District { get; init; } = string.Empty;
     public string Mobile { get; init; } = string.Empty;
     public bool IsSelfVerification { get; init; }
+    public bool FiledUnderRc { get; init; }
 }

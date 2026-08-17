@@ -33,6 +33,7 @@ import {
   isSiteCalibrationSubmittable,
   siteCalibrationSubmitBlockReason,
   verificationTypeLabel,
+  inferVerificationSubject,
   type VerificationDeviceRowValues,
   type VerificationSessionValues,
 } from '../../lib/siteCalibrationProfileFields';
@@ -137,6 +138,7 @@ import { RvLegacyZohoSettlementSection } from '../../components/RvLegacyZohoSett
 import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { isRvPaymentRequired } from '../../lib/appSettings';
+import { rcFilingPartyPatch } from '../../lib/keralaRegion';
 import {
   buildRvPaymentFirestorePatch,
   computeRvPaymentAmount,
@@ -231,6 +233,60 @@ function verificationCreateGateBlockMessage(
     return 'Could not confirm centre setup. Refresh the page or check Profile and Vehicles.';
   }
   return null;
+}
+
+function partyPincodeForFiling(
+  session: Pick<VerificationSessionValues, 'verificationSubject' | 'customerId'>,
+  customers: Customer[],
+  formPincode?: string,
+  applied?: Customer,
+): string {
+  if (session.verificationSubject === 'self') return '';
+  return applied?.pincode
+    || formPincode
+    || customers.find(c => c.id === session.customerId)?.pincode
+    || '';
+}
+
+function rcFilingPartyFromProfile(
+  rcUid?: string | null,
+  rcProfile?: FirestoreUserDoc | null,
+): { uid: string; name: string } | null {
+  const uid = rcUid?.trim() || '';
+  const name = rcProfile?.companyName?.trim() || rcProfile?.username?.trim() || '';
+  if (!uid || !name) return null;
+  return { uid, name };
+}
+
+function rcFilingFieldsForSession(
+  session: Pick<VerificationSessionValues, 'verificationSubject' | 'customerId' | 'customerName'>,
+  pincode: string,
+  rcParty: { uid: string; name: string } | null,
+) {
+  return rcFilingPartyPatch({
+    verificationSubject: session.verificationSubject,
+    customerId: session.customerId,
+    customerName: session.customerName,
+    pincode,
+    rcUid: rcParty?.uid,
+    rcCompanyName: rcParty?.name,
+  });
+}
+
+function rcFilingFieldsForRecord(
+  record: SiteCalibration,
+  customers: Customer[],
+  rcParty: { uid: string; name: string } | null,
+) {
+  return rcFilingPartyPatch({
+    verificationSubject: inferVerificationSubject(record),
+    customerId: record.customerId,
+    customerName: record.customerName,
+    pincode: customers.find(c => c.id === record.customerId)?.pincode,
+    state: customers.find(c => c.id === record.customerId)?.state,
+    rcUid: rcParty?.uid || record.rcId,
+    rcCompanyName: rcParty?.name,
+  });
 }
 
 function verificationCreateGateSatisfied(
@@ -1301,6 +1357,12 @@ export const RCSiteCalibration: React.FC = () => {
         setError('Signed-in user is required to save verification drafts.');
         return;
       }
+      const filingPincode = partyPincodeForFiling(
+        sessionForSave,
+        customers,
+        partyContext.customerForm?.pincode,
+        applied.customer,
+      );
       const rowsToSync = includedRows.filter(
         row => row.productId.trim() && row.serialNumber.trim(),
       );
@@ -1362,6 +1424,8 @@ export const RCSiteCalibration: React.FC = () => {
             product,
             verificationDraftActor,
             docaCharges,
+            filingPincode,
+            rcFilingPartyFromProfile(rcUid, rcProfile),
           ),
           ...imageFields,
           ...performerImageFields,
@@ -1383,6 +1447,11 @@ export const RCSiteCalibration: React.FC = () => {
           draftRecordIds.map(recordId => ({
             id: recordId,
             verificationType: sessionForSave.verificationType,
+            ...rcFilingFieldsForSession(
+              sessionForSave,
+              filingPincode,
+              rcFilingPartyFromProfile(rcUid, rcProfile),
+            ),
           })),
           db,
           submitOptions,
@@ -1478,7 +1547,17 @@ export const RCSiteCalibration: React.FC = () => {
           ? await uploadPerformerPhotos(recordId)
           : {};
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
-        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, {
+          product,
+          partyPincode: partyPincodeForFiling(
+            sessionForSave,
+            customers,
+            partyContext.customerForm?.pincode,
+            applied.customer,
+          ),
+          rcUid,
+          rcCompanyName: rcProfile?.companyName || rcProfile?.username,
+        }),
         ...docaPatch,
         ...imageFields,
         ...performerImageFields,
@@ -1515,6 +1594,7 @@ export const RCSiteCalibration: React.FC = () => {
         {
           id: record.id,
           verificationType: record.verificationType,
+          ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
         },
         db,
         submitOptions,
@@ -1555,6 +1635,7 @@ export const RCSiteCalibration: React.FC = () => {
         selectedRecords.map(record => ({
           id: record.id,
           verificationType: record.verificationType,
+          ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
         })),
         db,
         submitOptions,
@@ -1637,6 +1718,12 @@ export const RCSiteCalibration: React.FC = () => {
       if (row.productId.trim() && row.serialNumber.trim()) {
         await syncCustomerDevices([row], sessionForSave.customerId, appliedCustomer);
       }
+      const filingPincode = partyPincodeForFiling(
+        sessionForSave,
+        customers,
+        partyContext.customerForm?.pincode,
+        appliedCustomer,
+      );
       const product = products.find(p => p.id === row.productId) ?? null;
       const docaPatch = verificationDocaFirestorePatch(
         resolveRcFeesStructure(rcProfile),
@@ -1667,7 +1754,12 @@ export const RCSiteCalibration: React.FC = () => {
           ? buildRvPaymentFirestorePatch(rvPayment.paymentId, perDeviceRvAmount)
           : {};
       await updateDoc(doc(db, 'siteCalibrations', editingId), {
-        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, {
+          product,
+          partyPincode: filingPincode,
+          rcUid,
+          rcCompanyName: rcProfile?.companyName || rcProfile?.username,
+        }),
         ...docaPatch,
         ...imageFields,
         ...performerImageFields,
@@ -1686,6 +1778,11 @@ export const RCSiteCalibration: React.FC = () => {
         {
           id: editingId,
           verificationType: sessionForSave.verificationType,
+          ...rcFilingFieldsForSession(
+            sessionForSave,
+            filingPincode,
+            rcFilingPartyFromProfile(rcUid, rcProfile),
+          ),
         },
         db,
         submitOptions,

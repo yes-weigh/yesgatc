@@ -1,4 +1,5 @@
 import type { Customer, CustomerDevice, JobType, Product, SiteCalibration, VerificationLocation } from '../types';
+import { rcFilingPartyPatch } from './keralaRegion';
 import { defaultRvServiceFee } from './rcProfileFields';
 import { parseAdditionalFeeInput, parseServiceFeeInput } from './verificationDocaCharges';
 import {
@@ -357,18 +358,29 @@ export function buildSiteCalibrationFromRow(
   options?: {
     product?: Product | null;
     docaCharges?: import('./verificationDocaCharges').VerificationDocaChargeFields | null;
+    partyPincode?: string | null;
+    rcUid?: string | null;
+    rcCompanyName?: string | null;
   },
 ): Omit<
   SiteCalibration,
   'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt' | 'status' | 'submittedAt' | 'approvedAt'
 > {
+  const filing = rcFilingPartyPatch({
+    verificationSubject: session.verificationSubject,
+    customerId: session.customerId,
+    customerName: session.customerName,
+    pincode: options?.partyPincode,
+    rcUid: options?.rcUid,
+    rcCompanyName: options?.rcCompanyName,
+  });
   const fields: Omit<
     SiteCalibration,
     'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt' | 'status' | 'submittedAt' | 'approvedAt'
   > = {
     verificationType: session.verificationType as JobType,
-    customerId: session.customerId.trim(),
-    customerName: session.customerName.trim(),
+    customerId: filing.customerId ?? session.customerId.trim(),
+    customerName: filing.customerName ?? session.customerName.trim(),
     productId: row.productId.trim(),
     productName: row.productName.trim(),
     serialNumber: row.serialNumber.trim(),
@@ -377,7 +389,10 @@ export function buildSiteCalibrationFromRow(
     relativeHumidity: session.relativeHumidity.trim(),
     sealIdentificationNumber: row.sealIdentificationNumber.trim(),
     verificationLocation: session.verificationLocation as VerificationLocation,
-    verificationSubject: session.verificationSubject,
+    verificationSubject: filing.verificationSubject ?? session.verificationSubject,
+    fileCertificateAsRc: filing.fileCertificateAsRc,
+    ...(filing.sourceCustomerId ? { sourceCustomerId: filing.sourceCustomerId } : {}),
+    ...(filing.sourceCustomerName ? { sourceCustomerName: filing.sourceCustomerName } : {}),
     ...productSnapshotFromProduct(options?.product),
   };
   if (row.deviceId.trim()) fields.deviceId = row.deviceId.trim();
@@ -399,9 +414,17 @@ export function buildNewSiteCalibrationRecord(
   product?: Product | null,
   draftActor: VerificationDraftActorMeta = { actor: 'rc' },
   docaCharges?: import('./verificationDocaCharges').VerificationDocaChargeFields | null,
+  partyPincode?: string | null,
+  rcParty?: { uid: string; name: string } | null,
 ): Omit<SiteCalibration, 'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt'> {
   return {
-    ...buildSiteCalibrationFromRow(session, row, { product, docaCharges }),
+    ...buildSiteCalibrationFromRow(session, row, {
+      product,
+      docaCharges,
+      partyPincode,
+      rcUid: rcParty?.uid,
+      rcCompanyName: rcParty?.name,
+    }),
     ...buildVerificationDraftMeta(draftActor),
   };
 }
