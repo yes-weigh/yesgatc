@@ -39,6 +39,7 @@ import { Certificates } from './pages/vct/Certificates';
 import { CertificateSign } from './pages/vct/CertificateSign';
 import { ManualPdf } from './pages/shared/ManualPdf';
 import { Reports } from './pages/shared/Reports';
+import { ContractorFeeSettings } from './pages/shared/ContractorFeeSettings';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 
 const App: React.FC = () => {
@@ -69,6 +70,7 @@ const App: React.FC = () => {
                 <Route path="quality-management" element={<Navigate to="/admin/manual-pdf" replace />} />
                 <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="contractor-fee" element={<ContractorFeeSettings />} />
                 <Route path="integrations/worker/sessions" element={<AdminEmaapSessionLogs />} />
                 <Route path="integrations/worker/sessions/:sessionId" element={<AdminEmaapSessionLogs />} />
                 <Route path="integrations" element={<AdminIntegrations />} />
@@ -97,6 +99,7 @@ const App: React.FC = () => {
                 <Route path="quality-management" element={<Navigate to="/rc/manual-pdf" replace />} />
                 <Route path="notifications" element={<RCNotifications />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="settings" element={<ContractorFeeSettings />} />
                 <Route path="profile" element={<RCProfile />} />
                 <Route path="wallet" element={<RCWallet />} />
               </Route>

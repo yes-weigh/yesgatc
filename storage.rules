@@ -60,6 +60,11 @@ service firebase.storage {
       allow write: if isAuthenticated();
     }
 
+    match /contractorFeePayments/{paymentId}/proof/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
     match /automationWorker/captcha/{fileName} {
       allow read, write: if isSuperAdmin();
     }

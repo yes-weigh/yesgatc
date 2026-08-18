@@ -3,16 +3,20 @@ import { createPortal } from 'react-dom';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { Building2, X } from 'lucide-react';
 import { FilterIcon } from '../../components/FilterIcon';
+import { ContractorFeePayControl } from '../../components/ContractorFeePayControl';
 import { TablePagination } from '../../components/TablePagination';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useSetReportsAppBar } from '../../context/ReportsAppBarContext';
+import { useAppSettings } from '../../hooks/useAppSettings';
 import { useRcScope } from '../../lib/roleScope';
 import { paginateItems, paginationRange, REPORTS_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import {
   formatReportInr,
+  stampRcRevenueShare,
   stampRevenueShare,
 } from '../../lib/reportRevenueShare';
+import { subscribeContractorFeePayments, type ContractorFeePayment } from '../../lib/contractorFeePayment';
 import { buildReportPdf, shareReportPdf } from '../../lib/reportPdf';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { getVerificationDisplayStatus } from '../../lib/verificationRequest';
@@ -42,6 +46,8 @@ type RevenueDayRow = {
   collected: number;
   interweighing: number;
   contractor: number;
+  handling: number;
+  rcShare: number;
 };
 
 function pad2(value: number): string {
@@ -138,9 +144,12 @@ function buildMonthOptions(records: SiteCalibration[], now = new Date()): string
 
 export const Reports: React.FC = () => {
   const { user } = useAuth();
-  const { rcUid, actorUid, isVct } = useRcScope();
+  const { rcUid, actorUid, isVct, isRcAdmin } = useRcScope();
+  const { appSettings } = useAppSettings();
   const setReportsAppBar = useSetReportsAppBar();
   const isSuper = user?.role === 'super_admin';
+  const isRcRevenue = !isSuper;
+  const defaultReportView: ReportView = isSuper ? 'day_summary' : 'revenue_share';
 
   const [records, setRecords] = useState<SiteCalibration[]>([]);
   const [rcOptions, setRcOptions] = useState<RcOption[]>([]);
@@ -149,14 +158,14 @@ export const Reports: React.FC = () => {
 
   const [rcFilter, setRcFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [reportView, setReportView] = useState<ReportView>('day_summary');
+  const [reportView, setReportView] = useState<ReportView>(defaultReportView);
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const [page, setPage] = useState(1);
   const [productsById, setProductsById] = useState<Map<string, Product>>(() => new Map());
   const [filterOpen, setFilterOpen] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState('');
-  const [draftView, setDraftView] = useState<ReportView>('day_summary');
+  const [draftView, setDraftView] = useState<ReportView>(defaultReportView);
   const [draftRc, setDraftRc] = useState('all');
   const [draftType, setDraftType] = useState<TypeFilter>('all');
   const [draftMonth, setDraftMonth] = useState(currentMonthKey);
@@ -165,6 +174,9 @@ export const Reports: React.FC = () => {
     mobile: HTMLElement | null;
     desktop: HTMLElement | null;
   }>({ mobile: null, desktop: null });
+  const [paymentsByDate, setPaymentsByDate] = useState<Map<string, ContractorFeePayment>>(
+    () => new Map(),
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -245,6 +257,14 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!isRcRevenue || !rcFilter || rcFilter === 'all') {
+      setPaymentsByDate(new Map());
+      return;
+    }
+    return subscribeContractorFeePayments(rcFilter, setPaymentsByDate);
+  }, [isRcRevenue, rcFilter]);
 
   useLayoutEffect(() => {
     const syncSlots = () => {
@@ -372,9 +392,16 @@ export const Reports: React.FC = () => {
       if (getVerificationDisplayStatus(record) !== 'certified') continue;
       const date = recordReportDate(record);
       if (!date) continue;
-      const share = stampRevenueShare(record, productsById);
-      if (!share) continue;
       const dateKey = dayKeyFromDate(date);
+      const share = isRcRevenue
+        ? stampRcRevenueShare(
+            record,
+            productsById,
+            dateKey,
+            appSettings.contractorFeeSchedules,
+          )
+        : stampRevenueShare(record, productsById);
+      if (!share) continue;
       const prev = byDay.get(dateKey) ?? {
         dateKey,
         dateLabel: formatDayLabel(date),
@@ -385,6 +412,8 @@ export const Reports: React.FC = () => {
         collected: 0,
         interweighing: 0,
         contractor: 0,
+        handling: 0,
+        rcShare: 0,
       };
       prev.qty += 1;
       if (share.tier === 'upto20') prev.qtyUpto20 += 1;
@@ -392,12 +421,22 @@ export const Reports: React.FC = () => {
       prev.collected += share.collected;
       prev.interweighing += share.interweighing;
       prev.contractor += share.contractor;
+      prev.handling += share.handling;
+      prev.rcShare += share.rcShare;
       byDay.set(dateKey, prev);
     }
     return daysOfMonth(monthKey)
       .map(date => byDay.get(dayKeyFromDate(date)))
       .filter((row): row is RevenueDayRow => Boolean(row && row.qty > 0));
-  }, [monthKey, productsById, rcFilter, scopedRecords, selectedRcName]);
+  }, [
+    appSettings.contractorFeeSchedules,
+    isRcRevenue,
+    monthKey,
+    productsById,
+    rcFilter,
+    scopedRecords,
+    selectedRcName,
+  ]);
 
   const revenueTotals = useMemo(
     () =>
@@ -409,14 +448,26 @@ export const Reports: React.FC = () => {
           collected: sum.collected + row.collected,
           interweighing: sum.interweighing + row.interweighing,
           contractor: sum.contractor + row.contractor,
+          handling: sum.handling + row.handling,
+          rcShare: sum.rcShare + row.rcShare,
         }),
-        { qty: 0, qtyUpto20: 0, qtyAbove20: 0, collected: 0, interweighing: 0, contractor: 0 },
+        {
+          qty: 0,
+          qtyUpto20: 0,
+          qtyAbove20: 0,
+          collected: 0,
+          interweighing: 0,
+          contractor: 0,
+          handling: 0,
+          rcShare: 0,
+        },
       ),
     [revenueRows],
   );
 
   const isRevenue = reportView === 'revenue_share';
   const listLength = isRevenue ? revenueRows.length : dayRows.length;
+  const showHandling = isRcRevenue && revenueTotals.handling > 0;
 
   useEffect(() => {
     setPage(1);
@@ -453,15 +504,15 @@ export const Reports: React.FC = () => {
     setFilterOpen(false);
   };
   const filterActive =
-    reportView !== 'day_summary' ||
+    reportView !== defaultReportView ||
     typeFilter !== 'all' ||
     monthKey !== currentMonthKey() ||
     (showRcSelect && rcFilter !== sortedRcOptions[0]?.id);
   const filterSlot = filterSlots.mobile ?? filterSlots.desktop;
   const monthLabel = formatMonthYear(monthKey);
-  const periodText = `${monthLabel}${isRevenue ? ' · Revenue share' : ' · Day summary'}${
-    typeFilter === 'all' ? '' : ` · ${typeFilter}`
-  }`;
+  const periodText = `${monthLabel}${
+    isRevenue ? (isRcRevenue ? ' · Contractor fee' : ' · Revenue share') : ' · Day summary'
+  }${typeFilter === 'all' ? '' : ` · ${typeFilter}`}`;
 
   const shareReport = useCallback(() => {
     if (sharing) return;
@@ -474,6 +525,7 @@ export const Reports: React.FC = () => {
               rcName: selectedRcName,
               period: periodText,
               view: 'revenue_share',
+              layout: isRcRevenue ? 'rc' : 'admin',
               rows: revenueRows.map(row => ({
                 dateLabel: row.dateLabel,
                 qty: row.qty,
@@ -482,6 +534,8 @@ export const Reports: React.FC = () => {
                 collected: row.collected,
                 interweighing: row.interweighing,
                 contractor: row.contractor,
+                handling: row.handling,
+                rcShare: row.rcShare,
               })),
               totals: {
                 qty: revenueTotals.qty,
@@ -490,6 +544,8 @@ export const Reports: React.FC = () => {
                 collected: revenueTotals.collected,
                 interweighing: revenueTotals.interweighing,
                 contractor: revenueTotals.contractor,
+                handling: revenueTotals.handling,
+                rcShare: revenueTotals.rcShare,
               },
             })
           : buildReportPdf({
@@ -521,6 +577,7 @@ export const Reports: React.FC = () => {
     dayRows,
     dayUpto20Total,
     dayVerifiedTotal,
+    isRcRevenue,
     isRevenue,
     monthKey,
     periodText,
@@ -586,7 +643,9 @@ export const Reports: React.FC = () => {
                 onChange={event => setDraftView(event.target.value as ReportView)}
               >
                 <option value="day_summary">Day summary</option>
-                <option value="revenue_share">Revenue share</option>
+                <option value="revenue_share">
+                  {isSuper ? 'Revenue share' : 'Contractor fee'}
+                </option>
               </select>
             </div>
             {showRcSelect ? (
@@ -685,7 +744,9 @@ export const Reports: React.FC = () => {
               <Building2 size={28} strokeWidth={1.6} aria-hidden />
               <p>
                 {isRevenue
-                  ? `No revenue share for ${monthLabel}.`
+                  ? isRcRevenue
+                    ? `No contractor fee for ${monthLabel}.`
+                    : `No revenue share for ${monthLabel}.`
                   : `No day summary for ${monthLabel}.`}
               </p>
             </div>
@@ -693,7 +754,12 @@ export const Reports: React.FC = () => {
             <>
               <div className="reports-sticky">
                 {isRevenue ? (
-                  <div className="reports-rev-totals" aria-label="Revenue share totals">
+                  <div
+                    className={`reports-rev-totals${isRcRevenue ? ' reports-rev-totals--contractor' : ''}${
+                      showHandling ? ' reports-rev-totals--handling' : ''
+                    }`}
+                    aria-label={isRcRevenue ? 'Contractor fee totals' : 'Revenue share totals'}
+                  >
                     <div className="reports-rev-total reports-rev-total--qty" aria-label={`Total qty ${revenueTotals.qty}`}>
                       <span className="reports-rev-total__label">
                         <span className="reports-rev-total__full">Total qty</span>
@@ -701,33 +767,60 @@ export const Reports: React.FC = () => {
                       </span>
                       <span className="reports-rev-total__value">{revenueTotals.qty}</span>
                     </div>
-                    <div className="reports-rev-total reports-rev-total--collected" aria-label={`Collected ${formatReportInr(revenueTotals.collected)}`}>
-                      <span className="reports-rev-total__label">
-                        <span className="reports-rev-total__full">Collected</span>
-                        <span className="reports-rev-total__abbr" aria-hidden>Coll.</span>
-                      </span>
-                      <span className="reports-rev-total__value">
-                        {formatReportInr(revenueTotals.collected)}
-                      </span>
-                    </div>
-                    <div className="reports-rev-total reports-rev-total--iw" aria-label={`Interweighing ${formatReportInr(revenueTotals.interweighing)}`}>
-                      <span className="reports-rev-total__label">
-                        <span className="reports-rev-total__full">Interweighing</span>
-                        <span className="reports-rev-total__abbr" aria-hidden>IW</span>
-                      </span>
-                      <span className="reports-rev-total__value">
-                        {formatReportInr(revenueTotals.interweighing)}
-                      </span>
-                    </div>
-                    <div className="reports-rev-total reports-rev-total--contractor" aria-label={`Contractor ${formatReportInr(revenueTotals.contractor)}`}>
-                      <span className="reports-rev-total__label">
-                        <span className="reports-rev-total__full">Contractor</span>
-                        <span className="reports-rev-total__abbr" aria-hidden>Contr.</span>
-                      </span>
-                      <span className="reports-rev-total__value">
-                        {formatReportInr(revenueTotals.contractor)}
-                      </span>
-                    </div>
+                    {isRcRevenue ? (
+                      <>
+                        <div className="reports-rev-total reports-rev-total--contractor" aria-label={`Contractor ${formatReportInr(revenueTotals.contractor)}`}>
+                          <span className="reports-rev-total__label">
+                            <span className="reports-rev-total__full">Contractor</span>
+                            <span className="reports-rev-total__abbr" aria-hidden>Contr.</span>
+                          </span>
+                          <span className="reports-rev-total__value">
+                            {formatReportInr(revenueTotals.contractor)}
+                          </span>
+                        </div>
+                        {showHandling ? (
+                          <div className="reports-rev-total reports-rev-total--handling" aria-label={`Handling ${formatReportInr(revenueTotals.handling)}`}>
+                            <span className="reports-rev-total__label">
+                              <span className="reports-rev-total__full">Handling</span>
+                              <span className="reports-rev-total__abbr" aria-hidden>Hand.</span>
+                            </span>
+                            <span className="reports-rev-total__value">
+                              {formatReportInr(revenueTotals.handling)}
+                            </span>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <div className="reports-rev-total reports-rev-total--collected" aria-label={`Collected ${formatReportInr(revenueTotals.collected)}`}>
+                          <span className="reports-rev-total__label">
+                            <span className="reports-rev-total__full">Collected</span>
+                            <span className="reports-rev-total__abbr" aria-hidden>Coll.</span>
+                          </span>
+                          <span className="reports-rev-total__value">
+                            {formatReportInr(revenueTotals.collected)}
+                          </span>
+                        </div>
+                        <div className="reports-rev-total reports-rev-total--iw" aria-label={`Interweighing ${formatReportInr(revenueTotals.interweighing)}`}>
+                          <span className="reports-rev-total__label">
+                            <span className="reports-rev-total__full">Interweighing</span>
+                            <span className="reports-rev-total__abbr" aria-hidden>IW</span>
+                          </span>
+                          <span className="reports-rev-total__value">
+                            {formatReportInr(revenueTotals.interweighing)}
+                          </span>
+                        </div>
+                        <div className="reports-rev-total reports-rev-total--contractor" aria-label={`Contractor ${formatReportInr(revenueTotals.contractor)}`}>
+                          <span className="reports-rev-total__label">
+                            <span className="reports-rev-total__full">Contractor</span>
+                            <span className="reports-rev-total__abbr" aria-hidden>Contr.</span>
+                          </span>
+                          <span className="reports-rev-total__value">
+                            {formatReportInr(revenueTotals.contractor)}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : null}
                 <div className={`reports-toolbar${isRevenue ? ' reports-toolbar--pager' : ''}`}>
@@ -756,19 +849,42 @@ export const Reports: React.FC = () => {
                           <span className="reports-rev-card__date">{row.dateLabel}</span>
                           <span className="reports-rev-card__qty">{row.qty} qty</span>
                         </div>
-                        <dl className="reports-rev-card__grid">
-                          <div className="reports-amt reports-amt--collected">
-                            <dt>Collected</dt>
-                            <dd>{formatReportInr(row.collected)}</dd>
-                          </div>
-                          <div className="reports-amt reports-amt--iw">
-                            <dt>Interweighing</dt>
-                            <dd>{formatReportInr(row.interweighing)}</dd>
-                          </div>
-                          <div className="reports-amt reports-amt--contractor">
-                            <dt>Contractor</dt>
-                            <dd>{formatReportInr(row.contractor)}</dd>
-                          </div>
+                        <div className="reports-rev-card__body">
+                        <div className="reports-rev-card__main">
+                        <dl
+                          className={`reports-rev-card__grid${
+                            isRcRevenue ? ' reports-rev-card__grid--contractor' : ''
+                          }${row.handling > 0 ? ' reports-rev-card__grid--handling' : ''}`}
+                        >
+                          {isRcRevenue ? (
+                            <>
+                              <div className="reports-amt reports-amt--contractor">
+                                <dt>Contractor</dt>
+                                <dd>{formatReportInr(row.contractor)}</dd>
+                              </div>
+                              {row.handling > 0 ? (
+                                <div className="reports-amt reports-amt--handling">
+                                  <dt>Handling</dt>
+                                  <dd>{formatReportInr(row.handling)}</dd>
+                                </div>
+                              ) : null}
+                            </>
+                          ) : (
+                            <>
+                              <div className="reports-amt reports-amt--collected">
+                                <dt>Collected</dt>
+                                <dd>{formatReportInr(row.collected)}</dd>
+                              </div>
+                              <div className="reports-amt reports-amt--iw">
+                                <dt>Interweighing</dt>
+                                <dd>{formatReportInr(row.interweighing)}</dd>
+                              </div>
+                              <div className="reports-amt reports-amt--contractor">
+                                <dt>Contractor</dt>
+                                <dd>{formatReportInr(row.contractor)}</dd>
+                              </div>
+                            </>
+                          )}
                         </dl>
                         {row.qtyUpto20 > 0 || row.qtyAbove20 > 0 ? (
                           <p className="reports-rev-card__meta">
@@ -784,6 +900,18 @@ export const Reports: React.FC = () => {
                             ) : null}
                           </p>
                         ) : null}
+                        </div>
+                        {isRcRevenue ? (
+                          <ContractorFeePayControl
+                            rcId={rcFilter}
+                            dateKey={row.dateKey}
+                            amountInr={row.contractor + row.handling}
+                            qty={row.qty}
+                            payment={paymentsByDate.get(row.dateKey) ?? null}
+                            canPay={isRcAdmin}
+                          />
+                        ) : null}
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -797,9 +925,19 @@ export const Reports: React.FC = () => {
                           <th className="reports-col-qty">Qty</th>
                           <th className="reports-col-tier">upto 20kg</th>
                           <th className="reports-col-tier">Above 20Kg</th>
-                          <th className="reports-col-inr">Collected</th>
-                          <th className="reports-col-inr">Interweighing</th>
-                          <th className="reports-col-inr">Contractor</th>
+                          {isRcRevenue ? (
+                            <>
+                              <th className="reports-col-inr">Contractor</th>
+                              {showHandling ? <th className="reports-col-inr">Handling</th> : null}
+                              <th className="reports-col-pay">Proof</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="reports-col-inr">Collected</th>
+                              <th className="reports-col-inr">Interweighing</th>
+                              <th className="reports-col-inr">Contractor</th>
+                            </>
+                          )}
                         </tr>
                       </thead>
                       <tbody>
@@ -815,15 +953,40 @@ export const Reports: React.FC = () => {
                             <td className="reports-col-tier reports-tier--above text-mono">
                               {row.qtyAbove20}
                             </td>
-                            <td className="reports-col-inr reports-amt--collected text-mono">
-                              {formatReportInr(row.collected)}
-                            </td>
-                            <td className="reports-col-inr reports-amt--iw text-mono">
-                              {formatReportInr(row.interweighing)}
-                            </td>
-                            <td className="reports-col-inr reports-amt--contractor text-mono">
-                              {formatReportInr(row.contractor)}
-                            </td>
+                            {isRcRevenue ? (
+                              <>
+                                <td className="reports-col-inr reports-amt--contractor text-mono">
+                                  {formatReportInr(row.contractor)}
+                                </td>
+                                {showHandling ? (
+                                  <td className="reports-col-inr reports-amt--handling text-mono">
+                                    {row.handling > 0 ? formatReportInr(row.handling) : '—'}
+                                  </td>
+                                ) : null}
+                                <td className="reports-col-pay">
+                                  <ContractorFeePayControl
+                                    rcId={rcFilter}
+                                    dateKey={row.dateKey}
+                                    amountInr={row.contractor + row.handling}
+                                    qty={row.qty}
+                                    payment={paymentsByDate.get(row.dateKey) ?? null}
+                                    canPay={isRcAdmin}
+                                  />
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td className="reports-col-inr reports-amt--collected text-mono">
+                                  {formatReportInr(row.collected)}
+                                </td>
+                                <td className="reports-col-inr reports-amt--iw text-mono">
+                                  {formatReportInr(row.interweighing)}
+                                </td>
+                                <td className="reports-col-inr reports-amt--contractor text-mono">
+                                  {formatReportInr(row.contractor)}
+                                </td>
+                              </>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -839,15 +1002,31 @@ export const Reports: React.FC = () => {
                           <td className="reports-col-tier reports-tier--above text-mono">
                             {revenueTotals.qtyAbove20}
                           </td>
-                          <td className="reports-col-inr reports-amt--collected text-mono">
-                            {formatReportInr(revenueTotals.collected)}
-                          </td>
-                          <td className="reports-col-inr reports-amt--iw text-mono">
-                            {formatReportInr(revenueTotals.interweighing)}
-                          </td>
-                          <td className="reports-col-inr reports-amt--contractor text-mono">
-                            {formatReportInr(revenueTotals.contractor)}
-                          </td>
+                          {isRcRevenue ? (
+                            <>
+                              <td className="reports-col-inr reports-amt--contractor text-mono">
+                                {formatReportInr(revenueTotals.contractor)}
+                              </td>
+                              {showHandling ? (
+                                <td className="reports-col-inr reports-amt--handling text-mono">
+                                  {formatReportInr(revenueTotals.handling)}
+                                </td>
+                              ) : null}
+                              <td className="reports-col-pay" />
+                            </>
+                          ) : (
+                            <>
+                              <td className="reports-col-inr reports-amt--collected text-mono">
+                                {formatReportInr(revenueTotals.collected)}
+                              </td>
+                              <td className="reports-col-inr reports-amt--iw text-mono">
+                                {formatReportInr(revenueTotals.interweighing)}
+                              </td>
+                              <td className="reports-col-inr reports-amt--contractor text-mono">
+                                {formatReportInr(revenueTotals.contractor)}
+                              </td>
+                            </>
+                          )}
                         </tr>
                       </tfoot>
                     </table>

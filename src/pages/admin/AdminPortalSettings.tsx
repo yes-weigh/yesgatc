@@ -23,8 +23,9 @@ import {
   zohoTdsAmountInr,
 } from '../../lib/zohoSettings';
 import { ROLE_LABELS } from '../../types';
+import { ContractorFeePanel } from '../shared/ContractorFeeSettings';
 
-type SettingTab = 'account' | 'fees';
+type SettingTab = 'account' | 'fees' | 'contractor';
 
 function PasswordField({
   id,
@@ -337,7 +338,7 @@ export const AdminPortalSettings: React.FC = () => {
           Setting
         </h1>
         <p className="admin-setting-subtitle text-muted text-sm mb-0">
-          Account, password, and invoice fees.
+          Account, invoice fees, and contractor fee.
         </p>
       </header>
 
@@ -359,6 +360,15 @@ export const AdminPortalSettings: React.FC = () => {
           onClick={() => setTab('fees')}
         >
           Fees
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'contractor'}
+          className={`admin-setting-tab${tab === 'contractor' ? ' admin-setting-tab--active' : ''}`}
+          onClick={() => setTab('contractor')}
+        >
+          Contractor fee
         </button>
       </div>
 
@@ -451,7 +461,7 @@ export const AdminPortalSettings: React.FC = () => {
             </form>
           </div>
         </>
-      ) : (
+      ) : tab === 'fees' ? (
         <div className="panel glass">
           <div className="panel-header">
             <h2>
@@ -518,6 +528,8 @@ export const AdminPortalSettings: React.FC = () => {
             </button>
           </form>
         </div>
+      ) : (
+        <ContractorFeePanel />
       )}
     </div>
   );

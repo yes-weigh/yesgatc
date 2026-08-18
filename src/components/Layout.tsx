@@ -36,6 +36,7 @@ import {
   Wallet,
   Award,
   Share2,
+  HardHat,
 } from 'lucide-react';
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
@@ -179,6 +180,7 @@ export const Layout: React.FC = () => {
           { path: '/admin/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
           { path: '/admin/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/admin/contractor-fee', icon: <HardHat size={20} />, label: 'Contractor fee' },
           { path: '/admin/integrations', icon: <Plug size={20} />, label: 'Integrations' },
           { path: '/admin/settings', icon: <Settings size={20} />, label: 'Setting' },
         ];
@@ -200,6 +202,7 @@ export const Layout: React.FC = () => {
           { path: '/rc/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
           { path: '/rc/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
           { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/rc/settings', icon: <HardHat size={20} />, label: 'Setting' },
           { path: '/rc/profile', icon: <Settings size={20} />, label: 'My Profile' },
         ];
       case 'vct':

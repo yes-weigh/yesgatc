@@ -181,6 +181,18 @@ service cloud.firestore {
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid
         && vctApprovalStatus(resource.data) == 'pending';
+
+      match /contractorFeePayments/{dateKey} {
+        allow read: if isAuthenticated()
+          && (
+            request.auth.uid == uid
+            || isSuperAdmin()
+            || (isOperationalVct() && vctRcId() == uid)
+          );
+        allow create, update: if isAuthenticated() && request.auth.uid == uid;
+        allow delete: if isSuperAdmin()
+          || (isAuthenticated() && request.auth.uid == uid);
+      }
     }
 
     // ── aadharIndex (global duplicate Aadhar lookup) ───────────────
@@ -419,10 +431,17 @@ service cloud.firestore {
       allow update: if isSuperAdmin();
     }
 
+    function contractorFeeOnlyUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['contractorFeeSchedules', 'updatedAt']);
+    }
+
     // ── app settings (global toggles) ─────────────────────────────
     match /appSettings/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isSuperAdmin();
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin()
+        || (isRCAdmin() && contractorFeeOnlyUpdate());
     }
 
     // Super Admin uploads manuals; RC + VCT read only.
@@ -509,6 +528,22 @@ service cloud.firestore {
         ]);
 
       allow update, delete: if false;
+    }
+
+    match /contractorFeePayments/{paymentId} {
+      allow read: if isAuthenticated()
+        && (
+          isSuperAdmin()
+          || resource.data.rcId == request.auth.uid
+          || (isOperationalVct() && resource.data.rcId == vctRcId())
+        );
+
+      allow create, update: if isAuthenticated()
+        && request.resource.data.rcId == request.auth.uid
+        && request.resource.data.paidByUid == request.auth.uid;
+
+      allow delete: if isSuperAdmin()
+        || (isAuthenticated() && resource.data.rcId == request.auth.uid);
     }
 
     match /walletLedger/{entryId} {
