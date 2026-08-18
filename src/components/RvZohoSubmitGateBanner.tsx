@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertCircle } from 'lucide-react';
+import { useAppSettings } from '../hooks/useAppSettings';
 import {
   formatRvZohoInvoiceSummary,
   rvZohoInvoiceSummary,
@@ -16,7 +17,8 @@ export const RvZohoSubmitGateBanner: React.FC<RvZohoSubmitGateBannerProps> = ({
   record,
   summary: summaryProp,
 }) => {
-  const summary = summaryProp ?? rvZohoInvoiceSummary(record);
+  const { appSettings } = useAppSettings();
+  const summary = summaryProp ?? rvZohoInvoiceSummary(record, appSettings);
   const appRef = record.applicationNumber?.trim();
   const zohoError = record.zohoPushError?.trim();
 

@@ -8,22 +8,21 @@ const { normalizeZohoWalletSettings } = require('./zohoWallet');
 
 const APP_SETTINGS_COLLECTION = 'appSettings';
 const APP_SETTINGS_GLOBAL_DOC = 'global';
-
-const RV_LABOUR_PAYOUT_UPTO_20_KG = 135;
-const RV_LABOUR_PAYOUT_ABOVE_20_KG = 225;
 const RV_ZOHO_PAYMENT_MODE = 'Bank Transfer';
 const INVOICE_BALANCE_TOLERANCE = 0.009;
 
-function normalizeZohoNumericId(value) {
-  return String(value ?? '').replace(/\D/g, '');
-}
-
-function rvLabourPayoutInr(record) {
+function rvLabourPayoutInr(record, settings) {
   const capacityKg = maximumCapacityKg(record);
   if (capacityKg == null) {
     throw new Error('Maximum capacity is required for RV labour payout.');
   }
-  return capacityKg <= 20 ? RV_LABOUR_PAYOUT_UPTO_20_KG : RV_LABOUR_PAYOUT_ABOVE_20_KG;
+  const baseInr = capacityKg <= 20 ? settings.zohoFeeUpto20KgInr : settings.zohoFeeAbove20KgInr;
+  const tdsInr = capacityKg <= 20 ? settings.zohoTdsUpto20KgInr : settings.zohoTdsAbove20KgInr;
+  return Math.max(0, baseInr - tdsInr);
+}
+
+function normalizeZohoNumericId(value) {
+  return String(value ?? '').replace(/\D/g, '');
 }
 
 function rvSettlementReference(prefix, applicationNumber) {
@@ -55,6 +54,11 @@ async function loadZohoSettlementSettings(db) {
     zohoRvSettlementEnabled: data?.zohoRvSettlementEnabled !== false,
     zohoOrganizationId: rv.zohoOrganizationId,
     zohoGatcWalletAccountId: wallet.zohoWalletFromAccountId,
+    zohoFeeUpto20KgInr: rv.zohoFeeUpto20KgInr,
+    zohoFeeAbove20KgInr: rv.zohoFeeAbove20KgInr,
+    zohoTdsPercent: rv.zohoTdsPercent,
+    zohoTdsUpto20KgInr: rv.zohoTdsUpto20KgInr,
+    zohoTdsAbove20KgInr: rv.zohoTdsAbove20KgInr,
   };
 }
 
@@ -267,7 +271,7 @@ async function processRvZohoSettlement(db, recordId, record, { allowLegacyPush =
   const paymentDate = settlementDate(record);
   const payReference = rvPaymentReference(record.applicationNumber);
   const labReference = rvLabourReference(record.applicationNumber);
-  const payoutInr = rvLabourPayoutInr(record);
+  const payoutInr = rvLabourPayoutInr(record, settings);
   const settledAt = new Date().toISOString();
 
   const result = {

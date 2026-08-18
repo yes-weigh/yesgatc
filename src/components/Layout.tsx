@@ -180,6 +180,7 @@ export const Layout: React.FC = () => {
           { path: '/admin/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
           { path: '/admin/integrations', icon: <Plug size={20} />, label: 'Integrations' },
+          { path: '/admin/settings', icon: <Settings size={20} />, label: 'Setting' },
         ];
       case 'rc_admin':
         return [
@@ -221,15 +222,13 @@ export const Layout: React.FC = () => {
   };
 
   const navItems = getNavItems();
-  const currentNavItem = navItems.find(item => {
-    if (location.pathname === item.path) {
-      return true;
+  const isNavActive = (path: string) => {
+    if (path === '/admin' || path === '/rc' || path === '/vct') {
+      return location.pathname === path;
     }
-    if (item.path === '/admin' || item.path === '/rc' || item.path === '/vct') {
-      return false;
-    }
-    return location.pathname.startsWith(`${item.path}/`);
-  });
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
+  const currentNavItem = navItems.find(item => isNavActive(item.path));
   const isEmaapSessions = location.pathname.includes('/integrations/worker/sessions');
   const pageTitle = isEmaapSessions
     ? 'Session Logs'
@@ -299,7 +298,7 @@ export const Layout: React.FC = () => {
         {navItems.map(item => (
           <div
             key={item.path}
-            className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
+            className={`nav-item ${isNavActive(item.path) ? 'active' : ''}`}
             onClick={() => handleNavClick(item.path)}
             title={!mobile && collapsed ? item.label : undefined}
           >

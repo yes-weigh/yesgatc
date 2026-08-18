@@ -139,6 +139,14 @@ import { RvLegacyZohoSettlementSection } from '../../components/RvLegacyZohoSett
 import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { isRvPaymentRequired } from '../../lib/appSettings';
+import {
+  isRvZohoSubmitGateRetry,
+  isZohoRvInvoicingEnabled,
+  rcZohoIdReady,
+  RV_ZOHO_SUBMIT_BLOCK_MESSAGE,
+  verificationZohoInvoiceNumber,
+  type RvWalletFeeSettings,
+} from '../../lib/zohoRvSubmit';
 import { rcFilingPartyPatch } from '../../lib/keralaRegion';
 import {
   buildRvPaymentFirestorePatch,
@@ -154,13 +162,6 @@ import {
   linkWalletPaymentToRecords,
   refundRvWalletPayment,
 } from '../../lib/rcWallet';
-import {
-  isRvZohoSubmitGateRetry,
-  isZohoRvInvoicingEnabled,
-  rcZohoIdReady,
-  RV_ZOHO_SUBMIT_BLOCK_MESSAGE,
-  verificationZohoInvoiceNumber,
-} from '../../lib/zohoRvSubmit';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
 import {
@@ -197,6 +198,7 @@ function verificationDocaFirestorePatch(
   verificationLocation: VerificationLocation | '',
   verificationSubject: 'self' | 'customer' | '',
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+  feeSettings?: RvWalletFeeSettings | null,
 ): Record<string, unknown> {
   if (!shouldPersistVerificationDocaCharges(verificationType)) {
     return {
@@ -216,6 +218,7 @@ function verificationDocaFirestorePatch(
     verificationLocation,
     verificationSubject,
     product,
+    feeSettings,
   );
   return charges ?? {};
 }
@@ -1261,8 +1264,9 @@ export const RCSiteCalibration: React.FC = () => {
         sessionValues.verificationLocation,
         sessionValues.verificationSubject,
         sessionValues.verificationType,
+        appSettings,
       ),
-    [sessionValues, products, rcProfile],
+    [sessionValues, products, rcProfile, appSettings],
   );
 
   const handleCreate = async (
@@ -1394,6 +1398,7 @@ export const RCSiteCalibration: React.FC = () => {
           sessionForSave.verificationLocation,
           sessionForSave.verificationSubject,
           product,
+          appSettings,
         );
 
         const perDeviceRvPaymentPatch =
@@ -1406,6 +1411,7 @@ export const RCSiteCalibration: React.FC = () => {
                   sessionForSave.verificationLocation,
                   sessionForSave.verificationSubject,
                   sessionForSave.verificationType,
+                  appSettings,
                 );
                 const perDeviceAmount = breakdown?.total;
                 return perDeviceAmount != null && perDeviceAmount > 0
@@ -1541,6 +1547,7 @@ export const RCSiteCalibration: React.FC = () => {
         sessionForSave.verificationLocation,
         sessionForSave.verificationSubject,
         product,
+        appSettings,
       );
       const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
       const performerImageFields =
@@ -1732,6 +1739,7 @@ export const RCSiteCalibration: React.FC = () => {
         sessionForSave.verificationLocation,
         sessionForSave.verificationSubject,
         product,
+        appSettings,
       );
       const imageFields = await uploadRowImages(editingId, row.localId, sessionForSave.verificationType === 'RV');
       const performerImageFields =
@@ -1748,6 +1756,7 @@ export const RCSiteCalibration: React.FC = () => {
               sessionForSave.verificationLocation,
               sessionForSave.verificationSubject,
               sessionForSave.verificationType,
+              appSettings,
             )?.total
           : null;
       const rvPaymentPatch =
@@ -1865,7 +1874,12 @@ export const RCSiteCalibration: React.FC = () => {
         const fees = resolveRcFeesStructure(rcProfile);
         const perRecordExpected =
           existing != null
-            ? computeRvPaymentBreakdownForRecord(existing, products, fees)?.total ?? null
+            ? computeRvPaymentBreakdownForRecord(
+                existing,
+                products,
+                fees,
+                appSettings,
+              )?.total ?? null
             : null;
 
         if (isRvSessionPaymentSatisfied(rvSessionPayment, rvPaymentBreakdown.total)) {

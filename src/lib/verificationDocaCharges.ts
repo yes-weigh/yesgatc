@@ -1,4 +1,5 @@
 import { rcVerificationFeeQuote, verificationFeeWithGst } from './rcProfileFields';
+import { rvSettingFeeLineFromProduct, type RvWalletFeeSettings } from './zohoRvSubmit';
 import type {
   JobType,
   Product,
@@ -46,9 +47,21 @@ export function computeVerificationDocaCharges(
   verificationLocation: VerificationLocation | '',
   verificationSubject: 'self' | 'customer' | '',
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+  feeSettings?: RvWalletFeeSettings | null,
 ): VerificationDocaChargeFields | null {
   if (!shouldPersistVerificationDocaCharges(verificationType)) {
     return null;
+  }
+
+  const settingLine = rvSettingFeeLineFromProduct(product, feeSettings);
+  if (settingLine) {
+    return {
+      verificationFeeBase: settingLine.baseInr,
+      verificationFeeGst: settingLine.gstInr,
+      verificationFeeTotal: settingLine.invoiceInr,
+      carriageConveyanceFee: 0,
+      totalDeposited: settingLine.invoiceInr,
+    };
   }
 
   const quote = rcVerificationFeeQuote(

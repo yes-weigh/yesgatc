@@ -72,7 +72,7 @@ const AdminIntegrationsHub: React.FC = () => {
           Integrations
         </h1>
         <p className="admin-integrations-subtitle text-muted text-sm mb-0">
-          Configure third-party services for billing, payments, and certificates.
+          Connect Zoho, Razorpay, and the certificate worker. Fees live under Setting.
         </p>
       </header>
 
@@ -133,7 +133,7 @@ const AdminIntegrationDetail: React.FC<{ tabId: IntegrationsTab }> = ({ tabId })
   );
 };
 
-export const AdminSettings: React.FC = () => {
+export const AdminIntegrations: React.FC = () => {
   const { integrationId } = useParams<{ integrationId?: string }>();
   const navigate = useNavigate();
 

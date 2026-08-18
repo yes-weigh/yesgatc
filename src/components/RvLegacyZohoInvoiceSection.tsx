@@ -56,7 +56,10 @@ export const RvLegacyZohoInvoiceSection: React.FC<RvLegacyZohoInvoiceSectionProp
     };
   }, [record.rcId]);
 
-  const invoiceSummary = useMemo(() => rvZohoInvoiceSummary(record), [record]);
+  const invoiceSummary = useMemo(
+    () => rvZohoInvoiceSummary(record, appSettings),
+    [appSettings, record],
+  );
 
   const showLegacyZohoBanner =
     isRvZohoInvoiceOutstanding(record)
@@ -64,7 +67,7 @@ export const RvLegacyZohoInvoiceSection: React.FC<RvLegacyZohoInvoiceSectionProp
 
   const pushBlockedReason = useMemo(() => {
     if (!isZohoRvInvoicingEnabled(appSettings)) {
-      return 'Enable Zoho RV invoicing in Admin Settings before pushing.';
+      return 'Enable Zoho RV invoicing in Integrations before pushing.';
     }
     if (!rcZohoIdReady(rcProfile?.zohoId)) {
       return 'Set the RC Zoho customer ID on the RC profile before pushing.';

@@ -29,5 +29,5 @@ export function vctApprovalLabel(status: FirestoreUserDoc['approvalStatus']): st
 }
 
 export function vctActiveLabel(active?: boolean): string {
-  return isVctActive({ active }) ? 'Enabled' : 'Disabled';
+  return isVctActive({ active }) ? 'Active' : 'Inactive';
 }

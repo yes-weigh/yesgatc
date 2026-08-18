@@ -15,7 +15,8 @@ import { AdminVehicleList } from './pages/admin/AdminVehicleList';
 import { AdminVerificationList } from './pages/admin/AdminVerificationList';
 import { AdminLaboratory } from './pages/admin/AdminLaboratory';
 import { AdminWalletTopUps } from './pages/admin/AdminWalletTopUps';
-import { AdminSettings } from './pages/admin/AdminSettings';
+import { AdminIntegrations } from './pages/admin/AdminIntegrations';
+import { AdminPortalSettings } from './pages/admin/AdminPortalSettings';
 import { AdminEmaapSessionLogs } from './pages/admin/AdminEmaapSessionLogs';
 import { AdminNotifications } from './pages/admin/AdminMenuPages';
 import { RCDashboard } from './pages/rc/RCDashboard';
@@ -70,9 +71,9 @@ const App: React.FC = () => {
                 <Route path="reports" element={<Reports />} />
                 <Route path="integrations/worker/sessions" element={<AdminEmaapSessionLogs />} />
                 <Route path="integrations/worker/sessions/:sessionId" element={<AdminEmaapSessionLogs />} />
-                <Route path="integrations" element={<AdminSettings />} />
-                <Route path="integrations/:integrationId" element={<AdminSettings />} />
-                <Route path="settings" element={<Navigate to="/admin/integrations" replace />} />
+                <Route path="integrations" element={<AdminIntegrations />} />
+                <Route path="integrations/:integrationId" element={<AdminIntegrations />} />
+                <Route path="settings" element={<AdminPortalSettings />} />
               </Route>
             </Route>
 

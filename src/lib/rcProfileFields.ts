@@ -204,9 +204,29 @@ export function sumRcVerificationFees(quotes: Array<{ amount: number | null }>):
 export const RV_SERVICE_FEE_UPTO_20_KG = 723;
 export const RV_SERVICE_FEE_ABOVE_20_KG = 705;
 
-/** RV TDS (INR) by maximum capacity tier. */
-export const RV_TDS_UPTO_20_KG = 15;
-export const RV_TDS_ABOVE_20_KG = 25;
+/** RV TDS rate. Was 10% (₹15 / ₹25); now 1% of the capacity amount. */
+export const RV_TDS_PERCENT = 1;
+
+export function rvTdsAmountFromBase(baseInr: number, percent: number = RV_TDS_PERCENT): number {
+  if (!Number.isFinite(baseInr) || baseInr <= 0 || !Number.isFinite(percent) || percent <= 0) {
+    return 0;
+  }
+  return Math.round(((baseInr * percent) / 100) * 100) / 100;
+}
+
+/** Fallback TDS (INR) at 1% of the default ₹150 / ₹250 amounts. */
+export const RV_TDS_UPTO_20_KG = rvTdsAmountFromBase(150, RV_TDS_PERCENT);
+export const RV_TDS_ABOVE_20_KG = rvTdsAmountFromBase(250, RV_TDS_PERCENT);
+
+export type RvTdsTiers = {
+  upto20Kg: number;
+  above20Kg: number;
+};
+
+export const DEFAULT_RV_TDS_TIERS: RvTdsTiers = {
+  upto20Kg: RV_TDS_UPTO_20_KG,
+  above20Kg: RV_TDS_ABOVE_20_KG,
+};
 
 /** @deprecated Gateway fees removed from RV administrative fees. Kept for historical backfill only. */
 export const RV_GATEWAY_FEE_UPTO_20_KG = 0;
@@ -235,8 +255,13 @@ export function defaultRvServiceFee(
 
 export function rvTdsFee(
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+  tiers?: Partial<RvTdsTiers> | null,
 ): number {
-  return rvCapacityTierAmount(product, RV_TDS_UPTO_20_KG, RV_TDS_ABOVE_20_KG);
+  return rvCapacityTierAmount(
+    product,
+    tiers?.upto20Kg ?? RV_TDS_UPTO_20_KG,
+    tiers?.above20Kg ?? RV_TDS_ABOVE_20_KG,
+  );
 }
 
 export function rvGatewayFee(

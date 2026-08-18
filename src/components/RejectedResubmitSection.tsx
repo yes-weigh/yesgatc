@@ -20,6 +20,7 @@ import {
   resubmitRejectedVerification,
 } from '../lib/verificationResubmit';
 import { isRvWalletPaymentRequired } from '../lib/appSettings';
+import { useAppSettings } from '../hooks/useAppSettings';
 import type { FirestoreUserDoc, SiteCalibration } from '../types';
 import { RvWalletPaymentPanel } from './RvWalletPaymentPanel';
 
@@ -40,6 +41,7 @@ export const RejectedResubmitSection: React.FC<RejectedResubmitSectionProps> = (
 }) => {
   const { user } = useAuth();
   const { products } = useAppContext();
+  const { appSettings } = useAppSettings();
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -118,9 +120,10 @@ export const RejectedResubmitSection: React.FC<RejectedResubmitSectionProps> = (
             record,
             products,
             resolveRcFeesStructure(rcProfile),
+            appSettings,
           )
         : null,
-    [needsFreshWallet, record, products, rcProfile],
+    [needsFreshWallet, record, products, rcProfile, appSettings],
   );
 
   if (!eligible) return null;

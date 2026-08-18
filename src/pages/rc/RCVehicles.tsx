@@ -9,7 +9,7 @@ import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { VehicleLogoMark } from '../../components/VehicleLogoMark';
 import {
-  RcListCardToggle,
+  RcListDeactivateToggle,
   RcListEditHint,
   RcListMetaChip,
   RcListPhoto,
@@ -38,8 +38,6 @@ import {
   RefreshCw,
   Save,
   ShieldCheck,
-  UserCheck,
-  UserX,
   Wind,
 } from 'lucide-react';
 import { isVehicleActive, vehicleActiveLabel } from '../../lib/vehicleApproval';
@@ -429,11 +427,11 @@ export const RCVehicles: React.FC = () => {
     const activating = !isVehicleActive(v);
     const label = v.regNumber || `${v.brand} ${v.model}`.trim() || 'vehicle';
     const ok = await confirm({
-      title: activating ? 'Enable vehicle?' : 'Disable vehicle?',
+      title: activating ? 'Activate vehicle?' : 'Deactivate vehicle?',
       message: activating
-        ? `Enable "${label}" for use again?`
-        : `Disable "${label}"? It will not be available for assignment while inactive.`,
-      confirmLabel: activating ? 'Enable' : 'Disable',
+        ? `Activate "${label}" for use again?`
+        : `Deactivate "${label}"? It will not be available for assignment while inactive.`,
+      confirmLabel: activating ? 'Activate' : 'Deactivate',
       destructive: !activating,
     });
     if (!ok || !canManage || !actorUid) return;
@@ -654,14 +652,13 @@ export const RCVehicles: React.FC = () => {
                         </span>
                       </button>
                       {canManage ? (
-                        <RcListCardToggle
-                          className={active ? '' : 'rc-list-card-toggle--enable'}
+                        <RcListDeactivateToggle
+                          active={active}
+                          noun="vehicle"
+                          name={disableLabel}
+                          iconSize={20}
                           onClick={() => void handleToggleActive(v)}
-                          title={active ? 'Disable vehicle' : 'Enable vehicle'}
-                          ariaLabel={active ? `Disable ${disableLabel}` : `Enable ${disableLabel}`}
-                        >
-                          {active ? <UserX size={20} strokeWidth={1.75} /> : <UserCheck size={20} strokeWidth={1.75} />}
-                        </RcListCardToggle>
+                        />
                       ) : null}
                     </div>
 

@@ -1,15 +1,14 @@
 import { isRvWalletPaymentRequired } from './appSettings';
 import {
-  rcVerificationFeeQuote,
-  rvTdsFee,
-  sumRcVerificationFees,
-  verificationFeeWithGst,
-} from './rcProfileFields';
-import {
   verificationSessionFromRecord,
   type VerificationDeviceRowValues,
 } from './siteCalibrationProfileFields';
 import { normalizeVerificationStatus } from './verificationRequest';
+import {
+  rvSettingFeeLineFromProduct,
+  type RvSettingFeeLine,
+  type RvWalletFeeSettings,
+} from './zohoRvSubmit';
 import type { JobType, Product, RcFeesStructure, SiteCalibration, VerificationLocation } from '../types';
 
 export type RvPaymentBreakdown = {
@@ -20,6 +19,10 @@ export type RvPaymentBreakdown = {
   gatewayTotal: number;
 };
 
+function roundInr(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 export function computeRvPaymentAmountForRow(
   row: VerificationDeviceRowValues,
   products: Product[],
@@ -27,6 +30,7 @@ export function computeRvPaymentAmountForRow(
   verificationLocation: VerificationLocation | '',
   verificationSubject: 'self' | 'customer',
   verificationType: JobType | '',
+  feeSettings?: RvWalletFeeSettings | null,
 ): RvPaymentBreakdown | null {
   if (!row.included) return null;
   return computeRvPaymentAmount(
@@ -36,47 +40,39 @@ export function computeRvPaymentAmountForRow(
     verificationLocation,
     verificationSubject,
     verificationType,
+    feeSettings,
   );
 }
 
 export function computeRvPaymentAmount(
   devices: VerificationDeviceRowValues[],
   products: Product[],
-  fees: RcFeesStructure,
-  verificationLocation: VerificationLocation | '',
-  verificationSubject: 'self' | 'customer',
+  _fees: RcFeesStructure,
+  _verificationLocation: VerificationLocation | '',
+  _verificationSubject: 'self' | 'customer',
   verificationType: JobType | '',
+  feeSettings?: RvWalletFeeSettings | null,
 ): RvPaymentBreakdown | null {
   if (verificationType !== 'RV') return null;
 
   const included = devices.filter(device => device.included);
   if (included.length === 0) return null;
 
-  const quotes = included.map(row => {
+  const lines: RvSettingFeeLine[] = [];
+  for (const row of included) {
     const product = products.find(entry => entry.id === row.productId) ?? null;
-    return rcVerificationFeeQuote(
-      fees,
-      verificationLocation,
-      product,
-      verificationSubject,
-      verificationType,
-    );
-  });
+    const line = rvSettingFeeLineFromProduct(product, feeSettings);
+    if (!line) return null;
+    lines.push(line);
+  }
 
-  const quotedBase = sumRcVerificationFees(quotes);
-  if (quotedBase <= 0) return null;
-
-  const { gst } = verificationFeeWithGst(quotedBase);
-  const tdsTotal = included.reduce((sum, row) => {
-    const product = products.find(entry => entry.id === row.productId) ?? null;
-    return sum + rvTdsFee(product);
-  }, 0);
-  const administrativeFees = tdsTotal;
+  const gst = roundInr(lines.reduce((sum, line) => sum + line.gstInr, 0));
+  const tdsTotal = roundInr(lines.reduce((sum, line) => sum + line.tdsInr, 0));
 
   return {
-    administrativeFees,
+    administrativeFees: tdsTotal,
     gst,
-    total: administrativeFees + gst,
+    total: roundInr(tdsTotal + gst),
     tdsTotal,
     gatewayTotal: 0,
   };
@@ -121,20 +117,21 @@ export function resolveRvWalletDisplayAmount(
   record: SiteCalibration,
   products: Product[],
   fees: RcFeesStructure,
+  feeSettings?: RvWalletFeeSettings | null,
 ): number | null {
   if (record.verificationType !== 'RV' || record.rvPaymentStatus !== 'paid') return null;
 
-  const computed = computeRvPaymentBreakdownForRecord(record, products, fees)?.total ?? null;
+  const computed = computeRvPaymentBreakdownForRecord(record, products, fees, feeSettings)?.total ?? null;
   const stored = record.rvPaymentAmount;
 
   if (computed == null || computed <= 0) {
-    return stored != null && Number.isFinite(stored) && stored > 0 ? Math.round(stored) : null;
+    return stored != null && Number.isFinite(stored) && stored > 0 ? roundInr(stored) : null;
   }
 
-  if (stored == null || !Number.isFinite(stored)) return Math.round(computed);
-  if (inrAmountsMatch(stored, computed)) return Math.round(stored);
-  if (stored > computed) return Math.round(computed);
-  return Math.round(stored);
+  if (stored == null || !Number.isFinite(stored)) return roundInr(computed);
+  if (inrAmountsMatch(stored, computed)) return roundInr(stored);
+  if (stored > computed) return roundInr(computed);
+  return roundInr(stored);
 }
 
 export function isRvSessionPaymentSatisfied(
@@ -149,6 +146,7 @@ export function computeRvPaymentBreakdownForRecord(
   record: SiteCalibration,
   products: Product[],
   fees: RcFeesStructure,
+  feeSettings?: RvWalletFeeSettings | null,
 ): RvPaymentBreakdown | null {
   const session = verificationSessionFromRecord(record);
   return computeRvPaymentAmount(
@@ -158,6 +156,7 @@ export function computeRvPaymentBreakdownForRecord(
     session.verificationLocation,
     session.verificationSubject,
     session.verificationType,
+    feeSettings,
   );
 }
 

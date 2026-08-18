@@ -1,13 +1,8 @@
 import React, { useMemo } from 'react';
 import { IndianRupee } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import {
-  DEFAULT_RC_FEES_STRUCTURE,
-  rcVerificationFeeQuote,
-  rvTdsFee,
-  sumRcVerificationFees,
-  verificationFeeWithGst,
-} from '../lib/rcProfileFields';
+import { useAppSettings } from '../hooks/useAppSettings';
+import { rvSettingFeeLineFromProduct } from '../lib/zohoRvSubmit';
 import { parseAdditionalFeeInput, parseServiceFeeInput } from '../lib/verificationDocaCharges';
 import type { VerificationDeviceRowValues } from '../lib/siteCalibrationProfileFields';
 import { VerificationFeeBreakdown } from './VerificationFeeBreakdown';
@@ -27,32 +22,28 @@ export const VerificationFeesTotalSummary: React.FC<VerificationFeesTotalSummary
   verificationType = 'OV',
   verificationLocation = '',
   verificationSubject = 'customer',
-  feesStructure,
   compact = false,
 }) => {
   const { products } = useAppContext();
+  const { appSettings } = useAppSettings();
   const isRv = verificationType === 'RV';
   const useSelfFees = verificationSubject === 'self';
-  const fees = feesStructure ?? DEFAULT_RC_FEES_STRUCTURE;
 
   const includedDevices = useMemo(
     () => devices.filter(device => device.included),
     [devices],
   );
 
-  const deviceFeeLines = useMemo(() => {
-    if (!isRv) return [];
-    return includedDevices.map(row => {
-      const product = products.find(entry => entry.id === row.productId) ?? null;
-      return rcVerificationFeeQuote(
-        fees,
-        verificationLocation,
-        product,
-        verificationSubject,
-        verificationType,
-      );
-    });
-  }, [fees, includedDevices, isRv, products, verificationLocation, verificationSubject, verificationType]);
+  const feeLines = useMemo(
+    () => {
+      if (!isRv) return [];
+      return includedDevices.map(row => {
+        const product = products.find(entry => entry.id === row.productId) ?? null;
+        return rvSettingFeeLineFromProduct(product, appSettings);
+      });
+    },
+    [appSettings, includedDevices, isRv, products],
+  );
 
   const serviceFeeTotal = useMemo(
     () =>
@@ -67,18 +58,14 @@ export const VerificationFeesTotalSummary: React.FC<VerificationFeesTotalSummary
   );
 
   const tdsTotal = useMemo(
-    () =>
-      includedDevices.reduce((sum, row) => {
-        const product = products.find(entry => entry.id === row.productId) ?? null;
-        return sum + rvTdsFee(product);
-      }, 0),
-    [includedDevices, products],
+    () => feeLines.reduce((sum, line) => sum + (line?.tdsInr ?? 0), 0),
+    [feeLines],
   );
 
-  const feeTotals = useMemo(() => {
-    const base = sumRcVerificationFees(deviceFeeLines);
-    return verificationFeeWithGst(base);
-  }, [deviceFeeLines]);
+  const baseAmount = useMemo(
+    () => feeLines.reduce((sum, line) => sum + (line?.baseInr ?? 0), 0),
+    [feeLines],
+  );
 
   const canCalculateFees = isRv || Boolean(verificationLocation) || useSelfFees;
 
@@ -105,7 +92,7 @@ export const VerificationFeesTotalSummary: React.FC<VerificationFeesTotalSummary
 
       {canCalculateFees && (
         <VerificationFeeBreakdown
-          baseAmount={feeTotals.base}
+          baseAmount={baseAmount}
           variant="total-footer"
           className="verification-fees-summary-breakdown"
           tdsTotal={tdsTotal}

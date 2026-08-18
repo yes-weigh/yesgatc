@@ -601,6 +601,174 @@ body.embed-mode {
   min-width: 0;
 }
 
+.admin-setting-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 56rem;
+}
+
+.admin-setting-header {
+  margin: 0;
+}
+
+.admin-setting-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.admin-setting-subtitle {
+  margin: 0;
+}
+
+.admin-setting-tabs {
+  display: flex;
+  gap: 0.2rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.admin-setting-tab {
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.admin-setting-tab--active {
+  color: #60a5fa;
+  box-shadow: inset 0 -2px 0 #3b82f6;
+}
+
+.admin-setting-fee-table {
+  overflow-x: auto;
+}
+
+.admin-setting-fee-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-setting-fee-head,
+.admin-setting-fee-row {
+  display: grid;
+  grid-template-columns:
+    minmax(6.5rem, 1.1fr)
+    minmax(6.25rem, 1fr)
+    minmax(4.75rem, 0.85fr)
+    minmax(5.75rem, 0.95fr)
+    minmax(6.5rem, 1fr);
+  align-items: center;
+  gap: 0.45rem 0.55rem;
+}
+
+.admin-setting-fee-head {
+  padding: 0 1rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.admin-setting-fee-row {
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.admin-setting-fee-label {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.admin-setting-fee-gst,
+.admin-setting-fee-total {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-setting-fee-total {
+  color: #93c5fd;
+}
+
+.admin-setting-fee-col-hint {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.admin-setting-fee-op {
+  color: #64748b;
+  font-weight: 700;
+  text-align: center;
+}
+
+.admin-setting-fee-amount {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.admin-setting-fee-currency {
+  color: #94a3b8;
+  font-weight: 650;
+}
+
+.admin-setting-fee-amount .input-field {
+  width: 100%;
+  min-width: 0;
+  text-align: right;
+}
+
+.admin-setting-fee-percent .input-field {
+  text-align: right;
+}
+
+.admin-setting-fee-percent-wrap {
+  min-width: 0;
+}
+
+.admin-setting-fee-percent-wrap .admin-setting-fee-col-hint {
+  margin-top: 0.2rem;
+}
+
+@media (max-width: 720px) {
+  .admin-setting-fee-head {
+    display: none;
+  }
+
+  .admin-setting-fee-row {
+    grid-template-columns: 1fr auto;
+    gap: 0.55rem 0.75rem;
+  }
+
+  .admin-setting-fee-label {
+    grid-column: 1 / -1;
+  }
+
+  .admin-setting-fee-op {
+    display: none;
+  }
+}
+
 .reports-page {
   width: 100%;
   min-width: 0;
@@ -6450,11 +6618,13 @@ body.verification-mobile-wizard-active {
 }
 
 .rc-list-card-toggle--delete,
+.rc-list-card-toggle--deactivate,
 .rc-vct-card-toggle--delete {
   color: #f87171;
 }
 
 .rc-list-card-toggle--delete:hover,
+.rc-list-card-toggle--deactivate:hover,
 .rc-vct-card-toggle--delete:hover {
   background: rgba(239, 68, 68, 0.12);
 }
