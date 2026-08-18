@@ -18,6 +18,7 @@ import {
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import {
   matchesVerificationDurationFilter,
+  parseVerificationDurationParam,
   type VerificationDurationFilter,
 } from '../../lib/verificationListDuration';
 import { rewriteOutOfKeralaJobsToRcName } from '../../lib/verificationRcFiling';
@@ -92,6 +93,7 @@ export const AdminVerificationList: React.FC = () => {
   const isSuperAdmin = user?.role === 'super_admin';
   const pendingStatusFilter = searchParams.get('status');
   const pendingTypeFilter = searchParams.get('type');
+  const pendingDurationFilter = parseVerificationDurationParam(searchParams.get('duration'));
   const pendingRcFilter = searchParams.get('rc');
   const pendingVoidFilter = searchParams.get('void') === '1';
   const pendingOpenId = searchParams.get('open');
@@ -170,21 +172,22 @@ export const AdminVerificationList: React.FC = () => {
           })
           .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
-      let rows = toRows(calibrationSnap.docs);
+      const rows = toRows(calibrationSnap.docs);
+      setRecords(rows);
 
       if (isSuperAdmin) {
-        const rewritten = await rewriteOutOfKeralaJobsToRcName({
+        void rewriteOutOfKeralaJobsToRcName({
           records: rows,
           customersById: customerMap,
           rcNameByUid: rcByUid,
-        });
-        if (rewritten > 0) {
-          const refreshed = await getDocs(collection(db, 'siteCalibrations'));
-          rows = toRows(refreshed.docs);
-        }
+        })
+          .then(async rewritten => {
+            if (rewritten <= 0) return;
+            const refreshed = await getDocs(collection(db, 'siteCalibrations'));
+            setRecords(toRows(refreshed.docs));
+          })
+          .catch(() => undefined);
       }
-
-      setRecords(rows);
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to load verifications.');
       setRecords([]);
@@ -254,6 +257,19 @@ export const AdminVerificationList: React.FC = () => {
       { replace: true },
     );
   }, [pendingTypeFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingDurationFilter) return;
+    setDurationFilter(pendingDurationFilter);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('duration');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingDurationFilter, setSearchParams]);
 
   useEffect(() => {
     if (!pendingRcFilter) return;

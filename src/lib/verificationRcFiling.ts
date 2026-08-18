@@ -98,6 +98,6 @@ export async function rewriteOutOfKeralaJobsToRcName(input: {
     );
   }
 
-  await Promise.all(writes);
-  return writes.length;
+  const results = await Promise.allSettled(writes);
+  return results.filter(result => result.status === 'fulfilled').length;
 }

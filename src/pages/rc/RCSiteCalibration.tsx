@@ -106,6 +106,7 @@ import {
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import {
   matchesVerificationDurationFilter,
+  parseVerificationDurationParam,
   type VerificationDurationFilter,
 } from '../../lib/verificationListDuration';
 import type {
@@ -1978,6 +1979,7 @@ export const RCSiteCalibration: React.FC = () => {
   const pendingCustomerId = searchParams.get('customerId');
   const pendingStatusFilter = searchParams.get('status');
   const pendingTypeFilter = searchParams.get('type');
+  const pendingDurationFilter = parseVerificationDurationParam(searchParams.get('duration'));
   const pendingOpenId = searchParams.get('open');
   const pendingFocusSearch = searchParams.get('focus') === 'search';
   const pendingNewType = searchParams.get('new');
@@ -2069,6 +2071,19 @@ export const RCSiteCalibration: React.FC = () => {
       { replace: true },
     );
   }, [pendingTypeFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingDurationFilter) return;
+    setDurationFilter(pendingDurationFilter);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('duration');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingDurationFilter, setSearchParams]);
 
   useEffect(() => {
     if (!pendingFocusSearch) return;

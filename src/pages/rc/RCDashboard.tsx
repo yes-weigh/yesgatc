@@ -19,7 +19,11 @@ import {
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
 import { DashboardPeriodFilter } from '../../components/DashboardPeriodFilter';
 import { DashboardWorkerLiveCard } from '../../components/DashboardWorkerLiveCard';
-import { recordInDashboardPeriod, type DashboardPeriod } from '../../lib/dashboardPeriod';
+import {
+  recordActivityStamp,
+  recordInDashboardPeriod,
+  type DashboardPeriod,
+} from '../../lib/dashboardPeriod';
 import { StorageImage } from '../../components/StorageImage';
 import { VctOfficerMark } from '../../components/VctOfficerMark';
 import { db } from '../../firebase';
@@ -31,6 +35,11 @@ import { subscribeRcWalletBalance, subscribeWalletTopUps } from '../../lib/rcWal
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
+import {
+  dashboardPeriodToListDuration,
+  verificationListPath,
+  type VerificationDurationFilter,
+} from '../../lib/verificationListDuration';
 import {
   getVerificationDisplayStatus,
   sanitizeVerificationDisplayText,
@@ -71,9 +80,9 @@ function certifiedInMonth(records: SiteCalibration[], offsetMonths: number): num
   const year = date.getFullYear();
   return records.filter(record => {
     if (getVerificationDisplayStatus(record) !== 'certified') return false;
-    const raw = record.certifiedAt || record.approvedAt || record.createdAt;
-    if (!raw) return false;
-    const parsed = new Date(raw);
+    const stamp = recordActivityStamp(record);
+    if (!Number.isFinite(stamp)) return false;
+    const parsed = new Date(stamp);
     return parsed.getMonth() === month && parsed.getFullYear() === year;
   }).length;
 }
@@ -256,11 +265,17 @@ export const RCDashboard: React.FC = () => {
     () => tallyVerificationTypeFilters(scopedVerifications),
     [scopedVerifications],
   );
+  const lifetimeCertified = useMemo(
+    () => tallyVerificationStatusFilters(verifications).certified,
+    [verifications],
+  );
+  const listDuration = dashboardPeriodToListDuration(period);
 
-  const verificationHref = (status?: VerificationStatusFilter) =>
-    status && status !== 'all'
-      ? `${basePath}/verification?status=${encodeURIComponent(status)}`
-      : `${basePath}/verification`;
+  const verificationHref = (
+    status?: VerificationStatusFilter,
+    duration: VerificationDurationFilter = listDuration,
+  ) =>
+    verificationListPath(`${basePath}/verification`, { status, duration });
 
   const stages = useMemo<StageCard[]>(
     () => [
@@ -307,10 +322,10 @@ export const RCDashboard: React.FC = () => {
       {
         key: 'total_certified',
         label: 'Total Certified',
-        count: tally.certified,
+        count: lifetimeCertified,
         tone: 'blue',
         icon: <LayoutGrid size={18} strokeWidth={1.9} />,
-        href: verificationHref('certified'),
+        href: verificationHref('certified', 'all'),
       },
       {
         key: 'cars',
@@ -338,7 +353,7 @@ export const RCDashboard: React.FC = () => {
         href: verificationHref('certified'),
       },
     ],
-    [tally, vehicleCount, vctCount, rcRank, rcCompanyName, isRcAdmin, basePath],
+    [tally, lifetimeCertified, vehicleCount, vctCount, rcRank, rcCompanyName, isRcAdmin, basePath, listDuration],
   );
 
   const recent = useMemo(
@@ -408,7 +423,7 @@ export const RCDashboard: React.FC = () => {
 
       <section className="wl-primary" aria-label="Verification types">
         <Link
-          to={`${basePath}/verification?type=OV`}
+          to={verificationListPath(`${basePath}/verification`, { type: 'OV', duration: listDuration })}
           className="wl-primary__card wl-primary__card--ov"
           aria-label={`Original Verification, ${typeTally.OV} total`}
         >
@@ -422,7 +437,7 @@ export const RCDashboard: React.FC = () => {
           </span>
         </Link>
         <Link
-          to={`${basePath}/verification?type=RV`}
+          to={verificationListPath(`${basePath}/verification`, { type: 'RV', duration: listDuration })}
           className="wl-primary__card wl-primary__card--rv"
           aria-label={`Re Verification, ${typeTally.RV} total`}
         >
@@ -480,7 +495,10 @@ export const RCDashboard: React.FC = () => {
       </section>
 
       <section className="wl-quick" aria-label="Quick stats">
-        <Link to={verificationHref('certified')} className="wl-quick__card wl-quick__card--orange">
+        <Link
+          to={verificationHref('certified', 'prevMonth')}
+          className="wl-quick__card wl-quick__card--orange"
+        >
           <span className="wl-quick__icon" aria-hidden>
             <BarChart3 size={18} strokeWidth={2} />
           </span>
@@ -490,7 +508,10 @@ export const RCDashboard: React.FC = () => {
             <p className="wl-quick__sub">Last month</p>
           </div>
         </Link>
-        <Link to={verificationHref('certified')} className="wl-quick__card wl-quick__card--green">
+        <Link
+          to={verificationHref('certified', 'month')}
+          className="wl-quick__card wl-quick__card--green"
+        >
           <span className="wl-quick__icon" aria-hidden>
             <Award size={18} strokeWidth={2} />
           </span>

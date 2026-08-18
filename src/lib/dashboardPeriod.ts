@@ -62,12 +62,31 @@ export function stampInDashboardPeriod(
   return true;
 }
 
+export type DashboardActivityRecord = {
+  createdAt?: string;
+  certifiedAt?: string;
+  approvedAt?: string;
+  submittedAt?: string;
+  rejectedAt?: string;
+};
+
+/** Prefer the latest workflow stamp so period tallies follow certification, not create date. */
+export function recordActivityStamp(record: DashboardActivityRecord): number {
+  const raw =
+    record.certifiedAt ||
+    record.rejectedAt ||
+    record.submittedAt ||
+    record.createdAt ||
+    record.approvedAt ||
+    '';
+  return Date.parse(raw);
+}
+
 export function recordInDashboardPeriod(
-  record: { createdAt?: string; certifiedAt?: string; approvedAt?: string },
+  record: DashboardActivityRecord,
   period: DashboardPeriod,
   customFrom: string,
   customTo: string,
 ): boolean {
-  const raw = record.createdAt || record.certifiedAt || record.approvedAt || '';
-  return stampInDashboardPeriod(Date.parse(raw), period, customFrom, customTo);
+  return stampInDashboardPeriod(recordActivityStamp(record), period, customFrom, customTo);
 }

@@ -1,4 +1,5 @@
 import type { SiteCalibration } from '../types';
+import { recordActivityStamp, type DashboardPeriod } from './dashboardPeriod';
 
 export type VerificationDurationFilter =
   | 'all'
@@ -24,10 +25,43 @@ function startOfQuarter(date: Date): Date {
 }
 
 function recordDate(record: SiteCalibration): Date | null {
-  const raw = record.createdAt || record.certifiedAt || record.approvedAt;
+  const stamp = recordActivityStamp(record);
+  if (!Number.isFinite(stamp)) return null;
+  return new Date(stamp);
+}
+
+export function parseVerificationDurationParam(
+  raw: string | null,
+): VerificationDurationFilter | null {
   if (!raw) return null;
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return VERIFICATION_DURATION_OPTIONS.some(option => option.id === raw)
+    ? (raw as VerificationDurationFilter)
+    : null;
+}
+
+export function dashboardPeriodToListDuration(
+  period: DashboardPeriod,
+): VerificationDurationFilter {
+  if (period === 'month' || period === 'quarter' || period === 'year') return period;
+  return 'all';
+}
+
+export function verificationListPath(
+  basePath: string,
+  query?: {
+    status?: string | null;
+    type?: string | null;
+    duration?: VerificationDurationFilter | null;
+    rc?: string | null;
+  },
+): string {
+  const params = new URLSearchParams();
+  if (query?.status && query.status !== 'all') params.set('status', query.status);
+  if (query?.type && query.type !== 'all') params.set('type', query.type);
+  if (query?.duration && query.duration !== 'all') params.set('duration', query.duration);
+  if (query?.rc) params.set('rc', query.rc);
+  const qs = params.toString();
+  return qs ? `${basePath}?${qs}` : basePath;
 }
 
 export function matchesVerificationDurationFilter(

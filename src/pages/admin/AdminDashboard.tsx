@@ -24,7 +24,6 @@ import {
   subscribeAutomationWorkerLogs,
   type AutomationWorkerLogEntry,
 } from '../../lib/automationWorker';
-import { LAST_CERTIFICATE_SEQUENCE_FLOOR } from '../../lib/certificateSequence';
 import {
   displayEmaapText,
   EMAAP_SESSIONS_PATH,
@@ -34,12 +33,19 @@ import { isVctOperational } from '../../lib/vctApproval';
 import { VctOfficerMark } from '../../components/VctOfficerMark';
 import { DashboardPeriodFilter } from '../../components/DashboardPeriodFilter';
 import { DashboardWorkerLiveCard } from '../../components/DashboardWorkerLiveCard';
-import { recordInDashboardPeriod, type DashboardPeriod } from '../../lib/dashboardPeriod';
+import {
+  recordActivityStamp,
+  recordInDashboardPeriod,
+  type DashboardPeriod,
+} from '../../lib/dashboardPeriod';
 import {
   rankRcsByCertifiedCount,
   saveRcCertificationRanks,
 } from '../../lib/rcCertificationRank';
-import { maxCertificateSequenceNumber } from '../../lib/verificationListSort';
+import {
+  dashboardPeriodToListDuration,
+  verificationListPath,
+} from '../../lib/verificationListDuration';
 import {
   getVerificationDisplayStatus,
   tallyVerificationStatusFilters,
@@ -81,9 +87,9 @@ function certifiedInMonth(records: SiteCalibration[], offsetMonths: number): num
   const year = date.getFullYear();
   return records.filter(record => {
     if (getVerificationDisplayStatus(record) !== 'certified') return false;
-    const raw = record.certifiedAt || record.approvedAt || record.createdAt;
-    if (!raw) return false;
-    const parsed = new Date(raw);
+    const stamp = recordActivityStamp(record);
+    if (!Number.isFinite(stamp)) return false;
+    const parsed = new Date(stamp);
     return parsed.getMonth() === month && parsed.getFullYear() === year;
   }).length;
 }
@@ -213,14 +219,11 @@ export const AdminDashboard: React.FC = () => {
     () => tallyVerificationTypeFilters(scopedVerifications),
     [scopedVerifications],
   );
-  const lastCertificateNumber = useMemo(
-    () =>
-      Math.max(
-        LAST_CERTIFICATE_SEQUENCE_FLOOR,
-        maxCertificateSequenceNumber(verifications) ?? 0,
-      ),
+  const lifetimeCertified = useMemo(
+    () => tallyVerificationStatusFilters(verifications).certified,
     [verifications],
   );
+  const listDuration = dashboardPeriodToListDuration(period);
 
   const rcRows = useMemo<RcRow[]>(() => {
     const rcById = new Map(rcUsers.map(rc => [rc.id, rc]));
@@ -244,7 +247,7 @@ export const AdminDashboard: React.FC = () => {
         count: tally.submitted,
         tone: 'blue',
         icon: <Send size={18} strokeWidth={1.9} />,
-        href: `${VERIFICATION_PATH}?status=submitted`,
+        href: verificationListPath(VERIFICATION_PATH, { status: 'submitted', duration: listDuration }),
       },
       {
         key: 'failed_submit',
@@ -252,7 +255,10 @@ export const AdminDashboard: React.FC = () => {
         count: tally.failed_submit,
         tone: 'red',
         icon: <UploadCloud size={18} strokeWidth={1.9} />,
-        href: `${VERIFICATION_PATH}?status=failed_submit`,
+        href: verificationListPath(VERIFICATION_PATH, {
+          status: 'failed_submit',
+          duration: listDuration,
+        }),
       },
       {
         key: 'draft',
@@ -260,7 +266,7 @@ export const AdminDashboard: React.FC = () => {
         count: tally.draft,
         tone: 'violet',
         icon: <FileText size={18} strokeWidth={1.9} />,
-        href: `${VERIFICATION_PATH}?status=draft`,
+        href: verificationListPath(VERIFICATION_PATH, { status: 'draft', duration: listDuration }),
       },
       {
         key: 'certified',
@@ -268,7 +274,7 @@ export const AdminDashboard: React.FC = () => {
         count: tally.certified,
         tone: 'green',
         icon: <Award size={18} strokeWidth={1.9} />,
-        href: `${VERIFICATION_PATH}?status=certified`,
+        href: verificationListPath(VERIFICATION_PATH, { status: 'certified', duration: listDuration }),
       },
       {
         key: 'rejected',
@@ -276,15 +282,15 @@ export const AdminDashboard: React.FC = () => {
         count: tally.rejected,
         tone: 'orange',
         icon: <XCircle size={18} strokeWidth={1.9} />,
-        href: `${VERIFICATION_PATH}?status=rejected`,
+        href: verificationListPath(VERIFICATION_PATH, { status: 'rejected', duration: listDuration }),
       },
       {
         key: 'all',
         label: 'Total Certified',
-        count: lastCertificateNumber,
+        count: lifetimeCertified,
         tone: 'blue',
         icon: <LayoutGrid size={18} strokeWidth={1.9} />,
-        href: VERIFICATION_PATH,
+        href: verificationListPath(VERIFICATION_PATH, { status: 'certified' }),
       },
       {
         key: 'cars',
@@ -311,7 +317,7 @@ export const AdminDashboard: React.FC = () => {
         href: EMAAP_SESSIONS_PATH,
       },
     ],
-    [tally, lastCertificateNumber, vehicleCount, vctTotal],
+    [tally, lifetimeCertified, listDuration, vehicleCount, vctTotal],
   );
 
   const certifiedLastMonth = useMemo(() => certifiedInMonth(verifications, -1), [verifications]);
@@ -357,12 +363,8 @@ export const AdminDashboard: React.FC = () => {
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   }, [scopedVerifications, customerDistrictById, rcUsers]);
 
-  const verificationHref = (status?: VerificationStatusFilter) => {
-    if (status && status !== 'all') {
-      return `${VERIFICATION_PATH}?status=${encodeURIComponent(status)}`;
-    }
-    return VERIFICATION_PATH;
-  };
+  const verificationHref = (status?: VerificationStatusFilter) =>
+    verificationListPath(VERIFICATION_PATH, { status, duration: listDuration });
 
   return (
     <div className="fade-in wl-dash">
@@ -370,7 +372,7 @@ export const AdminDashboard: React.FC = () => {
 
       <section className="wl-primary" aria-label="Verification types">
         <Link
-          to={`${VERIFICATION_PATH}?type=OV`}
+          to={verificationListPath(VERIFICATION_PATH, { type: 'OV', duration: listDuration })}
           className="wl-primary__card wl-primary__card--ov"
           aria-label={`Original Verification, ${typeTally.OV} total`}
         >
@@ -384,7 +386,7 @@ export const AdminDashboard: React.FC = () => {
           </span>
         </Link>
         <Link
-          to={`${VERIFICATION_PATH}?type=RV`}
+          to={verificationListPath(VERIFICATION_PATH, { type: 'RV', duration: listDuration })}
           className="wl-primary__card wl-primary__card--rv"
           aria-label={`Re Verification, ${typeTally.RV} total`}
         >
@@ -441,7 +443,10 @@ export const AdminDashboard: React.FC = () => {
       </section>
 
       <section className="wl-quick" aria-label="Quick stats">
-        <Link to={verificationHref('certified')} className="wl-quick__card wl-quick__card--orange">
+        <Link
+          to={verificationListPath(VERIFICATION_PATH, { status: 'certified', duration: 'prevMonth' })}
+          className="wl-quick__card wl-quick__card--orange"
+        >
           <span className="wl-quick__icon" aria-hidden>
             <BarChart3 size={18} strokeWidth={2} />
           </span>
@@ -451,7 +456,10 @@ export const AdminDashboard: React.FC = () => {
             <p className="wl-quick__sub">Last month</p>
           </div>
         </Link>
-        <Link to={verificationHref('certified')} className="wl-quick__card wl-quick__card--green">
+        <Link
+          to={verificationListPath(VERIFICATION_PATH, { status: 'certified', duration: 'month' })}
+          className="wl-quick__card wl-quick__card--green"
+        >
           <span className="wl-quick__icon" aria-hidden>
             <Award size={18} strokeWidth={2} />
           </span>
@@ -485,7 +493,7 @@ export const AdminDashboard: React.FC = () => {
             {rcRows.map(rc => (
               <li key={rc.id}>
                 <Link
-                  to={`${VERIFICATION_PATH}?rc=${encodeURIComponent(rc.id)}`}
+                  to={verificationListPath(VERIFICATION_PATH, { rc: rc.id, duration: listDuration })}
                   className="wl-rc__card"
                 >
                   <span className="wl-rc__rank" aria-label={`Rank ${rc.rank}`}>
