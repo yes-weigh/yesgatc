@@ -12,6 +12,7 @@ import { FailedSubmitMoveToDraftSection } from './FailedSubmitMoveToDraftSection
 import { RejectedResubmitSection } from './RejectedResubmitSection';
 import { verificationZohoInvoiceNumber } from '../lib/zohoRvSubmit';
 import { VerificationZohoInvoiceSection } from './VerificationZohoInvoiceSection';
+import { VerificationCertificateNotesBox } from './VerificationCertificateNotesBox';
 import { canResubmitSerialGroup, getVerificationSerialGroup } from '../lib/verificationResubmit';
 import { VerificationStatusBadge } from './VerificationStatusBadge';
 import {
@@ -333,6 +334,7 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
                 </>
               )}
             </div>
+            <VerificationCertificateNotesBox record={record} />
           </section>
         </div>
       </div>

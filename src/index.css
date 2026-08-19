@@ -20966,6 +20966,46 @@ body.verification-photo-viewer-open {
   gap: 0.35rem;
 }
 
+.verification-cert-notes {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, #f59e0b 38%, var(--border-glass));
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+}
+
+.verification-cert-notes__label {
+  margin: 0 0 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.verification-cert-notes__title {
+  margin: 0 0 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.verification-cert-notes__body {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.verification-cert-notes__log {
+  margin: 0.55rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
 .verification-detail-image-thumb {
   width: 120px;
   height: 90px;
