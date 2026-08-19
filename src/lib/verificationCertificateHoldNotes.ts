@@ -12,10 +12,7 @@ export type CertificateHoldNotes = {
 };
 
 export function shouldShowCertificateHoldNotes(record: SiteCalibration): boolean {
-  const status = normalizeVerificationStatus(record);
-  if (status === 'draft') return false;
-  if (isVerificationFullyCertified(record)) return false;
-  return true;
+  return normalizeVerificationStatus(record) !== 'draft' && !isVerificationFullyCertified(record);
 }
 
 export function buildCertificateHoldNotes(

@@ -4,6 +4,7 @@ public sealed class WorkerRemoteControlState
 {
     public int CommandRevision { get; init; }
     public int CredentialsRevision { get; init; }
+    public int ClearJobLocksRevision { get; init; }
     public bool? AutoWorkerEnabled { get; init; }
     public bool PauseWorker { get; init; }
     public string? SuperAdminAadhar { get; init; }

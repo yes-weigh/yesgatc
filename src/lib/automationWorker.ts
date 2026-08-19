@@ -59,6 +59,7 @@ export type AutomationWorkerRemoteControl = {
   credentialsRevision: number;
   autoWorkerEnabled: boolean;
   pauseWorker: boolean;
+  clearJobLocksRevision: number;
   scrapeCommandRevision: number;
   scrapePause: boolean;
   scrapeStartPage: number;
@@ -192,6 +193,7 @@ export const DEFAULT_AUTOMATION_WORKER_REMOTE: AutomationWorkerRemoteControl = {
   credentialsRevision: 0,
   autoWorkerEnabled: true,
   pauseWorker: false,
+  clearJobLocksRevision: 0,
   scrapeCommandRevision: 0,
   scrapePause: true,
   scrapeStartPage: 0,
@@ -267,6 +269,7 @@ export function normalizeAutomationWorkerRemote(
     credentialsRevision: readInt(data, 'credentialsRevision'),
     autoWorkerEnabled: readBool(data, 'autoWorkerEnabled', true),
     pauseWorker: readBool(data, 'pauseWorker'),
+    clearJobLocksRevision: readInt(data, 'clearJobLocksRevision'),
     scrapeCommandRevision: readInt(data, 'scrapeCommandRevision'),
     scrapePause: readBool(data, 'scrapePause'),
     scrapeStartPage: readInt(data, 'scrapeStartPage'),
@@ -485,6 +488,7 @@ export async function saveAutomationWorkerRemoteControl(
       credentialsRevision: nextCredentialsRevision,
       autoWorkerEnabled: patch.autoWorkerEnabled ?? current.autoWorkerEnabled,
       pauseWorker: patch.pauseWorker ?? current.pauseWorker,
+      clearJobLocksRevision: patch.clearJobLocksRevision ?? current.clearJobLocksRevision,
       scrapeCommandRevision: patch.scrapeCommandRevision ?? current.scrapeCommandRevision,
       scrapePause: patch.scrapePause ?? current.scrapePause,
       scrapeStartPage: patch.scrapeStartPage ?? current.scrapeStartPage,

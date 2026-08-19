@@ -1,10 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Clock } from 'lucide-react';
+import { Clock, RotateCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import {
+  DEFAULT_AUTOMATION_WORKER_REMOTE,
   resolveWorkerRuntimeState,
+  saveAutomationWorkerRemoteControl,
+  subscribeAutomationWorkerRemote,
   subscribeAutomationWorkerStatus,
+  type AutomationWorkerRemoteControl,
   type AutomationWorkerStatus,
   type WorkerRuntimeState,
 } from '../lib/automationWorker';
@@ -40,11 +45,20 @@ function heartbeatAge(value: string, now: number): string {
 
 export const DashboardWorkerLiveCard: React.FC = () => {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const isAdmin = user?.role === 'super_admin';
   const [status, setStatus] = useState<AutomationWorkerStatus | null>(null);
+  const [remote, setRemote] = useState<AutomationWorkerRemoteControl>(
+    DEFAULT_AUTOMATION_WORKER_REMOTE,
+  );
   const [now, setNow] = useState(() => Date.now());
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => subscribeAutomationWorkerStatus(setStatus), []);
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    return subscribeAutomationWorkerRemote(setRemote);
+  }, [isAdmin]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
@@ -56,6 +70,33 @@ export const DashboardWorkerLiveCard: React.FC = () => {
   const machine = status?.machineName?.trim() || 'VPS';
   const beat = heartbeatAge(status?.lastHeartbeatAt || '', now);
   const className = `wl-live wl-live--${runtime}`;
+  const offline = runtime === 'offline';
+
+  const handleRestart = async () => {
+    if (!isAdmin || !user?.uid || saving) return;
+    const ok = await confirm({
+      title: 'Restart certificate worker?',
+      message: [
+        'Clears stuck job locks and re-queues Submitted work.',
+        'Does not reboot the VPS. Worker picks it up within ~30 seconds.',
+        'Needs the updated Certificate Worker on the VPS.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Restart',
+    });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      await saveAutomationWorkerRemoteControl(
+        remote,
+        { clearJobLocksRevision: (remote.clearJobLocksRevision || 0) + 1 },
+        user.uid,
+        { incrementCommand: true },
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const body = (
     <>
@@ -81,17 +122,31 @@ export const DashboardWorkerLiveCard: React.FC = () => {
     </>
   );
 
-  if (isAdmin) {
+  if (!isAdmin) {
     return (
-      <Link to="/admin/integrations/worker" className={className} aria-label="Open worker">
+      <section className={className} aria-label="Worker status">
         {body}
-      </Link>
+      </section>
     );
   }
 
   return (
     <section className={className} aria-label="Worker status">
       {body}
+      <div className="wl-live__actions">
+        <button
+          type="button"
+          className="wl-live__restart"
+          disabled={saving || offline}
+          onClick={() => void handleRestart()}
+        >
+          <RotateCw size={15} strokeWidth={2.2} aria-hidden />
+          {saving ? 'Restarting…' : 'Restart worker'}
+        </button>
+        <Link to="/admin/integrations/worker" className="wl-live__open">
+          Open worker
+        </Link>
+      </div>
     </section>
   );
 };

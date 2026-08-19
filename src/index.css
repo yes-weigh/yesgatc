@@ -20967,11 +20967,14 @@ body.verification-photo-viewer-open {
 }
 
 .verification-cert-notes {
+  display: block;
+  width: 100%;
   margin-top: 1rem;
-  padding: 0.85rem 1rem;
+  padding: 0.9rem 1rem;
   border-radius: 0.65rem;
-  border: 1px solid color-mix(in srgb, #f59e0b 38%, var(--border-glass));
-  background: color-mix(in srgb, #f59e0b 8%, transparent);
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  background: rgba(251, 191, 36, 0.12);
+  box-sizing: border-box;
 }
 
 .verification-cert-notes__label {
@@ -23413,6 +23416,51 @@ a.wl-live:hover {
 .wl-live__chip--warn {
   border-color: rgba(251, 146, 60, 0.4);
   color: #fdba74;
+}
+
+.wl-live__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.45rem;
+}
+
+.wl-live__restart {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  height: 2.15rem;
+  padding: 0 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(96, 165, 250, 0.42);
+  background: rgba(37, 99, 235, 0.22);
+  color: #dbeafe;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.wl-live__restart:hover:not(:disabled) {
+  border-color: rgba(147, 197, 253, 0.7);
+  background: rgba(37, 99, 235, 0.34);
+}
+
+.wl-live__restart:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.wl-live__open {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.wl-live__open:hover {
+  color: #bfdbfe;
 }
 
 .wl-wallet {

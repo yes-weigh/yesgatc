@@ -19,6 +19,7 @@ public sealed class WorkerTelemetryService
 
     private int _lastAppliedCommandRevision;
     private int _lastAppliedCredentialsRevision;
+    private int _lastAppliedClearJobLocksRevision;
     private DateTimeOffset? _docaLoggedInAt;
     private DateTimeOffset? _lastSessionProbeAt;
     private string _lastSessionProbeResult = string.Empty;
@@ -254,6 +255,7 @@ public sealed class WorkerTelemetryService
             {
                 CommandRevision = FirestoreDocumentClient.ReadInt(fields, "commandRevision"),
                 CredentialsRevision = FirestoreDocumentClient.ReadInt(fields, "credentialsRevision"),
+                ClearJobLocksRevision = FirestoreDocumentClient.ReadInt(fields, "clearJobLocksRevision"),
                 AutoWorkerEnabled = fields.ContainsKey("autoWorkerEnabled")
                     ? FirestoreDocumentClient.ReadBool(fields, "autoWorkerEnabled")
                     : null,
@@ -274,10 +276,15 @@ public sealed class WorkerTelemetryService
     public bool ShouldApplyCommand(WorkerRemoteControlState remote) =>
         remote.CommandRevision > _lastAppliedCommandRevision;
 
+    public bool ShouldApplyClearJobLocks(WorkerRemoteControlState remote) =>
+        remote.ClearJobLocksRevision > _lastAppliedClearJobLocksRevision;
+
     public bool ShouldApplyCredentials(WorkerRemoteControlState remote) =>
         remote.CredentialsRevision > _lastAppliedCredentialsRevision;
 
     public void MarkCommandApplied(int revision) => _lastAppliedCommandRevision = revision;
+
+    public void MarkClearJobLocksApplied(int revision) => _lastAppliedClearJobLocksRevision = revision;
 
     public void MarkCredentialsApplied(int revision) => _lastAppliedCredentialsRevision = revision;
 

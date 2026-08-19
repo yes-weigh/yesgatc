@@ -6,6 +6,7 @@ import { listVerificationAttachmentsFromRecord } from '../lib/verificationAttach
 import { VerificationPhotoViewer } from './VerificationPhotoViewer';
 import { VerificationVoidWatermark } from './VerificationVoidWatermark';
 import { VerificationDetailSpecs } from './VerificationDetailSpecs';
+import { VerificationCertificateNotesBox } from './VerificationCertificateNotesBox';
 import type { Customer, Product, SiteCalibration } from '../types';
 import type { VerificationRcPartyProfile } from '../lib/verificationPartyDetails';
 
@@ -78,6 +79,7 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
               </button>
             ))}
           </div>
+          <VerificationCertificateNotesBox record={record} />
         </div>
       )}
 

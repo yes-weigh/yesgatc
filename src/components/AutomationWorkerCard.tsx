@@ -11,12 +11,14 @@ import {
   Pause,
   Play,
   RefreshCw,
+  RotateCw,
   Search,
   ShieldCheck,
   Wrench,
   XCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import {
   averageSessionSeconds,
   formatDuration,
@@ -161,6 +163,7 @@ function logLevelIcon(level: string): React.ReactNode {
 
 export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ className = '' }) => {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [status, setStatus] = useState<AutomationWorkerStatus | null>(null);
   const [remote, setRemote] = useState<AutomationWorkerRemoteControl>(DEFAULT_AUTOMATION_WORKER_REMOTE);
   const [logs, setLogs] = useState<AutomationWorkerLogEntry[]>([]);
@@ -250,6 +253,25 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     if (!remote) return;
     await pushRemote(
       { autoWorkerEnabled: !remote.autoWorkerEnabled },
+      { incrementCommand: true },
+    );
+  };
+
+  const handleClearJobLocks = async () => {
+    if (!remote) return;
+    const ok = await confirm({
+      title: 'Retry locked jobs?',
+      message: [
+        'Clears the in-memory retry lock and re-queues Submitted jobs.',
+        'Does not reboot the VPS. Worker picks this up within ~30 seconds.',
+        'Needs the updated Certificate Worker installed; older builds ignore this.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Clear locks',
+    });
+    if (!ok) return;
+    await pushRemote(
+      { clearJobLocksRevision: (remote.clearJobLocksRevision || 0) + 1 },
       { incrementCommand: true },
     );
   };
@@ -392,6 +414,15 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
           >
             <RefreshCw size={16} aria-hidden />
             {remote?.autoWorkerEnabled === false ? 'Enable auto worker' : 'Disable auto worker'}
+          </button>
+          <button
+            type="button"
+            className="cw-control-btn"
+            disabled={!remoteReady || saving || runtimeState === 'offline'}
+            onClick={() => void handleClearJobLocks()}
+          >
+            <RotateCw size={16} aria-hidden />
+            Retry locked jobs
           </button>
         </div>
       </section>

@@ -1258,6 +1258,11 @@ public partial class MainWindow : Window
         {
             await ApplyRemoteCommandAsync(remote);
         }
+
+        if (_telemetry.ShouldApplyClearJobLocks(remote))
+        {
+            await ApplyRemoteClearJobLocksAsync(remote);
+        }
     }
 
     private async Task ApplyRemoteCredentialsAsync(WorkerRemoteControlState remote)
@@ -1360,6 +1365,27 @@ public partial class MainWindow : Window
         _telemetry.MarkCommandApplied(remote.CommandRevision);
         UpdateAutoWorkerStatusText();
         await PublishWorkerStatusAsync();
+    }
+
+    private async Task ApplyRemoteClearJobLocksAsync(WorkerRemoteControlState remote)
+    {
+        var cleared = _jobRetries.Snapshot().Count;
+        _jobRetries.ClearAll();
+        RefreshRetryBadges();
+        _autoWorkerPausedForDoca = false;
+        AddActivityEntry(
+            cleared > 0
+                ? $"Cleared {cleared} job lock(s) from web admin — re-queueing submitted work."
+                : "Cleared job locks from web admin — re-queueing submitted work.");
+        _telemetry.MarkClearJobLocksApplied(remote.ClearJobLocksRevision);
+        await LoadQueueAsync().ConfigureAwait(false);
+        if (_autoWorkerEnabled && _session is not null && !_remotePaused)
+        {
+            StartAutoWorkerTimers();
+            _ = RunAutoWorkerCycleAsync();
+        }
+
+        await PublishWorkerStatusAsync().ConfigureAwait(false);
     }
 
     private void SetDocaLoginPaused(
