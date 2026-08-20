@@ -112,9 +112,33 @@ public partial class MainWindow : Window
         LoadSavedCredentials(settings);
         ConfigureAutoWorkerFromSettings();
         ConfigureStartWithWindowsFromStore();
+        ApplyProductBranding();
 
         Loaded += MainWindow_Loaded;
         Closed += MainWindow_Closed;
+    }
+
+    private void ApplyProductBranding()
+    {
+        Title = WorkerProduct.AppName;
+        WorkerBrandText.Text = WorkerProduct.AppName;
+        AccountHintText.Text = WorkerProduct.IsEmaapEngineBuild
+            ? "RC Admin Aadhar + password"
+            : "Super Admin Aadhar + password (VPS)";
+        EmaapLoginAutomation.PreferManualLoginUntilAuthenticated = WorkerProduct.IsEmaapEngineBuild;
+        if (!WorkerProduct.IsEmaapEngineBuild)
+        {
+            PortalLoginPanel.Visibility = Visibility.Collapsed;
+        }
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            ChromeProfileCombo.Visibility = Visibility.Collapsed;
+            ChromeProfileHint.Visibility = Visibility.Collapsed;
+            if (ChromeProfileLabel is not null)
+            {
+                ChromeProfileLabel.Visibility = Visibility.Collapsed;
+            }
+        }
     }
 
     private SiteCalibrationRecord? SelectedJob => _selectedQueueItem?.Record;
@@ -526,12 +550,20 @@ public partial class MainWindow : Window
 
         await StartDocaBrowserAsync();
 
-        ExpandAccountPanel();
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            ExpandAccountPanel();
+            SetStatus(
+                _automationService.IsBrowserConnected
+                    ? $"eMaap browser is open. Enter {WorkerProduct.SignInRoleLabel} credentials and sign in."
+                    : $"Enter {WorkerProduct.SignInRoleLabel} credentials and sign in to load the queue.",
+                StatusKind.Idle);
+            return;
+        }
+
         SetStatus(
-            _automationService.IsBrowserConnected
-                ? "eMaap browser is open. Enter Super Admin credentials and sign in."
-                : "Enter Super Admin credentials and sign in to load the queue.",
-            StatusKind.Idle);
+            "VPS worker uses saved Super Admin from credentials.local.json / appsettings.local.json. No portal login on this EXE.",
+            StatusKind.Info);
     }
 
     private Task StartDocaBrowserAsync()
@@ -2073,7 +2105,7 @@ public partial class MainWindow : Window
 
         if (_session is null)
         {
-            SetStatus("Sign in as Super Admin first.", StatusKind.Info);
+            SetStatus($"Sign in as {WorkerProduct.SignInRoleLabel} first.", StatusKind.Info);
             ExpandAccountPanel();
             return;
         }
@@ -2159,7 +2191,7 @@ public partial class MainWindow : Window
 
         if (_session is null)
         {
-            SetStatus("Sign in as Super Admin first.", StatusKind.Info);
+            SetStatus($"Sign in as {WorkerProduct.SignInRoleLabel} first.", StatusKind.Info);
             ExpandAccountPanel();
             return;
         }
@@ -2237,7 +2269,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            SetStatus("Sign in as Super Admin first.", StatusKind.Info);
+            SetStatus($"Sign in as {WorkerProduct.SignInRoleLabel} first.", StatusKind.Info);
             ExpandAccountPanel();
             return;
         }
@@ -2301,7 +2333,7 @@ public partial class MainWindow : Window
 
         if (_session is null)
         {
-            JobDetailBox.Text = "Sign in as Super Admin to load document details.";
+            JobDetailBox.Text = $"Sign in as {WorkerProduct.SignInRoleLabel} to load document details.";
             return;
         }
 
@@ -2388,12 +2420,12 @@ public partial class MainWindow : Window
             }
             else
             {
-                MessageBox.Show(this, "Log file does not exist yet.", "Certificate Worker", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(this, "Log file does not exist yet.", WorkerProduct.AppName, MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Could not open log file: {ex.Message}", "Certificate Worker", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, $"Could not open log file: {ex.Message}", WorkerProduct.AppName, MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -3090,7 +3122,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            throw new InvalidOperationException("Sign in as Super Admin first.");
+            throw new InvalidOperationException($"Sign in as {WorkerProduct.SignInRoleLabel} first.");
         }
 
         if (!job.NeedsPipelineWork)
@@ -3162,7 +3194,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            throw new InvalidOperationException("Sign in as Super Admin first.");
+            throw new InvalidOperationException($"Sign in as {WorkerProduct.SignInRoleLabel} first.");
         }
 
         await _tokenLock.WaitAsync(cancellationToken);
@@ -3204,10 +3236,8 @@ public partial class MainWindow : Window
         var rcScope = CertificateWorkerIdentity.IsEmaapEngine(session) ? session.UserId : null;
         _firestoreService.QueueRcIdFilter = rcScope;
         _queueListener.ScopeRcId = rcScope;
-        EmaapLoginAutomation.PreferManualLoginUntilAuthenticated = CertificateWorkerIdentity.IsEmaapEngine(session);
-        Title = CertificateWorkerIdentity.IsEmaapEngine(session)
-            ? "emaapengine"
-            : "YesGATC Certificate Worker";
+        EmaapLoginAutomation.PreferManualLoginUntilAuthenticated = WorkerProduct.IsEmaapEngineBuild;
+        Title = WorkerProduct.AppName;
     }
 
     private async Task<bool> TryClaimCurrentJobAsync(SiteCalibrationRecord job)
@@ -3239,7 +3269,9 @@ public partial class MainWindow : Window
         await RunWithBusyStateAsync(async () =>
         {
             SetStatus("Signing in…", StatusKind.Working);
-            _session = await _authService.SignInAsCertificateWorkerAsync(AadharBox.Text, PasswordBox.Text);
+            _session = WorkerProduct.IsEmaapEngineBuild
+                ? await _authService.SignInAsRcAdminAsync(AadharBox.Text, PasswordBox.Text)
+                : await _authService.SignInAsSuperAdminAsync(AadharBox.Text, PasswordBox.Text);
             ApplyCertificateWorkerSession(_session);
 
             PersistCredentials();
@@ -3431,8 +3463,8 @@ public partial class MainWindow : Window
             ? _session.Email
             : _session.DisplayName;
         var role = CertificateWorkerIdentity.IsEmaapEngine(_session)
-            ? "emaapengine"
-            : "Super Admin · VPS";
+            ? "EmaapEngine"
+            : "VPS worker";
         SignInSummaryText.Text = $"{summary} · {role}";
         SignInStatusDot.Fill = (Brush)FindResource("AccentGreenBrush");
     }
@@ -3468,7 +3500,7 @@ public partial class MainWindow : Window
             await RunOnUiAsync(() =>
             {
                 SetStatus(ex.Message, ex, StatusKind.Error);
-                MessageBox.Show(this, ex.Message, "Certificate Worker", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(this, ex.Message, WorkerProduct.AppName, MessageBoxButton.OK, MessageBoxImage.Warning);
             });
         }
         finally

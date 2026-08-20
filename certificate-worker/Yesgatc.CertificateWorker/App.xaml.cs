@@ -32,7 +32,7 @@ public partial class App : Application
     {
         MessageBox.Show(
             e.Exception.ToString(),
-            "Certificate Worker — unexpected error",
+            WorkerProduct.AppName + " — unexpected error",
             MessageBoxButton.OK,
             MessageBoxImage.Error);
         e.Handled = true;

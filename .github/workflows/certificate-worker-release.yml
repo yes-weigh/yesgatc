@@ -24,6 +24,7 @@ jobs:
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
       ZIP_PATH: certificate-worker/publish/Yesgatc.CertificateWorker-win-x64.zip
+      EMAAP_ENGINE_ZIP_PATH: certificate-worker/publish/EmaapEngine-win-x64.zip
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,6 +41,9 @@ jobs:
           if (-not (Test-Path $env:ZIP_PATH)) {
             throw "Release zip was not created at $env:ZIP_PATH"
           }
+          if (-not (Test-Path $env:EMAAP_ENGINE_ZIP_PATH)) {
+            throw "EmaapEngine zip was not created at $env:EMAAP_ENGINE_ZIP_PATH"
+          }
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -47,9 +51,17 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           name: Certificate Worker ${{ env.RELEASE_TAG }}
           generate_release_notes: true
-          files: ${{ env.ZIP_PATH }}
+          files: |
+            ${{ env.ZIP_PATH }}
+            ${{ env.EMAAP_ENGINE_ZIP_PATH }}
           body: |
-            Windows x64 build of the YesGATC Certificate Worker.
+            Two Windows x64 builds:
+
+            - **Yesgatc.CertificateWorker** — VPS Super Admin worker
+            - **EmaapEngine.exe** — RC Admin PC only (`EmaapEngine-win-x64.zip`)
+
+            ### RC PC
+            Unzip `EmaapEngine-win-x64.zip`, run **EmaapEngine.exe**, sign in with RC Aadhar + portal password. Type eMAAP captcha and OTP in Chrome.
 
             ### Server update (already installed)
             ```powershell

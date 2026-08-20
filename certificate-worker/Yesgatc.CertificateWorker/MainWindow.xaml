@@ -163,7 +163,8 @@
                               HorizontalScrollBarVisibility="Disabled"
                               Padding="0,0,4,0">
                     <StackPanel MaxWidth="720" HorizontalAlignment="Left">
-                        <TextBlock Text="Certificate Worker"
+                        <TextBlock x:Name="WorkerBrandText"
+                                   Text="Certificate Worker"
                                    FontSize="20"
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource TitleGradientBrush}"
@@ -194,7 +195,9 @@
                                 </Expander.Header>
 
                                 <StackPanel Margin="0,6,0,0">
-                                    <TextBlock Text="Aadhar + password — Super Admin (VPS) or RC Admin (emaapengine)"
+                                    <StackPanel x:Name="PortalLoginPanel">
+                                    <TextBlock x:Name="AccountHintText"
+                                               Text="Aadhar + password"
                                                Style="{StaticResource FieldLabel}"
                                                Margin="0,0,0,4"/>
                                     <Grid Margin="0,0,0,10">
@@ -217,8 +220,10 @@
                                             HorizontalAlignment="Stretch"
                                             Margin="0,0,0,14"
                                             Click="SignInButton_Click"/>
+                                    </StackPanel>
 
-                                    <TextBlock Text="Chrome profile (DeepSeek / cookies)"
+                                    <TextBlock x:Name="ChromeProfileLabel"
+                                               Text="Chrome profile (DeepSeek / cookies)"
                                                Style="{StaticResource FieldLabel}"
                                                Margin="0,0,0,4"/>
                                     <ComboBox x:Name="ChromeProfileCombo"

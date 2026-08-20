@@ -11,9 +11,8 @@ namespace Yesgatc.CertificateWorker.Services;
 /// </summary>
 public static class WindowsAutostartService
 {
-    public const string TaskName = "YesGATC Certificate Worker";
-    public const string RunValueName = "YesGATC Certificate Worker";
-    private const string KnownInstallPath = @"C:\YesGATC\CertificateWorker";
+    public static string TaskName => WorkerProduct.AutostartName;
+    public static string RunValueName => WorkerProduct.AutostartName;
 
     public static string ResolveInstallDirectory()
     {
@@ -21,32 +20,35 @@ public static class WindowsAutostartService
             Path.DirectorySeparatorChar,
             Path.AltDirectorySeparatorChar));
 
-        var knownExe = Path.Combine(KnownInstallPath, "Yesgatc.CertificateWorker.exe");
+        var knownExe = Path.Combine(WorkerProduct.KnownInstallPath, WorkerProduct.ExeFileName);
         if (File.Exists(knownExe)
             && string.Equals(
-                Path.GetFullPath(KnownInstallPath),
+                Path.GetFullPath(WorkerProduct.KnownInstallPath),
                 baseDir,
                 StringComparison.OrdinalIgnoreCase))
         {
-            return KnownInstallPath;
+            return WorkerProduct.KnownInstallPath;
         }
 
         return baseDir;
     }
 
     public static string ResolveExePath() =>
-        Path.Combine(ResolveInstallDirectory(), "Yesgatc.CertificateWorker.exe");
+        Path.Combine(ResolveInstallDirectory(), WorkerProduct.ExeFileName);
 
     public static string BuildLaunchCommand(string installDir)
     {
-        var startScript = Path.Combine(installDir, "start-worker.ps1");
-        if (File.Exists(startScript))
+        if (!WorkerProduct.IsEmaapEngineBuild)
         {
-            return
-                $"powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{startScript}\" -InstallPath \"{installDir}\"";
+            var startScript = Path.Combine(installDir, "start-worker.ps1");
+            if (File.Exists(startScript))
+            {
+                return
+                    $"powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{startScript}\" -InstallPath \"{installDir}\"";
+            }
         }
 
-        var exe = Path.Combine(installDir, "Yesgatc.CertificateWorker.exe");
+        var exe = Path.Combine(installDir, WorkerProduct.ExeFileName);
         return $"\"{exe}\"";
     }
 

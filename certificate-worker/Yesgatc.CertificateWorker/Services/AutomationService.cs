@@ -228,11 +228,7 @@ public sealed class AutomationService : IAsyncDisposable
             }
 
             var root = string.IsNullOrWhiteSpace(_settings.BrowserProfilePath)
-                ? Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "YesGATC",
-                    "CertificateWorker",
-                    "doca-browser")
+                ? Path.Combine(WorkerProduct.DataRoot, "doca-browser")
                 : Environment.ExpandEnvironmentVariables(_settings.BrowserProfilePath);
 
             return WorkerIndex switch

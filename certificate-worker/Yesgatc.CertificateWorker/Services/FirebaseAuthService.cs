@@ -15,30 +15,45 @@ public sealed class FirebaseAuthService
         _settings = settings;
     }
 
-    public Task<FirebaseSignInResult> SignInAsSuperAdminAsync(
-        string aadhar,
-        string password,
-        CancellationToken cancellationToken = default) =>
-        SignInAsCertificateWorkerAsync(aadhar, password, cancellationToken);
-
-    public async Task<FirebaseSignInResult> SignInAsCertificateWorkerAsync(
+    public async Task<FirebaseSignInResult> SignInAsSuperAdminAsync(
         string aadhar,
         string password,
         CancellationToken cancellationToken = default)
+    {
+        var session = await SignInWithProfileAsync(aadhar, password, cancellationToken);
+        if (!string.Equals(session.Role, "super_admin", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "This EXE is the VPS Certificate Worker. Use Super Admin Aadhar and password.");
+        }
+
+        return session;
+    }
+
+    public async Task<FirebaseSignInResult> SignInAsRcAdminAsync(
+        string aadhar,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        var session = await SignInWithProfileAsync(aadhar, password, cancellationToken);
+        if (!string.Equals(session.Role, "rc_admin", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "This EXE is EmaapEngine. Use this RC Admin Aadhar and password.");
+        }
+
+        return session;
+    }
+
+    private async Task<FirebaseSignInResult> SignInWithProfileAsync(
+        string aadhar,
+        string password,
+        CancellationToken cancellationToken)
     {
         var session = await SignInWithAadharAsync(aadhar, password, cancellationToken);
         var documents = new FirestoreDocumentClient(_settings);
         var fields = await documents.GetFieldsAsync("users", session.UserId, session.IdToken, cancellationToken);
         var role = FirestoreFieldReader.ReadString(fields, "role");
-
-        var isSuperAdmin = string.Equals(role, "super_admin", StringComparison.OrdinalIgnoreCase);
-        var isRcAdmin = string.Equals(role, "rc_admin", StringComparison.OrdinalIgnoreCase);
-        if (!isSuperAdmin && !isRcAdmin)
-        {
-            throw new InvalidOperationException(
-                "This account cannot run the certificate worker. Use Super Admin (VPS) or RC Admin (emaapengine).");
-        }
-
         var displayName = FirstNonEmpty(
             FirestoreFieldReader.ReadString(fields, "companyName"),
             FirestoreFieldReader.ReadString(fields, "username"),
@@ -152,7 +167,7 @@ public sealed class FirebaseAuthService
             || body.Contains("INVALID_PASSWORD", StringComparison.OrdinalIgnoreCase)
             || body.Contains("EMAIL_NOT_FOUND", StringComparison.OrdinalIgnoreCase))
         {
-            return "Invalid Aadhar or password.";
+            return $"Invalid {WorkerProduct.SignInRoleLabel} Aadhar or password.";
         }
 
         return "Firebase sign-in failed. Check your credentials and network connection.";

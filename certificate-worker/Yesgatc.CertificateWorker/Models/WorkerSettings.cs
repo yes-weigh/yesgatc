@@ -53,7 +53,7 @@ public sealed class AutomationSettings
     public string DocaLoginUrl { get; init; } = "https://emaap.gov.in/gatc/login";
     /// <summary>Checked first — if session is still valid, portal redirects away from login.</summary>
     public string DocaHomeUrl { get; init; } = "https://emaap.gov.in/gatc/dashboard";
-    /// <summary>Optional override. Default: %LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser</summary>
+    /// <summary>Optional override. Default: %LOCALAPPDATA%\YesGATC\{CertificateWorker|EmaapEngine}\doca-browser</summary>
     public string BrowserProfilePath { get; init; } = string.Empty;
     /// <summary>
     /// When true, seed a YesGATC Chrome mirror from your Chrome profile (cookies/DeepSeek login).
