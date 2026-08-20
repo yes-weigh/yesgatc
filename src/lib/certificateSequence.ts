@@ -3,8 +3,8 @@ export const CERTIFICATE_SEQUENCE_PREFIX = 'IND/GATC/KL/26/04/26/';
 
 export const DEFAULT_CERTIFICATE_SEQUENCE_MAX = 1366;
 
-/** Last sequence issued outside this app. All Stages uses max(this, highest in Firestore). */
-export const LAST_CERTIFICATE_SEQUENCE_FLOOR = 3258;
+/** Last sequence issued on eMAAP. Dashboard Total Certified uses max(this, highest in Firestore). */
+export const LAST_CERTIFICATE_SEQUENCE_FLOOR = 3488;
 
 /** Trailing numeric segment (IND/GATC/KL/26/04/26/1365 → 1365). */
 export function parseCertificateSequenceNumber(value?: string | null): number | null {
@@ -20,6 +20,18 @@ export function parseCertificateSequenceNumber(value?: string | null): number | 
 
 export function formatCertificateNumberFromSequence(sequence: number): string {
   return `${CERTIFICATE_SEQUENCE_PREFIX}${sequence}`;
+}
+
+/** Super Admin Total Certified: eMAAP latest serial, or higher if Firestore already passed it. */
+export function lifetimeCertifiedFromLatestSequence(
+  records: Iterable<{ certificateNumber?: string | null }>,
+): number {
+  let highest = LAST_CERTIFICATE_SEQUENCE_FLOOR;
+  for (const record of records) {
+    const sequence = parseCertificateSequenceNumber(record.certificateNumber);
+    if (sequence != null && sequence > highest) highest = sequence;
+  }
+  return highest;
 }
 
 export type CertificateSequenceHit = {

@@ -46,6 +46,7 @@ import {
   dashboardPeriodToListDuration,
   verificationListPath,
 } from '../../lib/verificationListDuration';
+import { lifetimeCertifiedFromLatestSequence } from '../../lib/certificateSequence';
 import {
   getVerificationDisplayStatus,
   tallyVerificationStatusFilters,
@@ -220,7 +221,7 @@ export const AdminDashboard: React.FC = () => {
     [scopedVerifications],
   );
   const lifetimeCertified = useMemo(
-    () => tallyVerificationStatusFilters(verifications).certified,
+    () => lifetimeCertifiedFromLatestSequence(verifications),
     [verifications],
   );
   const listDuration = dashboardPeriodToListDuration(period);
