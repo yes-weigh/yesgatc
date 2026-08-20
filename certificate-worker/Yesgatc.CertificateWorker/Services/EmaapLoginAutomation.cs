@@ -106,6 +106,89 @@ public static class EmaapLoginAutomation
         return false;
     }
 
+    /// <summary>
+    /// After userid/password: pause so an operator can type captcha + OTP.
+    /// Returns LoggedIn / OtpRequired if that happens; otherwise null (still on captcha form).
+    /// </summary>
+    private static async Task<DocaSessionState?> WaitAfterCredentialsForManualCaptchaOtpAsync(
+        IPage page,
+        int waitSeconds,
+        CancellationToken cancellationToken)
+    {
+        if (waitSeconds <= 0)
+        {
+            return null;
+        }
+
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(waitSeconds, 1, 300));
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await IsLoggedInAsync(page))
+            {
+                return DocaSessionState.LoggedIn;
+            }
+
+            if (await IsOtpStepAsync(page))
+            {
+                return DocaSessionState.OtpRequired;
+            }
+
+            await Task.Delay(1000, cancellationToken);
+        }
+
+        if (await IsLoggedInAsync(page))
+        {
+            return DocaSessionState.LoggedIn;
+        }
+
+        if (await IsOtpStepAsync(page))
+        {
+            return DocaSessionState.OtpRequired;
+        }
+
+        return null;
+    }
+
+    private static async Task<DocaSessionState> ContinueFromOtpStepAsync(
+        IPage page,
+        AutomationSettings settings,
+        FirebaseSettings? firebase,
+        Func<CancellationToken, Task<string>>? resolveFirebaseIdToken,
+        CancellationToken cancellationToken,
+        Func<CaptchaAttemptReport, Task>? reportAttemptAsync)
+    {
+        var masterHit = await TrySubmitMasterOtpAsync(
+            page,
+            settings,
+            cancellationToken,
+            reportAttemptAsync);
+        if (masterHit == DocaSessionState.LoggedIn)
+        {
+            return DocaSessionState.LoggedIn;
+        }
+
+        var since = LastOtpRequestedAtUtc ?? DateTimeOffset.UtcNow.AddMinutes(-10);
+        var emailOtp = await TryReadEmailOtpAsync(
+            page,
+            settings,
+            firebase,
+            resolveFirebaseIdToken,
+            since,
+            cancellationToken);
+        if (!string.IsNullOrWhiteSpace(emailOtp))
+        {
+            return await SubmitOtpAsync(
+                page,
+                settings,
+                emailOtp,
+                cancellationToken,
+                reportAttemptAsync);
+        }
+
+        return DocaSessionState.OtpRequired;
+    }
+
     public static async Task<DocaSessionState> TryLoginThroughOtpGateAsync(
         IPage page,
         AutomationSettings settings,
@@ -131,36 +214,13 @@ public static class EmaapLoginAutomation
 
         if (await IsOtpStepAsync(page))
         {
-            var masterHit = await TrySubmitMasterOtpAsync(
-                page,
-                settings,
-                cancellationToken,
-                reportAttemptAsync);
-            if (masterHit == DocaSessionState.LoggedIn)
-            {
-                return DocaSessionState.LoggedIn;
-            }
-
-            // Already on OTP step after prior Send OTP / session bounce — poll Firebase (or Gmail).
-            var since = LastOtpRequestedAtUtc ?? DateTimeOffset.UtcNow.AddMinutes(-10);
-            var emailOtp = await TryReadEmailOtpAsync(
+            return await ContinueFromOtpStepAsync(
                 page,
                 settings,
                 firebase,
                 resolveFirebaseIdToken,
-                since,
-                cancellationToken);
-            if (!string.IsNullOrWhiteSpace(emailOtp))
-            {
-                return await SubmitOtpAsync(
-                    page,
-                    settings,
-                    emailOtp,
-                    cancellationToken,
-                    reportAttemptAsync);
-            }
-
-            return DocaSessionState.OtpRequired;
+                cancellationToken,
+                reportAttemptAsync);
         }
 
         if (!settings.AutoSolveCaptcha)
@@ -170,6 +230,52 @@ public static class EmaapLoginAutomation
         }
 
         await FillCredentialsAsync(page, credentials);
+        await page.BringToFrontAsync();
+
+        var afterManualWait = await WaitAfterCredentialsForManualCaptchaOtpAsync(
+            page,
+            settings.EmaapManualCaptchaOtpWaitSeconds,
+            cancellationToken);
+        if (afterManualWait == DocaSessionState.LoggedIn)
+        {
+            return DocaSessionState.LoggedIn;
+        }
+
+        if (afterManualWait == DocaSessionState.OtpRequired
+            || await IsOtpStepAsync(page))
+        {
+            return await ContinueFromOtpStepAsync(
+                page,
+                settings,
+                firebase,
+                resolveFirebaseIdToken,
+                cancellationToken,
+                reportAttemptAsync);
+        }
+
+        var typedCaptcha = await ReadCaptchaInputValueAsync(page);
+        if (typedCaptcha.Length >= 4)
+        {
+            LastSendOtpCaptcha = typedCaptcha;
+            LastOtpRequestedAtUtc = DateTimeOffset.UtcNow;
+            await ClickSendOtpAsync(page);
+            await WaitAndDismissOtpSentDialogAsync(page, maxSeconds: 15);
+            if (await IsLoggedInAsync(page))
+            {
+                return DocaSessionState.LoggedIn;
+            }
+
+            if (await IsOtpStepAsync(page))
+            {
+                return await ContinueFromOtpStepAsync(
+                    page,
+                    settings,
+                    firebase,
+                    resolveFirebaseIdToken,
+                    cancellationToken,
+                    reportAttemptAsync);
+            }
+        }
 
         var maxAttempts = Math.Max(1, settings.CaptchaMaxAttempts);
         var ocrProvider = ResolveOcrProviderLabel(settings.CaptchaOcr);

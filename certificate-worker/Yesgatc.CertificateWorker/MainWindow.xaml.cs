@@ -582,7 +582,7 @@ public partial class MainWindow : Window
             var profileLabel = ChromeProfilePreference.RuntimeDirectory ?? "Default";
             var ocrLabel = CaptchaOcrKeys.DescribeProvider(App.Settings.Automation.CaptchaOcr);
             SetStatus(
-                $"Opening eMAAP (Chrome: {profileLabel}) — captcha via {ocrLabel}, OTP via Firebase inbox…",
+                $"Opening eMAAP (Chrome: {profileLabel}) — fill userid/password, wait 1 min for manual captcha/OTP, then {ocrLabel}…",
                 StatusKind.Working);
             var state = await _automationService.OpenDocaWorkspaceAsync();
 

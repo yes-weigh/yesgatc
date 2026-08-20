@@ -371,7 +371,7 @@ public sealed class FirestoreService
     }
 
     /// <summary>
-    /// Permanent data failure — status=rejected. Worker will not pick the job again.
+    /// Permanent data failure — reopen as draft so RC/VCT can fix and resubmit.
     /// </summary>
     public async Task RecordRejectionAsync(
         string jobId,
@@ -385,7 +385,7 @@ public sealed class FirestoreService
         }
 
         var verification = await GetVerificationByIdAsync(jobId, idToken, cancellationToken);
-        if (verification is null || verification.IsCertified || verification.IsRejected)
+        if (verification is null || verification.IsCertified)
         {
             return;
         }
@@ -398,11 +398,10 @@ public sealed class FirestoreService
             jobId,
             new Dictionary<string, string>
             {
-                ["status"] = VerificationStatuses.Rejected,
+                ["status"] = VerificationStatuses.Draft,
                 ["pipelineFailedPhase"] = "submit",
                 ["pipelineFailureMessage"] = trimmed,
                 ["pipelineFailedAt"] = now,
-                ["rejectedAt"] = now,
                 ["updatedAt"] = now,
             },
             idToken,

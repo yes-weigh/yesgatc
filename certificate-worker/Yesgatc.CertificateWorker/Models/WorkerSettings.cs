@@ -85,7 +85,11 @@ public sealed class AutomationSettings
     public int EmaapOtpPollSeconds { get; init; } = 180;
     /// <summary>Legacy Gmail tab scrape — off by default (Google blocks automation).</summary>
     public bool EmaapOtpUseGmailFallback { get; init; }
-    /// <summary>Try this OTP first after Send OTP; on failure fall back to Firebase inbox.</summary>
+    /// <summary>
+    /// After filling eMAAP email/password, wait this long (seconds) for manual captcha/OTP
+    /// before DeepSeek OCR. 0 disables the pause.
+    /// </summary>
+    public int EmaapManualCaptchaOtpWaitSeconds { get; init; } = 60;
     public string EmaapMasterOtp { get; init; } = string.Empty;
     public CaptchaOcrSettings CaptchaOcr { get; init; } = new();
     public DocaCredentialSettings DocaCredentials { get; init; } = new();
