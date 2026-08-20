@@ -36,6 +36,7 @@ import {
   VerificationListFilters,
   type VerificationStatusFilter,
   type VerificationTypeFilter,
+  type VerificationPaymentDueFilter,
 } from '../../components/VerificationListFilters';
 import { TablePagination } from '../../components/TablePagination';
 import { VerificationDetailPanel } from '../../components/VerificationDetailPanel';
@@ -43,6 +44,8 @@ import { VerificationListTable } from '../../components/VerificationListTable';
 import { isVerificationCertificateVoided } from '../../lib/verificationCertificateVoid';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
 import { isRvWalletPaymentOutstanding } from '../../lib/rvPaymentAmount';
+import { ensureRvWalletDebitedForRecords } from '../../lib/rvWalletAdvancePay';
+import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import {
   buildDevDeleteSubmittedMessage,
   canDevDeleteSubmittedVerification,
@@ -106,6 +109,7 @@ export const AdminVerificationList: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
   const [durationFilter, setDurationFilter] = useState<VerificationDurationFilter>('all');
   const [rcFilter, setRcFilter] = useState<string>('all');
+  const [paymentDueFilter, setPaymentDueFilter] = useState<VerificationPaymentDueFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [viewingRecord, setViewingRecord] = useState<VerificationRow | null>(null);
@@ -320,6 +324,9 @@ export const AdminVerificationList: React.FC = () => {
       if (voidOnly && !isVerificationCertificateVoided(record)) {
         return false;
       }
+      if (paymentDueFilter === 'due' && !isRvWalletPaymentOutstanding(record)) {
+        return false;
+      }
       if (!matchesVerificationSearch(record, searchTerm, { rcCenterName: record.rcCenterName })) {
         return false;
       }
@@ -343,7 +350,7 @@ export const AdminVerificationList: React.FC = () => {
       return true;
     });
     return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
-  }, [durationScoped, statusFilter, voidOnly, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+  }, [durationScoped, statusFilter, voidOnly, paymentDueFilter, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -361,7 +368,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter]);
+  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter]);
 
   useEffect(() => {
     if (viewingRecord || !rowHighlightFlashId) return;
@@ -581,7 +588,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
-  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter]);
+  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter]);
 
   useEffect(() => {
     if (selectAllDraftsRef.current) {
@@ -622,6 +629,12 @@ export const AdminVerificationList: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      await ensureRvWalletDebitedForRecords({
+        records: [record],
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(null),
+      });
       await submitVerificationRecord(
         {
           id: record.id,
@@ -665,6 +678,12 @@ export const AdminVerificationList: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      await ensureRvWalletDebitedForRecords({
+        records: selectedRecords,
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(null),
+      });
       await submitVerificationRecords(
         selectedRecords.map(record => ({
           id: record.id,
@@ -697,6 +716,10 @@ export const AdminVerificationList: React.FC = () => {
         .map(record => record.id),
     );
   }, [records]);
+  const paymentDueCount = useMemo(
+    () => durationScoped.filter(record => isRvWalletPaymentOutstanding(record)).length,
+    [durationScoped],
+  );
   return (
     <div className="fade-in page-content">
       {viewingRecord ? (
@@ -749,6 +772,10 @@ export const AdminVerificationList: React.FC = () => {
             rcFilter={rcFilter}
             onRcFilterChange={setRcFilter}
             rcOptions={rcFilterOptions}
+            paymentDueFilter={paymentDueFilter}
+            onPaymentDueFilterChange={setPaymentDueFilter}
+            paymentDueCount={paymentDueCount}
+            paymentDueAllCount={durationScoped.length}
             onRefresh={() => void fetchRecords()}
             refreshing={loading}
           />

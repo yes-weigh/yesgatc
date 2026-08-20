@@ -1035,6 +1035,186 @@ async function resetRcWalletHandler(request, db) {
   };
 }
 
+function isDraftStatus(status) {
+  return !status || status === 'draft';
+}
+
+function isRvWalletOutstanding(data) {
+  if (!data || data.verificationType !== 'RV') return false;
+  if (data.rvPaymentStatus === 'paid') return false;
+  if (isDraftStatus(data.status) && !data.certificateNumber && !data.submittedAt) return false;
+  return true;
+}
+
+function walletBreakdownFromCapacity(capacityKg, settings) {
+  const base = capacityKg <= 20 ? settings.zohoFeeUpto20KgInr : settings.zohoFeeAbove20KgInr;
+  const gst = Math.round(Number(base) * 0.18);
+  const tds = Math.round(((Number(base) * Number(settings.zohoTdsPercent || 1)) / 100) * 100) / 100;
+  const total = roundInr(tds + gst);
+  return {
+    administrativeFees: tds,
+    gst,
+    total,
+    tdsTotal: tds,
+    gatewayTotal: 0,
+  };
+}
+
+/**
+ * Super Admin: debit RC wallets for RV rows that already submitted/certified without payment.
+ */
+async function settleOutstandingRvWalletPaymentsHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+  await assertSuperAdmin(db, request.auth.uid);
+
+  const { normalizeZohoRvSettings, maximumCapacityKg } = require('./zohoRv');
+  const settingsSnap = await db.doc('appSettings/global').get();
+  const settings = normalizeZohoRvSettings(settingsSnap.exists ? settingsSnap.data() : {});
+
+  const maxRecords = Math.min(Math.max(Number(request.data?.limit) || 400, 1), 800);
+  const rcIdFilter =
+    typeof request.data?.rcId === 'string' && request.data.rcId.trim()
+      ? request.data.rcId.trim()
+      : '';
+
+  const unpaid = [];
+  let last = null;
+  while (unpaid.length < maxRecords) {
+    let query = db.collection('siteCalibrations').where('verificationType', '==', 'RV').limit(250);
+    if (last) query = query.startAfter(last);
+    const snap = await query.get();
+    if (snap.empty) break;
+    last = snap.docs[snap.docs.length - 1];
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data();
+      if (rcIdFilter && data.rcId !== rcIdFilter) continue;
+      if (!isRvWalletOutstanding(data)) continue;
+      unpaid.push(docSnap);
+      if (unpaid.length >= maxRecords) break;
+    }
+    if (snap.size < 250) break;
+  }
+
+  const skipped = [];
+  const settled = [];
+  const failed = [];
+
+  const byRc = new Map();
+  for (const docSnap of unpaid) {
+    const data = docSnap.data();
+    const rcId = typeof data.rcId === 'string' ? data.rcId.trim() : '';
+    if (!rcId) {
+      skipped.push({ id: docSnap.id, reason: 'missing rcId' });
+      continue;
+    }
+    const capacityKg = maximumCapacityKg(data);
+    if (capacityKg == null) {
+      skipped.push({ id: docSnap.id, reason: 'missing capacity' });
+      continue;
+    }
+    const breakdown = walletBreakdownFromCapacity(capacityKg, settings);
+    if (!breakdown.total || breakdown.total <= 0) {
+      skipped.push({ id: docSnap.id, reason: 'zero fee' });
+      continue;
+    }
+    const list = byRc.get(rcId) ?? [];
+    list.push({ id: docSnap.id, breakdown });
+    byRc.set(rcId, list);
+  }
+
+  const paidAt = new Date().toISOString();
+
+  for (const [rcId, rows] of byRc) {
+    const chunks = [];
+    for (let i = 0; i < rows.length; i += 40) {
+      chunks.push(rows.slice(i, i + 40));
+    }
+
+    for (const chunk of chunks) {
+      const total = roundInr(chunk.reduce((sum, row) => sum + row.breakdown.total, 0));
+      const administrativeFees = roundInr(
+        chunk.reduce((sum, row) => sum + row.breakdown.administrativeFees, 0),
+      );
+      const gst = roundInr(chunk.reduce((sum, row) => sum + row.breakdown.gst, 0));
+      try {
+        validatePaymentBreakdown({ administrativeFees, gst, total }, total);
+      } catch (err) {
+        for (const row of chunk) {
+          failed.push({ id: row.id, reason: err.message || 'invalid breakdown' });
+        }
+        continue;
+      }
+
+      const ledgerId = `rv-settle-${rcId.slice(0, 8)}-${Date.now()}-${chunk[0].id.slice(0, 6)}`;
+      const paymentId = `wallet:${ledgerId}`;
+
+      try {
+        await db.runTransaction(async transaction => {
+          const walletSnap = await transaction.get(walletRef(db, rcId));
+          const currentBalance = walletSnap.exists ? Number(walletSnap.data().balanceInr) || 0 : 0;
+          if (currentBalance < total) {
+            throw new HttpsError(
+              'failed-precondition',
+              `Insufficient wallet for ${rcId}. Available ₹${currentBalance.toFixed(2)}, required ₹${total.toFixed(2)}.`,
+            );
+          }
+
+          const nextBalance = roundInr(currentBalance - total);
+          transaction.set(
+            walletRef(db, rcId),
+            { rcId, balanceInr: nextBalance, updatedAt: paidAt },
+            { merge: true },
+          );
+          transaction.set(ledgerRef(db, ledgerId), {
+            rcId,
+            type: 'rv_payment',
+            amountInr: -total,
+            balanceAfterInr: nextBalance,
+            recordIds: chunk.map(row => row.id),
+            status: 'completed',
+            idempotencyKey: ledgerId,
+            createdAt: paidAt,
+            createdByUid: request.auth.uid,
+            settledOutstanding: true,
+          });
+
+          for (const row of chunk) {
+            transaction.set(
+              db.doc(`siteCalibrations/${row.id}`),
+              {
+                rvPaymentStatus: 'paid',
+                rvPaymentId: paymentId,
+                rvPaymentAmount: row.breakdown.total,
+                rvPaidAt: paidAt,
+                updatedAt: paidAt,
+              },
+              { merge: true },
+            );
+          }
+        });
+        settled.push(...chunk.map(row => ({ id: row.id, amountInr: row.breakdown.total, rcId })));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Settle failed.';
+        for (const row of chunk) {
+          failed.push({ id: row.id, rcId, reason: message });
+        }
+      }
+    }
+  }
+
+  return {
+    scannedUnpaid: unpaid.length,
+    settled: settled.length,
+    skipped: skipped.length,
+    failed: failed.length,
+    settledIds: settled.map(row => row.id),
+    skippedRows: skipped,
+    failedRows: failed.slice(0, 40),
+  };
+}
+
 module.exports = {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -1046,4 +1226,5 @@ module.exports = {
   deleteWalletTopUpHandler,
   deleteWalletLedgerEntryHandler,
   resetRcWalletHandler,
+  settleOutstandingRvWalletPaymentsHandler,
 };

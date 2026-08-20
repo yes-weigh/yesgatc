@@ -22289,6 +22289,17 @@ body.verification-photo-viewer-open {
 
 .admin-wallet-balances-panel .panel-header {
   padding: 0.85rem 1.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.admin-wallet-balances-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
 }
 
 .admin-wallet-balances-panel .panel-header h2 {
@@ -22298,6 +22309,11 @@ body.verification-photo-viewer-open {
 
 .admin-wallet-balances-panel .panel-body {
   padding: 0 0 0.25rem;
+}
+
+.admin-wallet-settle-note {
+  margin: 0 1.15rem 0.5rem;
+  font-size: 0.82rem;
 }
 
 .admin-wallet-balances-empty {

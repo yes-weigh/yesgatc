@@ -53,6 +53,7 @@ const {
   deleteWalletTopUpHandler,
   deleteWalletLedgerEntryHandler,
   resetRcWalletHandler,
+  settleOutstandingRvWalletPaymentsHandler,
 } = require('./rcWallet');
 const { initializeApp, getApps } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
@@ -380,6 +381,12 @@ exports.reviewWalletTopUp = onCall(
     secrets: [zohoClientId, zohoClientSecret, zohoRefreshToken],
   },
   async request => reviewWalletTopUpHandler(request, adminDb()),
+);
+
+/** Super Admin: debit wallets for RV rows that submitted/certified without payment. */
+exports.settleOutstandingRvWalletPayments = onCall(
+  { region: CALLABLE_REGION, timeoutSeconds: 300, memory: '512MiB' },
+  async request => settleOutstandingRvWalletPaymentsHandler(request, adminDb()),
 );
 
 /** RC Admin debits wallet for RV verification payment. */

@@ -17,6 +17,7 @@ import {
   fetchWalletTopUps,
   reviewWalletTopUp,
   walletTopUpStatusLabel,
+  settleOutstandingRvWalletPayments,
 } from '../../lib/rcWallet';
 import { buildWalletLedgerZohoClearanceMessage } from '../../lib/walletLedgerZohoClearance';
 import {
@@ -98,6 +99,8 @@ export const AdminWalletTopUps: React.FC = () => {
   const [deletingLedgerId, setDeletingLedgerId] = useState<string | null>(null);
   const isDevServer = import.meta.env.DEV;
   const [pushingZohoTopUpId, setPushingZohoTopUpId] = useState<string | null>(null);
+  const [settlingDues, setSettlingDues] = useState(false);
+  const [settleNote, setSettleNote] = useState('');
   const [topUpById, setTopUpById] = useState<Map<string, WalletTopUp>>(new Map());
   const [rcNamesById, setRcNamesById] = useState<Record<string, string>>({});
   const [walletBalancesByRcId, setWalletBalancesByRcId] = useState<Record<string, number>>({});
@@ -264,6 +267,32 @@ export const AdminWalletTopUps: React.FC = () => {
     }
   };
 
+  const handleSettlePaymentDue = async () => {
+    const ok = await confirm({
+      title: 'Settle payment due?',
+      message:
+        'Debit each RC wallet for RV verifications that were submitted or certified without payment. Repeat if the first run hits the batch limit or a wallet is short.',
+      confirmLabel: 'Settle dues',
+    });
+    if (!ok) return;
+
+    setSettlingDues(true);
+    setError('');
+    setSettleNote('');
+    try {
+      const result = await settleOutstandingRvWalletPayments({ limit: 400 });
+      await refresh();
+      setSettleNote(
+        `Settled ${result.settled} · skipped ${result.skipped} · failed ${result.failed}` +
+          (result.failedRows[0]?.reason ? ` · ${result.failedRows[0].reason}` : ''),
+      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Settle payment due failed.');
+    } finally {
+      setSettlingDues(false);
+    }
+  };
+
   const handleApprove = async (item: WalletTopUp) => {
     const ok = await confirm({
       title: 'Approve wallet top-up?',
@@ -396,10 +425,25 @@ export const AdminWalletTopUps: React.FC = () => {
       <div className="panel glass admin-wallet-balances-panel">
         <div className="panel-header">
           <h2><IndianRupee className="inline-icon" /> RC wallet balances</h2>
-          {!balancesLoading && rcWalletSummary.length > 0 && (
-            <span className="text-muted text-sm">{rcWalletSummary.length} centres</span>
-          )}
+          <div className="admin-wallet-balances-actions">
+            {!balancesLoading && rcWalletSummary.length > 0 && (
+              <span className="text-muted text-sm">{rcWalletSummary.length} centres</span>
+            )}
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => void handleSettlePaymentDue()}
+              disabled={settlingDues}
+            >
+              {settlingDues ? 'Settling…' : 'Settle payment due'}
+            </button>
+          </div>
         </div>
+        {settleNote ? (
+          <p className="admin-wallet-settle-note text-muted">
+            {settleNote}
+          </p>
+        ) : null}
         <div className="panel-body">
           {balancesLoading ? (
             <div className="admin-wallet-balances-empty"><span className="spinner-inline" /></div>

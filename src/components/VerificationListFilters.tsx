@@ -9,6 +9,7 @@ import {
 import type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
 
 export type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
+export type VerificationPaymentDueFilter = 'all' | 'due';
 
 export interface VerificationStatusFilterOption {
   value: VerificationStatusFilter;
@@ -40,6 +41,10 @@ interface VerificationListFiltersProps {
   rcFilter?: string;
   onRcFilterChange?: (value: string) => void;
   rcOptions?: VerificationRcFilterOption[];
+  paymentDueFilter?: VerificationPaymentDueFilter;
+  onPaymentDueFilterChange?: (value: VerificationPaymentDueFilter) => void;
+  paymentDueCount?: number;
+  paymentDueAllCount?: number;
   searchTerm?: string;
   onSearchTermChange?: (value: string) => void;
   searchPlaceholder?: string;
@@ -65,6 +70,10 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
   rcFilter,
   onRcFilterChange,
   rcOptions,
+  paymentDueFilter = 'all',
+  onPaymentDueFilterChange,
+  paymentDueCount = 0,
+  paymentDueAllCount = 0,
   searchTerm = '',
   onSearchTermChange,
   searchPlaceholder = 'Search verification…',
@@ -80,6 +89,7 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
   const [draftType, setDraftType] = useState(typeFilter);
   const [draftDuration, setDraftDuration] = useState(durationFilter);
   const [draftRc, setDraftRc] = useState(rcFilter ?? 'all');
+  const [draftPaymentDue, setDraftPaymentDue] = useState(paymentDueFilter);
   const filterRef = useRef<HTMLDivElement>(null);
   const [slots, setSlots] = useState<{ mobile: HTMLElement | null; desktop: HTMLElement | null }>({
     mobile: null,
@@ -90,7 +100,8 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
     statusFilter !== 'all' ||
     typeFilter !== 'all' ||
     durationFilter !== 'all' ||
-    (rcFilter != null && rcFilter !== 'all');
+    (rcFilter != null && rcFilter !== 'all') ||
+    paymentDueFilter === 'due';
 
   useLayoutEffect(() => {
     setSlots({
@@ -105,7 +116,8 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
     setDraftType(typeFilter);
     setDraftDuration(durationFilter);
     setDraftRc(rcFilter ?? 'all');
-  }, [filterOpen, statusFilter, typeFilter, durationFilter, rcFilter]);
+    setDraftPaymentDue(paymentDueFilter);
+  }, [filterOpen, statusFilter, typeFilter, durationFilter, rcFilter, paymentDueFilter]);
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -232,6 +244,27 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
                 </div>
               </>
             ) : null}
+
+            {onPaymentDueFilterChange ? (
+              <>
+                <label className="verification-app-filter__label" htmlFor="verification-filter-payment">
+                  Payment
+                </label>
+                <div className="verification-app-filter__select-wrap">
+                  <select
+                    id="verification-filter-payment"
+                    className="verification-app-filter__select"
+                    value={draftPaymentDue}
+                    onChange={event =>
+                      setDraftPaymentDue(event.target.value as VerificationPaymentDueFilter)
+                    }
+                  >
+                    <option value="all">All ({paymentDueAllCount})</option>
+                    <option value="due">Payment due ({paymentDueCount})</option>
+                  </select>
+                </div>
+              </>
+            ) : null}
           </div>
 
           <div className="verification-app-filter__foot">
@@ -243,10 +276,12 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
                 setDraftType('all');
                 setDraftDuration('all');
                 setDraftRc('all');
+                setDraftPaymentDue('all');
                 onStatusFilterChange('all');
                 onTypeFilterChange?.('all');
                 onDurationFilterChange?.('all');
                 onRcFilterChange?.('all');
+                onPaymentDueFilterChange?.('all');
                 setFilterOpen(false);
               }}
             >
@@ -260,6 +295,7 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
                 onTypeFilterChange?.(draftType);
                 onDurationFilterChange?.(draftDuration);
                 onRcFilterChange?.(draftRc);
+                onPaymentDueFilterChange?.(draftPaymentDue);
                 setFilterOpen(false);
               }}
             >

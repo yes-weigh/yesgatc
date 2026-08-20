@@ -89,6 +89,7 @@ import {
   VerificationListFilters,
   type VerificationStatusFilter,
   type VerificationTypeFilter,
+  type VerificationPaymentDueFilter,
 } from '../../components/VerificationListFilters';
 import {
   buildDuplicatePrimaryIdSet,
@@ -160,8 +161,10 @@ import {
 import {
   isWalletPaymentId,
   linkWalletPaymentToRecords,
+  payRvFromWallet,
   refundRvWalletPayment,
 } from '../../lib/rcWallet';
+import { ensureRvWalletDebitedForRecords } from '../../lib/rvWalletAdvancePay';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
 import {
@@ -340,6 +343,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
   const [durationFilter, setDurationFilter] = useState<VerificationDurationFilter>('all');
+  const [paymentDueFilter, setPaymentDueFilter] = useState<VerificationPaymentDueFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
@@ -1375,6 +1379,16 @@ export const RCSiteCalibration: React.FC = () => {
       const applicationNumbers = await allocateVerificationApplicationNumbers(db, includedRows.length);
       const fees = resolveRcFeesStructure(rcProfile);
 
+      if (
+        submitAfterSave
+        && sessionForSave.verificationType === 'RV'
+        && isRvPaymentRequired(sessionForSave.verificationType)
+        && !rvPayment
+      ) {
+        setError('Pay RV fees from wallet before submitting.');
+        return;
+      }
+
       const pendingRvPaymentPatch =
         sessionForSave.verificationType === 'RV'
           ? { rvPaymentStatus: 'pending' as const }
@@ -1598,6 +1612,12 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      await ensureRvWalletDebitedForRecords({
+        records: [record],
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(rcProfile),
+      });
       await submitVerificationRecord(
         {
           id: record.id,
@@ -1639,6 +1659,12 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      await ensureRvWalletDebitedForRecords({
+        records: selectedRecords,
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(rcProfile),
+      });
       await submitVerificationRecords(
         selectedRecords.map(record => ({
           id: record.id,
@@ -1898,11 +1924,26 @@ export const RCSiteCalibration: React.FC = () => {
           return;
         }
 
-        setRvPaymentOpen(true);
+        const paid = await payRvFromWallet({
+          rcId: rcUid,
+          amountInr: rvPaymentBreakdown.total,
+          breakdown: rvPaymentBreakdown,
+          idempotencyKey:
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : `wallet-${Date.now()}`,
+          recordIds: editingId ? [editingId] : [],
+        });
+        await executeSubmitFromForm(
+          { paymentId: paid.paymentId, amountInr: rvPaymentBreakdown.total },
+          { partyPersisted: true },
+        );
         return;
       }
 
       await executeSubmitFromForm(undefined, { partyPersisted: true });
+    } catch (err: unknown) {
+      setError(formatSaveError(err, 'Failed to submit verification.'));
     } finally {
       setSubmitting(false);
     }
@@ -2280,9 +2321,17 @@ export const RCSiteCalibration: React.FC = () => {
     [records, durationFilter],
   );
 
+  const paymentDueCount = useMemo(
+    () => durationScoped.filter(record => isRvWalletPaymentOutstanding(record)).length,
+    [durationScoped],
+  );
+
   const filteredRecords = useMemo(() => {
     const filtered = durationScoped.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
+      if (paymentDueFilter === 'due' && !isRvWalletPaymentOutstanding(record)) {
+        return false;
+      }
       if (
         !matchesVerificationListStatusFilter(
           record,
@@ -2297,7 +2346,7 @@ export const RCSiteCalibration: React.FC = () => {
       return matchesVerificationTypeFilter(record, typeFilter);
     });
     return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
-  }, [durationScoped, statusFilter, typeFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+  }, [durationScoped, statusFilter, typeFilter, paymentDueFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -2362,7 +2411,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, typeFilter, searchTerm, durationFilter]);
+  }, [statusFilter, typeFilter, searchTerm, durationFilter, paymentDueFilter]);
 
   useEffect(() => {
     if (showForm || !rowHighlightFlashId) return;
@@ -2378,7 +2427,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
-  }, [statusFilter, searchTerm]);
+  }, [statusFilter, searchTerm, paymentDueFilter]);
 
   useEffect(() => {
     if (selectAllDraftsRef.current) {
@@ -2699,6 +2748,10 @@ export const RCSiteCalibration: React.FC = () => {
             typeOptions={typeFilterOptions}
             durationFilter={durationFilter}
             onDurationFilterChange={setDurationFilter}
+            paymentDueFilter={paymentDueFilter}
+            onPaymentDueFilterChange={setPaymentDueFilter}
+            paymentDueCount={paymentDueCount}
+            paymentDueAllCount={durationScoped.length}
             onNewClick={
               canStartNewVerification
                 ? handleStartAdd
