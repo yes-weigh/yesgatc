@@ -8,7 +8,7 @@
       "Email": "admin@yesweigh.in",
       "Password": "your-emaap-password"
     },
-    "EmaapManualCaptchaOtpWaitSeconds": 60,
+    "EmaapManualCaptchaOtpWaitSeconds": 30,
     "CaptchaOcr": {
       "Provider": "Gemini",
       "ApiKey": "YOUR_GEMINI_API_KEY",

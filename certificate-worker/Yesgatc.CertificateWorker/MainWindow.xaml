@@ -222,6 +222,7 @@
                                             Click="SignInButton_Click"/>
                                     </StackPanel>
 
+                                    <StackPanel x:Name="ChromeProfilePanel">
                                     <TextBlock x:Name="ChromeProfileLabel"
                                                Text="Chrome profile (DeepSeek / cookies)"
                                                Style="{StaticResource FieldLabel}"
@@ -236,7 +237,7 @@
                                                Foreground="{StaticResource TextMutedBrush}"
                                                TextWrapping="Wrap"
                                                Margin="0,0,0,8"
-                                               Text="Pick a profile before launching the browser."/>
+                                               Text="Pick a Chrome profile before launching the browser."/>
                                     <Grid Margin="0,0,0,14">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
@@ -257,15 +258,19 @@
                                                 ToolTip="Clear saved Chrome profile preference and restart the worker."
                                                 Click="ResetChromeProfileButton_Click"/>
                                     </Grid>
+                                    </StackPanel>
 
-                                    <TextBlock Text="eMAAP / DOCA login" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
-                                    <TextBox x:Name="DocaEmailBox"
-                                             Style="{StaticResource GlassTextBox}"
-                                             Margin="0,0,0,8"/>
-                                    <TextBox x:Name="DocaPasswordBox"
-                                             Style="{StaticResource GlassTextBox}"
-                                             Margin="0,0,0,14"/>
+                                    <StackPanel x:Name="DocaLoginPanel">
+                                        <TextBlock Text="eMAAP / DOCA login" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
+                                        <TextBox x:Name="DocaEmailBox"
+                                                 Style="{StaticResource GlassTextBox}"
+                                                 Margin="0,0,0,8"/>
+                                        <TextBox x:Name="DocaPasswordBox"
+                                                 Style="{StaticResource GlassTextBox}"
+                                                 Margin="0,0,0,14"/>
+                                    </StackPanel>
 
+                                    <StackPanel x:Name="VpsAccountExtrasPanel">
                                     <TextBlock Text="eMAAP email OTP"
                                                Style="{StaticResource FieldLabel}"
                                                Margin="0,0,0,4"/>
@@ -307,6 +312,7 @@
                                             Style="{StaticResource SecondaryButton}"
                                             HorizontalAlignment="Stretch"
                                             Click="SaveCredsButton_Click"/>
+                                    </StackPanel>
                                 </StackPanel>
                             </Expander>
                         </Border>
@@ -340,7 +346,8 @@
                                           Foreground="{StaticResource TextMainBrush}"
                                           Checked="StartWithWindowsCheckBox_Changed"
                                           Unchecked="StartWithWindowsCheckBox_Changed"/>
-                                <TextBlock Text="Registers logon + startup task. After host reboot: RDP in once, or use Windows auto-logon."
+                                <TextBlock x:Name="StartWithWindowsHint"
+                                           Text="Registers logon + startup task. After host reboot: RDP in once, or use Windows auto-logon."
                                            FontSize="10"
                                            Foreground="{StaticResource TextMutedBrush}"
                                            TextWrapping="Wrap"

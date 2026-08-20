@@ -243,12 +243,24 @@ public sealed class AutomationService : IAsyncDisposable
     public bool UsesSystemChromeProfile =>
         _settings.UseSystemChromeProfile && WorkerIndex < 0 && WorkerIndex != -2;
 
-    public static string ResolveSystemChromeUserDataDir() =>
-        Path.Combine(
+    public static string ResolveSystemChromeUserDataDir()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            return Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "Library",
+                "Application Support",
+                "Google",
+                "Chrome");
+        }
+
+        return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Google",
             "Chrome",
             "User Data");
+    }
 
     public string SystemChromeProfileDirectoryName =>
         ChromeProfilePreference.ResolveDirectory(_settings.ChromeProfileDirectory);

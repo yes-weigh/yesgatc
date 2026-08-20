@@ -21,6 +21,9 @@ public static class EmaapLoginAutomation
 
     private static DateTimeOffset? _lastResendOtpClickUtc;
 
+    /// <summary>Fired on the Playwright thread when eMAAP session becomes logged-in.</summary>
+    public static Action? OnLoggedIn { get; set; }
+
     public static bool IsEmaapUrl(string? url) =>
         !string.IsNullOrWhiteSpace(url)
         && url.Contains("emaap.gov.in", StringComparison.OrdinalIgnoreCase);
@@ -98,20 +101,40 @@ public static class EmaapLoginAutomation
 
     public static async Task<bool> IsLoggedInAsync(IPage page)
     {
-        var url = page.Url;
-        if (url.Contains("/dashboard", StringComparison.OrdinalIgnoreCase)
-            || url.Contains("/user/", StringComparison.OrdinalIgnoreCase)
-            || url.Contains("/gatc/app", StringComparison.OrdinalIgnoreCase))
+        var url = page.Url ?? "";
+        if (!IsEmaapUrl(url))
         {
-            return !url.Contains("/login", StringComparison.OrdinalIgnoreCase);
+            return false;
         }
 
-        return false;
+        if (await IsOtpStepAsync(page))
+        {
+            return false;
+        }
+
+        if (url.Contains("/login", StringComparison.OrdinalIgnoreCase))
+        {
+            var email = page.Locator("input[name='email'], input[type='email'], input[placeholder='Email']");
+            return await email.CountAsync() == 0 || !await email.First.IsVisibleAsync();
+        }
+
+        return url.Contains("/gatc", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void NotifyLoggedIn()
+    {
+        try
+        {
+            OnLoggedIn?.Invoke();
+        }
+        catch
+        {
+        }
     }
 
     /// <summary>
-    /// After userid/password: pause so an operator can type captcha + OTP.
-    /// Returns LoggedIn / OtpRequired if that happens; otherwise null (still on captcha form).
+    /// After userid/password: wait for captcha canvas (and optional manual type).
+    /// Returns LoggedIn / OtpRequired if that happens; otherwise null then DeepSeek OCR.
     /// </summary>
     private static async Task<DocaSessionState?> WaitAfterCredentialsForManualCaptchaOtpAsync(
         IPage page,
@@ -232,15 +255,20 @@ public static class EmaapLoginAutomation
                 cancellationToken.ThrowIfCancellationRequested();
                 if (await IsLoggedInAsync(page))
                 {
+                    NotifyLoggedIn();
                     return DocaSessionState.LoggedIn;
                 }
 
-                await Task.Delay(1000, cancellationToken);
+                await Task.Delay(300, cancellationToken);
             }
 
-            return await IsLoggedInAsync(page)
-                ? DocaSessionState.LoggedIn
-                : DocaSessionState.LoginRequired;
+            if (await IsLoggedInAsync(page))
+            {
+                NotifyLoggedIn();
+                return DocaSessionState.LoggedIn;
+            }
+
+            return DocaSessionState.LoginRequired;
         }
 
         if (await IsOtpStepAsync(page))

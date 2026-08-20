@@ -86,10 +86,10 @@ public sealed class AutomationSettings
     /// <summary>Legacy Gmail tab scrape — off by default (Google blocks automation).</summary>
     public bool EmaapOtpUseGmailFallback { get; init; }
     /// <summary>
-    /// After filling eMAAP email/password, wait this long (seconds) for manual captcha/OTP
-    /// before DeepSeek OCR. 0 disables the pause.
+    /// After filling eMAAP email/password, wait this long (seconds) for the captcha
+    /// canvas to settle, then DeepSeek OCR. 0 disables the pause.
     /// </summary>
-    public int EmaapManualCaptchaOtpWaitSeconds { get; init; } = 60;
+    public int EmaapManualCaptchaOtpWaitSeconds { get; init; } = 30;
     /// <summary>RC emaapengine: seconds to wait on login page for manual captcha + OTP.</summary>
     public int EmaapEngineManualLoginWaitSeconds { get; init; } = 900;
     public string EmaapMasterOtp { get; init; } = string.Empty;

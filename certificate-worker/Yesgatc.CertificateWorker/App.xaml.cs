@@ -22,6 +22,7 @@ public partial class App : Application
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
             .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true)
+            .AddJsonFile("appsettings.emaapengine.json", optional: true, reloadOnChange: true)
             .Build();
 
         Settings = configuration.Get<WorkerSettings>() ?? new WorkerSettings();

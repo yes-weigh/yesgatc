@@ -146,7 +146,7 @@ function Publish-WorkerFlavor {
             "2. Install .NET 8 Desktop Runtime x64 if prompted."
             "3. Run EmaapEngine.exe"
             "4. Sign in with this RC Admin Aadhar + portal password."
-            "5. Enter eMAAP user id + password. Type captcha and OTP in Chrome."
+            "5. Type captcha and OTP in Chrome. eMAAP user/pass is built in."
             "6. Data folder: %LOCALAPPDATA%\YesGATC\EmaapEngine\"
             ""
             "Do not install this on the VPS. VPS uses Yesgatc.CertificateWorker.exe."

@@ -59,6 +59,7 @@ public partial class MainWindow : Window
     private bool _isBusy;
     private bool _autoWorkerEnabled;
     private bool _autoWorkerPausedForDoca;
+    private bool _emaapReadyForJobs;
     private bool _startWithWindows = true;
     private bool _suppressStartWithWindowsCheckBoxEvent;
     /// <summary>Waiting on eMAAP OTP — stay on eMAAP, do not probe DOCA.</summary>
@@ -126,18 +127,21 @@ public partial class MainWindow : Window
             ? "RC Admin Aadhar + password"
             : "Super Admin Aadhar + password (VPS)";
         EmaapLoginAutomation.PreferManualLoginUntilAuthenticated = WorkerProduct.IsEmaapEngineBuild;
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            EmaapLoginAutomation.OnLoggedIn = () => Dispatcher.BeginInvoke(OnEmaapPortalLoggedIn);
+        }
         if (!WorkerProduct.IsEmaapEngineBuild)
         {
             PortalLoginPanel.Visibility = Visibility.Collapsed;
         }
         if (WorkerProduct.IsEmaapEngineBuild)
         {
-            ChromeProfileCombo.Visibility = Visibility.Collapsed;
-            ChromeProfileHint.Visibility = Visibility.Collapsed;
-            if (ChromeProfileLabel is not null)
-            {
-                ChromeProfileLabel.Visibility = Visibility.Collapsed;
-            }
+            DocaLoginPanel.Visibility = Visibility.Collapsed;
+            ChromeProfilePanel.Visibility = Visibility.Collapsed;
+            VpsAccountExtrasPanel.Visibility = Visibility.Collapsed;
+            StartWithWindowsCheckBox.Visibility = Visibility.Collapsed;
+            StartWithWindowsHint.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -169,12 +173,20 @@ public partial class MainWindow : Window
         PasswordBox.Text = FirstNonEmpty(
             saved.SuperAdmin.Password,
             settings.Credentials.Password);
-        DocaEmailBox.Text = FirstNonEmpty(
-            saved.Doca.Email,
-            settings.Automation.DocaCredentials.Email);
-        DocaPasswordBox.Text = FirstNonEmpty(
-            saved.Doca.Password,
-            settings.Automation.DocaCredentials.Password);
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            DocaEmailBox.Text = settings.Automation.DocaCredentials.Email;
+            DocaPasswordBox.Text = settings.Automation.DocaCredentials.Password;
+        }
+        else
+        {
+            DocaEmailBox.Text = FirstNonEmpty(
+                saved.Doca.Email,
+                settings.Automation.DocaCredentials.Email);
+            DocaPasswordBox.Text = FirstNonEmpty(
+                saved.Doca.Password,
+                settings.Automation.DocaCredentials.Password);
+        }
 
         // Load captcha API key: saved store wins, then appsettings, then env var.
         var captchaKey = FirstNonEmpty(
@@ -233,7 +245,9 @@ public partial class MainWindow : Window
 
         UpdateChromeProfileHint();
 
-        if (settings.Automation.UseSystemChromeProfile && !ChromeProfilePreference.HasSelection)
+        if (!WorkerProduct.IsEmaapEngineBuild
+            && settings.Automation.UseSystemChromeProfile
+            && !ChromeProfilePreference.HasSelection)
         {
             ExpandAccountPanel();
         }
@@ -371,10 +385,28 @@ public partial class MainWindow : Window
     private static string FirstNonEmpty(string primary, string fallback) =>
         string.IsNullOrWhiteSpace(primary) ? fallback : primary;
 
-    private DocaCredentialSettings CurrentDocaCredentials() => new()
+    private DocaCredentialSettings CurrentDocaCredentials()
     {
-        Email = DocaEmailBox.Text.Trim(),
-        Password = DocaPasswordBox.Text,
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            return CloneSettingsDoca();
+        }
+
+        return new DocaCredentialSettings
+        {
+            Email = DocaEmailBox.Text.Trim(),
+            Password = DocaPasswordBox.Text,
+        };
+    }
+
+    private static DocaCredentialSettings CloneSettingsDoca() => new()
+    {
+        Email = FirstNonEmpty(
+            App.Settings.Automation.DocaCredentials.Email,
+            EmaapPortalLogin.Email).Trim(),
+        Password = string.IsNullOrWhiteSpace(App.Settings.Automation.DocaCredentials.Password)
+            ? EmaapPortalLogin.Password
+            : App.Settings.Automation.DocaCredentials.Password,
     };
 
     private static bool HasDocaLoginCredentials(DocaCredentialSettings credentials) =>
@@ -383,6 +415,11 @@ public partial class MainWindow : Window
 
     private DocaCredentialSettings ResolveDocaCredentials()
     {
+        if (WorkerProduct.IsEmaapEngineBuild && HasDocaLoginCredentials(CloneSettingsDoca()))
+        {
+            return CloneSettingsDoca();
+        }
+
         var fromUi = CurrentDocaCredentials();
         if (HasDocaLoginCredentials(fromUi))
         {
@@ -451,8 +488,8 @@ public partial class MainWindow : Window
         _credentialStore.SaveAll(
             AadharBox.Text,
             PasswordBox.Text,
-            DocaEmailBox.Text,
-            DocaPasswordBox.Text,
+            WorkerProduct.IsEmaapEngineBuild ? CloneSettingsDoca().Email : DocaEmailBox.Text,
+            WorkerProduct.IsEmaapEngineBuild ? CloneSettingsDoca().Password : DocaPasswordBox.Text,
             CaptchaApiKeyBox.Text,
             docaFillOnly: false,
             _docaSessionProbeMinutes,
@@ -528,7 +565,7 @@ public partial class MainWindow : Window
         _telemetry.LogDiagnostic = message => LogToFile($"[telemetry] {message}");
 
         // Re-assert autostart on every launch (install path / scripts may have been updated).
-        if (_startWithWindows)
+        if (_startWithWindows && !WorkerProduct.IsEmaapEngineBuild)
         {
             try
             {
@@ -540,6 +577,12 @@ public partial class MainWindow : Window
             }
         }
 
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            await StartEmaapEngineSessionAsync();
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(AadharBox.Text) && !string.IsNullOrWhiteSpace(PasswordBox.Text))
         {
             await SignInAndLoadAsync();
@@ -549,17 +592,6 @@ public partial class MainWindow : Window
         }
 
         await StartDocaBrowserAsync();
-
-        if (WorkerProduct.IsEmaapEngineBuild)
-        {
-            ExpandAccountPanel();
-            SetStatus(
-                _automationService.IsBrowserConnected
-                    ? $"eMaap browser is open. Enter {WorkerProduct.SignInRoleLabel} credentials and sign in."
-                    : $"Enter {WorkerProduct.SignInRoleLabel} credentials and sign in to load the queue.",
-                StatusKind.Idle);
-            return;
-        }
 
         SetStatus(
             "VPS worker uses saved Super Admin from credentials.local.json / appsettings.local.json. No portal login on this EXE.",
@@ -600,12 +632,13 @@ public partial class MainWindow : Window
 
             SyncDocaCredentialsToAllAutomation(creds);
 
-            if (!TryEnsureChromeProfileSelected(persist: true))
+            if (!WorkerProduct.IsEmaapEngineBuild && !TryEnsureChromeProfileSelected(persist: true))
             {
                 return;
             }
 
-            if (CaptchaOcrKeys.RequiresApiKey(App.Settings.Automation.CaptchaOcr)
+            if (!WorkerProduct.IsEmaapEngineBuild
+                && CaptchaOcrKeys.RequiresApiKey(App.Settings.Automation.CaptchaOcr)
                 && string.IsNullOrWhiteSpace(CaptchaOcrKeys.ResolveApiKey(App.Settings.Automation.CaptchaOcr)))
             {
                 SetStatus(
@@ -614,12 +647,36 @@ public partial class MainWindow : Window
                 ExpandAccountPanel();
             }
 
-            var profileLabel = ChromeProfilePreference.RuntimeDirectory ?? "Default";
-            var ocrLabel = CaptchaOcrKeys.DescribeProvider(App.Settings.Automation.CaptchaOcr);
-            SetStatus(
-                $"Opening eMAAP (Chrome: {profileLabel}) — fill userid/password, wait 1 min for manual captcha/OTP, then {ocrLabel}…",
-                StatusKind.Working);
+            if (WorkerProduct.IsEmaapEngineBuild)
+            {
+                MainTabs.SelectedIndex = 0;
+                SetStatus(
+                    "Chrome window should open on eMAAP. Type captcha and OTP there. This app waits.",
+                    StatusKind.Working);
+            }
+            else
+            {
+                var profileLabel = ChromeProfilePreference.RuntimeDirectory ?? "Default";
+                var ocrLabel = CaptchaOcrKeys.DescribeProvider(App.Settings.Automation.CaptchaOcr);
+                SetStatus(
+                    $"Opening eMAAP (Chrome: {profileLabel}) — fill userid/password, wait 1 min for manual captcha/OTP, then {ocrLabel}…",
+                    StatusKind.Working);
+            }
             var state = await _automationService.OpenDocaWorkspaceAsync();
+
+            if (WorkerProduct.IsEmaapEngineBuild)
+            {
+                if (state == DocaSessionState.LoggedIn)
+                {
+                    OnEmaapPortalLoggedIn();
+                    return;
+                }
+
+                SetStatus(
+                    "Chrome is on eMAAP. Type captcha and OTP. Fill starts the moment login succeeds.",
+                    StatusKind.Working);
+                return;
+            }
 
             if (state == DocaSessionState.OtpRequired)
             {
@@ -779,6 +836,10 @@ public partial class MainWindow : Window
         var saved = _credentialStore.Load();
         // Persist last checkbox choice; fall back to appsettings when never saved.
         _autoWorkerEnabled = saved.AutoWorkerEnabled ?? settings.Enabled;
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            _autoWorkerEnabled = true;
+        }
         _useRealtimeListener = settings.UseRealtimeListener;
         _suppressAutoRunCheckBoxEvent = true;
         try
@@ -1349,13 +1410,13 @@ public partial class MainWindow : Window
             changed = true;
         }
 
-        if (!string.IsNullOrWhiteSpace(remote.DocaEmail))
+        if (!WorkerProduct.IsEmaapEngineBuild && !string.IsNullOrWhiteSpace(remote.DocaEmail))
         {
             DocaEmailBox.Text = remote.DocaEmail.Trim();
             changed = true;
         }
 
-        if (!string.IsNullOrWhiteSpace(remote.DocaPassword))
+        if (!WorkerProduct.IsEmaapEngineBuild && !string.IsNullOrWhiteSpace(remote.DocaPassword))
         {
             DocaPasswordBox.Text = remote.DocaPassword;
             changed = true;
@@ -1837,37 +1898,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (CertificateWorkerIdentity.IsSuperAdmin(_session))
+        if (WorkerProduct.IsEmaapEngineBuild && !_emaapReadyForJobs)
         {
-            try
-            {
-                var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
-                var rcLive = await _presence.AnyLiveEmaapEngineAsync(token).ConfigureAwait(false);
-                if (rcLive)
-                {
-                    _yieldedToRcEngine = true;
-                    await RunOnUiAsync(() =>
-                    {
-                        SetStatus("Paused — RC emaapengine live. VPS waits to avoid duplicate certify.", StatusKind.Info);
-                        UpdateAutoWorkerStatusText();
-                    }).ConfigureAwait(false);
-                    return;
-                }
-
-                if (_yieldedToRcEngine)
-                {
-                    _yieldedToRcEngine = false;
-                    await RunOnUiAsync(() =>
-                    {
-                        SetStatus("RC emaapengine offline — VPS auto worker resuming.", StatusKind.Info);
-                        UpdateAutoWorkerStatusText();
-                    }).ConfigureAwait(false);
-                }
-            }
-            catch
-            {
-                // If presence check fails, continue; job claims still prevent duplicates.
-            }
+            return;
         }
 
         if (_isBusy)
@@ -1997,12 +2030,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_yieldedToRcEngine)
-        {
-            AutoWorkerStatusText.Text = "Paused — RC emaapengine live. VPS idle until that PC goes offline (~90s).";
-            return;
-        }
-
         if (_session is null)
         {
             AutoWorkerStatusText.Text = "Sign in to start unattended processing.";
@@ -2031,6 +2058,11 @@ public partial class MainWindow : Window
     private async void SignInButton_Click(object sender, RoutedEventArgs e)
     {
         await SignInAndLoadAsync();
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            ForceEmaapEngineAutoWorker();
+        }
+
         await StartDocaBrowserAsync();
         BeginWorkerServicesAfterDocaBrowser();
     }
@@ -2447,6 +2479,13 @@ public partial class MainWindow : Window
     {
         if (result.LoginRequired)
         {
+            if (WorkerProduct.IsEmaapEngineBuild)
+            {
+                SetStatus("Type captcha + OTP in Chrome. Auto-worker keeps the queue running.", StatusKind.Working);
+                ScheduleJobRetry(job, result.Message);
+                return;
+            }
+
             if (fromAutoWorker || _autoWorkerEnabled)
             {
                 var otp = result.Message.Contains("OTP", StringComparison.OrdinalIgnoreCase);
@@ -3264,6 +3303,83 @@ public partial class MainWindow : Window
         return claimed;
     }
 
+    private async Task StartEmaapEngineSessionAsync()
+    {
+        var hasSavedRc = !string.IsNullOrWhiteSpace(AadharBox.Text)
+            && !string.IsNullOrWhiteSpace(PasswordBox.Text);
+        if (!hasSavedRc)
+        {
+            PortalLoginPanel.Visibility = Visibility.Visible;
+            ExpandAccountPanel();
+            SetStatus(
+                "Enter RC Aadhar + password once. This PC saves it and will not ask again.",
+                StatusKind.Idle);
+            return;
+        }
+
+        PortalLoginPanel.Visibility = Visibility.Collapsed;
+        await SignInAndLoadAsync();
+        if (_session is null)
+        {
+            PortalLoginPanel.Visibility = Visibility.Visible;
+            ExpandAccountPanel();
+            SetStatus("RC sign-in failed. Enter Aadhar + password again.", StatusKind.Error);
+            return;
+        }
+
+        ForceEmaapEngineAutoWorker();
+        await StartDocaBrowserAsync();
+        BeginWorkerServicesAfterDocaBrowser();
+    }
+
+    private void OnEmaapPortalLoggedIn()
+    {
+        if (!WorkerProduct.IsEmaapEngineBuild)
+        {
+            return;
+        }
+
+        if (_emaapReadyForJobs)
+        {
+            _ = RunAutoWorkerCycleAsync();
+            return;
+        }
+
+        _emaapReadyForJobs = true;
+        _autoWorkerPausedForDoca = false;
+        _telemetry.MarkDocaLoggedIn();
+        StartDocaSessionWatchdogTimer();
+        MainTabs.SelectedIndex = 0;
+        SetStatus("eMAAP login ok. Starting fill & certify now.", StatusKind.Success);
+        AddActivityEntry("eMAAP login ok — auto-worker starting immediately.");
+        UpdateAutoWorkerStatusText();
+        StartAutoWorkerTimers();
+        _ = RunAutoWorkerCycleAsync();
+    }
+
+    private void ForceEmaapEngineAutoWorker()
+    {
+        if (!WorkerProduct.IsEmaapEngineBuild)
+        {
+            return;
+        }
+
+        _autoWorkerEnabled = true;
+        _autoWorkerPausedForDoca = false;
+        _suppressAutoRunCheckBoxEvent = true;
+        try
+        {
+            AutoRunCheckBox.IsChecked = true;
+        }
+        finally
+        {
+            _suppressAutoRunCheckBoxEvent = false;
+        }
+
+        PersistCredentials();
+        UpdateAutoWorkerStatusText();
+    }
+
     private async Task SignInAndLoadAsync()
     {
         await RunWithBusyStateAsync(async () =>
@@ -3278,10 +3394,19 @@ public partial class MainWindow : Window
             SyncDocaCredentialsToAllAutomation();
             UpdateSignInSummary();
             SignInExpander.IsExpanded = false;
+            if (WorkerProduct.IsEmaapEngineBuild)
+            {
+                PortalLoginPanel.Visibility = Visibility.Collapsed;
+                MainTabs.SelectedIndex = 0;
+            }
 
             await FlushPendingCaptchaReportsAsync();
 
-            SetStatus("Signed in. Loading certification queue...", StatusKind.Working);
+            SetStatus(
+                WorkerProduct.IsEmaapEngineBuild
+                    ? "RC verified and saved on this PC. Opening eMAAP — type captcha and OTP in Chrome."
+                    : "Signed in. Loading certification queue...",
+                StatusKind.Working);
             if (_useRealtimeListener)
             {
                 await StartQueueListenerAsync();

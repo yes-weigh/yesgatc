@@ -1,30 +1,25 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
-    <RootNamespace>Yesgatc.CertificateWorker</RootNamespace>
-    <AssemblyName>Yesgatc.CertificateWorker</AssemblyName>
-    <Version>1.0.69</Version>
-    <WorkerFlavor Condition="'$(WorkerFlavor)' == ''">Vps</WorkerFlavor>
-    <Product>YesGATC Certificate Worker</Product>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(WorkerFlavor)' == 'EmaapEngine'">
-    <DefineConstants>$(DefineConstants);EMAAP_ENGINE</DefineConstants>
+    <RootNamespace>Yesgatc.EmaapEngine</RootNamespace>
     <AssemblyName>EmaapEngine</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <DefineConstants>$(DefineConstants);EMAAP_ENGINE</DefineConstants>
+    <Version>1.0.64</Version>
     <Product>EmaapEngine</Product>
     <AssemblyTitle>EmaapEngine</AssemblyTitle>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Yesgatc.CertificateWorker.Tests" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.8" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.8" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.8" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.8" />
     <PackageReference Include="Google.Cloud.Firestore" Version="3.10.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.8" />
@@ -36,21 +31,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Yesgatc.CertificateWorker\Models\**\*.cs" Link="Shared\Models\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Yesgatc.CertificateWorker\Services\**\*.cs" Link="Shared\Services\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Remove="..\Yesgatc.CertificateWorker\Models\ActivityLogEntry.cs" />
+    <Compile Remove="..\Yesgatc.CertificateWorker\Services\WindowsAutostartService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="appsettings.local.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="appsettings.emaapengine.json" Condition="'$(WorkerFlavor)' == 'EmaapEngine'">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="adobelogo.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="tessdata\**\*">
+    <None Include="..\Yesgatc.CertificateWorker\adobelogo.png" Link="adobelogo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
 </Project>

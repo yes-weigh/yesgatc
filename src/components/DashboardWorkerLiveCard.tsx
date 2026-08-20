@@ -9,11 +9,8 @@ import {
   saveAutomationWorkerRemoteControl,
   subscribeAutomationWorkerRemote,
   subscribeAutomationWorkerStatus,
-  subscribeEmaapEnginePresence,
-  isEmaapEngineLive,
   type AutomationWorkerRemoteControl,
   type AutomationWorkerStatus,
-  type EmaapEnginePresence,
   type WorkerRuntimeState,
 } from '../lib/automationWorker';
 import { displayEmaapText } from '../lib/emaapSessionHistory';
@@ -56,10 +53,8 @@ export const DashboardWorkerLiveCard: React.FC = () => {
   );
   const [now, setNow] = useState(() => Date.now());
   const [saving, setSaving] = useState(false);
-  const [engines, setEngines] = useState<EmaapEnginePresence[]>([]);
 
   useEffect(() => subscribeAutomationWorkerStatus(setStatus), []);
-  useEffect(() => subscribeEmaapEnginePresence(setEngines), []);
   useEffect(() => {
     if (!isAdmin) return undefined;
     return subscribeAutomationWorkerRemote(setRemote);
@@ -69,10 +64,6 @@ export const DashboardWorkerLiveCard: React.FC = () => {
     return () => window.clearInterval(timer);
   }, []);
 
-  const liveEngines = useMemo(
-    () => engines.filter(row => isEmaapEngineLive(row, now)),
-    [engines, now],
-  );
   const runtime = useMemo(() => resolveWorkerRuntimeState(status), [status]);
   const loggedIn = status?.docaSessionState === 'logged_in';
   const activity = compactLiveText(status?.statusMessage?.trim() || '');
@@ -125,11 +116,6 @@ export const DashboardWorkerLiveCard: React.FC = () => {
             <Clock size={12} strokeWidth={2.2} aria-hidden />
             {beat}
           </span>
-          {liveEngines.length > 0 ? (
-            <span className="wl-live__chip wl-live__chip--ok" aria-label="RC emaapengine live">
-              emaapengine {liveEngines.length}
-            </span>
-          ) : null}
         </div>
       </div>
       {activity ? <p className="wl-live__msg">{activity}</p> : null}

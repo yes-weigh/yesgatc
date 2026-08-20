@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
 import { DashboardPeriodFilter } from '../../components/DashboardPeriodFilter';
-import { EmaapEngineDownloadCard } from '../../components/EmaapEngineDownloadCard';
 import {
   recordActivityStamp,
   recordInDashboardPeriod,
@@ -418,8 +417,6 @@ export const RCDashboard: React.FC = () => {
           </section>
         )
       ) : null}
-
-      {isRcAdmin ? <EmaapEngineDownloadCard /> : null}
 
       <section className="wl-primary" aria-label="Verification types">
         <Link
