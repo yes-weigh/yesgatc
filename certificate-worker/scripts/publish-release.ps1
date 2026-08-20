@@ -140,7 +140,7 @@ function Publish-WorkerFlavor {
     }
     else {
         $rcReadme = @(
-            "EmaapEngine — RC private certificate worker"
+            "EmaapEngine - RC private certificate worker"
             ""
             "1. Unzip on the RC Windows PC."
             "2. Install .NET 8 Desktop Runtime x64 if prompted."
