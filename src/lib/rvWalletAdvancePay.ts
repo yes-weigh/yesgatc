@@ -1,6 +1,6 @@
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { DEFAULT_RC_FEES_STRUCTURE, resolveRcFeesStructure } from './rcProfileFields';
+import { DEFAULT_RC_FEES_STRUCTURE } from './rcProfileFields';
 import { payRvFromWallet } from './rcWallet';
 import {
   buildRvPaymentFirestorePatch,
