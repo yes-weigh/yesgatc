@@ -52,6 +52,21 @@ public sealed class CertificationQueueFilterTests
         Assert.Equal("new", filtered[0].Id);
     }
 
+    [Fact]
+    public void Apply_scopes_to_rc_id()
+    {
+        var records = new[]
+        {
+            Make("a", "rc1", "SN1", "submitted"),
+            Make("b", "rc2", "SN2", "submitted"),
+        };
+
+        var filtered = CertificationQueueFilter.Apply(records, "rc2");
+
+        Assert.Single(filtered);
+        Assert.Equal("b", filtered[0].Id);
+    }
+
     private static SiteCalibrationRecord Make(
         string id,
         string rcId,

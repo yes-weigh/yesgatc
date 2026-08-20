@@ -13,10 +13,16 @@ public sealed class FirestoreService
     private readonly HttpClient _http = new();
     private readonly FirebaseSettings _settings;
 
+    public const string ClaimsCollection = "certificationClaims";
+    public static readonly TimeSpan ClaimTtl = TimeSpan.FromMinutes(12);
+
     public FirestoreService(FirebaseSettings settings)
     {
         _settings = settings;
     }
+
+    /// <summary>RC emaapengine: only this centre. VPS: null = all centres.</summary>
+    public string? QueueRcIdFilter { get; set; }
 
     public Task<IReadOnlyList<SiteCalibrationRecord>> GetAllSubmittedVerificationsAsync(
         string idToken,
@@ -34,7 +40,111 @@ public sealed class FirestoreService
         CancellationToken cancellationToken = default)
     {
         var submitted = await GetAllSubmittedVerificationsAsync(idToken, cancellationToken);
-        return CertificationQueueFilter.Apply(submitted);
+        return CertificationQueueFilter.Apply(submitted, QueueRcIdFilter);
+    }
+
+    public async Task<bool> TryClaimJobAsync(
+        string jobId,
+        FirebaseSignInResult session,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return false;
+        }
+
+        var selfId = CertificateWorkerIdentity.WorkerId(session);
+        var documents = new FirestoreDocumentClient(_settings);
+        var existing = await documents.TryGetFieldsAsync(
+            ClaimsCollection,
+            jobId,
+            session.IdToken,
+            cancellationToken);
+
+        var owner = FirestoreFieldReader.ReadString(existing, "workerId");
+        var claimedAt = FirestoreFieldReader.ReadTimestamp(existing, "claimedAt");
+        if (CertificationClaimLogic.IsHeldByOther(owner, claimedAt, selfId, DateTimeOffset.UtcNow, ClaimTtl))
+        {
+            return false;
+        }
+
+        var fields = new Dictionary<string, object?>
+        {
+            ["workerId"] = selfId,
+            ["ownerUid"] = session.UserId,
+            ["kind"] = CertificateWorkerIdentity.Kind(session),
+            ["claimedAt"] = DateTimeOffset.UtcNow,
+            ["machineName"] = Environment.MachineName,
+        };
+
+        if (existing.Count == 0)
+        {
+            try
+            {
+                await documents.CreateDocumentWithIdAsync(
+                    ClaimsCollection,
+                    jobId,
+                    fields,
+                    session.IdToken,
+                    cancellationToken);
+            }
+            catch (InvalidOperationException)
+            {
+                existing = await documents.TryGetFieldsAsync(
+                    ClaimsCollection,
+                    jobId,
+                    session.IdToken,
+                    cancellationToken);
+                owner = FirestoreFieldReader.ReadString(existing, "workerId");
+                claimedAt = FirestoreFieldReader.ReadTimestamp(existing, "claimedAt");
+                return !CertificationClaimLogic.IsHeldByOther(
+                    owner,
+                    claimedAt,
+                    selfId,
+                    DateTimeOffset.UtcNow,
+                    ClaimTtl);
+            }
+        }
+        else
+        {
+            await documents.PatchFieldsAsync(
+                ClaimsCollection,
+                jobId,
+                fields,
+                session.IdToken,
+                cancellationToken);
+        }
+
+        var confirm = await documents.TryGetFieldsAsync(
+            ClaimsCollection,
+            jobId,
+            session.IdToken,
+            cancellationToken);
+        return string.Equals(
+            FirestoreFieldReader.ReadString(confirm, "workerId"),
+            selfId,
+            StringComparison.Ordinal);
+    }
+
+    public async Task ReleaseClaimAsync(
+        string jobId,
+        FirebaseSignInResult session,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return;
+        }
+
+        try
+        {
+            var documents = new FirestoreDocumentClient(_settings);
+            await documents.DeleteDocumentAsync(ClaimsCollection, jobId, session.IdToken, cancellationToken);
+        }
+        catch
+        {
+            // Non-fatal.
+        }
     }
 
     public async Task<SiteCalibrationRecord?> GetVerificationByIdAsync(
@@ -515,14 +625,31 @@ public sealed class FirestoreService
         CancellationToken cancellationToken)
     {
         var rcNames = await GetRcCenterNamesAsync(idToken, cancellationToken);
+        var statusFilter = new QueryFilter(
+            new FieldFilter(
+                new FieldReference("status"),
+                "EQUAL",
+                new FirestoreValue { StringValue = status }));
+        QueryFilter where = statusFilter;
+        if (!string.IsNullOrWhiteSpace(QueueRcIdFilter))
+        {
+            where = new QueryFilter(
+                CompositeFilter: new CompositeFilter(
+                    "AND",
+                    [
+                        statusFilter,
+                        new QueryFilter(
+                            new FieldFilter(
+                                new FieldReference("rcId"),
+                                "EQUAL",
+                                new FirestoreValue { StringValue = QueueRcIdFilter })),
+                    ]));
+        }
+
         var rows = await RunQueryAsync(
             new StructuredQuery(
                 [new CollectionSelector("siteCalibrations")],
-                new QueryFilter(
-                    new FieldFilter(
-                        new FieldReference("status"),
-                        "EQUAL",
-                        new FirestoreValue { StringValue = status }))),
+                where),
             idToken,
             cancellationToken);
 
@@ -539,41 +666,69 @@ public sealed class FirestoreService
         string idToken,
         CancellationToken cancellationToken)
     {
-        var rows = await RunQueryAsync(
-            new StructuredQuery(
-                [new CollectionSelector("users")],
-                new QueryFilter(
-                    new FieldFilter(
-                        new FieldReference("role"),
-                        "EQUAL",
-                        new FirestoreValue { StringValue = "rc_admin" }))),
-            idToken,
-            cancellationToken);
-
-        var names = new Dictionary<string, string>(StringComparer.Ordinal);
-
-        foreach (var row in rows)
+        if (!string.IsNullOrWhiteSpace(QueueRcIdFilter))
         {
-            if (row.Document?.Name is null)
+            try
             {
-                continue;
+                var documents = new FirestoreDocumentClient(_settings);
+                var fields = await documents.GetFieldsAsync("users", QueueRcIdFilter, idToken, cancellationToken);
+                var label = FirstNonEmpty(
+                    FirestoreFieldReader.ReadString(fields, "companyName"),
+                    FirestoreFieldReader.ReadString(fields, "username"),
+                    QueueRcIdFilter);
+                return new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [QueueRcIdFilter] = label,
+                };
             }
-
-            var uid = row.Document.Name.Split('/').LastOrDefault();
-            if (string.IsNullOrWhiteSpace(uid))
+            catch (InvalidOperationException)
             {
-                continue;
+                return new Dictionary<string, string>(StringComparer.Ordinal);
             }
-
-            var fields = row.Document.Fields ?? new Dictionary<string, JsonElement>();
-            var label = FirstNonEmpty(
-                FirestoreFieldReader.ReadString(fields, "companyName"),
-                FirestoreFieldReader.ReadString(fields, "username"),
-                uid);
-            names[uid] = label;
         }
 
-        return names;
+        try
+        {
+            var rows = await RunQueryAsync(
+                new StructuredQuery(
+                    [new CollectionSelector("users")],
+                    new QueryFilter(
+                        new FieldFilter(
+                            new FieldReference("role"),
+                            "EQUAL",
+                            new FirestoreValue { StringValue = "rc_admin" }))),
+                idToken,
+                cancellationToken);
+
+            var names = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var row in rows)
+            {
+                if (row.Document?.Name is null)
+                {
+                    continue;
+                }
+
+                var uid = row.Document.Name.Split('/').LastOrDefault();
+                if (string.IsNullOrWhiteSpace(uid))
+                {
+                    continue;
+                }
+
+                var fields = row.Document.Fields ?? new Dictionary<string, JsonElement>();
+                var label = FirstNonEmpty(
+                    FirestoreFieldReader.ReadString(fields, "companyName"),
+                    FirestoreFieldReader.ReadString(fields, "username"),
+                    uid);
+                names[uid] = label;
+            }
+
+            return names;
+        }
+        catch (InvalidOperationException)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
     }
 
     private async Task<List<RunQueryRow>> RunQueryAsync(
@@ -664,7 +819,16 @@ public sealed class FirestoreService
     private sealed record CollectionSelector([property: JsonPropertyName("collectionId")] string CollectionId);
 
     private sealed record QueryFilter(
-        [property: JsonPropertyName("fieldFilter")] FieldFilter FieldFilter);
+        [property: JsonPropertyName("fieldFilter")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        FieldFilter? FieldFilter = null,
+        [property: JsonPropertyName("compositeFilter")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        CompositeFilter? CompositeFilter = null);
+
+    private sealed record CompositeFilter(
+        [property: JsonPropertyName("op")] string Op,
+        [property: JsonPropertyName("filters")] QueryFilter[] Filters);
 
     private sealed record FieldFilter(
         [property: JsonPropertyName("field")] FieldReference Field,

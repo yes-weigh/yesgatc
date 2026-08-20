@@ -48,6 +48,8 @@ public partial class MainWindow : Window
     private readonly LocalCredentialsStore _credentialStore = new();
     private readonly JobRetryTracker _jobRetries = new();
     private readonly WorkerTelemetryService _telemetry;
+    private readonly WorkerPresenceService _presence;
+    private bool _yieldedToRcEngine;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private readonly List<AutomationService> _preparedBulkWorkers = [];
     private DateTimeOffset _lastStatusPublishUtc = DateTimeOffset.MinValue;
@@ -96,6 +98,7 @@ public partial class MainWindow : Window
         _partyDetailsService = new PartyDetailsService(settings.Firebase);
         _instrumentDetailsService = new InstrumentDetailsService(settings.Firebase);
         _telemetry = new WorkerTelemetryService(settings.Firebase);
+        _presence = new WorkerPresenceService(settings.Firebase);
         _automationService = new AutomationService(settings.Automation, _firestoreService);
         _automationService.Firebase = settings.Firebase;
         _automationService.ResolveFirebaseIdToken = GetFreshIdTokenAsync;
@@ -719,6 +722,18 @@ public partial class MainWindow : Window
         StopAutoWorkerTimers();
         StopTelemetryTimer();
         await _queueListener.StopAsync();
+        if (_session is not null)
+        {
+            try
+            {
+                var token = await GetFreshIdTokenAsync();
+                await _presence.ClearAsync(_session with { IdToken = token });
+            }
+            catch
+            {
+            }
+        }
+
         await DisposePreparedBulkWorkersAsync();
         await _automationService.DisposeAsync();
         _tokenLock.Dispose();
@@ -1065,7 +1080,10 @@ public partial class MainWindow : Window
         _telemetryTimer.Tick += TelemetryTimer_Tick;
         _telemetryTimer.Start();
         _ = PublishWorkerStatusAsync();
-        _ = PollRemoteControlAsync();
+        if (CertificateWorkerIdentity.IsSuperAdmin(_session))
+        {
+            _ = PollRemoteControlAsync();
+        }
     }
 
     private void StopTelemetryTimer()
@@ -1083,7 +1101,10 @@ public partial class MainWindow : Window
     private async void TelemetryTimer_Tick(object? sender, EventArgs e)
     {
         await PublishWorkerStatusAsync();
-        await PollRemoteControlAsync();
+        if (CertificateWorkerIdentity.IsSuperAdmin(_session))
+        {
+            await PollRemoteControlAsync();
+        }
     }
 
     private readonly List<CaptchaAttemptReport> _pendingCaptchaReports = [];
@@ -1199,46 +1220,61 @@ public partial class MainWindow : Window
             return;
         }
 
-        var submitted = _jobs.Count(item => item.Record.IsSubmitted);
-        var eligible = _jobs.Count(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id));
-
-        var state = _lastStatusKind switch
+        if (CertificateWorkerIdentity.IsSuperAdmin(_session))
         {
-            StatusKind.Working => "working",
-            StatusKind.Error => "error",
-            StatusKind.Success => "idle",
-            _ when _autoWorkerPausedForDoca => "login_required",
-            _ when _remotePaused => "paused",
-            _ => "idle",
-        };
+            var submitted = _jobs.Count(item => item.Record.IsSubmitted);
+            var eligible = _jobs.Count(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id));
 
-        var docaSessionAgeSeconds = _telemetry.DocaLoggedInAt is { } loggedInAt
-            ? (int)Math.Max(0, (DateTimeOffset.UtcNow - loggedInAt).TotalSeconds)
-            : 0;
-
-        await _telemetry.PublishStatusAsync(
-            new WorkerStatusSnapshot
+            var state = _lastStatusKind switch
             {
-                State = state,
-                StatusMessage = StatusText.Text,
-                AutoWorkerEnabled = _autoWorkerEnabled,
-                RemotePaused = _remotePaused,
-                DocaSessionState = _autoWorkerPausedForDoca ? "login_required" : "logged_in",
-                QueueTotal = _jobs.Count,
-                QueueEligible = eligible,
-                QueueSubmitted = submitted,
-                JobsCompletedSession = _telemetry.JobsCompletedSession,
-                JobsFailedSession = _telemetry.JobsFailedSession,
-                LastSessionProbeAt = _telemetry.LastSessionProbeAt?.ToString("O") ?? string.Empty,
-                LastSessionProbeResult = _telemetry.LastSessionProbeResult,
-                DocaSessionAgeSeconds = docaSessionAgeSeconds,
-            },
-            () => GetFreshIdTokenAsync());
+                StatusKind.Working => "working",
+                StatusKind.Error => "error",
+                StatusKind.Success => "idle",
+                _ when _autoWorkerPausedForDoca => "login_required",
+                _ when _remotePaused => "paused",
+                _ when _yieldedToRcEngine => "paused",
+                _ => "idle",
+            };
+
+            var docaSessionAgeSeconds = _telemetry.DocaLoggedInAt is { } loggedInAt
+                ? (int)Math.Max(0, (DateTimeOffset.UtcNow - loggedInAt).TotalSeconds)
+                : 0;
+
+            await _telemetry.PublishStatusAsync(
+                new WorkerStatusSnapshot
+                {
+                    State = state,
+                    StatusMessage = StatusText.Text,
+                    AutoWorkerEnabled = _autoWorkerEnabled,
+                    RemotePaused = _remotePaused || _yieldedToRcEngine,
+                    DocaSessionState = _autoWorkerPausedForDoca ? "login_required" : "logged_in",
+                    QueueTotal = _jobs.Count,
+                    QueueEligible = eligible,
+                    QueueSubmitted = submitted,
+                    JobsCompletedSession = _telemetry.JobsCompletedSession,
+                    JobsFailedSession = _telemetry.JobsFailedSession,
+                    LastSessionProbeAt = _telemetry.LastSessionProbeAt?.ToString("O") ?? string.Empty,
+                    LastSessionProbeResult = _telemetry.LastSessionProbeResult,
+                    DocaSessionAgeSeconds = docaSessionAgeSeconds,
+                },
+                () => GetFreshIdTokenAsync());
+        }
+
+        try
+        {
+            var token = await GetFreshIdTokenAsync();
+            var message = Dispatcher.CheckAccess() ? StatusText.Text : await RunOnUiAsync(() => StatusText.Text);
+            await _presence.HeartbeatAsync(_session, token, message);
+        }
+        catch
+        {
+            // Presence must not stop the worker.
+        }
     }
 
     private async Task PollRemoteControlAsync()
     {
-        if (_session is null)
+        if (_session is null || !CertificateWorkerIdentity.IsSuperAdmin(_session))
         {
             return;
         }
@@ -1769,6 +1805,39 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (CertificateWorkerIdentity.IsSuperAdmin(_session))
+        {
+            try
+            {
+                var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+                var rcLive = await _presence.AnyLiveEmaapEngineAsync(token).ConfigureAwait(false);
+                if (rcLive)
+                {
+                    _yieldedToRcEngine = true;
+                    await RunOnUiAsync(() =>
+                    {
+                        SetStatus("Paused — RC emaapengine live. VPS waits to avoid duplicate certify.", StatusKind.Info);
+                        UpdateAutoWorkerStatusText();
+                    }).ConfigureAwait(false);
+                    return;
+                }
+
+                if (_yieldedToRcEngine)
+                {
+                    _yieldedToRcEngine = false;
+                    await RunOnUiAsync(() =>
+                    {
+                        SetStatus("RC emaapengine offline — VPS auto worker resuming.", StatusKind.Info);
+                        UpdateAutoWorkerStatusText();
+                    }).ConfigureAwait(false);
+                }
+            }
+            catch
+            {
+                // If presence check fails, continue; job claims still prevent duplicates.
+            }
+        }
+
         if (_isBusy)
         {
             _autoWorkerCyclePending = true;
@@ -1896,6 +1965,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_yieldedToRcEngine)
+        {
+            AutoWorkerStatusText.Text = "Paused — RC emaapengine live. VPS idle until that PC goes offline (~90s).";
+            return;
+        }
+
         if (_session is null)
         {
             AutoWorkerStatusText.Text = "Sign in to start unattended processing.";
@@ -1950,7 +2025,7 @@ public partial class MainWindow : Window
     {
         if (_session is null)
         {
-            SetStatus("Sign in as Super Admin first to refresh.", StatusKind.Info);
+            SetStatus("Sign in first to refresh.", StatusKind.Info);
             ExpandAccountPanel();
             return;
         }
@@ -2540,14 +2615,27 @@ public partial class MainWindow : Window
             SelectJobOnUiThread(job.Id);
             SetStatusSafe($"{batchLabel} · Serial {job.SerialNumber} ({job.NextStepLabel})…", StatusKind.Working);
 
+            var claimed = false;
             try
             {
+                claimed = await TryClaimCurrentJobAsync(job).ConfigureAwait(false);
+                if (!claimed)
+                {
+                    AddActivityEntry($"{batchLabel} skipped — claimed by another worker ({job.SerialNumber}).");
+                    continue;
+                }
+
                 var result = await ProcessJobWithRecoveryAsync(
                     job,
                     _automationService,
                     continueBrowserSession: continueSession || i > 0);
 
                 continueSession = _automationService.IsBrowserConnected;
+
+                if (result.Completed && _session is not null)
+                {
+                    await _firestoreService.ReleaseClaimAsync(job.Id, _session).ConfigureAwait(false);
+                }
 
                 if (TryHandleSequentialJobResult(
                         job,
@@ -2768,10 +2856,21 @@ public partial class MainWindow : Window
 
                 try
                 {
+                    if (!await TryClaimCurrentJobAsync(job).ConfigureAwait(false))
+                    {
+                        AddActivityEntry($"{label} skipped — claimed by another worker.");
+                        continue;
+                    }
+
                     var result = await ProcessJobWithRecoveryAsync(
                         job,
                         automation,
                         continueBrowserSession: i > 0);
+
+                    if (result.Completed && _session is not null)
+                    {
+                        await _firestoreService.ReleaseClaimAsync(job.Id, _session).ConfigureAwait(false);
+                    }
 
                     if (result.LoginRequired)
                     {
@@ -3100,12 +3199,48 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ApplyCertificateWorkerSession(FirebaseSignInResult session)
+    {
+        var rcScope = CertificateWorkerIdentity.IsEmaapEngine(session) ? session.UserId : null;
+        _firestoreService.QueueRcIdFilter = rcScope;
+        _queueListener.ScopeRcId = rcScope;
+        EmaapLoginAutomation.PreferManualLoginUntilAuthenticated = CertificateWorkerIdentity.IsEmaapEngine(session);
+        Title = CertificateWorkerIdentity.IsEmaapEngine(session)
+            ? "emaapengine"
+            : "YesGATC Certificate Worker";
+    }
+
+    private async Task<bool> TryClaimCurrentJobAsync(SiteCalibrationRecord job)
+    {
+        if (_session is null)
+        {
+            return false;
+        }
+
+        await GetFreshIdTokenAsync().ConfigureAwait(false);
+        if (_session is null)
+        {
+            return false;
+        }
+
+        var claimed = await _firestoreService.TryClaimJobAsync(job.Id, _session).ConfigureAwait(false);
+        if (!claimed)
+        {
+            SetStatusSafe(
+                $"Queue skip · {job.SerialNumber} held by another worker.",
+                StatusKind.Info);
+        }
+
+        return claimed;
+    }
+
     private async Task SignInAndLoadAsync()
     {
         await RunWithBusyStateAsync(async () =>
         {
-            SetStatus("Signing in as Super Admin…", StatusKind.Working);
-            _session = await _authService.SignInAsSuperAdminAsync(AadharBox.Text, PasswordBox.Text);
+            SetStatus("Signing in…", StatusKind.Working);
+            _session = await _authService.SignInAsCertificateWorkerAsync(AadharBox.Text, PasswordBox.Text);
+            ApplyCertificateWorkerSession(_session);
 
             PersistCredentials();
             SyncDocaCredentialsToAllAutomation();
@@ -3294,8 +3429,11 @@ public partial class MainWindow : Window
 
         var summary = string.IsNullOrWhiteSpace(_session.DisplayName)
             ? _session.Email
-            : $"{_session.DisplayName} · Super Admin";
-        SignInSummaryText.Text = summary;
+            : _session.DisplayName;
+        var role = CertificateWorkerIdentity.IsEmaapEngine(_session)
+            ? "emaapengine"
+            : "Super Admin · VPS";
+        SignInSummaryText.Text = $"{summary} · {role}";
         SignInStatusDot.Fill = (Brush)FindResource("AccentGreenBrush");
     }
 

@@ -10,6 +10,9 @@ namespace Yesgatc.CertificateWorker.Services;
 /// </summary>
 public static class EmaapLoginAutomation
 {
+    /// <summary>RC emaapengine: fill eMAAP user/pass, wait for manual captcha+OTP. No DeepSeek / Firebase OTP.</summary>
+    public static bool PreferManualLoginUntilAuthenticated { get; set; }
+
     /// <summary>UTC time of last successful captcha → Send OTP click (for late Firebase poll).</summary>
     public static DateTimeOffset? LastOtpRequestedAtUtc { get; private set; }
 
@@ -212,6 +215,34 @@ public static class EmaapLoginAutomation
             return DocaSessionState.LoggedIn;
         }
 
+        if (PreferManualLoginUntilAuthenticated)
+        {
+            if (!await IsOtpStepAsync(page))
+            {
+                await FillCredentialsAsync(page, credentials);
+            }
+
+            await page.BringToFrontAsync();
+            var waitSeconds = settings.EmaapEngineManualLoginWaitSeconds > 0
+                ? settings.EmaapEngineManualLoginWaitSeconds
+                : 900;
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(waitSeconds, 30, 1800));
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (await IsLoggedInAsync(page))
+                {
+                    return DocaSessionState.LoggedIn;
+                }
+
+                await Task.Delay(1000, cancellationToken);
+            }
+
+            return await IsLoggedInAsync(page)
+                ? DocaSessionState.LoggedIn
+                : DocaSessionState.LoginRequired;
+        }
+
         if (await IsOtpStepAsync(page))
         {
             return await ContinueFromOtpStepAsync(
@@ -223,14 +254,13 @@ public static class EmaapLoginAutomation
                 reportAttemptAsync);
         }
 
-        if (!settings.AutoSolveCaptcha)
-        {
-            await FillCredentialsAsync(page, credentials);
-            return DocaSessionState.LoginRequired;
-        }
-
         await FillCredentialsAsync(page, credentials);
         await page.BringToFrontAsync();
+
+        if (!settings.AutoSolveCaptcha)
+        {
+            return DocaSessionState.LoginRequired;
+        }
 
         var afterManualWait = await WaitAfterCredentialsForManualCaptchaOtpAsync(
             page,

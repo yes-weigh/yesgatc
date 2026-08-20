@@ -113,4 +113,32 @@ internal static class FirestoreFieldReader
 
         return numeric.ToString(CultureInfo.InvariantCulture);
     }
+
+    public static DateTimeOffset? ReadTimestamp(IReadOnlyDictionary<string, JsonElement> fields, string key)
+    {
+        if (!fields.TryGetValue(key, out var value) || value.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (value.TryGetProperty("timestampValue", out var timestampValue))
+        {
+            var raw = timestampValue.GetString();
+            if (!string.IsNullOrWhiteSpace(raw) && DateTimeOffset.TryParse(raw, out var parsedTs))
+            {
+                return parsedTs;
+            }
+        }
+
+        if (value.TryGetProperty("stringValue", out var stringValue))
+        {
+            var raw = stringValue.GetString();
+            if (!string.IsNullOrWhiteSpace(raw) && DateTimeOffset.TryParse(raw, out var parsedStr))
+            {
+                return parsedStr;
+            }
+        }
+
+        return null;
+    }
 }

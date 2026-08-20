@@ -194,7 +194,9 @@
                                 </Expander.Header>
 
                                 <StackPanel Margin="0,6,0,0">
-                                    <TextBlock Text="YesGATC" Style="{StaticResource FieldLabel}" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Aadhar + password — Super Admin (VPS) or RC Admin (emaapengine)"
+                                               Style="{StaticResource FieldLabel}"
+                                               Margin="0,0,0,4"/>
                                     <Grid Margin="0,0,0,10">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>

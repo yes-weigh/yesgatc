@@ -1,4 +1,5 @@
 import {
+  Timestamp,
   collection,
   doc,
   getDocs,
@@ -19,6 +20,7 @@ export const AUTOMATION_WORKER_REMOTE_DOC = 'remote';
 export const AUTOMATION_WORKER_LOGS_COLLECTION = 'automationWorkerLogs';
 export const AUTOMATION_WORKER_CAPTCHA_COLLECTION = 'automationWorkerCaptchaAttempts';
 export const AUTOMATION_WORKER_SESSIONS_COLLECTION = 'automationWorkerSessions';
+export const EMAAP_ENGINE_PRESENCE_COLLECTION = 'emaapEnginePresence';
 
 export const EMAAP_HISTORY_SESSION_LIMIT = 400;
 export const EMAAP_HISTORY_LOG_LIMIT = 2500;
@@ -52,6 +54,15 @@ export type AutomationWorkerStatus = {
   docaSessionAgeSeconds: number;
   lastSessionProbeAt: string;
   lastSessionProbeResult: string;
+};
+
+export type EmaapEnginePresence = {
+  id: string;
+  kind: string;
+  rcId: string;
+  rcName: string;
+  machineName: string;
+  lastHeartbeatAt: string;
 };
 
 export type AutomationWorkerRemoteControl = {
@@ -216,6 +227,21 @@ export function readString(data: Record<string, unknown> | undefined, key: strin
   return typeof value === 'string' ? value : fallback;
 }
 
+export function readTimestampIso(data: Record<string, unknown> | undefined, key: string): string {
+  if (!data) return '';
+  const value = data[key];
+  if (typeof value === 'string') return value;
+  if (value instanceof Timestamp) return value.toDate().toISOString();
+  if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
+    try {
+      return (value as { toDate: () => Date }).toDate().toISOString();
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
 export function readBool(data: Record<string, unknown> | undefined, key: string, fallback = false): boolean {
   if (!data) return fallback;
   const value = data[key];
@@ -324,6 +350,37 @@ export function subscribeAutomationWorkerStatus(
     doc(db, AUTOMATION_WORKER_COLLECTION, AUTOMATION_WORKER_STATUS_DOC),
     snapshot => {
       onData(normalizeAutomationWorkerStatus(snapshot.data() as Record<string, unknown> | undefined));
+    },
+    error => onError?.(error),
+  );
+}
+
+export function isEmaapEngineLive(presence: EmaapEnginePresence, now = Date.now()): boolean {
+  if (presence.kind !== 'emaapengine') return false;
+  const heartbeatMs = Date.parse(presence.lastHeartbeatAt);
+  return Number.isFinite(heartbeatMs) && now - heartbeatMs <= OFFLINE_HEARTBEAT_MS;
+}
+
+export function subscribeEmaapEnginePresence(
+  onData: (rows: EmaapEnginePresence[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, EMAAP_ENGINE_PRESENCE_COLLECTION),
+    snapshot => {
+      onData(
+        snapshot.docs.map(document => {
+          const data = (document.data() as Record<string, unknown> | undefined) ?? {};
+          return {
+            id: document.id,
+            kind: readString(data, 'kind'),
+            rcId: readString(data, 'rcId'),
+            rcName: readString(data, 'rcName'),
+            machineName: readString(data, 'machineName'),
+            lastHeartbeatAt: readTimestampIso(data, 'lastHeartbeatAt'),
+          };
+        }),
+      );
     },
     error => onError?.(error),
   );

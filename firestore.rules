@@ -363,7 +363,13 @@ service cloud.firestore {
         && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
         && verificationZohoFieldsUnchanged();
 
-      // Certificate worker — RC approves own submitted verification after DOCA success.
+      // RC emaapengine — certify / fail / void own submitted jobs (same pipeline as VPS worker).
+      allow update: if isRCAdmin()
+        && resource.data.rcId == request.auth.uid
+        && request.resource.data.rcId == resource.data.rcId
+        && verificationRecordStatus(resource.data) in ['submitted', 'approved', 'certified']
+        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted', 'approved', 'certified']
+        && verificationApplicationNumberUnchanged();
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == resource.data.rcId
@@ -473,6 +479,39 @@ service cloud.firestore {
     match /automationWorkerSessions/{sessionId} {
       allow read, create: if isSuperAdmin();
       allow update, delete: if false;
+    }
+
+    match /emaapEnginePresence/{workerId} {
+      allow read: if isAuthenticated();
+
+      allow create, update: if isRCAdmin()
+        && workerId == request.auth.uid
+        && request.resource.data.kind == 'emaapengine'
+        && request.resource.data.rcId == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow delete: if isRCAdmin() && workerId == request.auth.uid;
+
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /certificationClaims/{jobId} {
+      allow read: if isSuperAdmin() || isRCAdmin();
+
+      allow create: if isSuperAdmin()
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow create: if isRCAdmin()
+        && request.resource.data.ownerUid == request.auth.uid
+        && get(/databases/$(database)/documents/siteCalibrations/$(jobId)).data.rcId == request.auth.uid;
+
+      allow update, delete: if isSuperAdmin();
+
+      allow update, delete: if isRCAdmin()
+        && (
+          resource.data.ownerUid == request.auth.uid
+          || request.time > resource.data.claimedAt + duration.value(12, 'm')
+        );
     }
 
     // eMAAP OTP codes written by Cloud Function only; Super Admin worker reads + marks consumed.

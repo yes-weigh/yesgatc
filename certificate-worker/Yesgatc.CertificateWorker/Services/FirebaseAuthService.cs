@@ -15,7 +15,13 @@ public sealed class FirebaseAuthService
         _settings = settings;
     }
 
-    public async Task<FirebaseSignInResult> SignInAsSuperAdminAsync(
+    public Task<FirebaseSignInResult> SignInAsSuperAdminAsync(
+        string aadhar,
+        string password,
+        CancellationToken cancellationToken = default) =>
+        SignInAsCertificateWorkerAsync(aadhar, password, cancellationToken);
+
+    public async Task<FirebaseSignInResult> SignInAsCertificateWorkerAsync(
         string aadhar,
         string password,
         CancellationToken cancellationToken = default)
@@ -25,13 +31,16 @@ public sealed class FirebaseAuthService
         var fields = await documents.GetFieldsAsync("users", session.UserId, session.IdToken, cancellationToken);
         var role = FirestoreFieldReader.ReadString(fields, "role");
 
-        if (!string.Equals(role, "super_admin", StringComparison.OrdinalIgnoreCase))
+        var isSuperAdmin = string.Equals(role, "super_admin", StringComparison.OrdinalIgnoreCase);
+        var isRcAdmin = string.Equals(role, "rc_admin", StringComparison.OrdinalIgnoreCase);
+        if (!isSuperAdmin && !isRcAdmin)
         {
             throw new InvalidOperationException(
-                "This account is not a Super Admin. Use the Super Admin Aadhar and password from the web app.");
+                "This account cannot run the certificate worker. Use Super Admin (VPS) or RC Admin (emaapengine).");
         }
 
         var displayName = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(fields, "companyName"),
             FirestoreFieldReader.ReadString(fields, "username"),
             session.Email);
 
@@ -143,7 +152,7 @@ public sealed class FirebaseAuthService
             || body.Contains("INVALID_PASSWORD", StringComparison.OrdinalIgnoreCase)
             || body.Contains("EMAIL_NOT_FOUND", StringComparison.OrdinalIgnoreCase))
         {
-            return "Invalid Super Admin Aadhar or password.";
+            return "Invalid Aadhar or password.";
         }
 
         return "Firebase sign-in failed. Check your credentials and network connection.";

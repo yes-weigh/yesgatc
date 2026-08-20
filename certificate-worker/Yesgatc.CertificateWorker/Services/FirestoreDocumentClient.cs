@@ -141,6 +141,31 @@ internal sealed class FirestoreDocumentClient
         }
     }
 
+    public async Task DeleteDocumentAsync(
+        string collection,
+        string documentId,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        var url =
+            $"https://firestore.googleapis.com/v1/projects/{_settings.ProjectId}/databases/(default)/documents/{collection}/{documentId}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Could not delete {collection}/{documentId} ({(int)response.StatusCode}): {body}");
+        }
+    }
+
     public async Task<Dictionary<string, JsonElement>> TryGetFieldsAsync(
         string collection,
         string documentId,
@@ -179,7 +204,15 @@ internal sealed class FirestoreDocumentClient
         int integer => new Dictionary<string, string> { ["integerValue"] = integer.ToString() },
         long longValue => new Dictionary<string, string> { ["integerValue"] = longValue.ToString() },
         double doubleValue => new Dictionary<string, object> { ["doubleValue"] = doubleValue },
-        string text => new Dictionary<string, string> { ["stringValue"] = text },
+        DateTimeOffset timestamp => new Dictionary<string, string>
+        {
+            ["timestampValue"] = timestamp.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"),
+        },
+        DateTime dateTime => new Dictionary<string, string>
+        {
+            ["timestampValue"] = DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+                .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"),
+        },
         IReadOnlyDictionary<string, object?> dictionary => new Dictionary<string, object>
         {
             ["mapValue"] = new Dictionary<string, object>

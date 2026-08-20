@@ -90,6 +90,8 @@ public sealed class AutomationSettings
     /// before DeepSeek OCR. 0 disables the pause.
     /// </summary>
     public int EmaapManualCaptchaOtpWaitSeconds { get; init; } = 60;
+    /// <summary>RC emaapengine: seconds to wait on login page for manual captcha + OTP.</summary>
+    public int EmaapEngineManualLoginWaitSeconds { get; init; } = 900;
     public string EmaapMasterOtp { get; init; } = string.Empty;
     public CaptchaOcrSettings CaptchaOcr { get; init; } = new();
     public DocaCredentialSettings DocaCredentials { get; init; } = new();
