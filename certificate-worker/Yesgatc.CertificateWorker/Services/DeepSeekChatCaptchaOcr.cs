@@ -116,16 +116,8 @@ public static class DeepSeekChatCaptchaOcr
 
             await SendPromptAsync(deepseek, cancellationToken);
 
-            // Vision hint reappearing after send = model never saw the image.
-            if (await PageHasVisionHintAsync(deepseek))
-            {
-                if (!await TryClickVisionAsync(deepseek) || await PageHasVisionHintAsync(deepseek))
-                {
-                    return string.Empty;
-                }
-
-                await deepseek.WaitForTimeoutAsync(800);
-            }
+            // Instant often replies "Parse failed. Send to Vision." — click that before waiting 90s.
+            await RecoverVisionAfterSendAsync(deepseek, cancellationToken);
 
             var raw = await WaitForAssistantReplyAsync(
                 deepseek,
@@ -975,6 +967,48 @@ public static class DeepSeekChatCaptchaOcr
         return true;
     }
 
+    /// <summary>
+    /// After send, Instant may show "Parse failed. Send to Vision." / "No text extracted".
+    /// Click Vision promptly so we do not burn the full assistant wait on a failed parse.
+    /// </summary>
+    private static async Task RecoverVisionAfterSendAsync(IPage page, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(8);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await PageHasVisionHintAsync(page))
+            {
+                if (await TryClickVisionAsync(page))
+                {
+                    await page.WaitForTimeoutAsync(1_200);
+                    // Second nudge if link still visible.
+                    if (await PageHasVisionHintAsync(page))
+                    {
+                        await TryClickVisionAsync(page);
+                        await page.WaitForTimeoutAsync(800);
+                    }
+                }
+
+                return;
+            }
+
+            // Already generating a real answer — no Vision nudge needed.
+            if (await IsDeepSeekStillGeneratingAsync(page))
+            {
+                return;
+            }
+
+            var early = SanitizeCaptcha(await ExtractLatestAssistantTextAsync(page));
+            if (CaptchaTextPattern.IsMatch(early))
+            {
+                return;
+            }
+
+            await page.WaitForTimeoutAsync(250);
+        }
+    }
+
     private static async Task<bool> PageHasVisionHintAsync(IPage page)
     {
         try
@@ -982,14 +1016,13 @@ public static class DeepSeekChatCaptchaOcr
             return await page.EvaluateAsync<bool>(
                 """
                 () => {
-                  const floor = window.innerHeight * 0.35;
                   const nodes = Array.from(document.querySelectorAll('div,span,p,a,button'));
                   for (const el of nodes) {
-                    const t = (el.innerText || el.textContent || '').trim();
-                    if (!t || t.length > 90) continue;
-                    if (!/Try Vision|No text found|No text extract/i.test(t)) continue;
+                    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (!t || t.length > 120) continue;
+                    if (!/Try Vision|Send to Vision|Parse failed|No text found|No text extract/i.test(t)) continue;
                     const r = el.getBoundingClientRect();
-                    if (r.width > 0 && r.height > 0 && r.bottom >= floor) return true;
+                    if (r.width > 0 && r.height > 0) return true;
                   }
                   return false;
                 }
@@ -1003,16 +1036,19 @@ public static class DeepSeekChatCaptchaOcr
 
     private static async Task<bool> TryClickVisionAsync(IPage page)
     {
-        // Prefer the blue "Vision" link inside "No text found. Try Vision."
+        // Instant: "Parse failed. Send to Vision." — legacy: "Try Vision"
         var candidates = new[]
         {
+            "a:has-text('Send to Vision')",
+            "button:has-text('Send to Vision')",
+            "span:has-text('Send to Vision')",
             "a:has-text('Vision')",
             "button:has-text('Vision')",
             "[role='button']:has-text('Vision')",
             "span:has-text('Vision')",
             "div:has-text('Try Vision') a",
-            "div:has-text('Try Vision') button",
-            "div:has-text('Try Vision') span:has-text('Vision')",
+            "div:has-text('Send to Vision') a",
+            "div:has-text('Parse failed') a",
         };
 
         foreach (var selector in candidates)
@@ -1025,7 +1061,7 @@ public static class DeepSeekChatCaptchaOcr
                     continue;
                 }
 
-                await loc.ClickAsync(new LocatorClickOptions { Timeout = 2_500 });
+                await loc.ClickAsync(new LocatorClickOptions { Timeout = 2_500, Force = true });
                 return true;
             }
             catch (PlaywrightException)
@@ -1036,10 +1072,10 @@ public static class DeepSeekChatCaptchaOcr
 
         try
         {
-            var byRole = page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = "Vision" });
+            var byRole = page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { NameRegex = new("Vision", RegexOptions.IgnoreCase) });
             if (await byRole.CountAsync() > 0)
             {
-                await byRole.Last.ClickAsync(new LocatorClickOptions { Timeout = 2_500 });
+                await byRole.Last.ClickAsync(new LocatorClickOptions { Timeout = 2_500, Force = true });
                 return true;
             }
         }
@@ -1047,26 +1083,25 @@ public static class DeepSeekChatCaptchaOcr
         {
         }
 
-        // DOM fallback: click element whose visible text is exactly Vision near the hint.
         try
         {
-            var clicked = await page.EvaluateAsync<bool>(
+            return await page.EvaluateAsync<bool>(
                 """
                 () => {
                   const nodes = Array.from(document.querySelectorAll('a,button,span,div'));
                   for (const el of nodes) {
-                    const t = (el.innerText || el.textContent || '').trim();
-                    if (t === 'Vision' || t === 'Try Vision') {
+                    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (!t || t.length > 80) continue;
+                    if (/^Send to Vision\.?$/i.test(t) || /^Try Vision\.?$/i.test(t) || /^Vision$/i.test(t)) {
                       el.click();
                       return true;
                     }
                   }
-                  // Partial: blue link inside "No text found. Try Vision."
                   for (const el of nodes) {
-                    const t = (el.innerText || '').trim();
-                    if (/try\s+vision/i.test(t) && t.length < 40) {
+                    const t = (el.innerText || '').replace(/\s+/g, ' ').trim();
+                    if (/Parse failed.*Vision|Send to Vision|Try Vision/i.test(t) && t.length < 80) {
                       const child = Array.from(el.querySelectorAll('a,button,span'))
-                        .find(c => (c.innerText || '').trim() === 'Vision');
+                        .find(c => /Vision/i.test((c.innerText || '').trim()));
                       (child || el).click();
                       return true;
                     }
@@ -1074,7 +1109,6 @@ public static class DeepSeekChatCaptchaOcr
                   return false;
                 }
                 """);
-            return clicked;
         }
         catch (PlaywrightException)
         {
