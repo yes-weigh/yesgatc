@@ -329,7 +329,32 @@ public static class DeepSeekChatCaptchaOcr
 
     private static async Task ForceFreshChatAsync(IPage page, CancellationToken cancellationToken)
     {
-        // Hard navigation clears stacked attachments + prior assistant tokens.
+        var url = page.Url ?? string.Empty;
+        var alreadyOnChat = url.Contains("chat.deepseek.com", StringComparison.OrdinalIgnoreCase)
+            && !url.Contains("/sign", StringComparison.OrdinalIgnoreCase);
+
+        if (alreadyOnChat)
+        {
+            // Soft reset — New chat only. Full Goto looks like a tab reload and kills in-flight attaches on slow VPS.
+            await TryStartNewChatAsync(page);
+            await page.WaitForTimeoutAsync(400);
+            await ClearComposerAttachmentsAsync(page);
+            try
+            {
+                await EnsureChatReadyAsync(page, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                return;
+            }
+            catch (TimeoutException)
+            {
+                // Fall through to hard navigation.
+            }
+            catch (PlaywrightException)
+            {
+                // Fall through to hard navigation.
+            }
+        }
+
         await page.GotoAsync(
             ChatUrl,
             new PageGotoOptions
@@ -339,7 +364,7 @@ public static class DeepSeekChatCaptchaOcr
             });
         await EnsureChatReadyAsync(page, cancellationToken);
         await TryStartNewChatAsync(page);
-        await page.WaitForTimeoutAsync(500);
+        await page.WaitForTimeoutAsync(400);
         await ClearComposerAttachmentsAsync(page);
         cancellationToken.ThrowIfCancellationRequested();
     }
@@ -355,7 +380,7 @@ public static class DeepSeekChatCaptchaOcr
                     """
                     () => {
                       let n = 0;
-                      const floor = window.innerHeight * 0.38;
+                      const floor = window.innerHeight * 0.72;
                       const click = (el) => {
                         try { el.click(); n++; } catch {}
                       };
@@ -438,15 +463,15 @@ public static class DeepSeekChatCaptchaOcr
             return await page.EvaluateAsync<int>(
                 """
                 () => {
-                  const floor = window.innerHeight * 0.38;
+                  // Only count thumbs in the composer band (bottom ~28%), not chat history images.
+                  const floor = window.innerHeight * 0.72;
                   const imgs = Array.from(document.querySelectorAll('img'));
                   let count = 0;
                   for (const img of imgs) {
                     const r = img.getBoundingClientRect();
-                    // Composer thumbs are small squares near the input; skip avatars / heroes.
-                    if (r.width < 16 || r.height < 16) continue;
-                    if (r.width > 180 || r.height > 180) continue;
-                    if (r.bottom < floor) continue;
+                    if (r.width < 20 || r.height < 20) continue;
+                    if (r.width > 140 || r.height > 140) continue;
+                    if (r.top < floor) continue;
                     count++;
                   }
                   return count;
@@ -461,6 +486,7 @@ public static class DeepSeekChatCaptchaOcr
 
     /// <summary>
     /// Attach exactly one file via the file input. Never clipboard paste (Control+V stacked images).
+    /// Never hard-reload the tab after attach — that is the VPS "paste then reloads" failure mode.
     /// </summary>
     private static async Task<bool> AttachCaptchaImageOnceAsync(
         IPage page,
@@ -485,22 +511,24 @@ public static class DeepSeekChatCaptchaOcr
 
             if (count > 1)
             {
-                await ForceFreshChatAsync(page, cancellationToken);
-                await WaitUntilComposerClearAsync(page, cancellationToken);
+                // Extra thumbs from history/UI noise — strip composer, re-attach once. No Goto.
+                await ClearComposerAttachmentsAsync(page);
+                await page.WaitForTimeoutAsync(200);
                 if (!await AttachImageOnceViaFileInputAsync(page, tempPath, cancellationToken))
                 {
                     return false;
                 }
 
-                await page.WaitForTimeoutAsync(500);
-                return await CountComposerAttachmentsAsync(page) == 1;
+                await page.WaitForTimeoutAsync(400);
+                count = await CountComposerAttachmentsAsync(page);
+                return count >= 1;
             }
 
             await page.WaitForTimeoutAsync(200);
         }
 
-        // File input was set once. Composer thumbs are not always <img> — do not re-paste.
-        return await CountComposerAttachmentsAsync(page) <= 1;
+        // File input was set once. Composer thumbs are not always <img> — proceed to prompt/send.
+        return true;
     }
 
     private static async Task WaitUntilComposerClearAsync(IPage page, CancellationToken cancellationToken)
@@ -527,7 +555,9 @@ public static class DeepSeekChatCaptchaOcr
             "button:has-text('New Chat')",
             "div[role='button']:has-text('New chat')",
             "[aria-label*='New chat' i]",
+            "[aria-label*='New Chat' i]",
             "[data-testid*='new-chat' i]",
+            "button[aria-label='New chat']",
         };
 
         foreach (var selector in candidates)
