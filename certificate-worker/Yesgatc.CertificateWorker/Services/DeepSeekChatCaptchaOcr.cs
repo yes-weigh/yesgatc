@@ -31,7 +31,7 @@ public static class DeepSeekChatCaptchaOcr
 
     private const string Prompt =
         """
-        Look at the attached captcha image with Vision.
+        Look at the attached captcha image.
         Reply with exactly one line:
         CAPTCHA=xxxxxx
         xxxxxx is the characters left to right, case-sensitive, no spaces.
@@ -108,7 +108,7 @@ public static class DeepSeekChatCaptchaOcr
                 return string.Empty;
             }
 
-            // Captcha PNGs fail DeepSeek text OCR — Vision must be active before send.
+            // New DeepSeek UI: image attach is enough (Vision auto). Legacy: click "Try Vision" if shown.
             if (!await EnsureVisionModeAsync(deepseek, cancellationToken))
             {
                 return string.Empty;
@@ -904,50 +904,45 @@ public static class DeepSeekChatCaptchaOcr
     }
 
     /// <summary>
-    /// After image upload DeepSeek shows "No text found. Try Vision." — click Vision and wait for it.
-    /// Returns false if the Vision banner is still visible (OCR would be garbage).
+    /// Legacy DeepSeek showed "No text found. Try Vision." after image upload.
+    /// Current Instant chat accepts images without Vision — proceed as soon as one attachment is present.
+    /// Still clicks Vision if the old banner appears.
     /// </summary>
     private static async Task<bool> EnsureVisionModeAsync(IPage page, CancellationToken cancellationToken)
     {
-        var clickedVision = false;
-        var deadline = DateTime.UtcNow.AddSeconds(15);
+        // Caller already attached the image. Short poll for optional legacy Vision banner only.
+        var deadline = DateTime.UtcNow.AddSeconds(2);
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (await TryClickVisionAsync(page))
+            if (await PageHasVisionHintAsync(page))
             {
-                clickedVision = true;
-                // Wait for Vision to process the attachment (do not rush the answer path).
-                await page.WaitForTimeoutAsync(1_200);
-                if (await PageHasVisionHintAsync(page))
+                if (await TryClickVisionAsync(page))
                 {
-                    await TryClickVisionAsync(page);
                     await page.WaitForTimeoutAsync(800);
+                    if (await PageHasVisionHintAsync(page))
+                    {
+                        await TryClickVisionAsync(page);
+                        await page.WaitForTimeoutAsync(500);
+                    }
                 }
 
-                break;
+                // Banner still up → text-OCR path is unreliable.
+                return !await PageHasVisionHintAsync(page);
             }
 
-            if (!await PageHasVisionHintAsync(page)
-                && await CountComposerAttachmentsAsync(page) == 1)
+            // New UI: image in composer, no Vision gate.
+            if (await CountComposerAttachmentsAsync(page) >= 1)
             {
-                // Image attached, no Vision hint yet — keep waiting briefly for banner.
-                await page.WaitForTimeoutAsync(300);
-                continue;
+                return true;
             }
 
-            await page.WaitForTimeoutAsync(250);
+            await page.WaitForTimeoutAsync(120);
         }
 
-        // Fail hard: banner still up means text-OCR path (wrong / invented glyphs).
-        if (await PageHasVisionHintAsync(page))
-        {
-            return false;
-        }
-
-        // Prefer an explicit Vision click; if banner never appeared, allow proceed only with one image.
-        return clickedVision || await CountComposerAttachmentsAsync(page) == 1;
+        // No banner after brief wait — Instant chat accepts the image; prompt next.
+        return true;
     }
 
     private static async Task<bool> PageHasVisionHintAsync(IPage page)
@@ -1070,16 +1065,108 @@ public static class DeepSeekChatCaptchaOcr
             await page.Keyboard.TypeAsync(Prompt, new KeyboardTypeOptions { Delay = 0 });
         }
 
+        // Let Instant chat enable the send control after text lands.
+        await page.WaitForTimeoutAsync(250);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Paste → prompt → submit immediately (blue send / Ctrl+Enter; plain Enter often inserts newline).
-        if (!await TryClickSendButtonAsync(page))
+        // Instant chat send is a blue round button (often no aria-label). Prefer DOM click.
+        if (!await ClickInstantSendAsync(page))
         {
             await composer.ClickAsync();
-            await page.Keyboard.PressAsync("Control+Enter");
+            // Fallbacks — DeepSeek often ignores plain Enter (newline).
+            foreach (var key in new[] { "Control+Enter", "Meta+Enter", "Enter" })
+            {
+                await page.Keyboard.PressAsync(key);
+                await page.WaitForTimeoutAsync(400);
+                if (await ComposerLooksEmptyAsync(page))
+                {
+                    break;
+                }
+            }
         }
 
         await WaitUntilComposerClearedAsync(page, cancellationToken);
+    }
+
+    /// <summary>Click the Instant-chat blue circular send (up-arrow) next to the composer.</summary>
+    private static async Task<bool> ClickInstantSendAsync(IPage page)
+    {
+        try
+        {
+            var clicked = await page.EvaluateAsync<bool>(
+                """
+                () => {
+                  const reject = /deepthink|search|vision|login|sign|attach|upload|file|new chat|paperclip/i;
+                  const nodes = Array.from(document.querySelectorAll('button, div[role="button"], [role="button"]'));
+                  let best = null;
+                  let bestScore = -1;
+                  for (const el of nodes) {
+                    if (el.disabled) continue;
+                    const cs = getComputedStyle(el);
+                    if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) continue;
+                    const label = (el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText || '').trim();
+                    if (reject.test(label)) continue;
+                    const r = el.getBoundingClientRect();
+                    if (r.width < 28 || r.height < 28 || r.width > 64 || r.height > 64) continue;
+                    // Send sits in the lower composer band, right side.
+                    if (r.top < innerHeight * 0.55) continue;
+                    if (r.left < innerWidth * 0.55) continue;
+                    const hasSvg = !!el.querySelector('svg');
+                    const bg = cs.backgroundColor || '';
+                    const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                    let blue = 0;
+                    if (m) {
+                      const rc = +m[1], g = +m[2], b = +m[3];
+                      if (b > 130 && b >= rc && b >= g) blue = (b - rc) + (b - g) + b;
+                    }
+                    // Round-ish blue + svg = Instant send.
+                    const round = Math.abs(r.width - r.height) < 8;
+                    if (!hasSvg && !/send/i.test(label)) continue;
+                    if (!blue && !/send/i.test(label)) continue;
+                    const score = blue * 10 + (round ? 50 : 0) + r.left + r.top;
+                    if (score > bestScore) {
+                      bestScore = score;
+                      best = el;
+                    }
+                  }
+                  if (!best) return false;
+                  best.scrollIntoView({ block: 'center', inline: 'center' });
+                  best.click();
+                  return true;
+                }
+                """);
+            if (clicked)
+            {
+                await page.WaitForTimeoutAsync(300);
+                return true;
+            }
+        }
+        catch (PlaywrightException)
+        {
+        }
+
+        return await TryClickSendButtonAsync(page);
+    }
+
+    private static async Task<bool> ComposerLooksEmptyAsync(IPage page)
+    {
+        try
+        {
+            return await page.EvaluateAsync<bool>(
+                """
+                () => {
+                  const nodes = Array.from(document.querySelectorAll('textarea, [contenteditable="true"]'));
+                  const el = nodes[nodes.length - 1];
+                  if (!el) return true;
+                  const text = (el.value || el.innerText || el.textContent || '').trim();
+                  return text.length === 0;
+                }
+                """);
+        }
+        catch (PlaywrightException)
+        {
+            return false;
+        }
     }
 
     private static async Task<bool> TryClickSendButtonAsync(IPage page)
@@ -1101,7 +1188,7 @@ public static class DeepSeekChatCaptchaOcr
                     continue;
                 }
 
-                await loc.ClickAsync(new LocatorClickOptions { Timeout = 2_500 });
+                await loc.ClickAsync(new LocatorClickOptions { Timeout = 2_500, Force = true });
                 return true;
             }
             catch (PlaywrightException)
@@ -1111,12 +1198,13 @@ public static class DeepSeekChatCaptchaOcr
 
         try
         {
-            var clicked = await page.EvaluateAsync<bool>(
+            return await page.EvaluateAsync<bool>(
                 """
                 () => {
                   const reject = /deepthink|search|vision|login|sign|attach|upload|file|new chat/i;
                   const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                  const scored = [];
+                  let best = null;
+                  let bestScore = -1;
                   for (const b of buttons) {
                     if (b.disabled) continue;
                     const cs = getComputedStyle(b);
@@ -1125,7 +1213,7 @@ public static class DeepSeekChatCaptchaOcr
                     if (reject.test(t)) continue;
                     const rect = b.getBoundingClientRect();
                     if (rect.width < 24 || rect.height < 24 || rect.width > 72 || rect.height > 72) continue;
-                    if (rect.bottom < 0 || rect.top > innerHeight) continue;
+                    if (rect.top < innerHeight * 0.55) continue;
                     const hasSvg = !!b.querySelector('svg');
                     if (!hasSvg && t.toLowerCase() !== 'send') continue;
                     const bg = cs.backgroundColor || '';
@@ -1133,20 +1221,19 @@ public static class DeepSeekChatCaptchaOcr
                     let blueScore = 0;
                     if (m) {
                       const r = +m[1], g = +m[2], bl = +m[3];
-                      if (bl > r + 20 && bl > g + 10 && bl > 120) blueScore = 100;
+                      if (bl > r + 20 && bl > g + 10 && bl > 120) blueScore = 100 + bl;
                     }
-                    // Prefer bottom-right icon buttons (send sits there).
-                    const posScore = rect.y + rect.x;
-                    scored.push({ el: b, score: blueScore * 10000 + posScore, blueScore });
+                    const score = blueScore * 10000 + rect.x + rect.y;
+                    if (score > bestScore) {
+                      bestScore = score;
+                      best = b;
+                    }
                   }
-                  scored.sort((a, b) => b.score - a.score);
-                  const best = scored.find(s => s.blueScore > 0) || scored[0];
                   if (!best) return false;
-                  best.el.click();
+                  best.click();
                   return true;
                 }
                 """);
-            return clicked;
         }
         catch (PlaywrightException)
         {
@@ -1154,17 +1241,22 @@ public static class DeepSeekChatCaptchaOcr
         }
     }
 
+    private static bool LooksLikeOurCaptchaPrompt(string? text) =>
+        !string.IsNullOrWhiteSpace(text)
+        && (text.Contains("CAPTCHA=", StringComparison.Ordinal)
+            || text.Contains("Look at the attached captcha", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("CASE-SENSITIVE", StringComparison.Ordinal));
+
     private static async Task WaitUntilComposerClearedAsync(IPage page, CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(8);
+        var deadline = DateTime.UtcNow.AddSeconds(12);
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var text = await page.Locator("textarea, [contenteditable='true']").Last.InputValueAsync();
-                if (string.IsNullOrWhiteSpace(text)
-                    || !text.Contains("CASE-SENSITIVE", StringComparison.Ordinal))
+                if (!LooksLikeOurCaptchaPrompt(text))
                 {
                     return;
                 }
@@ -1175,8 +1267,7 @@ public static class DeepSeekChatCaptchaOcr
                 try
                 {
                     var inner = await page.Locator("textarea, [contenteditable='true']").Last.InnerTextAsync();
-                    if (string.IsNullOrWhiteSpace(inner)
-                        || !inner.Contains("CASE-SENSITIVE", StringComparison.Ordinal))
+                    if (!LooksLikeOurCaptchaPrompt(inner))
                     {
                         return;
                     }
@@ -1187,8 +1278,8 @@ public static class DeepSeekChatCaptchaOcr
                 }
             }
 
-            // Retry send if still stuck with draft.
-            await TryClickSendButtonAsync(page);
+            // Still holding our draft — keep hammering Instant send.
+            await ClickInstantSendAsync(page);
             await page.WaitForTimeoutAsync(400);
         }
     }
