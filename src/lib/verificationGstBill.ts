@@ -2,6 +2,7 @@ import { VERIFICATION_LABEL_BRANDING } from './verificationLabel';
 import { inrAmountToWords } from './inrAmountToWords';
 import { rvZohoInvoiceSummary } from './zohoRvSubmit';
 import type { Customer, SiteCalibration } from '../types';
+import type { ZohoRvSettings } from './zohoSettings';
 
 /** Thermal receipt width for GST bill preview / print. */
 export const VERIFICATION_GST_BILL_RECEIPT = {
@@ -84,13 +85,16 @@ function resolveInvoiceNumber(record: SiteCalibration): string {
   );
 }
 
-function resolveTaxableValue(record: SiteCalibration): number | null {
+function resolveTaxableValue(
+  record: SiteCalibration,
+  settings?: Pick<ZohoRvSettings, 'zohoFeeUpto20KgInr' | 'zohoFeeAbove20KgInr'> | null,
+): number | null {
+  const zohoSummary = rvZohoInvoiceSummary(record, settings);
+  if (zohoSummary?.baseInr) return zohoSummary.baseInr;
+
   if (typeof record.verificationFeeBase === 'number' && record.verificationFeeBase > 0) {
     return Math.round(record.verificationFeeBase);
   }
-
-  const zohoSummary = rvZohoInvoiceSummary(record);
-  if (zohoSummary?.baseInr) return zohoSummary.baseInr;
 
   if (typeof record.verificationFeeTotal === 'number' && record.verificationFeeTotal > 0) {
     return Math.round(record.verificationFeeTotal / 1.18);
@@ -122,9 +126,10 @@ function formatCustomerLocation(customer?: Customer | null): string {
 export function buildVerificationGstBillData(
   record: SiteCalibration,
   customer?: Customer | null,
+  settings?: Pick<ZohoRvSettings, 'zohoFeeUpto20KgInr' | 'zohoFeeAbove20KgInr'> | null,
 ): VerificationGstBillData {
   const missingFields: string[] = [];
-  const taxableValue = resolveTaxableValue(record);
+  const taxableValue = resolveTaxableValue(record, settings);
   const { cgst, sgst, total } = taxableValue
     ? splitKeralaGst(taxableValue)
     : { cgst: 0, sgst: 0, total: 0 };

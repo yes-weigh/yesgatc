@@ -17,12 +17,7 @@ public sealed class LocalCredentialsStore
 
     public LocalCredentialsStore()
     {
-        var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "YesGATC",
-            "CertificateWorker");
-        Directory.CreateDirectory(directory);
-        FilePath = Path.Combine(directory, "credentials.local.json");
+        FilePath = Path.Combine(WorkerDataPaths.RootDirectory, "credentials.local.json");
     }
 
     public StoredCredentials Load()

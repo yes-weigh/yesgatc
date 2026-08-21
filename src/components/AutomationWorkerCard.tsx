@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Activity,
   CheckCircle2,
@@ -10,12 +11,14 @@ import {
   Pause,
   Play,
   RefreshCw,
+  RotateCw,
   Search,
   ShieldCheck,
   Wrench,
   XCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useConfirm } from '../context/ConfirmContext';
 import {
   averageSessionSeconds,
   formatDuration,
@@ -34,6 +37,7 @@ import {
   type WorkerRuntimeState,
   DEFAULT_AUTOMATION_WORKER_REMOTE,
 } from '../lib/automationWorker';
+import { displayEmaapText } from '../lib/emaapSessionHistory';
 import {
   diagnoseVerificationPipeline,
   findVerificationBySerial,
@@ -159,6 +163,7 @@ function logLevelIcon(level: string): React.ReactNode {
 
 export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ className = '' }) => {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [status, setStatus] = useState<AutomationWorkerStatus | null>(null);
   const [remote, setRemote] = useState<AutomationWorkerRemoteControl>(DEFAULT_AUTOMATION_WORKER_REMOTE);
   const [logs, setLogs] = useState<AutomationWorkerLogEntry[]>([]);
@@ -248,6 +253,25 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
     if (!remote) return;
     await pushRemote(
       { autoWorkerEnabled: !remote.autoWorkerEnabled },
+      { incrementCommand: true },
+    );
+  };
+
+  const handleClearJobLocks = async () => {
+    if (!remote) return;
+    const ok = await confirm({
+      title: 'Retry locked jobs?',
+      message: [
+        'Clears the in-memory retry lock and re-queues Submitted jobs.',
+        'Does not reboot the VPS. Worker picks this up within ~30 seconds.',
+        'Needs the updated Certificate Worker installed; older builds ignore this.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Clear locks',
+    });
+    if (!ok) return;
+    await pushRemote(
+      { clearJobLocksRevision: (remote.clearJobLocksRevision || 0) + 1 },
       { incrementCommand: true },
     );
   };
@@ -349,7 +373,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
               <p className="cw-hero-label">Worker status</p>
               <h2 className="cw-hero-title">{RUNTIME_LABELS[runtimeState]}</h2>
               <p className="cw-hero-message">
-                {status?.statusMessage || RUNTIME_HINTS[runtimeState]}
+                {displayEmaapText(status?.statusMessage || RUNTIME_HINTS[runtimeState])}
               </p>
             </div>
           </div>
@@ -390,6 +414,15 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
           >
             <RefreshCw size={16} aria-hidden />
             {remote?.autoWorkerEnabled === false ? 'Enable auto worker' : 'Disable auto worker'}
+          </button>
+          <button
+            type="button"
+            className="cw-control-btn"
+            disabled={!remoteReady || saving || runtimeState === 'offline'}
+            onClick={() => void handleClearJobLocks()}
+          >
+            <RotateCw size={16} aria-hidden />
+            Retry locked jobs
           </button>
         </div>
       </section>
@@ -492,7 +525,7 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                   <li key={entry.id} className={`cw-log-item cw-log-item--${entry.level}`}>
                     <span className="cw-log-level">{logLevelIcon(entry.level)}</span>
                     <time dateTime={entry.createdAt}>{formatCompactTimestamp(entry.createdAt)}</time>
-                    <span className="cw-log-message">{entry.message}</span>
+                    <span className="cw-log-message">{displayEmaapText(entry.message)}</span>
                   </li>
                 ))}
               </ul>
@@ -579,9 +612,20 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
         {activeLogTab === 'sessions' && (
           <div role="tabpanel" className="cw-log-panel">
             {sessions.length === 0 ? (
-              <p className="cw-log-empty">No eMAAP session logout events yet. Sessions are recorded when the worker detects a logout.</p>
+              <p className="cw-log-empty">
+                No eMAAP session logout events yet.{' '}
+                <Link to="/admin/integrations/worker/sessions" className="cw-session-link">
+                  Open session history
+                </Link>
+              </p>
             ) : (
-              <ul className="cw-session-list">
+              <>
+                <p className="cw-session-link-wrap">
+                  <Link to="/admin/integrations/worker/sessions" className="cw-session-link">
+                    Open session history
+                  </Link>
+                </p>
+                <ul className="cw-session-list">
                 {sessions.map(session => (
                   <li key={session.id} className="cw-session-item">
                     <div className="cw-session-duration">
@@ -594,7 +638,8 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                     </div>
                   </li>
                 ))}
-              </ul>
+                </ul>
+              </>
             )}
           </div>
         )}

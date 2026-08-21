@@ -18,11 +18,13 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return 2 * r * Math.asin(Math.sqrt(a));
 }
 
-export function formatCustomerRegion(customer: Customer): string {
-  const parts = [customer.district, customer.state].filter(part => part?.trim());
-  if (parts.length) return parts.join(', ');
-  if (customer.address?.trim()) return customer.address.trim();
-  return '—';
+export function formatCustomerCityDistrict(customer: Customer): { city: string; district: string } {
+  const city = customer.address?.trim().split(',')[0]?.trim() ?? '';
+  const district = customer.district?.trim() ?? '';
+  if (city && district && city.toLowerCase() === district.toLowerCase()) {
+    return { city: '', district };
+  }
+  return { city, district };
 }
 
 export function customerDistanceKm(

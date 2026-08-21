@@ -20,18 +20,42 @@ public sealed class FirebaseAuthService
         string password,
         CancellationToken cancellationToken = default)
     {
+        var session = await SignInWithProfileAsync(aadhar, password, cancellationToken);
+        if (!string.Equals(session.Role, "super_admin", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "This EXE is the VPS Certificate Worker. Use Super Admin Aadhar and password.");
+        }
+
+        return session;
+    }
+
+    public async Task<FirebaseSignInResult> SignInAsRcAdminAsync(
+        string aadhar,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        var session = await SignInWithProfileAsync(aadhar, password, cancellationToken);
+        if (!string.Equals(session.Role, "rc_admin", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "This EXE is EmaapEngine. Use this RC Admin Aadhar and password.");
+        }
+
+        return session;
+    }
+
+    private async Task<FirebaseSignInResult> SignInWithProfileAsync(
+        string aadhar,
+        string password,
+        CancellationToken cancellationToken)
+    {
         var session = await SignInWithAadharAsync(aadhar, password, cancellationToken);
         var documents = new FirestoreDocumentClient(_settings);
         var fields = await documents.GetFieldsAsync("users", session.UserId, session.IdToken, cancellationToken);
         var role = FirestoreFieldReader.ReadString(fields, "role");
-
-        if (!string.Equals(role, "super_admin", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException(
-                "This account is not a Super Admin. Use the Super Admin Aadhar and password from the web app.");
-        }
-
         var displayName = FirstNonEmpty(
+            FirestoreFieldReader.ReadString(fields, "companyName"),
             FirestoreFieldReader.ReadString(fields, "username"),
             session.Email);
 
@@ -143,7 +167,7 @@ public sealed class FirebaseAuthService
             || body.Contains("INVALID_PASSWORD", StringComparison.OrdinalIgnoreCase)
             || body.Contains("EMAIL_NOT_FOUND", StringComparison.OrdinalIgnoreCase))
         {
-            return "Invalid Super Admin Aadhar or password.";
+            return $"Invalid {WorkerProduct.SignInRoleLabel} Aadhar or password.";
         }
 
         return "Firebase sign-in failed. Check your credentials and network connection.";

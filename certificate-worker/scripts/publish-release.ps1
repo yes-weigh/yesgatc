@@ -1,5 +1,4 @@
-# Builds a release folder you can copy to the Windows Server.
-# Usage (from repo root or certificate-worker folder):
+# Builds release zips you can copy to Windows.
 #   powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-release.ps1
 #   powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-release.ps1 -SelfContained
 
@@ -14,19 +13,21 @@ $ErrorActionPreference = "Stop"
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-function Stop-CertificateWorkerIfRunning {
-    $processes = Get-Process -Name "Yesgatc.CertificateWorker" -ErrorAction SilentlyContinue
+function Stop-NamedProcessIfRunning {
+    param([string]$ProcessName)
+
+    $processes = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue
     if (-not $processes) {
         return
     }
 
     if ($KeepWorkerRunning) {
-        throw "Yesgatc.CertificateWorker is running. Close it first, or rerun without -KeepWorkerRunning."
+        throw "$ProcessName is running. Close it first, or rerun without -KeepWorkerRunning."
     }
 
-    Write-Host "Stopping Yesgatc.CertificateWorker (file lock release)..." -ForegroundColor Yellow
+    Write-Host "Stopping $ProcessName (file lock release)..." -ForegroundColor Yellow
     $processes | Stop-Process -Force
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 1
 }
 
 function New-ZipFromDirectory {
@@ -62,93 +63,141 @@ function Sync-PublishDirectory {
     New-Item -ItemType Directory -Path $DestinationDirectory -Force | Out-Null
     robocopy $SourceDirectory $DestinationDirectory /MIR /NFL /NDL /NJH /NJS /NC /NS | Out-Null
     if ($LASTEXITCODE -ge 8) {
-        throw "Could not sync publish folder (robocopy exit code $LASTEXITCODE). Close Certificate Worker and retry."
+        throw "Could not sync publish folder (robocopy exit code $LASTEXITCODE). Close the EXE and retry."
     }
+}
+
+function Publish-WorkerFlavor {
+    param(
+        [string]$Flavor,
+        [string]$ZipName,
+        [string]$PublishFolderName,
+        [string]$ProductLabel,
+        [bool]$IncludeServerScripts
+    )
+
+    $stagingDir = Join-Path $env:TEMP "yesgatc-publish-$Flavor-$Runtime-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    if (Test-Path $stagingDir) {
+        Remove-Item $stagingDir -Recurse -Force
+    }
+
+    Write-Host "Publishing $ProductLabel ($Configuration, $Runtime, $Flavor)..." -ForegroundColor Cyan
+
+    $publishArgs = @(
+        "publish", $projectDir,
+        "-c", $Configuration,
+        "-r", $Runtime,
+        "-o", $stagingDir,
+        "/p:PublishSingleFile=false",
+        "/p:DebugType=none",
+        "/p:DebugSymbols=false",
+        "/p:WorkerFlavor=$Flavor"
+    )
+
+    if ($SelfContained) {
+        $publishArgs += @("--self-contained", "true")
+    }
+    else {
+        $publishArgs += @("--self-contained", "false")
+    }
+
+    dotnet @publishArgs
+
+    $playwrightScript = Join-Path $stagingDir "playwright.ps1"
+    if (-not (Test-Path $playwrightScript)) {
+        throw "Publish succeeded but playwright.ps1 was not found in $stagingDir"
+    }
+
+    $gitSha = "unknown"
+    try {
+        $gitSha = (git -C (Join-Path $scriptDir "..") rev-parse --short HEAD 2>$null)
+        if (-not $gitSha) { $gitSha = "unknown" }
+    }
+    catch {
+        $gitSha = "unknown"
+    }
+
+    $versionText = @(
+        $ProductLabel
+        "Published: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"
+        "Git: $gitSha"
+        "Configuration: $Configuration"
+        "Runtime: $Runtime"
+        "Flavor: $Flavor"
+        "SelfContained: $($SelfContained.IsPresent)"
+    ) -join "`n"
+
+    Set-Content -Path (Join-Path $stagingDir "version.txt") -Value $versionText -Encoding UTF8
+
+    if ($IncludeServerScripts) {
+        $serverDir = Join-Path $scriptDir "..\server"
+        foreach ($serverFile in @("pull-update.ps1", "update.ps1", "install.ps1", "start-worker.ps1", "register-autostart.ps1", "README-SERVER.md")) {
+            $serverFilePath = Join-Path $serverDir $serverFile
+            if (Test-Path $serverFilePath) {
+                Copy-Item $serverFilePath $stagingDir -Force
+            }
+        }
+    }
+    else {
+        $rcReadme = @(
+            "EmaapEngine - RC private certificate worker"
+            ""
+            "1. Unzip on the RC Windows PC."
+            "2. Install .NET 8 Desktop Runtime x64 if prompted."
+            "3. Run EmaapEngine.exe"
+            "4. Sign in with this RC Admin Aadhar + portal password."
+            "5. Type captcha and OTP in Chrome. eMAAP user/pass is built in."
+            "6. Data folder: %LOCALAPPDATA%\YesGATC\EmaapEngine\"
+            ""
+            "Do not install this on the VPS. VPS uses Yesgatc.CertificateWorker.exe."
+        ) -join "`n"
+        Set-Content -Path (Join-Path $stagingDir "README-EMAAPENGINE.txt") -Value $rcReadme -Encoding UTF8
+    }
+
+    $zipPath = Join-Path $publishRoot $ZipName
+    Write-Host "Creating zip $ZipName..." -ForegroundColor Cyan
+    New-ZipFromDirectory -SourceDirectory $stagingDir -DestinationZip $zipPath
+
+    $publishDir = Join-Path $publishRoot $PublishFolderName
+    Write-Host "Syncing $publishDir..." -ForegroundColor Cyan
+    Sync-PublishDirectory -SourceDirectory $stagingDir -DestinationDirectory $publishDir
+
+    Remove-Item $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
+    return $zipPath
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectDir = Join-Path $scriptDir "..\Yesgatc.CertificateWorker"
 $publishRoot = Join-Path $scriptDir "..\publish"
-$publishDir = Join-Path $publishRoot $Runtime
-$stagingDir = Join-Path $env:TEMP "yesgatc-publish-$Runtime-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
-Write-Host "Publishing Certificate Worker ($Configuration, $Runtime)..." -ForegroundColor Cyan
-
-Stop-CertificateWorkerIfRunning
-
-if (Test-Path $stagingDir) {
-    Remove-Item $stagingDir -Recurse -Force
-}
-
-$publishArgs = @(
-    "publish", $projectDir,
-    "-c", $Configuration,
-    "-r", $Runtime,
-    "-o", $stagingDir,
-    "/p:PublishSingleFile=false",
-    "/p:DebugType=none",
-    "/p:DebugSymbols=false"
-)
+Stop-NamedProcessIfRunning -ProcessName "Yesgatc.CertificateWorker"
+Stop-NamedProcessIfRunning -ProcessName "EmaapEngine"
 
 if ($SelfContained) {
-    $publishArgs += @("--self-contained", "true")
-    Write-Host "Mode: self-contained (no .NET runtime needed on server, larger download)" -ForegroundColor Yellow
+    Write-Host "Mode: self-contained (no .NET runtime needed, larger download)" -ForegroundColor Yellow
 }
 else {
-    $publishArgs += @("--self-contained", "false")
-    Write-Host "Mode: framework-dependent (install .NET 8 Desktop Runtime x64 on the server once)" -ForegroundColor Yellow
+    Write-Host "Mode: framework-dependent (install .NET 8 Desktop Runtime x64 once)" -ForegroundColor Yellow
 }
 
-dotnet @publishArgs
+$vpsZip = Publish-WorkerFlavor `
+    -Flavor "Vps" `
+    -ZipName "Yesgatc.CertificateWorker-$Runtime.zip" `
+    -PublishFolderName $Runtime `
+    -ProductLabel "YesGATC Certificate Worker" `
+    -IncludeServerScripts $true
 
-$playwrightScript = Join-Path $stagingDir "playwright.ps1"
-if (-not (Test-Path $playwrightScript)) {
-    throw "Publish succeeded but playwright.ps1 was not found in $stagingDir"
-}
-
-$gitSha = "unknown"
-try {
-    $gitSha = (git -C (Join-Path $scriptDir "..") rev-parse --short HEAD 2>$null)
-    if (-not $gitSha) { $gitSha = "unknown" }
-}
-catch {
-    $gitSha = "unknown"
-}
-
-$versionText = @(
-    "YesGATC Certificate Worker"
-    "Published: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"
-    "Git: $gitSha"
-    "Configuration: $Configuration"
-    "Runtime: $Runtime"
-    "SelfContained: $($SelfContained.IsPresent)"
-) -join "`n"
-
-Set-Content -Path (Join-Path $stagingDir "version.txt") -Value $versionText -Encoding UTF8
-
-$serverDir = Join-Path $scriptDir "..\server"
-foreach ($serverFile in @("pull-update.ps1", "update.ps1", "install.ps1", "start-worker.ps1", "register-autostart.ps1", "README-SERVER.md")) {
-    $serverFilePath = Join-Path $serverDir $serverFile
-    if (Test-Path $serverFilePath) {
-        Copy-Item $serverFilePath $stagingDir -Force
-    }
-}
-
-$zipPath = Join-Path $publishRoot "Yesgatc.CertificateWorker-$Runtime.zip"
-Write-Host "Creating zip..." -ForegroundColor Cyan
-New-ZipFromDirectory -SourceDirectory $stagingDir -DestinationZip $zipPath
-
-Write-Host "Syncing publish folder..." -ForegroundColor Cyan
-Sync-PublishDirectory -SourceDirectory $stagingDir -DestinationDirectory $publishDir
-
-Remove-Item $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
+$engineZip = Publish-WorkerFlavor `
+    -Flavor "EmaapEngine" `
+    -ZipName "EmaapEngine-$Runtime.zip" `
+    -PublishFolderName "EmaapEngine-$Runtime" `
+    -ProductLabel "EmaapEngine" `
+    -IncludeServerScripts $false
 
 Write-Host ""
 Write-Host "Done." -ForegroundColor Green
-Write-Host "  Folder: $publishDir"
-Write-Host "  Zip:    $zipPath"
+Write-Host "  VPS zip: $vpsZip"
+Write-Host "  RC zip:  $engineZip"
 Write-Host ""
-Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "  GitHub Release: push tag certificate-worker-v1.0.0 (or run Actions > Release Certificate Worker)"
-Write-Host "  Server update:  pull-update.ps1 -Start"
-Write-Host "  Manual copy:    server\install.ps1 / server\update.ps1 -SourcePath <unzipped-folder>"
+Write-Host "VPS: pull-update.ps1 -Start"
+Write-Host "RC:  unzip EmaapEngine-win-x64.zip and run EmaapEngine.exe"

@@ -497,6 +497,28 @@ export async function linkWalletPaymentToRecords(input: {
   return result.data;
 }
 
+export type SettleOutstandingRvWalletPaymentsResult = {
+  scannedUnpaid: number;
+  settled: number;
+  skipped: number;
+  failed: number;
+  settledIds: string[];
+  skippedRows: Array<{ id: string; reason: string }>;
+  failedRows: Array<{ id: string; rcId?: string; reason: string }>;
+};
+
+export async function settleOutstandingRvWalletPayments(input?: {
+  limit?: number;
+  rcId?: string;
+}): Promise<SettleOutstandingRvWalletPaymentsResult> {
+  const fn = httpsCallable<
+    { limit?: number; rcId?: string },
+    SettleOutstandingRvWalletPaymentsResult
+  >(functionsClient(), 'settleOutstandingRvWalletPayments');
+  const result = await fn(input ?? {});
+  return result.data;
+}
+
 export async function deleteWalletTopUp(topUpId: string): Promise<{
   topUpId: string;
   rcId: string;

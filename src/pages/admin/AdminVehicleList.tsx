@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { collection, deleteDoc, doc, getDocs, updateDoc, deleteField } from 'firebase/firestore';
+import { collection, doc, getDocs, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -16,13 +16,14 @@ import {
   VEHICLE_DOC_LABELS,
 } from '../../lib/vehicleProfileFields';
 import {
-  Building2, RefreshCw, Trash2, Eye, ExternalLink, ImageIcon, UserX, UserCheck,
+  Building2, RefreshCw, Eye, ExternalLink, ImageIcon, Power, PowerOff,
   Calendar, ShieldCheck, Check, Wind,
 } from 'lucide-react';
 import { VehicleLogoMark } from '../../components/VehicleLogoMark';
 import {
   RcListCardActions,
   RcListCardToggle,
+  RcListDeactivateToggle,
   RcListEditHint,
   RcListMetaChip,
   RcListPhoto,
@@ -127,33 +128,15 @@ export const AdminVehicleList: React.FC = () => {
 
   const inactiveCount = vehicles.filter(v => !isVehicleActive(v)).length;
 
-  const handleDelete = async (id: string, label: string) => {
-    const ok = await confirm({
-      title: 'Remove vehicle?',
-      message: `Remove vehicle "${label}"?\nThis cannot be undone.`,
-      confirmLabel: 'Remove',
-      destructive: true,
-    });
-    if (!ok) return;
-
-    try {
-      await deleteDoc(doc(db, 'vehicles', id));
-      if (reviewing?.id === id) setReviewing(null);
-      await fetchVehicles();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to remove vehicle.');
-    }
-  };
-
   const handleToggleActive = async (vehicle: VehicleRecord) => {
     const activating = !isVehicleActive(vehicle);
     const label = vehicle.regNumber || `${vehicle.brand} ${vehicle.model}`.trim() || 'vehicle';
     const ok = await confirm({
-      title: activating ? 'Enable vehicle?' : 'Disable vehicle?',
+      title: activating ? 'Activate vehicle?' : 'Deactivate vehicle?',
       message: activating
-        ? `Enable "${label}" for use again?`
-        : `Disable "${label}"? It will not be available for assignment while inactive.`,
-      confirmLabel: activating ? 'Enable' : 'Disable',
+        ? `Activate "${label}" for use again?`
+        : `Deactivate "${label}"? It will not be available for assignment while inactive.`,
+      confirmLabel: activating ? 'Activate' : 'Deactivate',
       destructive: !activating,
     });
     if (!ok || !user?.uid) return;
@@ -210,7 +193,7 @@ export const AdminVehicleList: React.FC = () => {
           </div>
         </div>
         <div className="stat-card glass">
-          <div className="stat-icon text-orange"><UserX /></div>
+          <div className="stat-icon text-orange"><PowerOff /></div>
           <div className="stat-content">
             <h3>Inactive</h3>
             <p className="stat-value">{inactiveCount}</p>
@@ -288,11 +271,11 @@ export const AdminVehicleList: React.FC = () => {
                   <span className="spinner-inline"></span>
                 ) : isVehicleActive(reviewing) ? (
                   <>
-                    <UserX size={18} /> Disable Vehicle
+                    <PowerOff size={18} /> Deactivate Vehicle
                   </>
                 ) : (
                   <>
-                    <UserCheck size={18} /> Enable Vehicle
+                    <Power size={18} /> Activate Vehicle
                   </>
                 )}
               </button>
@@ -403,22 +386,12 @@ export const AdminVehicleList: React.FC = () => {
                         >
                           <Eye size={18} strokeWidth={1.75} />
                         </RcListCardToggle>
-                        <RcListCardToggle
-                          className={active ? '' : 'rc-list-card-toggle--enable'}
+                        <RcListDeactivateToggle
+                          active={active}
+                          noun="vehicle"
+                          name={label}
                           onClick={() => void handleToggleActive(v)}
-                          title={active ? 'Disable vehicle' : 'Enable vehicle'}
-                          ariaLabel={active ? `Disable ${label}` : `Enable ${label}`}
-                        >
-                          {active ? <UserX size={18} strokeWidth={1.75} /> : <UserCheck size={18} strokeWidth={1.75} />}
-                        </RcListCardToggle>
-                        <RcListCardToggle
-                          className="rc-list-card-toggle--delete"
-                          onClick={() => void handleDelete(v.id, label)}
-                          title="Remove vehicle"
-                          ariaLabel={`Remove ${label}`}
-                        >
-                          <Trash2 size={18} strokeWidth={1.85} />
-                        </RcListCardToggle>
+                        />
                       </RcListCardActions>
                     </div>
 

@@ -14,7 +14,7 @@ public static class PipelineFailureClassifier
         /// <summary>status stays submitted; pipelineFailedPhase=submit (Failed at submit).</summary>
         FailedSubmit,
 
-        /// <summary>status=rejected — closed; worker will not pick up again.</summary>
+        /// <summary>Reopen as draft so RC/VCT can fix and resubmit.</summary>
         Rejected,
     }
 

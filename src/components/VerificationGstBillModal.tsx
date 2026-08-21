@@ -4,6 +4,7 @@ import { MessageCircle, Tags, X } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
+import { useAppSettings } from '../hooks/useAppSettings';
 import {
   getRememberedBluetoothPrinter,
   isBluetoothEscposSupported,
@@ -67,6 +68,7 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
   const [printError, setPrintError] = useState<string | null>(null);
   const [savedPrinter, setSavedPrinter] = useState<RememberedBluetoothPrinter | null>(null);
   const bluetoothPrintSupported = isBluetoothEscposSupported();
+  const { appSettings } = useAppSettings();
 
   useHistoryOverlay(open, onClose);
 
@@ -100,8 +102,8 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
   }, [open, record.customerId]);
 
   const billData = useMemo(
-    () => buildVerificationGstBillData(record, customer),
-    [record, customer],
+    () => buildVerificationGstBillData(record, customer, appSettings),
+    [record, customer, appSettings],
   );
 
   const whatsAppShareUrl = useMemo(() => {

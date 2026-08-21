@@ -7,7 +7,7 @@ import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { RazorpaySettingsCard } from '../../components/RazorpaySettingsCard';
 import { ZohoSettingsCard } from '../../components/ZohoSettingsCard';
 
-type IntegrationsTab = 'zoho' | 'razorpay' | 'whatsapp' | 'worker' | 'openai';
+type IntegrationsTab = 'zoho' | 'razorpay' | 'worker';
 
 const INTEGRATIONS_TABS: {
   id: IntegrationsTab;
@@ -31,25 +31,11 @@ const INTEGRATIONS_TABS: {
     brandClass: 'admin-integrations-tab--razorpay',
   },
   {
-    id: 'whatsapp',
-    label: 'WhatsApp',
-    subtitle: 'Notifications & messaging',
-    logoSrc: '/integrations/whatsapp.svg',
-    brandClass: 'admin-integrations-tab--whatsapp',
-  },
-  {
     id: 'worker',
     label: 'Certificate Worker',
     subtitle: 'eMAAP queue, remote control & logs',
     logoSrc: '/integrations/certificate-worker.png',
     brandClass: 'admin-integrations-tab--worker',
-  },
-  {
-    id: 'openai',
-    label: 'OpenAI',
-    subtitle: 'AI & vision automation',
-    logoSrc: '/integrations/openai.svg',
-    brandClass: 'admin-integrations-tab--openai',
   },
 ];
 
@@ -70,13 +56,6 @@ function renderIntegrationContent(tabId: IntegrationsTab): React.ReactNode {
       );
     case 'worker':
       return <AutomationWorkerCard className="admin-integrations-section" />;
-    case 'whatsapp':
-    case 'openai':
-      return (
-        <p className="text-muted text-sm m-0">
-          Settings for this integration are not configured in the web app yet.
-        </p>
-      );
     default:
       return null;
   }
@@ -93,7 +72,7 @@ const AdminIntegrationsHub: React.FC = () => {
           Integrations
         </h1>
         <p className="admin-integrations-subtitle text-muted text-sm mb-0">
-          Configure third-party services for billing, payments, messaging, certificates, and AI.
+          Connect Zoho, Razorpay, and the certificate worker. Fees live under Setting.
         </p>
       </header>
 
@@ -154,7 +133,7 @@ const AdminIntegrationDetail: React.FC<{ tabId: IntegrationsTab }> = ({ tabId })
   );
 };
 
-export const AdminSettings: React.FC = () => {
+export const AdminIntegrations: React.FC = () => {
   const { integrationId } = useParams<{ integrationId?: string }>();
   const navigate = useNavigate();
 

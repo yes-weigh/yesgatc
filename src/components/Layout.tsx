@@ -3,18 +3,23 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
+import {
+  ReportsAppBarContext,
+  type ReportsAppBarChrome,
+} from '../context/ReportsAppBarContext';
 import { formatContactSubtitle } from '../lib/contactFields';
 import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
 import { vctProfilePhotoFromUser } from '../lib/vctProfileFields';
 import { MobileAppBarBrandIcon } from './MobileAppBarBrandIcon';
+import { EmaapStatusShortcut } from './EmaapStatusShortcut';
 import { StorageImage } from './StorageImage';
 import { VehicleLogoMark } from './VehicleLogoMark';
+import { VctOfficerMark } from './VctOfficerMark';
 import {
   LayoutDashboard,
   Building2,
   Package,
   BarChart3,
-  ClipboardList,
   Menu,
   X,
   UserCircle,
@@ -22,19 +27,21 @@ import {
   Plug,
   Settings,
   UserRound,
-  Wrench,
   Scale,
-  ClipboardCheck,
+  FileText,
   Bell,
-  UserPlus,
   Sparkles,
   GraduationCap,
   LogOut,
   Wallet,
+  Award,
+  Share2,
+  HardHat,
 } from 'lucide-react';
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { embedVerificationPath, isEmbedSession, rememberEmbedMode } from '../lib/embedMode';
+import { APP_VERSION } from '../lib/appVersion';
 import type { FirestoreUserDoc } from '../types';
 
 type NavItem = {
@@ -56,6 +63,9 @@ export const Layout: React.FC = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [profilePhoto, setProfilePhoto] = useState<{ url?: string; path?: string } | null>(null);
   const [pageRefreshKey, setPageRefreshKey] = useState(0);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [suppressAccountOverlayHistory, setSuppressAccountOverlayHistory] = useState(true);
+  const [reportsChrome, setReportsChrome] = useState<ReportsAppBarChrome | null>(null);
 
   const profilePath =
     user?.role === 'rc_admin' ? '/rc/profile' : user?.role === 'vct' ? '/vct/profile' : null;
@@ -81,12 +91,24 @@ export const Layout: React.FC = () => {
   }, [location.pathname, navigate]);
 
   useEffect(() => {
+    if (!/\/(admin|rc|vct)\/reports\/?$/.test(location.pathname)) {
+      setReportsChrome(null);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
     setSuppressSidebarOverlayHistory(true);
+    setSuppressAccountOverlayHistory(true);
     setMobileOpen(false);
+    setAccountOpen(false);
   }, [location.pathname]);
 
   useHistoryOverlay(isMobile && mobileOpen, () => setMobileOpen(false), {
     suppressHistoryBackWhenInactive: suppressSidebarOverlayHistory,
+  });
+
+  useHistoryOverlay(accountOpen, () => setAccountOpen(false), {
+    suppressHistoryBackWhenInactive: suppressAccountOverlayHistory,
   });
 
   useEffect(() => {
@@ -117,6 +139,8 @@ export const Layout: React.FC = () => {
   if (!user) return null;
 
   const handleLogout = async () => {
+    setSuppressAccountOverlayHistory(true);
+    setAccountOpen(false);
     await logout();
     navigate('/login', { replace: true });
   };
@@ -144,54 +168,56 @@ export const Layout: React.FC = () => {
           },
           { path: '/admin/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
           { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
-          { path: '/admin/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Vehicle' },
+          { path: '/admin/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
           { path: '/admin/rc', icon: <Building2 size={20} />, label: 'Regional Centers' },
           {
             path: '/admin/technicians',
-            icon: <Wrench size={20} />,
-            label: 'Technician',
+            icon: <VctOfficerMark />,
+            label: 'VCT',
             pageTitle: 'Verification and Calibration Technician',
           },
           { path: '/admin/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
-          { path: '/admin/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
+          { path: '/admin/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
           { path: '/admin/notifications', icon: <Bell size={20} />, label: 'Notifications' },
           { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/admin/contractor-fee', icon: <HardHat size={20} />, label: 'Contractor fee' },
           { path: '/admin/integrations', icon: <Plug size={20} />, label: 'Integrations' },
+          { path: '/admin/settings', icon: <Settings size={20} />, label: 'Setting' },
         ];
       case 'rc_admin':
         return [
           { path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/rc/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
-          { path: '/rc/leads', icon: <UserPlus size={20} />, label: 'Leads' },
-          { path: '/rc/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
           { path: '/rc/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
-          { path: '/rc/customers', icon: <UserRound size={20} />, label: 'Customer' },
+          { path: '/rc/certificates', icon: <Award size={20} />, label: 'Certificates' },
+          { path: '/rc/customers', icon: <UserRound size={20} />, label: 'Customers' },
+          { path: '/rc/wallet', icon: <Wallet size={20} />, label: 'Wallets' },
           { path: '/rc/products', icon: <Package size={20} />, label: 'Product' },
           {
             path: '/rc/vct',
-            icon: <Wrench size={20} />,
-            label: 'Technician',
+            icon: <VctOfficerMark />,
+            label: 'VCT',
             pageTitle: 'Verification and Calibration Technician',
           },
-          { path: '/rc/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Vehicle' },
+          { path: '/rc/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
           { path: '/rc/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
-          { path: '/rc/quality-management', icon: <ClipboardCheck size={20} />, label: 'Quality Management' },
-          { path: '/rc/notifications', icon: <Bell size={20} />, label: 'Notifications' },
-          { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Report' },
-          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My profile' },
+          { path: '/rc/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
+          { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/rc/settings', icon: <HardHat size={20} />, label: 'Setting' },
+          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My Profile' },
         ];
       case 'vct':
         return [
           { path: '/vct', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/vct/leads', icon: <UserPlus size={20} />, label: 'Leads' },
-          { path: '/vct/new-job', icon: <ClipboardList size={20} />, label: 'New Job' },
           { path: '/vct/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
-          { path: '/vct/customers', icon: <UserRound size={20} />, label: 'Customer' },
+          { path: '/vct/certificates', icon: <Award size={20} />, label: 'Certificates' },
+          { path: '/vct/customers', icon: <UserRound size={20} />, label: 'Customers' },
           { path: '/vct/products', icon: <Package size={20} />, label: 'Product' },
+          { path: '/vct/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
+          { path: '/vct/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
+          { path: '/vct/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
           { path: '/vct/training', icon: <GraduationCap size={20} />, label: 'Training' },
-          { path: '/vct/notifications', icon: <Bell size={20} />, label: 'Notifications' },
-          { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Report' },
-          { path: '/vct/profile', icon: <Settings size={20} />, label: 'My profile' },
+          { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
+          { path: '/vct/profile', icon: <Settings size={20} />, label: 'My Profile' },
         ];
       default:
         return [];
@@ -199,21 +225,30 @@ export const Layout: React.FC = () => {
   };
 
   const navItems = getNavItems();
-  const currentNavItem = navItems.find(item => {
-    if (location.pathname === item.path) {
-      return true;
+  const isNavActive = (path: string) => {
+    if (path === '/admin' || path === '/rc' || path === '/vct') {
+      return location.pathname === path;
     }
-    if (item.path === '/admin' || item.path === '/rc' || item.path === '/vct') {
-      return false;
-    }
-    return location.pathname.startsWith(`${item.path}/`);
-  });
-  const pageTitle = currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
+    return location.pathname === path || location.pathname.startsWith(`${path}/`);
+  };
+  const currentNavItem = navItems.find(item => isNavActive(item.path));
+  const isEmaapSessions = location.pathname.includes('/integrations/worker/sessions');
+  const pageTitle = isEmaapSessions
+    ? 'Session Logs'
+    : currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
+  const isCertificatesList = /\/(rc|vct)\/certificates\/?$/.test(location.pathname);
+  const isCustomersList = /\/(rc|vct)\/customers\/?$/.test(location.pathname);
+  const isReportsList = /\/(admin|rc|vct)\/reports\/?$/.test(location.pathname);
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
   const isHomeDashboard =
-    location.pathname === '/rc' || location.pathname === '/vct';
+    location.pathname === '/rc' ||
+    location.pathname === '/vct' ||
+    location.pathname === '/admin';
+  const showAppFilterSlot =
+    useShieldBrand || isCertificatesList || isCustomersList || isReportsList;
+  const stickyMobileAppBar = showAppFilterSlot || isHomeDashboard || isEmaapSessions;
 
   const roleLabel = {
     super_admin: 'Super Admin',
@@ -243,7 +278,8 @@ export const Layout: React.FC = () => {
           className="logo-area"
           style={{
             display: 'flex',
-            alignItems: 'center',
+            flexDirection: 'column',
+            alignItems: !mobile && collapsed ? 'center' : 'flex-start',
             width: '100%',
             justifyContent: !mobile && collapsed ? 'center' : 'flex-start',
           }}
@@ -257,6 +293,7 @@ export const Layout: React.FC = () => {
                 : { maxHeight: '40px', maxWidth: '160px', objectFit: 'contain' }
             }
           />
+          <span className="sidebar-app-version">{APP_VERSION}</span>
         </div>
       </div>
 
@@ -264,7 +301,7 @@ export const Layout: React.FC = () => {
         {navItems.map(item => (
           <div
             key={item.path}
-            className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
+            className={`nav-item ${isNavActive(item.path) ? 'active' : ''}`}
             onClick={() => handleNavClick(item.path)}
             title={!mobile && collapsed ? item.label : undefined}
           >
@@ -276,23 +313,26 @@ export const Layout: React.FC = () => {
 
       {user.role === 'super_admin' && (
         <div className={`sidebar-mobile-account${!mobile && collapsed ? ' sidebar-mobile-account--collapsed' : ''}`}>
-          {(!collapsed || mobile) && (
-            <div className="sidebar-mobile-user">
-              <UserCircle size={28} className="text-blue shrink-0" />
-              <div className="sidebar-mobile-user-text">
-                <div className="sidebar-mobile-user-name">{user.username}</div>
-                <div className="sidebar-mobile-user-meta text-muted">{roleLabel}</div>
-              </div>
-            </div>
-          )}
           <button
             type="button"
-            className="sidebar-mobile-logout"
-            onClick={() => void handleLogout()}
-            title={!mobile && collapsed ? 'Logout' : undefined}
+            className="sidebar-mobile-user sidebar-mobile-user--account"
+            onClick={() => {
+              setMobileOpen(false);
+              setSuppressAccountOverlayHistory(false);
+              setAccountOpen(true);
+            }}
+            title="Account"
+            aria-label="Open account"
           >
-            <LogOut size={16} aria-hidden />
-            <span className="sidebar-logout-label">Logout</span>
+            <span className="sidebar-mobile-user-icon" aria-hidden>
+              <UserCircle size={28} className="text-blue shrink-0" />
+            </span>
+            {(!collapsed || mobile) && (
+              <span className="sidebar-mobile-user-text">
+                <span className="sidebar-mobile-user-name">{user.username}</span>
+                <span className="sidebar-mobile-user-meta text-muted">{roleLabel}</span>
+              </span>
+            )}
           </button>
         </div>
       )}
@@ -302,6 +342,7 @@ export const Layout: React.FC = () => {
   const embed = isEmbedSession();
 
   return (
+    <ReportsAppBarContext.Provider value={setReportsChrome}>
     <div className={`app-wrapper${embed ? ' embed-mode' : ''}`}>
       {!isMobile && (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -320,11 +361,11 @@ export const Layout: React.FC = () => {
       )}
 
       <main
-        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}${useShieldBrand ? ' mobile-verification' : ''}${isMobile && isLaboratoryPage ? ' mobile-laboratory-dashboard' : ''}${isMobile && isHomeDashboard ? ' mobile-home-dashboard' : ''}`}
+        className={`main-content ${!isMobile && collapsed ? 'expanded' : ''} ${isMobile ? 'mobile-main' : ''}${useShieldBrand ? ' mobile-verification' : ''}${isMobile && isLaboratoryPage ? ' mobile-laboratory-dashboard' : ''}${isMobile && isHomeDashboard ? ' mobile-home-dashboard' : ''}${isMobile && isReportsList ? ' mobile-reports' : ''}`}
       >
         {isMobile && (
           <header
-            className={`mobile-app-bar${useShieldBrand ? ' mobile-app-bar--sticky' : ''}${
+            className={`mobile-app-bar${stickyMobileAppBar ? ' mobile-app-bar--sticky' : ''}${
               isHomeDashboard ? ' mobile-app-bar--home' : ''
             }`}
           >
@@ -342,14 +383,17 @@ export const Layout: React.FC = () => {
             </button>
             {isHomeDashboard ? (
               <div className="mobile-app-bar-brand mobile-app-bar-brand--home">
-                <img
-                  className="wl-brand-mark"
-                  src="/brand/weighlab-logo-dark.png"
-                  alt=""
-                  width={40}
-                  height={40}
-                  decoding="async"
-                />
+                <div className="wl-brand-mark-wrap">
+                  <img
+                    className="wl-brand-mark"
+                    src="/brand/weighlab-logo-dark.png"
+                    alt=""
+                    width={40}
+                    height={40}
+                    decoding="async"
+                  />
+                  <span className="wl-brand-version">{APP_VERSION}</span>
+                </div>
                 <div className="mobile-app-bar-text">
                   <h1 className="mobile-app-bar-title wl-brand-title">
                     <span className="wl-brand-title__weigh">WEIGH</span>
@@ -366,44 +410,40 @@ export const Layout: React.FC = () => {
                   {!useShieldBrand ? pageIcon : null}
                 </MobileAppBarBrandIcon>
                 <div className="mobile-app-bar-text">
-                  <h1 className="mobile-app-bar-title">{pageTitle}</h1>
-                  {currentNavItem?.mobileSubtitle && (
+                  {isReportsList ? (
+                    <div className="reports-app-title-row">
+                      <h1 className="mobile-app-bar-title mobile-app-bar-title--reports">
+                        <span className="reports-app-title">{reportsChrome?.title ?? pageTitle}</span>
+                      </h1>
+                      {reportsChrome?.onShare ? (
+                        <button
+                          type="button"
+                          className="reports-share-btn"
+                          onClick={reportsChrome.onShare}
+                          disabled={reportsChrome.sharing}
+                          aria-label="Share report PDF"
+                          title="Share PDF"
+                        >
+                          <Share2 size={15} strokeWidth={2.2} aria-hidden />
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <h1 className="mobile-app-bar-title">{pageTitle}</h1>
+                  )}
+                  {isReportsList ? (
+                    <p className="mobile-app-bar-subtitle">{reportsChrome?.period}</p>
+                  ) : currentNavItem?.mobileSubtitle ? (
                     <p className="mobile-app-bar-subtitle">
                       <Sparkles size={14} className="mobile-app-bar-subtitle-icon" aria-hidden />
                       {currentNavItem.mobileSubtitle}
                     </p>
-                  )}
+                  ) : null}
                 </div>
               </div>
             )}
             {isLaboratoryPage ? (
               <div className="mobile-app-bar-actions">
-                {profilePath ? (
-                  <button
-                    type="button"
-                    className={`mobile-profile-shortcut${location.pathname === profilePath ? ' mobile-profile-shortcut--active' : ''}`}
-                    onClick={() => navigate(profilePath)}
-                    title="My profile"
-                    aria-label="Open my profile"
-                  >
-                    {profilePhoto?.url || profilePhoto?.path ? (
-                      <StorageImage
-                        url={profilePhoto.url}
-                        path={profilePhoto.path}
-                        alt=""
-                        className="mobile-profile-shortcut-img"
-                      />
-                    ) : (
-                      <span className="mobile-profile-shortcut-placeholder" aria-hidden>
-                        <UserCircle size={22} className="text-blue" />
-                      </span>
-                    )}
-                  </button>
-                ) : (
-                  <span className="mobile-profile-shortcut mobile-profile-shortcut--static" aria-hidden>
-                    <UserCircle size={22} className="text-blue" />
-                  </span>
-                )}
                 {user.role !== 'super_admin' && (
                   <button
                     type="button"
@@ -416,70 +456,119 @@ export const Layout: React.FC = () => {
                   </button>
                 )}
               </div>
-            ) : profilePath ? (
-              <button
-                type="button"
-                className={`mobile-profile-shortcut${location.pathname === profilePath ? ' mobile-profile-shortcut--active' : ''}`}
-                onClick={() => navigate(profilePath)}
-                title="My profile"
-                aria-label="Open my profile"
-              >
-                {profilePhoto?.url || profilePhoto?.path ? (
-                  <StorageImage
-                    url={profilePhoto.url}
-                    path={profilePhoto.path}
-                    alt=""
-                    className="mobile-profile-shortcut-img"
-                  />
-                ) : (
-                  <span className="mobile-profile-shortcut-placeholder" aria-hidden>
-                    <UserCircle size={22} className="text-blue" />
-                  </span>
-                )}
-              </button>
+            ) : isHomeDashboard ? (
+              <EmaapStatusShortcut />
+            ) : showAppFilterSlot ? (
+              <div id="verification-filter-slot-mobile" className="mobile-app-bar-actions" />
             ) : null}
           </header>
         )}
         {!isMobile && (
           <header className="top-bar glass">
-            <h1 className="page-title">{pageTitle}</h1>
-            {profilePath ? (
-              <button
-                type="button"
-                className="user-chip user-chip--profile-link"
-                onClick={() => navigate(profilePath)}
-                title="My profile"
-              >
-                {profilePhoto?.url || profilePhoto?.path ? (
-                  <StorageImage
-                    url={profilePhoto.url}
-                    path={profilePhoto.path}
-                    alt=""
-                    className="user-chip-avatar"
-                  />
-                ) : (
+            <div className="top-bar-title-wrap">
+              {isReportsList ? (
+                <>
+                  <div className="reports-app-title-row">
+                    <h1 className="page-title page-title--reports">
+                      <span className="reports-app-title">{reportsChrome?.title ?? pageTitle}</span>
+                    </h1>
+                    {reportsChrome?.onShare ? (
+                      <button
+                        type="button"
+                        className="reports-share-btn"
+                        onClick={reportsChrome.onShare}
+                        disabled={reportsChrome.sharing}
+                        aria-label="Share report PDF"
+                        title="Share PDF"
+                      >
+                        <Share2 size={16} strokeWidth={2.2} aria-hidden />
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="top-bar-period reports-app-period">{reportsChrome?.period}</p>
+                </>
+              ) : (
+                <h1 className="page-title">{pageTitle}</h1>
+              )}
+            </div>
+            <div className="top-bar-end">
+              {isHomeDashboard ? <EmaapStatusShortcut /> : null}
+              {profilePath ? (
+                <button
+                  type="button"
+                  className="user-chip user-chip--profile-link"
+                  onClick={() => navigate(profilePath)}
+                  title="My profile"
+                >
+                  {profilePhoto?.url || profilePhoto?.path ? (
+                    <StorageImage
+                      url={profilePhoto.url}
+                      path={profilePhoto.path}
+                      alt=""
+                      className="user-chip-avatar"
+                    />
+                  ) : (
+                    <UserCircle size={20} className="text-blue" />
+                  )}
+                  <div className="user-info">
+                    <span className="user-name">{user.username}</span>
+                    <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
+                  </div>
+                </button>
+              ) : (
+                <div className="user-chip">
                   <UserCircle size={20} className="text-blue" />
-                )}
-                <div className="user-info">
-                  <span className="user-name">{user.username}</span>
-                  <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
+                  <div className="user-info">
+                    <span className="user-name">{user.username}</span>
+                    <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
+                  </div>
                 </div>
-              </button>
-            ) : (
-              <div className="user-chip">
-                <UserCircle size={20} className="text-blue" />
-                <div className="user-info">
-                  <span className="user-name">{user.username}</span>
-                  <span className="user-email text-muted">{formatContactSubtitle(user)}</span>
-                </div>
-              </div>
-            )}
+              )}
+              {showAppFilterSlot ? <div id="verification-filter-slot-desktop" /> : null}
+            </div>
           </header>
         )}
         <div className="content-area">
           <Outlet key={`${location.pathname}-${pageRefreshKey}`} />
         </div>
       </main>
+      {accountOpen && (
+        <div
+          className="modal-overlay sidebar-account-overlay"
+          onClick={() => setAccountOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="sidebar-account-panel glass"
+            role="dialog"
+            aria-labelledby="sidebar-account-title"
+            onClick={event => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="sidebar-account-panel__close"
+              onClick={() => setAccountOpen(false)}
+              aria-label="Close account"
+            >
+              <X size={18} />
+            </button>
+            <UserCircle size={48} className="text-blue sidebar-account-panel__avatar" />
+            <h2 id="sidebar-account-title" className="sidebar-account-panel__name">
+              {user.username}
+            </h2>
+            <p className="sidebar-account-panel__role text-muted">{roleLabel}</p>
+            <button
+              type="button"
+              className="sidebar-account-panel__logout"
+              onClick={() => void handleLogout()}
+            >
+              <LogOut size={16} aria-hidden />
+              Logout
+            </button>
+          </div>
+        </div>
+      )}
     </div>
+    </ReportsAppBarContext.Provider>
   );
 };

@@ -8,7 +8,16 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>Yesgatc.CertificateWorker</RootNamespace>
     <AssemblyName>Yesgatc.CertificateWorker</AssemblyName>
-    <Version>1.0.54</Version>
+    <Version>1.0.69</Version>
+    <WorkerFlavor Condition="'$(WorkerFlavor)' == ''">Vps</WorkerFlavor>
+    <Product>YesGATC Certificate Worker</Product>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(WorkerFlavor)' == 'EmaapEngine'">
+    <DefineConstants>$(DefineConstants);EMAAP_ENGINE</DefineConstants>
+    <AssemblyName>EmaapEngine</AssemblyName>
+    <Product>EmaapEngine</Product>
+    <AssemblyTitle>EmaapEngine</AssemblyTitle>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,6 +40,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="appsettings.local.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="appsettings.emaapengine.json" Condition="'$(WorkerFlavor)' == 'EmaapEngine'">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="adobelogo.png">

@@ -1,0 +1,13 @@
+---
+description: Use the shared sliders FilterIcon for every filter control
+globs: **/*.{tsx,ts,jsx,js}
+alwaysApply: true
+---
+
+# Filter icon
+
+Every filter control uses `FilterIcon` from `src/components/FilterIcon.tsx`.
+
+- Do **not** use Lucide `Filter` (funnel).
+- Do **not** put the word “Filter” next to the icon. Icon-only button; `aria-label="Filter …"`.
+- Button chrome: square, ~2.35rem, 10px radius (see `.verification-app-filter__btn`).

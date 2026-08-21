@@ -8,12 +8,7 @@ public static class WorkerDataPaths
     {
         get
         {
-            var path = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "YesGATC",
-                "CertificateWorker");
-            Directory.CreateDirectory(path);
-            return path;
+            return WorkerProduct.DataRoot;
         }
     }
 

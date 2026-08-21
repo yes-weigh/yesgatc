@@ -27,7 +27,7 @@ export function verificationPartyPhotoForRecord(
     (record.rcId ? options.rcUsersById?.get(record.rcId) : undefined);
   const rcContactPerson = rc?.contactPerson?.trim() || undefined;
 
-  if (subject === 'self') {
+  if (subject === 'self' || record.fileCertificateAsRc) {
     return {
       partyPhotoUrl: rc?.profilePhotoUrl,
       partyPhotoPath: rc?.profilePhotoPath,

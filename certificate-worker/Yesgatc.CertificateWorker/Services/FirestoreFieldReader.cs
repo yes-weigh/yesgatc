@@ -46,6 +46,22 @@ internal static class FirestoreFieldReader
         return fallback;
     }
 
+    public static bool ReadBool(IReadOnlyDictionary<string, JsonElement> fields, string key, bool fallback = false)
+    {
+        if (!fields.TryGetValue(key, out var value) || value.ValueKind != JsonValueKind.Object)
+        {
+            return fallback;
+        }
+
+        if (value.TryGetProperty("booleanValue", out var booleanValue)
+            && booleanValue.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            return booleanValue.GetBoolean();
+        }
+
+        return fallback;
+    }
+
     public static double? ReadDouble(IReadOnlyDictionary<string, JsonElement> fields, string key)
     {
         if (!fields.TryGetValue(key, out var value) || value.ValueKind != JsonValueKind.Object)
@@ -96,5 +112,33 @@ internal static class FirestoreFieldReader
         }
 
         return numeric.ToString(CultureInfo.InvariantCulture);
+    }
+
+    public static DateTimeOffset? ReadTimestamp(IReadOnlyDictionary<string, JsonElement> fields, string key)
+    {
+        if (!fields.TryGetValue(key, out var value) || value.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (value.TryGetProperty("timestampValue", out var timestampValue))
+        {
+            var raw = timestampValue.GetString();
+            if (!string.IsNullOrWhiteSpace(raw) && DateTimeOffset.TryParse(raw, out var parsedTs))
+            {
+                return parsedTs;
+            }
+        }
+
+        if (value.TryGetProperty("stringValue", out var stringValue))
+        {
+            var raw = stringValue.GetString();
+            if (!string.IsNullOrWhiteSpace(raw) && DateTimeOffset.TryParse(raw, out var parsedStr))
+            {
+                return parsedStr;
+            }
+        }
+
+        return null;
     }
 }

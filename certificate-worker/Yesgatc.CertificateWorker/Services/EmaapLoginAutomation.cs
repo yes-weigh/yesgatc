@@ -10,6 +10,9 @@ namespace Yesgatc.CertificateWorker.Services;
 /// </summary>
 public static class EmaapLoginAutomation
 {
+    /// <summary>RC emaapengine: fill eMAAP user/pass, wait for manual captcha+OTP. No DeepSeek / Firebase OTP.</summary>
+    public static bool PreferManualLoginUntilAuthenticated { get; set; }
+
     /// <summary>UTC time of last successful captcha → Send OTP click (for late Firebase poll).</summary>
     public static DateTimeOffset? LastOtpRequestedAtUtc { get; private set; }
 
@@ -17,6 +20,9 @@ public static class EmaapLoginAutomation
     public static string? LastSendOtpCaptcha { get; private set; }
 
     private static DateTimeOffset? _lastResendOtpClickUtc;
+
+    /// <summary>Fired on the Playwright thread when eMAAP session becomes logged-in.</summary>
+    public static Action? OnLoggedIn { get; set; }
 
     public static bool IsEmaapUrl(string? url) =>
         !string.IsNullOrWhiteSpace(url)
@@ -95,15 +101,118 @@ public static class EmaapLoginAutomation
 
     public static async Task<bool> IsLoggedInAsync(IPage page)
     {
-        var url = page.Url;
-        if (url.Contains("/dashboard", StringComparison.OrdinalIgnoreCase)
-            || url.Contains("/user/", StringComparison.OrdinalIgnoreCase)
-            || url.Contains("/gatc/app", StringComparison.OrdinalIgnoreCase))
+        var url = page.Url ?? "";
+        if (!IsEmaapUrl(url))
         {
-            return !url.Contains("/login", StringComparison.OrdinalIgnoreCase);
+            return false;
         }
 
-        return false;
+        if (await IsOtpStepAsync(page))
+        {
+            return false;
+        }
+
+        if (url.Contains("/login", StringComparison.OrdinalIgnoreCase))
+        {
+            var email = page.Locator("input[name='email'], input[type='email'], input[placeholder='Email']");
+            return await email.CountAsync() == 0 || !await email.First.IsVisibleAsync();
+        }
+
+        return url.Contains("/gatc", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void NotifyLoggedIn()
+    {
+        try
+        {
+            OnLoggedIn?.Invoke();
+        }
+        catch
+        {
+        }
+    }
+
+    /// <summary>
+    /// After userid/password: wait for captcha canvas (and optional manual type).
+    /// Returns LoggedIn / OtpRequired if that happens; otherwise null then DeepSeek OCR.
+    /// </summary>
+    private static async Task<DocaSessionState?> WaitAfterCredentialsForManualCaptchaOtpAsync(
+        IPage page,
+        int waitSeconds,
+        CancellationToken cancellationToken)
+    {
+        if (waitSeconds <= 0)
+        {
+            return null;
+        }
+
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(waitSeconds, 1, 300));
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await IsLoggedInAsync(page))
+            {
+                return DocaSessionState.LoggedIn;
+            }
+
+            if (await IsOtpStepAsync(page))
+            {
+                return DocaSessionState.OtpRequired;
+            }
+
+            await Task.Delay(1000, cancellationToken);
+        }
+
+        if (await IsLoggedInAsync(page))
+        {
+            return DocaSessionState.LoggedIn;
+        }
+
+        if (await IsOtpStepAsync(page))
+        {
+            return DocaSessionState.OtpRequired;
+        }
+
+        return null;
+    }
+
+    private static async Task<DocaSessionState> ContinueFromOtpStepAsync(
+        IPage page,
+        AutomationSettings settings,
+        FirebaseSettings? firebase,
+        Func<CancellationToken, Task<string>>? resolveFirebaseIdToken,
+        CancellationToken cancellationToken,
+        Func<CaptchaAttemptReport, Task>? reportAttemptAsync)
+    {
+        var masterHit = await TrySubmitMasterOtpAsync(
+            page,
+            settings,
+            cancellationToken,
+            reportAttemptAsync);
+        if (masterHit == DocaSessionState.LoggedIn)
+        {
+            return DocaSessionState.LoggedIn;
+        }
+
+        var since = LastOtpRequestedAtUtc ?? DateTimeOffset.UtcNow.AddMinutes(-10);
+        var emailOtp = await TryReadEmailOtpAsync(
+            page,
+            settings,
+            firebase,
+            resolveFirebaseIdToken,
+            since,
+            cancellationToken);
+        if (!string.IsNullOrWhiteSpace(emailOtp))
+        {
+            return await SubmitOtpAsync(
+                page,
+                settings,
+                emailOtp,
+                cancellationToken,
+                reportAttemptAsync);
+        }
+
+        return DocaSessionState.OtpRequired;
     }
 
     public static async Task<DocaSessionState> TryLoginThroughOtpGateAsync(
@@ -129,47 +238,102 @@ public static class EmaapLoginAutomation
             return DocaSessionState.LoggedIn;
         }
 
-        if (await IsOtpStepAsync(page))
+        if (PreferManualLoginUntilAuthenticated)
         {
-            var masterHit = await TrySubmitMasterOtpAsync(
-                page,
-                settings,
-                cancellationToken,
-                reportAttemptAsync);
-            if (masterHit == DocaSessionState.LoggedIn)
+            if (!await IsOtpStepAsync(page))
             {
+                await FillCredentialsAsync(page, credentials);
+            }
+
+            await page.BringToFrontAsync();
+            var waitSeconds = settings.EmaapEngineManualLoginWaitSeconds > 0
+                ? settings.EmaapEngineManualLoginWaitSeconds
+                : 900;
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Clamp(waitSeconds, 30, 1800));
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (await IsLoggedInAsync(page))
+                {
+                    NotifyLoggedIn();
+                    return DocaSessionState.LoggedIn;
+                }
+
+                await Task.Delay(300, cancellationToken);
+            }
+
+            if (await IsLoggedInAsync(page))
+            {
+                NotifyLoggedIn();
                 return DocaSessionState.LoggedIn;
             }
 
-            // Already on OTP step after prior Send OTP / session bounce — poll Firebase (or Gmail).
-            var since = LastOtpRequestedAtUtc ?? DateTimeOffset.UtcNow.AddMinutes(-10);
-            var emailOtp = await TryReadEmailOtpAsync(
+            return DocaSessionState.LoginRequired;
+        }
+
+        if (await IsOtpStepAsync(page))
+        {
+            return await ContinueFromOtpStepAsync(
                 page,
                 settings,
                 firebase,
                 resolveFirebaseIdToken,
-                since,
-                cancellationToken);
-            if (!string.IsNullOrWhiteSpace(emailOtp))
-            {
-                return await SubmitOtpAsync(
-                    page,
-                    settings,
-                    emailOtp,
-                    cancellationToken,
-                    reportAttemptAsync);
-            }
-
-            return DocaSessionState.OtpRequired;
-        }
-
-        if (!settings.AutoSolveCaptcha)
-        {
-            await FillCredentialsAsync(page, credentials);
-            return DocaSessionState.LoginRequired;
+                cancellationToken,
+                reportAttemptAsync);
         }
 
         await FillCredentialsAsync(page, credentials);
+        await page.BringToFrontAsync();
+
+        if (!settings.AutoSolveCaptcha)
+        {
+            return DocaSessionState.LoginRequired;
+        }
+
+        var afterManualWait = await WaitAfterCredentialsForManualCaptchaOtpAsync(
+            page,
+            settings.EmaapManualCaptchaOtpWaitSeconds,
+            cancellationToken);
+        if (afterManualWait == DocaSessionState.LoggedIn)
+        {
+            return DocaSessionState.LoggedIn;
+        }
+
+        if (afterManualWait == DocaSessionState.OtpRequired
+            || await IsOtpStepAsync(page))
+        {
+            return await ContinueFromOtpStepAsync(
+                page,
+                settings,
+                firebase,
+                resolveFirebaseIdToken,
+                cancellationToken,
+                reportAttemptAsync);
+        }
+
+        var typedCaptcha = await ReadCaptchaInputValueAsync(page);
+        if (typedCaptcha.Length >= 4)
+        {
+            LastSendOtpCaptcha = typedCaptcha;
+            LastOtpRequestedAtUtc = DateTimeOffset.UtcNow;
+            await ClickSendOtpAsync(page);
+            await WaitAndDismissOtpSentDialogAsync(page, maxSeconds: 15);
+            if (await IsLoggedInAsync(page))
+            {
+                return DocaSessionState.LoggedIn;
+            }
+
+            if (await IsOtpStepAsync(page))
+            {
+                return await ContinueFromOtpStepAsync(
+                    page,
+                    settings,
+                    firebase,
+                    resolveFirebaseIdToken,
+                    cancellationToken,
+                    reportAttemptAsync);
+            }
+        }
 
         var maxAttempts = Math.Max(1, settings.CaptchaMaxAttempts);
         var ocrProvider = ResolveOcrProviderLabel(settings.CaptchaOcr);
@@ -214,47 +378,12 @@ public static class EmaapLoginAutomation
 
             var hasMasterOtp = IsConfiguredMasterOtp(settings);
             SendOtpOutcome sendOutcome;
+            var otpVisible = false;
+            var incorrectCaptcha = false;
+
             if (hasMasterOtp)
             {
-                // Master OTP: dismiss "OTP Sent" OK then fill+login immediately — no second wait loop.
-                sendOutcome = await WaitForSendOtpReadyFastAsync(page, cancellationToken, maxSeconds: 3);
-            }
-            else
-            {
-                await WaitAndDismissOtpSentDialogAsync(page, maxSeconds: 15);
-                sendOutcome = await WaitForSendOtpOutcomeAsync(
-                    page,
-                    cancellationToken,
-                    maxSeconds: 20);
-            }
-
-            var otpVisible = sendOutcome == SendOtpOutcome.OtpStep;
-            var incorrectCaptcha = sendOutcome == SendOtpOutcome.IncorrectCaptcha;
-
-            if (sendOutcome == SendOtpOutcome.LoggedIn)
-            {
-                if (reportAttemptAsync is not null)
-                {
-                    await reportAttemptAsync(new CaptchaAttemptReport(
-                        imageBytes,
-                        captchaText,
-                        ocrProvider,
-                        attempt,
-                        true,
-                        "otp_sent"));
-                }
-
-                return DocaSessionState.LoggedIn;
-            }
-
-            if (hasMasterOtp && !incorrectCaptcha)
-            {
-                // Straight to master OTP as soon as OK is gone / OTP field exists (or timed soft-ready).
-                await page.BringToFrontAsync();
-                await TryDismissOtpSentDialogIfVisibleAsync(page);
-                await WaitForOtpFieldVisibleAsync(page, timeoutMs: 1_500);
-
-                var afterMaster = await TrySubmitMasterOtpAsync(
+                var afterMaster = await TrySubmitMasterOtpImmediateAsync(
                     page,
                     settings,
                     cancellationToken,
@@ -275,9 +404,42 @@ public static class EmaapLoginAutomation
                     return DocaSessionState.LoggedIn;
                 }
 
+                incorrectCaptcha = await IsIncorrectCaptchaErrorAsync(page);
                 otpVisible = await IsOtpStepAsync(page);
+                sendOutcome = incorrectCaptcha
+                    ? SendOtpOutcome.IncorrectCaptcha
+                    : otpVisible
+                        ? SendOtpOutcome.OtpStep
+                        : SendOtpOutcome.Timeout;
             }
-            else if (otpVisible)
+            else
+            {
+                await WaitAndDismissOtpSentDialogAsync(page, maxSeconds: 15);
+                sendOutcome = await WaitForSendOtpOutcomeAsync(
+                    page,
+                    cancellationToken,
+                    maxSeconds: 20);
+                otpVisible = sendOutcome == SendOtpOutcome.OtpStep;
+                incorrectCaptcha = sendOutcome == SendOtpOutcome.IncorrectCaptcha;
+            }
+
+            if (sendOutcome == SendOtpOutcome.LoggedIn)
+            {
+                if (reportAttemptAsync is not null)
+                {
+                    await reportAttemptAsync(new CaptchaAttemptReport(
+                        imageBytes,
+                        captchaText,
+                        ocrProvider,
+                        attempt,
+                        true,
+                        "otp_sent"));
+                }
+
+                return DocaSessionState.LoggedIn;
+            }
+
+            if (!hasMasterOtp && otpVisible)
             {
                 // Email OTP path — captcha accepted; dismiss OK then wait for inbox code.
                 await page.BringToFrontAsync();
@@ -404,6 +566,59 @@ public static class EmaapLoginAutomation
         }
 
         return emailOtp;
+    }
+
+    /// <summary>
+    /// After Send OTP: dismiss OK and fill master OTP the instant the OTP field appears.
+    /// </summary>
+    private static async Task<DocaSessionState> TrySubmitMasterOtpImmediateAsync(
+        IPage page,
+        AutomationSettings settings,
+        CancellationToken cancellationToken,
+        Func<CaptchaAttemptReport, Task>? reportAttemptAsync,
+        int maxSeconds = 8)
+    {
+        if (!IsConfiguredMasterOtp(settings))
+        {
+            return DocaSessionState.OtpRequired;
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(Math.Max(1, maxSeconds));
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (await IsIncorrectCaptchaErrorAsync(page))
+            {
+                return DocaSessionState.OtpRequired;
+            }
+
+            if (await IsLoggedInAsync(page))
+            {
+                return DocaSessionState.LoggedIn;
+            }
+
+            await TryDismissOtpSentDialogIfVisibleAsync(page);
+            await TryDismissLoginFailedDialogIfVisibleAsync(page);
+
+            if (await IsOtpStepAsync(page))
+            {
+                return await TrySubmitMasterOtpAsync(
+                    page,
+                    settings,
+                    cancellationToken,
+                    reportAttemptAsync);
+            }
+
+            await page.WaitForTimeoutAsync(40);
+        }
+
+        await TryDismissOtpSentDialogIfVisibleAsync(page);
+        return await TrySubmitMasterOtpAsync(
+            page,
+            settings,
+            cancellationToken,
+            reportAttemptAsync);
     }
 
     private static bool IsConfiguredMasterOtp(AutomationSettings settings)
@@ -735,81 +950,6 @@ public static class EmaapLoginAutomation
         }
 
         await TryDismissOtpSentDialogIfVisibleAsync(page);
-    }
-
-    /// <summary>
-    /// Master OTP path after Send OTP: one fast loop — click OK the instant it appears,
-    /// return as soon as the OTP field is usable. No stacked multi-second waits.
-    /// </summary>
-    private static async Task<SendOtpOutcome> WaitForSendOtpReadyFastAsync(
-        IPage page,
-        CancellationToken cancellationToken,
-        int maxSeconds = 3)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(Math.Max(1, maxSeconds));
-        while (DateTime.UtcNow < deadline)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (await IsIncorrectCaptchaErrorAsync(page))
-            {
-                return SendOtpOutcome.IncorrectCaptcha;
-            }
-
-            if (await IsOtpSentDialogVisibleAsync(page))
-            {
-                await TryDismissOtpSentDialogIfVisibleAsync(page);
-            }
-
-            if (await IsOtpStepAsync(page))
-            {
-                return SendOtpOutcome.OtpStep;
-            }
-
-            if (await IsLoggedInAsync(page))
-            {
-                return SendOtpOutcome.LoggedIn;
-            }
-
-            await page.WaitForTimeoutAsync(50);
-        }
-
-        if (await IsIncorrectCaptchaErrorAsync(page))
-        {
-            return SendOtpOutcome.IncorrectCaptcha;
-        }
-
-        await TryDismissOtpSentDialogIfVisibleAsync(page);
-
-        if (await IsOtpStepAsync(page))
-        {
-            return SendOtpOutcome.OtpStep;
-        }
-
-        if (await IsLoggedInAsync(page))
-        {
-            return SendOtpOutcome.LoggedIn;
-        }
-
-        // Soft-ready: dialog may have closed without OTP field detect — still try master fill.
-        return SendOtpOutcome.OtpStep;
-    }
-
-    private static async Task WaitForOtpFieldVisibleAsync(IPage page, int timeoutMs = 1_500)
-    {
-        try
-        {
-            await page.Locator("input[name='otp'], input[placeholder*='OTP' i]").First.WaitForAsync(
-                new LocatorWaitForOptions
-                {
-                    State = WaitForSelectorState.Visible,
-                    Timeout = Math.Max(200, timeoutMs),
-                });
-        }
-        catch (PlaywrightException)
-        {
-            // Master fill will re-check IsOtpStepAsync.
-        }
     }
 
     /// <summary>Click OK only if OTP-sent dialog already showing. Never throws.</summary>

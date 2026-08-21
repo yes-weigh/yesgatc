@@ -15,8 +15,10 @@ import { AdminVehicleList } from './pages/admin/AdminVehicleList';
 import { AdminVerificationList } from './pages/admin/AdminVerificationList';
 import { AdminLaboratory } from './pages/admin/AdminLaboratory';
 import { AdminWalletTopUps } from './pages/admin/AdminWalletTopUps';
-import { AdminSettings } from './pages/admin/AdminSettings';
-import { AdminQualityManagement, AdminNotifications } from './pages/admin/AdminMenuPages';
+import { AdminIntegrations } from './pages/admin/AdminIntegrations';
+import { AdminPortalSettings } from './pages/admin/AdminPortalSettings';
+import { AdminEmaapSessionLogs } from './pages/admin/AdminEmaapSessionLogs';
+import { AdminNotifications } from './pages/admin/AdminMenuPages';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { RCProfile } from './pages/rc/RCProfile';
@@ -28,14 +30,16 @@ import { RCProducts } from './pages/rc/RCProducts';
 import { RCSiteCalibration } from './pages/rc/RCSiteCalibration';
 import {
   RCLaboratory,
-  RCQualityManagement,
   RCNotifications,
   RCLeads,
 } from './pages/rc/RCMenuPages';
 import { VCTProfile } from './pages/vct/VCTProfile';
 import { VCTTraining } from './pages/vct/VCTMenuPages';
 import { Certificates } from './pages/vct/Certificates';
+import { CertificateSign } from './pages/vct/CertificateSign';
+import { ManualPdf } from './pages/shared/ManualPdf';
 import { Reports } from './pages/shared/Reports';
+import { ContractorFeeSettings } from './pages/shared/ContractorFeeSettings';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
 
 const App: React.FC = () => {
@@ -62,12 +66,16 @@ const App: React.FC = () => {
                 <Route path="technicians" element={<AdminVCTList />} />
                 <Route path="vct" element={<Navigate to="/admin/technicians" replace />} />
                 <Route path="laboratory" element={<AdminLaboratory />} />
-                <Route path="quality-management" element={<AdminQualityManagement />} />
+                <Route path="manual-pdf" element={<ManualPdf />} />
+                <Route path="quality-management" element={<Navigate to="/admin/manual-pdf" replace />} />
                 <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="reports" element={<Reports />} />
-                <Route path="integrations" element={<AdminSettings />} />
-                <Route path="integrations/:integrationId" element={<AdminSettings />} />
-                <Route path="settings" element={<Navigate to="/admin/integrations" replace />} />
+                <Route path="contractor-fee" element={<ContractorFeeSettings />} />
+                <Route path="integrations/worker/sessions" element={<AdminEmaapSessionLogs />} />
+                <Route path="integrations/worker/sessions/:sessionId" element={<AdminEmaapSessionLogs />} />
+                <Route path="integrations" element={<AdminIntegrations />} />
+                <Route path="integrations/:integrationId" element={<AdminIntegrations />} />
+                <Route path="settings" element={<AdminPortalSettings />} />
               </Route>
             </Route>
 
@@ -85,9 +93,13 @@ const App: React.FC = () => {
                 <Route path="vct" element={<VCTManagement />} />
                 <Route path="vehicles" element={<RCVehicles />} />
                 <Route path="laboratory" element={<RCLaboratory />} />
-                <Route path="quality-management" element={<RCQualityManagement />} />
+                <Route path="certificates" element={<Certificates />} />
+                <Route path="certificates/:recordId" element={<CertificateSign />} />
+                <Route path="manual-pdf" element={<ManualPdf />} />
+                <Route path="quality-management" element={<Navigate to="/rc/manual-pdf" replace />} />
                 <Route path="notifications" element={<RCNotifications />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="settings" element={<ContractorFeeSettings />} />
                 <Route path="profile" element={<RCProfile />} />
                 <Route path="wallet" element={<RCWallet />} />
               </Route>
@@ -102,11 +114,16 @@ const App: React.FC = () => {
                 <Route path="verification" element={<RCSiteCalibration />} />
                 <Route path="customers" element={<RCCustomers />} />
                 <Route path="products" element={<RCProducts />} />
+                <Route path="vehicles" element={<RCVehicles />} />
+                <Route path="laboratory" element={<RCLaboratory />} />
+                <Route path="certificates" element={<Certificates />} />
+                <Route path="certificates/:recordId" element={<CertificateSign />} />
+                <Route path="manual-pdf" element={<ManualPdf />} />
+                <Route path="quality-management" element={<Navigate to="/vct/manual-pdf" replace />} />
                 <Route path="training" element={<VCTTraining />} />
                 <Route path="notifications" element={<RCNotifications />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<VCTProfile />} />
-                <Route path="certificates" element={<Certificates />} />
                 <Route path="queue" element={<Navigate to="/vct/new-job" replace />} />
               </Route>
             </Route>

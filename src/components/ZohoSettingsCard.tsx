@@ -13,7 +13,7 @@ import {
   DEFAULT_ZOHO_RV_SETTINGS,
   ZOHO_MODE_OF_TRANSPORT_OPTIONS,
   validateZohoRvSettingsForm,
-  zohoRvSettingsFromForm,
+  zohoIntegrationPatchFromForm,
   zohoRvSettingsToFormValues,
   type ZohoRvSettingsFormValues,
 } from '../lib/zohoSettings';
@@ -57,7 +57,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
 
     setSaving(true);
     try {
-      const patch = zohoRvSettingsFromForm(draft);
+      const patch = zohoIntegrationPatchFromForm(draft);
       await setDoc(
         doc(db, APP_SETTINGS_COLLECTION, APP_SETTINGS_GLOBAL_DOC),
         {
@@ -133,7 +133,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
               </div>
 
               <div className="form-group">
-                <label htmlFor="zoho-item-upto-20">Item ID — up to 20 kg (₹150)</label>
+                <label htmlFor="zoho-item-upto-20">Item ID — up to 20 kg</label>
                 <input
                   id="zoho-item-upto-20"
                   className="input-field text-mono"
@@ -145,7 +145,7 @@ export const ZohoSettingsCard: React.FC<ZohoSettingsCardProps> = ({ className = 
               </div>
 
               <div className="form-group">
-                <label htmlFor="zoho-item-above-20">Item ID — above 20 kg (₹250)</label>
+                <label htmlFor="zoho-item-above-20">Item ID — above 20 kg</label>
                 <input
                   id="zoho-item-above-20"
                   className="input-field text-mono"

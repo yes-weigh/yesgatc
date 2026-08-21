@@ -19,7 +19,7 @@ public sealed class AutoWorkerSettings
     /// <summary>Restart the Firestore listener before the auth token expires (minutes).</summary>
     public int ListenerTokenRefreshMinutes { get; init; } = 45;
     /// <summary>Fallback poll interval when UseRealtimeListener is false (seconds).</summary>
-    public int PollIntervalSeconds { get; init; } = 5;
+    public int PollIntervalSeconds { get; init; } = 30;
     /// <summary>Wait time before retrying a failed job (seconds).</summary>
     public int RetryDelaySeconds { get; init; } = 15;
     /// <summary>
@@ -35,9 +35,9 @@ public sealed class AutoWorkerSettings
     public int DocaLoginProbeSeconds { get; init; } = 30;
     /// <summary>
     /// While logged in and idle, navigate to a protected DOCA page this often (minutes) to detect silent logout.
-    /// Set to 0 to disable.
+    /// 0 = off (event-based only — better for 4 GB VPS).
     /// </summary>
-    public int DocaSessionProbeMinutes { get; init; } = 10;
+    public int DocaSessionProbeMinutes { get; init; }
 }
 
 public sealed class FirebaseSettings
@@ -53,7 +53,7 @@ public sealed class AutomationSettings
     public string DocaLoginUrl { get; init; } = "https://emaap.gov.in/gatc/login";
     /// <summary>Checked first — if session is still valid, portal redirects away from login.</summary>
     public string DocaHomeUrl { get; init; } = "https://emaap.gov.in/gatc/dashboard";
-    /// <summary>Optional override. Default: %LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser</summary>
+    /// <summary>Optional override. Default: %LOCALAPPDATA%\YesGATC\{CertificateWorker|EmaapEngine}\doca-browser</summary>
     public string BrowserProfilePath { get; init; } = string.Empty;
     /// <summary>
     /// When true, seed a YesGATC Chrome mirror from your Chrome profile (cookies/DeepSeek login).
@@ -68,9 +68,9 @@ public sealed class AutomationSettings
     /// <summary>Use installed browser instead of Playwright Chromium. Leave empty for default.</summary>
     public string BrowserChannel { get; init; } = string.Empty;
     /// <summary>When pending job count exceeds this, batch processing uses multiple browser windows.</summary>
-    public int ParallelBrowserThreshold { get; init; } = 40;
-    /// <summary>Number of parallel Chrome windows for large batches.</summary>
-    public int ParallelBrowserCount { get; init; } = 4;
+    public int ParallelBrowserThreshold { get; init; } = 9999;
+    /// <summary>Number of parallel Chrome windows for large batches. Keep 1 on 4 GB VPS.</summary>
+    public int ParallelBrowserCount { get; init; } = 1;
     /// <summary>Max machine photo size for DOCA create-ic-verification form (bytes).</summary>
     public long DocaUploadImageMaxBytes { get; init; } = 350 * 1024;
     /// <summary>Longest edge in pixels for machine photos uploaded to DOCA.</summary>
@@ -85,7 +85,13 @@ public sealed class AutomationSettings
     public int EmaapOtpPollSeconds { get; init; } = 180;
     /// <summary>Legacy Gmail tab scrape — off by default (Google blocks automation).</summary>
     public bool EmaapOtpUseGmailFallback { get; init; }
-    /// <summary>Try this OTP first after Send OTP; on failure fall back to Firebase inbox.</summary>
+    /// <summary>
+    /// After filling eMAAP email/password, wait this long (seconds) for the captcha
+    /// canvas to settle, then DeepSeek OCR. 0 disables the pause.
+    /// </summary>
+    public int EmaapManualCaptchaOtpWaitSeconds { get; init; } = 30;
+    /// <summary>RC emaapengine: seconds to wait on login page for manual captcha + OTP.</summary>
+    public int EmaapEngineManualLoginWaitSeconds { get; init; } = 900;
     public string EmaapMasterOtp { get; init; } = string.Empty;
     public CaptchaOcrSettings CaptchaOcr { get; init; } = new();
     public DocaCredentialSettings DocaCredentials { get; init; } = new();

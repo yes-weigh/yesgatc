@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { collection, deleteDoc, doc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -7,18 +7,17 @@ import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { StorageImage } from '../../components/StorageImage';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
-import { releaseAadharIndex } from '../../lib/aadharIndex';
-import { deleteAuthUserAccount } from '../../lib/authUserAdmin';
 import { buildRcVctMemberDoc, rcVctMemberRef } from '../../lib/rcVctMembers';
-import { vctApprovalLabel } from '../../lib/vctApproval';
+import { isVctActive, vctActiveLabel, vctApprovalLabel } from '../../lib/vctApproval';
 import { vctDocMetaFromUser, VCT_DOC_KEYS, VCT_DOC_LABELS } from '../../lib/vctProfileFields';
 import {
-  Users, Building2, RefreshCw, Trash2, Zap, ClipboardList, CheckCircle2, Eye, ExternalLink, UserCircle,
-  ShieldCheck, Calendar,
+  Users, Building2, RefreshCw, Zap, ClipboardList, CheckCircle2, Eye, ExternalLink, UserCircle,
+  ShieldCheck, Calendar, Check, Power, PowerOff,
 } from 'lucide-react';
 import {
   RcListCardActions,
   RcListCardToggle,
+  RcListDeactivateToggle,
   RcListEditHint,
   RcListMetaChip,
   RcListPhoneChip,
@@ -44,6 +43,7 @@ export const AdminVCTList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState<VCTRecord | null>(null);
   const [approving, setApproving] = useState(false);
+  const [toggling, setToggling] = useState(false);
 
   const fetchVCTs = useCallback(async () => {
     setLoading(true);
@@ -86,26 +86,43 @@ export const AdminVCTList: React.FC = () => {
   }, [fetchVCTs]);
 
   const pendingCount = vctList.filter(v => v.approvalStatus === 'pending').length;
+  const inactiveCount = vctList.filter(v => !isVctActive(v)).length;
 
-  const handleDelete = async (uid: string, name: string) => {
+  const handleToggleActive = async (vct: VCTRecord) => {
+    const activating = !isVctActive(vct);
+    const label = vct.username || vct.aadhar || 'technician';
     const ok = await confirm({
-      title: 'Remove technician?',
-      message: `Remove VCT technician "${name}"?\nThey will lose access immediately.`,
-      confirmLabel: 'Remove',
-      destructive: true,
+      title: activating ? 'Activate technician?' : 'Deactivate technician?',
+      message: activating
+        ? `Activate "${label}"? They will be able to sign in and receive jobs again.`
+        : `Deactivate "${label}"? They will not be able to sign in or be assigned new jobs.`,
+      confirmLabel: activating ? 'Activate' : 'Deactivate',
+      destructive: !activating,
     });
-    if (!ok) return;
+    if (!ok || !user?.uid) return;
 
+    setToggling(true);
     try {
-      const record = vctList.find(v => v.uid === uid);
-      await deleteDoc(doc(db, 'users', uid));
-      if (record?.rcId) await deleteDoc(rcVctMemberRef(record.rcId, uid));
-      if (record?.aadhar) await releaseAadharIndex(record.aadhar);
-      await deleteAuthUserAccount(uid).catch(() => undefined);
-      if (reviewing?.uid === uid) setReviewing(null);
+      const updates: Record<string, unknown> = activating
+        ? { active: true, deactivatedAt: deleteField(), deactivatedByUid: deleteField() }
+        : {
+            active: false,
+            deactivatedAt: new Date().toISOString(),
+            deactivatedByUid: user.uid,
+          };
+
+      await updateDoc(doc(db, 'users', vct.uid), updates);
+      if (vct.rcId) {
+        await setDoc(rcVctMemberRef(vct.rcId, vct.uid), { active: activating }, { merge: true });
+      }
+      if (reviewing?.uid === vct.uid) {
+        setReviewing(prev => (prev ? { ...prev, active: activating } : null));
+      }
       await fetchVCTs();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to remove technician.');
+      alert(err instanceof Error ? err.message : 'Failed to update technician status.');
+    } finally {
+      setToggling(false);
     }
   };
 
@@ -176,7 +193,7 @@ export const AdminVCTList: React.FC = () => {
           <div className="product-form-panel">
             <ListViewBackBar
               onBack={() => setReviewing(null)}
-              disabled={approving}
+              disabled={approving || toggling}
             />
             <div className="product-form-topbar">
               <div className="product-form-topbar-text">
@@ -210,6 +227,7 @@ export const AdminVCTList: React.FC = () => {
               <div className="vct-review-grid">
                 <div><span className="vct-review-label">Regional Center</span><p>{reviewing.rcCenterName}</p></div>
                 <div><span className="vct-review-label">Status</span><p>{vctApprovalLabel(reviewing.approvalStatus)}</p></div>
+                <div><span className="vct-review-label">Account</span><p>{vctActiveLabel(reviewing.active)}</p></div>
                 <div><span className="vct-review-label">Aadhar Number</span><p>{formatAadharDisplay(reviewing.aadhar)}</p></div>
                 <div><span className="vct-review-label">Mobile Number</span><p>{reviewing.phone || '—'}</p></div>
                 <div><span className="vct-review-label">Blood Group</span><p>{reviewing.bloodGroup || '—'}</p></div>
@@ -235,13 +253,31 @@ export const AdminVCTList: React.FC = () => {
               </div>
             </div>
 
-            {reviewing.approvalStatus === 'pending' && (
-              <div className="product-form-footer">
+            <div className="product-form-footer">
+              <button
+                type="button"
+                className={`btn flex items-center gap-2 ${isVctActive(reviewing) ? 'btn-secondary' : 'btn-primary'}`}
+                onClick={() => void handleToggleActive(reviewing)}
+                disabled={toggling || approving}
+              >
+                {toggling ? (
+                  <span className="spinner-inline"></span>
+                ) : isVctActive(reviewing) ? (
+                  <>
+                    <PowerOff size={18} /> Deactivate Technician
+                  </>
+                ) : (
+                  <>
+                    <Power size={18} /> Activate Technician
+                  </>
+                )}
+              </button>
+              {reviewing.approvalStatus === 'pending' && (
                 <button
                   type="button"
                   className="btn btn-primary flex items-center gap-2"
                   onClick={() => handleApprove(reviewing)}
-                  disabled={approving}
+                  disabled={approving || toggling}
                 >
                   {approving ? (
                     <span className="spinner-inline"></span>
@@ -251,8 +287,8 @@ export const AdminVCTList: React.FC = () => {
                     </>
                   )}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </InlineFormPanel>
       )}
@@ -266,7 +302,7 @@ export const AdminVCTList: React.FC = () => {
               </span>
               <h2 className="rc-vehicles-summary-title">Technicians</h2>
               <p className="rc-vehicles-summary-sub">
-                {vctList.length} technician{vctList.length !== 1 ? 's' : ''} · {pendingCount} pending
+                {vctList.length} technician{vctList.length !== 1 ? 's' : ''} · {pendingCount} pending · {inactiveCount} inactive
               </p>
             </div>
             <div className="rc-vehicles-summary-actions">
@@ -300,6 +336,7 @@ export const AdminVCTList: React.FC = () => {
                 const displayName = vctDisplayName(v);
                 const photo = vctProfilePhotoFromUser(v);
                 const pending = v.approvalStatus === 'pending';
+                const active = isVctActive(v);
 
                 return (
                   <article key={v.uid} className="rc-list-card">
@@ -348,6 +385,11 @@ export const AdminVCTList: React.FC = () => {
                               icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
                             />
                             <RcListStatusBadge
+                              tone={active ? 'active' : 'inactive'}
+                              label={vctActiveLabel(v.active)}
+                              icon={<Check size={12} strokeWidth={2.75} aria-hidden />}
+                            />
+                            <RcListStatusBadge
                               tone={v.workflowMode === 'auto' ? 'auto' : 'manual'}
                               label={v.workflowMode === 'auto' ? 'Auto' : 'Manual'}
                               icon={
@@ -380,14 +422,12 @@ export const AdminVCTList: React.FC = () => {
                             <CheckCircle2 size={18} strokeWidth={1.75} />
                           </RcListCardToggle>
                         )}
-                        <RcListCardToggle
-                          className="rc-list-card-toggle--delete"
-                          onClick={() => void handleDelete(v.uid, v.username || v.aadhar)}
-                          title="Remove technician"
-                          ariaLabel={`Remove ${displayName}`}
-                        >
-                          <Trash2 size={18} strokeWidth={1.85} />
-                        </RcListCardToggle>
+                        <RcListDeactivateToggle
+                          active={active}
+                          noun="technician"
+                          name={displayName}
+                          onClick={() => void handleToggleActive(v)}
+                        />
                       </RcListCardActions>
                     </div>
                   </article>

@@ -59,18 +59,21 @@ export const RvLegacyZohoSettlementSection: React.FC<RvLegacyZohoSettlementSecti
     };
   }, [record.rcId]);
 
-  const invoiceSummary = useMemo(() => rvZohoInvoiceSummary(record), [record]);
-  const labourPayout = useMemo(() => rvLabourPayoutInr(record), [record]);
+  const invoiceSummary = useMemo(
+    () => rvZohoInvoiceSummary(record, appSettings),
+    [appSettings, record],
+  );
+  const labourPayout = useMemo(() => rvLabourPayoutInr(record, appSettings), [appSettings, record]);
   const invoiceNumber = verificationZohoInvoiceNumber(record);
 
   const showBanner = isRvZohoSettlementOutstanding(record) && invoiceSummary != null;
 
   const pushBlockedReason = useMemo(() => {
     if (!isZohoRvInvoicingEnabled(appSettings)) {
-      return 'Enable Zoho RV invoicing in Admin Settings.';
+      return 'Enable Zoho RV invoicing in Integrations.';
     }
     if (appSettings.zohoRvSettlementEnabled === false) {
-      return 'Enable Zoho RV settlement in Admin Settings.';
+      return 'Enable Zoho RV settlement in Integrations.';
     }
     if (!rcZohoIdReady(rcProfile?.zohoId)) {
       return 'Set the RC Zoho customer ID before settlement.';

@@ -1,103 +1,498 @@
-import React from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { Award, Search, Share2 } from 'lucide-react';
+import { FilterIcon } from '../../components/FilterIcon';
+import { db } from '../../firebase';
+import { TablePagination } from '../../components/TablePagination';
+import { CertificatePdfShareViewer } from '../../components/CertificatePdfShareViewer';
+import { useRcScope, useRoleBasePath } from '../../lib/roleScope';
+import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
+import { formatVerificationListDate, formatVerificationListTime } from '../../lib/verificationListFormat';
+import { formatVerificationInstrumentFields } from '../../lib/productCalculations';
 import { useAppContext } from '../../context/AppContext';
-import { useAuth } from '../../context/AuthContext';
-import { Award, Download } from 'lucide-react';
+import { isVerificationCertifiedOnDoca } from '../../lib/verificationRequest';
+import { inferVerificationSubject } from '../../lib/siteCalibrationProfileFields';
+import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
+import {
+  certificateSignStatus,
+  resolveCertificatePdfFileUrl,
+  resolveCertificatePdfStoragePath,
+  type CertificateSignStatus,
+} from '../../lib/signedCertificatePdf';
+import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
+
+type CertTypeFilter = 'all' | 'OV' | 'RV';
+type CertStatusFilter = 'all' | CertificateSignStatus;
+
+function certLocation(
+  record: SiteCalibration,
+  customersById: Map<string, Customer>,
+  rcPlace: string,
+): { place: string; district: string } {
+  if (inferVerificationSubject(record) === 'self') {
+    return { place: rcPlace, district: '' };
+  }
+  const customer = customersById.get(record.customerId?.trim() || '');
+  return {
+    place: customer?.address?.trim() || '',
+    district: customer?.district?.trim() || '',
+  };
+}
+
+function recordType(record: SiteCalibration): 'OV' | 'RV' {
+  return record.verificationType === 'RV' ? 'RV' : 'OV';
+}
+
+function compactSearchToken(value: string): string {
+  return value.trim().toLowerCase().replace(/[\s/-]+/g, '');
+}
+
+/** RC certificates search: full certificate number or machine serial only. */
+function matchesCertificateOrMachine(record: SiteCalibration, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+
+  const qCompact = compactSearchToken(q);
+  const cert = record.certificateNumber?.trim().toLowerCase() ?? '';
+  const certTail = cert.split('/').pop() ?? '';
+  const serial = record.serialNumber?.trim().toLowerCase() ?? '';
+
+  if (cert.includes(q) || compactSearchToken(cert).includes(qCompact)) return true;
+  if (certTail === q || certTail.startsWith(q)) return true;
+  if (serial.includes(q) || compactSearchToken(serial).includes(qCompact)) return true;
+  return false;
+}
 
 export const Certificates: React.FC = () => {
-  const { certificates, jobs } = useAppContext();
-  const { user } = useAuth();
+  const { rcUid, actorUid, isVct } = useRcScope();
+  const { products } = useAppContext();
+  const basePath = useRoleBasePath();
+  const navigate = useNavigate();
+  const filterRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [records, setRecords] = useState<SiteCalibration[]>([]);
+  const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
+  const [rcPlace, setRcPlace] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<CertTypeFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<CertStatusFilter>('all');
+  const [viewingRecord, setViewingRecord] = useState<SiteCalibration | null>(null);
+  const [filterSlots, setFilterSlots] = useState<{
+    mobile: HTMLElement | null;
+    desktop: HTMLElement | null;
+  }>({ mobile: null, desktop: null });
 
-  // Show only certificates issued to THIS VCT technician
-  const myCerts = certificates.filter(c => c.assignedTo === user?.uid);
+  const fetchRecords = useCallback(async () => {
+    if (!rcUid) {
+      setRecords([]);
+      setCustomersById(new Map());
+      setRcPlace('');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const [calibSnap, customerSnap, rcSnap] = await Promise.all([
+        getDocs(verificationRecordsQuery(db, rcUid, { isVct, actorUid })),
+        getDocs(query(collection(db, 'customers'), where('rcId', '==', rcUid))),
+        getDoc(doc(db, 'users', rcUid)),
+      ]);
+      setRecords(calibSnap.docs.map(d => ({ id: d.id, ...d.data() } as SiteCalibration)));
+      setCustomersById(
+        new Map(customerSnap.docs.map(d => [d.id, { id: d.id, ...d.data() } as Customer])),
+      );
+      const rc = rcSnap.data() as FirestoreUserDoc | undefined;
+      setRcPlace(rc?.place?.trim() || '');
+    } finally {
+      setLoading(false);
+    }
+  }, [rcUid, isVct, actorUid]);
+
+  useEffect(() => {
+    void fetchRecords();
+  }, [fetchRecords]);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onDoc = (event: MouseEvent) => {
+      if (filterRef.current?.contains(event.target as Node)) return;
+      setFilterOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [filterOpen]);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  useLayoutEffect(() => {
+    setFilterSlots({
+      mobile: document.getElementById('verification-filter-slot-mobile'),
+      desktop: document.getElementById('verification-filter-slot-desktop'),
+    });
+  }, []);
+
+  const issued = useMemo(
+    () =>
+      records
+        .filter(isVerificationCertifiedOnDoca)
+        .sort((a, b) => (b.certifiedAt || b.approvedAt || '').localeCompare(a.certifiedAt || a.approvedAt || '')),
+    [records],
+  );
+
+  const filtered = useMemo(() => {
+    return issued.filter(record => {
+      if (typeFilter !== 'all' && recordType(record) !== typeFilter) return false;
+      const signStatus = certificateSignStatus(record);
+      if (statusFilter !== 'all' && signStatus !== statusFilter) return false;
+      return matchesCertificateOrMachine(record, searchTerm);
+    });
+  }, [issued, searchTerm, typeFilter, statusFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filtered.length, searchTerm, typeFilter, statusFilter]);
+
+  const pageRows = useMemo(
+    () => paginateItems(filtered, page, VERIFICATION_TABLE_PAGE_SIZE),
+    [filtered, page],
+  );
+  const rowOffset = (page - 1) * VERIFICATION_TABLE_PAGE_SIZE;
+  const filterActive = typeFilter !== 'all' || statusFilter !== 'all';
+  const searchVisible = searchOpen || Boolean(searchTerm.trim());
+
+  const openSignPage = (record: SiteCalibration) => {
+    navigate(`${basePath}/certificates/${record.id}`);
+  };
+
+  const handlePhoneShare = (record: SiteCalibration, event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (!resolveCertificatePdfFileUrl(record) && !resolveCertificatePdfStoragePath(record)) return;
+    setViewingRecord(record);
+  };
+
+  const filterSlot = filterSlots.mobile ?? filterSlots.desktop;
+  const filterControl = (
+    <div className="wl-cert-filter verification-app-filter" ref={filterRef}>
+      <button
+        type="button"
+        className={`wl-cert-filter-btn verification-app-filter__btn${
+          filterOpen || filterActive ? ' wl-cert-filter-btn--on verification-app-filter__btn--on' : ''
+        }`}
+        aria-label="Filter certificates"
+        aria-expanded={filterOpen}
+        onClick={() => {
+          setFilterOpen(open => !open);
+          setSearchOpen(false);
+        }}
+      >
+        <FilterIcon size={18} />
+      </button>
+      {filterOpen ? (
+        <div className="wl-cert-filter__pop" role="dialog" aria-label="Certificate filters">
+          <label className="wl-cert-filter__label" htmlFor="wl-cert-type">
+            Type
+          </label>
+          <select
+            id="wl-cert-type"
+            className="wl-cert-filter__select"
+            value={typeFilter}
+            onChange={event => setTypeFilter(event.target.value as CertTypeFilter)}
+          >
+            <option value="all">All</option>
+            <option value="OV">OV</option>
+            <option value="RV">RV</option>
+          </select>
+          <label className="wl-cert-filter__label" htmlFor="wl-cert-status">
+            Status
+          </label>
+          <select
+            id="wl-cert-status"
+            className="wl-cert-filter__select"
+            value={statusFilter}
+            onChange={event => setStatusFilter(event.target.value as CertStatusFilter)}
+          >
+            <option value="all">All</option>
+            <option value="signed">Signed</option>
+            <option value="not_signed">Not signed</option>
+            <option value="voided">Voided</option>
+          </select>
+        </div>
+      ) : null}
+    </div>
+  );
 
   return (
-    <div className="fade-in max-w-4xl mx-auto">
-      <div className="panel glass">
-        <div className="panel-header">
-          <h2>
-            <Award className="inline-icon text-yellow" /> My Issued Certificates
-          </h2>
-          {myCerts.length > 0 && <span className="badge-count">{myCerts.length}</span>}
-        </div>
-        <div className="panel-body p-0">
-          <div className="table-scroll-wrap">
-          <table className="data-table data-table--certificates data-table--mobile-cards">
-            <thead>
-              <tr>
-                <th>Certificate ID</th>
-                <th>Job Reference</th>
-                <th>Customer</th>
-                <th>Type</th>
-                <th>Date Issued</th>
-                <th className="text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {myCerts.map(cert => {
-                const job = jobs.find(j => j.id === cert.jobId);
-                return (
-                  <tr key={cert.id} className="table-mobile-row table-mobile-row--actions">
-                    <td className="font-bold text-blue text-mono-xs table-mobile-col-hide">
-                      {cert.id.slice(0, 16)}…
-                    </td>
-                    <td className="text-mono-muted table-mobile-col-hide">
-                      {cert.jobId.slice(0, 16)}…
-                    </td>
-                    <td className="font-medium table-mobile-col-primary">
-                      <span className="table-mobile-primary-text">{job?.customer ?? '—'}</span>
-                      <div className="table-mobile-summary">
-                        <span className="text-mono table-mobile-summary-meta">{cert.id.slice(0, 16)}…</span>
-                        <span className="table-mobile-summary-meta">Job {cert.jobId.slice(0, 16)}…</span>
-                        {job && (
-                          <span className="table-mobile-summary-badges">
-                            <span className={`role-badge ${job.jobType === 'OV' ? 'badge-rc' : 'badge-vct'}`}>
-                              {job.jobType}
-                            </span>
-                          </span>
-                        )}
-                        <span className="table-mobile-summary-meta">
-                          {new Date(cert.issuedAt).toLocaleDateString('en-IN', {
-                            day: '2-digit', month: 'short', year: 'numeric',
-                          })}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="table-mobile-col-hide">
-                      {job && (
-                        <span className={`role-badge ${job.jobType === 'OV' ? 'badge-rc' : 'badge-vct'}`}>
-                          {job.jobType}
-                        </span>
-                      )}
-                    </td>
-                    <td className="text-muted text-sm table-mobile-col-hide">
-                      {new Date(cert.issuedAt).toLocaleDateString('en-IN', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                      })}
-                    </td>
-                    <td className="text-right table-mobile-col-actions">
-                      <button
-                        className="btn-icon"
-                        title="Download PDF (coming soon)"
-                        onClick={() => alert('PDF generation coming soon.')}
-                      >
-                        <Download size={18} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {myCerts.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-center py-10 text-muted">
-                    No certificates yet. Complete a job to generate one.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+    <div className="fade-in wl-cert-page">
+      {filterSlot ? createPortal(filterControl, filterSlot) : null}
+      <section className="wl-section" aria-label="Certificates">
+        <div className="wl-cert-toolbar">
+          <div className="wl-cert-toolbar__pager">
+            {!loading && filtered.length > 0 ? (
+              <TablePagination
+                page={page}
+                totalItems={filtered.length}
+                pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+                onPageChange={setPage}
+                placement="top"
+              />
+            ) : null}
+          </div>
+          <div className="wl-cert-toolbar__actions">
+            <button
+              type="button"
+              className={`wl-cert-icon-btn${searchVisible ? ' wl-cert-icon-btn--on' : ''}`}
+              aria-label="Search certificates"
+              aria-pressed={searchVisible}
+              onClick={() => {
+                setSearchOpen(open => !open);
+                setFilterOpen(false);
+              }}
+            >
+              <Search size={18} strokeWidth={2} aria-hidden />
+            </button>
+            {!filterSlot ? filterControl : null}
           </div>
         </div>
-      </div>
+        {searchVisible ? (
+          <div className="search-wrap wl-cert-search">
+            <Search size={16} className="search-icon" aria-hidden />
+            <input
+              ref={searchInputRef}
+              type="search"
+              className="search-input"
+              placeholder="Certificate no or machine no"
+              value={searchTerm}
+              onChange={event => setSearchTerm(event.target.value)}
+              aria-label="Search certificates"
+            />
+          </div>
+        ) : null}
+        {loading ? (
+          <div className="wl-recent__loading">
+            <span className="spinner-inline" aria-hidden />
+          </div>
+        ) : issued.length === 0 ? (
+          <div className="wl-recent__empty">
+            <Award size={28} strokeWidth={1.6} aria-hidden />
+            <p>No certificates issued yet.</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="wl-recent__empty">
+            <p>No certificates match search or filter.</p>
+          </div>
+        ) : (
+          <>
+            <ul className="wl-cert-cards wl-cert-phone">
+                {pageRows.map((record, index) => {
+                  const pdfUrl = resolveCertificatePdfFileUrl(record);
+                  const pdfPath = resolveCertificatePdfStoragePath(record);
+                  const certNo = record.certificateNumber?.trim() || '—';
+                  const signStatus = certificateSignStatus(record);
+                  const type = recordType(record);
+                  const product = products.find(item => item.id === record.productId);
+                  const specs = formatVerificationInstrumentFields(record, product);
+                  const serial = record.serialNumber?.trim() || '—';
+                  const stamp = record.certifiedAt || record.approvedAt;
+                  const dateLabel = formatVerificationListDate(stamp);
+                  const timeLabel = formatVerificationListTime(stamp);
+                  const dateTime =
+                    dateLabel === '—'
+                      ? '—'
+                      : timeLabel === '—'
+                        ? dateLabel
+                        : `${dateLabel}  ${timeLabel}`;
+                  const vctName = record.vctName?.trim() || '—';
+                  return (
+                    <li key={record.id}>
+                      <article className="wl-cert-card">
+                        <button
+                          type="button"
+                          className="wl-cert-card__main"
+                          onClick={() => openSignPage(record)}
+                        >
+                          <span className="wl-cert-card__sl">{rowOffset + index + 1}</span>
+                          <span className="wl-cert-card__body">
+                            <span className="wl-cert-card__headline">
+                              <span className="wl-cert-card__name">
+                                {record.customerName?.trim() || '—'}
+                              </span>
+                              <span className="wl-cert-card__tags">
+                                <span className={`wl-cert-sign-type wl-cert-sign-type--${type.toLowerCase()}`}>
+                                  {type}
+                                </span>
+                                <span
+                                  className={`wl-cert-table__badge${
+                                    signStatus === 'voided'
+                                      ? ' wl-cert-table__badge--void'
+                                      : signStatus === 'not_signed'
+                                        ? ' wl-cert-table__badge--unsigned'
+                                        : ''
+                                  }`}
+                                >
+                                  {signStatus === 'voided'
+                                    ? 'Voided'
+                                    : signStatus === 'signed'
+                                      ? 'Signed'
+                                      : 'Not signed'}
+                                </span>
+                              </span>
+                            </span>
+                            <span className="wl-cert-card__meta">
+                              <span className="wl-cert-card__specs">
+                                <span className="wl-cert-card__kv">
+                                  <em>Max</em>
+                                  {specs.max}
+                                </span>
+                                <span className="wl-cert-card__kv">
+                                  <em>Min</em>
+                                  {specs.min}
+                                </span>
+                                <span className="wl-cert-card__kv">
+                                  <em className="wl-cert-card__e">e</em>
+                                  {specs.e}
+                                </span>
+                                <span className="wl-cert-card__kv">
+                                  <em>Serial</em>
+                                  <span className="text-mono">{serial}</span>
+                                </span>
+                              </span>
+                              <span className="wl-cert-card__session">
+                                <span className="wl-cert-card__when">{dateTime}</span>
+                                <span className="wl-cert-card__kv wl-cert-card__vct" title={vctName}>
+                                  <em>VCT</em>
+                                  {vctName}
+                                </span>
+                              </span>
+                            </span>
+                          </span>
+                        </button>
+                        {pdfUrl || pdfPath ? (
+                          <button
+                            type="button"
+                            className="wl-recent__download"
+                            onClick={event => handlePhoneShare(record, event)}
+                            aria-label={`Share certificate ${certNo}`}
+                            title="Share"
+                          >
+                            <Share2 size={16} strokeWidth={2} aria-hidden />
+                          </button>
+                        ) : null}
+                      </article>
+                    </li>
+                  );
+                })}
+              </ul>
+            <div className="table-scroll-wrap wl-cert-desktop">
+              <table className="wl-cert-table">
+                <colgroup>
+                  <col className="wl-cert-col-sl" />
+                  <col className="wl-cert-col-cert" />
+                  <col className="wl-cert-col-serial" />
+                  <col className="wl-cert-col-type" />
+                  <col className="wl-cert-col-name" />
+                  <col className="wl-cert-col-date" />
+                  <col className="wl-cert-col-status" />
+                  <col className="wl-cert-col-dl" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Sl</th>
+                    <th>Certificate No.</th>
+                    <th className="wl-cert-col-hide-phone">Serial</th>
+                    <th className="wl-cert-col-hide-phone">Type</th>
+                    <th>Name</th>
+                    <th className="wl-cert-col-hide-phone">Date</th>
+                    <th>Status</th>
+                    <th>
+                      <span className="sr-only">Download</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRows.map((record, index) => {
+                    const certNo = record.certificateNumber?.trim() || '—';
+                    const loc = certLocation(record, customersById, rcPlace);
+                    const signStatus = certificateSignStatus(record);
+                    const placeLine = [loc.place, loc.district].filter(Boolean).join(', ');
+                    const type = recordType(record);
+                    return (
+                      <tr
+                        key={record.id}
+                        className="wl-cert-table__row"
+                        onClick={() => openSignPage(record)}
+                      >
+                        <td className="wl-cert-table__sl">{rowOffset + index + 1}</td>
+                        <td className="wl-cert-table__cert">
+                          <span className="wl-cert-table__no">{certNo}</span>
+                        </td>
+                        <td className="wl-cert-col-hide-phone wl-cert-table__mono">
+                          {record.serialNumber?.trim() || '—'}
+                        </td>
+                        <td className="wl-cert-col-hide-phone">
+                          <span className={`wl-cert-sign-type wl-cert-sign-type--${type.toLowerCase()}`}>
+                            {type}
+                          </span>
+                        </td>
+                        <td className="wl-cert-table__name">
+                          <span className="wl-cert-table__primary">
+                            {record.customerName?.trim() || '—'}
+                          </span>
+                          <span className="wl-cert-table__sub">
+                            VCT: {record.vctName?.trim() || '—'}
+                            {placeLine ? ` · ${placeLine}` : ''}
+                          </span>
+                        </td>
+                        <td className="wl-cert-col-hide-phone">
+                          {formatVerificationListDate(record.certifiedAt || record.approvedAt)}
+                        </td>
+                        <td>
+                          <span
+                            className={`wl-cert-table__badge${
+                              signStatus === 'voided'
+                                ? ' wl-cert-table__badge--void'
+                                : signStatus === 'not_signed'
+                                  ? ' wl-cert-table__badge--unsigned'
+                                  : ''
+                            }`}
+                          >
+                            {signStatus === 'voided'
+                              ? 'Voided'
+                              : signStatus === 'signed'
+                                ? 'Signed'
+                                : 'Not signed'}
+                          </span>
+                        </td>
+                        <td className="wl-cert-table__dl" />
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <TablePagination
+              page={page}
+              totalItems={filtered.length}
+              pageSize={VERIFICATION_TABLE_PAGE_SIZE}
+              onPageChange={setPage}
+            />
+          </>
+        )}
+      </section>
+      <CertificatePdfShareViewer
+        open={Boolean(viewingRecord)}
+        record={viewingRecord}
+        url={viewingRecord ? resolveCertificatePdfFileUrl(viewingRecord) : null}
+        storagePath={viewingRecord ? resolveCertificatePdfStoragePath(viewingRecord) : null}
+        onClose={() => setViewingRecord(null)}
+      />
     </div>
   );
 };

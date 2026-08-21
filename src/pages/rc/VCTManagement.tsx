@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  doc, deleteDoc, updateDoc, writeBatch, deleteField,
+  doc, setDoc, updateDoc, writeBatch, deleteField,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -8,7 +8,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import {
-  RcListCardToggle,
+  RcListDeactivateToggle,
   RcListEditHint,
   RcListPhoneChip,
   RcListPhoto,
@@ -27,8 +27,7 @@ import {
   normalizeAadhar,
   syncAuthPassword,
 } from '../../lib/aadharAuth';
-import { releaseAadharIndex } from '../../lib/aadharIndex';
-import { deleteAuthUserAccount, rollbackCreatedAuthUser } from '../../lib/authUserAdmin';
+import { rollbackCreatedAuthUser } from '../../lib/authUserAdmin';
 import { isVctApproved, isVctActive, vctActiveLabel, vctApprovalLabel } from '../../lib/vctApproval';
 import { uploadVctDocument, uploadVctProfilePhoto, type VctDocKind } from '../../lib/vctDocumentUpload';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
@@ -45,7 +44,6 @@ import {
 } from '../../lib/vctProfileFields';
 import {
   UserPlus,
-  Trash2,
   RefreshCw,
   Users,
   Pencil,
@@ -54,8 +52,6 @@ import {
   Zap,
   ClipboardList,
   UserCircle,
-  UserX,
-  UserCheck,
   ShieldCheck,
   Check,
 } from 'lucide-react';
@@ -459,39 +455,15 @@ export const VCTManagement: React.FC = () => {
     setError('');
   };
 
-  const handleDelete = async (uid: string, identifier: string) => {
-    const record = vcts.find(v => v.uid === uid);
-    if (record && isVctApproved(record)) return;
-
-    const ok = await confirm({
-      title: 'Remove technician?',
-      message: `Remove technician "${identifier}" from your centre?`,
-      confirmLabel: 'Remove',
-      destructive: true,
-    });
-    if (!ok) return;
-    try {
-      await deleteDoc(doc(db, 'users', uid));
-      if (user?.uid) await deleteDoc(rcVctMemberRef(user.uid, uid));
-      if (record?.aadhar) await releaseAadharIndex(record.aadhar);
-      await deleteAuthUserAccount(uid).catch(() => undefined);
-      await fetchVCTs();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to remove technician.');
-    }
-  };
-
   const handleToggleActive = async (v: VCTRecord) => {
-    if (!isVctApproved(v)) return;
-
     const enabling = !isVctActive(v);
     const label = v.username || v.aadhar || 'technician';
     const ok = await confirm({
-      title: enabling ? 'Enable technician?' : 'Disable technician?',
+      title: enabling ? 'Activate technician?' : 'Deactivate technician?',
       message: enabling
-        ? `Enable "${label}"? They will be able to sign in and receive jobs again.`
-        : `Disable "${label}"? They will not be able to sign in or be assigned new jobs.`,
-      confirmLabel: enabling ? 'Enable' : 'Disable',
+        ? `Activate "${label}"? They will be able to sign in and receive jobs again.`
+        : `Deactivate "${label}"? They will not be able to sign in or be assigned new jobs.`,
+      confirmLabel: enabling ? 'Activate' : 'Deactivate',
       destructive: !enabling,
     });
     if (!ok || !user?.uid) return;
@@ -505,7 +477,7 @@ export const VCTManagement: React.FC = () => {
         };
 
     await updateDoc(doc(db, 'users', v.uid), updates);
-    await updateDoc(rcVctMemberRef(user.uid, v.uid), { active: enabling });
+    await setDoc(rcVctMemberRef(user.uid, v.uid), { active: enabling }, { merge: true });
     await fetchVCTs();
   };
 
@@ -690,13 +662,11 @@ export const VCTManagement: React.FC = () => {
                               label={vctApprovalLabel(v.approvalStatus)}
                               icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
                             />
-                            {approved && (
-                              <RcListStatusBadge
-                                tone={active ? 'active' : 'inactive'}
-                                label={vctActiveLabel(v.active)}
-                                icon={<Check size={12} strokeWidth={2.75} aria-hidden />}
-                              />
-                            )}
+                            <RcListStatusBadge
+                              tone={active ? 'active' : 'inactive'}
+                              label={vctActiveLabel(v.active)}
+                              icon={<Check size={12} strokeWidth={2.75} aria-hidden />}
+                            />
                             <RcListStatusBadge
                               tone={v.workflowMode === 'auto' ? 'auto' : 'manual'}
                               label={v.workflowMode === 'auto' ? 'Auto' : 'Manual'}
@@ -711,31 +681,13 @@ export const VCTManagement: React.FC = () => {
                           </span>
                         </span>
                       </button>
-                      {approved ? (
-                        <RcListCardToggle
-                          className={active ? '' : 'rc-list-card-toggle--enable'}
-                          onClick={() => void handleToggleActive(v)}
-                          title={active ? 'Disable technician' : 'Enable technician'}
-                          ariaLabel={
-                            active ? `Disable ${displayName}` : `Enable ${displayName}`
-                          }
-                        >
-                          {active ? (
-                            <UserX size={20} strokeWidth={1.75} />
-                          ) : (
-                            <UserCheck size={20} strokeWidth={1.75} />
-                          )}
-                        </RcListCardToggle>
-                      ) : (
-                        <RcListCardToggle
-                          className="rc-list-card-toggle--delete"
-                          onClick={() => void handleDelete(v.uid, v.username || v.aadhar)}
-                          title="Remove technician"
-                          ariaLabel={`Remove ${displayName}`}
-                        >
-                          <Trash2 size={18} strokeWidth={1.85} />
-                        </RcListCardToggle>
-                      )}
+                      <RcListDeactivateToggle
+                        active={active}
+                        noun="technician"
+                        name={displayName}
+                        iconSize={20}
+                        onClick={() => void handleToggleActive(v)}
+                      />
                     </div>
                   </article>
                 );

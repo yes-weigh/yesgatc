@@ -8,3 +8,12 @@ export function formatVerificationListDate(iso?: string): string {
     year: 'numeric',
   });
 }
+
+export function formatVerificationListTime(iso?: string): string {
+  if (!isValidVerificationIsoTimestamp(iso)) return '—';
+  return new Date(iso).toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}

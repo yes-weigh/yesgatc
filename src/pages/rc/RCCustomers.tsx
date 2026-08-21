@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useLayoutEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  collection, getDocs, doc, setDoc, updateDoc, query, where, deleteField, getDoc,
+  collection, getDocs, doc, setDoc, updateDoc, query, where, deleteField,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useRcScope } from '../../lib/roleScope';
@@ -24,13 +25,15 @@ import {
 } from '../../lib/customerProfileFields';
 import {
   UserRound,
-  RefreshCw,
   Pencil,
   Plus,
   Save,
   Search,
 } from 'lucide-react';
-import type { Customer, CustomerLocation, FirestoreUserDoc, SiteCalibration } from '../../types';
+import { FilterIcon } from '../../components/FilterIcon';
+import { TablePagination } from '../../components/TablePagination';
+import { CUSTOMER_LIST_PAGE_SIZE, paginateItems } from '../../lib/tablePagination';
+import type { Customer, SiteCalibration } from '../../types';
 import {
   EMPTY_CUSTOMER_FORM,
   EMPTY_IMAGE_UPLOAD_STATE,
@@ -42,7 +45,6 @@ export const RCCustomers: React.FC = () => {
   const { rcUid, actorUid, isVct } = useRcScope();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
-  const [distanceFrom, setDistanceFrom] = useState<CustomerLocation | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [showAddForm, setShowAddForm] = useState(false);
@@ -57,19 +59,46 @@ export const RCCustomers: React.FC = () => {
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [districtFilter, setDistrictFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+  const [filterSlots, setFilterSlots] = useState<{
+    mobile: HTMLElement | null;
+    desktop: HTMLElement | null;
+  }>({ mobile: null, desktop: null });
 
   const normalizedPhoneSearch = normalizePhone(searchQuery);
   const phoneSearchComplete = isValidPhone(searchQuery);
   const hasSearchQuery = searchQuery.trim().length > 0;
 
-  const displayedCustomers = useMemo(
-    () => filterCustomersBySearch(customers, searchQuery),
-    [customers, searchQuery],
-  );
+  const districtOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const customer of customers) {
+      const district = customer.district?.trim();
+      if (district) names.add(district);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [customers]);
+
+  const displayedCustomers = useMemo(() => {
+    const searched = filterCustomersBySearch(customers, searchQuery);
+    if (districtFilter === 'all') return searched;
+    return searched.filter(customer => (customer.district?.trim() || '') === districtFilter);
+  }, [customers, searchQuery, districtFilter]);
 
   const customerStatsMap = useMemo(
     () => buildCustomerTileStatsMap(customers, verifications),
     [customers, verifications],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, districtFilter]);
+
+  const pageCustomers = useMemo(
+    () => paginateItems(displayedCustomers, page, CUSTOMER_LIST_PAGE_SIZE),
+    [displayedCustomers, page],
   );
 
   const showCreateWithPhone =
@@ -92,10 +121,9 @@ export const RCCustomers: React.FC = () => {
     setLoading(true);
     setListError('');
     try {
-      const [customerSnap, verificationSnap, rcProfileSnap] = await Promise.all([
+      const [customerSnap, verificationSnap] = await Promise.all([
         getDocs(query(collection(db, 'customers'), where('rcId', '==', rcUid))),
         getDocs(verificationRecordsQuery(db, rcUid, { isVct, actorUid })),
-        getDoc(doc(db, 'users', rcUid)),
       ]);
 
       const rows = customerSnap.docs
@@ -106,13 +134,8 @@ export const RCCustomers: React.FC = () => {
         d => ({ id: d.id, ...d.data() } as SiteCalibration),
       );
 
-      const rcProfile = rcProfileSnap.exists()
-        ? (rcProfileSnap.data() as FirestoreUserDoc)
-        : null;
-
       setCustomers(rows);
       setVerifications(verificationRows);
-      setDistanceFrom(rcProfile?.location ?? null);
     } catch (err: unknown) {
       const code =
         typeof err === 'object' && err !== null && 'code' in err
@@ -127,7 +150,6 @@ export const RCCustomers: React.FC = () => {
       }
       setCustomers([]);
       setVerifications([]);
-      setDistanceFrom(null);
     } finally {
       setLoading(false);
     }
@@ -136,6 +158,27 @@ export const RCCustomers: React.FC = () => {
   useEffect(() => {
     Promise.resolve().then(() => fetchCustomers());
   }, [fetchCustomers]);
+
+  useLayoutEffect(() => {
+    setFilterSlots({
+      mobile: document.getElementById('verification-filter-slot-mobile'),
+      desktop: document.getElementById('verification-filter-slot-desktop'),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onDoc = (event: MouseEvent) => {
+      const target = event.target;
+      if (filterRef.current?.contains(target as Node)) return;
+      if (target instanceof HTMLElement && (target.tagName === 'OPTION' || target.closest('select'))) {
+        return;
+      }
+      setFilterOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [filterOpen]);
 
   const showForm = showAddForm || editingId !== null;
   const formBusy = submitting;
@@ -350,9 +393,47 @@ export const RCCustomers: React.FC = () => {
   };
 
   const editingCustomer = editingId ? customers.find(c => c.id === editingId) ?? null : null;
+  const filterSlot = filterSlots.mobile ?? filterSlots.desktop;
+  const filterActive = districtFilter !== 'all';
+  const filterControl = (
+    <div className="wl-cert-filter verification-app-filter" ref={filterRef}>
+      <button
+        type="button"
+        className={`wl-cert-filter-btn verification-app-filter__btn${
+          filterOpen || filterActive ? ' wl-cert-filter-btn--on verification-app-filter__btn--on' : ''
+        }`}
+        aria-label="Filter customers by district"
+        aria-expanded={filterOpen}
+        onClick={() => setFilterOpen(open => !open)}
+      >
+        <FilterIcon size={18} />
+      </button>
+      {filterOpen ? (
+        <div className="wl-cert-filter__pop" role="dialog" aria-label="Customer filters">
+          <label className="wl-cert-filter__label" htmlFor="customer-filter-district">
+            District
+          </label>
+          <select
+            id="customer-filter-district"
+            className="wl-cert-filter__select"
+            value={districtFilter}
+            onChange={event => setDistrictFilter(event.target.value)}
+          >
+            <option value="all">All districts</option>
+            {districtOptions.map(district => (
+              <option key={district} value={district}>
+                {district}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+    </div>
+  );
 
   return (
     <div className="fade-in page-content">
+      {filterSlot ? createPortal(filterControl, filterSlot) : null}
       {showForm && (
         <InlineFormPanel id="customer-form" className="mb-6 inline-form-panel--wide inline-form-panel--customer">
           <div className="product-form-panel">
@@ -440,41 +521,17 @@ export const RCCustomers: React.FC = () => {
 
       {!showForm && (
         <div className="rc-list-page">
-          <section className="rc-vehicles-summary-card rc-vehicles-summary-card--with-search">
-            <div className="rc-vehicles-summary-head">
-              <div className="rc-vehicles-summary-leading">
-                <span className="rc-list-summary-icon" aria-hidden>
-                  <UserRound size={20} strokeWidth={1.85} />
-                </span>
-                <h2 className="rc-vehicles-summary-title">Customers</h2>
-                <p className="rc-vehicles-summary-sub">
-                  {customers.length} customer{customers.length !== 1 ? 's' : ''} registered
-                </p>
-              </div>
-              <div className="rc-vehicles-summary-actions">
-                <button
-                  type="button"
-                  className="rc-vehicles-add-btn"
-                  onClick={handleStartAdd}
-                  aria-label="Add customer"
-                >
-                  <Plus size={16} strokeWidth={2.5} aria-hidden />
-                  <span className="rc-vehicles-add-btn-label">Add Customer</span>
-                </button>
-                <button
-                  type="button"
-                  className="rc-vehicles-refresh-btn"
-                  onClick={() => void fetchCustomers()}
-                  title="Refresh"
-                  aria-label="Refresh customers"
-                  disabled={loading}
-                >
-                  <RefreshCw size={18} className={loading ? 'spinner-inline' : undefined} />
-                </button>
-              </div>
-            </div>
-            <div className="rc-vehicles-summary-search-row">
-              <div className="search-wrap customer-phone-search rc-list-summary-search">
+          <section className="rc-customer-toolbar">
+            <div className="rc-customer-toolbar__row">
+              <button
+                type="button"
+                className="rc-vehicles-add-btn rc-customer-toolbar__add"
+                onClick={handleStartAdd}
+                aria-label="Add customer"
+              >
+                <Plus size={18} strokeWidth={2.5} aria-hidden />
+              </button>
+              <div className="search-wrap customer-phone-search rc-customer-toolbar__search">
                 <Search size={16} className="search-icon" aria-hidden />
                 <input
                   type="search"
@@ -485,7 +542,17 @@ export const RCCustomers: React.FC = () => {
                   aria-label="Search customers by name or phone number"
                 />
               </div>
+              {!filterSlot ? filterControl : null}
             </div>
+            {!loading && displayedCustomers.length > 0 ? (
+              <TablePagination
+                page={page}
+                totalItems={displayedCustomers.length}
+                pageSize={CUSTOMER_LIST_PAGE_SIZE}
+                onPageChange={setPage}
+                placement="top"
+              />
+            ) : null}
           </section>
           {listError && (
             <p className="rc-vehicles-summary-error" role="alert">
@@ -519,8 +586,8 @@ export const RCCustomers: React.FC = () => {
               <p>
                 {phoneSearchComplete
                   ? `No customer found with phone ${normalizedPhoneSearch}.`
-                  : hasSearchQuery
-                    ? 'No customers match your search.'
+                  : hasSearchQuery || filterActive
+                    ? 'No customers match your search or filter.'
                     : 'No customers yet.'}
               </p>
               <button
@@ -534,17 +601,23 @@ export const RCCustomers: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="rc-list-cards rc-customer-tiles">
-              {displayedCustomers.map(c => (
-                <CustomerListTile
-                  key={c.id}
-                  customer={c}
-                  stats={customerStatsMap.get(c.id) ?? { verificationCount: 0, dueCount: 0 }}
-                  distanceFrom={distanceFrom}
-                  onEdit={() => startEdit(c)}
-                />
-              ))}
-            </div>
+            <>
+              <div className="rc-list-cards rc-customer-tiles">
+                {pageCustomers.map(c => (
+                  <CustomerListTile
+                    key={c.id}
+                    customer={c}
+                    onEdit={() => startEdit(c)}
+                  />
+                ))}
+              </div>
+              <TablePagination
+                page={page}
+                totalItems={displayedCustomers.length}
+                pageSize={CUSTOMER_LIST_PAGE_SIZE}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </div>
       )}

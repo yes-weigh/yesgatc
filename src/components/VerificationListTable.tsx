@@ -1,4 +1,4 @@
-import React, { type RefObject } from 'react';
+import React, { useState, type RefObject } from 'react';
 import {
   AlertCircle,
   Download,
@@ -10,10 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useAppSettings } from '../hooks/useAppSettings';
-import { isRvWalletPaymentRequired } from '../lib/appSettings';
 import { useAppContext } from '../context/AppContext';
-import { DEFAULT_RC_FEES_STRUCTURE, formatRcFeeAmount } from '../lib/rcProfileFields';
-import { resolveRvWalletDisplayAmount } from '../lib/rvPaymentAmount';
 import {
   isZohoRvInvoicingEnabled,
   resolveZohoPushStatus,
@@ -38,7 +35,16 @@ import {
   verificationAdminDeleteLabel,
 } from '../lib/verificationDevDelete';
 import { canMoveFailedSubmitToDraft } from '../lib/verificationPipelineRepair';
-import type { SiteCalibration, VerificationRequestStatus } from '../types';
+import {
+  formatProductGramValue,
+  formatProductMaximumCapacity,
+  formatProductMinimumCapacity,
+} from '../lib/productCalculations';
+import { formatVerificationListTime } from '../lib/verificationListFormat';
+import { resolveCertificatePdfFileUrl, resolveCertificatePdfStoragePath } from '../lib/signedCertificatePdf';
+import { verificationListPartyName } from '../lib/verificationPartyDetails';
+import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
+import type { Product, SiteCalibration, VerificationRequestStatus } from '../types';
 
 export type VerificationListTableMode = 'rc' | 'admin';
 
@@ -110,6 +116,51 @@ function verificationListDisplayDate(record: SiteCalibration): string {
   return firstValidVerificationTimestamp(record) ?? '';
 }
 
+function verificationListSpecFields(
+  record: SiteCalibration,
+  product: Product | undefined,
+): { max: string; min: string; klass: string } {
+  const max = formatProductMaximumCapacity({
+    maximumCapacity: record.maximumCapacity ?? product?.maximumCapacity ?? 0,
+    unitOfMeasurement: record.unitOfMeasurement ?? product?.unitOfMeasurement ?? 'kg',
+  });
+  const min = product
+    ? formatProductMinimumCapacity(product)
+    : formatProductGramValue(
+        record.verificationScaleInterval != null
+          ? record.verificationScaleInterval * 20
+          : undefined,
+      );
+  const klass = product?.accuracyClass?.trim() || '—';
+  return { max, min, klass };
+}
+
+function VerificationListMetric({
+  label,
+  value,
+  title,
+  mono,
+  className,
+}: {
+  label: string;
+  value: React.ReactNode;
+  title?: string;
+  mono?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={`verification-list-card-metric${className ? ` ${className}` : ''}`}>
+      <span className="verification-list-card-metric-label">{label}</span>
+      <span
+        className={`verification-list-card-metric-value${mono ? ' text-mono' : ''}`}
+        title={title}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 function VerificationListTypeBadges({
   record,
   zohoListBadge,
@@ -170,7 +221,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   deletingId = null,
   submitting = false,
   bulkSelect,
-  hideVctColumn = false,
+  hideVctColumn: _hideVctColumn = false,
   lastViewedRecordId = null,
   flashRecordId = null,
   walletPaymentDueRecordIds,
@@ -181,9 +232,8 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   const { products } = useAppContext();
   const bulk = bulkSelect;
   const showRcCentre = mode === 'admin';
-  const showVctColumn = !hideVctColumn;
-  const rvWalletListEnabled = isRvWalletPaymentRequired('RV');
   const zohoRvListEnabled = isZohoRvInvoicingEnabled(appSettings);
+  const [pdfRecord, setPdfRecord] = useState<VerificationListTableRecord | null>(null);
 
   return (
     <div className="verification-list-cards-wrap">
@@ -234,17 +284,26 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const statusTone = verificationListStatusTone(record);
             const statusLabel = verificationListStatusLabel(record);
             const displayDate = formatDate(verificationListDisplayDate(record));
+            const displayTime = formatVerificationListTime(verificationListDisplayDate(record));
+            const displayDateTime =
+              displayDate === '—'
+                ? '—'
+                : displayTime === '—'
+                  ? displayDate
+                  : `${displayDate}  ${displayTime}`;
             const certNo = sanitizeVerificationDisplayText(record.certificateNumber);
             const serial = record.serialNumber?.trim() || '—';
+            const product = products.find(item => item.id === record.productId);
+            const specs = verificationListSpecFields(record, product);
+            const vctName = verificationVctLabel(record, {
+              rcContactPerson: record.rcContactPerson,
+            });
             const walletPaymentDue = walletPaymentDueRecordIds?.has(record.id) ?? false;
             const zohoPushStatus =
               record.verificationType === 'RV' && zohoRvListEnabled
                 ? resolveZohoPushStatus(record)
                 : null;
             const zohoListBadge = shouldShowZohoListBadge(zohoPushStatus) ? zohoPushStatus : null;
-            const walletDeductedAmount = rvWalletListEnabled
-              ? resolveRvWalletDisplayAmount(record, products, DEFAULT_RC_FEES_STRUCTURE)
-              : null;
 
             return (
               <article
@@ -302,7 +361,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                 >
                   <div className="verification-list-card-header">
                     <div className="verification-list-card-header-main">
-                      <h3 className="verification-list-card-title">{record.customerName || '—'}</h3>
+                      <h3 className="verification-list-card-title">
+                        {verificationListPartyName(record, record.rcCenterName)}
+                      </h3>
                       {walletPaymentDue && (
                         <span className="verification-list-wallet-due-badge">Payment due</span>
                       )}
@@ -325,43 +386,41 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   </div>
 
                   <div className="verification-list-card-metrics">
-                    <div className="verification-list-card-metric verification-list-card-metric--serial">
-                      <span className="verification-list-card-metric-label">Serial</span>
-                      <span
-                        className="verification-list-card-metric-value text-mono"
+                    <div className="verification-list-card-metrics-row verification-list-card-metrics-row--specs">
+                      <VerificationListMetric label="Max" value={specs.max} title={specs.max} />
+                      <VerificationListMetric label="Min" value={specs.min} title={specs.min} />
+                      <VerificationListMetric label="Class" value={specs.klass} title={specs.klass} />
+                      <VerificationListMetric
+                        label="Serial no."
+                        value={
+                          <>
+                            {serial}
+                            {record.serialVersionCount != null && record.serialVersionCount > 1 && (
+                              <span className="verification-list-version-badge verification-list-version-badge--inline">
+                                {' '}
+                                ({record.serialVersionCount})
+                              </span>
+                            )}
+                          </>
+                        }
                         title={serial}
-                      >
-                        {serial}
-                        {record.serialVersionCount != null && record.serialVersionCount > 1 && (
-                          <span className="verification-list-version-badge verification-list-version-badge--inline">
-                            {' '}
-                            ({record.serialVersionCount})
-                          </span>
-                        )}
-                      </span>
+                        mono
+                      />
                     </div>
-                    <div className="verification-list-card-metric verification-list-card-metric--date">
-                      <span className="verification-list-card-metric-label">Date</span>
-                      <span className="verification-list-card-metric-value">{displayDate}</span>
+                    <div className="verification-list-card-metrics-row verification-list-card-metrics-row--meta">
+                      <VerificationListMetric
+                        label="Date"
+                        value={displayDateTime}
+                        title={displayDateTime}
+                        className="verification-list-card-metric--datetime"
+                      />
+                      <VerificationListMetric
+                        label="VCT"
+                        value={vctName}
+                        title={vctName}
+                        className="verification-list-card-metric--vct"
+                      />
                     </div>
-                    {walletDeductedAmount != null && (
-                      <div className="verification-list-card-metric verification-list-card-metric--wallet">
-                        <span className="verification-list-card-metric-label">Wallet</span>
-                        <span className="verification-list-card-metric-value">
-                          {formatRcFeeAmount(walletDeductedAmount)}
-                        </span>
-                      </div>
-                    )}
-                    {showVctColumn && (
-                      <div className="verification-list-card-metric verification-list-card-metric--vct">
-                        <span className="verification-list-card-metric-label">VCT</span>
-                        <span className="verification-list-card-metric-value verification-list-card-metric-text">
-                          {verificationVctLabel(record, {
-                            rcContactPerson: record.rcContactPerson,
-                          })}
-                        </span>
-                      </div>
-                    )}
                   </div>
                 </button>
 
@@ -372,19 +431,18 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                   role="presentation"
                 >
                   {showDownload && (
-                    <a
-                      href={record.certificatePdfUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
                       className="verification-list-card-download"
-                      title="Download certificate PDF"
-                      aria-label={`Download certificate for ${record.customerName}`}
+                      title="View certificate PDF"
+                      aria-label={`View certificate for ${record.customerName}`}
+                      onClick={() => setPdfRecord(record)}
                     >
                       <span className="verification-list-card-download-ring">
                         <Download size={22} strokeWidth={2} aria-hidden />
                       </span>
                       <span className="verification-list-card-download-label">Download</span>
-                    </a>
+                    </button>
                   )}
                   {(showEdit || showSubmit || showDelete || showMoveToDraft) && (
                     <div className="verification-list-card-draft-actions">
@@ -443,6 +501,13 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
           })}
         </div>
       )}
+      <CertificatePdfShareViewer
+        open={Boolean(pdfRecord)}
+        record={pdfRecord}
+        url={pdfRecord ? resolveCertificatePdfFileUrl(pdfRecord) : null}
+        storagePath={pdfRecord ? resolveCertificatePdfStoragePath(pdfRecord) : null}
+        onClose={() => setPdfRecord(null)}
+      />
     </div>
   );
 };

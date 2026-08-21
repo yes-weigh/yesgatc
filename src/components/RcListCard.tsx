@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil, Phone } from 'lucide-react';
+import { Pencil, Phone, Power, PowerOff } from 'lucide-react';
 import { StorageImage } from './StorageImage';
 
 export type RcListBadgeTone =
@@ -120,4 +120,34 @@ export function RcListCardToggle({
 
 export function RcListCardActions({ children }: { children: React.ReactNode }) {
   return <div className="rc-list-card-actions">{children}</div>;
+}
+
+export function RcListDeactivateToggle({
+  active,
+  noun,
+  name,
+  onClick,
+  iconSize = 18,
+}: {
+  active: boolean;
+  noun: string;
+  name: string;
+  onClick: () => void;
+  iconSize?: number;
+}) {
+  const action = active ? 'Deactivate' : 'Activate';
+  return (
+    <RcListCardToggle
+      className={active ? 'rc-list-card-toggle--deactivate' : 'rc-list-card-toggle--enable'}
+      onClick={onClick}
+      title={`${action} ${noun}`}
+      ariaLabel={`${action} ${name}`}
+    >
+      {active ? (
+        <PowerOff size={iconSize} strokeWidth={1.75} />
+      ) : (
+        <Power size={iconSize} strokeWidth={1.75} />
+      )}
+    </RcListCardToggle>
+  );
 }

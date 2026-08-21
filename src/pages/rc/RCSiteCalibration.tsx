@@ -14,10 +14,6 @@ import {
   VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE,
 } from '../../lib/rcActivation';
 import { fetchRcVehicles, rcHasRegisteredVehicle, VCT_RC_VEHICLE_REQUIRED_MESSAGE } from '../../lib/rcVehicles';
-import {
-  RcStandardWeightsCertVctNotice,
-  RcVehicleRequiredNotice,
-} from '../../components/RcVehicleRequiredNotice';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
@@ -37,6 +33,7 @@ import {
   isSiteCalibrationSubmittable,
   siteCalibrationSubmitBlockReason,
   verificationTypeLabel,
+  inferVerificationSubject,
   type VerificationDeviceRowValues,
   type VerificationSessionValues,
 } from '../../lib/siteCalibrationProfileFields';
@@ -92,6 +89,7 @@ import {
   VerificationListFilters,
   type VerificationStatusFilter,
   type VerificationTypeFilter,
+  type VerificationPaymentDueFilter,
 } from '../../components/VerificationListFilters';
 import {
   buildDuplicatePrimaryIdSet,
@@ -107,6 +105,11 @@ import {
   type VerificationSubmitOptions,
 } from '../../lib/verificationSubmit';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
+import {
+  matchesVerificationDurationFilter,
+  parseVerificationDurationParam,
+  type VerificationDurationFilter,
+} from '../../lib/verificationListDuration';
 import type {
   Customer,
   FirestoreUserDoc,
@@ -138,6 +141,15 @@ import { RvWalletPaymentPanel } from '../../components/RvWalletPaymentPanel';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import { isRvPaymentRequired } from '../../lib/appSettings';
 import {
+  isRvZohoSubmitGateRetry,
+  isZohoRvInvoicingEnabled,
+  rcZohoIdReady,
+  RV_ZOHO_SUBMIT_BLOCK_MESSAGE,
+  verificationZohoInvoiceNumber,
+  type RvWalletFeeSettings,
+} from '../../lib/zohoRvSubmit';
+import { rcFilingPartyPatch } from '../../lib/keralaRegion';
+import {
   buildRvPaymentFirestorePatch,
   computeRvPaymentAmount,
   computeRvPaymentAmountForRow,
@@ -149,15 +161,10 @@ import {
 import {
   isWalletPaymentId,
   linkWalletPaymentToRecords,
+  payRvFromWallet,
   refundRvWalletPayment,
 } from '../../lib/rcWallet';
-import {
-  isRvZohoSubmitGateRetry,
-  isZohoRvInvoicingEnabled,
-  rcZohoIdReady,
-  RV_ZOHO_SUBMIT_BLOCK_MESSAGE,
-  verificationZohoInvoiceNumber,
-} from '../../lib/zohoRvSubmit';
+import { ensureRvWalletDebitedForRecords } from '../../lib/rvWalletAdvancePay';
 import { unlockVerificationSuccessAudio } from '../../lib/playVerificationSuccessSound';
 import { allocateVerificationApplicationNumbers } from '../../lib/verificationApplicationNumber';
 import {
@@ -194,6 +201,7 @@ function verificationDocaFirestorePatch(
   verificationLocation: VerificationLocation | '',
   verificationSubject: 'self' | 'customer' | '',
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+  feeSettings?: RvWalletFeeSettings | null,
 ): Record<string, unknown> {
   if (!shouldPersistVerificationDocaCharges(verificationType)) {
     return {
@@ -213,6 +221,7 @@ function verificationDocaFirestorePatch(
     verificationLocation,
     verificationSubject,
     product,
+    feeSettings,
   );
   return charges ?? {};
 }
@@ -231,6 +240,60 @@ function verificationCreateGateBlockMessage(
     return 'Could not confirm centre setup. Refresh the page or check Profile and Vehicles.';
   }
   return null;
+}
+
+function partyPincodeForFiling(
+  session: Pick<VerificationSessionValues, 'verificationSubject' | 'customerId'>,
+  customers: Customer[],
+  formPincode?: string,
+  applied?: Customer,
+): string {
+  if (session.verificationSubject === 'self') return '';
+  return applied?.pincode
+    || formPincode
+    || customers.find(c => c.id === session.customerId)?.pincode
+    || '';
+}
+
+function rcFilingPartyFromProfile(
+  rcUid?: string | null,
+  rcProfile?: FirestoreUserDoc | null,
+): { uid: string; name: string } | null {
+  const uid = rcUid?.trim() || '';
+  const name = rcProfile?.companyName?.trim() || rcProfile?.username?.trim() || '';
+  if (!uid || !name) return null;
+  return { uid, name };
+}
+
+function rcFilingFieldsForSession(
+  session: Pick<VerificationSessionValues, 'verificationSubject' | 'customerId' | 'customerName'>,
+  pincode: string,
+  rcParty: { uid: string; name: string } | null,
+) {
+  return rcFilingPartyPatch({
+    verificationSubject: session.verificationSubject,
+    customerId: session.customerId,
+    customerName: session.customerName,
+    pincode,
+    rcUid: rcParty?.uid,
+    rcCompanyName: rcParty?.name,
+  });
+}
+
+function rcFilingFieldsForRecord(
+  record: SiteCalibration,
+  customers: Customer[],
+  rcParty: { uid: string; name: string } | null,
+) {
+  return rcFilingPartyPatch({
+    verificationSubject: inferVerificationSubject(record),
+    customerId: record.customerId,
+    customerName: record.customerName,
+    pincode: customers.find(c => c.id === record.customerId)?.pincode,
+    state: customers.find(c => c.id === record.customerId)?.state,
+    rcUid: rcParty?.uid || record.rcId,
+    rcCompanyName: rcParty?.name,
+  });
 }
 
 function verificationCreateGateSatisfied(
@@ -279,6 +342,8 @@ export const RCSiteCalibration: React.FC = () => {
   const [listError, setListError] = useState('');
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
+  const [durationFilter, setDurationFilter] = useState<VerificationDurationFilter>('all');
+  const [paymentDueFilter, setPaymentDueFilter] = useState<VerificationPaymentDueFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
@@ -1203,8 +1268,9 @@ export const RCSiteCalibration: React.FC = () => {
         sessionValues.verificationLocation,
         sessionValues.verificationSubject,
         sessionValues.verificationType,
+        appSettings,
       ),
-    [sessionValues, products, rcProfile],
+    [sessionValues, products, rcProfile, appSettings],
   );
 
   const handleCreate = async (
@@ -1300,12 +1366,28 @@ export const RCSiteCalibration: React.FC = () => {
         setError('Signed-in user is required to save verification drafts.');
         return;
       }
+      const filingPincode = partyPincodeForFiling(
+        sessionForSave,
+        customers,
+        partyContext.customerForm?.pincode,
+        applied.customer,
+      );
       const rowsToSync = includedRows.filter(
         row => row.productId.trim() && row.serialNumber.trim(),
       );
       await syncCustomerDevices(rowsToSync, sessionForSave.customerId, applied.customer);
       const applicationNumbers = await allocateVerificationApplicationNumbers(db, includedRows.length);
       const fees = resolveRcFeesStructure(rcProfile);
+
+      if (
+        submitAfterSave
+        && sessionForSave.verificationType === 'RV'
+        && isRvPaymentRequired(sessionForSave.verificationType)
+        && !rvPayment
+      ) {
+        setError('Pay RV fees from wallet before submitting.');
+        return;
+      }
 
       const pendingRvPaymentPatch =
         sessionForSave.verificationType === 'RV'
@@ -1330,6 +1412,7 @@ export const RCSiteCalibration: React.FC = () => {
           sessionForSave.verificationLocation,
           sessionForSave.verificationSubject,
           product,
+          appSettings,
         );
 
         const perDeviceRvPaymentPatch =
@@ -1342,6 +1425,7 @@ export const RCSiteCalibration: React.FC = () => {
                   sessionForSave.verificationLocation,
                   sessionForSave.verificationSubject,
                   sessionForSave.verificationType,
+                  appSettings,
                 );
                 const perDeviceAmount = breakdown?.total;
                 return perDeviceAmount != null && perDeviceAmount > 0
@@ -1361,6 +1445,8 @@ export const RCSiteCalibration: React.FC = () => {
             product,
             verificationDraftActor,
             docaCharges,
+            filingPincode,
+            rcFilingPartyFromProfile(rcUid, rcProfile),
           ),
           ...imageFields,
           ...performerImageFields,
@@ -1382,6 +1468,11 @@ export const RCSiteCalibration: React.FC = () => {
           draftRecordIds.map(recordId => ({
             id: recordId,
             verificationType: sessionForSave.verificationType,
+            ...rcFilingFieldsForSession(
+              sessionForSave,
+              filingPincode,
+              rcFilingPartyFromProfile(rcUid, rcProfile),
+            ),
           })),
           db,
           submitOptions,
@@ -1470,6 +1561,7 @@ export const RCSiteCalibration: React.FC = () => {
         sessionForSave.verificationLocation,
         sessionForSave.verificationSubject,
         product,
+        appSettings,
       );
       const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
       const performerImageFields =
@@ -1477,7 +1569,17 @@ export const RCSiteCalibration: React.FC = () => {
           ? await uploadPerformerPhotos(recordId)
           : {};
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
-        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, {
+          product,
+          partyPincode: partyPincodeForFiling(
+            sessionForSave,
+            customers,
+            partyContext.customerForm?.pincode,
+            applied.customer,
+          ),
+          rcUid,
+          rcCompanyName: rcProfile?.companyName || rcProfile?.username,
+        }),
         ...docaPatch,
         ...imageFields,
         ...performerImageFields,
@@ -1510,10 +1612,17 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      await ensureRvWalletDebitedForRecords({
+        records: [record],
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(rcProfile),
+      });
       await submitVerificationRecord(
         {
           id: record.id,
           verificationType: record.verificationType,
+          ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
         },
         db,
         submitOptions,
@@ -1550,10 +1659,17 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      await ensureRvWalletDebitedForRecords({
+        records: selectedRecords,
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(rcProfile),
+      });
       await submitVerificationRecords(
         selectedRecords.map(record => ({
           id: record.id,
           verificationType: record.verificationType,
+          ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
         })),
         db,
         submitOptions,
@@ -1636,6 +1752,12 @@ export const RCSiteCalibration: React.FC = () => {
       if (row.productId.trim() && row.serialNumber.trim()) {
         await syncCustomerDevices([row], sessionForSave.customerId, appliedCustomer);
       }
+      const filingPincode = partyPincodeForFiling(
+        sessionForSave,
+        customers,
+        partyContext.customerForm?.pincode,
+        appliedCustomer,
+      );
       const product = products.find(p => p.id === row.productId) ?? null;
       const docaPatch = verificationDocaFirestorePatch(
         resolveRcFeesStructure(rcProfile),
@@ -1643,6 +1765,7 @@ export const RCSiteCalibration: React.FC = () => {
         sessionForSave.verificationLocation,
         sessionForSave.verificationSubject,
         product,
+        appSettings,
       );
       const imageFields = await uploadRowImages(editingId, row.localId, sessionForSave.verificationType === 'RV');
       const performerImageFields =
@@ -1659,6 +1782,7 @@ export const RCSiteCalibration: React.FC = () => {
               sessionForSave.verificationLocation,
               sessionForSave.verificationSubject,
               sessionForSave.verificationType,
+              appSettings,
             )?.total
           : null;
       const rvPaymentPatch =
@@ -1666,7 +1790,12 @@ export const RCSiteCalibration: React.FC = () => {
           ? buildRvPaymentFirestorePatch(rvPayment.paymentId, perDeviceRvAmount)
           : {};
       await updateDoc(doc(db, 'siteCalibrations', editingId), {
-        ...buildSiteCalibrationFromRow(sessionForSave, row, { product }),
+        ...buildSiteCalibrationFromRow(sessionForSave, row, {
+          product,
+          partyPincode: filingPincode,
+          rcUid,
+          rcCompanyName: rcProfile?.companyName || rcProfile?.username,
+        }),
         ...docaPatch,
         ...imageFields,
         ...performerImageFields,
@@ -1685,6 +1814,11 @@ export const RCSiteCalibration: React.FC = () => {
         {
           id: editingId,
           verificationType: sessionForSave.verificationType,
+          ...rcFilingFieldsForSession(
+            sessionForSave,
+            filingPincode,
+            rcFilingPartyFromProfile(rcUid, rcProfile),
+          ),
         },
         db,
         submitOptions,
@@ -1766,7 +1900,12 @@ export const RCSiteCalibration: React.FC = () => {
         const fees = resolveRcFeesStructure(rcProfile);
         const perRecordExpected =
           existing != null
-            ? computeRvPaymentBreakdownForRecord(existing, products, fees)?.total ?? null
+            ? computeRvPaymentBreakdownForRecord(
+                existing,
+                products,
+                fees,
+                appSettings,
+              )?.total ?? null
             : null;
 
         if (isRvSessionPaymentSatisfied(rvSessionPayment, rvPaymentBreakdown.total)) {
@@ -1785,11 +1924,26 @@ export const RCSiteCalibration: React.FC = () => {
           return;
         }
 
-        setRvPaymentOpen(true);
+        const paid = await payRvFromWallet({
+          rcId: rcUid,
+          amountInr: rvPaymentBreakdown.total,
+          breakdown: rvPaymentBreakdown,
+          idempotencyKey:
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : `wallet-${Date.now()}`,
+          recordIds: editingId ? [editingId] : [],
+        });
+        await executeSubmitFromForm(
+          { paymentId: paid.paymentId, amountInr: rvPaymentBreakdown.total },
+          { partyPersisted: true },
+        );
         return;
       }
 
       await executeSubmitFromForm(undefined, { partyPersisted: true });
+    } catch (err: unknown) {
+      setError(formatSaveError(err, 'Failed to submit verification.'));
     } finally {
       setSubmitting(false);
     }
@@ -1880,6 +2034,7 @@ export const RCSiteCalibration: React.FC = () => {
   const pendingCustomerId = searchParams.get('customerId');
   const pendingStatusFilter = searchParams.get('status');
   const pendingTypeFilter = searchParams.get('type');
+  const pendingDurationFilter = parseVerificationDurationParam(searchParams.get('duration'));
   const pendingOpenId = searchParams.get('open');
   const pendingFocusSearch = searchParams.get('focus') === 'search';
   const pendingNewType = searchParams.get('new');
@@ -1971,6 +2126,19 @@ export const RCSiteCalibration: React.FC = () => {
       { replace: true },
     );
   }, [pendingTypeFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingDurationFilter) return;
+    setDurationFilter(pendingDurationFilter);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('duration');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingDurationFilter, setSearchParams]);
 
   useEffect(() => {
     if (!pendingFocusSearch) return;
@@ -2148,14 +2316,27 @@ export const RCSiteCalibration: React.FC = () => {
   const duplicatePrimaryIds = useMemo(() => buildDuplicatePrimaryIdSet(records), [records]);
   const serialGroups = useMemo(() => buildSerialGroupMap(records), [records]);
 
+  const durationScoped = useMemo(
+    () => records.filter(record => matchesVerificationDurationFilter(record, durationFilter)),
+    [records, durationFilter],
+  );
+
+  const paymentDueCount = useMemo(
+    () => durationScoped.filter(record => isRvWalletPaymentOutstanding(record)).length,
+    [durationScoped],
+  );
+
   const filteredRecords = useMemo(() => {
-    const filtered = records.filter(record => {
+    const filtered = durationScoped.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
+      if (paymentDueFilter === 'due' && !isRvWalletPaymentOutstanding(record)) {
+        return false;
+      }
       if (
         !matchesVerificationListStatusFilter(
           record,
           statusFilter,
-          records,
+          durationScoped,
           duplicatePrimaryIds,
           serialGroups,
         )
@@ -2164,8 +2345,8 @@ export const RCSiteCalibration: React.FC = () => {
       }
       return matchesVerificationTypeFilter(record, typeFilter);
     });
-    return buildVerificationListDisplay(filtered, records, statusFilter);
-  }, [records, statusFilter, typeFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+    return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
+  }, [durationScoped, statusFilter, typeFilter, paymentDueFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -2191,15 +2372,15 @@ export const RCSiteCalibration: React.FC = () => {
     [statusFilter, typeFilter, searchTerm],
   );
   const statusCounts = useMemo(
-    () => tallyVerificationStatusFiltersCollapsed(records, listFilters),
-    [records, listFilters],
+    () => tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters),
+    [durationScoped, listFilters],
   );
   const typeCounts = useMemo(
     () =>
       tallyVerificationTypeFilters(
-        verificationListCollapsedForCounts(records, listFilters, 'type'),
+        verificationListCollapsedForCounts(durationScoped, listFilters, 'type'),
       ),
-    [records, listFilters],
+    [durationScoped, listFilters],
   );
 
   const statusFilterOptions = buildVerificationStatusFilterOptions(statusCounts);
@@ -2230,7 +2411,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, typeFilter, searchTerm]);
+  }, [statusFilter, typeFilter, searchTerm, durationFilter, paymentDueFilter]);
 
   useEffect(() => {
     if (showForm || !rowHighlightFlashId) return;
@@ -2246,7 +2427,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
-  }, [statusFilter, searchTerm]);
+  }, [statusFilter, searchTerm, paymentDueFilter]);
 
   useEffect(() => {
     if (selectAllDraftsRef.current) {
@@ -2549,34 +2730,11 @@ export const RCSiteCalibration: React.FC = () => {
               </p>
             </div>
           )}
-          {(isVct || isRcAdmin) && gatesLoading ? (
-            <div className="rc-vehicle-required-notice" role="status">
-              <p className="rc-vehicle-required-notice__title">Checking centre setup</p>
-              <p className="rc-vehicle-required-notice__text mb-0">
-                Verifying standard weights certificate and vehicle registration…
-              </p>
-            </div>
-          ) : null}
           {(isVct || isRcAdmin) && gatesError ? (
             <div className="rc-vehicle-required-notice" role="alert">
               <p className="rc-vehicle-required-notice__title">Cannot start verification</p>
               <p className="rc-vehicle-required-notice__text mb-0">{gatesError}</p>
             </div>
-          ) : null}
-          {(isVct || isRcAdmin) && !gatesLoading && !gatesError && rcHasWeightsCert === false ? (
-            isRcAdmin ? (
-              <div className="rc-vehicle-required-notice" role="status">
-                <p className="rc-vehicle-required-notice__title">Standard weights certificate required</p>
-                <p className="rc-vehicle-required-notice__text mb-0">
-                  {VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE} Upload it under Profile → Edit.
-                </p>
-              </div>
-            ) : (
-              <RcStandardWeightsCertVctNotice />
-            )
-          ) : null}
-          {(isVct || isRcAdmin) && !gatesLoading && !gatesError && rcHasVehicle === false ? (
-            <RcVehicleRequiredNotice variant={isRcAdmin ? 'rc' : 'vct'} />
           ) : null}
           <VerificationListFilters
             searchTerm={searchTerm}
@@ -2588,6 +2746,12 @@ export const RCSiteCalibration: React.FC = () => {
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
             typeOptions={typeFilterOptions}
+            durationFilter={durationFilter}
+            onDurationFilterChange={setDurationFilter}
+            paymentDueFilter={paymentDueFilter}
+            onPaymentDueFilterChange={setPaymentDueFilter}
+            paymentDueCount={paymentDueCount}
+            paymentDueAllCount={durationScoped.length}
             onNewClick={
               canStartNewVerification
                 ? handleStartAdd

@@ -392,6 +392,11 @@ export interface SiteCalibration {
   verificationLocation?: VerificationLocation;
   /** Self (RC centre) vs customer verification. */
   verificationSubject?: 'self' | 'customer';
+  /** eMAAP belong-to is RC because customer PIN is outside Kerala. */
+  fileCertificateAsRc?: boolean;
+  /** Original customer when the record was rewritten to RC name. */
+  sourceCustomerId?: string;
+  sourceCustomerName?: string;
   /** Request workflow — omitted on legacy records (treated as draft). */
   status?: VerificationRequestStatus;
   submittedAt?: string;
@@ -472,6 +477,13 @@ export interface SiteCalibration {
   certificatePdfPath?: string;
   certificatePdfName?: string;
   certificatePdfContentType?: string;
+  /** RC-uploaded DSC-signed certificate PDF. */
+  signedCertificatePdfUrl?: string;
+  signedCertificatePdfPath?: string;
+  signedCertificatePdfName?: string;
+  signedCertificatePdfContentType?: string;
+  signedCertificateUploadedAt?: string;
+  signedCertificateUploadedByUid?: string;
   /** Public eMAAP gatcapi third-party PDF URL — QR / verify target (not Firebase Storage). */
   emaapCertificatePdfUrl?: string;
   /** VCT display — RC direct uses contact person in `vctName` when performedBy is `rc`. */

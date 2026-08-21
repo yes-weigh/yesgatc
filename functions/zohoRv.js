@@ -17,6 +17,11 @@ const DEFAULT_ZOHO_RV_SETTINGS = {
   zohoSalespersonId: '99381000030360028',
   zohoItemIdUpto20Kg: '99381000030360012',
   zohoItemIdAbove20Kg: '99381000030360017',
+  zohoFeeUpto20KgInr: 150,
+  zohoFeeAbove20KgInr: 250,
+  zohoTdsPercent: 1,
+  zohoTdsUpto20KgInr: 1.5,
+  zohoTdsAbove20KgInr: 2.5,
   zohoModeOfTransport: 'CUSTOMER PICKUP',
 };
 
@@ -36,8 +41,48 @@ function normalizeZohoNumericId(value) {
   return String(value ?? '').replace(/\D/g, '');
 }
 
+function normalizeZohoFeeAmountInr(value, fallback) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed >= 1) return Math.round(parsed);
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return fallback;
+  const fromDigits = Number.parseInt(digits, 10);
+  return Number.isFinite(fromDigits) && fromDigits >= 1 ? fromDigits : fallback;
+}
+
+function normalizeZohoTdsPercent(value, fallback) {
+  if (value == null || value === '') return fallback;
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed >= 0) return Math.min(Math.round(parsed * 100) / 100, 100);
+  const digits = String(value ?? '').replace(/[^\d.]/g, '');
+  if (!digits) return fallback;
+  const fromDigits = Number.parseFloat(digits);
+  return Number.isFinite(fromDigits) && fromDigits >= 0
+    ? Math.min(Math.round(fromDigits * 100) / 100, 100)
+    : fallback;
+}
+
+function zohoTdsAmountInr(baseInr, percent) {
+  const base = Number(baseInr);
+  const rate = Number(percent);
+  if (!Number.isFinite(base) || base <= 0 || !Number.isFinite(rate) || rate <= 0) return 0;
+  return Math.round(((base * rate) / 100) * 100) / 100;
+}
+
 function normalizeZohoRvSettings(data) {
   const source = data && typeof data === 'object' ? data : {};
+  const zohoFeeUpto20KgInr = normalizeZohoFeeAmountInr(
+    source.zohoFeeUpto20KgInr,
+    DEFAULT_ZOHO_RV_SETTINGS.zohoFeeUpto20KgInr,
+  );
+  const zohoFeeAbove20KgInr = normalizeZohoFeeAmountInr(
+    source.zohoFeeAbove20KgInr,
+    DEFAULT_ZOHO_RV_SETTINGS.zohoFeeAbove20KgInr,
+  );
+  const zohoTdsPercent = normalizeZohoTdsPercent(
+    source.zohoTdsPercent,
+    DEFAULT_ZOHO_RV_SETTINGS.zohoTdsPercent,
+  );
   return {
     zohoRvInvoicingEnabled: source.zohoRvInvoicingEnabled !== false,
     zohoOrganizationId:
@@ -48,6 +93,11 @@ function normalizeZohoRvSettings(data) {
       normalizeZohoNumericId(source.zohoItemIdUpto20Kg) || DEFAULT_ZOHO_RV_SETTINGS.zohoItemIdUpto20Kg,
     zohoItemIdAbove20Kg:
       normalizeZohoNumericId(source.zohoItemIdAbove20Kg) || DEFAULT_ZOHO_RV_SETTINGS.zohoItemIdAbove20Kg,
+    zohoFeeUpto20KgInr,
+    zohoFeeAbove20KgInr,
+    zohoTdsPercent,
+    zohoTdsUpto20KgInr: zohoTdsAmountInr(zohoFeeUpto20KgInr, zohoTdsPercent),
+    zohoTdsAbove20KgInr: zohoTdsAmountInr(zohoFeeAbove20KgInr, zohoTdsPercent),
     zohoModeOfTransport: resolveZohoModeOfTransport(source.zohoModeOfTransport),
   };
 }
@@ -65,6 +115,14 @@ function pickZohoItemId(record, settings) {
     throw new Error('maximumCapacity is required to select a Zoho RV product.');
   }
   return capacityKg <= 20 ? settings.zohoItemIdUpto20Kg : settings.zohoItemIdAbove20Kg;
+}
+
+function pickZohoItemRate(record, settings) {
+  const capacityKg = maximumCapacityKg(record);
+  if (capacityKg == null) {
+    throw new Error('maximumCapacity is required to select a Zoho RV product.');
+  }
+  return capacityKg <= 20 ? settings.zohoFeeUpto20KgInr : settings.zohoFeeAbove20KgInr;
 }
 
 function formatZohoLineMaxCap(record) {
@@ -216,6 +274,7 @@ async function createRvInvoice(db, record, rcZohoId, settings) {
       {
         item_id: itemId,
         quantity: 1,
+        rate: pickZohoItemRate(record, settings),
         description: await buildLineDescription(db, record),
       },
     ],

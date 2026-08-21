@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Microsoft.Playwright;
 using Yesgatc.CertificateWorker.Models;
 
@@ -25,15 +26,17 @@ public static class DeepSeekChatCaptchaOcr
 
     private static readonly object RecentAnswersLock = new();
     private static readonly Queue<string> RecentAnswers = new();
+    private static readonly SemaphoreSlim OcrGate = new(1, 1);
     private const int RecentAnswerCapacity = 12;
 
     private const string Prompt =
         """
-        This image is a CASE-SENSITIVE website login captcha.
-        Read the characters LEFT to RIGHT exactly as drawn.
-        Preserve upper/lower case. Do not invent characters.
-        Reply with ONLY the captcha text — no spaces, no quotes, no explanation.
-        Example: aB3xYz
+        Look at the attached captcha image with Vision.
+        Reply with exactly one line:
+        CAPTCHA=xxxxxx
+        xxxxxx is the characters left to right, case-sensitive, no spaces.
+        Example: CAPTCHA=aB3xYz
+        No other words.
         """;
 
     public static async Task<string> ReadCaptchaFromImageAsync(
@@ -55,9 +58,10 @@ public static class DeepSeekChatCaptchaOcr
 
         IPage? deepseek = null;
         var createdDeepSeek = false;
-        using var allowBlank = BrowserPageGuard.AllowTransientBlankPages();
+        await OcrGate.WaitAsync(cancellationToken);
         try
         {
+            using var allowBlank = BrowserPageGuard.AllowTransientBlankPages();
             await browserContext.GrantPermissionsAsync(
                 ["clipboard-read", "clipboard-write"],
                 new BrowserContextGrantPermissionsOptions { Origin = "https://chat.deepseek.com" });
@@ -99,7 +103,7 @@ public static class DeepSeekChatCaptchaOcr
             }
 
             await ClearComposerAttachmentsAsync(deepseek);
-            if (!await AttachCaptchaImageOnceAsync(deepseek, tempPath, visionBytes, cancellationToken))
+            if (!await AttachCaptchaImageOnceAsync(deepseek, tempPath, cancellationToken))
             {
                 return string.Empty;
             }
@@ -130,6 +134,12 @@ public static class DeepSeekChatCaptchaOcr
                 baselineFingerprints,
                 forbidden);
             var normalized = SanitizeCaptcha(raw);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                raw = await ExtractLatestAssistantTextAsync(deepseek);
+                normalized = SanitizeCaptcha(raw);
+            }
+
             if (!CaptchaTextPattern.IsMatch(normalized) || IsRecentAnswer(normalized))
             {
                 return string.Empty;
@@ -175,6 +185,7 @@ public static class DeepSeekChatCaptchaOcr
             }
 
             await RestorePortalPageAsync(browserContext, returnToPage);
+            OcrGate.Release();
         }
     }
 
@@ -449,18 +460,19 @@ public static class DeepSeekChatCaptchaOcr
     }
 
     /// <summary>
-    /// Attach exactly once. Never re-attach while count==0 (upload lag caused 8× paste spam).
+    /// Attach exactly one file via the file input. Never clipboard paste (Control+V stacked images).
     /// </summary>
     private static async Task<bool> AttachCaptchaImageOnceAsync(
         IPage page,
         string tempPath,
-        byte[] visionBytes,
         CancellationToken cancellationToken)
     {
-        await ClearComposerAttachmentsAsync(page);
-        await AttachImageAsync(page, tempPath, visionBytes, cancellationToken);
+        await WaitUntilComposerClearAsync(page, cancellationToken);
+        if (!await AttachImageOnceViaFileInputAsync(page, tempPath, cancellationToken))
+        {
+            return false;
+        }
 
-        var sawOne = false;
         var deadline = DateTime.UtcNow.AddSeconds(6);
         while (DateTime.UtcNow < deadline)
         {
@@ -473,33 +485,38 @@ public static class DeepSeekChatCaptchaOcr
 
             if (count > 1)
             {
-                // Stacked from a prior buggy attempt or SetInputFiles append — wipe and one retry.
-                await ClearComposerAttachmentsAsync(page);
-                if (await CountComposerAttachmentsAsync(page) > 0)
+                await ForceFreshChatAsync(page, cancellationToken);
+                await WaitUntilComposerClearAsync(page, cancellationToken);
+                if (!await AttachImageOnceViaFileInputAsync(page, tempPath, cancellationToken))
                 {
-                    // Clear failed — hard reset chat composer.
-                    await ForceFreshChatAsync(page, cancellationToken);
+                    return false;
                 }
 
-                await AttachImageAsync(page, tempPath, visionBytes, cancellationToken);
-                await page.WaitForTimeoutAsync(600);
-                count = await CountComposerAttachmentsAsync(page);
-                return count <= 1;
+                await page.WaitForTimeoutAsync(500);
+                return await CountComposerAttachmentsAsync(page) == 1;
             }
 
-            if (count == 0)
-            {
-                // Wait only — do NOT attach again (that stacked identical thumbs).
-                await page.WaitForTimeoutAsync(250);
-                continue;
-            }
-
-            sawOne = true;
-            break;
+            await page.WaitForTimeoutAsync(200);
         }
 
-        // Detection can miss DeepSeek's DOM; after a single attach, proceed if Vision path can run.
-        return sawOne || await CountComposerAttachmentsAsync(page) <= 1;
+        // File input was set once. Composer thumbs are not always <img> — do not re-paste.
+        return await CountComposerAttachmentsAsync(page) <= 1;
+    }
+
+    private static async Task WaitUntilComposerClearAsync(IPage page, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(3);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await ClearComposerAttachmentsAsync(page);
+            if (await CountComposerAttachmentsAsync(page) == 0)
+            {
+                return;
+            }
+
+            await page.WaitForTimeoutAsync(120);
+        }
     }
 
     private static async Task TryStartNewChatAsync(IPage page)
@@ -596,6 +613,7 @@ public static class DeepSeekChatCaptchaOcr
         var deadline = DateTime.UtcNow.AddSeconds(90);
         string stableCandidate = string.Empty;
         var stableHits = 0;
+        var idleAfterGenerate = 0;
 
         while (DateTime.UtcNow < deadline)
         {
@@ -603,32 +621,29 @@ public static class DeepSeekChatCaptchaOcr
 
             if (await PageHasVisionHintAsync(page))
             {
-                if (!await TryClickVisionAsync(page))
-                {
-                    // Vision still required but click failed — do not accept any short token.
-                    await page.WaitForTimeoutAsync(400);
-                    continue;
-                }
-
-                await page.WaitForTimeoutAsync(600);
-            }
-
-            // Still generating ("Analysing…") — do not scrape yet.
-            if (await IsDeepSeekStillGeneratingAsync(page))
-            {
+                await TryClickVisionAsync(page);
                 await page.WaitForTimeoutAsync(500);
                 continue;
             }
 
-            var text = (await ExtractLatestAssistantTextAsync(page)).Trim();
-            if (string.IsNullOrWhiteSpace(text) || IsUiStatusText(text))
+            if (await IsDeepSeekStillGeneratingAsync(page))
             {
+                idleAfterGenerate = 0;
                 stableCandidate = string.Empty;
                 stableHits = 0;
                 await page.WaitForTimeoutAsync(400);
                 continue;
             }
 
+            idleAfterGenerate++;
+            // Wait until generation has been idle ~1.2s so the last bubble is complete.
+            if (idleAfterGenerate < 3)
+            {
+                await page.WaitForTimeoutAsync(400);
+                continue;
+            }
+
+            var text = (await ExtractLatestAssistantTextAsync(page)).Trim();
             var sanitized = SanitizeCaptcha(text);
             if (string.IsNullOrWhiteSpace(sanitized)
                 || IsUiStatusNoiseToken(sanitized)
@@ -636,7 +651,7 @@ public static class DeepSeekChatCaptchaOcr
             {
                 stableCandidate = string.Empty;
                 stableHits = 0;
-                await page.WaitForTimeoutAsync(400);
+                await page.WaitForTimeoutAsync(350);
                 continue;
             }
 
@@ -651,23 +666,19 @@ public static class DeepSeekChatCaptchaOcr
             {
                 stableCandidate = string.Empty;
                 stableHits = 0;
-                await page.WaitForTimeoutAsync(400);
+                await page.WaitForTimeoutAsync(350);
                 continue;
             }
 
-            // Require the same captcha token twice ~1.2s apart so streaming mid-status is ignored.
             if (sanitized.Equals(stableCandidate, StringComparison.Ordinal))
             {
                 stableHits++;
                 if (stableHits >= 2)
                 {
-                    // Final Vision gate — never accept answer while OCR fallback banner is up.
-                    if (await PageHasVisionHintAsync(page))
+                    if (await PageHasVisionHintAsync(page) || await IsDeepSeekStillGeneratingAsync(page))
                     {
                         stableCandidate = string.Empty;
                         stableHits = 0;
-                        await TryClickVisionAsync(page);
-                        await page.WaitForTimeoutAsync(500);
                         continue;
                     }
 
@@ -680,10 +691,10 @@ public static class DeepSeekChatCaptchaOcr
                 stableHits = 1;
             }
 
-            await page.WaitForTimeoutAsync(600);
+            await page.WaitForTimeoutAsync(350);
         }
 
-        return string.Empty;
+        return SanitizeCaptcha(await ExtractLatestAssistantTextAsync(page));
     }
 
     private static bool IsUiStatusNoiseToken(string sanitized) =>
@@ -757,55 +768,45 @@ public static class DeepSeekChatCaptchaOcr
         return await page.EvaluateAsync<string>(
             """
             () => {
-              const pickText = (el) => (el?.innerText || el?.textContent || '').trim();
-              const isNoise = (t) => {
-                if (!t) return true;
-                if (/CASE-SENSITIVE website login captcha/i.test(t)) return true;
-                if (/^(Analysing|Analyzing|Thinking|Searching|Generating|Vision|DeepThink)\b/i.test(t.trim())) return true;
-                if (/\b(Analysing|Analyzing|Thinking)\.{0,3}$/i.test(t.trim()) && t.length < 24) return true;
-                return false;
-              };
-
+              const pick = (el) => (el?.innerText || el?.textContent || '').trim();
+              const isUserPrompt = (t) => /CAPTCHA=xxxxxx|Look at the attached captcha|CASE-SENSITIVE website login captcha/i.test(t);
+              const isStatus = (t) => /^(Analysing|Analyzing|Thinking|Searching|Generating|Vision|DeepThink)\b/i.test(t.trim());
               const selectors = [
                 '[data-message-author-role="assistant"]',
-                '.ds-message',
-                '[class*="message"]',
-                '[class*="Message"]',
-                '.markdown',
+                '.ds-markdown',
                 '.md-box',
+                '.markdown',
+                '[class*="ds-message"]',
+                '[class*="message"]',
               ];
 
-              // Prefer the newest short captcha-like token (scan from end).
+              const bubbles = [];
               for (const sel of selectors) {
-                const nodes = Array.from(document.querySelectorAll(sel));
-                for (let i = nodes.length - 1; i >= 0; i--) {
-                  const t = pickText(nodes[i]);
-                  if (isNoise(t)) continue;
-                  const compact = t.replace(/\s+/g, '');
-                  if (/^[A-Za-z0-9]{4,8}$/.test(compact)
-                      && !/^(analys|analyz|thinking|search|vision|deepthink)/i.test(compact)) {
-                    return compact;
-                  }
+                for (const el of document.querySelectorAll(sel)) {
+                  const t = pick(el);
+                  if (!t || t.length > 400) continue;
+                  if (isUserPrompt(t) || isStatus(t)) continue;
+                  const r = el.getBoundingClientRect();
+                  if (r.width <= 0 || r.height <= 0) continue;
+                  bubbles.push({ t, y: r.top });
                 }
+                if (bubbles.length) break;
               }
 
-              let best = '';
-              for (const sel of selectors) {
-                const nodes = Array.from(document.querySelectorAll(sel));
+              if (!bubbles.length) {
+                const nodes = Array.from(document.querySelectorAll('div,p,pre,code,span'));
                 for (let i = nodes.length - 1; i >= 0; i--) {
-                  const t = pickText(nodes[i]);
-                  if (isNoise(t)) continue;
-                  if (t.length > best.length && t.length < 80) best = t;
-                  const compact = t.replace(/\s+/g, '');
-                  if (/^[A-Za-z0-9]{4,8}$/.test(compact)
-                      && !/^(analys|analyz|thinking|search|vision|deepthink)/i.test(compact)) {
+                  const t = pick(nodes[i]);
+                  if (!t || t.length > 120 || isUserPrompt(t) || isStatus(t)) continue;
+                  if (/CAPTCHA\s*=\s*[A-Za-z0-9]{4,8}/i.test(t) || /^[A-Za-z0-9]{4,8}$/.test(t.replace(/\s+/g,''))) {
                     return t;
                   }
                 }
-                if (best) return best;
+                return '';
               }
 
-              return best;
+              bubbles.sort((a, b) => b.y - a.y);
+              return bubbles[0].t;
             }
             """) ?? string.Empty;
     }
@@ -817,109 +818,89 @@ public static class DeepSeekChatCaptchaOcr
             return string.Empty;
         }
 
-        // Prefer a standalone 4–8 token on its own line.
-        foreach (var line in raw.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        var labeled = Regex.Match(raw, @"CAPTCHA\s*=\s*([A-Za-z0-9]{4,8})", RegexOptions.IgnoreCase);
+        if (labeled.Success)
         {
-            if (IsUiStatusText(line))
+            var token = labeled.Groups[1].Value;
+            if (CaptchaTextPattern.IsMatch(token) && !IsUiStatusNoiseToken(token))
             {
-                continue;
-            }
-
-            var compact = Regex.Replace(line, @"\s+", string.Empty);
-            compact = Regex.Replace(compact, "[^A-Za-z0-9]", string.Empty);
-            if (CaptchaTextPattern.IsMatch(compact) && !IsUiStatusNoiseToken(compact))
-            {
-                return compact;
+                return token;
             }
         }
 
-        var all = Regex.Replace(raw, "[^A-Za-z0-9]", string.Empty);
-        if (all.Length > 8)
+        var tick = Regex.Match(raw, "`([A-Za-z0-9]{4,8})`");
+        if (tick.Success && CaptchaTextPattern.IsMatch(tick.Groups[1].Value)
+            && !IsUiStatusNoiseToken(tick.Groups[1].Value))
         {
-            all = all[..8];
+            return tick.Groups[1].Value;
         }
 
-        if (IsUiStatusNoiseToken(all) || !CaptchaTextPattern.IsMatch(all))
+        var quoted = Regex.Match(raw, "[\"']([A-Za-z0-9]{4,8})[\"']");
+        if (quoted.Success && CaptchaTextPattern.IsMatch(quoted.Groups[1].Value)
+            && !IsUiStatusNoiseToken(quoted.Groups[1].Value))
         {
-            return string.Empty;
+            return quoted.Groups[1].Value;
         }
 
-        return all;
+        var tokens = Regex.Matches(raw, @"\b([A-Za-z0-9]{4,8})\b");
+        for (var i = tokens.Count - 1; i >= 0; i--)
+        {
+            var token = tokens[i].Groups[1].Value;
+            if (CaptchaTextPattern.IsMatch(token) && !IsUiStatusNoiseToken(token))
+            {
+                return token;
+            }
+        }
+
+        return string.Empty;
     }
 
-    private static async Task AttachImageAsync(
+    /// <summary>
+    /// One SetInputFiles on a single file input. Never Control+V — clipboard paste stacks thumbs.
+    /// </summary>
+    private static async Task<bool> AttachImageOnceViaFileInputAsync(
         IPage page,
         string tempPath,
-        byte[] visionBytes,
         CancellationToken cancellationToken)
     {
-        // Prefer hidden file input (most reliable). SetInputFiles replaces — never call twice per OCR.
-        var fileInput = page.Locator("input[type='file']").First;
-        if (await fileInput.CountAsync() > 0)
+        var fileInputs = page.Locator("input[type='file']");
+        var n = await fileInputs.CountAsync();
+        if (n > 0)
         {
             try
             {
-                await fileInput.SetInputFilesAsync(tempPath);
-                await page.WaitForTimeoutAsync(350);
+                await fileInputs.Nth(n - 1).SetInputFilesAsync(tempPath);
+                await page.WaitForTimeoutAsync(300);
                 cancellationToken.ThrowIfCancellationRequested();
-                return;
+                return true;
             }
             catch (PlaywrightException)
             {
-                // fall through to clipboard paste
+                // try chooser path
             }
         }
 
-        // Click attach / upload affordance, then set files again if a new input appears.
-        var attach = page.Locator(
-            "button[aria-label*='upload' i], button[aria-label*='attach' i], button[aria-label*='image' i], button:has(svg):near(textarea)").First;
-        if (await attach.CountAsync() > 0 && await attach.IsVisibleAsync())
+        try
         {
-            try
+            var chooserTask = page.WaitForFileChooserAsync(new PageWaitForFileChooserOptions { Timeout = 3_000 });
+            var attach = page.Locator(
+                "button[aria-label*='upload' i], button[aria-label*='attach' i], button[aria-label*='image' i]").First;
+            if (await attach.CountAsync() == 0 || !await attach.IsVisibleAsync())
             {
-                await attach.ClickAsync(new LocatorClickOptions { Timeout = 2_000 });
-                await page.WaitForTimeoutAsync(100);
-                fileInput = page.Locator("input[type='file']").First;
-                if (await fileInput.CountAsync() > 0)
-                {
-                    await fileInput.SetInputFilesAsync(tempPath);
-                    await page.WaitForTimeoutAsync(350);
-                    return;
-                }
+                return false;
             }
-            catch (PlaywrightException)
-            {
-                // clipboard fallback
-            }
+
+            await attach.ClickAsync(new LocatorClickOptions { Timeout = 2_000 });
+            var chooser = await chooserTask;
+            await chooser.SetFilesAsync(tempPath);
+            await page.WaitForTimeoutAsync(300);
+            cancellationToken.ThrowIfCancellationRequested();
+            return true;
         }
-
-        await PasteImageFromClipboardAsync(page, visionBytes, cancellationToken);
-    }
-
-    private static async Task PasteImageFromClipboardAsync(
-        IPage page,
-        byte[] visionBytes,
-        CancellationToken cancellationToken)
-    {
-        var b64 = Convert.ToBase64String(visionBytes);
-        await page.EvaluateAsync(
-            """
-            async (b64) => {
-              const binary = atob(b64);
-              const bytes = new Uint8Array(binary.length);
-              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-              const blob = new Blob([bytes], { type: 'image/png' });
-              await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-            }
-            """,
-            b64);
-
-        var composer = page.Locator("textarea, [contenteditable='true']").Last;
-        await composer.ClickAsync();
-        await page.Keyboard.PressAsync("Control+v");
-        // Single paste only — caller must not re-invoke on upload lag.
-        await page.WaitForTimeoutAsync(350);
-        cancellationToken.ThrowIfCancellationRequested();
+        catch (PlaywrightException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

@@ -60,12 +60,23 @@ service firebase.storage {
       allow write: if isAuthenticated();
     }
 
+    match /contractorFeePayments/{paymentId}/proof/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
     match /automationWorker/captcha/{fileName} {
       allow read, write: if isSuperAdmin();
     }
 
     match /docaCertificates/{certFolder}/{fileName} {
       allow read: if isSuperAdmin();
+      allow write: if isSuperAdmin();
+    }
+
+    // Manual PDFs — Super Admin upload; signed-in RC / VCT view.
+    match /manualPdfs/{fileId}/{fileName} {
+      allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }
   }

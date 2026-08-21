@@ -52,6 +52,8 @@ public sealed class JobRetryTracker
 
     public void Clear(string jobId) => _states.Remove(jobId);
 
+    public void ClearAll() => _states.Clear();
+
     public bool IsEligible(string jobId) =>
         !_states.TryGetValue(jobId, out var state)
         || (!state.Exhausted && DateTimeOffset.Now >= state.RetryAt);

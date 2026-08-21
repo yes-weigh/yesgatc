@@ -6,11 +6,13 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'src/lib/appVersion.ts'
   workflow_dispatch:
 
 permissions:
   checks: write
-  contents: read
+  contents: write
   deployments: write
   pull-requests: write
 
@@ -23,10 +25,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+      - name: Bump app version
+        run: |
+          set -euo pipefail
+          CHANGED="$(git diff --name-only HEAD~1 HEAD -- src/lib/appVersion.ts || true)"
+          if [ -n "$CHANGED" ]; then
+            echo "appVersion.ts already changed in this push — skip bump"
+            exit 0
+          fi
+          NEXT="$(node scripts/bump-app-version.mjs)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/appVersion.ts
+          git commit -m "chore: bump app version to ${NEXT}"
+          git push
       - run: npm install && npm run build
         env:
           VITE_WEATHERAPI_KEY: ${{ secrets.VITE_WEATHERAPI_KEY }}

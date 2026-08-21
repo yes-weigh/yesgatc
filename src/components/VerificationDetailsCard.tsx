@@ -6,15 +6,23 @@ import { listVerificationAttachmentsFromRecord } from '../lib/verificationAttach
 import { VerificationPhotoViewer } from './VerificationPhotoViewer';
 import { VerificationVoidWatermark } from './VerificationVoidWatermark';
 import { VerificationDetailSpecs } from './VerificationDetailSpecs';
-import type { SiteCalibration } from '../types';
+import { VerificationCertificateNotesBox } from './VerificationCertificateNotesBox';
+import type { Customer, Product, SiteCalibration } from '../types';
+import type { VerificationRcPartyProfile } from '../lib/verificationPartyDetails';
 
 type VerificationDetailsCardProps = {
   record: SiteCalibration;
+  customer?: Customer | null;
+  product?: Product | null;
+  rcProfile?: VerificationRcPartyProfile | null;
   className?: string;
 };
 
 export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = ({
   record,
+  customer = null,
+  product = null,
+  rcProfile = null,
   className = '',
 }) => {
   const isVoided = isVerificationCertificateVoided(record);
@@ -32,7 +40,13 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
       }${className ? ` ${className}` : ''}`}
       aria-label="Verification details"
     >
-      <VerificationDetailSpecs record={record} omitChromeFields includeTimeline />
+      <VerificationDetailSpecs
+        record={record}
+        customer={customer}
+        product={product}
+        rcProfile={rcProfile}
+        omitChromeFields
+      />
 
       {attachments.length > 0 && (
         <div className="verification-summary-photos">
@@ -65,6 +79,7 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
               </button>
             ))}
           </div>
+          <VerificationCertificateNotesBox record={record} />
         </div>
       )}
 

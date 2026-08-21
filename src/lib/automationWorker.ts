@@ -1,11 +1,15 @@
 import {
+  Timestamp,
   collection,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   orderBy,
   query,
   setDoc,
+  where,
+  type Query,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -16,6 +20,12 @@ export const AUTOMATION_WORKER_REMOTE_DOC = 'remote';
 export const AUTOMATION_WORKER_LOGS_COLLECTION = 'automationWorkerLogs';
 export const AUTOMATION_WORKER_CAPTCHA_COLLECTION = 'automationWorkerCaptchaAttempts';
 export const AUTOMATION_WORKER_SESSIONS_COLLECTION = 'automationWorkerSessions';
+export const EMAAP_ENGINE_PRESENCE_COLLECTION = 'emaapEnginePresence';
+
+export const EMAAP_HISTORY_SESSION_LIMIT = 400;
+export const EMAAP_HISTORY_LOG_LIMIT = 2500;
+export const EMAAP_HISTORY_CAPTCHA_LIMIT = 1500;
+export const EMAAP_HISTORY_WINDOW_LIMIT = 800;
 
 export type WorkerRuntimeState =
   | 'idle'
@@ -46,11 +56,21 @@ export type AutomationWorkerStatus = {
   lastSessionProbeResult: string;
 };
 
+export type EmaapEnginePresence = {
+  id: string;
+  kind: string;
+  rcId: string;
+  rcName: string;
+  machineName: string;
+  lastHeartbeatAt: string;
+};
+
 export type AutomationWorkerRemoteControl = {
   commandRevision: number;
   credentialsRevision: number;
   autoWorkerEnabled: boolean;
   pauseWorker: boolean;
+  clearJobLocksRevision: number;
   scrapeCommandRevision: number;
   scrapePause: boolean;
   scrapeStartPage: number;
@@ -93,7 +113,83 @@ export type AutomationWorkerSessionEvent = {
   durationSeconds: number;
   logoutReason: string;
   machineName: string;
+  jobsCompleted?: number;
+  jobsFailed?: number;
+  workerName?: string;
 };
+
+export function mapAutomationWorkerSession(
+  id: string,
+  data: Record<string, unknown>,
+): AutomationWorkerSessionEvent {
+  return {
+    id,
+    loggedInAt: readString(data, 'loggedInAt'),
+    loggedOutAt: readString(data, 'loggedOutAt'),
+    durationSeconds: readInt(data, 'durationSeconds'),
+    logoutReason: readString(data, 'logoutReason'),
+    machineName: readString(data, 'machineName'),
+    jobsCompleted: readOptionalInt(data, 'jobsCompleted'),
+    jobsFailed: readOptionalInt(data, 'jobsFailed'),
+    workerName: readString(data, 'workerName') || undefined,
+  };
+}
+
+export function mapAutomationWorkerLog(
+  id: string,
+  data: Record<string, unknown>,
+): AutomationWorkerLogEntry {
+  return {
+    id,
+    createdAt: readString(data, 'createdAt'),
+    message: readString(data, 'message'),
+    level: readString(data, 'level', 'info'),
+    category: readString(data, 'category'),
+    machineName: readString(data, 'machineName'),
+  };
+}
+
+export function mapAutomationWorkerCaptcha(
+  id: string,
+  data: Record<string, unknown>,
+): AutomationWorkerCaptchaAttempt {
+  return {
+    id,
+    createdAt: readString(data, 'createdAt'),
+    resolvedText: readString(data, 'resolvedText'),
+    ocrProvider: readString(data, 'ocrProvider'),
+    attemptNumber: readInt(data, 'attemptNumber'),
+    success: readBool(data, 'success'),
+    outcome: readString(data, 'outcome'),
+    imageUrl: readString(data, 'imageUrl'),
+    machineName: readString(data, 'machineName'),
+  };
+}
+
+function activityQuery(collectionName: string, maxEntries: number, sinceIso?: string, untilIso?: string): Query {
+  if (sinceIso && untilIso) {
+    return query(
+      collection(db, collectionName),
+      where('createdAt', '>=', sinceIso),
+      where('createdAt', '<=', untilIso),
+      orderBy('createdAt', 'desc'),
+      limit(maxEntries),
+    );
+  }
+  if (sinceIso) {
+    return query(
+      collection(db, collectionName),
+      where('createdAt', '>=', sinceIso),
+      orderBy('createdAt', 'desc'),
+      limit(maxEntries),
+    );
+  }
+  return query(
+    collection(db, collectionName),
+    orderBy('createdAt', 'desc'),
+    limit(maxEntries),
+  );
+}
 
 export type AutomationWorkerCredentialsForm = {
   superAdminAadhar: string;
@@ -108,6 +204,7 @@ export const DEFAULT_AUTOMATION_WORKER_REMOTE: AutomationWorkerRemoteControl = {
   credentialsRevision: 0,
   autoWorkerEnabled: true,
   pauseWorker: false,
+  clearJobLocksRevision: 0,
   scrapeCommandRevision: 0,
   scrapePause: true,
   scrapeStartPage: 0,
@@ -130,6 +227,21 @@ export function readString(data: Record<string, unknown> | undefined, key: strin
   return typeof value === 'string' ? value : fallback;
 }
 
+export function readTimestampIso(data: Record<string, unknown> | undefined, key: string): string {
+  if (!data) return '';
+  const value = data[key];
+  if (typeof value === 'string') return value;
+  if (value instanceof Timestamp) return value.toDate().toISOString();
+  if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
+    try {
+      return (value as { toDate: () => Date }).toDate().toISOString();
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
 export function readBool(data: Record<string, unknown> | undefined, key: string, fallback = false): boolean {
   if (!data) return fallback;
   const value = data[key];
@@ -140,6 +252,12 @@ export function readInt(data: Record<string, unknown> | undefined, key: string, 
   if (!data) return fallback;
   const value = data[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+export function readOptionalInt(data: Record<string, unknown> | undefined, key: string): number | undefined {
+  if (!data) return undefined;
+  const value = data[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 export function normalizeAutomationWorkerStatus(
@@ -177,6 +295,7 @@ export function normalizeAutomationWorkerRemote(
     credentialsRevision: readInt(data, 'credentialsRevision'),
     autoWorkerEnabled: readBool(data, 'autoWorkerEnabled', true),
     pauseWorker: readBool(data, 'pauseWorker'),
+    clearJobLocksRevision: readInt(data, 'clearJobLocksRevision'),
     scrapeCommandRevision: readInt(data, 'scrapeCommandRevision'),
     scrapePause: readBool(data, 'scrapePause'),
     scrapeStartPage: readInt(data, 'scrapeStartPage'),
@@ -236,6 +355,37 @@ export function subscribeAutomationWorkerStatus(
   );
 }
 
+export function isEmaapEngineLive(presence: EmaapEnginePresence, now = Date.now()): boolean {
+  if (presence.kind !== 'emaapengine') return false;
+  const heartbeatMs = Date.parse(presence.lastHeartbeatAt);
+  return Number.isFinite(heartbeatMs) && now - heartbeatMs <= OFFLINE_HEARTBEAT_MS;
+}
+
+export function subscribeEmaapEnginePresence(
+  onData: (rows: EmaapEnginePresence[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, EMAAP_ENGINE_PRESENCE_COLLECTION),
+    snapshot => {
+      onData(
+        snapshot.docs.map(document => {
+          const data = (document.data() as Record<string, unknown> | undefined) ?? {};
+          return {
+            id: document.id,
+            kind: readString(data, 'kind'),
+            rcId: readString(data, 'rcId'),
+            rcName: readString(data, 'rcName'),
+            machineName: readString(data, 'machineName'),
+            lastHeartbeatAt: readTimestampIso(data, 'lastHeartbeatAt'),
+          };
+        }),
+      );
+    },
+    error => onError?.(error),
+  );
+}
+
 export function subscribeAutomationWorkerRemote(
   onData: (remote: AutomationWorkerRemoteControl) => void,
   onError?: (error: Error) => void,
@@ -253,27 +403,15 @@ export function subscribeAutomationWorkerLogs(
   onData: (logs: AutomationWorkerLogEntry[]) => void,
   onError?: (error: Error) => void,
   maxEntries = 50,
+  sinceIso?: string,
 ): Unsubscribe {
-  const q = query(
-    collection(db, AUTOMATION_WORKER_LOGS_COLLECTION),
-    orderBy('createdAt', 'desc'),
-    limit(maxEntries),
-  );
   return onSnapshot(
-    q,
+    activityQuery(AUTOMATION_WORKER_LOGS_COLLECTION, maxEntries, sinceIso),
     snapshot => {
       onData(
-        snapshot.docs.map(docSnap => {
-          const data = docSnap.data() as Record<string, unknown>;
-          return {
-            id: docSnap.id,
-            createdAt: readString(data, 'createdAt'),
-            message: readString(data, 'message'),
-            level: readString(data, 'level', 'info'),
-            category: readString(data, 'category'),
-            machineName: readString(data, 'machineName'),
-          };
-        }),
+        snapshot.docs.map(docSnap =>
+          mapAutomationWorkerLog(docSnap.id, docSnap.data() as Record<string, unknown>),
+        ),
       );
     },
     error => onError?.(error),
@@ -284,30 +422,15 @@ export function subscribeAutomationWorkerCaptchaAttempts(
   onData: (attempts: AutomationWorkerCaptchaAttempt[]) => void,
   onError?: (error: Error) => void,
   maxEntries = 100,
+  sinceIso?: string,
 ): Unsubscribe {
-  const q = query(
-    collection(db, AUTOMATION_WORKER_CAPTCHA_COLLECTION),
-    orderBy('createdAt', 'desc'),
-    limit(maxEntries),
-  );
   return onSnapshot(
-    q,
+    activityQuery(AUTOMATION_WORKER_CAPTCHA_COLLECTION, maxEntries, sinceIso),
     snapshot => {
       onData(
-        snapshot.docs.map(docSnap => {
-          const data = docSnap.data() as Record<string, unknown>;
-          return {
-            id: docSnap.id,
-            createdAt: readString(data, 'createdAt'),
-            resolvedText: readString(data, 'resolvedText'),
-            ocrProvider: readString(data, 'ocrProvider'),
-            attemptNumber: readInt(data, 'attemptNumber'),
-            success: readBool(data, 'success'),
-            outcome: readString(data, 'outcome'),
-            imageUrl: readString(data, 'imageUrl'),
-            machineName: readString(data, 'machineName'),
-          };
-        }),
+        snapshot.docs.map(docSnap =>
+          mapAutomationWorkerCaptcha(docSnap.id, docSnap.data() as Record<string, unknown>),
+        ),
       );
     },
     error => onError?.(error),
@@ -328,20 +451,73 @@ export function subscribeAutomationWorkerSessions(
     q,
     snapshot => {
       onData(
-        snapshot.docs.map(docSnap => {
-          const data = docSnap.data() as Record<string, unknown>;
-          return {
-            id: docSnap.id,
-            loggedInAt: readString(data, 'loggedInAt'),
-            loggedOutAt: readString(data, 'loggedOutAt'),
-            durationSeconds: readInt(data, 'durationSeconds'),
-            logoutReason: readString(data, 'logoutReason'),
-            machineName: readString(data, 'machineName'),
-          };
-        }),
+        snapshot.docs.map(docSnap =>
+          mapAutomationWorkerSession(docSnap.id, docSnap.data() as Record<string, unknown>),
+        ),
       );
     },
     error => onError?.(error),
+  );
+}
+
+export async function fetchAutomationWorkerSessions(maxEntries = 300): Promise<AutomationWorkerSessionEvent[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, AUTOMATION_WORKER_SESSIONS_COLLECTION),
+      orderBy('loggedOutAt', 'desc'),
+      limit(maxEntries),
+    ),
+  );
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerSession(docSnap.id, docSnap.data() as Record<string, unknown>),
+  );
+}
+
+export async function fetchAutomationWorkerLogs(
+  maxEntries = 400,
+  sinceIso?: string,
+): Promise<AutomationWorkerLogEntry[]> {
+  const snap = await getDocs(activityQuery(AUTOMATION_WORKER_LOGS_COLLECTION, maxEntries, sinceIso));
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerLog(docSnap.id, docSnap.data() as Record<string, unknown>),
+  );
+}
+
+export async function fetchAutomationWorkerLogsInRange(
+  fromIso: string,
+  toIso: string,
+  maxEntries = EMAAP_HISTORY_WINDOW_LIMIT,
+): Promise<AutomationWorkerLogEntry[]> {
+  if (!fromIso) return [];
+  const snap = await getDocs(
+    activityQuery(AUTOMATION_WORKER_LOGS_COLLECTION, maxEntries, fromIso, toIso || '9999-12-31T23:59:59.999Z'),
+  );
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerLog(docSnap.id, docSnap.data() as Record<string, unknown>),
+  );
+}
+
+export async function fetchAutomationWorkerCaptchaAttempts(
+  maxEntries = 400,
+  sinceIso?: string,
+): Promise<AutomationWorkerCaptchaAttempt[]> {
+  const snap = await getDocs(activityQuery(AUTOMATION_WORKER_CAPTCHA_COLLECTION, maxEntries, sinceIso));
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerCaptcha(docSnap.id, docSnap.data() as Record<string, unknown>),
+  );
+}
+
+export async function fetchAutomationWorkerCaptchaAttemptsInRange(
+  fromIso: string,
+  toIso: string,
+  maxEntries = EMAAP_HISTORY_WINDOW_LIMIT,
+): Promise<AutomationWorkerCaptchaAttempt[]> {
+  if (!fromIso) return [];
+  const snap = await getDocs(
+    activityQuery(AUTOMATION_WORKER_CAPTCHA_COLLECTION, maxEntries, fromIso, toIso || '9999-12-31T23:59:59.999Z'),
+  );
+  return snap.docs.map(docSnap =>
+    mapAutomationWorkerCaptcha(docSnap.id, docSnap.data() as Record<string, unknown>),
   );
 }
 
@@ -369,6 +545,7 @@ export async function saveAutomationWorkerRemoteControl(
       credentialsRevision: nextCredentialsRevision,
       autoWorkerEnabled: patch.autoWorkerEnabled ?? current.autoWorkerEnabled,
       pauseWorker: patch.pauseWorker ?? current.pauseWorker,
+      clearJobLocksRevision: patch.clearJobLocksRevision ?? current.clearJobLocksRevision,
       scrapeCommandRevision: patch.scrapeCommandRevision ?? current.scrapeCommandRevision,
       scrapePause: patch.scrapePause ?? current.scrapePause,
       scrapeStartPage: patch.scrapeStartPage ?? current.scrapeStartPage,

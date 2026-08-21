@@ -29,6 +29,9 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
 
     public Func<Task<string>>? ResolveIdToken { get; set; }
 
+    /// <summary>RC emaapengine scopes the snapshot query to this centre.</summary>
+    public string? ScopeRcId { get; set; }
+
     public event Action<IReadOnlyList<SiteCalibrationRecord>>? QueueUpdated;
 
     public event Action<string>? ListenerError;
@@ -96,15 +99,19 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         };
         _db = await builder.BuildAsync(cancellationToken);
 
-        _rcNames = await LoadRcCenterNamesAsync(_db, cancellationToken);
+        _rcNames = await LoadRcCenterNamesAsync(_db, ScopeRcId, cancellationToken);
 
         lock (_gate)
         {
             _submitted.Clear();
         }
 
-        var submittedQuery = _db.Collection("siteCalibrations")
+        Query submittedQuery = _db.Collection("siteCalibrations")
             .WhereEqualTo("status", VerificationStatuses.Submitted);
+        if (!string.IsNullOrWhiteSpace(ScopeRcId))
+        {
+            submittedQuery = submittedQuery.WhereEqualTo("rcId", ScopeRcId);
+        }
 
         _submittedListener = submittedQuery.Listen((snapshot, _) =>
         {
@@ -201,25 +208,46 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
     {
         lock (_gate)
         {
-            return CertificationQueueFilter.Apply(_submitted.Values);
+            return CertificationQueueFilter.Apply(_submitted.Values, ScopeRcId);
         }
     }
 
     private static async Task<Dictionary<string, string>> LoadRcCenterNamesAsync(
         FirestoreDb db,
+        string? scopeRcId,
         CancellationToken cancellationToken)
     {
-        var snapshot = await db.Collection("users")
-            .WhereEqualTo("role", "rc_admin")
-            .GetSnapshotAsync(cancellationToken);
-
         var names = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var document in snapshot.Documents)
+        if (!string.IsNullOrWhiteSpace(scopeRcId))
         {
-            document.TryGetValue<string>("companyName", out var companyName);
-            document.TryGetValue<string>("username", out var username);
-            var label = FirstNonEmpty(companyName, username, document.Id);
-            names[document.Id] = label;
+            var document = await db.Collection("users").Document(scopeRcId).GetSnapshotAsync(cancellationToken);
+            if (document.Exists)
+            {
+                document.TryGetValue<string>("companyName", out var companyName);
+                document.TryGetValue<string>("username", out var username);
+                names[scopeRcId] = FirstNonEmpty(companyName, username, document.Id);
+            }
+
+            return names;
+        }
+
+        try
+        {
+            var snapshot = await db.Collection("users")
+                .WhereEqualTo("role", "rc_admin")
+                .GetSnapshotAsync(cancellationToken);
+
+            foreach (var document in snapshot.Documents)
+            {
+                document.TryGetValue<string>("companyName", out var companyName);
+                document.TryGetValue<string>("username", out var username);
+                var label = FirstNonEmpty(companyName, username, document.Id);
+                names[document.Id] = label;
+            }
+        }
+        catch (Exception)
+        {
+            return names;
         }
 
         return names;

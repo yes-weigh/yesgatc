@@ -181,6 +181,18 @@ service cloud.firestore {
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid
         && vctApprovalStatus(resource.data) == 'pending';
+
+      match /contractorFeePayments/{dateKey} {
+        allow read: if isAuthenticated()
+          && (
+            request.auth.uid == uid
+            || isSuperAdmin()
+            || (isOperationalVct() && vctRcId() == uid)
+          );
+        allow create, update: if isAuthenticated() && request.auth.uid == uid;
+        allow delete: if isSuperAdmin()
+          || (isAuthenticated() && request.auth.uid == uid);
+      }
     }
 
     // ── aadharIndex (global duplicate Aadhar lookup) ───────────────
@@ -351,7 +363,13 @@ service cloud.firestore {
         && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
         && verificationZohoFieldsUnchanged();
 
-      // Certificate worker — RC approves own submitted verification after DOCA success.
+      // RC emaapengine — certify / fail / void own submitted jobs (same pipeline as VPS worker).
+      allow update: if isRCAdmin()
+        && resource.data.rcId == request.auth.uid
+        && request.resource.data.rcId == resource.data.rcId
+        && verificationRecordStatus(resource.data) in ['submitted', 'approved', 'certified']
+        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted', 'approved', 'certified']
+        && verificationApplicationNumberUnchanged();
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
         && request.resource.data.rcId == resource.data.rcId
@@ -359,6 +377,22 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) == 'approved'
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['status', 'approvedAt', 'updatedAt']);
+
+      // RC uploads DSC-signed certificate PDF (Certificates list).
+      allow update: if isRCAdmin()
+        && resource.data.rcId == request.auth.uid
+        && request.resource.data.rcId == resource.data.rcId
+        && verificationRecordStatus(resource.data) == 'certified'
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly([
+               'signedCertificatePdfUrl',
+               'signedCertificatePdfPath',
+               'signedCertificatePdfName',
+               'signedCertificatePdfContentType',
+               'signedCertificateUploadedAt',
+               'signedCertificateUploadedByUid',
+               'updatedAt'
+             ]);
 
       allow delete: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
@@ -403,13 +437,31 @@ service cloud.firestore {
       allow update: if isSuperAdmin();
     }
 
+    function contractorFeeOnlyUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['contractorFeeSchedules', 'updatedAt']);
+    }
+
     // ── app settings (global toggles) ─────────────────────────────
     match /appSettings/{docId} {
+      allow read: if isAuthenticated();
+      allow create, delete: if isSuperAdmin();
+      allow update: if isSuperAdmin()
+        || (isRCAdmin() && contractorFeeOnlyUpdate());
+    }
+
+    // Super Admin uploads manuals; RC + VCT read only.
+    match /manualPdfs/{docId} {
       allow read: if isAuthenticated();
       allow write: if isSuperAdmin();
     }
 
     // ── certificate automation worker (remote control + telemetry) ─
+    match /automationWorker/status {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
     match /automationWorker/{docId} {
       allow read, write: if isSuperAdmin();
     }
@@ -427,6 +479,39 @@ service cloud.firestore {
     match /automationWorkerSessions/{sessionId} {
       allow read, create: if isSuperAdmin();
       allow update, delete: if false;
+    }
+
+    match /emaapEnginePresence/{workerId} {
+      allow read: if isAuthenticated();
+
+      allow create, update: if isRCAdmin()
+        && workerId == request.auth.uid
+        && request.resource.data.kind == 'emaapengine'
+        && request.resource.data.rcId == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow delete: if isRCAdmin() && workerId == request.auth.uid;
+
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /certificationClaims/{jobId} {
+      allow read: if isSuperAdmin() || isRCAdmin();
+
+      allow create: if isSuperAdmin()
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow create: if isRCAdmin()
+        && request.resource.data.ownerUid == request.auth.uid
+        && get(/databases/$(database)/documents/siteCalibrations/$(jobId)).data.rcId == request.auth.uid;
+
+      allow update, delete: if isSuperAdmin();
+
+      allow update, delete: if isRCAdmin()
+        && (
+          resource.data.ownerUid == request.auth.uid
+          || request.time > resource.data.claimedAt + duration.value(12, 'm')
+        );
     }
 
     // eMAAP OTP codes written by Cloud Function only; Super Admin worker reads + marks consumed.
@@ -482,6 +567,22 @@ service cloud.firestore {
         ]);
 
       allow update, delete: if false;
+    }
+
+    match /contractorFeePayments/{paymentId} {
+      allow read: if isAuthenticated()
+        && (
+          isSuperAdmin()
+          || resource.data.rcId == request.auth.uid
+          || (isOperationalVct() && resource.data.rcId == vctRcId())
+        );
+
+      allow create, update: if isAuthenticated()
+        && request.resource.data.rcId == request.auth.uid
+        && request.resource.data.paidByUid == request.auth.uid;
+
+      allow delete: if isSuperAdmin()
+        || (isAuthenticated() && resource.data.rcId == request.auth.uid);
     }
 
     match /walletLedger/{entryId} {

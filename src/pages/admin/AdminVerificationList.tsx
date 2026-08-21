@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { collection, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { Send } from 'lucide-react';
 import { db } from '../../firebase';
@@ -15,6 +16,12 @@ import {
   tallyVerificationTypeFilters,
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
+import {
+  matchesVerificationDurationFilter,
+  parseVerificationDurationParam,
+  type VerificationDurationFilter,
+} from '../../lib/verificationListDuration';
+import { rewriteOutOfKeralaJobsToRcName } from '../../lib/verificationRcFiling';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   buildDuplicatePrimaryIdSet,
@@ -29,12 +36,16 @@ import {
   VerificationListFilters,
   type VerificationStatusFilter,
   type VerificationTypeFilter,
+  type VerificationPaymentDueFilter,
 } from '../../components/VerificationListFilters';
 import { TablePagination } from '../../components/TablePagination';
 import { VerificationDetailPanel } from '../../components/VerificationDetailPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
+import { isVerificationCertificateVoided } from '../../lib/verificationCertificateVoid';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
 import { isRvWalletPaymentOutstanding } from '../../lib/rvPaymentAmount';
+import { ensureRvWalletDebitedForRecords } from '../../lib/rvWalletAdvancePay';
+import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import {
   buildDevDeleteSubmittedMessage,
   canDevDeleteSubmittedVerification,
@@ -56,11 +67,20 @@ import {
 } from '../../lib/verificationSubmit';
 import { formatZohoInvoiceGateError, isZohoInvoiceGateError } from '../../lib/zohoRvInvoice';
 import { isZohoRvInvoicingEnabled } from '../../lib/zohoRvSubmit';
+import { useAppContext } from '../../context/AppContext';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 type RcListProfile = Pick<
   FirestoreUserDoc,
-  'profilePhotoUrl' | 'profilePhotoPath' | 'contactPerson' | 'pincode' | 'zohoId'
+  | 'profilePhotoUrl'
+  | 'profilePhotoPath'
+  | 'contactPerson'
+  | 'pincode'
+  | 'zohoId'
+  | 'address'
+  | 'place'
+  | 'phone'
+  | 'companyName'
 >;
 
 interface VerificationRow extends SiteCalibration {
@@ -69,16 +89,27 @@ interface VerificationRow extends SiteCalibration {
 
 export const AdminVerificationList: React.FC = () => {
   const { user } = useAuth();
+  const { products } = useAppContext();
   const confirm = useConfirm();
   const { appSettings } = useAppSettings();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isSuperAdmin = user?.role === 'super_admin';
+  const pendingStatusFilter = searchParams.get('status');
+  const pendingTypeFilter = searchParams.get('type');
+  const pendingDurationFilter = parseVerificationDurationParam(searchParams.get('duration'));
+  const pendingRcFilter = searchParams.get('rc');
+  const pendingVoidFilter = searchParams.get('void') === '1';
+  const pendingOpenId = searchParams.get('open');
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
   const [rcUsersById, setRcUsersById] = useState<Map<string, RcListProfile>>(() => new Map());
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
+  const [voidOnly, setVoidOnly] = useState(false);
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
+  const [durationFilter, setDurationFilter] = useState<VerificationDurationFilter>('all');
   const [rcFilter, setRcFilter] = useState<string>('all');
+  const [paymentDueFilter, setPaymentDueFilter] = useState<VerificationPaymentDueFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [viewingRecord, setViewingRecord] = useState<VerificationRow | null>(null);
@@ -118,6 +149,10 @@ export const AdminVerificationList: React.FC = () => {
             contactPerson: data.contactPerson,
             pincode: data.pincode,
             zohoId: data.zohoId,
+            address: data.address,
+            place: data.place,
+            phone: data.phone,
+            companyName: data.companyName,
           });
         }
       });
@@ -129,28 +164,144 @@ export const AdminVerificationList: React.FC = () => {
       setCustomersById(customerMap);
       setRcUsersById(rcProfiles);
 
-      const rows: VerificationRow[] = calibrationSnap.docs.map(d => {
-        const data = d.data() as Omit<SiteCalibration, 'id'>;
-        return {
-          id: d.id,
-          ...data,
-          rcCenterName: (data.rcId && rcByUid.get(data.rcId)) || '—',
-        };
-      });
+      const toRows = (docs: typeof calibrationSnap.docs): VerificationRow[] =>
+        docs
+          .map(d => {
+            const data = d.data() as Omit<SiteCalibration, 'id'>;
+            return {
+              id: d.id,
+              ...data,
+              rcCenterName: (data.rcId && rcByUid.get(data.rcId)) || '—',
+            };
+          })
+          .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
-      rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      const rows = toRows(calibrationSnap.docs);
       setRecords(rows);
+
+      if (isSuperAdmin) {
+        void rewriteOutOfKeralaJobsToRcName({
+          records: rows,
+          customersById: customerMap,
+          rcNameByUid: rcByUid,
+        })
+          .then(async rewritten => {
+            if (rewritten <= 0) return;
+            const refreshed = await getDocs(collection(db, 'siteCalibrations'));
+            setRecords(toRows(refreshed.docs));
+          })
+          .catch(() => undefined);
+      }
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to load verifications.');
       setRecords([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     void fetchRecords();
   }, [fetchRecords]);
+
+  useEffect(() => {
+    if (!pendingStatusFilter) return;
+    const allowed: VerificationStatusFilter[] = [
+      'all',
+      'draft',
+      'submitted',
+      'certified',
+      'failed_submit',
+      'rejected',
+      'duplicates',
+    ];
+    const raw = pendingStatusFilter as VerificationStatusFilter;
+    if (allowed.includes(raw)) {
+      setStatusFilter(raw);
+      setVoidOnly(false);
+    } else if (raw === 'approved' || raw === 'failed_certification') {
+      setStatusFilter(raw === 'failed_certification' ? 'failed_submit' : 'submitted');
+      setVoidOnly(false);
+    }
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('status');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingStatusFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingVoidFilter) return;
+    setVoidOnly(true);
+    setStatusFilter('all');
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('void');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingVoidFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (pendingTypeFilter !== 'OV' && pendingTypeFilter !== 'RV' && pendingTypeFilter !== 'all') {
+      return;
+    }
+    setTypeFilter(pendingTypeFilter);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('type');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingTypeFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingDurationFilter) return;
+    setDurationFilter(pendingDurationFilter);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('duration');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingDurationFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingRcFilter) return;
+    setRcFilter(pendingRcFilter);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('rc');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingRcFilter, setSearchParams]);
+
+  useEffect(() => {
+    if (!pendingOpenId || loading) return;
+    const record = records.find(entry => entry.id === pendingOpenId);
+    if (!record) return;
+    setViewingRecord(record);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('open');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [pendingOpenId, loading, records, setSearchParams]);
 
   useEffect(() => {
     if (!viewingRecord) return;
@@ -163,8 +314,19 @@ export const AdminVerificationList: React.FC = () => {
   const duplicatePrimaryIds = useMemo(() => buildDuplicatePrimaryIdSet(records), [records]);
   const serialGroups = useMemo(() => buildSerialGroupMap(records), [records]);
 
+  const durationScoped = useMemo(
+    () => records.filter(record => matchesVerificationDurationFilter(record, durationFilter)),
+    [records, durationFilter],
+  );
+
   const filteredRecords = useMemo(() => {
-    const filtered = records.filter(record => {
+    const filtered = durationScoped.filter(record => {
+      if (voidOnly && !isVerificationCertificateVoided(record)) {
+        return false;
+      }
+      if (paymentDueFilter === 'due' && !isRvWalletPaymentOutstanding(record)) {
+        return false;
+      }
       if (!matchesVerificationSearch(record, searchTerm, { rcCenterName: record.rcCenterName })) {
         return false;
       }
@@ -172,7 +334,7 @@ export const AdminVerificationList: React.FC = () => {
         !matchesVerificationListStatusFilter(
           record,
           statusFilter,
-          records,
+          durationScoped,
           duplicatePrimaryIds,
           serialGroups,
         )
@@ -187,8 +349,8 @@ export const AdminVerificationList: React.FC = () => {
       }
       return true;
     });
-    return buildVerificationListDisplay(filtered, records, statusFilter);
-  }, [records, statusFilter, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+    return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
+  }, [durationScoped, statusFilter, voidOnly, paymentDueFilter, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -206,7 +368,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, typeFilter, rcFilter, searchTerm]);
+  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter]);
 
   useEffect(() => {
     if (viewingRecord || !rowHighlightFlashId) return;
@@ -254,20 +416,20 @@ export const AdminVerificationList: React.FC = () => {
   );
 
   const counts = useMemo(
-    () => tallyVerificationStatusFiltersCollapsed(records, listFilters),
-    [records, listFilters],
+    () => tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters),
+    [durationScoped, listFilters],
   );
   const typeCounts = useMemo(
     () =>
       tallyVerificationTypeFilters(
-        verificationListCollapsedForCounts(records, listFilters, 'type'),
+        verificationListCollapsedForCounts(durationScoped, listFilters, 'type'),
       ),
-    [records, listFilters],
+    [durationScoped, listFilters],
   );
   const typeFilterOptions = buildVerificationTypeFilterOptions(typeCounts);
 
   const rcFilterOptions = useMemo(() => {
-    const collapsed = verificationListCollapsedForCounts(records, listFilters, 'rc');
+    const collapsed = verificationListCollapsedForCounts(durationScoped, listFilters, 'rc');
     const byRc = new Map<string, { label: string; count: number }>();
     for (const record of collapsed) {
       const rcId = record.rcId?.trim() || 'unknown';
@@ -282,13 +444,14 @@ export const AdminVerificationList: React.FC = () => {
 
     const centres = [...byRc.entries()]
       .map(([value, { label, count }]) => ({ value, label, count }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+      .filter(row => row.count > 0)
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
     return [
       { value: 'all', label: 'All RC', count: collapsed.length },
       ...centres,
     ];
-  }, [records, listFilters, rcCenterNameByRcId]);
+  }, [durationScoped, listFilters, rcCenterNameByRcId]);
 
   const handleDelete = async (record: VerificationRow) => {
     const isDevSubmittedDelete = canDevDeleteSubmittedVerification(record, isSuperAdmin);
@@ -425,7 +588,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
-  }, [statusFilter, typeFilter, rcFilter, searchTerm]);
+  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter]);
 
   useEffect(() => {
     if (selectAllDraftsRef.current) {
@@ -466,6 +629,12 @@ export const AdminVerificationList: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      await ensureRvWalletDebitedForRecords({
+        records: [record],
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(null),
+      });
       await submitVerificationRecord(
         {
           id: record.id,
@@ -509,6 +678,12 @@ export const AdminVerificationList: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      await ensureRvWalletDebitedForRecords({
+        records: selectedRecords,
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(null),
+      });
       await submitVerificationRecords(
         selectedRecords.map(record => ({
           id: record.id,
@@ -541,6 +716,10 @@ export const AdminVerificationList: React.FC = () => {
         .map(record => record.id),
     );
   }, [records]);
+  const paymentDueCount = useMemo(
+    () => durationScoped.filter(record => isRvWalletPaymentOutstanding(record)).length,
+    [durationScoped],
+  );
   return (
     <div className="fade-in page-content">
       {viewingRecord ? (
@@ -552,6 +731,15 @@ export const AdminVerificationList: React.FC = () => {
             viewingRecord.rcId
               ? rcUsersById.get(viewingRecord.rcId)?.contactPerson
               : null
+          }
+          customer={
+            viewingRecord.customerId
+              ? customersById.get(viewingRecord.customerId) ?? null
+              : null
+          }
+          product={products.find(item => item.id === viewingRecord.productId) ?? null}
+          rcProfile={
+            viewingRecord.rcId ? rcUsersById.get(viewingRecord.rcId) ?? null : null
           }
           onClose={closeVerificationDetails}
           onRecordsChanged={async () => {
@@ -571,14 +759,23 @@ export const AdminVerificationList: React.FC = () => {
             onSearchTermChange={setSearchTerm}
             searchPlaceholder="Search verification…"
             statusFilter={statusFilter}
-            onStatusFilterChange={setStatusFilter}
+            onStatusFilterChange={value => {
+              setVoidOnly(false);
+              setStatusFilter(value);
+            }}
             statusOptions={filterOptions}
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
             typeOptions={typeFilterOptions}
+            durationFilter={durationFilter}
+            onDurationFilterChange={setDurationFilter}
             rcFilter={rcFilter}
             onRcFilterChange={setRcFilter}
             rcOptions={rcFilterOptions}
+            paymentDueFilter={paymentDueFilter}
+            onPaymentDueFilterChange={setPaymentDueFilter}
+            paymentDueCount={paymentDueCount}
+            paymentDueAllCount={durationScoped.length}
             onRefresh={() => void fetchRecords()}
             refreshing={loading}
           />

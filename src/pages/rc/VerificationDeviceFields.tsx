@@ -6,12 +6,10 @@ import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
 import { ManufacturingYearPicker } from '../../components/ManufacturingYearPicker';
 import { UploadField } from '../admin/productFormUi';
 import { useAppContext } from '../../context/AppContext';
+import { useAppSettings } from '../../hooks/useAppSettings';
+import { rvSettingFeeLineFromProduct } from '../../lib/zohoRvSubmit';
 import {
-  DEFAULT_RC_FEES_STRUCTURE,
   defaultRvServiceFee,
-  rcVerificationFeeQuote,
-  rvGatewayFee,
-  rvTdsFee,
 } from '../../lib/rcProfileFields';
 import { VerificationFeeBreakdown } from '../../components/VerificationFeeBreakdown';
 import {
@@ -200,15 +198,15 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   focusSerialRequest = 0,
   readOnly = false,
   laboratorySealIdentification = '',
-  verificationLocation = '',
-  verificationSubject = 'customer',
-  feesStructure,
+  verificationLocation: _verificationLocation = '',
+  verificationSubject: _verificationSubject = 'customer',
+  feesStructure: _feesStructure,
 }) => {
   const { products } = useAppContext();
+  const { appSettings } = useAppSettings();
   const selectAllRef = useRef<HTMLInputElement>(null);
   const locked = submitting || readOnly;
   const isRv = verificationType === 'RV';
-  const fees = feesStructure ?? DEFAULT_RC_FEES_STRUCTURE;
   const visibleDevices = visibleDeviceLocalId
     ? devices.filter(row => row.localId === visibleDeviceLocalId)
     : devices;
@@ -492,15 +490,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
               const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
               const product = selectedProduct(products, row);
-              const feeQuote = isRv
-                ? rcVerificationFeeQuote(
-                    fees,
-                    verificationLocation,
-                    product,
-                    verificationSubject,
-                    verificationType,
-                  )
-                : null;
+              const feeLine = isRv ? rvSettingFeeLineFromProduct(product, appSettings) : null;
 
               return (
                 <tr key={row.localId} className={row.included ? '' : 'verification-device-row--skipped'}>
@@ -608,17 +598,16 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     <td className="verification-devices-col-fee">
                       {!row.included ? (
                         <span className="text-muted text-sm">—</span>
-                      ) : feeQuote?.amount != null ? (
+                      ) : feeLine ? (
                         <VerificationFeeBreakdown
-                          baseAmount={feeQuote.amount}
+                          baseAmount={feeLine.baseInr}
                           variant="cell"
-                          tdsAmount={rvTdsFee(product)}
-                          gatewayFeeAmount={rvGatewayFee(product)}
+                          tdsAmount={feeLine.tdsInr}
                           serviceFee={buildServiceFeeProps(row)}
                           additionalFee={buildAdditionalFeeProps(row)}
                         />
                       ) : (
-                        <span className="text-muted text-xs">{feeQuote?.incompleteReason ?? '—'}</span>
+                        <span className="text-muted text-xs">{product ? '—' : 'Select product'}</span>
                       )}
                     </td>
                   )}
@@ -648,15 +637,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
           const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
           const product = selectedProduct(products, row);
-          const feeQuote = isRv
-            ? rcVerificationFeeQuote(
-                fees,
-                verificationLocation,
-                product,
-                verificationSubject,
-                verificationType,
-              )
-            : null;
+          const feeLine = isRv ? rvSettingFeeLineFromProduct(product, appSettings) : null;
 
           return (
             <div
@@ -870,17 +851,16 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
 
                 {isRv && row.included && (
                   <div className="verification-device-fee-tile">
-                    {feeQuote?.amount != null ? (
+                    {feeLine ? (
                       <VerificationFeeBreakdown
-                        baseAmount={feeQuote.amount}
+                        baseAmount={feeLine.baseInr}
                         variant="cell"
-                        tdsAmount={rvTdsFee(product)}
-                        gatewayFeeAmount={rvGatewayFee(product)}
+                        tdsAmount={feeLine.tdsInr}
                         serviceFee={buildServiceFeeProps(row)}
                         additionalFee={buildAdditionalFeeProps(row)}
                       />
                     ) : (
-                      <span className="text-muted text-xs">{feeQuote?.incompleteReason ?? '—'}</span>
+                      <span className="text-muted text-xs">{product ? '—' : 'Select product'}</span>
                     )}
                   </div>
                 )}

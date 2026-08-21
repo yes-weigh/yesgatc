@@ -1,7 +1,8 @@
 import { normalizeVerificationStatus } from './verificationRequest';
-import { formatRcFeeAmount, normalizeZohoId, verificationFeeWithGst } from './rcProfileFields';
+import { formatRcFeeAmount, normalizeZohoId, productMaximumCapacityKg, RV_TDS_PERCENT, rvTdsAmountFromBase, verificationFeeWithGst } from './rcProfileFields';
+import { zohoTdsAmountInr } from './zohoSettings';
 import type { ZohoRvSettings } from './zohoSettings';
-import type { JobType, SiteCalibration } from '../types';
+import type { JobType, Product, SiteCalibration } from '../types';
 
 export const RV_ZOHO_SUBMIT_BLOCK_MESSAGE =
   'RV cannot be submitted until Super Admin sets your Zoho customer ID on the RC profile.';
@@ -166,7 +167,7 @@ export function isRvZohoInvoiceOutstanding(
   return isRvVerificationSubmittedOrBeyond(record);
 }
 
-/** Zoho Books RV line-item rates (pre-GST) — must match configured Zoho products. */
+/** Zoho Books RV line-item rates (pre-GST) — defaults; live values live in app settings. */
 export const ZOHO_RV_PRODUCT_BASE_UPTO_20_KG = 150;
 export const ZOHO_RV_PRODUCT_BASE_ABOVE_20_KG = 250;
 
@@ -176,18 +177,61 @@ export type RvZohoInvoiceSummary = {
   tierLabel: string;
 };
 
-export function zohoRvProductBaseInr(capacityKg: number): number {
-  return capacityKg <= 20 ? ZOHO_RV_PRODUCT_BASE_UPTO_20_KG : ZOHO_RV_PRODUCT_BASE_ABOVE_20_KG;
+export type RvWalletFeeSettings = Pick<
+  ZohoRvSettings,
+  'zohoFeeUpto20KgInr' | 'zohoFeeAbove20KgInr' | 'zohoTdsPercent'
+>;
+
+export type RvSettingFeeLine = {
+  baseInr: number;
+  gstInr: number;
+  tdsInr: number;
+  invoiceInr: number;
+  walletInr: number;
+};
+
+export function rvSettingFeeLineFromCapacityKg(
+  capacityKg: number | null,
+  settings?: RvWalletFeeSettings | null,
+): RvSettingFeeLine | null {
+  if (capacityKg == null || !Number.isFinite(capacityKg)) return null;
+  const baseInr = zohoRvProductBaseInr(capacityKg, settings);
+  const { gst, total } = verificationFeeWithGst(baseInr);
+  const tdsInr = zohoTdsAmountInr(baseInr, settings?.zohoTdsPercent ?? RV_TDS_PERCENT);
+  return {
+    baseInr,
+    gstInr: gst,
+    tdsInr,
+    invoiceInr: total,
+    walletInr: gst + tdsInr,
+  };
 }
 
-/** Amounts shown for Zoho push — always from Zoho product tiers + 18% GST, not DOCA totals on the record. */
+export function rvSettingFeeLineFromProduct(
+  product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
+  settings?: RvWalletFeeSettings | null,
+): RvSettingFeeLine | null {
+  return rvSettingFeeLineFromCapacityKg(productMaximumCapacityKg(product), settings);
+}
+
+export function zohoRvProductBaseInr(
+  capacityKg: number,
+  settings?: Pick<ZohoRvSettings, 'zohoFeeUpto20KgInr' | 'zohoFeeAbove20KgInr'> | null,
+): number {
+  const upto = settings?.zohoFeeUpto20KgInr ?? ZOHO_RV_PRODUCT_BASE_UPTO_20_KG;
+  const above = settings?.zohoFeeAbove20KgInr ?? ZOHO_RV_PRODUCT_BASE_ABOVE_20_KG;
+  return capacityKg <= 20 ? upto : above;
+}
+
+/** Amounts shown for Zoho push — Zoho product tiers + 18% GST, not DOCA totals on the record. */
 export function rvZohoInvoiceSummary(
   record: Pick<SiteCalibration, 'maximumCapacity' | 'unitOfMeasurement'>,
+  settings?: Pick<ZohoRvSettings, 'zohoFeeUpto20KgInr' | 'zohoFeeAbove20KgInr'> | null,
 ): RvZohoInvoiceSummary | null {
   const capacityKg = maximumCapacityKgFromRecord(record);
   if (capacityKg == null) return null;
 
-  const baseInr = zohoRvProductBaseInr(capacityKg);
+  const baseInr = zohoRvProductBaseInr(capacityKg, settings);
   const { total } = verificationFeeWithGst(baseInr);
   return {
     baseInr,
@@ -259,8 +303,14 @@ export function zohoSettlementStatusLabel(status: ZohoSettlementStatus): string 
 
 export function rvLabourPayoutInr(
   record: Pick<SiteCalibration, 'maximumCapacity' | 'unitOfMeasurement'>,
+  settings?: Pick<
+    ZohoRvSettings,
+    'zohoFeeUpto20KgInr' | 'zohoFeeAbove20KgInr' | 'zohoTdsPercent'
+  > | null,
 ): number | null {
   const capacityKg = maximumCapacityKgFromRecord(record);
   if (capacityKg == null) return null;
-  return capacityKg <= 20 ? 135 : 225;
+  const baseInr = zohoRvProductBaseInr(capacityKg, settings);
+  const percent = settings?.zohoTdsPercent ?? RV_TDS_PERCENT;
+  return Math.max(0, baseInr - rvTdsAmountFromBase(baseInr, percent));
 }

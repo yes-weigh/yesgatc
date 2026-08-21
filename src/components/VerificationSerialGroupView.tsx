@@ -31,12 +31,16 @@ import { RvLegacyZohoSettlementSection } from './RvLegacyZohoSettlementSection';
 import { RvSubmitTestRevertSection } from './RvSubmitTestRevertSection';
 import { canRevertRvSubmitTest } from '../lib/rvSubmitTestRevert';
 import { ListViewBackBar } from './ListViewBackBar';
-import type { SiteCalibration } from '../types';
+import type { Customer, Product, SiteCalibration } from '../types';
+import type { VerificationRcPartyProfile } from '../lib/verificationPartyDetails';
 
 type VerificationSerialGroupViewProps = {
   record: SiteCalibration;
   allRecords: SiteCalibration[];
   rcCenterName?: string;
+  customer?: Customer | null;
+  product?: Product | null;
+  rcProfile?: VerificationRcPartyProfile | null;
   onClose: () => void;
   onResubmitted?: (newRecordId: string) => void | Promise<void>;
   onPaymentRecorded?: () => void | Promise<void>;
@@ -57,6 +61,9 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
   record,
   allRecords,
   rcCenterName,
+  customer = null,
+  product = null,
+  rcProfile = null,
   onClose,
   onResubmitted,
   onPaymentRecorded,
@@ -222,7 +229,12 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
                     <VerificationCertifiedActions record={version} />
                   )}
 
-                  <VerificationDetailsCard record={version} />
+                  <VerificationDetailsCard
+                    record={version}
+                    customer={customer}
+                    product={product}
+                    rcProfile={rcProfile}
+                  />
                 </div>
 
                 {showActions && (

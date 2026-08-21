@@ -1,21 +1,13 @@
 import {
-  ClipboardList,
-  Clock,
-  MapPin,
-  Package,
   Phone,
   Store,
 } from 'lucide-react';
+import { ElectronicWeighingScaleIcon } from './ElectronicWeighingScaleIcon';
 import { StorageImage } from './StorageImage';
-import { buildTelUrl, buildWhatsAppContactUrl, normalizePhone } from '../lib/contactFields';
+import { buildTelUrl, buildWhatsAppContactUrl } from '../lib/contactFields';
 import { customerDeviceCount } from '../lib/customerProfileFields';
-import {
-  customerDistanceKm,
-  formatCustomerDistance,
-  formatCustomerRegion,
-  type CustomerTileStats,
-} from '../lib/customerTileStats';
-import type { Customer, CustomerLocation } from '../types';
+import { formatCustomerCityDistrict } from '../lib/customerTileStats';
+import type { Customer } from '../types';
 
 function WhatsAppIcon() {
   return (
@@ -30,23 +22,17 @@ function WhatsAppIcon() {
 
 type CustomerListTileProps = {
   customer: Customer;
-  stats: CustomerTileStats;
-  distanceFrom?: CustomerLocation | null;
   onEdit: () => void;
 };
 
 export function CustomerListTile({
   customer,
-  stats,
-  distanceFrom,
   onEdit,
 }: CustomerListTileProps) {
   const displayName = (customer.name || '—').trim();
-  const phone = normalizePhone(customer.phone);
   const telUrl = buildTelUrl(customer.phone);
   const whatsAppUrl = buildWhatsAppContactUrl(customer.phone);
-  const region = formatCustomerRegion(customer);
-  const distanceLabel = formatCustomerDistance(customerDistanceKm(customer, distanceFrom));
+  const { city, district } = formatCustomerCityDistrict(customer);
   const deviceCount = customerDeviceCount(customer);
   const photoUrl = customer.shopPhotoUrl || customer.customerPhotoUrl;
   const photoPath = customer.shopPhotoPath || customer.customerPhotoPath;
@@ -59,83 +45,47 @@ export function CustomerListTile({
         onClick={onEdit}
         aria-label={`Edit ${displayName}`}
       >
-        <div className="rc-customer-tile-head">
-          <span className="rc-customer-tile-avatar" aria-hidden>
-            {photoUrl || photoPath ? (
-              <StorageImage
-                url={photoUrl}
-                path={photoPath}
-                alt=""
-                className="rc-customer-tile-avatar-img"
-              />
-            ) : (
-              <Store size={26} strokeWidth={1.85} />
-            )}
-          </span>
-
-          <div className="rc-customer-tile-head-main">
-            <div className="rc-customer-tile-title-row">
-              <h3 className="rc-customer-tile-name">{displayName}</h3>
-              <span className="rc-customer-tile-status">
-                <span className="rc-customer-tile-status-dot" aria-hidden />
-                Active
-              </span>
-            </div>
-
-            {phone && (
-              <p className="rc-customer-tile-contact">
-                <Phone size={14} strokeWidth={2.25} aria-hidden />
-                <span className="text-mono">{phone}</span>
-              </p>
-            )}
-
-            <p className="rc-customer-tile-contact">
-              <MapPin size={14} strokeWidth={2.25} aria-hidden />
-              <span>{region}</span>
-            </p>
-          </div>
-
-          {distanceLabel && (
-            <p className="rc-customer-tile-distance">
-              <MapPin size={14} strokeWidth={2.25} aria-hidden />
-              <span>{distanceLabel}</span>
-            </p>
+        <span className="rc-customer-tile-avatar" aria-hidden>
+          {photoUrl || photoPath ? (
+            <StorageImage
+              url={photoUrl}
+              path={photoPath}
+              alt=""
+              className="rc-customer-tile-avatar-img"
+            />
+          ) : (
+            <Store size={15} strokeWidth={1.85} />
           )}
-        </div>
+        </span>
 
-        <div className="rc-customer-tile-stats">
-          <div className="rc-customer-tile-stat rc-customer-tile-stat--devices">
-            <Package size={18} strokeWidth={2} aria-hidden />
-            <span className="rc-customer-tile-stat-value">{deviceCount}</span>
-            <span className="rc-customer-tile-stat-label">Devices</span>
-          </div>
-          <div className="rc-customer-tile-stat rc-customer-tile-stat--verifications">
-            <ClipboardList size={18} strokeWidth={2} aria-hidden />
-            <span className="rc-customer-tile-stat-value">{stats.verificationCount}</span>
-            <span className="rc-customer-tile-stat-label">Verifications</span>
-          </div>
-          <div className="rc-customer-tile-stat rc-customer-tile-stat--due">
-            <Clock size={18} strokeWidth={2} aria-hidden />
-            <span className="rc-customer-tile-stat-value">{stats.dueCount}</span>
-            <span className="rc-customer-tile-stat-label">Due</span>
-          </div>
-        </div>
+        <span className="rc-customer-tile-head-main">
+          <span className="rc-customer-tile-title-row">
+            <h3 className="rc-customer-tile-name">{displayName}</h3>
+          </span>
+          <span className="rc-customer-tile-meta">
+            {city ? <span>{city}</span> : null}
+            {district ? <span>{district}</span> : null}
+            <span className="rc-customer-tile-counts" title={`${deviceCount} weighing scale${deviceCount === 1 ? '' : 's'}`}>
+              <ElectronicWeighingScaleIcon size={13} strokeWidth={2} />
+              {deviceCount}
+            </span>
+          </span>
+        </span>
       </button>
 
-      <footer className="rc-customer-tile-actions">
+      <div className="rc-customer-tile-actions">
         {telUrl ? (
           <a
             href={telUrl}
             className="rc-customer-tile-action rc-customer-tile-action--call"
             onClick={e => e.stopPropagation()}
+            aria-label={`Call ${displayName}`}
           >
-            <Phone size={16} strokeWidth={2.25} aria-hidden />
-            Call
+            <Phone size={15} strokeWidth={2.25} aria-hidden />
           </a>
         ) : (
           <span className="rc-customer-tile-action rc-customer-tile-action--disabled" aria-disabled>
-            <Phone size={16} strokeWidth={2.25} aria-hidden />
-            Call
+            <Phone size={15} strokeWidth={2.25} aria-hidden />
           </span>
         )}
         {whatsAppUrl ? (
@@ -145,17 +95,16 @@ export function CustomerListTile({
             target="_blank"
             rel="noopener noreferrer"
             onClick={e => e.stopPropagation()}
+            aria-label={`WhatsApp ${displayName}`}
           >
             <WhatsAppIcon />
-            WhatsApp
           </a>
         ) : (
           <span className="rc-customer-tile-action rc-customer-tile-action--disabled" aria-disabled>
             <WhatsAppIcon />
-            WhatsApp
           </span>
         )}
-      </footer>
+      </div>
     </article>
   );
 }

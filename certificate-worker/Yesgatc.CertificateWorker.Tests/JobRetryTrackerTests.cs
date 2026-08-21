@@ -59,4 +59,17 @@ public sealed class JobRetryTrackerTests
         Assert.True(tracker.IsEligible("job-3"));
         Assert.Equal(string.Empty, tracker.BadgeFor("job-3"));
     }
+
+    [Fact]
+    public void ClearAll_unlocks_exhausted_jobs()
+    {
+        var tracker = new JobRetryTracker();
+        tracker.MarkExhausted("a", "lock", maxRetries: 3);
+        tracker.MarkExhausted("b", "lock", maxRetries: 3);
+        tracker.ClearAll();
+
+        Assert.True(tracker.IsEligible("a"));
+        Assert.True(tracker.IsEligible("b"));
+        Assert.False(tracker.IsExhausted("a"));
+    }
 }

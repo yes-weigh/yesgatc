@@ -29,9 +29,7 @@ public static class ChromeProfileMirror
 
     public static string MirrorUserDataDir =>
         Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "YesGATC",
-            "CertificateWorker",
+            WorkerProduct.DataRoot,
             "chrome-system-mirror");
 
     public static string MirrorDefaultProfileDir => Path.Combine(MirrorUserDataDir, "Default");
