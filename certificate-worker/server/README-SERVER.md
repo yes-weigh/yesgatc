@@ -17,7 +17,7 @@ Simple layout for RDP-based unattended processing on a Windows Server.
 | `C:\YesGATC\updates\` | Drop new zip / extracted publish folders here |
 | `%LOCALAPPDATA%\YesGATC\CertificateWorker\` | **Never deleted on update** — saved login, DOCA browser session, PDFs, stamping images |
 
-Keep the repo scripts on the server (optional) or copy only `server\update.ps1` and `server\pull-update.ps1` into `C:\YesGATC\CertificateWorker\` for easy re-runs.
+Keep the repo scripts on the server (optional) or copy `server\update.ps1`, `server\pull-update.ps1`, and `server\optimize-vps.ps1` into `C:\YesGATC\CertificateWorker\` for easy re-runs.
 
 ---
 
@@ -243,11 +243,86 @@ powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-rele
 - Do **not** sign out of Windows — that closes the interactive session and stops the worker.
 - If DOCA asks for captcha or a new password, RDP in, fix it in Chrome, and the auto worker resumes.
 - Closing Chrome is OK — the worker reopens it on the next job.
+- **CPU 100% with low memory?** Open Task Manager first — if **Antimalware Service Executable** (`MsMpEng`) is high, run [VPS performance tuning](#vps-performance-tuning-4-gb--defender) below before blaming the worker.
+
+---
+
+## VPS performance tuning (4 GB / Defender)
+
+Dedicated automation box checklist. **Biggest win on a busy queue:** stop Windows Defender from scanning Chrome/Playwright/worker I/O in real time.
+
+### Symptom
+
+| Task Manager | Meaning |
+|--------------|---------|
+| CPU ~100%, Memory ~50–60% | CPU starved — often Defender, not RAM |
+| `Antimalware Service Executable` ≫ other processes | Real-time scan thrashing worker folders |
+
+### One command (Administrator PowerShell)
+
+Copy `optimize-vps.ps1` onto the server (from a release zip / `pull-update`), then:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\optimize-vps.ps1
+```
+
+What it does:
+
+- **Defender path exclusions:** `C:\YesGATC\CertificateWorker\`, `%LOCALAPPDATA%\YesGATC\CertificateWorker\` (incl. `doca-browser`, `chrome-system-mirror`), Playwright cache dirs, Chrome User Data
+- **Defender process exclusions:** `Yesgatc.CertificateWorker.exe`, `chrome.exe`, `chromium.exe`, `msedge.exe`
+- Prefers weekly scan schedule (Sunday ~03:00) when policy allows
+- Sets current-user visual effects to **Best performance**
+- Prints current exclusions + manual checklist
+
+Show current exclusions only (no changes):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\optimize-vps.ps1 -ShowOnly
+```
+
+Optional — disable Windows Search indexing (saves background CPU/disk):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\optimize-vps.ps1 -DisableSearchIndexing
+```
+
+**Security note:** Exclusions reduce scanning on those paths/processes. Fine for a locked-down single-purpose VPS; do **not** turn Defender off entirely on a public host unless you accept that risk.
+
+### Manual Windows trim
+
+1. **Visual effects:** System → Advanced system settings → Performance → Settings → **Adjust for best performance** (script sets the registry equivalent for the logged-in user).
+2. **Windows Update:** set Active Hours / pause during long certificate queues so downloads do not steal CPU mid-run.
+3. **Roles/Features:** remove unused roles (IIS, Print Server, etc.) if present.
+4. Close **personal Chrome** and any second worker instance before long runs.
+
+### Session + autostart (required for Playwright UI)
+
+| Do | Do not |
+|----|--------|
+| RDP **Disconnect** (session stays) | **Sign out** (kills Chrome + worker) |
+| `pull-update.ps1 -EnsureAutoStart` | Expect worker with nobody logged in |
+| Optional Sysinternals Autologon for reboot recovery | Leave Evaluation license unused forever without a plan |
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -EnsureAutoStart
+```
+
+See [Auto-start after VM / node reboot](#auto-start-after-vm--node-reboot) below.
+
+### Captcha config (ops only)
+
+Match whatever works on your laptop in `C:\YesGATC\CertificateWorker\appsettings.local.json` (DeepSeek signed-in in the worker Chrome profile, **or** Gemini API key). No code change required for tuning.
+
+### Verification (after optimize)
+
+1. Task Manager → sort by CPU → **Antimalware Service Executable** should not stay dominant (>10–15% sustained) while the worker runs.
+2. Smoke: one eMAAP login + **one** job succeeds.
+3. Then resume the full queue (e.g. 69 jobs).
+4. Memory during one Chrome + worker should stay usable (roughly under ~80% on 4 GB).
 
 ---
 
 ## Auto-start after VM / node reboot
-
 The worker is a **desktop app** (Chrome + DOCA). It cannot run with no Windows user session. After a host provider reboots the VM, use a **scheduled task** so the worker starts again when the session is available.
 
 ### One-time setup (on the server, as your RDP user)
@@ -303,3 +378,5 @@ For a dedicated VM that must recover without manual RDP, configure **automatic s
 | Queue not updating | Check status line: should say *watching Firestore live*; verify network to Firebase |
 | Lost DOCA login | RDP in and log in again — profile is under `%LOCALAPPDATA%\YesGATC\CertificateWorker\doca-browser` |
 | Worker not running after VM reboot | Run `register-autostart.ps1` or `pull-update.ps1 -EnsureAutoStart`, then RDP in once (or configure auto-logon) |
+| CPU 100%, memory OK, MsMpEng high | Run `optimize-vps.ps1` as Administrator — see [VPS performance tuning](#vps-performance-tuning-4-gb--defender) |
+| Queue freezes / Chrome sluggish | Confirm single worker instance; close extra Chrome; Defender exclusions applied |
