@@ -54,6 +54,7 @@ public sealed class DscCertificateListService
             CertificatePdfPath = EmptyToNull(FirestoreFieldReader.ReadString(fields, "certificatePdfPath")),
             EmaapCertificatePdfUrl = EmptyToNull(FirestoreFieldReader.ReadString(fields, "emaapCertificatePdfUrl")),
             SignedCertificatePdfUrl = EmptyToNull(FirestoreFieldReader.ReadString(fields, "signedCertificatePdfUrl")),
+            SignedCertificatePdfPath = EmptyToNull(FirestoreFieldReader.ReadString(fields, "signedCertificatePdfPath")),
             CertificateVoidedAt = EmptyToNull(FirestoreFieldReader.ReadString(fields, "certificateVoidedAt")),
             SupersededByResubmissionId = EmptyToNull(FirestoreFieldReader.ReadString(fields, "supersededByResubmissionId")),
         };

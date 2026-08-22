@@ -34,9 +34,35 @@
                     <Button x:Name="SignInButton" Content="Sign in" Click="SignInButton_Click"/>
                     <Button x:Name="RefreshButton" Content="Refresh" Click="RefreshButton_Click" IsEnabled="False"/>
                     <Button x:Name="SignButton" Content="Sign &amp; upload" Click="SignButton_Click" IsEnabled="False"/>
+                    <Button x:Name="DownloadButton" Content="Download signed" Click="DownloadButton_Click" IsEnabled="False"/>
                     <Button Content="Save login" Click="SaveButton_Click"/>
                     <Button x:Name="SignOutButton" Content="Sign out" Click="SignOutButton_Click" IsEnabled="False"/>
                 </StackPanel>
+                <Grid ColumnDefinitions="220,10,70,6,70,10,*">
+                    <ComboBox x:Name="StampPlaceBox"
+                              SelectedIndex="0"
+                              SelectionChanged="StampPlaceBox_SelectionChanged">
+                        <ComboBoxItem Tag="Officer" Content="Stamp: above verifying officer"/>
+                        <ComboBoxItem Tag="BottomRight" Content="Stamp: bottom right"/>
+                        <ComboBoxItem Tag="BottomLeft" Content="Stamp: bottom left"/>
+                        <ComboBoxItem Tag="BottomCenter" Content="Stamp: bottom center"/>
+                        <ComboBoxItem Tag="TopRight" Content="Stamp: top right"/>
+                        <ComboBoxItem Tag="Custom" Content="Stamp: custom X Y"/>
+                    </ComboBox>
+                    <TextBox x:Name="StampXBox"
+                             Grid.Column="2"
+                             Watermark="X"
+                             IsVisible="False"/>
+                    <TextBox x:Name="StampYBox"
+                             Grid.Column="4"
+                             Watermark="Y"
+                             IsVisible="False"/>
+                    <TextBlock Grid.Column="6"
+                               VerticalAlignment="Center"
+                               Foreground="#666666"
+                               Text="Default sits just above “Signature of the verifying officer”."
+                               TextWrapping="Wrap"/>
+                </Grid>
                 <TextBlock x:Name="StatusText"
                            Text="Sign in with this RC Admin account."
                            TextWrapping="Wrap"/>

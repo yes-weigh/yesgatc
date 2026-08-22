@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Yesgatc.CertificateWorker.Models;
 using Yesgatc.CertificateWorker.Services;
 using Yesgatc.DscEngine.Models;
@@ -18,6 +20,8 @@ public partial class MainWindow : Window
     private readonly LocalCredentialsStore _store = new();
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private readonly DscTokenSession _dscToken = new();
+    private readonly DscLocalPrefsStore _prefsStore = new();
+    private DscLocalPrefs _prefs = new();
 
     private FirebaseSignInResult? _session;
     private bool _busy;
@@ -31,6 +35,7 @@ public partial class MainWindow : Window
         _certificates = new DscCertificateListService(settings.Firebase);
         _signedPdfs = new DscSignedPdfService(settings.Firebase, App.Dsc);
         LoadSaved();
+        LoadStampPrefs();
         RefreshTokenHint();
         Closed += (_, _) =>
         {
@@ -49,7 +54,21 @@ public partial class MainWindow : Window
     private void SaveButton_Click(object? sender, RoutedEventArgs e)
     {
         Persist();
-        SetStatus("Login saved on this machine.");
+        PersistStampPrefs();
+        SetStatus("Login and stamp position saved on this machine.");
+    }
+
+    private void StampPlaceBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!IsInitialized)
+        {
+            return;
+        }
+
+        var custom = SelectedPlacement() == "Custom";
+        StampXBox.IsVisible = custom;
+        StampYBox.IsVisible = custom;
+        PersistStampPrefs();
     }
 
     private async void SignInButton_Click(object? sender, RoutedEventArgs e) =>
@@ -61,6 +80,9 @@ public partial class MainWindow : Window
     private async void SignButton_Click(object? sender, RoutedEventArgs e) =>
         await SignSelectedAsync();
 
+    private async void DownloadButton_Click(object? sender, RoutedEventArgs e) =>
+        await DownloadSelectedAsync();
+
     private void SignOutButton_Click(object? sender, RoutedEventArgs e)
     {
         _session = null;
@@ -69,6 +91,7 @@ public partial class MainWindow : Window
         RefreshButton.IsEnabled = false;
         SignOutButton.IsEnabled = false;
         SignButton.IsEnabled = false;
+        DownloadButton.IsEnabled = false;
         SetStatus("Signed out.");
     }
 
@@ -83,7 +106,7 @@ public partial class MainWindow : Window
     }
 
     private void CertGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e) =>
-        UpdateSignButton();
+        UpdateActionButtons();
 
     private async Task SignInAsync()
     {
@@ -112,7 +135,7 @@ public partial class MainWindow : Window
         {
             _busy = false;
             SignInButton.IsEnabled = true;
-            UpdateSignButton();
+            UpdateActionButtons();
         }
     }
 
@@ -150,7 +173,7 @@ public partial class MainWindow : Window
         {
             _busy = false;
             RefreshButton.IsEnabled = _session is not null;
-            UpdateSignButton();
+            UpdateActionButtons();
         }
     }
 
@@ -162,11 +185,11 @@ public partial class MainWindow : Window
         }
 
         var selected = SelectedRows()
-            .Where(item => item.SignStatus == DscSignStatus.NotSigned)
+            .Where(item => item.SignStatus != DscSignStatus.Voided)
             .ToList();
         if (selected.Count == 0)
         {
-            SetStatus("Select one or more unsigned certified certificates.");
+            SetStatus("Select one or more certified certificates.");
             return;
         }
 
@@ -185,7 +208,12 @@ public partial class MainWindow : Window
             {
                 SetStatus($"Signing {record.CertificateNumber}…");
                 _session = _session with { IdToken = await GetFreshIdTokenAsync() };
-                var updated = await _signedPdfs.SignAndUploadAsync(record, _dscToken, _session);
+                PersistStampPrefs();
+                var updated = await _signedPdfs.SignAndUploadAsync(
+                    record,
+                    _dscToken,
+                    _session,
+                    CurrentStampLayout());
                 ReplaceRecord(updated);
                 ok++;
             }
@@ -202,7 +230,93 @@ public partial class MainWindow : Window
         {
             _busy = false;
             RefreshButton.IsEnabled = _session is not null;
-            UpdateSignButton();
+            UpdateActionButtons();
+        }
+    }
+
+    private async Task DownloadSelectedAsync()
+    {
+        if (_busy || _session is null)
+        {
+            return;
+        }
+
+        var selected = SelectedRows()
+            .Where(item => item.SignStatus == DscSignStatus.Signed)
+            .ToList();
+        if (selected.Count == 0)
+        {
+            SetStatus("Select one or more signed certificates.");
+            return;
+        }
+
+        _busy = true;
+        DownloadButton.IsEnabled = false;
+        try
+        {
+            var saved = new List<string>();
+            if (selected.Count == 1)
+            {
+                var record = selected[0];
+                var pick = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+                {
+                    Title = "Save signed certificate",
+                    SuggestedFileName = DscSignedPdfService.SuggestedSignedFileName(record),
+                    DefaultExtension = "pdf",
+                    FileTypeChoices =
+                    [
+                        new FilePickerFileType("PDF") { Patterns = ["*.pdf"] },
+                    ],
+                });
+                if (pick is null)
+                {
+                    SetStatus("Download cancelled.");
+                    return;
+                }
+
+                var path = pick.TryGetLocalPath()
+                    ?? Path.Combine(DefaultDownloadDirectory(), DscSignedPdfService.SuggestedSignedFileName(record));
+                _session = _session with { IdToken = await GetFreshIdTokenAsync() };
+                saved.Add(await _signedPdfs.DownloadSignedPdfAsync(record, _session.IdToken, path));
+            }
+            else
+            {
+                var folder = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                {
+                    Title = "Save signed certificates to folder",
+                    AllowMultiple = false,
+                });
+                var directory = folder.Count > 0
+                    ? folder[0].TryGetLocalPath()
+                    : null;
+                if (string.IsNullOrWhiteSpace(directory))
+                {
+                    SetStatus("Download cancelled.");
+                    return;
+                }
+
+                foreach (var record in selected)
+                {
+                    SetStatus($"Downloading {record.CertificateNumber}…");
+                    _session = _session with { IdToken = await GetFreshIdTokenAsync() };
+                    var path = Path.Combine(directory, DscSignedPdfService.SuggestedSignedFileName(record));
+                    saved.Add(await _signedPdfs.DownloadSignedPdfAsync(record, _session.IdToken, path));
+                }
+            }
+
+            OpenSaved(saved);
+            SetStatus(saved.Count == 1
+                ? $"Downloaded {Path.GetFileName(saved[0])}."
+                : $"Downloaded {saved.Count} signed PDFs.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+            UpdateActionButtons();
         }
     }
 
@@ -280,14 +394,18 @@ public partial class MainWindow : Window
         CountText.Text = filtered.Count == _all.Count
             ? $"{filtered.Count} certificate{(filtered.Count == 1 ? "" : "s")}"
             : $"{filtered.Count} of {_all.Count} certificates";
-        UpdateSignButton();
+        UpdateActionButtons();
     }
 
-    private void UpdateSignButton()
+    private void UpdateActionButtons()
     {
+        var selected = SelectedRows().ToList();
         SignButton.IsEnabled = !_busy
             && _session is not null
-            && SelectedRows().Any(item => item.SignStatus == DscSignStatus.NotSigned);
+            && selected.Any(item => item.SignStatus != DscSignStatus.Voided);
+        DownloadButton.IsEnabled = !_busy
+            && _session is not null
+            && selected.Any(item => item.SignStatus == DscSignStatus.Signed);
     }
 
     private void RefreshTokenHint()
@@ -331,6 +449,65 @@ public partial class MainWindow : Window
         }
     }
 
+    private void LoadStampPrefs()
+    {
+        _prefs = _prefsStore.Load();
+        if (string.Equals(_prefs.StampPlacement, "BottomRight", StringComparison.OrdinalIgnoreCase))
+        {
+            _prefs.StampPlacement = "Officer";
+        }
+        StampXBox.Text = _prefs.CustomX.ToString("0");
+        StampYBox.Text = _prefs.CustomY.ToString("0");
+        var index = 0;
+        foreach (var obj in StampPlaceBox.Items)
+        {
+            if (obj is ComboBoxItem item
+                && string.Equals(item.Tag as string, _prefs.StampPlacement, StringComparison.OrdinalIgnoreCase))
+            {
+                StampPlaceBox.SelectedIndex = index;
+                break;
+            }
+
+            index++;
+        }
+
+        var custom = SelectedPlacement() == "Custom";
+        StampXBox.IsVisible = custom;
+        StampYBox.IsVisible = custom;
+    }
+
+    private void PersistStampPrefs()
+    {
+        _prefs.StampPlacement = SelectedPlacement();
+        if (float.TryParse(StampXBox.Text, out var x))
+        {
+            _prefs.CustomX = x;
+        }
+
+        if (float.TryParse(StampYBox.Text, out var y))
+        {
+            _prefs.CustomY = y;
+        }
+
+        _prefsStore.Save(_prefs);
+    }
+
+    private string SelectedPlacement() =>
+        StampPlaceBox.SelectedItem is ComboBoxItem item && item.Tag is string tag && tag.Length > 0
+            ? tag
+            : "BottomRight";
+
+    private DscStampLayout CurrentStampLayout() =>
+        new()
+        {
+            Placement = SelectedPlacement(),
+            Width = App.Dsc.StampWidth,
+            Height = App.Dsc.StampHeight,
+            Margin = Math.Max(App.Dsc.StampMarginRight, App.Dsc.StampMarginBottom),
+            CustomX = float.TryParse(StampXBox.Text, out var x) ? x : _prefs.CustomX,
+            CustomY = float.TryParse(StampYBox.Text, out var y) ? y : _prefs.CustomY,
+        };
+
     private void Persist()
     {
         _store.Save(new StoredCredentials
@@ -344,6 +521,32 @@ public partial class MainWindow : Window
     }
 
     private void SetStatus(string text) => StatusText.Text = text;
+
+    private static string DefaultDownloadDirectory()
+    {
+        var downloads = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "Downloads",
+            "YesGATC-DSC");
+        Directory.CreateDirectory(downloads);
+        return downloads;
+    }
+
+    private static void OpenSaved(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        var target = paths.Count == 1 ? paths[0] : Path.GetDirectoryName(paths[0]);
+        if (string.IsNullOrWhiteSpace(target) || !Path.Exists(target))
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+    }
 
     private static string Compact(string value) =>
         new string(value.Where(ch => !char.IsWhiteSpace(ch) && ch is not '/' and not '-').ToArray())

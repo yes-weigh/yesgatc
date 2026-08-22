@@ -23,6 +23,7 @@ public sealed class DscCertificateRecord
     public string? CertificatePdfPath { get; init; }
     public string? EmaapCertificatePdfUrl { get; init; }
     public string? SignedCertificatePdfUrl { get; init; }
+    public string? SignedCertificatePdfPath { get; init; }
     public string? CertificateVoidedAt { get; init; }
     public string? SupersededByResubmissionId { get; init; }
 
@@ -51,7 +52,7 @@ public sealed class DscCertificateRecord
         _ => "Not signed",
     };
 
-    public DscCertificateRecord WithSignedPdf(string url) =>
+    public DscCertificateRecord WithSignedPdf(string url, string? path = null) =>
         new()
         {
             Id = Id,
@@ -66,6 +67,7 @@ public sealed class DscCertificateRecord
             CertificatePdfPath = CertificatePdfPath,
             EmaapCertificatePdfUrl = EmaapCertificatePdfUrl,
             SignedCertificatePdfUrl = url,
+            SignedCertificatePdfPath = path ?? SignedCertificatePdfPath,
             CertificateVoidedAt = CertificateVoidedAt,
             SupersededByResubmissionId = SupersededByResubmissionId,
         };

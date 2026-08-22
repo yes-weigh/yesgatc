@@ -17,6 +17,17 @@ internal static class Program
             return;
         }
 
+        var officerArg = args.SkipWhile(arg => !string.Equals(arg, "--probe-officer", StringComparison.OrdinalIgnoreCase)).Skip(1).FirstOrDefault();
+        if (officerArg is not null)
+        {
+            var bytes = File.ReadAllBytes(officerArg);
+            var rect = OfficerStampAnchor.Find(bytes, new Models.DscStampLayout());
+            Console.WriteLine(rect is null
+                ? "Officer label not found."
+                : $"Officer stamp {rect.GetX():0.0},{rect.GetY():0.0} {rect.GetWidth():0.0}x{rect.GetHeight():0.0} right={rect.GetRight():0.0}");
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

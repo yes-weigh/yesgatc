@@ -22,16 +22,12 @@ public sealed class DscSignedPdfService
         DscCertificateRecord record,
         DscTokenSession token,
         FirebaseSignInResult session,
+        DscStampLayout? layout = null,
         CancellationToken cancellationToken = default)
     {
         if (record.IsVoided)
         {
             throw new InvalidOperationException($"{record.CertificateNumber} is voided.");
-        }
-
-        if (record.SignStatus == DscSignStatus.Signed)
-        {
-            throw new InvalidOperationException($"{record.CertificateNumber} is already signed.");
         }
 
         var unsigned = await DownloadUnsignedPdfAsync(record, session.IdToken, cancellationToken);
@@ -40,7 +36,7 @@ public sealed class DscSignedPdfService
             throw new InvalidOperationException("Certificate PDF is larger than 20 MB.");
         }
 
-        var signed = _signer.SignVisible(unsigned, token, record);
+        var signed = _signer.SignVisible(unsigned, token, record, layout);
         var localDir = WorkerDataPaths.CertificatePdfDirectory(record.Id);
         var localName = SanitizeFileName($"{record.CertificateNumber}_signed.pdf");
         var localPath = Path.Combine(localDir, localName);
@@ -72,7 +68,96 @@ public sealed class DscSignedPdfService
             session.IdToken,
             cancellationToken);
 
-        return record.WithSignedPdf(upload.DownloadUrl);
+        return record.WithSignedPdf(upload.DownloadUrl, upload.StoragePath);
+    }
+
+    public async Task<string> DownloadSignedPdfAsync(
+        DscCertificateRecord record,
+        string idToken,
+        string destinationPath,
+        CancellationToken cancellationToken = default)
+    {
+        if (record.SignStatus != DscSignStatus.Signed)
+        {
+            throw new InvalidOperationException($"{record.CertificateNumber} is not signed.");
+        }
+
+        var bytes = await DownloadSignedPdfBytesAsync(record, idToken, cancellationToken);
+        var directory = Path.GetDirectoryName(destinationPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        await File.WriteAllBytesAsync(destinationPath, bytes, cancellationToken);
+        return destinationPath;
+    }
+
+    public static string SuggestedSignedFileName(DscCertificateRecord record)
+    {
+        var stem = string.IsNullOrWhiteSpace(record.CertificateNumber)
+            ? record.SerialNumber
+            : record.CertificateNumber;
+        return SanitizeFileName($"{stem}_signed.pdf");
+    }
+
+    private async Task<byte[]> DownloadSignedPdfBytesAsync(
+        DscCertificateRecord record,
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(record.SignedCertificatePdfPath))
+        {
+            try
+            {
+                return await _storage.DownloadFileAsync(record.SignedCertificatePdfPath, idToken, cancellationToken);
+            }
+            catch
+            {
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(record.SignedCertificatePdfUrl))
+        {
+            var fromUrl = await TryDownloadUrlAsync(record.SignedCertificatePdfUrl, idToken, cancellationToken);
+            if (fromUrl is not null)
+            {
+                return fromUrl;
+            }
+        }
+
+        try
+        {
+            return await DownloadUnsignedPdfAsync(record, idToken, cancellationToken);
+        }
+        catch
+        {
+            throw new InvalidOperationException(
+                $"No signed PDF file for {record.CertificateNumber}.");
+        }
+    }
+
+    private async Task<byte[]?> TryDownloadUrlAsync(
+        string url,
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", idToken);
+        using var response = await _http.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            using var retry = new HttpRequestMessage(HttpMethod.Get, url);
+            using var fallback = await _http.SendAsync(retry, cancellationToken);
+            if (!fallback.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            return await fallback.Content.ReadAsByteArrayAsync(cancellationToken);
+        }
+
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
     }
 
     private async Task<byte[]> DownloadUnsignedPdfAsync(
