@@ -22,7 +22,9 @@
     "import:emaap-pdfs": "node scripts/import-emaap-pdfs-mark-certified.mjs",
     "reconcile:rc-wallet-balances": "node scripts/reconcile-rc-wallet-balances.mjs",
     "cleanup:ghost-auth": "node scripts/cleanup-ghost-auth.mjs",
-    "worker:dev": "powershell -ExecutionPolicy Bypass -File certificate-worker/scripts/run-dev.ps1"
+    "worker:dev": "powershell -ExecutionPolicy Bypass -File certificate-worker/scripts/run-dev.ps1",
+    "dsc:dev": "powershell -ExecutionPolicy Bypass -File certificate-worker/scripts/run-dsc-dev.ps1",
+    "dsc:publish": "powershell -ExecutionPolicy Bypass -File certificate-worker/scripts/publish-dsc-engine.ps1"
   },
   "dependencies": {
     "firebase": "^12.13.0",

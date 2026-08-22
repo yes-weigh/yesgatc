@@ -1,0 +1,105 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Yesgatc.DscEngine.MainWindow"
+        Title="YesGATC DSC Engine"
+        Width="1100"
+        Height="720"
+        MinWidth="860"
+        MinHeight="560">
+    <Grid Margin="18" RowDefinitions="Auto,Auto,*,Auto">
+        <TextBlock Grid.Row="0"
+                   Text="DSC Auto Signing Engine"
+                   FontSize="22"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,4"/>
+        <TextBlock Grid.Row="0"
+                   Margin="0,28,0,12"
+                   Foreground="#666666"
+                   Text="Local RC machine only. Select a certified certificate, then Sign and upload."/>
+
+        <Border Grid.Row="1"
+                Padding="14"
+                CornerRadius="8"
+                BorderThickness="1"
+                BorderBrush="#DDDDDD"
+                Background="#F7F7F8"
+                Margin="0,0,0,12">
+            <StackPanel Spacing="8">
+                <TextBlock Text="RC Admin — 12-digit Aadhar + password"/>
+                <Grid ColumnDefinitions="*,8,*">
+                    <TextBox x:Name="AadharBox" Watermark="RC Aadhar"/>
+                    <TextBox x:Name="PasswordBox" Grid.Column="2" PasswordChar="•" Watermark="Password"/>
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Button x:Name="SignInButton" Content="Sign in" Click="SignInButton_Click"/>
+                    <Button x:Name="RefreshButton" Content="Refresh" Click="RefreshButton_Click" IsEnabled="False"/>
+                    <Button x:Name="SignButton" Content="Sign &amp; upload" Click="SignButton_Click" IsEnabled="False"/>
+                    <Button Content="Save login" Click="SaveButton_Click"/>
+                    <Button x:Name="SignOutButton" Content="Sign out" Click="SignOutButton_Click" IsEnabled="False"/>
+                </StackPanel>
+                <TextBlock x:Name="StatusText"
+                           Text="Sign in with this RC Admin account."
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="2" RowDefinitions="Auto,*">
+            <Grid ColumnDefinitions="*,12,180,12,Auto" Margin="0,0,0,8">
+                <TextBox x:Name="SearchBox"
+                         Watermark="Search certificate no. or machine serial"
+                         TextChanged="SearchBox_TextChanged"/>
+                <ComboBox x:Name="StatusFilterBox"
+                          Grid.Column="2"
+                          SelectedIndex="0"
+                          SelectionChanged="StatusFilterBox_SelectionChanged">
+                    <ComboBoxItem Content="All DSC statuses"/>
+                    <ComboBoxItem Content="Not signed"/>
+                    <ComboBoxItem Content="Signed"/>
+                    <ComboBoxItem Content="Voided"/>
+                </ComboBox>
+                <TextBlock x:Name="CountText"
+                           Grid.Column="4"
+                           VerticalAlignment="Center"
+                           Text="0 certificates"/>
+            </Grid>
+
+            <DataGrid x:Name="CertGrid"
+                      Grid.Row="1"
+                      IsReadOnly="True"
+                      SelectionMode="Extended"
+                      CanUserReorderColumns="True"
+                      CanUserResizeColumns="True"
+                      CanUserSortColumns="True"
+                      GridLinesVisibility="Horizontal"
+                      HeadersVisibility="Column"
+                      SelectionChanged="CertGrid_SelectionChanged">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Certificate"
+                                        Binding="{Binding CertificateNumber}"
+                                        Width="2.2*"/>
+                    <DataGridTextColumn Header="Serial"
+                                        Binding="{Binding SerialNumber}"
+                                        Width="*"/>
+                    <DataGridTextColumn Header="Customer"
+                                        Binding="{Binding CustomerName}"
+                                        Width="1.4*"/>
+                    <DataGridTextColumn Header="Type"
+                                        Binding="{Binding VerificationTypeLabel}"
+                                        Width="70"/>
+                    <DataGridTextColumn Header="Certified"
+                                        Binding="{Binding CertifiedAtDisplay}"
+                                        Width="140"/>
+                    <DataGridTextColumn Header="DSC"
+                                        Binding="{Binding SignStatusLabel}"
+                                        Width="100"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
+
+        <TextBlock x:Name="HintText"
+                   Grid.Row="3"
+                   Margin="0,10,0,0"
+                   Foreground="#666666"
+                   Text="WD PROXKey · PIN once per session · visible stamp · upload to Firebase."/>
+    </Grid>
+</Window>

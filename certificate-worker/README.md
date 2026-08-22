@@ -2,6 +2,10 @@
 
 Windows desktop app for **Super Admin** staff to process submitted verifications on the DOCA portal across **all regional centers**.
 
+Related local RC apps (do **not** install on the VPS):
+- **EmaapEngine** — RC-scoped eMAAP certificate generation
+- **DSC Engine** — RC-scoped WD PROXKey sign + Firebase upload (`Yesgatc.DscEngine`, `npm run dsc:dev` / `npm run dsc:publish`)
+
 **Current features:**
 - Sign in with Super Admin Aadhar + password (same as the web app admin login)
 - List all `submitted` verifications from every RC
