@@ -19,6 +19,8 @@ public sealed record EmaapCertificateDownloadResult(
 /// </summary>
 public static class EmaapCertificatesIssuedAutomation
 {
+    private const int EmaapBelongToMaxLength = 50;
+
     private static readonly Regex CertificateNumberRegex = new(
         @"IND\s*/\s*GATC\s*/\s*KL\s*/\s*26\s*/\s*04\s*/\s*26\s*/\s*([\d\s]+)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -1085,16 +1087,31 @@ public static class EmaapCertificatesIssuedAutomation
               const wantB = normName(belong);
               const certCompact = String(cert).replace(/\s+/g, '');
               if (!certCompact) return false;
+              const belongHit = (rowText, cells) => {
+                if (!wantB) return true;
+                const rowNorm = normName(rowText);
+                if (rowNorm.includes(wantB)) return true;
+                const cap = wantB.slice(0, 50).trim();
+                if (cap.length >= 8 && rowNorm.includes(cap)) return true;
+                return (cells || []).some(c => {
+                  const n = normName(c);
+                  if (n.length < 8) return false;
+                  return n === wantB || n.includes(wantB) || wantB.includes(n)
+                    || (cap.length >= 8 && (n.includes(cap) || cap.includes(n)));
+                });
+              };
               const trs = Array.from(document.querySelectorAll('table tbody tr, table tr'));
               for (const tr of trs) {
                 const text = (tr.innerText || '').replace(/\s+/g, ' ');
                 const compact = text.replace(/\s+/g, '');
+                const cells = Array.from(tr.querySelectorAll('td')).map(td =>
+                  (td.innerText || '').replace(/\s+/g, ' ').trim());
                 if (!compact.includes(certCompact)
                     && !(seq && compact.includes('26/04/26/' + seq))) {
                   continue;
                 }
                 if (wantM && !text.includes(wantM)) continue;
-                if (wantB && !normName(text).includes(wantB)) continue;
+                if (!belongHit(text, cells)) continue;
                 return Array.from(tr.querySelectorAll('button, a, span'))
                   .some(el => /upload\s*signed\s*pdf/i.test(
                     (el.innerText || el.textContent || '').trim()));
@@ -1123,14 +1140,32 @@ public static class EmaapCertificatesIssuedAutomation
               const wantM = normMobile(mobile);
               const wantB = normName(belong);
               const certCompact = String(cert).replace(/\s+/g, '');
+              const belongHit = (rowText, cells) => {
+                if (!wantB) return true;
+                const rowNorm = normName(rowText);
+                if (rowNorm.includes(wantB)) return true;
+                const cap = wantB.slice(0, 50).trim();
+                if (cap.length >= 8 && rowNorm.includes(cap)) return true;
+                return (cells || []).some(c => {
+                  const n = normName(c);
+                  if (n.length < 8) return false;
+                  return n === wantB || n.includes(wantB) || wantB.includes(n)
+                    || (cap.length >= 8 && (n.includes(cap) || cap.includes(n)));
+                });
+              };
+              const downloadLabel = (el) => (el.innerText || el.textContent
+                || el.getAttribute('title') || el.getAttribute('aria-label') || '')
+                .replace(/\s+/g, ' ').trim();
               const trs = Array.from(document.querySelectorAll('table tbody tr, table tr'));
               for (const tr of trs) {
                 const text = (tr.innerText || '').replace(/\s+/g, ' ');
                 const compact = text.replace(/\s+/g, '');
+                const cells = Array.from(tr.querySelectorAll('td')).map(td =>
+                  (td.innerText || '').replace(/\s+/g, ' ').trim());
                 if (pending) {
                   if (/IND\s*\/\s*GATC/i.test(text)) continue;
                   if (wantM && !text.includes(wantM)) continue;
-                  if (wantB && !normName(text).includes(wantB)) continue;
+                  if (!belongHit(text, cells)) continue;
                 } else {
                   if (!certCompact) continue;
                   if (!compact.includes(certCompact)
@@ -1138,10 +1173,10 @@ public static class EmaapCertificatesIssuedAutomation
                     continue;
                   }
                   if (wantM && !text.includes(wantM)) continue;
-                  if (wantB && !normName(text).includes(wantB)) continue;
+                  if (!belongHit(text, cells)) continue;
                 }
-                const btn = Array.from(tr.querySelectorAll('button, a, span'))
-                  .find(el => /^\s*Download\s*$/i.test((el.innerText || el.textContent || '').trim()));
+                const btn = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
+                  .find(el => /^download$/i.test(downloadLabel(el)));
                 if (!btn) continue;
                 btn.scrollIntoView({ block: 'center' });
                 btn.click();
@@ -1189,7 +1224,7 @@ public static class EmaapCertificatesIssuedAutomation
             }
 
             if (!string.IsNullOrWhiteSpace(belongToName)
-                && rowText.IndexOf(belongToName, StringComparison.OrdinalIgnoreCase) < 0)
+                && !BelongNamesMatch(belongToName, rowText))
             {
                 continue;
             }
@@ -1330,7 +1365,7 @@ public static class EmaapCertificatesIssuedAutomation
               return true;
             }
             """,
-            new object[] { belongTo.Trim(), mobile10 });
+            new object[] { TruncateEmaapBelongTo(belongTo), mobile10 });
 
         // Orange magnifying-glass search in Action filter cell.
         try
@@ -1444,11 +1479,15 @@ public static class EmaapCertificatesIssuedAutomation
                   if (mobile !== wantM) continue;
 
                   const rowNorm = normName(rowText);
+                  const cap = wantB.slice(0, 50).trim();
                   const belongHit =
                     rowNorm.includes(wantB)
+                    || (cap.length >= 8 && rowNorm.includes(cap))
                     || cells.some(c => {
                       const n = normName(c);
-                      return n === wantB || n.includes(wantB) || wantB.includes(n);
+                      if (n.length < 8) return false;
+                      return n === wantB || n.includes(wantB) || wantB.includes(n)
+                        || (cap.length >= 8 && (n.includes(cap) || cap.includes(n)));
                     });
                   if (!belongHit) continue;
 
@@ -1475,8 +1514,11 @@ public static class EmaapCertificatesIssuedAutomation
                   }
 
                   if (!allowPending) continue;
-                  const hasDownload = Array.from(tr.querySelectorAll('button, a, span'))
-                    .some(el => /^\s*Download\s*$/i.test((el.innerText || el.textContent || '').trim()));
+                  const hasDownload = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
+                    .some(el => /^download$/i.test(
+                      (el.innerText || el.textContent
+                        || el.getAttribute('title') || el.getAttribute('aria-label') || '')
+                        .replace(/\s+/g, ' ').trim()));
                   if (!hasDownload) continue;
                   if (!bestPending || index < bestPending.index) {
                     bestPending = {
@@ -1596,6 +1638,38 @@ public static class EmaapCertificatesIssuedAutomation
         return int.TryParse(seqStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seq)
             ? seq
             : 0;
+    }
+
+    private static string TruncateEmaapBelongTo(string? value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        return trimmed.Length <= EmaapBelongToMaxLength
+            ? trimmed
+            : trimmed[..EmaapBelongToMaxLength];
+    }
+
+    /// <summary>
+    /// eMAAP Belongs To is maxlength 50. Issued-list cells are truncated; Firestore names can be longer.
+    /// </summary>
+    private static bool BelongNamesMatch(string? wantRaw, string haystack)
+    {
+        var want = NormalizeName(wantRaw);
+        var have = NormalizeName(haystack);
+        if (string.IsNullOrEmpty(want) || string.IsNullOrEmpty(have))
+        {
+            return false;
+        }
+
+        if (have.Contains(want, StringComparison.Ordinal)
+            || want.Contains(have, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var cap = TruncateEmaapBelongTo(want);
+        return cap.Length >= 8
+            && (have.Contains(cap, StringComparison.Ordinal)
+                || cap.Contains(have, StringComparison.Ordinal));
     }
 
     private static string NormalizeName(string? value) =>
