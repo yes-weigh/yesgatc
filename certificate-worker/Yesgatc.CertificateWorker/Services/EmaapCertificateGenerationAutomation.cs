@@ -8,8 +8,8 @@ namespace Yesgatc.CertificateWorker.Services;
 
 /// <summary>
 /// eMAAP Generate Certificates:
-/// Generate Certificates → Certificate Generation → fill frm-gatc by field id (same Firestore resolve as DOCA).
-/// After Submit Certificate Details: Instrument Certificate Upload then Generate Certificate + dismiss OK.
+/// Generate Certificates → Certificate Generation → fill frm-gatc by field id.
+/// Submit Certificate Details → dismiss "Record saved successfully" OK.
 /// PDF download / mark certified is handled by AutomationService via Certificates Issued.
 /// </summary>
 public static class EmaapCertificateGenerationAutomation
@@ -73,21 +73,23 @@ public static class EmaapCertificateGenerationAutomation
         await FillVerificationDecisionBlockAsync(page, instrument);
         await FillChargesBlockAsync(page, instrument, machinePhotoLocalPaths);
 
-        await ClickSubmitCertificateDetailsAsync(page, cancellationToken);
+        // Updated portal shows Instrument Certificate Upload on the same form (before submit).
         await FillInstrumentCertificateUploadBlockAsync(
             page,
+            party,
             instrument,
             standardWeightPhotoLocalPath,
             cancellationToken);
 
-        // Fill-only: stop after Instrument Certificate Upload — do not click Generate Certificate.
+        // Fill-only: stop at Name of Principal Officer — do not submit or generate.
         if (fillOnly)
         {
             await page.BringToFrontAsync();
             return;
         }
 
-        await ClickGenerateCertificateAsync(page, cancellationToken);
+        await ClickSubmitCertificateDetailsAsync(page, cancellationToken);
+        await EmaapCertificatesIssuedAutomation.DismissSuccessOkAsync(page, cancellationToken);
 
         await page.BringToFrontAsync();
     }
@@ -136,16 +138,17 @@ public static class EmaapCertificateGenerationAutomation
     }
 
     /// <summary>
-    /// Post-submit Instrument Certificate Upload: br_upload (standard weights), br_remark, name_of_officer.
-    /// Section is hidden until Submit Certificate Details succeeds.
+    /// Instrument Certificate Upload (visible on generate form before submit).
+    /// Portal render: br_generate_certificate / belong_to / address / mobile / validity are view-field divs.
+    /// Fill only editable controls: br_upload, br_remark, name_of_officer.
     /// </summary>
     private static async Task FillInstrumentCertificateUploadBlockAsync(
         IPage page,
+        PartyContactDetails party,
         InstrumentDetails instrument,
         string? standardWeightPhotoLocalPath,
         CancellationToken cancellationToken)
     {
-        // Wait for post-submit section to unhide.
         var uploadSection = page.Locator("#group-br_instrument_certificate_upload-0").First;
         if (await uploadSection.CountAsync() > 0)
         {
@@ -154,7 +157,16 @@ public static class EmaapCertificateGenerationAutomation
                 State = WaitForSelectorState.Visible,
                 Timeout = 45_000,
             });
+            await uploadSection.ScrollIntoViewIfNeededAsync();
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await FillGenerateCertificateModeAsync(page);
+        await FillIfEditableAsync(page, "#br_belong_to", TruncateForEmaapField(party.BelongToName, 50));
+        await FillIfEditableAsync(page, "#br_address", party.Address);
+        await FillIfEditableAsync(page, "#br_mobile_no", party.Mobile);
+        await FillValidityDateIfEmptyAsync(page);
 
         var upload = page.Locator("#br_upload_file, input[name='br_upload']").First;
         await upload.WaitForAsync(new LocatorWaitForOptions
@@ -175,7 +187,7 @@ public static class EmaapCertificateGenerationAutomation
         await upload.SetInputFilesAsync(standardWeightPhotoLocalPath);
 
         var remarks = string.IsNullOrWhiteSpace(instrument.Remarks) ? "Nill" : instrument.Remarks.Trim();
-        await ClearAndFillByIdAsync(page, "#br_remark", remarks);
+        await ClearAndFillByIdAsync(page, "#br_remark", TruncateForEmaapField(remarks, 50));
 
         // Portal prefills GATC company name — always overwrite with principal officer.
         await ClearAndFillByIdAsync(page, "#name_of_officer", PrincipalOfficerName);
@@ -183,50 +195,133 @@ public static class EmaapCertificateGenerationAutomation
         cancellationToken.ThrowIfCancellationRequested();
     }
 
-    private static async Task ClickGenerateCertificateAsync(
-        IPage page,
-        CancellationToken cancellationToken)
+    private static async Task FillGenerateCertificateModeAsync(IPage page)
     {
-        // Prefer the submit button in the Instrument Certificate Upload footer
-        // (type=submit "Generate Certificate"), not sidebar "Generate Certificates".
-        var btn = page.Locator("button[type='submit'], button")
-            .Filter(new LocatorFilterOptions
-            {
-                HasTextRegex = new Regex("^\\s*Generate Certificate\\s*$", RegexOptions.IgnoreCase),
-            });
-
-        if (await btn.CountAsync() == 0)
+        var el = page.Locator("#br_generate_certificate").First;
+        if (await el.CountAsync() == 0)
         {
-            btn = page.GetByRole(AriaRole.Button, new PageGetByRoleOptions
-            {
-                Name = "Generate Certificate",
-                Exact = true,
-            });
+            return;
         }
-
-        if (await btn.CountAsync() == 0)
-        {
-            throw new InvalidOperationException(
-                "Could not find eMAAP 'Generate Certificate' button.");
-        }
-
-        await btn.First.ScrollIntoViewIfNeededAsync();
-        await btn.First.ClickAsync(new LocatorClickOptions { Timeout = 15_000 });
-        cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions
+            await el.WaitForAsync(new LocatorWaitForOptions
             {
-                Timeout = 30_000,
+                State = WaitForSelectorState.Visible,
+                Timeout = 5_000,
             });
         }
         catch (PlaywrightException)
         {
-            await page.WaitForTimeoutAsync(2_000);
+            return;
         }
 
-        await EmaapCertificatesIssuedAutomation.DismissSuccessOkAsync(page, cancellationToken);
+        if (!await IsFillableControlAsync(el))
+        {
+            return;
+        }
+
+        var tag = await el.EvaluateAsync<string>("el => (el.tagName || '').toLowerCase()");
+        if (tag == "select")
+        {
+            await SelectByIdLabelAsync(page, "#br_generate_certificate", "Auto Generate");
+            return;
+        }
+
+        var current = (await el.InputValueAsync()).Trim();
+        if (string.IsNullOrWhiteSpace(current))
+        {
+            await FillLocatorAsync(el, "Auto Generate");
+        }
+    }
+
+    private static async Task FillValidityDateIfEmptyAsync(IPage page)
+    {
+        var el = page.Locator("#br_validity_date").First;
+        if (await el.CountAsync() == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await el.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 5_000,
+            });
+        }
+        catch (PlaywrightException)
+        {
+            return;
+        }
+
+        // Updated portal: #br_validity_date is a view-field div, not an input.
+        if (!await IsFillableControlAsync(el))
+        {
+            return;
+        }
+
+        var current = (await el.InputValueAsync()).Trim();
+        if (!string.IsNullOrWhiteSpace(current))
+        {
+            return;
+        }
+
+        var due = DateTime.Now.Date.AddYears(1).AddDays(-1);
+        await FillLocatorAsync(el, due.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+    }
+
+    private static async Task FillIfEditableAsync(IPage page, string selector, string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var el = page.Locator(selector).First;
+        if (await el.CountAsync() == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await el.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 3_000,
+            });
+        }
+        catch (PlaywrightException)
+        {
+            return;
+        }
+
+        if (!await IsFillableControlAsync(el))
+        {
+            return;
+        }
+
+        await FillLocatorAsync(el, value.Trim());
+    }
+
+    /// <summary>
+    /// True for text/date inputs, textarea, select. False for view-field divs, file, checkbox.
+    /// </summary>
+    private static async Task<bool> IsFillableControlAsync(ILocator el)
+    {
+        return await el.EvaluateAsync<bool>(
+            """
+            el => {
+              const tag = (el.tagName || '').toLowerCase();
+              if (tag === 'textarea' || tag === 'select') return true;
+              if (tag !== 'input') return false;
+              const type = (el.getAttribute('type') || 'text').toLowerCase();
+              return type !== 'file' && type !== 'checkbox' && type !== 'radio'
+                && type !== 'button' && type !== 'submit' && type !== 'hidden';
+            }
+            """);
     }
 
     private static async Task FillInstrumentDetailsBlockAsync(

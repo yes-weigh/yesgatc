@@ -14,7 +14,8 @@ public sealed record EmaapCertificateDownloadResult(
 
 /// <summary>
 /// eMAAP Certificates Issued: dismiss success OK, open list, match Belongs to + Mobile,
-/// pick highest IND/GATC/KL/26/04/26/{n}, download PDF.
+/// pick highest IND/GATC/KL/26/04/26/{n}. First Download generates PDF in background
+/// (reveals Upload Signed PDF); wait 3s; second Download opens the PDF tab.
 /// </summary>
 public static class EmaapCertificatesIssuedAutomation
 {
@@ -24,7 +25,7 @@ public static class EmaapCertificatesIssuedAutomation
 
     public static async Task DismissSuccessOkAsync(IPage page, CancellationToken cancellationToken = default)
     {
-        // After Generate Certificate: spinner first, then "Record saved successfully" + OK.
+        // After Submit Certificate Details: spinner first, then "Record saved successfully" + OK.
         // Must click OK before any Certificates Issued navigation.
         var deadline = DateTime.UtcNow.AddSeconds(45);
         var sawDialog = false;
@@ -278,13 +279,47 @@ public static class EmaapCertificatesIssuedAutomation
         }
     }
 
+    /// <summary>
+    /// Current highest matching issued cert sequence for this party (before submit).
+    /// Download must pick a newer sequence so batch jobs do not reuse the last PDF.
+    /// </summary>
+    public static async Task<int?> PeekHighestMatchingSequenceAsync(
+        IPage page,
+        PartyContactDetails party,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(party);
+
+        var wantBelong = NormalizeName(party.BelongToName);
+        var wantMobile = NormalizeMobile(party.Mobile);
+        if (string.IsNullOrWhiteSpace(wantBelong) || string.IsNullOrWhiteSpace(wantMobile))
+        {
+            return null;
+        }
+
+        try
+        {
+            await OpenCertificatesIssuedAsync(page, cancellationToken);
+            await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
+            var best = await FindHighestMatchingRowAsync(page, wantBelong, wantMobile);
+            return best is null || best.Sequence <= 0 ? null : best.Sequence;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
     public static async Task<EmaapCertificateDownloadResult> DownloadHighestMatchingAsync(
         IPage page,
         PartyContactDetails party,
         string downloadDirectory,
         CancellationToken cancellationToken = default,
         string? preferCertificateNumber = null,
-        Func<string, Task>? onCertificateMatchedAsync = null)
+        Func<string, Task>? onCertificateMatchedAsync = null,
+        IReadOnlyCollection<string>? excludeCertificateNumbers = null,
+        int? minExclusiveSequence = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(party);
@@ -305,8 +340,24 @@ public static class EmaapCertificatesIssuedAutomation
         await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
 
         var preferNormalized = NormalizeCertificateNumber(preferCertificateNumber);
+        var exclude = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (excludeCertificateNumbers is not null)
+        {
+            foreach (var raw in excludeCertificateNumbers)
+            {
+                var n = NormalizeCertificateNumber(raw);
+                if (!string.IsNullOrWhiteSpace(n))
+                {
+                    exclude.Add(n);
+                }
+            }
+        }
+
+        var minSeq = minExclusiveSequence.GetValueOrDefault();
+        var waitForNewCert = string.IsNullOrWhiteSpace(preferNormalized) && (exclude.Count > 0 || minSeq > 0);
+        var maxAttempts = waitForNewCert ? 24 : 12;
         EmaapIssuedRowMatch? best = null;
-        for (var attempt = 0; attempt < 12; attempt++)
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -315,7 +366,7 @@ public static class EmaapCertificatesIssuedAutomation
                 best = await FindRowByCertificateNumberAsync(page, preferNormalized);
             }
 
-            best ??= await FindHighestMatchingRowAsync(page, wantBelong, wantMobile);
+            best ??= await FindHighestMatchingRowAsync(page, wantBelong, wantMobile, exclude, minSeq);
 
             if (best is not null
                 && (string.IsNullOrWhiteSpace(preferNormalized)
@@ -328,19 +379,19 @@ public static class EmaapCertificatesIssuedAutomation
             }
 
             best = null;
-            await page.WaitForTimeoutAsync(600);
+            await page.WaitForTimeoutAsync(waitForNewCert ? 900 : 600);
             if (attempt == 2)
             {
                 await TrySetPageLengthAsync(page, 100);
             }
 
-            if (attempt is 4 or 8)
+            if (attempt is 4 or 8 or 16)
             {
                 await ClearIssuedListFiltersAsync(page);
                 await page.WaitForTimeoutAsync(800);
             }
 
-            if (attempt is 5 or 9)
+            if (attempt is 5 or 9 or 17)
             {
                 await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
             }
@@ -352,8 +403,11 @@ public static class EmaapCertificatesIssuedAutomation
             var preferHint = string.IsNullOrWhiteSpace(preferNormalized)
                 ? string.Empty
                 : $" Preferred cert '{preferNormalized}' not found.";
+            var floorHint = minSeq > 0
+                ? $" Need a cert newer than sequence {minSeq}."
+                : string.Empty;
             throw new InvalidOperationException(
-                $"No Certificates Issued row matched Belongs to '{party.BelongToName}' and Mobile '{party.Mobile}'.{preferHint} " +
+                $"No Certificates Issued row matched Belongs to '{party.BelongToName}' and Mobile '{party.Mobile}'.{preferHint}{floorHint} " +
                 $"Visible sample: {sample}");
         }
 
@@ -420,7 +474,8 @@ public static class EmaapCertificatesIssuedAutomation
             }
             else
             {
-                best = await FindHighestMatchingRowAsync(page, wantBelong, wantMobile) ?? best;
+                best = await FindHighestMatchingRowAsync(
+                    page, wantBelong, wantMobile, exclude, minSeq) ?? best;
             }
         }
 
@@ -517,8 +572,6 @@ public static class EmaapCertificatesIssuedAutomation
             pdfResponseBodyTask ??= CapturePdfResponseAsync(newPage);
         }
 
-        page.Context.Page += OnPage;
-
         Task<IDownload>? downloadTask = null;
         try
         {
@@ -558,13 +611,17 @@ public static class EmaapCertificatesIssuedAutomation
                 }
             }
 
+            // First Download generates PDF in background. Arm listeners only for the second click.
+            await PrimeIssuedPdfGenerationAsync(page, best, belongToName, cancellationToken);
+
+            page.Context.Page += OnPage;
             downloadTask = page.WaitForDownloadAsync(new PageWaitForDownloadOptions { Timeout = 120_000 });
 
-            var clicked = await ClickIssuedDownloadAsync(page, best, belongToName);
-            if (!clicked)
+            var opened = await ClickIssuedDownloadAsync(page, best, belongToName);
+            if (!opened)
             {
                 throw new InvalidOperationException(
-                    $"Download button missing for certificate {best.CertificateNumber}.");
+                    $"Download button missing for certificate {best.CertificateNumber} after PDF generate.");
             }
 
             var deadline = DateTime.UtcNow.AddSeconds(120);
@@ -904,6 +961,77 @@ public static class EmaapCertificatesIssuedAutomation
             // ignore
         }
     }
+    /// <summary>
+    /// First Download click: eMAAP generates PDF in background and reveals Upload Signed PDF.
+    /// Wait 3s (then up to 15s more until that button appears). Skip if already generated.
+    /// </summary>
+    private static async Task PrimeIssuedPdfGenerationAsync(
+        IPage page,
+        EmaapIssuedRowMatch best,
+        string belongToName,
+        CancellationToken cancellationToken)
+    {
+        if (await RowHasUploadSignedPdfAsync(page, best, belongToName))
+        {
+            return;
+        }
+
+        var primed = await ClickIssuedDownloadAsync(page, best, belongToName);
+        if (!primed)
+        {
+            throw new InvalidOperationException(
+                $"Download button missing for certificate {best.CertificateNumber}.");
+        }
+
+        await WaitUntilOverlaysClearAsync(page, cancellationToken, maxSeconds: 10);
+        await page.WaitForTimeoutAsync(3_000);
+
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline
+               && !await RowHasUploadSignedPdfAsync(page, best, belongToName))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await page.WaitForTimeoutAsync(400);
+        }
+    }
+
+    private static async Task<bool> RowHasUploadSignedPdfAsync(
+        IPage page,
+        EmaapIssuedRowMatch best,
+        string belongToName)
+    {
+        return await page.EvaluateAsync<bool>(
+            """
+            ([cert, mobile, belong]) => {
+              const normName = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+              const normMobile = (s) => {
+                const d = String(s || '').replace(/\D/g, '');
+                return d.length > 10 ? d.slice(-10) : d;
+              };
+              const seq = String(cert).split('/').pop();
+              const wantM = normMobile(mobile);
+              const wantB = normName(belong);
+              const certCompact = String(cert).replace(/\s+/g, '');
+              const trs = Array.from(document.querySelectorAll('table tbody tr, table tr'));
+              for (const tr of trs) {
+                const text = (tr.innerText || '').replace(/\s+/g, ' ');
+                const compact = text.replace(/\s+/g, '');
+                if (!compact.includes(certCompact)
+                    && !(seq && compact.includes('26/04/26/' + seq))) {
+                  continue;
+                }
+                if (wantM && !text.includes(wantM)) continue;
+                if (wantB && !normName(text).includes(wantB)) continue;
+                return Array.from(tr.querySelectorAll('button, a, span'))
+                  .some(el => /upload\s*signed\s*pdf/i.test(
+                    (el.innerText || el.textContent || '').trim()));
+              }
+              return false;
+            }
+            """,
+            new object[] { best.CertificateNumber, best.Mobile, belongToName });
+    }
+
     private static async Task<bool> ClickIssuedDownloadAsync(
         IPage page,
         EmaapIssuedRowMatch best,
@@ -1114,12 +1242,24 @@ public static class EmaapCertificatesIssuedAutomation
     private static async Task<EmaapIssuedRowMatch?> FindHighestMatchingRowAsync(
         IPage page,
         string wantBelong,
-        string wantMobile)
+        string wantMobile,
+        IReadOnlyCollection<string>? excludeCertificateNumbers = null,
+        int minExclusiveSequence = 0)
     {
+        var excludeCsv = string.Empty;
+        if (excludeCertificateNumbers is { Count: > 0 })
+        {
+            excludeCsv = string.Join(
+                '|',
+                excludeCertificateNumbers
+                    .Select(NormalizeCertificateNumber)
+                    .Where(static s => !string.IsNullOrWhiteSpace(s)));
+        }
+
         // Match entirely in-page: Belongs+Mobile on row text; cert allows wrapped "23 10" → 2310.
         var json = await page.EvaluateAsync<string>(
             """
-            ([wantBelong, wantMobile]) => {
+            ([wantBelong, wantMobile, excludeCsv, minExclusiveSeq]) => {
               const normName = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
               const normMobile = (s) => {
                 const d = String(s || '').replace(/\D/g, '');
@@ -1138,6 +1278,9 @@ public static class EmaapCertificatesIssuedAutomation
               const wantB = normName(wantBelong);
               const wantM = normMobile(wantMobile);
               if (!wantB || wantM.length !== 10) return '';
+
+              const exclude = new Set(String(excludeCsv || '').split('|').filter(Boolean).map(s => s.toUpperCase()));
+              const minSeq = Number(minExclusiveSeq) || 0;
 
               let best = null;
               const tables = Array.from(document.querySelectorAll('table'));
@@ -1181,6 +1324,8 @@ public static class EmaapCertificatesIssuedAutomation
                   }
                   if (!parsed) parsed = parseCert(rowText);
                   if (!parsed) continue;
+                  if (exclude.has(String(parsed.cert).toUpperCase())) continue;
+                  if (minSeq > 0 && parsed.seq <= minSeq) continue;
 
                   if (!best || parsed.seq > best.sequence) {
                     let belong = '';
@@ -1209,7 +1354,7 @@ public static class EmaapCertificatesIssuedAutomation
               return best ? JSON.stringify(best) : '';
             }
             """,
-            new object[] { wantBelong, wantMobile });
+            new object[] { wantBelong, wantMobile, excludeCsv, minExclusiveSequence });
 
         if (string.IsNullOrWhiteSpace(json))
         {

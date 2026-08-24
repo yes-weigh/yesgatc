@@ -33,6 +33,8 @@ public sealed class AutomationService : IAsyncDisposable
     private readonly AutomationSettings _settings;
     private readonly FirestoreService _firestoreService;
     private readonly SemaphoreSlim _browserLock = new(1, 1);
+    private readonly HashSet<string> _claimedEmaapCertNumbers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _claimedCertLock = new();
     private IPlaywright? _playwright;
     private IBrowserContext? _context;
     private bool _pageHandlersAttached;
@@ -1024,10 +1026,9 @@ public sealed class AutomationService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Logged-in eMAAP: fill form → submit → generate → download PDF → mark certified in Firebase.
-    /// When <paramref name="fillOnly"/> is true: fill form → Submit Certificate Details → fill upload section,
-    /// then stop (no Generate Certificate / PDF / Firebase certify).
-    /// Auto re-login (captcha + OTP) if session expired.
+    /// Logged-in eMAAP: fill form → Submit Certificate Details → OK → Certificates Issued
+    /// (Download once to generate, wait 3s, Download again to open PDF) → mark certified in Firebase.
+    /// When <paramref name="fillOnly"/> is true: fill through Name of Principal Officer, then stop.
     /// </summary>
     public async Task<string> FillEmaapCertificateGenerationAsync(
         SiteCalibrationRecord job,
@@ -1067,6 +1068,16 @@ public sealed class AutomationService : IAsyncDisposable
                 token,
                 pendingCert,
                 filledPhotoCount: 0,
+                minExclusiveSequence: null,
+                cancellationToken);
+        }
+
+        int? minExclusiveSequence = null;
+        if (!fillOnly)
+        {
+            minExclusiveSequence = await EmaapCertificatesIssuedAutomation.PeekHighestMatchingSequenceAsync(
+                page,
+                party,
                 cancellationToken);
         }
 
@@ -1120,11 +1131,11 @@ public sealed class AutomationService : IAsyncDisposable
         var filledCount = preparedPaths.Count(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p));
         var weightsPath = preparedPaths.Count > 3 ? preparedPaths[3] : string.Empty;
 
-        // Weights photo is needed after Submit Certificate Details (upload step).
+        // Weights photo → Instrument Certificate Upload (visible on generate form before submit).
         if (string.IsNullOrWhiteSpace(weightsPath) || !File.Exists(weightsPath))
         {
             throw new InvalidOperationException(
-                "Standard weight photo is missing on the verification record (needed after Submit Certificate Details).");
+                "Standard weight photo is missing on the verification record (needed for eMAAP Upload).");
         }
 
         await FillStarterFormWithSessionRetryAsync(
@@ -1139,7 +1150,7 @@ public sealed class AutomationService : IAsyncDisposable
         if (fillOnly)
         {
             return $"eMAAP fill-only complete for {instrument.SerialNumber} " +
-                   $"({filledCount} photo slot(s) prepared). Submitted details + upload filled — Generate Certificate not clicked.";
+                   $"({filledCount} photo slot(s) prepared). Filled through Principal Officer — Submit Certificate Details not clicked.";
         }
 
         return await DownloadIssuedPdfAndMarkCertifiedAsync(
@@ -1150,6 +1161,7 @@ public sealed class AutomationService : IAsyncDisposable
             token,
             preferCertificateNumber: null,
             filledPhotoCount: filledCount,
+            minExclusiveSequence,
             cancellationToken);
     }
 
@@ -1266,6 +1278,7 @@ public sealed class AutomationService : IAsyncDisposable
         string firebaseIdToken,
         string? preferCertificateNumber,
         int filledPhotoCount,
+        int? minExclusiveSequence,
         CancellationToken cancellationToken)
     {
         EmaapCertificateDownloadResult download;
@@ -1294,7 +1307,9 @@ public sealed class AutomationService : IAsyncDisposable
                     {
                         // Best-effort — resume still works from HALT message later.
                     }
-                });
+                },
+                excludeCertificateNumbers: SnapshotClaimedEmaapCerts(),
+                minExclusiveSequence: preferCertificateNumber is null ? minExclusiveSequence : null);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1322,6 +1337,8 @@ public sealed class AutomationService : IAsyncDisposable
                 $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but downloaded file is not a valid PDF.");
         }
 
+        RememberClaimedEmaapCert(download.CertificateNumber);
+
         try
         {
             await _firestoreService.MarkCertifiedWithSignedPdfAsync(
@@ -1346,6 +1363,27 @@ public sealed class AutomationService : IAsyncDisposable
         return
             $"eMAAP certified {party.BelongToName} · serial {instrument.SerialNumber} · " +
             $"{download.CertificateNumber}{photoNote} · PDF synced to Firebase.";
+    }
+
+    private string[] SnapshotClaimedEmaapCerts()
+    {
+        lock (_claimedCertLock)
+        {
+            return _claimedEmaapCertNumbers.ToArray();
+        }
+    }
+
+    private void RememberClaimedEmaapCert(string? certificateNumber)
+    {
+        if (string.IsNullOrWhiteSpace(certificateNumber))
+        {
+            return;
+        }
+
+        lock (_claimedCertLock)
+        {
+            _claimedEmaapCertNumbers.Add(certificateNumber.Trim());
+        }
     }
 
     private static string? FirstNonEmpty(params string?[] values)
