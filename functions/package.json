@@ -6,7 +6,8 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js"
+    "lint": "node --check index.js && node --check lookupPublicCertificates.js",
+    "test": "node --test lookupPublicCertificates.test.js"
   },
   "dependencies": {
     "@fastify/busboy": "^3.2.0",

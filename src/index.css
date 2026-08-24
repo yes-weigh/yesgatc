@@ -3936,6 +3936,127 @@ select.input-field option {
   text-align: center;
 }
 
+.public-cert-box {
+  max-width: 36rem;
+}
+
+.public-cert-header h1 {
+  font-size: 1.85rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.public-cert-header {
+  margin-bottom: 1.75rem;
+}
+
+.public-cert-form {
+  text-align: left;
+}
+
+.public-cert-results {
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.public-cert-empty,
+.public-cert-unavailable {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.public-cert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.public-cert-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: 16px;
+  padding: 1.1rem 1.15rem 1.15rem;
+}
+
+.public-cert-card__top {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.public-cert-type,
+.public-cert-voided {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+}
+
+.public-cert-type {
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+}
+
+.public-cert-voided {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.public-cert-number {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+  word-break: break-word;
+}
+
+.public-cert-meta {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+}
+
+.public-cert-meta div {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.public-cert-meta dt {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.public-cert-meta dd {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.public-cert-staff {
+  color: var(--accent-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.public-cert-staff:hover {
+  text-decoration: underline;
+}
+
+.login-footer .public-cert-staff {
+  display: inline-block;
+  margin-bottom: 0.65rem;
+}
+
 /* Input with icon */
 .input-icon-wrap {
   position: relative;
@@ -5759,6 +5880,13 @@ body.verification-mobile-wizard-active {
   }
   .login-header h2 {
     font-size: 1.8rem;
+  }
+  .public-cert-header h1 {
+    font-size: 1.45rem;
+  }
+  .public-cert-meta div {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
   }
   .role-grid {
     grid-template-columns: 1fr;
