@@ -1056,6 +1056,12 @@ public sealed class AutomationService : IAsyncDisposable
             job.EmaapIssuedCertificateNumber,
             FirestoreService.TryExtractEmaapCertificateNumber(job.PipelineFailureMessage));
 
+        // Matcher HALT lists other parties' certs as "Visible sample" — never resume those.
+        if (FirestoreService.IsUnmatchedIssuedRowHalt(job.PipelineFailureMessage))
+        {
+            pendingCert = null;
+        }
+
         // Resume: eMAAP already generated this cert — download PDF only (do not re-submit).
         // Fill-only tests never resume into certify.
         if (!fillOnly && !string.IsNullOrWhiteSpace(pendingCert))
@@ -1078,6 +1084,21 @@ public sealed class AutomationService : IAsyncDisposable
             minExclusiveSequence = await EmaapCertificatesIssuedAutomation.PeekHighestMatchingSequenceAsync(
                 page,
                 party,
+                cancellationToken);
+        }
+
+        // Submit already saved; issued row may still have an empty cert number. Download only.
+        if (!fillOnly && FirestoreService.IsPostSubmitPdfHalt(job.PipelineFailureMessage))
+        {
+            return await DownloadIssuedPdfAndMarkCertifiedAsync(
+                page,
+                job,
+                party,
+                instrument,
+                token,
+                preferCertificateNumber: null,
+                filledPhotoCount: 0,
+                minExclusiveSequence,
                 cancellationToken);
         }
 
