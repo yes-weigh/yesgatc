@@ -29,7 +29,7 @@ public sealed class PdfDscSigner
     {
         if (token.SigningCertificate is null)
         {
-            throw new InvalidOperationException("Unlock the PROXKey PIN first.");
+            throw new InvalidOperationException("Unlock the DSC token PIN first.");
         }
 
         layout ??= new DscStampLayout

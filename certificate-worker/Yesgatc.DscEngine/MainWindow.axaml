@@ -34,6 +34,7 @@
                     <Button x:Name="SignInButton" Content="Sign in" Click="SignInButton_Click"/>
                     <Button x:Name="RefreshButton" Content="Refresh" Click="RefreshButton_Click" IsEnabled="False"/>
                     <Button x:Name="SignButton" Content="Sign &amp; upload" Click="SignButton_Click" IsEnabled="False"/>
+                    <Button x:Name="SignLocalButton" Content="Sign &amp; download" Click="SignLocalButton_Click" IsEnabled="False"/>
                     <Button x:Name="DownloadButton" Content="Download signed" Click="DownloadButton_Click" IsEnabled="False"/>
                     <Button Content="Save login" Click="SaveButton_Click"/>
                     <Button x:Name="SignOutButton" Content="Sign out" Click="SignOutButton_Click" IsEnabled="False"/>
@@ -126,6 +127,6 @@
                    Grid.Row="3"
                    Margin="0,10,0,0"
                    Foreground="#666666"
-                   Text="WD PROXKey · PIN once per session · visible stamp · upload to Firebase."/>
+                   Text="DSC token (InnalT / WD PROXKey) · PIN once per session · Sign &amp; download stays local."/>
     </Grid>
 </Window>

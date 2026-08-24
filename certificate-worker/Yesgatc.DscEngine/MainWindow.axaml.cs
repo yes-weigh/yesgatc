@@ -78,7 +78,10 @@ public partial class MainWindow : Window
         await LoadCertificatesAsync();
 
     private async void SignButton_Click(object? sender, RoutedEventArgs e) =>
-        await SignSelectedAsync();
+        await SignSelectedAsync(upload: true);
+
+    private async void SignLocalButton_Click(object? sender, RoutedEventArgs e) =>
+        await SignSelectedAsync(upload: false);
 
     private async void DownloadButton_Click(object? sender, RoutedEventArgs e) =>
         await DownloadSelectedAsync();
@@ -91,6 +94,7 @@ public partial class MainWindow : Window
         RefreshButton.IsEnabled = false;
         SignOutButton.IsEnabled = false;
         SignButton.IsEnabled = false;
+        SignLocalButton.IsEnabled = false;
         DownloadButton.IsEnabled = false;
         SetStatus("Signed out.");
     }
@@ -177,7 +181,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task SignSelectedAsync()
+    private async Task SignSelectedAsync(bool upload)
     {
         if (_busy || _session is null)
         {
@@ -200,27 +204,55 @@ public partial class MainWindow : Window
 
         _busy = true;
         SignButton.IsEnabled = false;
+        SignLocalButton.IsEnabled = false;
         RefreshButton.IsEnabled = false;
         try
         {
             var ok = 0;
+            var saved = new List<string>();
+            var downloads = DefaultDownloadDirectory();
             foreach (var record in selected)
             {
-                SetStatus($"Signing {record.CertificateNumber}…");
+                SetStatus(upload
+                    ? $"Signing {record.CertificateNumber}…"
+                    : $"Signing {record.CertificateNumber} to Downloads…");
                 _session = _session with { IdToken = await GetFreshIdTokenAsync() };
                 PersistStampPrefs();
-                var updated = await _signedPdfs.SignAndUploadAsync(
-                    record,
-                    _dscToken,
-                    _session,
-                    CurrentStampLayout());
-                ReplaceRecord(updated);
+                if (upload)
+                {
+                    var updated = await _signedPdfs.SignAndUploadAsync(
+                        record,
+                        _dscToken,
+                        _session,
+                        CurrentStampLayout());
+                    ReplaceRecord(updated);
+                }
+                else
+                {
+                    saved.Add(await _signedPdfs.SignAndSaveLocalAsync(
+                        record,
+                        _dscToken,
+                        _session,
+                        downloads,
+                        CurrentStampLayout()));
+                }
+
                 ok++;
             }
 
             ApplyFilter();
-            SetStatus(
-                $"Signed & uploaded {ok}. Token: {_dscToken.SigningCertificate?.SubjectCn}");
+            if (upload)
+            {
+                SetStatus(
+                    $"Signed & uploaded {ok}. Token: {_dscToken.SigningCertificate?.SubjectCn}");
+            }
+            else
+            {
+                OpenSaved(saved);
+                SetStatus(saved.Count == 1
+                    ? $"Signed locally · {Path.GetFileName(saved[0])} · Downloads (not uploaded)."
+                    : $"Signed {saved.Count} locally · Downloads (not uploaded).");
+            }
         }
         catch (Exception ex)
         {
@@ -400,9 +432,11 @@ public partial class MainWindow : Window
     private void UpdateActionButtons()
     {
         var selected = SelectedRows().ToList();
-        SignButton.IsEnabled = !_busy
+        var canSign = !_busy
             && _session is not null
             && selected.Any(item => item.SignStatus != DscSignStatus.Voided);
+        SignButton.IsEnabled = canSign;
+        SignLocalButton.IsEnabled = canSign;
         DownloadButton.IsEnabled = !_busy
             && _session is not null
             && selected.Any(item => item.SignStatus == DscSignStatus.Signed);
@@ -415,14 +449,14 @@ public partial class MainWindow : Window
             if (_dscToken.IsUnlocked)
             {
                 HintText.Text =
-                    $"PROXKey unlocked · {_dscToken.SigningCertificate?.SubjectCn} · PIN cached this session.";
+                    $"Token unlocked · {_dscToken.SigningCertificate?.SubjectCn} · PIN cached this session.";
                 return;
             }
 
             var info = DscTokenSession.Describe(App.Dsc.Pkcs11Library);
             HintText.Text = info.TokenPresent
-                ? $"PROXKey present · {info.TokenLabel} · PIN once, then Sign & upload."
-                : "PROXKey not present. Plug in WD PROXKey.";
+                ? $"Token present · {info.TokenLabel} · PIN once, then Sign & upload."
+                : "No DSC token. Plug in InnalT or WD PROXKey.";
         }
         catch (Exception ex)
         {
@@ -526,8 +560,7 @@ public partial class MainWindow : Window
     {
         var downloads = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            "Downloads",
-            "YesGATC-DSC");
+            "Downloads");
         Directory.CreateDirectory(downloads);
         return downloads;
     }

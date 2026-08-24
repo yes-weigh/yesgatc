@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Yesgatc.DscEngine.PinWindow"
-        Title="PROXKey PIN"
+        Title="DSC token PIN"
         Width="380"
         Height="190"
         MinWidth="320"
@@ -9,7 +9,7 @@
         WindowStartupLocation="CenterOwner"
         CanResize="False">
     <StackPanel Margin="18" Spacing="10">
-        <TextBlock Text="Enter WD PROXKey PIN once for this session."
+        <TextBlock Text="Enter DSC token PIN once for this session."
                    TextWrapping="Wrap"/>
         <TextBox x:Name="PinBox" PasswordChar="•" Watermark="Token PIN"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">

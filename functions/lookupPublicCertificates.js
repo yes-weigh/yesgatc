@@ -70,6 +70,42 @@ function toPublicCertificate(data) {
   };
 }
 
+function httpStatusFromLookupError(err) {
+  if (Number.isFinite(err?.httpErrorCode?.status)) return err.httpErrorCode.status;
+  if (err?.code === 'invalid-argument') return 400;
+  return 500;
+}
+
+function setPublicCertificateCors(res) {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Max-Age', '3600');
+}
+
+async function lookupPublicCertificatesHttpHandler(req, res, db) {
+  setPublicCertificateCors(res);
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'POST only.' });
+    return;
+  }
+
+  try {
+    const query = req.body?.query ?? req.body?.data?.query;
+    const result = await lookupPublicCertificatesHandler({ data: { query } }, db);
+    res.status(200).json(result);
+  } catch (err) {
+    const status = httpStatusFromLookupError(err);
+    res.status(status).json({
+      error: status < 500 ? (err.message || 'Lookup failed.') : 'Lookup failed.',
+    });
+  }
+}
+
 async function lookupPublicCertificatesHandler(request, db) {
   const query = normalizeLookupQuery(request.data?.query);
   if (query.length < MIN_QUERY_LENGTH) {
@@ -109,6 +145,7 @@ async function lookupPublicCertificatesHandler(request, db) {
 
 module.exports = {
   lookupPublicCertificatesHandler,
+  lookupPublicCertificatesHttpHandler,
   resolvePublicCertificatePdfUrl,
   buildLookupValues,
   isIssuedPublicCertificate,

@@ -47,22 +47,25 @@ public sealed class DscTokenSession : IDisposable
     {
         var lines = new List<string>
         {
-            "WD PROXKey / Watchdata WDIND USB CCID",
-            $"CSP: {ProxKeyLibraryLocator.CspName}",
-            $"KSP: {ProxKeyLibraryLocator.KspName}",
+            "DSC PKCS#11 probe",
+            $"WD PROXKey CSP: {DscPkcs11Locator.ProxKeyCspName}",
+            $"WD PROXKey KSP: {DscPkcs11Locator.ProxKeyKspName}",
+            "InnalT PKCS#11: InnaITPKCS11Driver.dll",
         };
 
-        var existing = ProxKeyLibraryLocator.CandidateLibraries(configuredLibrary)
-            .Select(path => $"{(File.Exists(path) ? "OK " : "—  ")}{path}");
-        lines.AddRange(existing);
+        foreach (var path in DscPkcs11Locator.CandidateLibraries(configuredLibrary))
+        {
+            lines.Add($"{(File.Exists(path) ? "OK " : "—  ")}{path}");
+        }
 
         try
         {
             var info = Describe(configuredLibrary);
+            lines.Add($"Using: {info.LibraryPath}");
             lines.Add($"Slot: {info.SlotLabel} · {info.Manufacturer}");
             lines.Add(info.TokenPresent
                 ? $"Token present: {info.TokenLabel}"
-                : "Token not present. Plug in WD PROXKey.");
+                : "Token not present. Plug in the USB DSC token.");
         }
         catch (Exception ex)
         {
@@ -74,26 +77,26 @@ public sealed class DscTokenSession : IDisposable
 
     public static DscTokenInfo Describe(string? configuredLibrary = null)
     {
-        var path = ProxKeyLibraryLocator.FindExistingLibrary(configuredLibrary)
+        var load = DscPkcs11Locator.FindLibrary(configuredLibrary)
             ?? throw new InvalidOperationException(
-                "PROXKey PKCS#11 not found. Install WD PROXKey middleware from the token CD.");
+                "No DSC PKCS#11 library. Install InnalT Token Manager or WD PROXKey middleware.");
 
         var factories = new Pkcs11InteropFactories();
         using var library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(
             factories,
-            path,
-            AppType.MultiThreaded);
+            load.Path,
+            load.AppType);
         var slot = FindTokenSlot(library)
-            ?? throw new InvalidOperationException("No PROXKey slot. Plug in the USB token.");
+            ?? throw new InvalidOperationException("No DSC token slot. Plug in the USB token.");
         var slotInfo = slot.GetSlotInfo();
-        var token = slotInfo.SlotFlags.TokenPresent ? slot.GetTokenInfo() : null;
+        var token = slotInfo.SlotFlags.TokenPresent ? TryTokenInfo(slot) : null;
         return new DscTokenInfo
         {
-            LibraryPath = path,
-            SlotLabel = slotInfo.SlotDescription?.Trim() ?? "",
-            Manufacturer = slotInfo.ManufacturerId?.Trim() ?? "",
+            LibraryPath = load.Path,
+            SlotLabel = CleanPkcs11(slotInfo.SlotDescription),
+            Manufacturer = CleanPkcs11(slotInfo.ManufacturerId),
             TokenPresent = token is not null,
-            TokenLabel = token?.Label?.Trim() ?? "",
+            TokenLabel = CleanPkcs11(token?.Label),
         };
     }
 
@@ -107,18 +110,18 @@ public sealed class DscTokenSession : IDisposable
         lock (_gate)
         {
             CloseUnlocked();
-            var path = ProxKeyLibraryLocator.FindExistingLibrary(configuredLibrary)
+            var load = DscPkcs11Locator.FindLibrary(configuredLibrary)
                 ?? throw new InvalidOperationException(
-                    "PROXKey PKCS#11 not found. Install WD PROXKey middleware from the token CD.");
-            LibraryPath = path;
+                    "No DSC PKCS#11 library. Install InnalT Token Manager or WD PROXKey middleware.");
+            LibraryPath = load.Path;
             var factories = new Pkcs11InteropFactories();
             _library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(
                 factories,
-                path,
-                AppType.MultiThreaded);
+                load.Path,
+                load.AppType);
             var slot = FindTokenSlot(_library)
-                ?? throw new InvalidOperationException("No PROXKey token. Plug in WD PROXKey and retry.");
-            _session = slot.OpenSession(SessionType.ReadOnly);
+                ?? throw new InvalidOperationException("No DSC token. Plug in the USB token and retry.");
+            _session = OpenSession(slot);
             try
             {
                 _session.Login(CKU.CKU_USER, pin);
@@ -136,6 +139,11 @@ public sealed class DscTokenSession : IDisposable
                 CloseUnlocked();
                 throw new InvalidOperationException("Token PIN is locked.");
             }
+            catch (Pkcs11Exception ex) when (ex.RV == CKR.CKR_DEVICE_ERROR)
+            {
+                CloseUnlocked();
+                throw DeviceBusy();
+            }
 
             var cert = FindBestSigningCertificate(_session);
             var key = FindPrivateKey(_session, cert.Id)
@@ -152,7 +160,7 @@ public sealed class DscTokenSession : IDisposable
         {
             if (_session is null || _privateKey is null)
             {
-                throw new InvalidOperationException("Unlock the PROXKey PIN first.");
+                throw new InvalidOperationException("Unlock the DSC token PIN first.");
             }
 
             try
@@ -172,8 +180,8 @@ public sealed class DscTokenSession : IDisposable
     public IReadOnlyList<X509Certificate2> BuildChain()
     {
         var leaf = SigningCertificate?.Certificate
-            ?? throw new InvalidOperationException("Unlock the PROXKey PIN first.");
-        var extras = LoadWatchdataAuthorities();
+            ?? throw new InvalidOperationException("Unlock the DSC token PIN first.");
+        var extras = LoadTokenAuthorities();
         using var chain = new X509Chain();
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
@@ -239,11 +247,67 @@ public sealed class DscTokenSession : IDisposable
         _library = null;
     }
 
+    private static string CleanPkcs11(string? value) =>
+        (value ?? string.Empty).Trim('\0', ' ', '\t', '\r', '\n');
+
+    private static ISession OpenSession(ISlot slot)
+    {
+        Pkcs11Exception? last = null;
+        foreach (var type in new[] { SessionType.ReadWrite, SessionType.ReadOnly })
+        {
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                try
+                {
+                    return slot.OpenSession(type);
+                }
+                catch (Pkcs11Exception ex) when (
+                    ex.RV is CKR.CKR_DEVICE_ERROR or CKR.CKR_TOKEN_NOT_PRESENT or CKR.CKR_DEVICE_REMOVED)
+                {
+                    last = ex;
+                    Thread.Sleep(400);
+                }
+            }
+        }
+
+        if (last is { RV: CKR.CKR_DEVICE_ERROR } || last is null)
+        {
+            throw DeviceBusy();
+        }
+
+        throw last;
+    }
+
+    private static InvalidOperationException DeviceBusy() =>
+        new(
+            "DSC token busy (CKR_DEVICE_ERROR). Close InnalT Token Manager, unplug and plug the USB token, then retry.");
+
     private static ISlot? FindTokenSlot(IPkcs11Library library)
     {
         var slots = library.GetSlotList(SlotsType.WithOrWithoutTokenPresent);
-        return slots.FirstOrDefault(slot => slot.GetSlotInfo().SlotFlags.TokenPresent)
-            ?? slots.FirstOrDefault();
+        return slots.FirstOrDefault(slot =>
+        {
+            try
+            {
+                return slot.GetSlotInfo().SlotFlags.TokenPresent;
+            }
+            catch
+            {
+                return false;
+            }
+        }) ?? slots.FirstOrDefault();
+    }
+
+    private static ITokenInfo? TryTokenInfo(ISlot slot)
+    {
+        try
+        {
+            return slot.GetTokenInfo();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static DscSigningCertificate FindBestSigningCertificate(ISession session)
@@ -284,7 +348,7 @@ public sealed class DscTokenSession : IDisposable
 
         if (certs.Count == 0)
         {
-            throw new InvalidOperationException("No valid X.509 certificate on this PROXKey.");
+            throw new InvalidOperationException("No valid X.509 certificate on this token.");
         }
 
         return certs
@@ -328,22 +392,20 @@ public sealed class DscTokenSession : IDisposable
         cert.Extensions.OfType<X509KeyUsageExtension>()
             .Any(ext => ext.KeyUsages.HasFlag(X509KeyUsageFlags.DigitalSignature));
 
-    private static List<X509Certificate2> LoadWatchdataAuthorities()
+    private static List<X509Certificate2> LoadTokenAuthorities()
     {
         var loaded = new List<X509Certificate2>();
-        if (!Directory.Exists(ProxKeyLibraryLocator.WatchdataCertDirectory))
+        foreach (var directory in DscPkcs11Locator.AuthorityDirectories())
         {
-            return loaded;
-        }
-
-        foreach (var file in Directory.EnumerateFiles(ProxKeyLibraryLocator.WatchdataCertDirectory, "*.cer"))
-        {
-            try
+            foreach (var file in Directory.EnumerateFiles(directory, "*.cer"))
             {
-                loaded.Add(new X509Certificate2(file));
-            }
-            catch
-            {
+                try
+                {
+                    loaded.Add(new X509Certificate2(file));
+                }
+                catch
+                {
+                }
             }
         }
 
@@ -352,7 +414,6 @@ public sealed class DscTokenSession : IDisposable
 
     private static byte[] BuildSha256DigestInfo(byte[] hash)
     {
-        // DigestInfo for SHA-256: SEQUENCE { AlgorithmIdentifier, OCTET STRING hash }
         var prefix = Convert.FromHexString("3031300d060960864801650304020105000420");
         var result = new byte[prefix.Length + hash.Length];
         Buffer.BlockCopy(prefix, 0, result, 0, prefix.Length);

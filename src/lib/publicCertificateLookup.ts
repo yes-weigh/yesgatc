@@ -1,9 +1,3 @@
-import { FirebaseError } from 'firebase/app';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { app } from '../firebase';
-
-const FUNCTIONS_REGION = 'us-central1';
-
 export type PublicCertificateHit = {
   certificateNumber: string | null;
   serialNumber: string | null;
@@ -19,30 +13,49 @@ export type PublicCertificateLookupResult = {
   certificates: PublicCertificateHit[];
 };
 
-function functionsClient() {
-  return getFunctions(app, FUNCTIONS_REGION);
-}
+const LOOKUP_PATH = '/api/lookupPublicCertificates';
+const LOOKUP_FALLBACK = 'https://us-central1-yesgatc.cloudfunctions.net/lookupPublicCertificates';
 
 export function mapPublicCertificateLookupError(err: unknown): string {
-  if (err instanceof FirebaseError) {
-    if (err.code === 'functions/invalid-argument') {
-      return err.message.replace(/^Firebase:\s*/i, '').replace(/\s*\([^)]+\)\s*$/, '').trim()
-        || 'Enter a valid serial or certificate number.';
-    }
-    if (err.code === 'functions/unavailable' || err.code === 'functions/internal') {
-      return 'Lookup service unavailable. Try again.';
-    }
-  }
   return err instanceof Error ? err.message : 'Lookup failed.';
 }
 
+async function postLookup(url: string, query: string): Promise<Response> {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+}
+
+async function readLookupPayload(response: Response): Promise<PublicCertificateLookupResult & { error?: string }> {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('not-json');
+  }
+  return response.json() as Promise<PublicCertificateLookupResult & { error?: string }>;
+}
+
 export async function lookupPublicCertificates(query: string): Promise<PublicCertificateHit[]> {
-  const fn = httpsCallable<{ query: string }, PublicCertificateLookupResult>(
-    functionsClient(),
-    'lookupPublicCertificates',
-  );
-  const result = await fn({ query });
-  return result.data.certificates ?? [];
+  const urls = [LOOKUP_PATH, LOOKUP_FALLBACK];
+  let lastError: Error | null = null;
+
+  for (const url of urls) {
+    try {
+      const response = await postLookup(url, query);
+      const payload = await readLookupPayload(response);
+      if (!response.ok) {
+        lastError = new Error(payload.error?.trim() || 'Lookup failed.');
+        if (response.status >= 500) continue;
+        throw lastError;
+      }
+      return payload.certificates ?? [];
+    } catch (err) {
+      if (err instanceof Error && err.message !== 'not-json') lastError = err;
+    }
+  }
+
+  throw lastError ?? new Error('Lookup service unavailable. Try again.');
 }
 
 export function publicCertificateFileName(hit: PublicCertificateHit): string {

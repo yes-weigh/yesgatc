@@ -44,6 +44,22 @@ test('only issued certificates with a real number are public', () => {
   );
 });
 
+test('HTTP OPTIONS returns CORS headers', async () => {
+  const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertificates');
+  const headers = {};
+  let statusCode = 0;
+  const res = {
+    set(key, value) { headers[key] = value; },
+    status(code) { statusCode = code; return this; },
+    send() { return this; },
+    json() { return this; },
+  };
+  await lookupPublicCertificatesHttpHandler({ method: 'OPTIONS' }, res, {});
+  assert.equal(statusCode, 204);
+  assert.equal(headers['Access-Control-Allow-Origin'], '*');
+  assert.equal(headers['Access-Control-Allow-Methods'], 'POST, OPTIONS');
+});
+
 test('voided certificates keep summary but drop the PDF', () => {
   const hit = toPublicCertificate({
     certificateNumber: 'IND/GATC/KL/26/04/26/12',

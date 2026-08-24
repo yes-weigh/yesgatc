@@ -78,6 +78,12 @@ export default defineConfig(() => {
     ],
     server: {
       proxy: {
+        '/api/lookupPublicCertificates': {
+          target: 'https://us-central1-yesgatc.cloudfunctions.net',
+          changeOrigin: true,
+          secure: true,
+          rewrite: () => '/lookupPublicCertificates',
+        },
         '/api/pincode': {
           target: 'https://api.postalpincode.in',
           changeOrigin: true,

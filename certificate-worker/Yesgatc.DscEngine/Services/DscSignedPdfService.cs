@@ -18,6 +18,21 @@ public sealed class DscSignedPdfService
         _signer = new PdfDscSigner(dsc);
     }
 
+    public async Task<string> SignAndSaveLocalAsync(
+        DscCertificateRecord record,
+        DscTokenSession token,
+        FirebaseSignInResult session,
+        string destinationDirectory,
+        DscStampLayout? layout = null,
+        CancellationToken cancellationToken = default)
+    {
+        var signed = await SignBytesAsync(record, token, session.IdToken, layout, cancellationToken);
+        Directory.CreateDirectory(destinationDirectory);
+        var path = UniquePath(Path.Combine(destinationDirectory, SuggestedSignedFileName(record)));
+        await File.WriteAllBytesAsync(path, signed, cancellationToken);
+        return path;
+    }
+
     public async Task<DscCertificateRecord> SignAndUploadAsync(
         DscCertificateRecord record,
         DscTokenSession token,
@@ -25,23 +40,8 @@ public sealed class DscSignedPdfService
         DscStampLayout? layout = null,
         CancellationToken cancellationToken = default)
     {
-        if (record.IsVoided)
-        {
-            throw new InvalidOperationException($"{record.CertificateNumber} is voided.");
-        }
-
-        var unsigned = await DownloadUnsignedPdfAsync(record, session.IdToken, cancellationToken);
-        if (unsigned.Length > 20 * 1024 * 1024)
-        {
-            throw new InvalidOperationException("Certificate PDF is larger than 20 MB.");
-        }
-
-        var signed = _signer.SignVisible(unsigned, token, record, layout);
-        var localDir = WorkerDataPaths.CertificatePdfDirectory(record.Id);
-        var localName = SanitizeFileName($"{record.CertificateNumber}_signed.pdf");
-        var localPath = Path.Combine(localDir, localName);
-        await File.WriteAllBytesAsync(localPath, signed, cancellationToken);
-
+        var signed = await SignBytesAsync(record, token, session.IdToken, layout, cancellationToken);
+        var localName = SuggestedSignedFileName(record);
         var storagePath =
             $"siteCalibrations/{record.Id}/signed-certificate/{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}.pdf";
         var upload = await _storage.UploadPdfBytesAsync(
@@ -69,6 +69,33 @@ public sealed class DscSignedPdfService
             cancellationToken);
 
         return record.WithSignedPdf(upload.DownloadUrl, upload.StoragePath);
+    }
+
+    private async Task<byte[]> SignBytesAsync(
+        DscCertificateRecord record,
+        DscTokenSession token,
+        string idToken,
+        DscStampLayout? layout,
+        CancellationToken cancellationToken)
+    {
+        if (record.IsVoided)
+        {
+            throw new InvalidOperationException($"{record.CertificateNumber} is voided.");
+        }
+
+        var unsigned = await DownloadUnsignedPdfAsync(record, idToken, cancellationToken);
+        if (unsigned.Length > 20 * 1024 * 1024)
+        {
+            throw new InvalidOperationException("Certificate PDF is larger than 20 MB.");
+        }
+
+        var signed = _signer.SignVisible(unsigned, token, record, layout);
+        var localDir = WorkerDataPaths.CertificatePdfDirectory(record.Id);
+        await File.WriteAllBytesAsync(
+            Path.Combine(localDir, SuggestedSignedFileName(record)),
+            signed,
+            cancellationToken);
+        return signed;
     }
 
     public async Task<string> DownloadSignedPdfAsync(
@@ -194,6 +221,28 @@ public sealed class DscSignedPdfService
 
         throw new InvalidOperationException(
             $"No unsigned PDF for {record.CertificateNumber}. Wait for eMAAP PDF sync.");
+    }
+
+    private static string UniquePath(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return path;
+        }
+
+        var directory = Path.GetDirectoryName(path) ?? "";
+        var stem = Path.GetFileNameWithoutExtension(path);
+        var ext = Path.GetExtension(path);
+        for (var i = 2; i < 1000; i++)
+        {
+            var candidate = Path.Combine(directory, $"{stem}-{i}{ext}");
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return Path.Combine(directory, $"{stem}-{DateTime.Now:HHmmss}{ext}");
     }
 
     private static string SanitizeFileName(string value)

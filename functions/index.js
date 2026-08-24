@@ -42,7 +42,7 @@ const { devDeleteSubmittedVerificationHandler } = require('./verificationDevDele
 const { downloadStorageFileBytesHandler } = require('./docaStorageDownload');
 const { emaapOtpWebhookHandler } = require('./emaapOtpInbox');
 const { mintYesweighEmbedTokenHandler } = require('./yesweighEmbed');
-const { lookupPublicCertificatesHandler } = require('./lookupPublicCertificates');
+const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertificates');
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -469,21 +469,25 @@ exports.emaapOtpWebhook = onRequest(
 );
 
 /**
+ * Public certificate download page — serial or certificate number → safe PDF fields only.
+ * HTTP + public invoker so unauthenticated browsers can preflight from yesgatc.in.
+ */
+exports.lookupPublicCertificates = onRequest(
+  {
+    region: CALLABLE_REGION,
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 30,
+    memory: '256MiB',
+  },
+  async (req, res) => lookupPublicCertificatesHttpHandler(req, res, adminDb()),
+);
+
+/**
  * YesWeigh Service iframe — mint a custom token for the configured RC account.
  * Shared secret must match yesweigh-service YESWEIGH_EMBED_SECRET.
  * Set before deploy: firebase functions:secrets:set YESWEIGH_EMBED_SECRET --project yesgatc
  */
-/** Public certificate download page — serial or certificate number → safe PDF fields only. */
-exports.lookupPublicCertificates = onCall(
-  {
-    region: CALLABLE_REGION,
-    cors: CALLABLE_CORS,
-    timeoutSeconds: 30,
-    memory: '256MiB',
-  },
-  async request => lookupPublicCertificatesHandler(request, adminDb()),
-);
-
 exports.mintYesweighEmbedToken = onRequest(
   {
     region: CALLABLE_REGION,
