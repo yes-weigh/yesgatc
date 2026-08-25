@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { CertificatePdfShareViewer } from '../../components/CertificatePdfShareViewer';
+import { SignedCertificateAvailabilityBadge } from '../../components/SignedCertificateAvailabilityBadge';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { useMobileViewport } from '../../hooks/useMobileViewport';
 import { useAuth } from '../../context/AuthContext';
@@ -21,6 +22,7 @@ import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { isVerificationCertifiedOnDoca } from '../../lib/verificationRequest';
 import { verificationValidUptoDate } from '../../lib/verificationLabel';
 import {
+  hasSignedCertificatePdf,
   certificatePdfDownloadedAt,
   certificateRequiresSignedUpload,
   certificateSignStatus,
@@ -290,6 +292,7 @@ export const CertificateSign: React.FC = () => {
               <h2>Apply Digital Signature</h2>
               <strong>{signed ? 'Signed' : downloaded ? 'Sign now' : 'Waiting'}</strong>
             </header>
+            {record ? <SignedCertificateAvailabilityBadge record={record} /> : null}
             {signed ? (
               <p className="wl-cert-sign-muted">
                 Signed PDF on file
@@ -436,6 +439,14 @@ export const CertificateSign: React.FC = () => {
                 <strong>{signed ? 'Uploaded' : 'Pending upload'}</strong>
                 <span>{signed ? 'Available for download and share' : 'Waiting for upload'}</span>
               </li>
+              <li className={record.emaapSignedPdfUploadedAt ? 'is-done' : signed ? 'is-current' : ''}>
+                <strong>eMAAP Issued</strong>
+                <span>
+                  {record.emaapSignedPdfUploadedAt
+                    ? formatStamp(record.emaapSignedPdfUploadedAt)
+                    : 'Worker uploads the signed PDF on Certificates Issued'}
+                </span>
+              </li>
             </ol>
           </section>
         </aside>
@@ -445,6 +456,7 @@ export const CertificateSign: React.FC = () => {
         record={record}
         url={pdfUrl}
         storagePath={record ? resolveCertificatePdfStoragePath(record) : null}
+        heading={record && hasSignedCertificatePdf(record) ? 'Signed certificate' : undefined}
         onClose={() => setViewingPdf(false)}
       />
     </div>

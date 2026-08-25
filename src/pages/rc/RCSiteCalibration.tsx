@@ -92,6 +92,11 @@ import {
   type VerificationPaymentDueFilter,
 } from '../../components/VerificationListFilters';
 import {
+  matchesSignedPdfFilter,
+  tallySignedPdfFilters,
+  type VerificationSignedPdfFilter,
+} from '../../lib/signedCertificatePdf';
+import {
   buildDuplicatePrimaryIdSet,
   buildSerialGroupMap,
   buildVerificationListDisplay,
@@ -344,6 +349,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
   const [durationFilter, setDurationFilter] = useState<VerificationDurationFilter>('all');
   const [paymentDueFilter, setPaymentDueFilter] = useState<VerificationPaymentDueFilter>('all');
+  const [signedPdfFilter, setSignedPdfFilter] = useState<VerificationSignedPdfFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
@@ -2325,11 +2331,15 @@ export const RCSiteCalibration: React.FC = () => {
     () => durationScoped.filter(record => isRvWalletPaymentOutstanding(record)).length,
     [durationScoped],
   );
+  const signedPdfCounts = useMemo(() => tallySignedPdfFilters(durationScoped), [durationScoped]);
 
   const filteredRecords = useMemo(() => {
     const filtered = durationScoped.filter(record => {
       if (!matchesVerificationSearch(record, searchTerm)) return false;
       if (paymentDueFilter === 'due' && !isRvWalletPaymentOutstanding(record)) {
+        return false;
+      }
+      if (!matchesSignedPdfFilter(record, signedPdfFilter)) {
         return false;
       }
       if (
@@ -2346,7 +2356,7 @@ export const RCSiteCalibration: React.FC = () => {
       return matchesVerificationTypeFilter(record, typeFilter);
     });
     return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
-  }, [durationScoped, statusFilter, typeFilter, paymentDueFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+  }, [durationScoped, statusFilter, typeFilter, paymentDueFilter, signedPdfFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -2411,7 +2421,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, typeFilter, searchTerm, durationFilter, paymentDueFilter]);
+  }, [statusFilter, typeFilter, searchTerm, durationFilter, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
     if (showForm || !rowHighlightFlashId) return;
@@ -2427,7 +2437,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
-  }, [statusFilter, searchTerm, paymentDueFilter]);
+  }, [statusFilter, searchTerm, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
     if (selectAllDraftsRef.current) {
@@ -2752,6 +2762,10 @@ export const RCSiteCalibration: React.FC = () => {
             onPaymentDueFilterChange={setPaymentDueFilter}
             paymentDueCount={paymentDueCount}
             paymentDueAllCount={durationScoped.length}
+            signedPdfFilter={signedPdfFilter}
+            onSignedPdfFilterChange={setSignedPdfFilter}
+            signedPdfCount={signedPdfCounts.signed}
+            notSignedPdfCount={signedPdfCounts.notSigned}
             onNewClick={
               canStartNewVerification
                 ? handleStartAdd

@@ -17,10 +17,12 @@ import { inferVerificationSubject } from '../../lib/siteCalibrationProfileFields
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import {
   certificateSignStatus,
+  hasSignedCertificatePdf,
   resolveCertificatePdfFileUrl,
   resolveCertificatePdfStoragePath,
   type CertificateSignStatus,
 } from '../../lib/signedCertificatePdf';
+import { SignedCertificateAvailabilityBadge } from '../../components/SignedCertificateAvailabilityBadge';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 type CertTypeFilter = 'all' | 'OV' | 'RV';
@@ -295,7 +297,6 @@ export const Certificates: React.FC = () => {
                   const pdfUrl = resolveCertificatePdfFileUrl(record);
                   const pdfPath = resolveCertificatePdfStoragePath(record);
                   const certNo = record.certificateNumber?.trim() || '—';
-                  const signStatus = certificateSignStatus(record);
                   const type = recordType(record);
                   const product = products.find(item => item.id === record.productId);
                   const specs = formatVerificationInstrumentFields(record, product);
@@ -328,21 +329,7 @@ export const Certificates: React.FC = () => {
                                 <span className={`wl-cert-sign-type wl-cert-sign-type--${type.toLowerCase()}`}>
                                   {type}
                                 </span>
-                                <span
-                                  className={`wl-cert-table__badge${
-                                    signStatus === 'voided'
-                                      ? ' wl-cert-table__badge--void'
-                                      : signStatus === 'not_signed'
-                                        ? ' wl-cert-table__badge--unsigned'
-                                        : ''
-                                  }`}
-                                >
-                                  {signStatus === 'voided'
-                                    ? 'Voided'
-                                    : signStatus === 'signed'
-                                      ? 'Signed'
-                                      : 'Not signed'}
-                                </span>
+                                <SignedCertificateAvailabilityBadge record={record} />
                               </span>
                             </span>
                             <span className="wl-cert-card__meta">
@@ -420,7 +407,6 @@ export const Certificates: React.FC = () => {
                   {pageRows.map((record, index) => {
                     const certNo = record.certificateNumber?.trim() || '—';
                     const loc = certLocation(record, customersById, rcPlace);
-                    const signStatus = certificateSignStatus(record);
                     const placeLine = [loc.place, loc.district].filter(Boolean).join(', ');
                     const type = recordType(record);
                     return (
@@ -454,21 +440,7 @@ export const Certificates: React.FC = () => {
                           {formatVerificationListDate(record.certifiedAt || record.approvedAt)}
                         </td>
                         <td>
-                          <span
-                            className={`wl-cert-table__badge${
-                              signStatus === 'voided'
-                                ? ' wl-cert-table__badge--void'
-                                : signStatus === 'not_signed'
-                                  ? ' wl-cert-table__badge--unsigned'
-                                  : ''
-                            }`}
-                          >
-                            {signStatus === 'voided'
-                              ? 'Voided'
-                              : signStatus === 'signed'
-                                ? 'Signed'
-                                : 'Not signed'}
-                          </span>
+                          <SignedCertificateAvailabilityBadge record={record} />
                         </td>
                         <td className="wl-cert-table__dl" />
                       </tr>
@@ -491,6 +463,9 @@ export const Certificates: React.FC = () => {
         record={viewingRecord}
         url={viewingRecord ? resolveCertificatePdfFileUrl(viewingRecord) : null}
         storagePath={viewingRecord ? resolveCertificatePdfStoragePath(viewingRecord) : null}
+        heading={
+          viewingRecord && hasSignedCertificatePdf(viewingRecord) ? 'Signed certificate' : undefined
+        }
         onClose={() => setViewingRecord(null)}
       />
     </div>

@@ -493,6 +493,10 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
         {!canEditCertification ? (
           <p className="text-muted text-xs mb-0 mt-2 rc-form-hint">Only Super Admin can change this.</p>
         ) : null}
+        <p className="text-muted text-xs mb-0 mt-2 rc-form-hint">
+          After 2304: worker generates the eMAAP PDF, DSC Engine / signer / manual stores the signed PDF,
+          then the worker uploads it on Certificates Issued.
+        </p>
         {values.certificationMethod === 'pdf_signer' ? (
           <div className="rc-pdf-signer-upload">
             <p className="text-muted text-xs mb-2 mt-3 rc-form-hint">

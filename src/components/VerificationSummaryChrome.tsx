@@ -7,6 +7,7 @@ import {
   verificationCertificateNumber,
   verificationDisplayStatusLabel,
 } from '../lib/verificationRequest';
+import { SignedCertificateAvailabilityBadge } from './SignedCertificateAvailabilityBadge';
 import type { SiteCalibration } from '../types';
 
 type VerificationSummaryChromeProps = {
@@ -51,6 +52,7 @@ export const VerificationSummaryChrome: React.FC<VerificationSummaryChromeProps>
             <h2 className={`verification-ref-status-title verification-ref-status-title--${statusKey}`}>
               {statusLabel}
             </h2>
+            <SignedCertificateAvailabilityBadge record={record} />
             {versionHint && <p className="verification-ref-version-hint mb-0">{versionHint}</p>}
           </div>
         </div>

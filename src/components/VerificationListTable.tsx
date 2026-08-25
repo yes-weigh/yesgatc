@@ -40,10 +40,17 @@ import {
   formatProductMaximumCapacity,
   formatProductMinimumCapacity,
 } from '../lib/productCalculations';
-import { formatVerificationListTime } from '../lib/verificationListFormat';
-import { resolveCertificatePdfFileUrl, resolveCertificatePdfStoragePath } from '../lib/signedCertificatePdf';
+import {
+  formatVerificationListTime,
+} from '../lib/verificationListFormat';
+import {
+  hasSignedCertificatePdf,
+  resolveCertificatePdfFileUrl,
+  resolveCertificatePdfStoragePath,
+} from '../lib/signedCertificatePdf';
 import { verificationListPartyName } from '../lib/verificationPartyDetails';
 import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
+import { SignedCertificateAvailabilityBadge } from './SignedCertificateAvailabilityBadge';
 import type { Product, SiteCalibration, VerificationRequestStatus } from '../types';
 
 export type VerificationListTableMode = 'rc' | 'admin';
@@ -266,7 +273,8 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const detailTitle = editable ? 'Edit draft verification' : 'View verification details';
             const showEdit = mode === 'rc' && editable && onEdit;
             const showSubmit = canSubmitVerification(record) && Boolean(onSubmit);
-            const showDownload = canDownloadVerificationCertificate(record);
+            const showDownload =
+              canDownloadVerificationCertificate(record) || hasSignedCertificatePdf(record);
             const showDelete =
               onDelete
               && (canDeleteVerification(record)
@@ -375,6 +383,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                     <span className="verification-list-card-cert text-mono" title={certNo}>
                       {certNo}
                     </span>
+                    <SignedCertificateAvailabilityBadge record={record} />
                     {showRcCentre && (
                       <span
                         className="verification-list-card-rc"
@@ -434,7 +443,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                     <button
                       type="button"
                       className="verification-list-card-download"
-                      title="View certificate PDF"
+                      title={hasSignedCertificatePdf(record) ? 'View signed certificate PDF' : 'View certificate PDF'}
                       aria-label={`View certificate for ${record.customerName}`}
                       onClick={() => setPdfRecord(record)}
                     >
@@ -506,6 +515,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
         record={pdfRecord}
         url={pdfRecord ? resolveCertificatePdfFileUrl(pdfRecord) : null}
         storagePath={pdfRecord ? resolveCertificatePdfStoragePath(pdfRecord) : null}
+        heading={
+          pdfRecord && hasSignedCertificatePdf(pdfRecord) ? 'Signed certificate' : undefined
+        }
         onClose={() => setPdfRecord(null)}
       />
     </div>
