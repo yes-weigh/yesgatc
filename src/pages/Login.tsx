@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { CreditCard, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
-import { isValidAadhar, normalizeAadhar } from '../lib/aadharAuth';
+import { isValidAadhar, normalizeAadhar, sanitizeAadharInput } from '../lib/aadharAuth';
 import { embedVerificationPath, isEmbedSession, rememberEmbedMode } from '../lib/embedMode';
 import { APP_VERSION } from '../lib/appVersion';
 
@@ -82,14 +82,14 @@ export const Login: React.FC = () => {
               <input
                 id="login-aadhar"
                 type="text"
-                inputMode="numeric"
+                inputMode="text"
                 className="input-field input-with-icon"
                 placeholder="12-digit Aadhar"
                 value={aadhar}
-                onChange={e => setAadhar(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                onChange={e => setAadhar(sanitizeAadharInput(e.target.value))}
                 required
                 autoFocus
-                maxLength={12}
+                maxLength={14}
                 autoComplete="username"
               />
             </div>

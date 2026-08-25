@@ -18,6 +18,22 @@ export function normalizeAadhar(input: string): string {
   return input.replace(/\D/g, '');
 }
 
+/** Digits plus spaces for typing (e.g. XXXX XXXX XXXX). Submit still uses normalizeAadhar. */
+export function sanitizeAadharInput(input: string): string {
+  let digits = 0;
+  let out = '';
+  for (const ch of input) {
+    if (ch >= '0' && ch <= '9') {
+      if (digits >= 12) continue;
+      out += ch;
+      digits += 1;
+    } else if (ch === ' ' && out.length > 0 && !out.endsWith(' ')) {
+      out += ' ';
+    }
+  }
+  return out;
+}
+
 export function isValidAadhar(aadhar: string): boolean {
   return AADHAR_REGEX.test(normalizeAadhar(aadhar));
 }

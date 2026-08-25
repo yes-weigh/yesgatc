@@ -265,6 +265,18 @@ export interface FirestoreUserDoc {
   panCardPath?: string;
   panCardName?: string;
   panCardContentType?: string;
+  /** Super Admin only — how this RC issues certificates. */
+  certificationMethod?: 'auto_dsc' | 'pdf_signer' | 'manual_upload';
+  /** PDF signer: officer signature + name image (JPG/PNG). */
+  pdfSignerSignUrl?: string;
+  pdfSignerSignPath?: string;
+  pdfSignerSignName?: string;
+  pdfSignerSignContentType?: string;
+  /** Square RC logo / display picture. */
+  logoUrl?: string;
+  logoPath?: string;
+  logoName?: string;
+  logoContentType?: string;
 }
 
 /** Verification fees for a weight tier (amounts in INR). */

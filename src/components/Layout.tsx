@@ -7,6 +7,10 @@ import {
   ReportsAppBarContext,
   type ReportsAppBarChrome,
 } from '../context/ReportsAppBarContext';
+import {
+  RcListAppBarContext,
+  type RcListAppBarChrome,
+} from '../context/RcListAppBarContext';
 import { formatContactSubtitle } from '../lib/contactFields';
 import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
 import { vctProfilePhotoFromUser } from '../lib/vctProfileFields';
@@ -37,6 +41,7 @@ import {
   Award,
   Share2,
   HardHat,
+  Plus,
 } from 'lucide-react';
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
@@ -66,6 +71,7 @@ export const Layout: React.FC = () => {
   const [accountOpen, setAccountOpen] = useState(false);
   const [suppressAccountOverlayHistory, setSuppressAccountOverlayHistory] = useState(true);
   const [reportsChrome, setReportsChrome] = useState<ReportsAppBarChrome | null>(null);
+  const [rcListChrome, setRcListChrome] = useState<RcListAppBarChrome | null>(null);
 
   const profilePath =
     user?.role === 'rc_admin' ? '/rc/profile' : user?.role === 'vct' ? '/vct/profile' : null;
@@ -242,13 +248,14 @@ export const Layout: React.FC = () => {
   const isCustomersList = /\/(rc|vct)\/customers\/?$/.test(location.pathname);
   const isReportsList = /\/(admin|rc|vct)\/reports\/?$/.test(location.pathname);
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
+  const isRcCentersPage = /^\/admin\/rc\/?$/.test(location.pathname);
   const isHomeDashboard =
     location.pathname === '/rc' ||
     location.pathname === '/vct' ||
     location.pathname === '/admin';
   const showAppFilterSlot =
     useShieldBrand || isCertificatesList || isCustomersList || isReportsList;
-  const stickyMobileAppBar = showAppFilterSlot || isHomeDashboard || isEmaapSessions;
+  const stickyMobileAppBar = showAppFilterSlot || isHomeDashboard || isEmaapSessions || isRcCentersPage;
 
   const roleLabel = {
     super_admin: 'Super Admin',
@@ -341,8 +348,22 @@ export const Layout: React.FC = () => {
 
   const embed = isEmbedSession();
 
+  const rcRegisterBtn =
+    isRcCentersPage && rcListChrome ? (
+      <button
+        type="button"
+        className="rc-register-add-btn"
+        onClick={rcListChrome.onRegister}
+        title="Register center"
+        aria-label="Register center"
+      >
+        <Plus size={22} strokeWidth={2.5} />
+      </button>
+    ) : null;
+
   return (
     <ReportsAppBarContext.Provider value={setReportsChrome}>
+    <RcListAppBarContext.Provider value={setRcListChrome}>
     <div className={`app-wrapper${embed ? ' embed-mode' : ''}`}>
       {!isMobile && (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -406,9 +427,13 @@ export const Layout: React.FC = () => {
               </div>
             ) : (
               <div className="mobile-app-bar-brand">
-                <MobileAppBarBrandIcon variant={useShieldBrand ? 'shield' : 'page'}>
-                  {!useShieldBrand ? pageIcon : null}
-                </MobileAppBarBrandIcon>
+                {isRcCentersPage ? (
+                  rcRegisterBtn
+                ) : (
+                  <MobileAppBarBrandIcon variant={useShieldBrand ? 'shield' : 'page'}>
+                    {!useShieldBrand ? pageIcon : null}
+                  </MobileAppBarBrandIcon>
+                )}
                 <div className="mobile-app-bar-text">
                   {isReportsList ? (
                     <div className="reports-app-title-row">
@@ -492,6 +517,7 @@ export const Layout: React.FC = () => {
               )}
             </div>
             <div className="top-bar-end">
+              {rcRegisterBtn}
               {isHomeDashboard ? <EmaapStatusShortcut /> : null}
               {profilePath ? (
                 <button
@@ -569,6 +595,7 @@ export const Layout: React.FC = () => {
         </div>
       )}
     </div>
+    </RcListAppBarContext.Provider>
     </ReportsAppBarContext.Provider>
   );
 };

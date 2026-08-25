@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Building2, Eye, EyeOff, Pencil } from 'lucide-react';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { normalizePhone, normalizePincode } from '../../lib/contactFields';
 import {
@@ -11,70 +11,139 @@ import {
 } from '../../lib/rcProfileFields';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import type { RcFormValues } from '../../lib/rcProfileFields';
+import { StorageImage } from '../../components/StorageImage';
+import {
+  RC_CERTIFICATION_METHOD_OPTIONS,
+  type RcCertificationMethod,
+} from '../../lib/rcCertificationMethod';
 import { UploadField } from './productFormUi';
 
 type RCFormFieldsProps = {
   mode: 'create' | 'edit';
+  editing: boolean;
   values: RcFormValues;
   onChange: (patch: Partial<RcFormValues>) => void;
+  logo: ProductFileMeta | null;
+  logoUploading: boolean;
+  onLogoSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   cert: ProductFileMeta | null;
   certUploading: boolean;
   certProgress: number;
   onCertSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onCertRemove: () => void;
-  seal: ProductFileMeta | null;
-  sealUploading: boolean;
-  sealProgress: number;
-  onSealSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onSealRemove: () => void;
   panCardImage: ProductFileMeta | null;
   panCardUploading: boolean;
   panCardProgress: number;
   onPanCardSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onPanCardRemove: () => void;
+  signerSign: ProductFileMeta | null;
+  signerUploading: boolean;
+  onSignerSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onSignerRemove: () => void;
   submitting: boolean;
   showPassword: boolean;
   onTogglePassword: () => void;
   loginAadhar?: string;
+  canEditCertification: boolean;
+  onStartEdit?: () => void;
+  editArmed?: boolean;
+  editBusy?: boolean;
 };
 
 export const RCFormFields: React.FC<RCFormFieldsProps> = ({
   mode,
+  editing,
   values,
   onChange,
+  logo,
+  logoUploading,
+  onLogoSelect,
   cert,
   certUploading,
   certProgress,
   onCertSelect,
   onCertRemove,
-  seal,
-  sealUploading,
-  sealProgress,
-  onSealSelect,
-  onSealRemove,
   panCardImage,
   panCardUploading,
   panCardProgress,
   onPanCardSelect,
   onPanCardRemove,
+  signerSign,
+  signerUploading,
+  onSignerSelect,
+  onSignerRemove,
   submitting,
   showPassword,
   onTogglePassword,
   loginAadhar,
+  canEditCertification,
+  onStartEdit,
+  editArmed = false,
+  editBusy = false,
 }) => {
   const certInputRef = useRef<HTMLInputElement>(null);
-  const sealInputRef = useRef<HTMLInputElement>(null);
   const panCardInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const signerInputRef = useRef<HTMLInputElement>(null);
   const certDueDate = standardWeightsCertExpiryFromDate(values.standardWeightsCertDate);
-  const canUploadFiles = mode === 'edit' ? Boolean(loginAadhar) : values.aadhar.trim().length === 12;
-  const fileUploadTitle = !canUploadFiles
-    ? mode === 'create'
-      ? 'Enter 12-digit Aadhar to upload'
-      : 'Save center first'
-    : undefined;
+  const locked = mode === 'edit' && !editing;
+  const canUploadFiles = !locked && (mode === 'edit' ? Boolean(loginAadhar) : values.aadhar.trim().length === 12);
+  const fileUploadTitle = locked
+    ? 'Tap the pencil to edit'
+    : !canUploadFiles
+      ? mode === 'create'
+        ? 'Enter 12-digit Aadhar to upload'
+        : 'Save center first'
+      : undefined;
 
   return (
-    <div className="product-form-flat rc-form-flat">
+    <div className={`product-form-flat rc-form-flat${locked ? ' rc-form-flat--locked' : ''}`}>
+      <div className="rc-form-dp">
+        <input
+          ref={logoInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          hidden
+          onChange={onLogoSelect}
+          disabled={locked || submitting || logoUploading}
+        />
+        <div className="rc-form-dp__cluster">
+          <button
+            type="button"
+            className="rc-form-dp__btn"
+            onClick={() => logoInputRef.current?.click()}
+            disabled={locked || submitting || logoUploading}
+            aria-label="RC logo"
+          >
+            {logo ? (
+              <StorageImage
+                url={logo.url}
+                path={logo.path}
+                alt=""
+                className="rc-form-dp__img"
+              />
+            ) : (
+              <Building2 size={28} strokeWidth={1.7} aria-hidden />
+            )}
+          </button>
+          {onStartEdit ? (
+            <button
+              type="button"
+              className={`rc-form-edit-btn${editArmed ? ' is-on' : ''}`}
+              onClick={onStartEdit}
+              disabled={editBusy || editArmed}
+              aria-label="Edit regional center"
+              aria-pressed={editArmed}
+              title="Edit"
+            >
+              <Pencil size={14} strokeWidth={2.2} />
+            </button>
+          ) : null}
+        </div>
+        <span className="rc-form-dp__hint">Logo</span>
+      </div>
+
+      <fieldset className="rc-form-lock" disabled={locked || submitting}>
       <div className="product-form-flat-row rc-form-row-main">
         <div className="rc-form-grid rc-form-grid--main">
           <div className="form-group mb-0">
@@ -128,7 +197,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
               spellCheck={false}
               aria-describedby="rc-code-hint"
             />
-            <p id="rc-code-hint" className="text-muted text-xs mt-1 mb-0">
+            <p id="rc-code-hint" className="text-muted text-xs mt-1 mb-0 rc-form-hint">
               Used in certificate remarks — e.g. Original verification by {values.rcCode || 'ABC'}
             </p>
           </div>
@@ -145,7 +214,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
               spellCheck={false}
               aria-describedby="rc-zoho-id-hint"
             />
-            <p id="rc-zoho-id-hint" className="text-muted text-xs mt-1 mb-0">
+            <p id="rc-zoho-id-hint" className="text-muted text-xs mt-1 mb-0 rc-form-hint rc-form-hint--long">
               Zoho Books customer ID for RV invoicing (optional). Super Admin only — not shown on RC profile.
             </p>
           </div>
@@ -324,13 +393,15 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
             submitting={submitting}
             variant="document"
             compact
+            iconActions
+            readOnly={locked}
           />
         </div>
       </div>
 
       <div className="product-form-flat-row product-form-flat-row--scale rc-form-row-accounts">
         <span className="product-form-flat-row-title">Zoho labour expense &amp; PAN (Super Admin only)</span>
-        <p className="text-muted text-xs mb-3 mt-0">
+        <p className="text-muted text-xs mb-3 mt-0 rc-form-hint rc-form-hint--long">
           Not visible on the RC profile. Labour expense account is used for RV payout from GATC Wallet (chart of accounts ID, not a vendor contact). PAN is optional.
         </p>
         <div className="rc-form-grid rc-form-grid--main">
@@ -391,36 +462,70 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
             submitting={submitting}
             variant="document"
             compact
+            iconActions
+            readOnly={locked}
           />
         </div>
       </div>
 
-      <div className="product-form-flat-row product-form-flat-row--scale rc-form-row-seal">
-        <span className="product-form-flat-row-title">RC seal (optional)</span>
-        <div className="rc-form-grid rc-form-grid--seal">
-          <UploadField
-            label="Seal image"
-            hint="PNG only"
-            uploadDisabled={!canUploadFiles}
-            disabledReason={fileUploadTitle}
-            file={seal}
-            uploading={sealUploading}
-            progress={sealProgress}
-            accept="image/png"
-            uploadLabel="Upload PNG"
-            formats="Transparent background"
-            inputRef={sealInputRef}
-            onSelect={onSealSelect}
-            onRemove={onSealRemove}
-            submitting={submitting}
-            variant="image"
-            compact
-          />
-          <p className="rc-form-seal-note text-muted text-xs mb-0">
-            Strict: PNG with transparent background only.
-          </p>
+      <div className="product-form-flat-row product-form-flat-row--scale rc-form-row-cert-settings">
+        <span className="product-form-flat-row-title">Settings for certification</span>
+        <div className="rc-cert-settings" role="radiogroup" aria-label="Certification method">
+          {RC_CERTIFICATION_METHOD_OPTIONS.map(option => {
+            const on = values.certificationMethod === option.id;
+            const switchDisabled = locked || submitting || !canEditCertification;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                className={`rc-cert-settings__row${on ? ' is-on' : ''}`}
+                role="radio"
+                aria-checked={on}
+                disabled={switchDisabled}
+                onClick={() => onChange({ certificationMethod: option.id as RcCertificationMethod })}
+              >
+                <span>{option.label}</span>
+                <span className={`rc-cert-settings__switch${on ? ' is-on' : ''}`} aria-hidden />
+              </button>
+            );
+          })}
         </div>
+        {!canEditCertification ? (
+          <p className="text-muted text-xs mb-0 mt-2 rc-form-hint">Only Super Admin can change this.</p>
+        ) : null}
+        {values.certificationMethod === 'pdf_signer' ? (
+          <div className="rc-pdf-signer-upload">
+            <p className="text-muted text-xs mb-2 mt-3 rc-form-hint">
+              Upload officer signature and name as one JPG or PNG.
+            </p>
+            <UploadField
+              label="Signature & name"
+              hint="JPG / PNG · required"
+              uploadDisabled={!canUploadFiles || !canEditCertification}
+              disabledReason={
+                !canEditCertification
+                  ? 'Only Super Admin can change this.'
+                  : fileUploadTitle
+              }
+              file={signerSign}
+              uploading={signerUploading}
+              progress={0}
+              accept="image/jpeg,image/png"
+              uploadLabel="Upload"
+              formats="JPG or PNG"
+              inputRef={signerInputRef}
+              onSelect={onSignerSelect}
+              onRemove={onSignerRemove}
+              submitting={submitting}
+              variant="image"
+              compact
+              iconActions
+              readOnly={locked}
+            />
+          </div>
+        ) : null}
       </div>
+      </fieldset>
     </div>
   );
 };

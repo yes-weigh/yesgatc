@@ -2,6 +2,9 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { FirestoreUserDoc } from '../types';
 
+export const RC_ACCOUNT_INACTIVE_LOGIN_MESSAGE =
+  'This regional center account is deactivated. Contact Super Admin.';
+
 export const RC_INACTIVE_LOGIN_MESSAGE =
   'Your regional center is inactive. Super Admin must upload your standard weights certificate before you can sign in.';
 
@@ -12,12 +15,18 @@ export function rcHasStandardWeightsCert(
   return Boolean(doc.standardWeightsCertUrl?.trim() || doc.standardWeightsCertPath?.trim());
 }
 
-/** @deprecated Use rcHasStandardWeightsCert — kept for admin Active/Inactive badge. */
+/** Super Admin can disable an RC without deleting the account. Omitted/true = enabled. */
+export function isRcAccountActive(doc: Pick<FirestoreUserDoc, 'active'>): boolean {
+  return doc.active !== false;
+}
+
+/** @deprecated Use rcHasStandardWeightsCert — kept for admin cert Active/Inactive badge. */
 export const isRcActive = rcHasStandardWeightsCert;
 
 export function rcActivationLabel(
-  doc: Pick<FirestoreUserDoc, 'standardWeightsCertUrl' | 'standardWeightsCertPath'>,
+  doc: Pick<FirestoreUserDoc, 'standardWeightsCertUrl' | 'standardWeightsCertPath' | 'active'>,
 ): string {
+  if (!isRcAccountActive(doc)) return 'Deactivated';
   return rcHasStandardWeightsCert(doc) ? 'Active' : 'Inactive';
 }
 

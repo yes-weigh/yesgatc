@@ -8,6 +8,8 @@ import type {
 } from '../types';
 import type { Product } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
+import type { RcCertificationMethod } from './rcCertificationMethod';
+import { DEFAULT_RC_CERTIFICATION_METHOD, rcCertificationMethodFromUser } from './rcCertificationMethod';
 import { isValidPincode, normalizePincode } from './contactFields';
 import { resolveLaboratorySealIdentification } from './rcLaboratoryFields';
 import {
@@ -420,6 +422,7 @@ export type RcFormValues = {
   password: string;
   standardWeightsCertNumber: string;
   standardWeightsCertDate: string;
+  certificationMethod: RcCertificationMethod;
 };
 
 export const EMPTY_RC_FORM: RcFormValues = {
@@ -440,6 +443,7 @@ export const EMPTY_RC_FORM: RcFormValues = {
   password: '',
   standardWeightsCertNumber: '',
   standardWeightsCertDate: '',
+  certificationMethod: DEFAULT_RC_CERTIFICATION_METHOD,
 };
 
 export function validateRcPincodeInput(pincode: string): string | null {
@@ -469,6 +473,7 @@ export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
     password: '',
     standardWeightsCertNumber: doc.standardWeightsCertNumber || '',
     standardWeightsCertDate: doc.standardWeightsCertDate || '',
+    certificationMethod: rcCertificationMethodFromUser(doc),
   };
 }
 
@@ -476,11 +481,13 @@ export type RcFormUploads = {
   cert: ProductFileMeta | null;
   seal: ProductFileMeta | null;
   panCard: ProductFileMeta | null;
+  logo: ProductFileMeta | null;
+  pdfSignerSign: ProductFileMeta | null;
 };
 
 function applyFileMeta(
   base: Partial<FirestoreUserDoc>,
-  prefix: 'standardWeightsCert' | 'seal' | 'panCard',
+  prefix: 'standardWeightsCert' | 'seal' | 'panCard' | 'logo' | 'pdfSignerSign',
   file: ProductFileMeta | null,
   isCreate: boolean,
 ): void {
@@ -527,6 +534,7 @@ export function buildRcFirestoreFields(
     standardWeightsCertNumber: values.standardWeightsCertNumber.trim(),
     standardWeightsCertDate: values.standardWeightsCertDate,
     standardWeightsCertExpiry: expiry,
+    certificationMethod: values.certificationMethod,
   };
 
   if (options.isCreate) {
@@ -537,6 +545,8 @@ export function buildRcFirestoreFields(
   applyFileMeta(base, 'standardWeightsCert', uploads.cert, Boolean(options.isCreate));
   applyFileMeta(base, 'seal', uploads.seal, Boolean(options.isCreate));
   applyFileMeta(base, 'panCard', uploads.panCard, Boolean(options.isCreate));
+  applyFileMeta(base, 'logo', uploads.logo, Boolean(options.isCreate));
+  applyFileMeta(base, 'pdfSignerSign', uploads.pdfSignerSign, Boolean(options.isCreate));
 
   if (options.includePassword) {
     base.clearTextPassword = options.includePassword;

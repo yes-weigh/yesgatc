@@ -11,22 +11,39 @@ export type RcCertifiedRank = {
   certified: number;
 };
 
-export function rankRcsByCertifiedCount(
+export type RcCertifiedTypeCounts = {
+  ov: number;
+  rv: number;
+  total: number;
+};
+
+export function certifiedTypeCountsByRcId(
   records: SiteCalibration[],
   rcIds: string[] = [],
-): RcCertifiedRank[] {
-  const counts = new Map<string, number>();
+): Map<string, RcCertifiedTypeCounts> {
+  const counts = new Map<string, RcCertifiedTypeCounts>();
   for (const id of rcIds) {
-    if (id) counts.set(id, 0);
+    if (id) counts.set(id, { ov: 0, rv: 0, total: 0 });
   }
   for (const record of records) {
     if (getVerificationDisplayStatus(record) !== 'certified') continue;
     const id = record.rcId?.trim();
     if (!id) continue;
-    counts.set(id, (counts.get(id) || 0) + 1);
+    const row = counts.get(id) ?? { ov: 0, rv: 0, total: 0 };
+    if (record.verificationType === 'RV') row.rv += 1;
+    else row.ov += 1;
+    row.total += 1;
+    counts.set(id, row);
   }
-  return [...counts.entries()]
-    .map(([rcId, certified]) => ({ rcId, certified }))
+  return counts;
+}
+
+export function rankRcsByCertifiedCount(
+  records: SiteCalibration[],
+  rcIds: string[] = [],
+): RcCertifiedRank[] {
+  return [...certifiedTypeCountsByRcId(records, rcIds).entries()]
+    .map(([rcId, row]) => ({ rcId, certified: row.total }))
     .sort((a, b) => b.certified - a.certified || a.rcId.localeCompare(b.rcId));
 }
 

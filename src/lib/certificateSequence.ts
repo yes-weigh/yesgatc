@@ -3,8 +3,8 @@ export const CERTIFICATE_SEQUENCE_PREFIX = 'IND/GATC/KL/26/04/26/';
 
 export const DEFAULT_CERTIFICATE_SEQUENCE_MAX = 1366;
 
-/** Last sequence issued on eMAAP. Dashboard Total Certified uses max(this, highest in Firestore). */
-export const LAST_CERTIFICATE_SEQUENCE_FLOOR = 3488;
+/** Last sequence issued on eMAAP. Dashboard / RC Total Certified uses max(this, highest in Firestore). */
+export const LAST_CERTIFICATE_SEQUENCE_FLOOR = 3740;
 
 /** Trailing numeric segment (IND/GATC/KL/26/04/26/1365 → 1365). */
 export function parseCertificateSequenceNumber(value?: string | null): number | null {
