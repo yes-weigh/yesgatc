@@ -15,7 +15,7 @@
         <TextBlock Grid.Row="0"
                    Margin="0,28,0,12"
                    Foreground="#666666"
-                   Text="Local RC machine only. Select a certified certificate, then Sign and upload."/>
+                   Text="Local RC machine only. Unsigned eMAAP PDF stays in Firebase. Signed copy is stored separately."/>
 
         <Border Grid.Row="1"
                 Padding="14"
@@ -34,6 +34,7 @@
                     <Button x:Name="SignInButton" Content="Sign in" Click="SignInButton_Click"/>
                     <Button x:Name="RefreshButton" Content="Refresh" Click="RefreshButton_Click" IsEnabled="False"/>
                     <Button x:Name="SignButton" Content="Sign &amp; upload" Click="SignButton_Click" IsEnabled="False"/>
+                    <Button x:Name="SignAllButton" Content="Sign all unsigned" Click="SignAllButton_Click" IsEnabled="False"/>
                     <Button x:Name="SignLocalButton" Content="Sign &amp; download" Click="SignLocalButton_Click" IsEnabled="False"/>
                     <Button x:Name="DownloadButton" Content="Download signed" Click="DownloadButton_Click" IsEnabled="False"/>
                     <Button Content="Save login" Click="SaveButton_Click"/>
@@ -71,7 +72,7 @@
         </Border>
 
         <Grid Grid.Row="2" RowDefinitions="Auto,*">
-            <Grid ColumnDefinitions="*,12,180,12,Auto" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="*,12,180,12,*" Margin="0,0,0,8">
                 <TextBox x:Name="SearchBox"
                          Watermark="Search certificate no. or machine serial"
                          TextChanged="SearchBox_TextChanged"/>
@@ -87,7 +88,9 @@
                 <TextBlock x:Name="CountText"
                            Grid.Column="4"
                            VerticalAlignment="Center"
-                           Text="0 certificates"/>
+                           TextAlignment="Right"
+                           TextWrapping="Wrap"
+                           Text="0 issued · 0 signed · 0 not signed"/>
             </Grid>
 
             <DataGrid x:Name="CertGrid"
@@ -99,7 +102,22 @@
                       CanUserSortColumns="True"
                       GridLinesVisibility="Horizontal"
                       HeadersVisibility="Column"
+                      LoadingRow="CertGrid_LoadingRow"
                       SelectionChanged="CertGrid_SelectionChanged">
+                <DataGrid.Styles>
+                    <Style Selector="DataGridRow.dsc-signed">
+                        <Setter Property="Background" Value="#D7EDDA"/>
+                    </Style>
+                    <Style Selector="DataGridRow.dsc-signed:selected">
+                        <Setter Property="Background" Value="#B4D8BC"/>
+                    </Style>
+                    <Style Selector="DataGridRow.dsc-voided">
+                        <Setter Property="Background" Value="#EFEFEF"/>
+                    </Style>
+                    <Style Selector="DataGridRow.dsc-voided:selected">
+                        <Setter Property="Background" Value="#DEDEDE"/>
+                    </Style>
+                </DataGrid.Styles>
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Certificate"
                                         Binding="{Binding CertificateNumber}"
@@ -127,6 +145,6 @@
                    Grid.Row="3"
                    Margin="0,10,0,0"
                    Foreground="#666666"
-                   Text="DSC token (InnalT / WD PROXKey) · PIN once per session · Sign &amp; download stays local."/>
+                   Text="DSC token (InnalT / WD PROXKey) · PIN once · Sign all unsigned uploads signed PDFs and keeps the original."/>
     </Grid>
 </Window>

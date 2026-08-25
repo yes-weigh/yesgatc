@@ -43,6 +43,47 @@ public sealed class FirestoreService
         return CertificationQueueFilter.Apply(submitted, QueueRcIdFilter);
     }
 
+    public async Task<IReadOnlyList<SiteCalibrationRecord>> GetPendingSignedPdfUploadQueueAsync(
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<SiteCalibrationRecord> rows;
+        try
+        {
+            rows = await QuerySignedCertificatePdfsAsync(idToken, cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            rows = await GetVerificationsByStatusAsync("certified", idToken, cancellationToken);
+        }
+
+        return EmaapSignedPdfUploadFilter.Apply(rows, QueueRcIdFilter);
+    }
+
+    public async Task MarkEmaapSignedPdfUploadedAsync(
+        string jobId,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow.ToString("O");
+        var documents = new FirestoreDocumentClient(_settings);
+        await documents.PatchStringFieldsAsync(
+            "siteCalibrations",
+            jobId,
+            new Dictionary<string, string>
+            {
+                ["emaapSignedPdfUploadedAt"] = now,
+                ["updatedAt"] = now,
+            },
+            idToken,
+            cancellationToken);
+    }
+
     public async Task<bool> TryClaimJobAsync(
         string jobId,
         FirebaseSignInResult session,
@@ -666,6 +707,45 @@ public sealed class FirestoreService
             cancellationToken);
     }
 
+    private async Task<IReadOnlyList<SiteCalibrationRecord>> QuerySignedCertificatePdfsAsync(
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        var rcNames = await GetRcCenterNamesAsync(idToken, cancellationToken);
+        var urlFilter = new QueryFilter(
+            new FieldFilter(
+                new FieldReference("signedCertificatePdfUrl"),
+                "NOT_EQUAL",
+                new FirestoreValue { StringValue = "" }));
+        QueryFilter where = urlFilter;
+        if (!string.IsNullOrWhiteSpace(QueueRcIdFilter))
+        {
+            where = new QueryFilter(
+                CompositeFilter: new CompositeFilter(
+                    "AND",
+                    [
+                        urlFilter,
+                        new QueryFilter(
+                            new FieldFilter(
+                                new FieldReference("rcId"),
+                                "EQUAL",
+                                new FirestoreValue { StringValue = QueueRcIdFilter })),
+                    ]));
+        }
+
+        var rows = await RunQueryAsync(
+            new StructuredQuery(
+                [new CollectionSelector("siteCalibrations")],
+                where),
+            idToken,
+            cancellationToken);
+
+        return rows
+            .Where(row => row.Document is not null)
+            .Select(row => MapDocument(row.Document!, rcNames))
+            .ToList();
+    }
+
     private async Task<IReadOnlyList<SiteCalibrationRecord>> GetVerificationsByStatusAsync(
         string status,
         string idToken,
@@ -834,6 +914,9 @@ public sealed class FirestoreService
             CertifiedAt = FirestoreFieldReader.ReadString(fields, "certifiedAt"),
             CertificatePdfUrl = FirestoreFieldReader.ReadString(fields, "certificatePdfUrl"),
             CertificateNumber = FirestoreFieldReader.ReadString(fields, "certificateNumber"),
+            SignedCertificatePdfUrl = FirestoreFieldReader.ReadString(fields, "signedCertificatePdfUrl"),
+            SignedCertificatePdfPath = FirestoreFieldReader.ReadString(fields, "signedCertificatePdfPath"),
+            EmaapSignedPdfUploadedAt = FirestoreFieldReader.ReadString(fields, "emaapSignedPdfUploadedAt"),
             EmaapIssuedCertificateNumber = FirestoreFieldReader.ReadString(fields, "emaapIssuedCertificateNumber"),
             PipelineFailedPhase = FirestoreFieldReader.ReadString(fields, "pipelineFailedPhase"),
             PipelineFailureMessage = FirestoreFieldReader.ReadString(fields, "pipelineFailureMessage"),

@@ -34,6 +34,9 @@ public sealed class DscCertificateRecord
         string.Equals(Status, "certified", StringComparison.OrdinalIgnoreCase)
         && !string.IsNullOrWhiteSpace(CertificateNumber);
 
+    public bool IsAfterLegacySequence =>
+        ParseSequence(CertificateNumber) is int sequence && sequence > LegacySignedSequenceMax;
+
     public string VerificationTypeLabel => VerificationType switch
     {
         "RV" => "RV",

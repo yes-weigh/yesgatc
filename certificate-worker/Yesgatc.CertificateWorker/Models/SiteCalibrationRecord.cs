@@ -15,6 +15,9 @@ public sealed class SiteCalibrationRecord
     public string? CertifiedAt { get; init; }
     public string? CertificatePdfUrl { get; init; }
     public string? CertificateNumber { get; init; }
+    public string? SignedCertificatePdfUrl { get; init; }
+    public string? SignedCertificatePdfPath { get; init; }
+    public string? EmaapSignedPdfUploadedAt { get; init; }
     /// <summary>Set when eMAAP generated a cert but PDF sync failed — resume download-only.</summary>
     public string? EmaapIssuedCertificateNumber { get; init; }
     public string? PipelineFailedPhase { get; init; }
@@ -60,10 +63,35 @@ public sealed class SiteCalibrationRecord
     public bool IsCertified => string.Equals(Status, VerificationStatuses.Certified, StringComparison.OrdinalIgnoreCase);
     public bool HasCertificate => IsCertified || !string.IsNullOrWhiteSpace(CertificatePdfUrl);
 
+    public const int LegacySignedSequenceMax = 2304;
+
+    public static int? ParseCertificateSequence(string? certificateNumber)
+    {
+        var tail = (certificateNumber ?? "").Trim().Split('/').LastOrDefault() ?? "";
+        return int.TryParse(tail, out var sequence) && sequence > 0 ? sequence : null;
+    }
+
+    public bool IsAfterLegacySequence =>
+        ParseCertificateSequence(CertificateNumber) is int sequence && sequence > LegacySignedSequenceMax;
+
+    /// <summary>Certified, seq &gt; 2304, signed PDF in Firebase, not yet pushed to eMAAP.</summary>
+    public bool IsEligibleForSignedPdfUpload =>
+        IsCertified
+        && !IsSuperseded
+        && !IsVoided
+        && IsAfterLegacySequence
+        && !string.IsNullOrWhiteSpace(SignedCertificatePdfUrl)
+        && string.IsNullOrWhiteSpace(EmaapSignedPdfUploadedAt);
+
     /// <summary>Single production stage: Submitted → eMAAP fill+certify → PDF → Firebase certified.</summary>
     public bool NeedsPipelineWork => IsSubmitted;
 
-    public string NextStepLabel => IsSubmitted ? "eMAAP · Fill & certify" : "Complete";
+    public string NextStepLabel =>
+        IsSubmitted
+            ? "eMAAP · Fill & certify"
+            : IsEligibleForSignedPdfUpload
+                ? "eMAAP · Upload signed PDF"
+                : "Complete";
 
     public string PipelineDateDisplay =>
         IsSubmitted ? SubmittedAtDisplay

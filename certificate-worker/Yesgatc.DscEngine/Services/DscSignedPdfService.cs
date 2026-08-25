@@ -52,6 +52,7 @@ public sealed class DscSignedPdfService
             cancellationToken);
 
         var uploadedAt = DateTime.UtcNow.ToString("o");
+        // Patch signed-* only. certificatePdfUrl / Path stay as the unsigned eMAAP PDF.
         await _documents.PatchStringFieldsAsync(
             "siteCalibrations",
             record.Id,

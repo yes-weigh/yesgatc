@@ -77,6 +77,9 @@ public partial class MainWindow : Window
     private async void RefreshButton_Click(object? sender, RoutedEventArgs e) =>
         await LoadCertificatesAsync();
 
+    private async void SignAllButton_Click(object? sender, RoutedEventArgs e) =>
+        await SignRecordsAsync(_all.Where(item => item.SignStatus == DscSignStatus.NotSigned).ToList(), upload: true);
+
     private async void SignButton_Click(object? sender, RoutedEventArgs e) =>
         await SignSelectedAsync(upload: true);
 
@@ -94,6 +97,7 @@ public partial class MainWindow : Window
         RefreshButton.IsEnabled = false;
         SignOutButton.IsEnabled = false;
         SignButton.IsEnabled = false;
+        SignAllButton.IsEnabled = false;
         SignLocalButton.IsEnabled = false;
         DownloadButton.IsEnabled = false;
         SetStatus("Signed out.");
@@ -165,9 +169,7 @@ public partial class MainWindow : Window
             _all.Clear();
             _all.AddRange(records);
             ApplyFilter();
-            var unsigned = _all.Count(item => item.SignStatus == DscSignStatus.NotSigned);
-            SetStatus(
-                $"{_session.DisplayName}  ·  {_all.Count} issued  ·  {unsigned} not signed");
+            SetStatus($"{_session.DisplayName}  ·  {CountSummary()}");
         }
         catch (Exception ex)
         {
@@ -183,17 +185,28 @@ public partial class MainWindow : Window
 
     private async Task SignSelectedAsync(bool upload)
     {
-        if (_busy || _session is null)
-        {
-            return;
-        }
-
         var selected = SelectedRows()
             .Where(item => item.SignStatus != DscSignStatus.Voided)
             .ToList();
         if (selected.Count == 0)
         {
-            SetStatus("Select one or more certified certificates.");
+            SetStatus("Select one or more rows, or use Sign all unsigned.");
+            return;
+        }
+
+        await SignRecordsAsync(selected, upload);
+    }
+
+    private async Task SignRecordsAsync(IReadOnlyList<DscCertificateRecord> records, bool upload)
+    {
+        if (_busy || _session is null)
+        {
+            return;
+        }
+
+        if (records.Count == 0)
+        {
+            SetStatus("Nothing to sign.");
             return;
         }
 
@@ -204,54 +217,73 @@ public partial class MainWindow : Window
 
         _busy = true;
         SignButton.IsEnabled = false;
+        SignAllButton.IsEnabled = false;
         SignLocalButton.IsEnabled = false;
         RefreshButton.IsEnabled = false;
         try
         {
             var ok = 0;
+            var failed = new List<string>();
             var saved = new List<string>();
             var downloads = DefaultDownloadDirectory();
-            foreach (var record in selected)
+            var total = records.Count;
+            for (var i = 0; i < records.Count; i++)
             {
+                var record = records[i];
                 SetStatus(upload
-                    ? $"Signing {record.CertificateNumber}…"
-                    : $"Signing {record.CertificateNumber} to Downloads…");
-                _session = _session with { IdToken = await GetFreshIdTokenAsync() };
-                PersistStampPrefs();
-                if (upload)
+                    ? $"Signing {i + 1}/{total}  ·  {record.CertificateNumber}  ·  {CountSummary()}"
+                    : $"Signing {i + 1}/{total} to Downloads  ·  {record.CertificateNumber}");
+                try
                 {
-                    var updated = await _signedPdfs.SignAndUploadAsync(
-                        record,
-                        _dscToken,
-                        _session,
-                        CurrentStampLayout());
-                    ReplaceRecord(updated);
-                }
-                else
-                {
-                    saved.Add(await _signedPdfs.SignAndSaveLocalAsync(
-                        record,
-                        _dscToken,
-                        _session,
-                        downloads,
-                        CurrentStampLayout()));
-                }
+                    _session = _session with { IdToken = await GetFreshIdTokenAsync() };
+                    PersistStampPrefs();
+                    if (upload)
+                    {
+                        var updated = await _signedPdfs.SignAndUploadAsync(
+                            record,
+                            _dscToken,
+                            _session,
+                            CurrentStampLayout());
+                        ReplaceRecord(updated);
+                    }
+                    else
+                    {
+                        saved.Add(await _signedPdfs.SignAndSaveLocalAsync(
+                            record,
+                            _dscToken,
+                            _session,
+                            downloads,
+                            CurrentStampLayout()));
+                    }
 
-                ok++;
+                    ok++;
+                    ApplyFilter();
+                }
+                catch (Exception ex)
+                {
+                    failed.Add($"{record.CertificateNumber}: {ex.Message}");
+                    if (IsFatalTokenError(ex))
+                    {
+                        break;
+                    }
+                }
             }
 
             ApplyFilter();
             if (upload)
             {
-                SetStatus(
-                    $"Signed & uploaded {ok}. Token: {_dscToken.SigningCertificate?.SubjectCn}");
+                SetStatus(failed.Count == 0
+                    ? $"Signed & uploaded {ok}. Unsigned PDF kept. Signed PDF stored separately.  ·  {CountSummary()}"
+                    : $"Signed {ok}/{total}. Failed {failed.Count}: {failed[0]}  ·  {CountSummary()}");
             }
             else
             {
                 OpenSaved(saved);
-                SetStatus(saved.Count == 1
-                    ? $"Signed locally · {Path.GetFileName(saved[0])} · Downloads (not uploaded)."
-                    : $"Signed {saved.Count} locally · Downloads (not uploaded).");
+                SetStatus(failed.Count == 0
+                    ? saved.Count == 1
+                        ? $"Signed locally · {Path.GetFileName(saved[0])} · Downloads (not uploaded)."
+                        : $"Signed {saved.Count} locally · Downloads (not uploaded)."
+                    : $"Signed {ok}/{total} locally. Failed {failed.Count}: {failed[0]}");
             }
         }
         catch (Exception ex)
@@ -423,10 +455,43 @@ public partial class MainWindow : Window
             _visible.Add(item);
         }
 
-        CountText.Text = filtered.Count == _all.Count
-            ? $"{filtered.Count} certificate{(filtered.Count == 1 ? "" : "s")}"
-            : $"{filtered.Count} of {_all.Count} certificates";
+        CountText.Text = CountSummary(filtered.Count);
         UpdateActionButtons();
+    }
+
+    private string CountSummary(int? shown = null)
+    {
+        var signed = _all.Count(item => item.SignStatus == DscSignStatus.Signed);
+        var unsigned = _all.Count(item => item.SignStatus == DscSignStatus.NotSigned);
+        var core = $"{_all.Count} issued · {signed} signed · {unsigned} not signed";
+        if (shown is int n && n != _all.Count)
+        {
+            return $"{n} shown · {core}";
+        }
+
+        return core;
+    }
+
+    private void CertGrid_LoadingRow(object? sender, DataGridRowEventArgs e)
+    {
+        var signed = e.Row.DataContext is DscCertificateRecord record
+            && record.SignStatus == DscSignStatus.Signed;
+        var voided = e.Row.DataContext is DscCertificateRecord row
+            && row.SignStatus == DscSignStatus.Voided;
+        e.Row.Classes.Set("dsc-signed", signed);
+        e.Row.Classes.Set("dsc-voided", voided);
+    }
+
+    private static bool IsFatalTokenError(Exception ex)
+    {
+        var text = ex.Message;
+        return text.Contains("PIN", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("PKCS#11", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("CKR_", StringComparison.OrdinalIgnoreCase)
+            || (text.Contains("token", StringComparison.OrdinalIgnoreCase)
+                && (text.Contains("not present", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("removed", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("unlock", StringComparison.OrdinalIgnoreCase)));
     }
 
     private void UpdateActionButtons()
@@ -435,7 +500,9 @@ public partial class MainWindow : Window
         var canSign = !_busy
             && _session is not null
             && selected.Any(item => item.SignStatus != DscSignStatus.Voided);
+        var unsigned = _all.Count(item => item.SignStatus == DscSignStatus.NotSigned);
         SignButton.IsEnabled = canSign;
+        SignAllButton.IsEnabled = !_busy && _session is not null && unsigned > 0;
         SignLocalButton.IsEnabled = canSign;
         DownloadButton.IsEnabled = !_busy
             && _session is not null

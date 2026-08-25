@@ -32,7 +32,10 @@ public sealed class DscCertificateListService
 
         return rows
             .Select(row => Map(row.Id, row.Fields))
-            .Where(record => record.IsIssuedCertificate && !record.IsSuperseded)
+            .Where(record =>
+                record.IsIssuedCertificate
+                && !record.IsSuperseded
+                && record.IsAfterLegacySequence)
             .OrderByDescending(record => record.CertifiedAt ?? record.CertificateNumber)
             .ToList();
     }

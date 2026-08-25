@@ -2000,6 +2000,14 @@ public partial class MainWindow : Window
             .Select(item => item.Record)
             .ToList()).ConfigureAwait(false);
 
+        if (queue.Count == 0 && _session is not null)
+        {
+            var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+            queue = (await _firestoreService.GetPendingSignedPdfUploadQueueAsync(token).ConfigureAwait(false))
+                .Where(item => _jobRetries.IsEligible(item.Id))
+                .ToList();
+        }
+
         if (queue.Count == 0)
         {
             await RunOnUiAsync(UpdateAutoWorkerStatusText).ConfigureAwait(false);
@@ -2737,8 +2745,9 @@ public partial class MainWindow : Window
         bool sequentialOnly,
         bool fromAutoWorker)
     {
-        // eMAAP fill+certify must stay single-browser sequential.
-        if (sequentialOnly || queue.Any(job => job.IsSubmitted))
+        // eMAAP fill+certify and signed-PDF upload share one Chrome.
+        if (sequentialOnly
+            || queue.Any(job => job.IsSubmitted || job.IsEligibleForSignedPdfUpload))
         {
             await ProcessAllJobsSequentiallyAsync(queue, fromAutoWorker);
             return;
@@ -2776,6 +2785,21 @@ public partial class MainWindow : Window
             var claimed = false;
             try
             {
+                if (fromAutoWorker && job.IsEligibleForSignedPdfUpload)
+                {
+                    var generateWaiting = await _firestoreService
+                        .GetPendingCertificationQueueAsync(await GetFreshIdTokenAsync())
+                        .ConfigureAwait(false);
+                    if (generateWaiting.Count > 0)
+                    {
+                        AddActivityEntry(
+                            "Generate work waiting — pausing signed PDF uploads until fill+certify is empty.");
+                        await LoadQueueAsync();
+                        ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
+                        return;
+                    }
+                }
+
                 claimed = await TryClaimCurrentJobAsync(job).ConfigureAwait(false);
                 if (!claimed)
                 {
@@ -3255,6 +3279,33 @@ public partial class MainWindow : Window
         if (_session is null)
         {
             throw new InvalidOperationException($"Sign in as {WorkerProduct.SignInRoleLabel} first.");
+        }
+
+        if (job.IsEligibleForSignedPdfUpload)
+        {
+            automation.DocaCredentials = await ResolveDocaCredentialsAsync().ConfigureAwait(false);
+            SetStatusSafe(
+                $"eMAAP · Upload signed PDF {job.CertificateNumber} ({job.SerialNumber})…",
+                StatusKind.Working);
+            try
+            {
+                var uploadToken = await GetFreshIdTokenAsync();
+                var message = await automation.UploadEmaapSignedPdfAsync(job, uploadToken);
+                AddActivityEntry(message);
+                return new JobPipelineResult(true, false, message);
+            }
+            catch (EmaapMandatoryStepException ex)
+            {
+                AddActivityEntry(ex.Message);
+                return new JobPipelineResult(false, false, ex.Message, HaltBatch: true);
+            }
+            catch (Exception ex) when (
+                ex.Message.Contains("login page", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("Sign in to eMAAP", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("OTP", StringComparison.OrdinalIgnoreCase))
+            {
+                return new JobPipelineResult(false, true, ex.Message);
+            }
         }
 
         if (!job.NeedsPipelineWork)

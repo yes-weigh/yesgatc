@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Playwright;
@@ -1023,6 +1024,83 @@ public sealed class AutomationService : IAsyncDisposable
         await EnsureBrowserReadyAsync(cancellationToken);
         var page = await GetPageAsync();
         return await EmaapLoginAutomation.TryClickResendOtpIfEnabledAsync(page);
+    }
+
+    /// <summary>
+    /// Same Chrome session: open Certificates Issued, match cert number, Upload Signed PDF.
+    /// Does not submit a new certificate. Does not click Download.
+    /// </summary>
+    public async Task<string> UploadEmaapSignedPdfAsync(
+        SiteCalibrationRecord job,
+        string firebaseIdToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (!job.IsEligibleForSignedPdfUpload)
+        {
+            throw new InvalidOperationException(
+                $"{job.CertificateNumber} is not waiting for eMAAP signed PDF upload.");
+        }
+
+        await EnsureBrowserReadyAsync(cancellationToken);
+        var page = await GetPageAsync();
+        await page.BringToFrontAsync();
+        await EnsureEmaapLoggedInForWorkAsync(page, cancellationToken);
+
+        var token = ResolveFirebaseIdToken is not null
+            ? await ResolveFirebaseIdToken(cancellationToken)
+            : firebaseIdToken;
+        var localPath = await SaveSignedPdfLocalAsync(job, token, cancellationToken);
+        await EmaapCertificatesIssuedAutomation.UploadSignedPdfAsync(
+            page,
+            job.CertificateNumber!,
+            localPath,
+            cancellationToken);
+        await _firestoreService.MarkEmaapSignedPdfUploadedAsync(job.Id, token, cancellationToken);
+        return $"Uploaded signed PDF for {job.CertificateNumber} to eMAAP. Unsigned Firebase PDF kept.";
+    }
+
+    private async Task<string> SaveSignedPdfLocalAsync(
+        SiteCalibrationRecord job,
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        var storage = new FirebaseStorageUploadService(Firebase);
+        byte[] bytes;
+        if (!string.IsNullOrWhiteSpace(job.SignedCertificatePdfPath))
+        {
+            bytes = await storage.DownloadFileAsync(job.SignedCertificatePdfPath, idToken, cancellationToken);
+        }
+        else
+        {
+            using var http = new HttpClient();
+            using var request = new HttpRequestMessage(HttpMethod.Get, job.SignedCertificatePdfUrl);
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", idToken);
+            using var response = await http.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                using var retry = new HttpRequestMessage(HttpMethod.Get, job.SignedCertificatePdfUrl);
+                using var fallback = await http.SendAsync(retry, cancellationToken);
+                fallback.EnsureSuccessStatusCode();
+                bytes = await fallback.Content.ReadAsByteArrayAsync(cancellationToken);
+            }
+            else
+            {
+                bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            }
+        }
+
+        if (bytes.Length < 5 || System.Text.Encoding.ASCII.GetString(bytes, 0, 4) != "%PDF")
+        {
+            throw new InvalidOperationException(
+                $"Signed PDF for {job.CertificateNumber} is not a valid PDF.");
+        }
+
+        var localPath = Path.Combine(
+            WorkerDataPaths.CertificatePdfDirectory(job.Id),
+            "emaap-signed-upload.pdf");
+        await File.WriteAllBytesAsync(localPath, bytes, cancellationToken);
+        return localPath;
     }
 
     /// <summary>

@@ -181,6 +181,54 @@ public static class EmaapCertificatesIssuedAutomation
         cancellationToken.ThrowIfCancellationRequested();
     }
 
+    public static async Task UploadSignedPdfAsync(
+        IPage page,
+        string certificateNumber,
+        string localPdfPath,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(certificateNumber))
+        {
+            throw new InvalidOperationException("Certificate number is required to upload the signed PDF.");
+        }
+
+        if (!File.Exists(localPdfPath))
+        {
+            throw new FileNotFoundException("Signed PDF was not found for eMAAP upload.", localPdfPath);
+        }
+
+        await OpenCertificatesIssuedAsync(page, cancellationToken);
+        await DismissLeftoverSignedPdfUploadModalAsync(page);
+        await TryFilterIssuedListByCertificateAsync(page, certificateNumber, cancellationToken);
+
+        var row = await FindRowByCertificateNumberAsync(page, certificateNumber);
+        if (row is null || string.IsNullOrWhiteSpace(row.CertificateNumber))
+        {
+            throw new InvalidOperationException(
+                $"No Certificates Issued row matched certificate {certificateNumber} for signed PDF upload.");
+        }
+
+        if (!string.Equals(
+                NormalizeCertificateNumber(row.CertificateNumber),
+                NormalizeCertificateNumber(certificateNumber),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Issued row {row.CertificateNumber} does not match {certificateNumber}.");
+        }
+
+        var clicked = await ClickIssuedUploadSignedPdfAsync(page, row);
+        if (!clicked)
+        {
+            throw new InvalidOperationException(
+                $"Upload Signed PDF button missing for {certificateNumber}.");
+        }
+
+        await AttachAndConfirmSignedPdfModalAsync(page, localPdfPath, certificateNumber, cancellationToken);
+        await DismissSuccessOkAsync(page, cancellationToken);
+        await WaitUntilOverlaysClearAsync(page, cancellationToken, maxSeconds: 15);
+    }
+
     private static async Task<bool> IsCertificatesIssuedPageAsync(IPage page)
     {
         // Prefer operational markers over title text (title can be late/hidden in SPA).
@@ -1122,6 +1170,203 @@ public static class EmaapCertificatesIssuedAutomation
             new object[] { best.CertificateNumber, best.Mobile, belongToName });
     }
 
+    private static async Task<bool> ClickIssuedUploadSignedPdfAsync(IPage page, EmaapIssuedRowMatch best)
+    {
+        var clicked = await page.EvaluateAsync<bool>(
+            """
+            (cert) => {
+              const norm = (s) => String(s || '').replace(/\s+/g, '');
+              const want = norm(cert).toUpperCase();
+              const seq = want.split('/').pop();
+              const labelOf = (el) => (el.innerText || el.textContent
+                || el.getAttribute('title') || el.getAttribute('aria-label') || '')
+                .replace(/\s+/g, ' ').trim();
+              const trs = Array.from(document.querySelectorAll('table tbody tr, table tr'));
+              for (const tr of trs) {
+                const compact = norm(tr.innerText || '').toUpperCase();
+                if (!compact.includes(want) && !(seq && compact.includes('26/04/26/' + seq))) continue;
+                const btn = tr.querySelector('button.upload-btn')
+                  || Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
+                    .find(el => /^upload\s*signed\s*pdf$/i.test(labelOf(el)));
+                if (!btn) continue;
+                btn.scrollIntoView({ block: 'center' });
+                btn.click();
+                return true;
+              }
+              return false;
+            }
+            """,
+            best.CertificateNumber);
+
+        return clicked;
+    }
+
+    private static ILocator SignedPdfUploadModal(IPage page)
+    {
+        var hint = page.GetByText("Click to select a signed PDF");
+        var dialog = page.GetByRole(AriaRole.Dialog)
+            .Filter(new LocatorFilterOptions { Has = hint });
+        var bootstrap = page.Locator(".modal.show, .modal-dialog, .modal-content")
+            .Filter(new LocatorFilterOptions { Has = hint });
+        return dialog.Or(bootstrap).Last;
+    }
+
+    private static async Task DismissLeftoverSignedPdfUploadModalAsync(IPage page)
+    {
+        var hint = page.GetByText("Click to select a signed PDF");
+        try
+        {
+            if (!await hint.IsVisibleAsync())
+            {
+                return;
+            }
+        }
+        catch (PlaywrightException)
+        {
+            return;
+        }
+
+        var cancel = SignedPdfUploadModal(page).GetByRole(
+            AriaRole.Button,
+            new LocatorGetByRoleOptions { NameRegex = new Regex(@"^\s*Cancel\s*$", RegexOptions.IgnoreCase) });
+        try
+        {
+            if (await cancel.CountAsync() > 0)
+            {
+                await cancel.First.ClickAsync(new LocatorClickOptions { Timeout = 4_000 });
+            }
+        }
+        catch (PlaywrightException)
+        {
+        }
+
+        try
+        {
+            await hint.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Hidden,
+                Timeout = 6_000,
+            });
+        }
+        catch (PlaywrightException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Row Upload Signed PDF opens a modal (dropzone + Cancel + confirm). Native picker only after dropzone click.
+    /// Fill+certify never calls this. Confirm is the modal gold button, not Cancel, not the table button.
+    /// </summary>
+    private static async Task AttachAndConfirmSignedPdfModalAsync(
+        IPage page,
+        string localPdfPath,
+        string certificateNumber,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var hint = page.GetByText("Click to select a signed PDF");
+        await hint.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 15_000,
+        });
+
+        var modal = SignedPdfUploadModal(page);
+        var attached = false;
+        var fileInput = modal.Locator("input[type='file']");
+        if (await fileInput.CountAsync() > 0)
+        {
+            try
+            {
+                await fileInput.First.SetInputFilesAsync(localPdfPath);
+                attached = true;
+            }
+            catch (PlaywrightException)
+            {
+            }
+        }
+
+        if (!attached)
+        {
+            var chooserWait = page.WaitForFileChooserAsync(new PageWaitForFileChooserOptions { Timeout = 12_000 });
+            await hint.ClickAsync();
+            try
+            {
+                var chooser = await chooserWait;
+                await chooser.SetFilesAsync(localPdfPath);
+            }
+            catch (PlaywrightException ex)
+            {
+                throw new InvalidOperationException(
+                    $"eMAAP signed-PDF dropzone did not accept a file for {certificateNumber}.",
+                    ex);
+            }
+        }
+
+        var confirm = modal.GetByRole(
+            AriaRole.Button,
+            new LocatorGetByRoleOptions
+            {
+                NameRegex = new Regex(@"^\s*Upload Signed PDF\s*$", RegexOptions.IgnoreCase),
+            });
+        if (await confirm.CountAsync() == 0)
+        {
+            confirm = modal.Locator("button").Filter(new LocatorFilterOptions
+            {
+                HasTextRegex = new Regex(@"^\s*Upload Signed PDF\s*$", RegexOptions.IgnoreCase),
+            });
+        }
+
+        if (await confirm.CountAsync() == 0)
+        {
+            confirm = page.Locator(".modal-footer button, [role='dialog'] button, .modal-content button")
+                .Filter(new LocatorFilterOptions
+                {
+                    HasTextRegex = new Regex(@"^\s*Upload Signed PDF\s*$", RegexOptions.IgnoreCase),
+                });
+        }
+
+        if (await confirm.CountAsync() == 0)
+        {
+            throw new InvalidOperationException(
+                $"eMAAP signed-PDF modal confirm missing for {certificateNumber}.");
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(8);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (await confirm.First.IsEnabledAsync())
+                {
+                    break;
+                }
+            }
+            catch (PlaywrightException)
+            {
+            }
+
+            await page.WaitForTimeoutAsync(200);
+        }
+
+        await confirm.First.ClickAsync(new LocatorClickOptions { Timeout = 8_000 });
+
+        try
+        {
+            await hint.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Hidden,
+                Timeout = 25_000,
+            });
+        }
+        catch (PlaywrightException)
+        {
+            throw new InvalidOperationException(
+                $"eMAAP Upload Signed PDF confirm did not finish for {certificateNumber}.");
+        }
+    }
+
     private static async Task<bool> ClickIssuedDownloadAsync(
         IPage page,
         EmaapIssuedRowMatch best,
@@ -1390,6 +1635,49 @@ public static class EmaapCertificatesIssuedAutomation
         }
 
         await page.WaitForTimeoutAsync(filled ? 1_400 : 400);
+    }
+
+    private static async Task TryFilterIssuedListByCertificateAsync(
+        IPage page,
+        string certificateNumber,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var seq = certificateNumber.Trim().Split('/').LastOrDefault() ?? certificateNumber;
+        seq = seq.Trim();
+        if (string.IsNullOrWhiteSpace(seq))
+        {
+            return;
+        }
+
+        var certInput = page.Locator("table.custom-table thead tr.filter-row input.filter-input").First;
+        await certInput.WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Visible,
+            Timeout = 12_000,
+        });
+        await certInput.ClickAsync();
+        await certInput.FillAsync("");
+        await certInput.FillAsync(seq);
+
+        var searchBtn = page.Locator("table.custom-table thead tr.filter-row button.filter-search-btn").First;
+        await searchBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+
+        var match = page.Locator("table.custom-table tbody tr")
+            .Filter(new LocatorFilterOptions { HasText = seq });
+        try
+        {
+            await match.First.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 15_000,
+            });
+        }
+        catch (PlaywrightException)
+        {
+            throw new InvalidOperationException(
+                $"Certificates Issued filter for {seq} returned no row. Type the last digits in Third Party Certificate No. and click the yellow search.");
+        }
     }
 
     private static async Task<EmaapIssuedRowMatch?> FindHighestMatchingRowAsync(
