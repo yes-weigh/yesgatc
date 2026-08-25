@@ -17,6 +17,7 @@ type CertificatePdfShareViewerProps = {
   record: SiteCalibration | null;
   url: string | null;
   storagePath?: string | null;
+  heading?: string;
   onClose: () => void;
 };
 
@@ -25,6 +26,7 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
   record,
   url,
   storagePath,
+  heading,
   onClose,
 }) => {
   const [pages, setPages] = useState<string[]>([]);
@@ -90,7 +92,8 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
 
   if (!open || !record || typeof document === 'undefined') return null;
 
-  const title = record.certificateNumber?.trim() || 'Certificate';
+  const title = heading?.trim()
+    || (record.certificateNumber?.trim() ? record.certificateNumber.trim() : 'Certificate');
 
   const handleShare = async () => {
     if (sharing) return;

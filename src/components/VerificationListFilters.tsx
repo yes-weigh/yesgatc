@@ -7,8 +7,10 @@ import {
   type VerificationDurationFilter,
 } from '../lib/verificationListDuration';
 import type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
+import type { VerificationSignedPdfFilter } from '../lib/signedCertificatePdf';
 
 export type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
+export type { VerificationSignedPdfFilter } from '../lib/signedCertificatePdf';
 export type VerificationPaymentDueFilter = 'all' | 'due';
 
 export interface VerificationStatusFilterOption {
@@ -45,6 +47,10 @@ interface VerificationListFiltersProps {
   onPaymentDueFilterChange?: (value: VerificationPaymentDueFilter) => void;
   paymentDueCount?: number;
   paymentDueAllCount?: number;
+  signedPdfFilter?: VerificationSignedPdfFilter;
+  onSignedPdfFilterChange?: (value: VerificationSignedPdfFilter) => void;
+  signedPdfCount?: number;
+  notSignedPdfCount?: number;
   searchTerm?: string;
   onSearchTermChange?: (value: string) => void;
   searchPlaceholder?: string;
@@ -74,6 +80,10 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
   onPaymentDueFilterChange,
   paymentDueCount = 0,
   paymentDueAllCount = 0,
+  signedPdfFilter = 'all',
+  onSignedPdfFilterChange,
+  signedPdfCount = 0,
+  notSignedPdfCount = 0,
   searchTerm = '',
   onSearchTermChange,
   searchPlaceholder = 'Search verification…',
@@ -90,6 +100,7 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
   const [draftDuration, setDraftDuration] = useState(durationFilter);
   const [draftRc, setDraftRc] = useState(rcFilter ?? 'all');
   const [draftPaymentDue, setDraftPaymentDue] = useState(paymentDueFilter);
+  const [draftSignedPdf, setDraftSignedPdf] = useState(signedPdfFilter);
   const filterRef = useRef<HTMLDivElement>(null);
   const [slots, setSlots] = useState<{ mobile: HTMLElement | null; desktop: HTMLElement | null }>({
     mobile: null,
@@ -101,7 +112,8 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
     typeFilter !== 'all' ||
     durationFilter !== 'all' ||
     (rcFilter != null && rcFilter !== 'all') ||
-    paymentDueFilter === 'due';
+    paymentDueFilter === 'due' ||
+    signedPdfFilter !== 'all';
 
   useLayoutEffect(() => {
     setSlots({
@@ -117,7 +129,8 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
     setDraftDuration(durationFilter);
     setDraftRc(rcFilter ?? 'all');
     setDraftPaymentDue(paymentDueFilter);
-  }, [filterOpen, statusFilter, typeFilter, durationFilter, rcFilter, paymentDueFilter]);
+    setDraftSignedPdf(signedPdfFilter);
+  }, [filterOpen, statusFilter, typeFilter, durationFilter, rcFilter, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -265,6 +278,28 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
                 </div>
               </>
             ) : null}
+
+            {onSignedPdfFilterChange ? (
+              <>
+                <label className="verification-app-filter__label" htmlFor="verification-filter-signed">
+                  Signed PDF
+                </label>
+                <div className="verification-app-filter__select-wrap">
+                  <select
+                    id="verification-filter-signed"
+                    className="verification-app-filter__select"
+                    value={draftSignedPdf}
+                    onChange={event =>
+                      setDraftSignedPdf(event.target.value as VerificationSignedPdfFilter)
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="signed">Signed PDF ({signedPdfCount})</option>
+                    <option value="not_signed">No signed PDF ({notSignedPdfCount})</option>
+                  </select>
+                </div>
+              </>
+            ) : null}
           </div>
 
           <div className="verification-app-filter__foot">
@@ -277,11 +312,13 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
                 setDraftDuration('all');
                 setDraftRc('all');
                 setDraftPaymentDue('all');
+                setDraftSignedPdf('all');
                 onStatusFilterChange('all');
                 onTypeFilterChange?.('all');
                 onDurationFilterChange?.('all');
                 onRcFilterChange?.('all');
                 onPaymentDueFilterChange?.('all');
+                onSignedPdfFilterChange?.('all');
                 setFilterOpen(false);
               }}
             >
@@ -296,6 +333,7 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
                 onDurationFilterChange?.(draftDuration);
                 onRcFilterChange?.(draftRc);
                 onPaymentDueFilterChange?.(draftPaymentDue);
+                onSignedPdfFilterChange?.(draftSignedPdf);
                 setFilterOpen(false);
               }}
             >

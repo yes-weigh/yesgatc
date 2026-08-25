@@ -42,6 +42,11 @@ import { TablePagination } from '../../components/TablePagination';
 import { VerificationDetailPanel } from '../../components/VerificationDetailPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { isVerificationCertificateVoided } from '../../lib/verificationCertificateVoid';
+import {
+  matchesSignedPdfFilter,
+  tallySignedPdfFilters,
+  type VerificationSignedPdfFilter,
+} from '../../lib/signedCertificatePdf';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
 import { isRvWalletPaymentOutstanding } from '../../lib/rvPaymentAmount';
 import { ensureRvWalletDebitedForRecords } from '../../lib/rvWalletAdvancePay';
@@ -110,6 +115,7 @@ export const AdminVerificationList: React.FC = () => {
   const [durationFilter, setDurationFilter] = useState<VerificationDurationFilter>('all');
   const [rcFilter, setRcFilter] = useState<string>('all');
   const [paymentDueFilter, setPaymentDueFilter] = useState<VerificationPaymentDueFilter>('all');
+  const [signedPdfFilter, setSignedPdfFilter] = useState<VerificationSignedPdfFilter>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [viewingRecord, setViewingRecord] = useState<VerificationRow | null>(null);
@@ -347,10 +353,13 @@ export const AdminVerificationList: React.FC = () => {
       if (rcFilter !== 'all' && (record.rcId || '') !== rcFilter) {
         return false;
       }
+      if (!matchesSignedPdfFilter(record, signedPdfFilter)) {
+        return false;
+      }
       return true;
     });
     return buildVerificationListDisplay(filtered, durationScoped, statusFilter);
-  }, [durationScoped, statusFilter, voidOnly, paymentDueFilter, typeFilter, rcFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
+  }, [durationScoped, statusFilter, voidOnly, paymentDueFilter, typeFilter, rcFilter, signedPdfFilter, searchTerm, duplicatePrimaryIds, serialGroups]);
 
   const paginatedRecords = useMemo(
     () => paginateItems(filteredRecords, page, VERIFICATION_TABLE_PAGE_SIZE),
@@ -368,7 +377,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter]);
+  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
     if (viewingRecord || !rowHighlightFlashId) return;
@@ -588,7 +597,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
-  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter]);
+  }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
     if (selectAllDraftsRef.current) {
@@ -720,6 +729,7 @@ export const AdminVerificationList: React.FC = () => {
     () => durationScoped.filter(record => isRvWalletPaymentOutstanding(record)).length,
     [durationScoped],
   );
+  const signedPdfCounts = useMemo(() => tallySignedPdfFilters(durationScoped), [durationScoped]);
   return (
     <div className="fade-in page-content">
       {viewingRecord ? (
@@ -776,6 +786,10 @@ export const AdminVerificationList: React.FC = () => {
             onPaymentDueFilterChange={setPaymentDueFilter}
             paymentDueCount={paymentDueCount}
             paymentDueAllCount={durationScoped.length}
+            signedPdfFilter={signedPdfFilter}
+            onSignedPdfFilterChange={setSignedPdfFilter}
+            signedPdfCount={signedPdfCounts.signed}
+            notSignedPdfCount={signedPdfCounts.notSigned}
             onRefresh={() => void fetchRecords()}
             refreshing={loading}
           />

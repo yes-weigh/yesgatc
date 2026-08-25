@@ -232,7 +232,7 @@ export function isVerificationFailedAtCertification(record: SiteCalibration): bo
   return false;
 }
 
-/** Approved in Firebase but signed PDF upload never finished (eMAAP worker retries exhausted). */
+/** Approved in Firebase but eMAAP PDF download never finished (worker retries exhausted). */
 export function isVerificationStuckAtApproved(record: SiteCalibration): boolean {
   if (isVerificationRejected(record)) return false;
   if (normalizeVerificationStatus(record) !== 'approved') return false;
@@ -289,7 +289,7 @@ export function verificationDisplayStatusLabel(record: SiteCalibration): string 
 
 export function verificationDisplayStatusTitle(record: SiteCalibration): string | undefined {
   if (isVerificationCertifiedOnDoca(record) && !record.certificatePdfUrl?.trim()) {
-    return 'Certificate issued — signed PDF is not stored in Firebase yet.';
+    return 'Certificate issued — eMAAP PDF is not stored in Firebase yet.';
   }
   if (
     normalizeVerificationStatus(record) === 'certified'

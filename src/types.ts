@@ -513,6 +513,8 @@ export interface SiteCalibration {
   signedCertificatePdfContentType?: string;
   signedCertificateUploadedAt?: string;
   signedCertificateUploadedByUid?: string;
+  /** Worker uploaded the DSC-signed PDF on eMAAP Certificates Issued. */
+  emaapSignedPdfUploadedAt?: string;
   /** Public eMAAP gatcapi third-party PDF URL — QR / verify target (not Firebase Storage). */
   emaapCertificatePdfUrl?: string;
   /** VCT display — RC direct uses contact person in `vctName` when performedBy is `rc`. */

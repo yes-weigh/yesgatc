@@ -45,6 +45,11 @@ import {
 import { isRcAccountActive, isRcActive, rcActivationLabel } from '../../lib/rcActivation';
 import { canEditRcCertificationSettings, rcCertificationMethodLabel } from '../../lib/rcCertificationMethod';
 import { certifiedTypeCountsByRcId, type RcCertifiedTypeCounts } from '../../lib/rcCertificationRank';
+import {
+  EMPTY_RC_SIGNED_PIPELINE_COUNTS,
+  signedPipelineCountsByRcId,
+  type RcSignedPipelineCounts,
+} from '../../lib/signedCertificatePdf';
 import { LAST_CERTIFICATE_SEQUENCE_FLOOR, lifetimeCertifiedFromLatestSequence } from '../../lib/certificateSequence';
 import type { FirestoreUserDoc, SiteCalibration } from '../../types';
 import { StorageImage } from '../../components/StorageImage';
@@ -62,6 +67,7 @@ interface RCRecord extends FirestoreUserDoc {
   certifiedCount: number;
   ovCount: number;
   rvCount: number;
+  signedPipeline: RcSignedPipelineCounts;
 }
 
 function certMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
@@ -141,6 +147,7 @@ function compareRcByCertifiedCount(a: RCRecord, b: RCRecord): number {
 function buildRcRecords(
   allUsers: Array<FirestoreUserDoc & { uid: string }>,
   certifiedByRc: Map<string, RcCertifiedTypeCounts>,
+  signedByRc: Map<string, RcSignedPipelineCounts> = new Map(),
 ): RCRecord[] {
   const records: RCRecord[] = allUsers
     .filter(u => u.role === 'rc_admin')
@@ -152,10 +159,37 @@ function buildRcRecords(
         ovCount: counts.ov,
         rvCount: counts.rv,
         certifiedCount: counts.total,
+        signedPipeline: signedByRc.get(rc.uid) ?? EMPTY_RC_SIGNED_PIPELINE_COUNTS,
       };
     });
   records.sort(compareRcByCertifiedCount);
   return records;
+}
+
+function RcSignedPipelineSummary({ counts }: { counts: RcSignedPipelineCounts }) {
+  if (counts.live <= 0) return null;
+  const title =
+    `${counts.signed} of ${counts.live} live certs after 2304 have a DSC-signed PDF. ` +
+    `${counts.emaapUploaded} uploaded to eMAAP. ${counts.needSign} still need a signed PDF.`;
+  return (
+    <span className="rc-signed-pipeline" title={title}>
+      <span className="rc-card-stat rc-card-stat--signed">
+        {counts.signed.toLocaleString('en-IN')} signed
+      </span>
+      {counts.needSign > 0 ? (
+        <>
+          <span className="rc-card-sep"> · </span>
+          <span className="rc-card-stat rc-card-stat--need">
+            {counts.needSign.toLocaleString('en-IN')} need sign
+          </span>
+        </>
+      ) : null}
+      <span className="rc-card-sep"> · </span>
+      <span className="rc-card-stat rc-card-stat--emaap">
+        {counts.emaapUploaded.toLocaleString('en-IN')} eMAAP
+      </span>
+    </span>
+  );
 }
 
 export const RCList: React.FC = () => {
@@ -213,8 +247,12 @@ export const RCList: React.FC = () => {
           calibrations,
           rcAdmins.map(rc => rc.uid),
         );
+        const signedByRc = signedPipelineCountsByRcId(
+          calibrations,
+          rcAdmins.map(rc => rc.uid),
+        );
         setLifetimeCertified(lifetimeCertifiedFromLatestSequence(calibrations));
-        setRcList(buildRcRecords(allUsers, certifiedByRc));
+        setRcList(buildRcRecords(allUsers, certifiedByRc, signedByRc));
       } catch (calibErr) {
         console.error('Failed to load certifications', calibErr);
         setLifetimeCertified(LAST_CERTIFICATE_SEQUENCE_FLOOR);
@@ -229,7 +267,8 @@ export const RCList: React.FC = () => {
             const certifiedByRc = new Map(
               prev.map(r => [r.uid, { ov: r.ovCount, rv: r.rvCount, total: r.certifiedCount }]),
             );
-            return buildRcRecords(refreshedUsers, certifiedByRc);
+            const signedByRc = new Map(prev.map(r => [r.uid, r.signedPipeline]));
+            return buildRcRecords(refreshedUsers, certifiedByRc, signedByRc);
           });
         }
       } catch (migrationErr) {
@@ -936,6 +975,11 @@ export const RCList: React.FC = () => {
                               {certOpted}
                             </span>
                           </div>
+                          {rc.signedPipeline.live > 0 ? (
+                            <div className="rc-card-line rc-card-line--signed">
+                              <RcSignedPipelineSummary counts={rc.signedPipeline} />
+                            </div>
+                          ) : null}
                           <div className="rc-card-line">
                             <span className="rc-card-line__loc">
                               {rcCodeLabel !== '—' ? (
@@ -984,6 +1028,7 @@ export const RCList: React.FC = () => {
                             <span className="rc-card-stat rc-card-stat--ov">{rc.ovCount.toLocaleString('en-IN')}</span>
                           )}
                         </span>
+                        <RcSignedPipelineSummary counts={rc.signedPipeline} />
                       </td>
                       <td
                         {...editCell}

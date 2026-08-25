@@ -2423,6 +2423,31 @@ select.input-field option {
   white-space: nowrap;
 }
 
+.data-table--rc .rc-col-jobs {
+  white-space: normal;
+}
+
+.rc-signed-pipeline {
+  display: block;
+  margin-top: 0.22rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-card-stat--signed {
+  color: #4ade80;
+}
+
+.rc-card-stat--need {
+  color: #fbbf24;
+}
+
+.rc-card-stat--emaap {
+  color: #67e8f9;
+}
+
 .text-right { text-align: right !important; }
 
 /* Login Page specific */
@@ -11984,8 +12009,8 @@ body.verification-mobile-wizard-active {
 }
 
 .verification-certified-actions {
-  display: flex;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(4.1rem, 1fr));
   gap: 0.45rem;
   width: 100%;
 }
@@ -12054,6 +12079,13 @@ body.verification-mobile-wizard-active {
   border-color: rgba(74, 222, 128, 0.35);
   background: rgba(22, 101, 52, 0.35);
   box-shadow: 0 0 18px rgba(74, 222, 128, 0.22);
+}
+
+.verification-certified-action--signed-certificate .verification-certified-action-icon {
+  color: #67e8f9;
+  border-color: rgba(103, 232, 249, 0.35);
+  background: rgba(8, 47, 73, 0.45);
+  box-shadow: 0 0 18px rgba(103, 232, 249, 0.18);
 }
 
 .verification-certified-action--label .verification-certified-action-icon {
@@ -14428,6 +14460,78 @@ body.verification-mobile-wizard-active {
   gap: 0.5rem;
   padding: 0.5rem 0.65rem;
   border-bottom: 1px solid rgba(71, 85, 105, 0.4);
+}
+
+.verification-certificate-preview-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.verification-certificate-preview-switch {
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  overflow: hidden;
+}
+
+.verification-certificate-preview-switch-btn {
+  padding: 0.18rem 0.55rem;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.verification-certificate-preview-switch-btn.is-on {
+  background: rgba(103, 232, 249, 0.18);
+  color: #ecfeff;
+}
+
+.signed-cert-avail {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  width: fit-content;
+}
+
+.signed-cert-avail--available {
+  color: #bbf7d0;
+  background: rgba(22, 163, 74, 0.18);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+
+.signed-cert-avail--emaap {
+  color: #cffafe;
+  background: rgba(8, 145, 178, 0.2);
+  border-color: rgba(103, 232, 249, 0.4);
+}
+
+.signed-cert-avail--missing {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.signed-cert-avail--legacy {
+  color: #cbd5e1;
+  background: rgba(71, 85, 105, 0.28);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.signed-cert-avail--toolbar {
+  margin: 0.1rem 0 0.4rem;
 }
 
 .verification-certificate-preview-title {

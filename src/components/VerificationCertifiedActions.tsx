@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Award, BarChart3, Receipt, ScrollText, Tag } from 'lucide-react';
+import { Award, BadgeCheck, BarChart3, Receipt, ScrollText, Tag } from 'lucide-react';
 import { useMobileViewport } from '../hooks/useMobileViewport';
 import {
   buildVerificationCertifiedActions,
@@ -7,8 +7,17 @@ import {
   type VerificationCertifiedActionId,
 } from '../lib/verificationCertifiedActions';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
-import { resolveCertificatePdfFileUrl, resolveCertificatePdfStoragePath } from '../lib/signedCertificatePdf';
+import {
+  canShowSignedCertificatePdf,
+  certificateRequiresSignedUpload,
+  resolveSignedCertificatePdfOnlyPath,
+  resolveSignedCertificatePdfOnlyUrl,
+  resolveUnsignedCertificatePdfStoragePath,
+  resolveUnsignedCertificatePdfUrl,
+  signedCertificateAvailability,
+} from '../lib/signedCertificatePdf';
 import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
+import { SignedCertificateAvailabilityBadge } from './SignedCertificateAvailabilityBadge';
 import { VerificationGstBillModal } from './VerificationGstBillModal';
 import { VerificationLabelModal } from './VerificationLabelModal';
 import { VerificationReceiptModal } from './VerificationReceiptModal';
@@ -142,6 +151,80 @@ function CertifiedActionTile({
   );
 }
 
+function SignedCertificateTile({
+  record,
+  isPhone,
+  onOpen,
+}: {
+  record: SiteCalibration;
+  isPhone: boolean;
+  onOpen: () => void;
+}) {
+  const signedUrl = resolveSignedCertificatePdfOnlyUrl(record);
+  const hasSigned = canShowSignedCertificatePdf(record);
+  const waitingEmaap = signedCertificateAvailability(record) === 'missing';
+  if (!hasSigned && !waitingEmaap && !certificateRequiresSignedUpload(record)) return null;
+
+  const className =
+    'verification-certified-action verification-certified-action--signed-certificate';
+  const label = hasSigned ? 'Signed PDF' : 'No signed PDF';
+
+  const content = (
+    <>
+      <span className="verification-certified-action-icon" aria-hidden>
+        <BadgeCheck size={22} strokeWidth={1.75} />
+      </span>
+      <span className="verification-certified-action-label">{label}</span>
+    </>
+  );
+
+  if (!hasSigned) {
+    return (
+      <button
+        type="button"
+        className={`${className} verification-certified-action--placeholder`}
+        disabled
+        title="Signed PDF is not on eMAAP yet."
+        aria-label="Signed PDF not available"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  if (isPhone) {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={onOpen}
+        aria-label="View signed certificate"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  if (signedUrl) {
+    return (
+      <a
+        href={signedUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <button type="button" className={className} onClick={onOpen} aria-label="View signed certificate">
+      {content}
+    </button>
+  );
+}
+
 export const VerificationCertifiedActions: React.FC<VerificationCertifiedActionsProps> = ({
   record,
   className = '',
@@ -151,32 +234,58 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
   const [testReportOpen, setTestReportOpen] = useState(false);
   const [gstBillOpen, setGstBillOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
-  const [certificateOpen, setCertificateOpen] = useState(false);
+  const [pdfKind, setPdfKind] = useState<'original' | 'signed' | null>(null);
 
   if (!canShowVerificationCertifiedActions(record)) return null;
 
   const actions = buildVerificationCertifiedActions(record);
   if (!actions.length) return null;
 
+  const pdfOpen = pdfKind !== null;
+  const pdfUrl =
+    pdfKind === 'signed'
+      ? resolveSignedCertificatePdfOnlyUrl(record)
+      : resolveUnsignedCertificatePdfUrl(record);
+  const pdfPath =
+    pdfKind === 'signed'
+      ? resolveSignedCertificatePdfOnlyPath(record)
+      : resolveUnsignedCertificatePdfStoragePath(record);
+
   return (
     <>
+      <SignedCertificateAvailabilityBadge
+        record={record}
+        className="signed-cert-avail--toolbar"
+      />
       <div
         className={`verification-certified-actions${className ? ` ${className}` : ''}`}
         role="toolbar"
         aria-label="Verification documents and printing"
       >
-        {actions.map(action => (
-          <CertifiedActionTile
-            key={action.id}
-            action={action}
-            isPhone={isPhone}
-            onCertificateOpen={() => setCertificateOpen(true)}
-            onLabelOpen={() => setLabelOpen(true)}
-            onTestReportOpen={() => setTestReportOpen(true)}
-            onGstBillOpen={() => setGstBillOpen(true)}
-            onReceiptOpen={() => setReceiptOpen(true)}
-          />
-        ))}
+        {actions.flatMap(action => {
+          const tile = (
+            <CertifiedActionTile
+              key={action.id}
+              action={action}
+              isPhone={isPhone}
+              onCertificateOpen={() => setPdfKind('original')}
+              onLabelOpen={() => setLabelOpen(true)}
+              onTestReportOpen={() => setTestReportOpen(true)}
+              onGstBillOpen={() => setGstBillOpen(true)}
+              onReceiptOpen={() => setReceiptOpen(true)}
+            />
+          );
+          if (action.id !== 'certificate') return [tile];
+          return [
+            tile,
+            <SignedCertificateTile
+              key="signed-certificate"
+              record={record}
+              isPhone={isPhone}
+              onOpen={() => setPdfKind('signed')}
+            />,
+          ];
+        })}
       </div>
 
       <VerificationLabelModal
@@ -204,11 +313,12 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
       />
 
       <CertificatePdfShareViewer
-        open={certificateOpen}
+        open={pdfOpen}
         record={record}
-        url={resolveCertificatePdfFileUrl(record)}
-        storagePath={resolveCertificatePdfStoragePath(record)}
-        onClose={() => setCertificateOpen(false)}
+        url={pdfUrl}
+        storagePath={pdfPath}
+        heading={pdfKind === 'signed' ? 'Signed certificate' : undefined}
+        onClose={() => setPdfKind(null)}
       />
     </>
   );
