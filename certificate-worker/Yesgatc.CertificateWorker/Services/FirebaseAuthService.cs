@@ -39,7 +39,7 @@ public sealed class FirebaseAuthService
         if (!string.Equals(session.Role, "rc_admin", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                "This EXE is EmaapEngine. Use this RC Admin Aadhar and password.");
+                $"This EXE is {WorkerProduct.AppName}. Use {WorkerProduct.SignInRoleLabel} Aadhar and password.");
         }
 
         return session;

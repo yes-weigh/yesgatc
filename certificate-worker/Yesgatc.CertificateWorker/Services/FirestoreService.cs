@@ -466,6 +466,11 @@ public sealed class FirestoreService
         };
 
         var pendingCert = TryExtractEmaapCertificateNumber(trimmed);
+        if (IsUnmatchedIssuedRowHalt(trimmed))
+        {
+            pendingCert = null;
+        }
+
         if (!string.IsNullOrWhiteSpace(pendingCert))
         {
             fields["emaapIssuedCertificateNumber"] = pendingCert;
@@ -550,8 +555,15 @@ public sealed class FirestoreService
             return null;
         }
 
+        var search = text;
+        var sampleAt = text.IndexOf("Visible sample:", StringComparison.OrdinalIgnoreCase);
+        if (sampleAt >= 0)
+        {
+            search = text[..sampleAt];
+        }
+
         var m = Regex.Match(
-            text,
+            search,
             @"IND\s*/\s*GATC\s*/\s*KL\s*/\s*26\s*/\s*04\s*/\s*26\s*/\s*(\d+)",
             RegexOptions.IgnoreCase);
         if (!m.Success)
@@ -560,6 +572,41 @@ public sealed class FirestoreService
         }
 
         return $"IND/GATC/KL/26/04/26/{m.Groups[1].Value}";
+    }
+
+    /// <summary>
+    /// Submit reached Certificates Issued, but no numbered row was matched yet.
+    /// Sample certs in the error are other parties — do not treat them as this job's cert.
+    /// </summary>
+    public static bool IsUnmatchedIssuedRowHalt(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        return message.Contains("No Certificates Issued row matched", StringComparison.OrdinalIgnoreCase)
+            || (message.Contains("submit succeeded", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("Visible sample:", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>eMAAP record was saved; remaining work is issued-list Download + Firebase sync.</summary>
+    public static bool IsPostSubmitPdfHalt(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        if (!message.Contains("submit succeeded", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return message.Contains("PDF download failed", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("certificate PDF is missing", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not a valid PDF", StringComparison.OrdinalIgnoreCase)
+            || IsUnmatchedIssuedRowHalt(message);
     }
 
     public async Task RecordCertificationFailureAsync(

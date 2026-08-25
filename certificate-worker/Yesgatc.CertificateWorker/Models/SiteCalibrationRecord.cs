@@ -41,10 +41,14 @@ public sealed class SiteCalibrationRecord
         && string.Equals(PipelineFailedPhase, "submit", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Failed-at-submit blocks the queue unless a pending eMAAP cert number means PDF-only resume.
+    /// Failed-at-submit blocks the queue unless PDF-only resume is possible
+    /// (pending eMAAP cert number, or submit already succeeded).
     /// </summary>
     public bool HasBlockingSubmitFailure =>
-        IsFailedAtSubmit && string.IsNullOrWhiteSpace(EmaapIssuedCertificateNumber);
+        IsFailedAtSubmit
+        && string.IsNullOrWhiteSpace(EmaapIssuedCertificateNumber)
+        && (PipelineFailureMessage is null
+            || PipelineFailureMessage.IndexOf("submit succeeded", StringComparison.OrdinalIgnoreCase) < 0);
 
     /// <summary>Submitted jobs only (OV + RV). eMAAP fill → certify → PDF in one pass.</summary>
     public bool IsEligibleForWorkerQueue =>

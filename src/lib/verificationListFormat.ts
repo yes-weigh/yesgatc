@@ -11,9 +11,9 @@ export function formatVerificationListDate(iso?: string): string {
 
 export function formatVerificationListTime(iso?: string): string {
   if (!isValidVerificationIsoTimestamp(iso)) return '—';
-  return new Date(iso).toLocaleTimeString('en-GB', {
+  return new Date(iso).toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hour12: true,
   });
 }

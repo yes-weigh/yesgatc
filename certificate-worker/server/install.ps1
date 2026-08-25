@@ -37,7 +37,7 @@ if ($updateSrc -ne $updateDest -and (Test-Path $updateSrc)) {
     Copy-Item $updateSrc $updateDest -Force
 }
 
-foreach ($serverFile in @("pull-update.ps1", "update.ps1", "register-autostart.ps1", "start-worker.ps1", "README-SERVER.md")) {
+foreach ($serverFile in @("pull-update.ps1", "update.ps1", "register-autostart.ps1", "start-worker.ps1", "optimize-vps.ps1", "README-SERVER.md")) {
     $serverFilePath = Join-Path $PSScriptRoot $serverFile
     if (Test-Path $serverFilePath) {
         Copy-Item $serverFilePath $InstallPath -Force
@@ -70,3 +70,4 @@ Write-Host "  Data dir: $env:LOCALAPPDATA\YesGATC\CertificateWorker (credentials
 Write-Host ""
 Write-Host "After first launch: sign in, complete DOCA captcha in Chrome, enable Auto worker."
 Write-Host "For auto-start after reboot: run register-autostart.ps1 (or reinstall with -CreateLogonTask)."
+Write-Host "For 4 GB / high Defender CPU: run optimize-vps.ps1 as Administrator once."

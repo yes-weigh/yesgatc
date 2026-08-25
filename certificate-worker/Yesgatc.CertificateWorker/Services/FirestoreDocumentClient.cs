@@ -266,18 +266,36 @@ internal sealed class FirestoreDocumentClient
             .ToDictionary(property => property.Name, property => property.Value);
     }
 
-    public async Task<List<(string Id, Dictionary<string, JsonElement> Fields)>> ListCollectionAsync(
+    public Task<List<(string Id, Dictionary<string, JsonElement> Fields)>> ListCollectionAsync(
         string collection,
+        string idToken,
+        CancellationToken cancellationToken = default) =>
+        QueryEqualAsync(collection, fieldPath: null, equalValue: null, idToken, cancellationToken);
+
+    public async Task<List<(string Id, Dictionary<string, JsonElement> Fields)>> QueryEqualAsync(
+        string collection,
+        string? fieldPath,
+        string? equalValue,
         string idToken,
         CancellationToken cancellationToken = default)
     {
         var url =
             $"https://firestore.googleapis.com/v1/projects/{_settings.ProjectId}/databases/(default)/documents:runQuery";
 
+        QueryFilter? where = null;
+        if (!string.IsNullOrWhiteSpace(fieldPath) && equalValue is not null)
+        {
+            where = new QueryFilter(new FieldFilter(
+                new FieldReference(fieldPath),
+                "EQUAL",
+                new FirestoreQueryValue { StringValue = equalValue }));
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", idToken);
         request.Content = JsonContent.Create(new RunQueryRequest(new StructuredQuery(
-            [new CollectionSelector(collection)])));
+            [new CollectionSelector(collection)],
+            where)));
 
         using var response = await _http.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -315,10 +333,30 @@ internal sealed class FirestoreDocumentClient
         [property: JsonPropertyName("structuredQuery")] StructuredQuery StructuredQuery);
 
     private sealed record StructuredQuery(
-        [property: JsonPropertyName("from")] CollectionSelector[] From);
+        [property: JsonPropertyName("from")] CollectionSelector[] From,
+        [property: JsonPropertyName("where")]
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        QueryFilter? Where = null);
 
     private sealed record CollectionSelector(
         [property: JsonPropertyName("collectionId")] string CollectionId);
+
+    private sealed record QueryFilter(
+        [property: JsonPropertyName("fieldFilter")] FieldFilter FieldFilter);
+
+    private sealed record FieldFilter(
+        [property: JsonPropertyName("field")] FieldReference Field,
+        [property: JsonPropertyName("op")] string Op,
+        [property: JsonPropertyName("value")] FirestoreQueryValue Value);
+
+    private sealed record FieldReference(
+        [property: JsonPropertyName("fieldPath")] string FieldPath);
+
+    private sealed record FirestoreQueryValue
+    {
+        [property: JsonPropertyName("stringValue")]
+        public string? StringValue { get; init; }
+    }
 
     private sealed record RunQueryRow(
         [property: JsonPropertyName("document")] RunQueryDocument? Document);

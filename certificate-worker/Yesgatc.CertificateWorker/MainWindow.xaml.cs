@@ -81,6 +81,7 @@ public partial class MainWindow : Window
     private int _docaSessionProbeMinutes;
     private Task _docaBrowserStartupTask = Task.CompletedTask;
     private StatusKind _lastStatusKind = StatusKind.Idle;
+    private StatusHudWindow? _statusHud;
 
     public MainWindow()
     {
@@ -451,10 +452,16 @@ public partial class MainWindow : Window
         return fromUi;
     }
 
-    private DocaCredentialSettings ResolveDocaCredentialsOnUiThread() =>
-        Dispatcher.CheckAccess()
-            ? ResolveDocaCredentials()
-            : Dispatcher.Invoke(ResolveDocaCredentials);
+    private DocaCredentialSettings ResolveDocaCredentialsOnUiThread()
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            return ResolveDocaCredentials();
+        }
+
+        // Prefer async path via ResolveDocaCredentialsAsync; sync fallback for legacy callers.
+        return Dispatcher.Invoke(ResolveDocaCredentials);
+    }
 
     private void SyncDocaCredentialsToAllAutomation(DocaCredentialSettings? credentials = null)
     {
@@ -563,6 +570,7 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         _telemetry.LogDiagnostic = message => LogToFile($"[telemetry] {message}");
+        EnsureStatusHud();
 
         // Re-assert autostart on every launch (install path / scripts may have been updated).
         if (_startWithWindows && !WorkerProduct.IsEmaapEngineBuild)
@@ -659,10 +667,12 @@ public partial class MainWindow : Window
                 var profileLabel = ChromeProfilePreference.RuntimeDirectory ?? "Default";
                 var ocrLabel = CaptchaOcrKeys.DescribeProvider(App.Settings.Automation.CaptchaOcr);
                 SetStatus(
-                    $"Opening eMAAP (Chrome: {profileLabel}) — fill userid/password, wait 1 min for manual captcha/OTP, then {ocrLabel}…",
+                    $"Opening eMAAP (Chrome: {profileLabel}) — auto login + captcha via {ocrLabel}…",
                     StatusKind.Working);
             }
-            var state = await _automationService.OpenDocaWorkspaceAsync();
+
+            // Playwright must not run on the WPF dispatcher — long captcha/OCR waits freeze the main window.
+            var state = await RunPlaywrightOffUiAsync(() => _automationService.OpenDocaWorkspaceAsync());
 
             if (WorkerProduct.IsEmaapEngineBuild)
             {
@@ -741,7 +751,7 @@ public partial class MainWindow : Window
         {
             SyncDocaCredentialsToAllAutomation();
             SetStatus("Submitting eMAAP OTP + solving captcha…", StatusKind.Working);
-            var state = await _automationService.SubmitEmaapOtpAsync(otp);
+            var state = await RunPlaywrightOffUiAsync(() => _automationService.SubmitEmaapOtpAsync(otp));
             if (state == DocaSessionState.LoggedIn)
             {
                 EmaapOtpBox.Text = string.Empty;
@@ -810,6 +820,7 @@ public partial class MainWindow : Window
     {
         StopAutoWorkerTimers();
         StopTelemetryTimer();
+        CloseStatusHud();
         await _queueListener.StopAsync();
         if (_session is not null)
         {
@@ -826,6 +837,73 @@ public partial class MainWindow : Window
         await DisposePreparedBulkWorkersAsync();
         await _automationService.DisposeAsync();
         _tokenLock.Dispose();
+    }
+
+    private void EnsureStatusHud()
+    {
+        if (_statusHud is not null)
+        {
+            return;
+        }
+
+        _statusHud = new StatusHudWindow();
+        _statusHud.UpdateStatus("Idle", StatusText.Text, (Brush)FindResource("TextMutedBrush"));
+        UpdateAutoWorkerStatusText();
+        _statusHud.Show();
+    }
+
+    private void CloseStatusHud()
+    {
+        if (_statusHud is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _statusHud.Close();
+        }
+        catch
+        {
+        }
+
+        _statusHud = null;
+    }
+
+    private void PushStatusHud(string message, StatusKind kind)
+    {
+        if (_statusHud is null)
+        {
+            return;
+        }
+
+        string state;
+        Brush dot;
+        switch (kind)
+        {
+            case StatusKind.Idle:
+                state = "Idle";
+                dot = (Brush)FindResource("TextMutedBrush");
+                break;
+            case StatusKind.Working:
+                state = "Working";
+                dot = (Brush)FindResource("AccentPrimaryBrush");
+                break;
+            case StatusKind.Success:
+                state = "Done";
+                dot = (Brush)FindResource("AccentGreenBrush");
+                break;
+            case StatusKind.Error:
+                state = "Error";
+                dot = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+                break;
+            default:
+                state = "Ready";
+                dot = (Brush)FindResource("TextMutedBrush");
+                break;
+        }
+
+        _statusHud.UpdateStatus(state, message, dot);
     }
 
     private bool _suppressAutoRunCheckBoxEvent;
@@ -1525,7 +1603,9 @@ public partial class MainWindow : Window
     {
         if (!Dispatcher.CheckAccess())
         {
-            Dispatcher.Invoke(() => SetDocaLoginPaused(paused, logoutReason, startResumeProbe, blockAutoLogin));
+            // Never block a Playwright worker thread on the UI — sync Invoke deadlocks when UI awaits browser.
+            _ = Dispatcher.InvokeAsync(
+                () => SetDocaLoginPaused(paused, logoutReason, startResumeProbe, blockAutoLogin));
             return;
         }
 
@@ -1577,7 +1657,7 @@ public partial class MainWindow : Window
     {
         if (!Dispatcher.CheckAccess())
         {
-            Dispatcher.Invoke(StartEmaapOtpIdlePoller);
+            _ = Dispatcher.InvokeAsync(StartEmaapOtpIdlePoller);
             return;
         }
 
@@ -1620,7 +1700,7 @@ public partial class MainWindow : Window
             // After ~5 min countdown, auto-click Resend OTP so a fresh mail can arrive.
             try
             {
-                if (await _automationService.TryResendEmaapOtpIfEnabledAsync())
+                if (await RunPlaywrightOffUiAsync(() => _automationService.TryResendEmaapOtpIfEnabledAsync()))
                 {
                     AddActivityEntry("Clicked Resend OTP — trying master OTP, then Firebase…");
                     SetStatus("Resend OTP clicked — trying master OTP…", StatusKind.Working);
@@ -1639,7 +1719,7 @@ public partial class MainWindow : Window
             {
                 _emaapMasterOtpTried = true;
                 AddActivityEntry("Trying master OTP…");
-                var masterState = await _automationService.TrySubmitMasterEmaapOtpAsync();
+                var masterState = await RunPlaywrightOffUiAsync(() => _automationService.TrySubmitMasterEmaapOtpAsync());
                 if (masterState == DocaSessionState.LoggedIn)
                 {
                     EmaapOtpBox.Text = string.Empty;
@@ -1668,7 +1748,7 @@ public partial class MainWindow : Window
 
             AddActivityEntry($"Firebase OTP received ({code}) — submitting…");
             SetStatus("Firebase OTP landed — submitting…", StatusKind.Working);
-            var state = await _automationService.SubmitEmaapOtpAsync(code);
+            var state = await RunPlaywrightOffUiAsync(() => _automationService.SubmitEmaapOtpAsync(code));
             if (state == DocaSessionState.LoggedIn)
             {
                 EmaapOtpBox.Text = string.Empty;
@@ -1774,7 +1854,8 @@ public partial class MainWindow : Window
             DocaSessionProbeResult probe;
             try
             {
-                probe = await _automationService.ProbeDocaSessionAtProtectedRouteAsync(forceAutoLogin: false);
+                probe = await RunPlaywrightOffUiAsync(
+                    () => _automationService.ProbeDocaSessionAtProtectedRouteAsync(forceAutoLogin: false));
             }
             catch (Exception ex) when (AutomationService.IsBrowserDisconnectedError(ex))
             {
@@ -1861,7 +1942,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var state = await _automationService.ProbeDocaSessionAsync();
+            var state = await RunPlaywrightOffUiAsync(() => _automationService.ProbeDocaSessionAsync());
             if (state == DocaSessionState.OtpRequired)
             {
                 _emaapOtpIdle = true;
@@ -2021,18 +2102,21 @@ public partial class MainWindow : Window
         if (!_autoWorkerEnabled)
         {
             AutoWorkerStatusText.Text = "Auto-run off — use Process all submitted.";
+            _statusHud?.UpdateContext(AutoWorkerStatusText.Text);
             return;
         }
 
         if (_remotePaused)
         {
             AutoWorkerStatusText.Text = "Paused from web admin — resume in Integrations → Automation Worker.";
+            _statusHud?.UpdateContext(AutoWorkerStatusText.Text);
             return;
         }
 
         if (_session is null)
         {
             AutoWorkerStatusText.Text = "Sign in to start unattended processing.";
+            _statusHud?.UpdateContext(AutoWorkerStatusText.Text);
             return;
         }
 
@@ -2040,6 +2124,7 @@ public partial class MainWindow : Window
         {
             AutoWorkerStatusText.Text =
                 "Paused — eMAAP login / HALT. Finish login, then turn Auto-run on.";
+            _statusHud?.UpdateContext(AutoWorkerStatusText.Text);
             return;
         }
 
@@ -2053,6 +2138,8 @@ public partial class MainWindow : Window
         AutoWorkerStatusText.Text = waitingRetries > 0
             ? $"Running — {eligible} job(s) ready, {waitingRetries} waiting for retry ({watchMode}{probeNote})."
             : $"Running — {watchMode} · {eligible} job(s) ready{probeNote}.";
+
+        _statusHud?.UpdateContext(AutoWorkerStatusText.Text);
     }
 
     private async void SignInButton_Click(object sender, RoutedEventArgs e)
@@ -2845,7 +2932,7 @@ public partial class MainWindow : Window
     {
         if (!Dispatcher.CheckAccess())
         {
-            Dispatcher.Invoke(() => HaltWorkerPipeline(message));
+            _ = Dispatcher.InvokeAsync(() => HaltWorkerPipeline(message));
             return;
         }
 
@@ -3125,6 +3212,12 @@ public partial class MainWindow : Window
 
         _ = Dispatcher.InvokeAsync(() => SelectJobById(jobId), DispatcherPriority.Background);
     }
+
+    private static Task RunPlaywrightOffUiAsync(Func<Task> action) =>
+        Task.Run(async () => await action().ConfigureAwait(false));
+
+    private static Task<T> RunPlaywrightOffUiAsync<T>(Func<Task<T>> action) =>
+        Task.Run(async () => await action().ConfigureAwait(false));
 
     private Task RunOnUiAsync(Action action)
     {
@@ -3444,7 +3537,7 @@ public partial class MainWindow : Window
     {
         if (!Dispatcher.CheckAccess())
         {
-            Dispatcher.Invoke(() => ApplyQueueRecords(records, statusMessage, quietStatus));
+            _ = Dispatcher.InvokeAsync(() => ApplyQueueRecords(records, statusMessage, quietStatus));
             return;
         }
 
@@ -3709,6 +3802,7 @@ public partial class MainWindow : Window
                 break;
         }
 
+        PushStatusHud(message, kind);
         AddActivityEntry(message);
         LogToFile(message, ex);
 

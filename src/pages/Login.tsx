@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { CreditCard, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
 import { isValidAadhar, normalizeAadhar, sanitizeAadharInput } from '../lib/aadharAuth';
@@ -132,6 +132,9 @@ export const Login: React.FC = () => {
         </form>
 
         <div className="login-footer">
+          <p>
+            <Link to="/download" className="public-cert-staff">Download certificate</Link>
+          </p>
           <p className="text-muted text-sm">© Interweighing PVT LTD, 2026</p>
         </div>
       </div>

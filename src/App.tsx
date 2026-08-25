@@ -7,6 +7,7 @@ import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 import { Login } from './pages/Login';
+import { PublicCertificateDownload } from './pages/PublicCertificateDownload';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { Products } from './pages/admin/Products';
 import { RCList } from './pages/admin/RCList';
@@ -51,6 +52,7 @@ const App: React.FC = () => {
         <Router>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/download" element={<PublicCertificateDownload />} />
             <Route path="/" element={<Navigate to="/login" replace />} />
 
             {/* Super Admin Routes */}

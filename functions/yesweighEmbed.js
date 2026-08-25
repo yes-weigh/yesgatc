@@ -2,11 +2,34 @@ const { timingSafeEqual } = require('crypto');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
 
+const AUTH_EMAIL_DOMAIN = 'yesgatc.auth';
+
 function secretsEqual(provided, expected) {
   const left = Buffer.from(String(provided ?? ''), 'utf8');
   const right = Buffer.from(String(expected ?? ''), 'utf8');
   if (!right.length || left.length !== right.length) return false;
   return timingSafeEqual(left, right);
+}
+
+async function resolveUidByAadhar(aadhar) {
+  const indexSnap = await getFirestore().doc(`aadharIndex/${aadhar}`).get();
+  const indexedUid = indexSnap.exists ? String(indexSnap.data()?.uid ?? '').trim() : '';
+  if (indexedUid) return indexedUid;
+
+  try {
+    const authUser = await getAuth().getUserByEmail(`${aadhar}@${AUTH_EMAIL_DOMAIN}`);
+    if (authUser?.uid) return authUser.uid;
+  } catch (err) {
+    if (err?.code !== 'auth/user-not-found') throw err;
+  }
+
+  const usersSnap = await getFirestore()
+    .collection('users')
+    .where('aadhar', '==', aadhar)
+    .limit(1)
+    .get();
+  if (!usersSnap.empty) return usersSnap.docs[0].id;
+  return '';
 }
 
 /**
@@ -35,13 +58,7 @@ async function mintYesweighEmbedTokenHandler(req, res, secret, aadharInput) {
     return;
   }
 
-  const indexSnap = await getFirestore().doc(`aadharIndex/${aadhar}`).get();
-  if (!indexSnap.exists) {
-    res.status(404).json({ error: 'RC login not found' });
-    return;
-  }
-
-  const uid = String(indexSnap.data()?.uid ?? '').trim();
+  const uid = await resolveUidByAadhar(aadhar);
   if (!uid) {
     res.status(404).json({ error: 'RC login not found' });
     return;

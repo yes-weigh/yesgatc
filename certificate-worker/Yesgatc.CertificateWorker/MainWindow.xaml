@@ -116,7 +116,7 @@
                                         Padding="14,6"
                                         Margin="0,0,8,0"
                                         Visibility="Collapsed"
-                                        ToolTip="Fill form, Submit Certificate Details, fill upload section — does not click Generate Certificate or update Firebase (test mode)."
+                                        ToolTip="Fill through Name of Principal Officer (incl. upload + remark) — does not click Submit Certificate Details or update Firebase."
                                         Click="FillOnlySelectedEmaapButton_Click"/>
                                 <Button x:Name="ProcessSubmittedEmaapButton"
                                         Content="Process all submitted"

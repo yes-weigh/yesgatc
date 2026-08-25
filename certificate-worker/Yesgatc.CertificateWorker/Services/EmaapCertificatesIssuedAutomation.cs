@@ -13,18 +13,21 @@ public sealed record EmaapCertificateDownloadResult(
     string? EmaapPdfUrl = null);
 
 /// <summary>
-/// eMAAP Certificates Issued: dismiss success OK, open list, match Belongs to + Mobile,
-/// pick highest IND/GATC/KL/26/04/26/{n}, download PDF.
+/// eMAAP Certificates Issued: dismiss success OK, open list, match Belongs to + Mobile.
+/// New submits often have empty Third Party Certificate No. until first Download (green).
+/// Then the number appears and Upload Signed PDF shows. Second Download opens the PDF tab.
 /// </summary>
 public static class EmaapCertificatesIssuedAutomation
 {
+    private const int EmaapBelongToMaxLength = 50;
+
     private static readonly Regex CertificateNumberRegex = new(
         @"IND\s*/\s*GATC\s*/\s*KL\s*/\s*26\s*/\s*04\s*/\s*26\s*/\s*([\d\s]+)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static async Task DismissSuccessOkAsync(IPage page, CancellationToken cancellationToken = default)
     {
-        // After Generate Certificate: spinner first, then "Record saved successfully" + OK.
+        // After Submit Certificate Details: spinner first, then "Record saved successfully" + OK.
         // Must click OK before any Certificates Issued navigation.
         var deadline = DateTime.UtcNow.AddSeconds(45);
         var sawDialog = false;
@@ -278,13 +281,48 @@ public static class EmaapCertificatesIssuedAutomation
         }
     }
 
+    /// <summary>
+    /// Current highest matching issued cert sequence for this party (before submit).
+    /// Download must pick a newer sequence so batch jobs do not reuse the last PDF.
+    /// </summary>
+    public static async Task<int?> PeekHighestMatchingSequenceAsync(
+        IPage page,
+        PartyContactDetails party,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(party);
+
+        var wantBelong = NormalizeName(party.BelongToName);
+        var wantMobile = NormalizeMobile(party.Mobile);
+        if (string.IsNullOrWhiteSpace(wantBelong) || string.IsNullOrWhiteSpace(wantMobile))
+        {
+            return null;
+        }
+
+        try
+        {
+            await OpenCertificatesIssuedAsync(page, cancellationToken);
+            await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
+            var best = await FindHighestMatchingRowAsync(
+                page, wantBelong, wantMobile, includePending: false);
+            return best is null || best.Sequence <= 0 ? null : best.Sequence;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
     public static async Task<EmaapCertificateDownloadResult> DownloadHighestMatchingAsync(
         IPage page,
         PartyContactDetails party,
         string downloadDirectory,
         CancellationToken cancellationToken = default,
         string? preferCertificateNumber = null,
-        Func<string, Task>? onCertificateMatchedAsync = null)
+        Func<string, Task>? onCertificateMatchedAsync = null,
+        IReadOnlyCollection<string>? excludeCertificateNumbers = null,
+        int? minExclusiveSequence = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(party);
@@ -305,8 +343,24 @@ public static class EmaapCertificatesIssuedAutomation
         await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
 
         var preferNormalized = NormalizeCertificateNumber(preferCertificateNumber);
+        var exclude = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (excludeCertificateNumbers is not null)
+        {
+            foreach (var raw in excludeCertificateNumbers)
+            {
+                var n = NormalizeCertificateNumber(raw);
+                if (!string.IsNullOrWhiteSpace(n))
+                {
+                    exclude.Add(n);
+                }
+            }
+        }
+
+        var minSeq = minExclusiveSequence.GetValueOrDefault();
+        var waitForNewCert = string.IsNullOrWhiteSpace(preferNormalized) && (exclude.Count > 0 || minSeq > 0);
+        var maxAttempts = waitForNewCert ? 24 : 12;
         EmaapIssuedRowMatch? best = null;
-        for (var attempt = 0; attempt < 12; attempt++)
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -315,7 +369,8 @@ public static class EmaapCertificatesIssuedAutomation
                 best = await FindRowByCertificateNumberAsync(page, preferNormalized);
             }
 
-            best ??= await FindHighestMatchingRowAsync(page, wantBelong, wantMobile);
+            best ??= await FindHighestMatchingRowAsync(
+                page, wantBelong, wantMobile, exclude, minSeq, includePending: true);
 
             if (best is not null
                 && (string.IsNullOrWhiteSpace(preferNormalized)
@@ -328,19 +383,19 @@ public static class EmaapCertificatesIssuedAutomation
             }
 
             best = null;
-            await page.WaitForTimeoutAsync(600);
+            await page.WaitForTimeoutAsync(waitForNewCert ? 900 : 600);
             if (attempt == 2)
             {
                 await TrySetPageLengthAsync(page, 100);
             }
 
-            if (attempt is 4 or 8)
+            if (attempt is 4 or 8 or 16)
             {
                 await ClearIssuedListFiltersAsync(page);
                 await page.WaitForTimeoutAsync(800);
             }
 
-            if (attempt is 5 or 9)
+            if (attempt is 5 or 9 or 17)
             {
                 await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
             }
@@ -352,41 +407,70 @@ public static class EmaapCertificatesIssuedAutomation
             var preferHint = string.IsNullOrWhiteSpace(preferNormalized)
                 ? string.Empty
                 : $" Preferred cert '{preferNormalized}' not found.";
+            var floorHint = minSeq > 0
+                ? $" Need a cert newer than sequence {minSeq} (or a pending row with no number yet)."
+                : string.Empty;
             throw new InvalidOperationException(
-                $"No Certificates Issued row matched Belongs to '{party.BelongToName}' and Mobile '{party.Mobile}'.{preferHint} " +
+                $"No Certificates Issued row matched Belongs to '{party.BelongToName}' and Mobile '{party.Mobile}'.{preferHint}{floorHint} " +
                 $"Visible sample: {sample}");
         }
 
-        if (onCertificateMatchedAsync is not null)
-        {
-            try
-            {
-                await onCertificateMatchedAsync(best.CertificateNumber);
-            }
-            catch
-            {
-                // Best-effort persist — download must still proceed.
-            }
-        }
-
         Directory.CreateDirectory(downloadDirectory);
-        var safeCert = SanitizeFileSegment(best.CertificateNumber);
-        var savePath = Path.Combine(downloadDirectory, $"{safeCert}.pdf");
 
         Exception? lastError = null;
         for (var attempt = 1; attempt <= 5; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            TryDeleteFile(savePath);
 
             try
             {
+                await PrimeIssuedPdfGenerationAsync(page, best, party.BelongToName, cancellationToken);
+
+                if (string.IsNullOrWhiteSpace(best.CertificateNumber))
+                {
+                    var numbered = await WaitForNumberedIssuedRowAsync(
+                        page,
+                        wantBelong,
+                        wantMobile,
+                        exclude,
+                        minSeq,
+                        cancellationToken);
+                    if (numbered is null)
+                    {
+                        throw new InvalidOperationException(
+                            $"eMAAP Download did not assign a certificate number for {party.BelongToName} / {party.Mobile}.");
+                    }
+
+                    best = numbered;
+                }
+
+                if (onCertificateMatchedAsync is not null
+                    && !string.IsNullOrWhiteSpace(best.CertificateNumber))
+                {
+                    try
+                    {
+                        await onCertificateMatchedAsync(best.CertificateNumber);
+                    }
+                    catch
+                    {
+                        // Best-effort persist — download must still proceed.
+                    }
+                }
+
+                var safeCert = SanitizeFileSegment(
+                    string.IsNullOrWhiteSpace(best.CertificateNumber)
+                        ? $"pending-{wantMobile}"
+                        : best.CertificateNumber);
+                var savePath = Path.Combine(downloadDirectory, $"{safeCert}.pdf");
+                TryDeleteFile(savePath);
+
                 var emaapPdfUrl = await SaveCertificatePdfViaDownloadClickAsync(
                     page,
                     best,
                     party.BelongToName,
                     savePath,
-                    cancellationToken);
+                    cancellationToken,
+                    skipPrime: true);
 
                 if (await IsValidPdfFileAsync(savePath, cancellationToken))
                 {
@@ -420,7 +504,8 @@ public static class EmaapCertificatesIssuedAutomation
             }
             else
             {
-                best = await FindHighestMatchingRowAsync(page, wantBelong, wantMobile) ?? best;
+                best = await FindHighestMatchingRowAsync(
+                    page, wantBelong, wantMobile, exclude, minSeq, includePending: true) ?? best;
             }
         }
 
@@ -505,7 +590,8 @@ public static class EmaapCertificatesIssuedAutomation
         EmaapIssuedRowMatch best,
         string belongToName,
         string savePath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool skipPrime = false)
     {
         IPage? pdfPage = null;
         Task<(string? Url, byte[]? Body)>? pdfResponseBodyTask = null;
@@ -516,8 +602,6 @@ public static class EmaapCertificatesIssuedAutomation
             pdfPage ??= newPage;
             pdfResponseBodyTask ??= CapturePdfResponseAsync(newPage);
         }
-
-        page.Context.Page += OnPage;
 
         Task<IDownload>? downloadTask = null;
         try
@@ -558,13 +642,20 @@ public static class EmaapCertificatesIssuedAutomation
                 }
             }
 
+            // First Download generates PDF in background. Arm listeners only for the second click.
+            if (!skipPrime)
+            {
+                await PrimeIssuedPdfGenerationAsync(page, best, belongToName, cancellationToken);
+            }
+
+            page.Context.Page += OnPage;
             downloadTask = page.WaitForDownloadAsync(new PageWaitForDownloadOptions { Timeout = 120_000 });
 
-            var clicked = await ClickIssuedDownloadAsync(page, best, belongToName);
-            if (!clicked)
+            var opened = await ClickIssuedDownloadAsync(page, best, belongToName);
+            if (!opened)
             {
                 throw new InvalidOperationException(
-                    $"Download button missing for certificate {best.CertificateNumber}.");
+                    $"Download button missing for certificate {best.CertificateNumber} after PDF generate.");
             }
 
             var deadline = DateTime.UtcNow.AddSeconds(120);
@@ -904,6 +995,133 @@ public static class EmaapCertificatesIssuedAutomation
             // ignore
         }
     }
+
+    /// <summary>
+    /// First Download click: eMAAP generates PDF in background and reveals Upload Signed PDF.
+    /// Pending rows have no cert number until this click. Wait 3s (then up to 15s more until
+    /// Upload Signed PDF appears on a numbered row). Skip if already generated.
+    /// </summary>
+    private static async Task PrimeIssuedPdfGenerationAsync(
+        IPage page,
+        EmaapIssuedRowMatch best,
+        string belongToName,
+        CancellationToken cancellationToken)
+    {
+        var pending = string.IsNullOrWhiteSpace(best.CertificateNumber);
+        if (!pending && await RowHasUploadSignedPdfAsync(page, best, belongToName))
+        {
+            return;
+        }
+
+        var primed = await ClickIssuedDownloadAsync(page, best, belongToName);
+        if (!primed)
+        {
+            throw new InvalidOperationException(
+                pending
+                    ? $"Download button missing for pending {belongToName} / {best.Mobile} row."
+                    : $"Download button missing for certificate {best.CertificateNumber}.");
+        }
+
+        await WaitUntilOverlaysClearAsync(page, cancellationToken, maxSeconds: 10);
+        await page.WaitForTimeoutAsync(3_000);
+
+        if (pending)
+        {
+            return;
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline
+               && !await RowHasUploadSignedPdfAsync(page, best, belongToName))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await page.WaitForTimeoutAsync(400);
+        }
+    }
+
+    private static async Task<EmaapIssuedRowMatch?> WaitForNumberedIssuedRowAsync(
+        IPage page,
+        string wantBelong,
+        string wantMobile,
+        IReadOnlyCollection<string>? exclude,
+        int minSeq,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(25);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var numbered = await FindHighestMatchingRowAsync(
+                page, wantBelong, wantMobile, exclude, minSeq, includePending: false);
+            if (numbered is not null && !string.IsNullOrWhiteSpace(numbered.CertificateNumber))
+            {
+                return numbered;
+            }
+
+            await page.WaitForTimeoutAsync(400);
+        }
+
+        return null;
+    }
+
+    private static async Task<bool> RowHasUploadSignedPdfAsync(
+        IPage page,
+        EmaapIssuedRowMatch best,
+        string belongToName)
+    {
+        if (string.IsNullOrWhiteSpace(best.CertificateNumber))
+        {
+            return false;
+        }
+
+        return await page.EvaluateAsync<bool>(
+            """
+            ([cert, mobile, belong]) => {
+              const normName = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+              const normMobile = (s) => {
+                const d = String(s || '').replace(/\D/g, '');
+                return d.length > 10 ? d.slice(-10) : d;
+              };
+              const seq = String(cert).split('/').pop();
+              const wantM = normMobile(mobile);
+              const wantB = normName(belong);
+              const certCompact = String(cert).replace(/\s+/g, '');
+              if (!certCompact) return false;
+              const belongHit = (rowText, cells) => {
+                if (!wantB) return true;
+                const rowNorm = normName(rowText);
+                if (rowNorm.includes(wantB)) return true;
+                const cap = wantB.slice(0, 50).trim();
+                if (cap.length >= 8 && rowNorm.includes(cap)) return true;
+                return (cells || []).some(c => {
+                  const n = normName(c);
+                  if (n.length < 8) return false;
+                  return n === wantB || n.includes(wantB) || wantB.includes(n)
+                    || (cap.length >= 8 && (n.includes(cap) || cap.includes(n)));
+                });
+              };
+              const trs = Array.from(document.querySelectorAll('table tbody tr, table tr'));
+              for (const tr of trs) {
+                const text = (tr.innerText || '').replace(/\s+/g, ' ');
+                const compact = text.replace(/\s+/g, '');
+                const cells = Array.from(tr.querySelectorAll('td')).map(td =>
+                  (td.innerText || '').replace(/\s+/g, ' ').trim());
+                if (!compact.includes(certCompact)
+                    && !(seq && compact.includes('26/04/26/' + seq))) {
+                  continue;
+                }
+                if (wantM && !text.includes(wantM)) continue;
+                if (!belongHit(text, cells)) continue;
+                return Array.from(tr.querySelectorAll('button, a, span'))
+                  .some(el => /upload\s*signed\s*pdf/i.test(
+                    (el.innerText || el.textContent || '').trim()));
+              }
+              return false;
+            }
+            """,
+            new object[] { best.CertificateNumber, best.Mobile, belongToName });
+    }
+
     private static async Task<bool> ClickIssuedDownloadAsync(
         IPage page,
         EmaapIssuedRowMatch best,
@@ -917,22 +1135,48 @@ public static class EmaapCertificatesIssuedAutomation
                 const d = String(s || '').replace(/\D/g, '');
                 return d.length > 10 ? d.slice(-10) : d;
               };
+              const pending = !String(cert || '').trim();
               const seq = String(cert).split('/').pop();
               const wantM = normMobile(mobile);
               const wantB = normName(belong);
               const certCompact = String(cert).replace(/\s+/g, '');
+              const belongHit = (rowText, cells) => {
+                if (!wantB) return true;
+                const rowNorm = normName(rowText);
+                if (rowNorm.includes(wantB)) return true;
+                const cap = wantB.slice(0, 50).trim();
+                if (cap.length >= 8 && rowNorm.includes(cap)) return true;
+                return (cells || []).some(c => {
+                  const n = normName(c);
+                  if (n.length < 8) return false;
+                  return n === wantB || n.includes(wantB) || wantB.includes(n)
+                    || (cap.length >= 8 && (n.includes(cap) || cap.includes(n)));
+                });
+              };
+              const downloadLabel = (el) => (el.innerText || el.textContent
+                || el.getAttribute('title') || el.getAttribute('aria-label') || '')
+                .replace(/\s+/g, ' ').trim();
               const trs = Array.from(document.querySelectorAll('table tbody tr, table tr'));
               for (const tr of trs) {
                 const text = (tr.innerText || '').replace(/\s+/g, ' ');
                 const compact = text.replace(/\s+/g, '');
-                if (!compact.includes(certCompact)
-                    && !(seq && compact.includes('26/04/26/' + seq))) {
-                  continue;
+                const cells = Array.from(tr.querySelectorAll('td')).map(td =>
+                  (td.innerText || '').replace(/\s+/g, ' ').trim());
+                if (pending) {
+                  if (/IND\s*\/\s*GATC/i.test(text)) continue;
+                  if (wantM && !text.includes(wantM)) continue;
+                  if (!belongHit(text, cells)) continue;
+                } else {
+                  if (!certCompact) continue;
+                  if (!compact.includes(certCompact)
+                      && !(seq && compact.includes('26/04/26/' + seq))) {
+                    continue;
+                  }
+                  if (wantM && !text.includes(wantM)) continue;
+                  if (!belongHit(text, cells)) continue;
                 }
-                if (wantM && !text.includes(wantM)) continue;
-                if (wantB && !normName(text).includes(wantB)) continue;
-                const btn = Array.from(tr.querySelectorAll('button, a, span'))
-                  .find(el => /^\s*Download\s*$/i.test((el.innerText || el.textContent || '').trim()));
+                const btn = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
+                  .find(el => /^download$/i.test(downloadLabel(el)));
                 if (!btn) continue;
                 btn.scrollIntoView({ block: 'center' });
                 btn.click();
@@ -948,23 +1192,60 @@ public static class EmaapCertificatesIssuedAutomation
             return true;
         }
 
-        var row = page.Locator("table tbody tr")
-            .Filter(new LocatorFilterOptions { HasText = best.Mobile })
-            .First;
-        var downloadBtn = row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Download" })
-            .Or(row.Locator("button, a")
-                .Filter(new LocatorFilterOptions
-                {
-                    HasTextRegex = new Regex("^\\s*Download\\s*$", RegexOptions.IgnoreCase),
-                }));
-        if (await downloadBtn.CountAsync() == 0)
+        var rows = page.Locator("table tbody tr")
+            .Filter(new LocatorFilterOptions { HasText = best.Mobile });
+        var rowCount = await rows.CountAsync();
+        for (var i = 0; i < rowCount; i++)
         {
-            return false;
+            var row = rows.Nth(i);
+            string rowText;
+            try
+            {
+                rowText = await row.InnerTextAsync();
+            }
+            catch (PlaywrightException)
+            {
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(best.CertificateNumber))
+            {
+                if (Regex.IsMatch(rowText, @"IND\s*/\s*GATC", RegexOptions.IgnoreCase))
+                {
+                    continue;
+                }
+            }
+            else if (!rowText.Contains(best.CertificateNumber, StringComparison.OrdinalIgnoreCase)
+                     && !rowText.Contains(
+                         best.CertificateNumber.Replace(" ", string.Empty, StringComparison.Ordinal),
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(belongToName)
+                && !BelongNamesMatch(belongToName, rowText))
+            {
+                continue;
+            }
+
+            var downloadBtn = row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Download" })
+                .Or(row.Locator("button, a")
+                    .Filter(new LocatorFilterOptions
+                    {
+                        HasTextRegex = new Regex("^\\s*Download\\s*$", RegexOptions.IgnoreCase),
+                    }));
+            if (await downloadBtn.CountAsync() == 0)
+            {
+                continue;
+            }
+
+            await downloadBtn.First.ScrollIntoViewIfNeededAsync();
+            await downloadBtn.First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+            return true;
         }
 
-        await downloadBtn.First.ScrollIntoViewIfNeededAsync();
-        await downloadBtn.First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
-        return true;
+        return false;
     }
 
     private static async Task TrySetPageLengthAsync(IPage page, int length)
@@ -1084,7 +1365,7 @@ public static class EmaapCertificatesIssuedAutomation
               return true;
             }
             """,
-            new object[] { belongTo.Trim(), mobile10 });
+            new object[] { TruncateEmaapBelongTo(belongTo), mobile10 });
 
         // Orange magnifying-glass search in Action filter cell.
         try
@@ -1114,12 +1395,25 @@ public static class EmaapCertificatesIssuedAutomation
     private static async Task<EmaapIssuedRowMatch?> FindHighestMatchingRowAsync(
         IPage page,
         string wantBelong,
-        string wantMobile)
+        string wantMobile,
+        IReadOnlyCollection<string>? excludeCertificateNumbers = null,
+        int minExclusiveSequence = 0,
+        bool includePending = true)
     {
-        // Match entirely in-page: Belongs+Mobile on row text; cert allows wrapped "23 10" → 2310.
+        var excludeCsv = string.Empty;
+        if (excludeCertificateNumbers is { Count: > 0 })
+        {
+            excludeCsv = string.Join(
+                '|',
+                excludeCertificateNumbers
+                    .Select(NormalizeCertificateNumber)
+                    .Where(static s => !string.IsNullOrWhiteSpace(s)));
+        }
+
+        // Match Belongs+Mobile. Numbered certs use sequence; pending rows have no IND/GATC until first Download.
         var json = await page.EvaluateAsync<string>(
             """
-            ([wantBelong, wantMobile]) => {
+            ([wantBelong, wantMobile, excludeCsv, minExclusiveSeq, includePending]) => {
               const normName = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
               const normMobile = (s) => {
                 const d = String(s || '').replace(/\D/g, '');
@@ -1134,12 +1428,33 @@ public static class EmaapCertificatesIssuedAutomation
                 const seq = parseInt(seqStr, 10);
                 return { cert: 'IND/GATC/KL/26/04/26/' + seqStr, seq };
               };
+              const pickBelong = (cells, parsed, wantB, wantBelong) => {
+                let belong = '';
+                if (parsed) {
+                  for (let i = 0; i < cells.length; i++) {
+                    if (parseCert(cells[i]) && i + 1 < cells.length) {
+                      const next = cells[i + 1].trim();
+                      if (next && normMobile(next).length !== 10) { belong = next; break; }
+                    }
+                  }
+                }
+                if (!belong) {
+                  const hit = cells.find(c => normName(c).includes(wantB));
+                  belong = hit || wantBelong;
+                }
+                return belong;
+              };
 
               const wantB = normName(wantBelong);
               const wantM = normMobile(wantMobile);
               if (!wantB || wantM.length !== 10) return '';
 
-              let best = null;
+              const exclude = new Set(String(excludeCsv || '').split('|').filter(Boolean).map(s => s.toUpperCase()));
+              const minSeq = Number(minExclusiveSeq) || 0;
+              const allowPending = includePending === true || includePending === 'true' || includePending === 1;
+
+              let bestNumbered = null;
+              let bestPending = null;
               const tables = Array.from(document.querySelectorAll('table'));
               for (const table of tables) {
                 const trs = Array.from(table.querySelectorAll('tbody tr, tr'));
@@ -1150,8 +1465,6 @@ public static class EmaapCertificatesIssuedAutomation
                   if (cells.length < 4) continue;
 
                   const rowText = (tr.innerText || '').replace(/\s+/g, ' ').trim();
-                  if (!/IND\s*\/\s*GATC/i.test(rowText)) continue;
-                  // Skip filter rows that still contain a Search placeholder only.
                   if (/^search/i.test(rowText) && cells.every(c => !parseCert(c))) continue;
 
                   let mobile = '';
@@ -1166,11 +1479,15 @@ public static class EmaapCertificatesIssuedAutomation
                   if (mobile !== wantM) continue;
 
                   const rowNorm = normName(rowText);
+                  const cap = wantB.slice(0, 50).trim();
                   const belongHit =
                     rowNorm.includes(wantB)
+                    || (cap.length >= 8 && rowNorm.includes(cap))
                     || cells.some(c => {
                       const n = normName(c);
-                      return n === wantB || n.includes(wantB) || wantB.includes(n);
+                      if (n.length < 8) return false;
+                      return n === wantB || n.includes(wantB) || wantB.includes(n)
+                        || (cap.length >= 8 && (n.includes(cap) || cap.includes(n)));
                     });
                   if (!belongHit) continue;
 
@@ -1180,36 +1497,55 @@ public static class EmaapCertificatesIssuedAutomation
                     if (p && (!parsed || p.seq > parsed.seq)) parsed = p;
                   }
                   if (!parsed) parsed = parseCert(rowText);
-                  if (!parsed) continue;
 
-                  if (!best || parsed.seq > best.sequence) {
-                    let belong = '';
-                    for (let i = 0; i < cells.length; i++) {
-                      if (parseCert(cells[i]) && i + 1 < cells.length) {
-                        const next = cells[i + 1].trim();
-                        if (next && normMobile(next).length !== 10) { belong = next; break; }
-                      }
+                  if (parsed) {
+                    if (exclude.has(String(parsed.cert).toUpperCase())) continue;
+                    if (minSeq > 0 && parsed.seq <= minSeq) continue;
+                    if (!bestNumbered || parsed.seq > bestNumbered.sequence) {
+                      bestNumbered = {
+                        index,
+                        certificateNumber: parsed.cert,
+                        belongTo: pickBelong(cells, parsed, wantB, wantBelong),
+                        mobile,
+                        sequence: parsed.seq
+                      };
                     }
-                    if (!belong) {
-                      const hit = cells.find(c => normName(c).includes(wantB));
-                      belong = hit || wantBelong;
-                    }
+                    continue;
+                  }
 
-                    best = {
+                  if (!allowPending) continue;
+                  const hasDownload = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
+                    .some(el => /^download$/i.test(
+                      (el.innerText || el.textContent
+                        || el.getAttribute('title') || el.getAttribute('aria-label') || '')
+                        .replace(/\s+/g, ' ').trim()));
+                  if (!hasDownload) continue;
+                  if (!bestPending || index < bestPending.index) {
+                    bestPending = {
                       index,
-                      certificateNumber: parsed.cert,
-                      belongTo: belong,
+                      certificateNumber: '',
+                      belongTo: pickBelong(cells, null, wantB, wantBelong),
                       mobile,
-                      sequence: parsed.seq
+                      sequence: 0
                     };
                   }
                 }
               }
 
-              return best ? JSON.stringify(best) : '';
+              const chosen = (minSeq > 0 && bestNumbered)
+                ? bestNumbered
+                : (bestPending || bestNumbered);
+              return chosen ? JSON.stringify(chosen) : '';
             }
             """,
-            new object[] { wantBelong, wantMobile });
+            new object[]
+            {
+                wantBelong,
+                wantMobile,
+                excludeCsv,
+                minExclusiveSequence,
+                includePending,
+            });
 
         if (string.IsNullOrWhiteSpace(json))
         {
@@ -1219,17 +1555,21 @@ public static class EmaapCertificatesIssuedAutomation
         try
         {
             var dto = JsonSerializer.Deserialize<IssuedMatchDto>(json);
-            if (dto is null || string.IsNullOrWhiteSpace(dto.CertificateNumber))
+            if (dto is null)
             {
                 return null;
             }
 
+            var cert = string.IsNullOrWhiteSpace(dto.CertificateNumber)
+                ? string.Empty
+                : NormalizeCertificateNumber(dto.CertificateNumber);
+
             return new EmaapIssuedRowMatch(
                 dto.Index,
-                NormalizeCertificateNumber(dto.CertificateNumber),
+                cert,
                 dto.BelongTo ?? string.Empty,
                 NormalizeMobile(dto.Mobile),
-                dto.Sequence > 0 ? dto.Sequence : ParseSequence(dto.CertificateNumber));
+                dto.Sequence > 0 ? dto.Sequence : ParseSequence(cert));
         }
         catch (JsonException)
         {
@@ -1298,6 +1638,38 @@ public static class EmaapCertificatesIssuedAutomation
         return int.TryParse(seqStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seq)
             ? seq
             : 0;
+    }
+
+    private static string TruncateEmaapBelongTo(string? value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        return trimmed.Length <= EmaapBelongToMaxLength
+            ? trimmed
+            : trimmed[..EmaapBelongToMaxLength];
+    }
+
+    /// <summary>
+    /// eMAAP Belongs To is maxlength 50. Issued-list cells are truncated; Firestore names can be longer.
+    /// </summary>
+    private static bool BelongNamesMatch(string? wantRaw, string haystack)
+    {
+        var want = NormalizeName(wantRaw);
+        var have = NormalizeName(haystack);
+        if (string.IsNullOrEmpty(want) || string.IsNullOrEmpty(have))
+        {
+            return false;
+        }
+
+        if (have.Contains(want, StringComparison.Ordinal)
+            || want.Contains(have, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var cap = TruncateEmaapBelongTo(want);
+        return cap.Length >= 8
+            && (have.Contains(cap, StringComparison.Ordinal)
+                || cap.Contains(have, StringComparison.Ordinal));
     }
 
     private static string NormalizeName(string? value) =>

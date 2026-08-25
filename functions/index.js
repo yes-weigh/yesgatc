@@ -42,6 +42,7 @@ const { devDeleteSubmittedVerificationHandler } = require('./verificationDevDele
 const { downloadStorageFileBytesHandler } = require('./docaStorageDownload');
 const { emaapOtpWebhookHandler } = require('./emaapOtpInbox');
 const { mintYesweighEmbedTokenHandler } = require('./yesweighEmbed');
+const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertificates');
 const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
@@ -465,6 +466,21 @@ exports.emaapOtpWebhook = onRequest(
     secrets: [emaapOtpWebhookSecret],
   },
   async (req, res) => emaapOtpWebhookHandler(req, res, adminDb(), emaapOtpWebhookSecret.value()),
+);
+
+/**
+ * Public certificate download page — serial or certificate number → safe PDF fields only.
+ * HTTP + public invoker so unauthenticated browsers can preflight from yesgatc.in.
+ */
+exports.lookupPublicCertificates = onRequest(
+  {
+    region: CALLABLE_REGION,
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 30,
+    memory: '256MiB',
+  },
+  async (req, res) => lookupPublicCertificatesHttpHandler(req, res, adminDb()),
 );
 
 /**

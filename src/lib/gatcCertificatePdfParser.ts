@@ -29,7 +29,7 @@ const NEXT_VERIFICATION_REGEX =
   /Next verification falls due on or before\s*:?\s*(\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})/i;
 
 const INSTRUMENT_ROW_REGEX =
-  /(?<!\bif\s)(?<![(\-])(Electronic|Mechanical|Hybrid)\s+(\S+)\s+([A-Z0-9-]+)\s+(20\d{2})\s+(I{1,3}|IV)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+\.?\d*\s*[a-zA-Z]+)/gi;
+  /(?<!\bif\s)(?<![(\-])(Electronic|Mechanical|Hybrid|(?:Counter|Platform)\s*Scale)\s+(\S+)\s+([A-Z0-9-]+)\s+(20\d{2})\s+(I{1,3}|IV)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+\.?\d*\s*[a-zA-Z]+)/gi;
 
 const INSTRUMENT_ROW_BEFORE_VISUAL_REGEX =
   /(?:MPE\)|Maximum Permissible Error \(MPE\))\s+(?<!\bif\s)(Electronic|Mechanical|Hybrid)\s+(\S+)\s+([A-Z0-9-]+)\s+(20\d{2})\s+(I{1,3}|IV)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+\.?\d*\s*g)(?=\s+Visual\b)/gi;
@@ -221,15 +221,30 @@ function tryParseInstrumentScattered(text: string): InstrumentRowFields | null {
   let model = 'YESWEIGH';
   let serial = '';
 
-  const yesweighMatch = /\bYESWEIGH\s+([A-Z][A-Z0-9-]{4,})\b/.exec(text);
-  if (yesweighMatch) {
+  const compactTypeMatch =
+    /\b((?:Counter|Platform)\s*Scale)\s+(\S+)\s+([A-Z][A-Z0-9-]{3,})\s+(20\d{2})\s+(I{1,3}|IV)\s+(\d+\.?\d*\s*kg)\b/i.exec(
+      text,
+    );
+  if (compactTypeMatch) {
+    instrumentType = compactTypeMatch[1] ?? 'Electronic';
+    model = compactTypeMatch[2] ?? 'YESWEIGH';
+    serial = compactTypeMatch[3] ?? '';
+  }
+
+  const yesweighMatch = /\bYESWEIGH\s+([A-Z][A-Z0-9-]{3,})\b/.exec(text);
+  if (!serial && yesweighMatch) {
     serial = yesweighMatch[1] ?? '';
-  } else {
+  } else if (!serial) {
     const brandMatch = /\b(Electronic|Mechanical|Hybrid)\s+(\S+)\s+([A-Z][A-Z0-9-]{4,})\b/i.exec(text);
     if (!brandMatch) return null;
     instrumentType = brandMatch[1] ?? 'Electronic';
     model = brandMatch[2] ?? '';
     serial = brandMatch[3] ?? '';
+  }
+
+  const labeledSerial = /Serial\s*Number\s*:?\s*([A-Z][A-Z0-9-]{3,})/i.exec(text);
+  if (labeledSerial?.[1] && /[0-9]/.test(labeledSerial[1])) {
+    serial = labeledSerial[1];
   }
 
   const classMatch = /\b(20\d{2})\s+(I{1,3}|IV)\s+(\d+\.?\d*\s*kg)\b/i.exec(text);
