@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Share2, X } from 'lucide-react';
+import { Download, Share2, X } from 'lucide-react';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
+import { useMobileViewport } from '../hooks/useMobileViewport';
 import {
   certificatePdfFileName,
+  downloadCertificatePdfFile,
   fetchCertificatePdfFile,
   renderCertificatePdfPages,
 } from '../lib/certificatePdfFile';
@@ -31,6 +33,7 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState('');
   const [useFrame, setUseFrame] = useState(false);
+  const isPhone = useMobileViewport();
 
   useHistoryOverlay(open, onClose);
 
@@ -107,6 +110,33 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
     }
   };
 
+  const handleDownload = async () => {
+    if (sharing) return;
+    setSharing(true);
+    setError('');
+    try {
+      if (file) {
+        downloadCertificatePdfFile(file);
+        return;
+      }
+      const pdfFile = await fetchCertificatePdfFile(
+        url || '',
+        certificatePdfFileName(record),
+        storagePath,
+      );
+      setFile(pdfFile);
+      downloadCertificatePdfFile(pdfFile);
+    } catch (err) {
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      setError(err instanceof Error ? err.message : 'Download failed.');
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return createPortal(
     <div className="wl-cert-pdf-viewer" role="dialog" aria-modal="true" aria-label={title}>
       <header className="wl-cert-pdf-viewer__bar">
@@ -123,11 +153,17 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
           <button
             type="button"
             className="wl-cert-pdf-viewer__share"
-            onClick={() => void handleShare()}
-            disabled={sharing || (!file && !url)}
+            onClick={() => void (isPhone ? handleShare() : handleDownload())}
+            disabled={sharing || (!file && !url && !storagePath)}
+            aria-label={isPhone ? 'Share certificate' : 'Download certificate'}
+            title={isPhone ? 'Share' : 'Download'}
           >
-            <Share2 size={18} strokeWidth={2} aria-hidden />
-            Share
+            {isPhone ? (
+              <Share2 size={18} strokeWidth={2} aria-hidden />
+            ) : (
+              <Download size={18} strokeWidth={2} aria-hidden />
+            )}
+            {isPhone ? 'Share' : 'Download'}
           </button>
         </div>
       </header>

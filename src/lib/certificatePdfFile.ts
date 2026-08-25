@@ -62,6 +62,18 @@ export async function fetchCertificatePdfFile(
   return new File([blob], fileName, { type: 'application/pdf' });
 }
 
+export function downloadCertificatePdfFile(file: File): void {
+  const objectUrl = URL.createObjectURL(file);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = file.name || 'certificate.pdf';
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+}
+
 export async function renderCertificatePdfPages(file: File): Promise<string[]> {
   const pdfjs = await loadPdfJs();
   const data = await file.arrayBuffer();
