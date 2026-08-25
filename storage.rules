@@ -30,10 +30,11 @@ service firebase.storage {
     }
 
     // RC / VCT profile documents — folders from rcCertificateUpload + vctDocumentUpload.
-    // PAN card read is Super Admin only; all other user folders are public read.
+    // PAN + RC logo: Super Admin write. Other user folders: signed-in write.
     match /users/{userId}/{docKind}/{fileName} {
       allow read: if docKind != 'pan-card' || isSuperAdmin();
-      allow write: if isAuthenticated();
+      allow write: if isSuperAdmin()
+        || (isAuthenticated() && docKind != 'logo' && docKind != 'pan-card');
     }
 
     // RC fleet documents — folders: rc, insurance, pollution, f2-weight, photo.

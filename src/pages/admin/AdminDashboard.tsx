@@ -61,7 +61,21 @@ type RcRow = {
   district: string;
   count: number;
   rank: number;
+  logoUrl?: string;
+  logoPath?: string;
 };
+
+function WlRcLogo({ url, path }: { url?: string; path?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed || (!url?.trim() && !path?.trim())) {
+    return (
+      <span className="wl-rc__photo-fallback wl-rc__photo-fallback--rc">
+        <Building2 size={14} strokeWidth={2} />
+      </span>
+    );
+  }
+  return <StorageImage url={url} path={path} alt="" onError={() => setFailed(true)} />;
+}
 
 type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange' | 'slate' | 'cyan';
 
@@ -114,7 +128,9 @@ const VERIFICATION_PATH = '/admin/verifications';
 
 export const AdminDashboard: React.FC = () => {
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
-  const [rcUsers, setRcUsers] = useState<{ id: string; name: string; district: string }[]>([]);
+  const [rcUsers, setRcUsers] = useState<
+    { id: string; name: string; district: string; logoUrl?: string; logoPath?: string }[]
+  >([]);
   const [vctUsers, setVctUsers] = useState<
     { id: string; name: string; rcId: string; photoUrl?: string; photoPath?: string }[]
   >([]);
@@ -143,7 +159,13 @@ export const AdminDashboard: React.FC = () => {
         ...(d.data() as Omit<SiteCalibration, 'id'>),
       }));
       setVerifications(loaded);
-      const rcs: { id: string; name: string; district: string }[] = [];
+      const rcs: {
+        id: string;
+        name: string;
+        district: string;
+        logoUrl?: string;
+        logoPath?: string;
+      }[] = [];
       const vcts: {
         id: string;
         name: string;
@@ -159,6 +181,8 @@ export const AdminDashboard: React.FC = () => {
             id: d.id,
             name: data.companyName?.trim() || data.username?.trim() || '—',
             district: data.place?.trim() || '',
+            logoUrl: data.logoUrl?.trim() || undefined,
+            logoPath: data.logoPath?.trim() || undefined,
           });
           return;
         }
@@ -237,6 +261,8 @@ export const AdminDashboard: React.FC = () => {
       district: rcById.get(row.rcId)?.district || '—',
       count: row.certified,
       rank: index + 1,
+      logoUrl: rcById.get(row.rcId)?.logoUrl,
+      logoPath: rcById.get(row.rcId)?.logoPath,
     }));
   }, [scopedVerifications, rcUsers]);
 
@@ -500,8 +526,8 @@ export const AdminDashboard: React.FC = () => {
                   <span className="wl-rc__rank" aria-label={`Rank ${rc.rank}`}>
                     #{rc.rank}
                   </span>
-                  <span className="wl-rc__icon" aria-hidden>
-                    <Building2 size={18} strokeWidth={2} />
+                  <span className="wl-rc__photo wl-rc__photo--rc" aria-hidden>
+                    <WlRcLogo url={rc.logoUrl} path={rc.logoPath} />
                   </span>
                   <span className="wl-rc__body">
                     <span className="wl-rc__name">{rc.name}</span>

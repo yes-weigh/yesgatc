@@ -164,7 +164,12 @@ service cloud.firestore {
         && request.resource.data.get('panCardUrl', null) == resource.data.get('panCardUrl', null)
         && request.resource.data.get('panCardPath', null) == resource.data.get('panCardPath', null)
         && request.resource.data.get('panCardName', null) == resource.data.get('panCardName', null)
-        && request.resource.data.get('panCardContentType', null) == resource.data.get('panCardContentType', null);
+        && request.resource.data.get('panCardContentType', null) == resource.data.get('panCardContentType', null)
+        && request.resource.data.get('certificationMethod', null) == resource.data.get('certificationMethod', null)
+        && request.resource.data.get('logoUrl', null) == resource.data.get('logoUrl', null)
+        && request.resource.data.get('logoPath', null) == resource.data.get('logoPath', null)
+        && request.resource.data.get('logoName', null) == resource.data.get('logoName', null)
+        && request.resource.data.get('logoContentType', null) == resource.data.get('logoContentType', null);
 
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'

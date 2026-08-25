@@ -60,6 +60,50 @@ export async function uploadRcStandardWeightsCert(
 
 export { deleteProductStorageFile as deleteRcStorageFile };
 
+const MAX_RC_IMAGE_BYTES = 15 * 1024 * 1024;
+
+export function validateRcLogoFile(file: File): string | null {
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+    return 'Logo must be a PNG, JPEG, or WebP image.';
+  }
+  if (file.size > MAX_RC_IMAGE_BYTES) {
+    return 'Logo file must be 15 MB or smaller.';
+  }
+  return null;
+}
+
+export async function uploadRcLogo(
+  rcUid: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ProductFileMeta> {
+  const validation = validateRcLogoFile(file);
+  if (validation) throw new Error(validation);
+  if (!rcUid.trim()) throw new Error('Save the regional center first to upload the logo.');
+
+  await ensureUploadAuth();
+
+  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '.png';
+  const path = `users/${rcUid}/logo/${Date.now()}${ext}`;
+  const storageRef = ref(storage, path);
+  const task = uploadBytesResumable(storageRef, file, { contentType: file.type });
+
+  return new Promise((resolve, reject) => {
+    task.on(
+      'state_changed',
+      snapshot => {
+        const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+        onProgress?.(pct);
+      },
+      err => reject(mapStorageError(err)),
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref);
+        resolve({ url, path, name: file.name, contentType: file.type });
+      },
+    );
+  });
+}
+
 const MAX_SEAL_BYTES = 15 * 1024 * 1024;
 
 export function validateRcSealFile(file: File): string | null {

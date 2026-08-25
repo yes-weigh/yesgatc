@@ -1,5 +1,5 @@
 import React from 'react';
-import { Camera, ExternalLink, FileText, Image as ImageIcon, Info, RefreshCw, Upload, X } from 'lucide-react';
+import { Camera, Eye, FileText, Image as ImageIcon, Info, Pencil, Upload, X } from 'lucide-react';
 import { StorageImage } from '../../components/StorageImage';
 import { isPdfContentType, type ProductFileMeta } from '../../lib/productApprovalUpload';
 import { mobileCameraUploadLabel } from '../../lib/imageCapture';
@@ -122,7 +122,7 @@ export const UploadField: React.FC<{
               }`}
               aria-hidden
             >
-              <ImageIcon size={compact ? 22 : 28} className="text-muted" />
+              <ImageIcon size={compact ? 16 : 22} className="text-muted" />
             </div>
           )}
         </div>
@@ -274,7 +274,7 @@ export const UploadField: React.FC<{
                         aria-label="View photo"
                         title="View"
                       >
-                        <ExternalLink size={16} />
+                        <Eye size={14} />
                       </a>
                     )}
                     {mobileSourceChoice ? (
@@ -306,10 +306,10 @@ export const UploadField: React.FC<{
                         className="product-upload-icon-btn"
                         onClick={openPicker}
                         disabled={submitting}
-                        aria-label="Replace photo"
-                        title="Replace"
-                      >
-                        <RefreshCw size={16} />
+                          aria-label="Edit photo"
+                          title="Edit"
+                        >
+                          <Pencil size={14} />
                       </button>
                     )}
                     <button
@@ -354,7 +354,7 @@ export const UploadField: React.FC<{
                         rel="noopener noreferrer"
                         className="btn btn-secondary text-xs py-1 px-2"
                       >
-                        <ExternalLink size={12} /> View
+                        <Eye size={12} /> View
                       </a>
                       {mobileSourceChoice ? (
                         <>
@@ -382,7 +382,7 @@ export const UploadField: React.FC<{
                           onClick={openPicker}
                           disabled={submitting}
                         >
-                          Replace
+                          <Pencil size={12} /> Edit
                         </button>
                       )}
                       <button
