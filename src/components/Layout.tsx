@@ -255,7 +255,14 @@ export const Layout: React.FC = () => {
     location.pathname === '/admin';
   const showAppFilterSlot =
     useShieldBrand || isCertificatesList || isCustomersList || isReportsList;
-  const stickyMobileAppBar = showAppFilterSlot || isHomeDashboard || isEmaapSessions || isRcCentersPage;
+  const isSettingsPage =
+    /\/settings\/?$/.test(location.pathname) || /\/contractor-fee\/?$/.test(location.pathname);
+  const stickyMobileAppBar =
+    showAppFilterSlot ||
+    isHomeDashboard ||
+    isEmaapSessions ||
+    isRcCentersPage ||
+    isSettingsPage;
 
   const roleLabel = {
     super_admin: 'Super Admin',

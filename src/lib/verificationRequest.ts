@@ -448,12 +448,27 @@ export function verificationVctLabel(
 
 export function productSnapshotFromProduct(
   product: Product | null | undefined,
-): Pick<SiteCalibration, 'maximumCapacity' | 'verificationScaleInterval' | 'unitOfMeasurement'> {
+): Pick<
+  SiteCalibration,
+  | 'maximumCapacity'
+  | 'verificationScaleInterval'
+  | 'unitOfMeasurement'
+  | 'manufacturerBrandSeries'
+  | 'modelApprovalNo'
+  | 'accuracyClass'
+> {
   if (!product) return {};
   return {
     maximumCapacity: product.maximumCapacity,
     verificationScaleInterval: product.verificationScaleInterval,
     unitOfMeasurement: product.unitOfMeasurement,
+    ...(product.manufacturerBrandSeries?.trim()
+      ? { manufacturerBrandSeries: product.manufacturerBrandSeries.trim() }
+      : {}),
+    ...(product.modelApprovalNo?.trim()
+      ? { modelApprovalNo: product.modelApprovalNo.trim() }
+      : {}),
+    ...(product.accuracyClass?.trim() ? { accuracyClass: product.accuracyClass.trim() } : {}),
   };
 }
 

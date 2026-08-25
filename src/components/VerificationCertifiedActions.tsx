@@ -12,6 +12,7 @@ import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
 import { VerificationGstBillModal } from './VerificationGstBillModal';
 import { VerificationLabelModal } from './VerificationLabelModal';
 import { VerificationReceiptModal } from './VerificationReceiptModal';
+import { VerificationTestReportModal } from './VerificationTestReportModal';
 import type { SiteCalibration } from '../types';
 
 type VerificationCertifiedActionsProps = {
@@ -50,6 +51,7 @@ function CertifiedActionTile({
   isPhone,
   onCertificateOpen,
   onLabelOpen,
+  onTestReportOpen,
   onGstBillOpen,
   onReceiptOpen,
 }: {
@@ -57,6 +59,7 @@ function CertifiedActionTile({
   isPhone: boolean;
   onCertificateOpen: () => void;
   onLabelOpen: () => void;
+  onTestReportOpen: () => void;
   onGstBillOpen: () => void;
   onReceiptOpen: () => void;
 }) {
@@ -69,6 +72,19 @@ function CertifiedActionTile({
         className={className}
         onClick={onLabelOpen}
         aria-label="View verification label"
+      >
+        <ActionTileContent action={action} />
+      </button>
+    );
+  }
+
+  if (action.kind === 'test-report-modal') {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={onTestReportOpen}
+        aria-label="View test report"
       >
         <ActionTileContent action={action} />
       </button>
@@ -95,21 +111,6 @@ function CertifiedActionTile({
         className={className}
         onClick={onReceiptOpen}
         aria-label="View wallet receipt"
-      >
-        <ActionTileContent action={action} />
-      </button>
-    );
-  }
-
-  if (action.kind === 'print-placeholder') {
-    if (isPhone) return null;
-    return (
-      <button
-        type="button"
-        className={`${className} verification-certified-action--placeholder`}
-        disabled
-        title="Printer printing — coming soon"
-        aria-label={`${action.label} — printer printing coming soon`}
       >
         <ActionTileContent action={action} />
       </button>
@@ -147,6 +148,7 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
 }) => {
   const isPhone = useMobileViewport();
   const [labelOpen, setLabelOpen] = useState(false);
+  const [testReportOpen, setTestReportOpen] = useState(false);
   const [gstBillOpen, setGstBillOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [certificateOpen, setCertificateOpen] = useState(false);
@@ -170,6 +172,7 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
             isPhone={isPhone}
             onCertificateOpen={() => setCertificateOpen(true)}
             onLabelOpen={() => setLabelOpen(true)}
+            onTestReportOpen={() => setTestReportOpen(true)}
             onGstBillOpen={() => setGstBillOpen(true)}
             onReceiptOpen={() => setReceiptOpen(true)}
           />
@@ -180,6 +183,12 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
         open={labelOpen}
         record={record}
         onClose={() => setLabelOpen(false)}
+      />
+
+      <VerificationTestReportModal
+        open={testReportOpen}
+        record={record}
+        onClose={() => setTestReportOpen(false)}
       />
 
       <VerificationGstBillModal

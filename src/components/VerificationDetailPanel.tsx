@@ -28,6 +28,7 @@ import {
 } from '../lib/verificationRequest';
 import type { Customer, Product, SiteCalibration } from '../types';
 import type { VerificationRcPartyProfile } from '../lib/verificationPartyDetails';
+import { useVerificationDetailDocs } from '../hooks/useVerificationDetailDocs';
 
 interface VerificationDetailPanelProps {
   record: SiteCalibration;
@@ -87,6 +88,10 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
   onClose,
   onRecordsChanged,
 }) => {
+  const { customer: linkedCustomer, product: linkedProduct } = useVerificationDetailDocs(record, {
+    customer,
+    product,
+  });
   const serialGroup = getVerificationSerialGroup(
     allRecords.length ? allRecords : [record],
     record,
@@ -114,8 +119,8 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
             record={record}
             allRecords={allRecords.length ? allRecords : [record]}
             rcCenterName={rcCenterName}
-            customer={customer}
-            product={product}
+            customer={linkedCustomer}
+            product={linkedProduct}
             rcProfile={rcProfile}
             onClose={onClose}
             onResubmitted={onRecordsChanged}
@@ -218,8 +223,8 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
         <div className="verification-detail-body">
           <VerificationDetailSpecs
             record={record}
-            customer={customer}
-            product={product}
+            customer={linkedCustomer}
+            product={linkedProduct}
             rcProfile={rcProfile}
             omitChromeFields
             rcContactPerson={rcContactPerson}

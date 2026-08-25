@@ -171,6 +171,7 @@ import {
   computeVerificationDocaCharges,
   shouldPersistVerificationDocaCharges,
 } from '../../lib/verificationDocaCharges';
+import { computeStoredGstBill } from '../../lib/rvGstBillRates';
 import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { buildCustomerVerificationSession } from '../../lib/verificationCustomerEntry';
@@ -202,6 +203,15 @@ function verificationDocaFirestorePatch(
   verificationSubject: 'self' | 'customer' | '',
   product: Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null | undefined,
   feeSettings?: RvWalletFeeSettings | null,
+  existing?: Pick<
+    SiteCalibration,
+    | 'maximumCapacity'
+    | 'unitOfMeasurement'
+    | 'certifiedAt'
+    | 'submittedAt'
+    | 'approvedAt'
+    | 'createdAt'
+  > | null,
 ): Record<string, unknown> {
   if (!shouldPersistVerificationDocaCharges(verificationType)) {
     return {
@@ -212,6 +222,7 @@ function verificationDocaFirestorePatch(
       additionalFee: deleteField(),
       carriageConveyanceFee: deleteField(),
       totalDeposited: deleteField(),
+      gstBill: deleteField(),
     };
   }
 
@@ -223,7 +234,18 @@ function verificationDocaFirestorePatch(
     product,
     feeSettings,
   );
-  return charges ?? {};
+  const gstBill = computeStoredGstBill({
+    maximumCapacity: product?.maximumCapacity ?? existing?.maximumCapacity,
+    unitOfMeasurement: product?.unitOfMeasurement ?? existing?.unitOfMeasurement,
+    certifiedAt: existing?.certifiedAt,
+    submittedAt: existing?.submittedAt,
+    approvedAt: existing?.approvedAt,
+    createdAt: existing?.createdAt,
+  });
+  return {
+    ...(charges ?? {}),
+    ...(gstBill ? { gstBill } : {}),
+  };
 }
 
 function verificationCreateGateBlockMessage(
@@ -1434,9 +1456,10 @@ export const RCSiteCalibration: React.FC = () => {
               })()
             : pendingRvPaymentPatch;
 
+        const createdAt = new Date().toISOString();
         const record: Omit<SiteCalibration, 'id'> = {
           rcId: rcUid!,
-          createdAt: new Date().toISOString(),
+          createdAt,
           createdByUid,
           applicationNumber: applicationNumbers[rowIndex],
           ...buildNewSiteCalibrationRecord(
@@ -1452,6 +1475,8 @@ export const RCSiteCalibration: React.FC = () => {
           ...performerImageFields,
           ...perDeviceRvPaymentPatch,
         };
+        const gstBill = computeStoredGstBill(record);
+        if (gstBill) record.gstBill = gstBill;
         await setDoc(ref, record);
         draftRecordIds.push(recordId);
       }
@@ -1562,6 +1587,7 @@ export const RCSiteCalibration: React.FC = () => {
         sessionForSave.verificationSubject,
         product,
         appSettings,
+        existing,
       );
       const imageFields = await uploadRowImages(recordId, row.localId, sessionForSave.verificationType === 'RV');
       const performerImageFields =
@@ -1766,6 +1792,7 @@ export const RCSiteCalibration: React.FC = () => {
         sessionForSave.verificationSubject,
         product,
         appSettings,
+        existing,
       );
       const imageFields = await uploadRowImages(editingId, row.localId, sessionForSave.verificationType === 'RV');
       const performerImageFields =
@@ -2548,6 +2575,18 @@ export const RCSiteCalibration: React.FC = () => {
               <VerificationSerialGroupView
                 record={editingRecord}
                 allRecords={records}
+                rcCenterName={rcProfile?.companyName || rcProfile?.username}
+                customer={
+                  editingRecord.customerId
+                    ? customers.find(item => item.id === editingRecord.customerId) ?? null
+                    : null
+                }
+                product={
+                  products.find(item => item.id === editingRecord.productId)
+                  ?? products.find(item => item.name.trim() === editingRecord.productName?.trim())
+                  ?? null
+                }
+                rcProfile={rcProfile}
                 onClose={handleCloseForm}
                 closeDisabled={formBusy}
                 onResubmitted={async () => {

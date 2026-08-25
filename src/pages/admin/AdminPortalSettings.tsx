@@ -338,7 +338,7 @@ export const AdminPortalSettings: React.FC = () => {
           Setting
         </h1>
         <p className="admin-setting-subtitle text-muted text-sm mb-0">
-          Account, invoice fees, and contractor fee.
+          Account, invoice fees, and contractor fees.
         </p>
       </header>
 
@@ -368,7 +368,7 @@ export const AdminPortalSettings: React.FC = () => {
           className={`admin-setting-tab${tab === 'contractor' ? ' admin-setting-tab--active' : ''}`}
           onClick={() => setTab('contractor')}
         >
-          Contractor fee
+          Contractor fees
         </button>
       </div>
 

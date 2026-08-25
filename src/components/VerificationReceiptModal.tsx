@@ -10,14 +10,13 @@ import {
   buildVerificationReceiptData,
   formatReceiptLineAmount,
   formatReceiptMoney,
-  VERIFICATION_RECEIPT_BRANDING,
   VERIFICATION_RECEIPT_THERMAL,
 } from '../lib/verificationReceipt';
 import {
   formatReceiptShareError,
   shareVerificationReceiptOnWhatsApp,
 } from '../lib/verificationReceiptShare';
-import type { Customer, SiteCalibration } from '../types';
+import type { Customer, FirestoreUserDoc, SiteCalibration } from '../types';
 
 type VerificationReceiptModalProps = {
   open: boolean;
@@ -58,6 +57,7 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
   const { products } = useAppContext();
   const fees = DEFAULT_RC_FEES_STRUCTURE;
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const [rc, setRc] = useState<FirestoreUserDoc | null>(null);
   const [loading, setLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
@@ -69,16 +69,26 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
     if (!open) return;
 
     const customerId = record.customerId?.trim();
+    const rcId = record.rcId?.trim();
     let cancelled = false;
     setLoading(true);
 
     void (async () => {
       try {
-        const customerSnap = customerId ? await getDoc(doc(db, 'customers', customerId)) : null;
+        const [customerSnap, rcSnap] = await Promise.all([
+          customerId ? getDoc(doc(db, 'customers', customerId)) : Promise.resolve(null),
+          rcId ? getDoc(doc(db, 'users', rcId)) : Promise.resolve(null),
+        ]);
         if (cancelled) return;
-        setCustomer(customerSnap?.exists() ? ({ id: customerSnap.id, ...customerSnap.data() } as Customer) : null);
+        setCustomer(
+          customerSnap?.exists() ? ({ id: customerSnap.id, ...customerSnap.data() } as Customer) : null,
+        );
+        setRc(rcSnap?.exists() ? (rcSnap.data() as FirestoreUserDoc) : null);
       } catch {
-        if (!cancelled) setCustomer(null);
+        if (!cancelled) {
+          setCustomer(null);
+          setRc(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -87,11 +97,11 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
     return () => {
       cancelled = true;
     };
-  }, [open, record.customerId]);
+  }, [open, record.customerId, record.rcId]);
 
   const receiptData = useMemo(
-    () => buildVerificationReceiptData(record, customer, products, fees),
-    [record, customer, products, fees],
+    () => buildVerificationReceiptData(record, customer, products, fees, rc),
+    [record, customer, products, fees, rc],
   );
 
   const handleWhatsAppShare = async () => {
@@ -153,20 +163,22 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
         <div className="verification-gst-bill-scroll">
           <article
             ref={receiptRef}
-            className="verification-gst-bill"
+            className="verification-gst-bill verification-cash-receipt"
             style={receiptStyle}
             data-verification-receipt-print
           >
             <header className="verification-gst-bill-header">
-              <p className="verification-gst-bill-company">{VERIFICATION_RECEIPT_BRANDING.companyName}</p>
-              {VERIFICATION_RECEIPT_BRANDING.addressLines.map(line => (
-                <p key={line} className="verification-gst-bill-address mb-0">
+              <p className="verification-gst-bill-company">{receiptData.issuer.companyName}</p>
+              {receiptData.issuer.addressLines.map((line, index) => (
+                <p key={`${index}-${line}`} className="verification-gst-bill-address mb-0">
                   {line}
                 </p>
               ))}
-              <p className="verification-gst-bill-gstin mb-0">
-                GSTIN : {VERIFICATION_RECEIPT_BRANDING.gstin}
-              </p>
+              {receiptData.issuer.gstin ? (
+                <p className="verification-gst-bill-gstin mb-0">
+                  GSTIN {receiptData.issuer.gstin}
+                </p>
+              ) : null}
             </header>
 
             <ReceiptRule />
@@ -187,7 +199,11 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
 
             <section className="verification-gst-bill-section" aria-label="Customer details">
               <ReceiptRow label="Customer Name" value={loading ? '…' : receiptData.customerName} />
-              <ReceiptRow label="Location" value={loading ? '…' : receiptData.customerLocation} />
+              <ReceiptRow label="Phone" value={loading ? '…' : receiptData.customerPhone} />
+              <ReceiptRow label="Place" value={loading ? '…' : receiptData.customerAddress} />
+              <ReceiptRow label="Pincode" value={loading ? '…' : receiptData.customerPincode} />
+              <ReceiptRow label="District" value={loading ? '…' : receiptData.customerDistrict} />
+              <ReceiptRow label="State" value={loading ? '…' : receiptData.customerState} />
             </section>
 
             <ReceiptRule />
@@ -222,19 +238,9 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
             <section className="verification-gst-bill-section verification-gst-bill-section--block">
               <p className="verification-gst-bill-block-label mb-0">Payment Mode</p>
               <p className="verification-gst-bill-block-value mb-0">
-                {VERIFICATION_RECEIPT_BRANDING.paymentMode}
+                {receiptData.issuer.paymentMode}
               </p>
             </section>
-
-            <ReceiptRule />
-
-            <footer className="verification-gst-bill-footer" aria-label="Receipt footer">
-              {VERIFICATION_RECEIPT_BRANDING.footerLines.map(line => (
-                <p key={line} className="verification-gst-bill-footer-line mb-0">
-                  {line}
-                </p>
-              ))}
-            </footer>
 
             <ReceiptRule />
 

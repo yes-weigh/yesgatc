@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
-import { HardHat, Settings } from 'lucide-react';
+import { HardHat } from 'lucide-react';
 import { db } from '../../firebase';
+import { useAuth } from '../../context/AuthContext';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import {
   APP_SETTINGS_COLLECTION,
@@ -9,7 +10,6 @@ import {
 } from '../../lib/appSettings';
 import {
   CONTRACTOR_FEE_DEFAULT,
-  CONTRACTOR_FEE_LEGACY,
   contractorFeeForForm,
   contractorFeeSchedulesAfterSave,
   formatContractorFeeEffectiveLabel,
@@ -18,6 +18,7 @@ import {
   normalizeContractorFeeZeroAmountInr,
 } from '../../lib/contractorFeeSettings';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
+import { RvFeesPanel } from './RvFeesPanel';
 
 function formatFeeMoney(amount: number): string {
   if (Number.isInteger(amount)) return formatRcFeeAmount(amount);
@@ -120,16 +121,6 @@ export function ContractorFeePanel() {
 
   return (
     <div className="panel glass">
-      <div className="panel-header">
-        <h2>
-          <HardHat className="inline-icon" aria-hidden />
-          RC contractor fee
-        </h2>
-      </div>
-      <p className="text-muted text-sm mb-4">
-        RC pays contractor. Handling fee stays ₹0 until you set it. Save applies from today.
-        Past report days keep old rates. Handling shows on report only when greater than zero.
-      </p>
       <form onSubmit={event => void handleSave(event)}>
         {error ? <div className="login-error">{error}</div> : null}
         {saved ? (
@@ -193,12 +184,7 @@ export function ContractorFeePanel() {
           Save contractor fee
         </button>
       </form>
-      {appSettings.contractorFeeSchedules.length === 0 ? (
-        <p className="text-muted text-sm mt-4 mb-0">
-          Reports still use {formatFeeMoney(CONTRACTOR_FEE_LEGACY.upto20Kg)} /{' '}
-          {formatFeeMoney(CONTRACTOR_FEE_LEGACY.above20Kg)} until save.
-        </p>
-      ) : (
+      {appSettings.contractorFeeSchedules.length > 0 ? (
         <ol className="admin-setting-contractor-history">
           {[...appSettings.contractorFeeSchedules].reverse().map(row => (
             <li key={row.effectiveFrom}>
@@ -210,24 +196,41 @@ export function ContractorFeePanel() {
             </li>
           ))}
         </ol>
-      )}
+      ) : null}
     </div>
   );
 }
 
 export const ContractorFeeSettings: React.FC = () => {
+  const { user } = useAuth();
+  const isRc = user?.role === 'rc_admin';
+  const [tab, setTab] = useState<'contractor' | 'rv'>('contractor');
+
   return (
-    <div className="fade-in page-content admin-setting-page">
-      <header className="admin-setting-header">
-        <h1 className="admin-setting-title">
-          <Settings className="inline-icon" aria-hidden />
-          Setting
-        </h1>
-        <p className="admin-setting-subtitle text-muted text-sm mb-0">
-          RC contractor fee. Upto 20 kg ₹150. Above 20 kg ₹250. Handling fee ₹0.
-        </p>
-      </header>
-      <ContractorFeePanel />
+    <div className={`fade-in page-content admin-setting-page${isRc && tab === 'rv' ? ' admin-setting-page--fit' : ''}`}>
+      {isRc ? (
+        <div className="admin-setting-tabs" role="tablist" aria-label="Setting">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'contractor'}
+            className={`admin-setting-tab${tab === 'contractor' ? ' admin-setting-tab--active' : ''}`}
+            onClick={() => setTab('contractor')}
+          >
+            Contractor fees
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'rv'}
+            className={`admin-setting-tab${tab === 'rv' ? ' admin-setting-tab--active' : ''}`}
+            onClick={() => setTab('rv')}
+          >
+            RV fees
+          </button>
+        </div>
+      ) : null}
+      {isRc && tab === 'rv' ? <RvFeesPanel /> : <ContractorFeePanel />}
     </div>
   );
 };

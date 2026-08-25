@@ -5,10 +5,12 @@ import { StorageImage } from './StorageImage';
 import { VerificationPhotoViewer } from './VerificationPhotoViewer';
 import { shouldUseInAppCameraCapture } from '../lib/imageCapture';
 import {
+  contractorFeeProofUploaded,
   markContractorFeePaid,
   uploadContractorFeeProof,
   type ContractorFeePayment,
 } from '../lib/contractorFeePayment';
+import { formatReportInr } from '../lib/reportRevenueShare';
 import { useImageFileInputs } from '../lib/useImageFileInputs';
 
 const ACCEPT = 'image/jpeg,image/png,image/webp';
@@ -16,7 +18,7 @@ const ACCEPT = 'image/jpeg,image/png,image/webp';
 type ContractorFeePayControlProps = {
   rcId: string;
   dateKey: string;
-  amountInr: number;
+  dueInr: number;
   qty: number;
   payment: ContractorFeePayment | null;
   canPay: boolean;
@@ -25,7 +27,7 @@ type ContractorFeePayControlProps = {
 export const ContractorFeePayControl: React.FC<ContractorFeePayControlProps> = ({
   rcId,
   dateKey,
-  amountInr,
+  dueInr,
   qty,
   payment,
   canPay,
@@ -45,7 +47,7 @@ export const ContractorFeePayControl: React.FC<ContractorFeePayControlProps> = (
         await markContractorFeePaid({
           rcId,
           dateKey,
-          amountInr,
+          amountInr: dueInr,
           qty,
           proof,
           existing: payment,
@@ -56,7 +58,7 @@ export const ContractorFeePayControl: React.FC<ContractorFeePayControlProps> = (
         setSaving(false);
       }
     },
-    [amountInr, canPay, dateKey, payment, qty, rcId, saving],
+    [canPay, dateKey, dueInr, payment, qty, rcId, saving],
   );
 
   const fileInputs = useImageFileInputs(ACCEPT, {
@@ -87,11 +89,12 @@ export const ContractorFeePayControl: React.FC<ContractorFeePayControlProps> = (
     [saveProof],
   );
 
-  const paidProof = payment
-    ? { url: payment.proofUrl, path: payment.proofPath, label: 'Payment proof' }
+  const proofUploaded = contractorFeeProofUploaded(payment);
+  const paidProof = proofUploaded
+    ? { url: payment?.proofUrl || '', path: payment?.proofPath || '', label: 'Payment proof' }
     : null;
 
-  if (!canPay && !payment) return null;
+  if (!canPay && !proofUploaded) return null;
 
   return (
     <div className="reports-pay">
@@ -113,7 +116,7 @@ export const ContractorFeePayControl: React.FC<ContractorFeePayControlProps> = (
         />
       ) : null}
 
-      {payment ? (
+      {proofUploaded && payment ? (
         <div className="reports-pay__proof">
           <button
             type="button"
@@ -150,6 +153,9 @@ export const ContractorFeePayControl: React.FC<ContractorFeePayControlProps> = (
           {saving ? <span className="spinner-inline" /> : <ImagePlus size={18} aria-hidden />}
         </button>
       )}
+      <p className="reports-pay__due" aria-label={`Due ${formatReportInr(dueInr)}`}>
+        {formatReportInr(dueInr)}
+      </p>
       {error ? <p className="reports-pay__error">{error}</p> : null}
     </div>
   );

@@ -5,7 +5,7 @@ import { db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { formatAadharDisplay } from '../../lib/aadharAuth';
 import { isValidPhone, isValidPincode, normalizePhone, normalizePincode, requireValidEmail } from '../../lib/contactFields';
-import { Building2, CreditCard, Crosshair, MapPin, FileText, Save, Pencil, X, Mail, Phone, User, ExternalLink, IndianRupee, LogOut } from 'lucide-react';
+import { Building2, CreditCard, Crosshair, MapPin, FileText, Save, Pencil, X, Mail, Phone, User, ExternalLink, LogOut } from 'lucide-react';
 import {
   parseRcLocation,
   rcMapsUrl,
@@ -17,11 +17,6 @@ import {
   rcStandardWeightsCertFromUser,
   formatRcLocation,
   standardWeightsCertExpiryFromDate,
-  resolveRcFeesStructure,
-  rcFeesDraftFromUser,
-  formatRcFeeAmount,
-  parseRcFeeAmountInput,
-  validateRcFeesStructure,
 } from '../../lib/rcProfileFields';
 import { deleteRcStorageFile, uploadRcStandardWeightsCert } from '../../lib/rcCertificateUpload';
 import { parseGoogleMapsCoordinates } from '../../lib/googleMapsCoordinates';
@@ -32,7 +27,7 @@ import {
   type ImageUploadState,
 } from './CustomerFormFields';
 import type { ProductFileMeta } from '../../lib/productApprovalUpload';
-import type { FirestoreUserDoc, RcFeesStructure } from '../../types';
+import type { FirestoreUserDoc } from '../../types';
 
 interface RCProfile extends FirestoreUserDoc {
   companyName: string;
@@ -105,7 +100,6 @@ export const RCProfile: React.FC = () => {
   const [certRemoved, setCertRemoved] = useState(false);
   const [draftCoords, setDraftCoords] = useState({ latitude: '', longitude: '' });
   const [mapsPaste, setMapsPaste] = useState('');
-  const [draftFees, setDraftFees] = useState<RcFeesStructure>(rcFeesDraftFromUser(null));
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
 
@@ -130,7 +124,6 @@ export const RCProfile: React.FC = () => {
     setDraft({ ...profile });
     setDraftCoords(rcProfileCoordsFromUser(profile as FirestoreUserDoc));
     setMapsPaste('');
-    setDraftFees(rcFeesDraftFromUser(profile as FirestoreUserDoc));
     setLocationError('');
     setPendingProfilePhoto(null);
     setProfilePhotoRemoved(false);
@@ -150,7 +143,6 @@ export const RCProfile: React.FC = () => {
     setDraft({});
     setDraftCoords(rcProfileCoordsFromUser(profile as FirestoreUserDoc));
     setMapsPaste('');
-    setDraftFees(rcFeesDraftFromUser(profile as FirestoreUserDoc));
     setLocationError('');
     setPendingProfilePhoto(null);
     setProfilePhotoRemoved(false);
@@ -299,11 +291,6 @@ export const RCProfile: React.FC = () => {
       alert('Postal code must be exactly 6 digits.');
       return;
     }
-    const feesError = validateRcFeesStructure(draftFees);
-    if (feesError) {
-      alert(feesError);
-      return;
-    }
     const latStr = draftCoords.latitude.trim();
     const lngStr = draftCoords.longitude.trim();
     if ((latStr && !lngStr) || (!latStr && lngStr)) {
@@ -342,7 +329,6 @@ export const RCProfile: React.FC = () => {
         email: (draft.email ?? '').trim(),
         phone: normalizePhone(draft.phone ?? ''),
         pincode,
-        feesStructure: draftFees,
         ...photoFields,
         ...certFields,
       };
@@ -375,26 +361,11 @@ export const RCProfile: React.FC = () => {
     setDraft(prev => ({ ...prev, [key]: v }));
   const displayPhoto = rcProfilePhotoFromUser(profile as FirestoreUserDoc);
   const mapsUrl = rcMapsUrl(profile as FirestoreUserDoc);
-  const displayFees = resolveRcFeesStructure(profile as FirestoreUserDoc);
-  const fees = editing ? draftFees : displayFees;
   const displayCert = editing ? cert : rcStandardWeightsCertFromUser(profile as FirestoreUserDoc);
   const certDueDate = standardWeightsCertExpiryFromDate(
     (p.standardWeightsCertDate ?? '').trim() || (profile.standardWeightsCertDate ?? ''),
   );
   const hasDraftLocation = Boolean(draftCoords.latitude.trim() && draftCoords.longitude.trim());
-
-  const setFee = (
-    tier: keyof RcFeesStructure,
-    field: 'inPremise' | 'inSitu' | 'self',
-  ) => (value: string) => {
-    setDraftFees(prev => ({
-      ...prev,
-      [tier]: {
-        ...prev[tier],
-        [field]: parseRcFeeAmountInput(value),
-      },
-    }));
-  };
 
   const handleLogout = async () => {
     await logout();
@@ -658,128 +629,6 @@ export const RCProfile: React.FC = () => {
                   )}
                 </div>
               )}
-            </div>
-          </div>
-
-          <div className="profile-grid mt-6 pt-6 border-t border-subtle">
-            <p className="col-span-all text-muted text-sm font-medium mb-2 flex items-center gap-1.5">
-              <IndianRupee size={15} />
-              Fees structure
-            </p>
-            <div className="profile-field col-span-all">
-              <p className="text-muted text-xs mb-3">
-                Default verification fees by weight and location. You can update these for your centre.
-              </p>
-              <div className="table-scroll-wrap">
-                <table className="data-table rc-fees-table">
-                  <thead>
-                    <tr>
-                      <th>Weight range</th>
-                      <th>In the premises</th>
-                      <th>In situ</th>
-                      <th>Self</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="font-medium">Up to 20 kg</td>
-                      <td>
-                        {editing ? (
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className="input-field input-field--table"
-                            value={fees.tierUpto20Kg.inPremise || ''}
-                            onChange={e => setFee('tierUpto20Kg', 'inPremise')(e.target.value)}
-                            placeholder="750"
-                            aria-label="Up to 20 kg — in the premises fee"
-                          />
-                        ) : (
-                          formatRcFeeAmount(displayFees.tierUpto20Kg.inPremise)
-                        )}
-                      </td>
-                      <td>
-                        {editing ? (
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className="input-field input-field--table"
-                            value={fees.tierUpto20Kg.inSitu || ''}
-                            onChange={e => setFee('tierUpto20Kg', 'inSitu')(e.target.value)}
-                            placeholder="850"
-                            aria-label="Up to 20 kg — in situ fee"
-                          />
-                        ) : (
-                          formatRcFeeAmount(displayFees.tierUpto20Kg.inSitu)
-                        )}
-                      </td>
-                      <td>
-                        {editing ? (
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className="input-field input-field--table"
-                            value={fees.tierUpto20Kg.self || ''}
-                            onChange={e => setFee('tierUpto20Kg', 'self')(e.target.value)}
-                            placeholder="150"
-                            aria-label="Up to 20 kg — self verification fee"
-                          />
-                        ) : (
-                          formatRcFeeAmount(displayFees.tierUpto20Kg.self)
-                        )}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="font-medium">Above 20 kg up to 150 kg</td>
-                      <td>
-                        {editing ? (
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className="input-field input-field--table"
-                            value={fees.tierUpto150Kg.inPremise || ''}
-                            onChange={e => setFee('tierUpto150Kg', 'inPremise')(e.target.value)}
-                            placeholder="900"
-                            aria-label="Above 20 kg up to 150 kg — in the premises fee"
-                          />
-                        ) : (
-                          formatRcFeeAmount(displayFees.tierUpto150Kg.inPremise)
-                        )}
-                      </td>
-                      <td>
-                        {editing ? (
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className="input-field input-field--table"
-                            value={fees.tierUpto150Kg.inSitu || ''}
-                            onChange={e => setFee('tierUpto150Kg', 'inSitu')(e.target.value)}
-                            placeholder="1000"
-                            aria-label="Above 20 kg up to 150 kg — in situ fee"
-                          />
-                        ) : (
-                          formatRcFeeAmount(displayFees.tierUpto150Kg.inSitu)
-                        )}
-                      </td>
-                      <td>
-                        {editing ? (
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            className="input-field input-field--table"
-                            value={fees.tierUpto150Kg.self || ''}
-                            onChange={e => setFee('tierUpto150Kg', 'self')(e.target.value)}
-                            placeholder="250"
-                            aria-label="Above 20 kg up to 150 kg — self verification fee"
-                          />
-                        ) : (
-                          formatRcFeeAmount(displayFees.tierUpto150Kg.self)
-                        )}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             </div>
           </div>
 

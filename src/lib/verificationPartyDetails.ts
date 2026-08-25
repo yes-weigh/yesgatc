@@ -68,8 +68,8 @@ export function verificationListPartyName(
 export function resolveVerificationProduct(record: SiteCalibration, product?: Product | null) {
   return {
     name: text(record.productName) || text(product?.name),
-    modelApprovalNo: text(product?.modelApprovalNo),
-    manufacturer: text(product?.manufacturerBrandSeries),
-    accuracyClass: text(product?.accuracyClass),
+    modelApprovalNo: text(record.modelApprovalNo) || text(product?.modelApprovalNo),
+    manufacturer: text(record.manufacturerBrandSeries) || text(product?.manufacturerBrandSeries),
+    accuracyClass: text(record.accuracyClass) || text(product?.accuracyClass),
   };
 }

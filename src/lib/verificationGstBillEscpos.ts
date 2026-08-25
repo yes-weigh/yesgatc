@@ -9,6 +9,9 @@ import {
   formatGstBillLineAmount,
   formatGstBillMoney,
   VERIFICATION_GST_BILL_BRANDING,
+  VERIFICATION_GST_BILL_LINE_DESCRIPTION,
+  VERIFICATION_GST_BILL_QR_CAPTION,
+  VERIFICATION_GST_BILL_SAC_LINE,
   type VerificationGstBillData,
 } from './verificationGstBill';
 
@@ -21,6 +24,47 @@ function dashedRule(width = RECEIPT_CHAR_WIDTH): string {
 
 function formatGstBillMoneyEscPos(amount: number): string {
   return formatGstBillMoney(amount).replace(/\u20b9/g, 'Rs.');
+}
+
+function appendLabeledValue(
+  builder: EscPosTextBuilder,
+  label: string,
+  value: string,
+): void {
+  const wrapWidth = RECEIPT_CHAR_WIDTH - Math.min(label.length + 3, 18);
+  const lines = wrapEscPosText(value, wrapWidth);
+  builder.textLine(labelValueEscPosLine(label, lines[0] ?? value, RECEIPT_CHAR_WIDTH));
+  for (let i = 1; i < lines.length; i += 1) {
+    builder.textLine(lines[i]!);
+  }
+}
+
+function appendInstrumentEscPos(
+  builder: EscPosTextBuilder,
+  lines: VerificationGstBillData['instrumentLines'],
+): void {
+  const col = Math.floor(RECEIPT_CHAR_WIDTH / 2);
+  let i = 0;
+  while (i < lines.length) {
+    const current = lines[i]!;
+    const next = lines[i + 1];
+    if (current.plain) {
+      for (const wrapped of wrapEscPosText(current.value, RECEIPT_CHAR_WIDTH)) {
+        builder.textLine(wrapped);
+      }
+      i += 1;
+      continue;
+    }
+    if (current.span === 'half' && next?.span === 'half') {
+      builder.textLine(
+        `${labelValueEscPosLine(current.label, current.value, col)}${labelValueEscPosLine(next.label, next.value, col)}`,
+      );
+      i += 2;
+      continue;
+    }
+    appendLabeledValue(builder, current.label, current.value);
+    i += 1;
+  }
 }
 
 export function buildVerificationGstBillEscPosPayload(
@@ -54,20 +98,26 @@ export function buildVerificationGstBillEscPosPayload(
 
   builder.textLine(dashedRule());
   builder.textLine(labelValueEscPosLine('Customer Name', bill.customerName, RECEIPT_CHAR_WIDTH));
-  const locationLines = wrapEscPosText(bill.customerLocation, RECEIPT_CHAR_WIDTH - 12);
-  builder.textLine(labelValueEscPosLine('Location', locationLines[0] ?? bill.customerLocation, RECEIPT_CHAR_WIDTH));
-  for (let i = 1; i < locationLines.length; i += 1) {
-    builder.textLine(locationLines[i]!);
-  }
+  appendLabeledValue(builder, 'Phone', bill.customerPhone);
+  appendLabeledValue(builder, 'Place', bill.customerAddress);
+  builder.textLine(labelValueEscPosLine('Pincode', bill.customerPincode, RECEIPT_CHAR_WIDTH));
+  builder.textLine(labelValueEscPosLine('District', bill.customerDistrict, RECEIPT_CHAR_WIDTH));
+  builder.textLine(labelValueEscPosLine('State', bill.customerState, RECEIPT_CHAR_WIDTH));
 
   builder.textLine(dashedRule());
   builder.textLine(leftRightEscPosLine('Description', 'Amount (Rs.)', RECEIPT_CHAR_WIDTH));
-  builder.textLine(repeatChar('-', RECEIPT_CHAR_WIDTH));
+  builder.textLine(repeatChar('=', RECEIPT_CHAR_WIDTH));
+  builder.bold(true);
   builder.textLine(
-    leftRightEscPosLine('Verification Fees', formatGstBillLineAmount(bill.taxableValue), RECEIPT_CHAR_WIDTH),
+    leftRightEscPosLine(
+      VERIFICATION_GST_BILL_LINE_DESCRIPTION,
+      formatGstBillLineAmount(bill.taxableValue),
+      RECEIPT_CHAR_WIDTH,
+    ),
   );
-
-  builder.textLine(dashedRule());
+  builder.bold(false);
+  builder.textLine(VERIFICATION_GST_BILL_SAC_LINE);
+  builder.textLine(repeatChar('=', RECEIPT_CHAR_WIDTH));
   builder.textLine(
     labelValueEscPosLine('Taxable Value', formatGstBillMoneyEscPos(bill.taxableValue), RECEIPT_CHAR_WIDTH),
   );
@@ -93,10 +143,13 @@ export function buildVerificationGstBillEscPosPayload(
   );
 
   builder.textLine(dashedRule());
-  builder.textLine('Verification Certificate');
-  builder.textLine('Certificate No :');
-  for (const line of wrapEscPosText(bill.certificateNumber, RECEIPT_CHAR_WIDTH)) {
-    builder.textLine(line);
+  builder.bold(true).textLine('Instrument Details').bold(false);
+  appendInstrumentEscPos(builder, bill.instrumentLines);
+  if (bill.verifyUrl) {
+    builder.align('center').blankLine();
+    builder.qrCode(bill.verifyUrl, 4);
+    builder.textLine(VERIFICATION_GST_BILL_QR_CAPTION);
+    builder.align('left');
   }
 
   builder.textLine(dashedRule());
@@ -104,11 +157,6 @@ export function buildVerificationGstBillEscPosPayload(
   for (const line of VERIFICATION_GST_BILL_BRANDING.footerLines) {
     builder.textLine(line);
   }
-  builder.align('left');
-  builder.textLine(dashedRule());
-  builder.align('center');
-  builder.textLine('This is a computer generated invoice.');
-  builder.textLine('No signature required.');
   builder.align('left').feed(3);
 
   return builder.build();

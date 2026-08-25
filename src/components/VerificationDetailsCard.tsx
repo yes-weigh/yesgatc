@@ -7,6 +7,7 @@ import { VerificationPhotoViewer } from './VerificationPhotoViewer';
 import { VerificationVoidWatermark } from './VerificationVoidWatermark';
 import { VerificationDetailSpecs } from './VerificationDetailSpecs';
 import { VerificationCertificateNotesBox } from './VerificationCertificateNotesBox';
+import { useVerificationDetailDocs } from '../hooks/useVerificationDetailDocs';
 import type { Customer, Product, SiteCalibration } from '../types';
 import type { VerificationRcPartyProfile } from '../lib/verificationPartyDetails';
 
@@ -26,6 +27,10 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
   className = '',
 }) => {
   const isVoided = isVerificationCertificateVoided(record);
+  const { customer: linkedCustomer, product: linkedProduct } = useVerificationDetailDocs(record, {
+    customer,
+    product,
+  });
   const attachments = useMemo(() => listVerificationAttachmentsFromRecord(record), [record]);
   const [viewerAttachmentId, setViewerAttachmentId] = useState<string | null>(null);
   const viewerIndex =
@@ -42,8 +47,8 @@ export const VerificationDetailsCard: React.FC<VerificationDetailsCardProps> = (
     >
       <VerificationDetailSpecs
         record={record}
-        customer={customer}
-        product={product}
+        customer={linkedCustomer}
+        product={linkedProduct}
         rcProfile={rcProfile}
         omitChromeFields
       />

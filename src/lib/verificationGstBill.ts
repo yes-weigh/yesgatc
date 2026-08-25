@@ -1,8 +1,14 @@
+import { formatProductMpe } from './productCalculations';
+import { resolveVerificationProduct } from './verificationPartyDetails';
+import { verificationVctLabel } from './verificationRequest';
 import { VERIFICATION_LABEL_BRANDING } from './verificationLabel';
 import { inrAmountToWords } from './inrAmountToWords';
-import { rvZohoInvoiceSummary } from './zohoRvSubmit';
-import type { Customer, SiteCalibration } from '../types';
-import type { ZohoRvSettings } from './zohoSettings';
+import { buildCertificateVerifyUrl } from './certificateVerifyUrl';
+import {
+  computeStoredGstBill,
+  isStoredGstBill,
+} from './rvGstBillRates';
+import type { Customer, Product, SiteCalibration } from '../types';
 
 /** Thermal receipt width for GST bill preview / print. */
 export const VERIFICATION_GST_BILL_RECEIPT = {
@@ -33,12 +39,29 @@ export const VERIFICATION_GST_BILL_BRANDING = {
   ] as const,
 } as const;
 
+export const VERIFICATION_GST_BILL_LINE_DESCRIPTION = 'Re-Verification Fees (GATC)';
+export const VERIFICATION_GST_BILL_SAC_LINE = 'SAC : 998346';
+export const VERIFICATION_GST_BILL_QR_CAPTION = 'Scan QR to verify';
+
+export type GstBillInstrumentLine = {
+  label: string;
+  value: string;
+  span?: 'full' | 'half';
+  plain?: boolean;
+};
+
 export type VerificationGstBillData = {
   invoiceNumber: string;
   invoiceDateTime: string;
   customerName: string;
-  customerLocation: string;
+  customerPhone: string;
+  customerAddress: string;
+  customerPincode: string;
+  customerDistrict: string;
+  customerState: string;
   certificateNumber: string;
+  instrumentLines: GstBillInstrumentLine[];
+  verifyUrl: string | null;
   taxableValue: number;
   cgstAmount: number;
   sgstAmount: number;
@@ -85,54 +108,143 @@ function resolveInvoiceNumber(record: SiteCalibration): string {
   );
 }
 
-function resolveTaxableValue(
+function resolveGstAmounts(record: SiteCalibration): {
+  taxableValue: number | null;
+  cgst: number;
+  sgst: number;
+  total: number;
+} {
+  const computed = computeStoredGstBill(record);
+  if (
+    isStoredGstBill(record.gstBill)
+    && (!computed || record.gstBill.rateDate === computed.rateDate)
+  ) {
+    return {
+      taxableValue: record.gstBill.taxableValue,
+      cgst: record.gstBill.cgstAmount,
+      sgst: record.gstBill.sgstAmount,
+      total: record.gstBill.totalAmount,
+    };
+  }
+
+  if (!computed) {
+    return { taxableValue: null, cgst: 0, sgst: 0, total: 0 };
+  }
+
+  return {
+    taxableValue: computed.taxableValue,
+    cgst: computed.cgstAmount,
+    sgst: computed.sgstAmount,
+    total: computed.totalAmount,
+  };
+}
+
+function formatCustomerField(value?: string | null): string {
+  return value?.trim() || '—';
+}
+
+export function resolveGstBillCustomerContact(
+  record: Pick<SiteCalibration, 'customerName'>,
+  customer?: Customer | null,
+): {
+  name: string;
+  phone: string;
+  address: string;
+  pincode: string;
+  district: string;
+  state: string;
+} {
+  const district = customer?.district?.trim() || '';
+  const state = customer?.state?.trim() || (district ? 'Kerala' : '');
+  return {
+    name: record.customerName?.trim() || customer?.name?.trim() || '—',
+    phone: formatCustomerField(customer?.phone),
+    address: formatCustomerField(customer?.address),
+    pincode: formatCustomerField(customer?.pincode),
+    district: formatCustomerField(district),
+    state: formatCustomerField(state),
+  };
+}
+
+function gstBillDash(value?: string | number | null): string {
+  if (value == null) return '—';
+  const text = String(value).trim();
+  return text || '—';
+}
+
+function gstBillQty(value?: number | null): string | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return String(Math.round(value * 1e6) / 1e6);
+}
+
+function formatGstBillInstrumentSpec(
   record: SiteCalibration,
-  settings?: Pick<ZohoRvSettings, 'zohoFeeUpto20KgInr' | 'zohoFeeAbove20KgInr'> | null,
-): number | null {
-  const zohoSummary = rvZohoInvoiceSummary(record, settings);
-  if (zohoSummary?.baseInr) return zohoSummary.baseInr;
+  product?: Product | null,
+): string {
+  const productInfo = resolveVerificationProduct(record, product);
+  const max = gstBillQty(record.maximumCapacity ?? product?.maximumCapacity);
+  const e = gstBillQty(record.verificationScaleInterval ?? product?.verificationScaleInterval);
+  const unit = record.unitOfMeasurement || product?.unitOfMeasurement || 'kg';
+  const mpeRaw = formatProductMpe(record.maximumPermissibleError ?? product?.maximumPermissibleError);
+  const accuracyClass = productInfo.accuracyClass || 'III';
 
-  if (typeof record.verificationFeeBase === 'number' && record.verificationFeeBase > 0) {
-    return Math.round(record.verificationFeeBase);
+  return [
+    `Max : ${max != null ? `${max}${unit}` : '—'}`,
+    `e:${e != null ? `${e}g` : '—'}`,
+    `Class :${accuracyClass}`,
+    `MPE : ${mpeRaw === '—' ? '—' : `${mpeRaw}g`}`,
+  ].join(' ');
+}
+
+export function buildGstBillInstrumentLines(
+  record: SiteCalibration,
+  product?: Product | null,
+): GstBillInstrumentLine[] {
+  const productInfo = resolveVerificationProduct(record, product);
+  return [
+    { label: 'Certificate No', value: gstBillDash(record.certificateNumber), span: 'full' },
+    { label: 'Machine No', value: gstBillDash(record.serialNumber), span: 'half' },
+    { label: 'Mfg Year', value: gstBillDash(record.manufacturingYear), span: 'half' },
+    { label: 'Instrument', value: gstBillDash(productInfo.name), span: 'full' },
+    { label: 'Manufacturer', value: gstBillDash(productInfo.manufacturer), span: 'full' },
+    { label: 'Model Approval No', value: gstBillDash(productInfo.modelApprovalNo), span: 'full' },
+    { label: '', value: formatGstBillInstrumentSpec(record, product), span: 'full', plain: true },
+    { label: 'VCT', value: gstBillDash(verificationVctLabel(record)), span: 'full' },
+    { label: 'Seal ID', value: gstBillDash(record.sealIdentificationNumber), span: 'full' },
+  ];
+}
+
+export function groupGstBillInstrumentRows(
+  lines: GstBillInstrumentLine[],
+): Array<
+  | { kind: 'full'; line: GstBillInstrumentLine }
+  | { kind: 'pair'; left: GstBillInstrumentLine; right: GstBillInstrumentLine }
+> {
+  const rows: Array<
+    | { kind: 'full'; line: GstBillInstrumentLine }
+    | { kind: 'pair'; left: GstBillInstrumentLine; right: GstBillInstrumentLine }
+  > = [];
+  for (let i = 0; i < lines.length; ) {
+    const current = lines[i]!;
+    const next = lines[i + 1];
+    if (current.span === 'half' && next?.span === 'half') {
+      rows.push({ kind: 'pair', left: current, right: next });
+      i += 2;
+      continue;
+    }
+    rows.push({ kind: 'full', line: current });
+    i += 1;
   }
-
-  if (typeof record.verificationFeeTotal === 'number' && record.verificationFeeTotal > 0) {
-    return Math.round(record.verificationFeeTotal / 1.18);
-  }
-
-  return null;
-}
-
-function roundInrPaise(amount: number): number {
-  return Math.round(amount * 100) / 100;
-}
-
-function splitKeralaGst(taxableValue: number): { cgst: number; sgst: number; total: number } {
-  const cgst = roundInrPaise(taxableValue * 0.09);
-  const sgst = roundInrPaise(taxableValue * 0.09);
-  return { cgst, sgst, total: roundInrPaise(taxableValue + cgst + sgst) };
-}
-
-function formatCustomerLocation(customer?: Customer | null): string {
-  if (!customer) return '—';
-  const district = customer.district?.trim();
-  const state = customer.state?.trim() || 'Kerala';
-  if (district) return `${district}, ${state}`;
-  const address = customer.address?.trim();
-  if (address) return address;
-  return state;
+  return rows;
 }
 
 export function buildVerificationGstBillData(
   record: SiteCalibration,
   customer?: Customer | null,
-  settings?: Pick<ZohoRvSettings, 'zohoFeeUpto20KgInr' | 'zohoFeeAbove20KgInr'> | null,
+  product?: Product | null,
 ): VerificationGstBillData {
   const missingFields: string[] = [];
-  const taxableValue = resolveTaxableValue(record, settings);
-  const { cgst, sgst, total } = taxableValue
-    ? splitKeralaGst(taxableValue)
-    : { cgst: 0, sgst: 0, total: 0 };
+  const { taxableValue, cgst, sgst, total } = resolveGstAmounts(record);
 
   const invoiceNumber = resolveInvoiceNumber(record);
   if (invoiceNumber === '—') missingFields.push('Invoice number');
@@ -142,10 +254,9 @@ export function buildVerificationGstBillData(
   );
   if (invoiceDateTime === '—') missingFields.push('Invoice date');
 
-  const customerName = record.customerName?.trim() || customer?.name?.trim() || '—';
-  if (customerName === '—') missingFields.push('Customer name');
+  const contact = resolveGstBillCustomerContact(record, customer);
+  if (contact.name === '—') missingFields.push('Customer name');
 
-  const customerLocation = formatCustomerLocation(customer);
   const certificateNumber = record.certificateNumber?.trim() || '—';
   if (certificateNumber === '—') missingFields.push('Certificate number');
 
@@ -153,17 +264,20 @@ export function buildVerificationGstBillData(
     missingFields.push('Verification fee');
   }
 
-  const totalAmount =
-    typeof record.verificationFeeTotal === 'number' && record.verificationFeeTotal > 0
-      ? Math.round(record.verificationFeeTotal)
-      : total;
+  const totalAmount = total;
 
   return {
     invoiceNumber,
     invoiceDateTime,
-    customerName,
-    customerLocation,
+    customerName: contact.name,
+    customerPhone: contact.phone,
+    customerAddress: contact.address,
+    customerPincode: contact.pincode,
+    customerDistrict: contact.district,
+    customerState: contact.state,
     certificateNumber,
+    instrumentLines: buildGstBillInstrumentLines(record, product),
+    verifyUrl: buildCertificateVerifyUrl(record),
     taxableValue: taxableValue ?? 0,
     cgstAmount: cgst,
     sgstAmount: sgst,
@@ -186,15 +300,26 @@ export function buildVerificationGstBillShareMessage(bill: VerificationGstBillDa
     `Invoice No : ${bill.invoiceNumber}`,
     `Date : ${bill.invoiceDateTime}`,
     `Customer : ${bill.customerName}`,
-    `Location : ${bill.customerLocation}`,
+    `Phone : ${bill.customerPhone}`,
+    `Place : ${bill.customerAddress}`,
+    `Pincode : ${bill.customerPincode}`,
+    `District : ${bill.customerDistrict}`,
+    `State : ${bill.customerState}`,
     '',
-    `Verification Fees : ${formatGstBillMoney(bill.taxableValue)}`,
+    `${VERIFICATION_GST_BILL_LINE_DESCRIPTION} : ${formatGstBillMoney(bill.taxableValue)}`,
+    VERIFICATION_GST_BILL_SAC_LINE,
     `CGST @ 9% : ${formatGstBillMoney(bill.cgstAmount)}`,
     `SGST @ 9% : ${formatGstBillMoney(bill.sgstAmount)}`,
     `TOTAL : ${formatGstBillMoney(bill.totalAmount)}`,
     bill.amountInWords,
     '',
-    `Certificate No : ${bill.certificateNumber}`,
+    'Instrument Details',
+    ...bill.instrumentLines.map(line =>
+      line.plain ? line.value : `${line.label} : ${line.value}`,
+    ),
+    ...(bill.verifyUrl
+      ? [VERIFICATION_GST_BILL_QR_CAPTION, bill.verifyUrl]
+      : []),
     VERIFICATION_GST_BILL_BRANDING.footerLines[0],
   ].join('\n');
 }

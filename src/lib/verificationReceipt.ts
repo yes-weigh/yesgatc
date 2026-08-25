@@ -1,33 +1,115 @@
 import { resolveRvWalletDisplayAmount } from './rvPaymentAmount';
 import { inrAmountToWords } from './inrAmountToWords';
-import { VERIFICATION_GST_BILL_BRANDING, VERIFICATION_GST_BILL_RECEIPT } from './verificationGstBill';
-import type { Customer, Product, RcFeesStructure, SiteCalibration } from '../types';
+import { resolveGstBillCustomerContact, VERIFICATION_GST_BILL_RECEIPT } from './verificationGstBill';
+import type { Customer, FirestoreUserDoc, Product, RcFeesStructure, SiteCalibration } from '../types';
 
 /** Thermal receipt width for wallet charge preview / print — same as GST bill. */
 export const VERIFICATION_RECEIPT_THERMAL = VERIFICATION_GST_BILL_RECEIPT;
 
-export const VERIFICATION_RECEIPT_BRANDING = {
-  companyName: VERIFICATION_GST_BILL_BRANDING.companyName,
-  addressLines: VERIFICATION_GST_BILL_BRANDING.addressLines,
-  gstin: VERIFICATION_GST_BILL_BRANDING.gstin,
-  paymentMode: 'Wallet',
-  footerLines: VERIFICATION_GST_BILL_BRANDING.footerLines,
-} as const;
+export const VERIFICATION_RECEIPT_PAYMENT_MODE = 'Wallet';
 
 export const VERIFICATION_RECEIPT_LINE_DESCRIPTION = 'Wallet Charge';
 
+export type VerificationReceiptIssuer = {
+  companyName: string;
+  addressLines: string[];
+  gstin: string;
+  paymentMode: string;
+};
+
 export type VerificationReceiptData = {
+  issuer: VerificationReceiptIssuer;
   receiptNumber: string;
   receiptDate: string;
   receiptTime: string;
   customerName: string;
-  customerLocation: string;
+  customerPhone: string;
+  customerAddress: string;
+  customerPincode: string;
+  customerDistrict: string;
+  customerState: string;
   lineDescription: string;
   amount: number;
   totalAmount: number;
   amountInWords: string;
   missingFields: string[];
 };
+
+function receiptCaps(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+const RECEIPT_SKIP_PARTS = new Set(['INDIA', 'IN', 'BHARAT']);
+
+function receiptAddressPart(raw: string): string {
+  return receiptCaps(raw).replace(/^[\s,./-]+|[\s,./-]+$/g, '');
+}
+
+/** Two compact lines: street, then city / district / Kerala - PIN. Drops India. */
+export function cashReceiptAddressLinesFromRc(
+  rc: Pick<FirestoreUserDoc, 'address' | 'place' | 'pincode'> | null | undefined,
+): string[] {
+  if (!rc) return [];
+
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  const add = (raw: string) => {
+    const line = receiptAddressPart(raw);
+    if (!line || RECEIPT_SKIP_PARTS.has(line) || seen.has(line)) return;
+    seen.add(line);
+    parts.push(line);
+  };
+
+  const address = rc.address?.trim() ?? '';
+  if (address) {
+    const chunks = /\n/.test(address) ? address.split(/\n+/) : address.split(',');
+    chunks.forEach(add);
+  }
+  if (rc.place?.trim()) add(rc.place);
+
+  let pin = (rc.pincode ?? '').replace(/\D/g, '').slice(0, 6);
+  const places: string[] = [];
+  for (const part of parts) {
+    const found = part.match(/(\d{6})/);
+    if (found && !pin) pin = found[1];
+    const stripped = part
+      .replace(/[\s-]*\d{6}\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^[-,]+|[-,]+$/g, '');
+    if (!stripped || stripped === 'KERALA' || stripped === 'KL') continue;
+    places.push(stripped);
+  }
+
+  const pinLine = pin ? `KERALA - ${pin}` : parts.some(part => part.includes('KERALA')) ? 'KERALA' : '';
+  if (places.length === 0) return pinLine ? [pinLine] : [];
+  if (places.length === 1) return pinLine ? [places[0], pinLine] : places;
+
+  const street = places.slice(0, 2).join(', ');
+  const locality = [...places.slice(2), pinLine].filter(Boolean).join(', ');
+  return locality ? [street, locality] : [street];
+}
+
+export function buildCashReceiptIssuerFromRc(
+  rc: Pick<
+    FirestoreUserDoc,
+    | 'companyName'
+    | 'username'
+    | 'address'
+    | 'place'
+    | 'pincode'
+    | 'gstNumber'
+  > | null | undefined,
+): VerificationReceiptIssuer {
+  const companyName = receiptCaps(rc?.companyName?.trim() || rc?.username?.trim() || 'REGIONAL CENTRE');
+
+  return {
+    companyName,
+    addressLines: cashReceiptAddressLinesFromRc(rc),
+    gstin: rc?.gstNumber?.trim().toUpperCase() || '',
+    paymentMode: VERIFICATION_RECEIPT_PAYMENT_MODE,
+  };
+}
 
 export function formatReceiptMoney(amount: number): string {
   return `₹${amount.toLocaleString('en-IN', {
@@ -81,16 +163,6 @@ function resolveReceiptNumber(record: SiteCalibration): string {
   return '—';
 }
 
-function formatCustomerLocation(customer?: Customer | null): string {
-  if (!customer) return '—';
-  const district = customer.district?.trim();
-  const state = customer.state?.trim() || 'Kerala';
-  if (district) return `${district}, ${state}`;
-  const address = customer.address?.trim();
-  if (address) return address;
-  return state;
-}
-
 export function resolveRvWalletChargeAmount(
   record: SiteCalibration,
   products: Product[],
@@ -108,6 +180,15 @@ export function buildVerificationReceiptData(
   customer: Customer | null | undefined,
   products: Product[],
   fees: RcFeesStructure,
+  rc?: Pick<
+    FirestoreUserDoc,
+    | 'companyName'
+    | 'username'
+    | 'address'
+    | 'place'
+    | 'pincode'
+    | 'gstNumber'
+  > | null,
 ): VerificationReceiptData {
   const missingFields: string[] = [];
   const paidAt = record.rvPaidAt || record.submittedAt || record.certifiedAt;
@@ -120,21 +201,25 @@ export function buildVerificationReceiptData(
   if (receiptDate === '—') missingFields.push('Receipt date');
   if (receiptTime === '—') missingFields.push('Receipt time');
 
-  const customerName = record.customerName?.trim() || customer?.name?.trim() || '—';
-  if (customerName === '—') missingFields.push('Customer name');
+  const contact = resolveGstBillCustomerContact(record, customer);
+  if (contact.name === '—') missingFields.push('Customer name');
 
-  const customerLocation = formatCustomerLocation(customer);
   const amount = resolveRvWalletChargeAmount(record, products, fees);
   if (amount == null || amount <= 0) missingFields.push('Wallet charge');
 
   const totalAmount = amount ?? 0;
 
   return {
+    issuer: buildCashReceiptIssuerFromRc(rc),
     receiptNumber,
     receiptDate,
     receiptTime,
-    customerName,
-    customerLocation,
+    customerName: contact.name,
+    customerPhone: contact.phone,
+    customerAddress: contact.address,
+    customerPincode: contact.pincode,
+    customerDistrict: contact.district,
+    customerState: contact.state,
     lineDescription: VERIFICATION_RECEIPT_LINE_DESCRIPTION,
     amount: totalAmount,
     totalAmount,

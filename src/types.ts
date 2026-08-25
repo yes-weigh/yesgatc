@@ -380,6 +380,18 @@ export interface Customer {
 }
 
 /** RC site calibration intake record (Firestore `siteCalibrations` collection). */
+export type StoredVerificationGstBill = {
+  taxableValue: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  totalAmount: number;
+  feeUpto20KgInr: number;
+  feeAbove20KgInr: number;
+  /** IST calendar date (YYYY-MM-DD) used to pick the GST rate. */
+  rateDate: string;
+  storedAt: string;
+};
+
 export interface SiteCalibration {
   id: string;
   rcId: string;
@@ -395,6 +407,9 @@ export interface SiteCalibration {
   maximumCapacity?: number;
   verificationScaleInterval?: number;
   unitOfMeasurement?: 'kg' | 'g';
+  manufacturerBrandSeries?: string;
+  modelApprovalNo?: string;
+  accuracyClass?: string;
   /** MPE for this calibration; may differ from the product default. */
   maximumPermissibleError?: number;
   ambientTemperature: string;
@@ -419,6 +434,8 @@ export interface SiteCalibration {
   certificateNumber?: string;
   /** Internal application reference — e.g. VC/26/1. Assigned at draft creation. */
   applicationNumber?: string;
+  /** Frozen GST tax invoice snapshot (dated Super Admin rates). */
+  gstBill?: StoredVerificationGstBill;
   /** Fee breakdown for eMAAP Verification & Charges (INR, whole rupees). */
   verificationFeeBase?: number;
   verificationFeeGst?: number;

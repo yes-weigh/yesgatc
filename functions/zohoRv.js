@@ -1,6 +1,7 @@
 const { defineSecret } = require('firebase-functions/params');
 const { HttpsError } = require('firebase-functions/v2/https');
 const { zohoInvoiceOrderReferenceFromCertificate } = require('./zohoInvoiceReference');
+const { pickDatedGstFeeBaseInr } = require('./rvGstBillRates');
 
 const zohoClientId = defineSecret('ZOHO_CLIENT_ID');
 const zohoClientSecret = defineSecret('ZOHO_CLIENT_SECRET');
@@ -117,12 +118,12 @@ function pickZohoItemId(record, settings) {
   return capacityKg <= 20 ? settings.zohoItemIdUpto20Kg : settings.zohoItemIdAbove20Kg;
 }
 
-function pickZohoItemRate(record, settings) {
+function pickZohoItemRate(record) {
   const capacityKg = maximumCapacityKg(record);
   if (capacityKg == null) {
     throw new Error('maximumCapacity is required to select a Zoho RV product.');
   }
-  return capacityKg <= 20 ? settings.zohoFeeUpto20KgInr : settings.zohoFeeAbove20KgInr;
+  return pickDatedGstFeeBaseInr(record, capacityKg);
 }
 
 function formatZohoLineMaxCap(record) {
@@ -274,7 +275,7 @@ async function createRvInvoice(db, record, rcZohoId, settings) {
       {
         item_id: itemId,
         quantity: 1,
-        rate: pickZohoItemRate(record, settings),
+        rate: pickZohoItemRate(record),
         description: await buildLineDescription(db, record),
       },
     ],

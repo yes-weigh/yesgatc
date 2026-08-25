@@ -8,7 +8,6 @@ import {
 import {
   formatReceiptLineAmount,
   formatReceiptMoney,
-  VERIFICATION_RECEIPT_BRANDING,
   type VerificationReceiptData,
 } from './verificationReceipt';
 
@@ -23,20 +22,36 @@ function formatReceiptMoneyEscPos(amount: number): string {
   return formatReceiptMoney(amount).replace(/\u20b9/g, 'Rs.');
 }
 
+function appendLabeledValue(
+  builder: EscPosTextBuilder,
+  label: string,
+  value: string,
+): void {
+  const wrapWidth = RECEIPT_CHAR_WIDTH - Math.min(label.length + 3, 18);
+  const lines = wrapEscPosText(value, wrapWidth);
+  builder.textLine(labelValueEscPosLine(label, lines[0] ?? value, RECEIPT_CHAR_WIDTH));
+  for (let i = 1; i < lines.length; i += 1) {
+    builder.textLine(lines[i]!);
+  }
+}
+
 export function buildVerificationReceiptEscPosPayload(
   receipt: VerificationReceiptData,
 ): Uint8Array {
   const builder = new EscPosTextBuilder().init().align('left').textSize('normal').bold(false);
 
-  builder.align('center').bold(true).textSize('large');
-  builder.textLine(VERIFICATION_RECEIPT_BRANDING.companyName);
-  builder.textSize('normal');
+  const issuer = receipt.issuer;
+
+  builder.align('center').bold(true).textSize('normal');
+  builder.textLine(issuer.companyName);
   builder.bold(false);
 
-  for (const line of VERIFICATION_RECEIPT_BRANDING.addressLines) {
+  for (const line of issuer.addressLines) {
     builder.textLine(line);
   }
-  builder.textLine(`GSTIN : ${VERIFICATION_RECEIPT_BRANDING.gstin}`);
+  if (issuer.gstin) {
+    builder.textLine(`GSTIN ${issuer.gstin}`);
+  }
 
   builder.align('left').textLine(dashedRule());
   builder.align('center').bold(true);
@@ -50,11 +65,11 @@ export function buildVerificationReceiptEscPosPayload(
 
   builder.textLine(dashedRule());
   builder.textLine(labelValueEscPosLine('Customer Name', receipt.customerName, RECEIPT_CHAR_WIDTH));
-  const locationLines = wrapEscPosText(receipt.customerLocation, RECEIPT_CHAR_WIDTH - 12);
-  builder.textLine(labelValueEscPosLine('Location', locationLines[0] ?? receipt.customerLocation, RECEIPT_CHAR_WIDTH));
-  for (let i = 1; i < locationLines.length; i += 1) {
-    builder.textLine(locationLines[i]!);
-  }
+  appendLabeledValue(builder, 'Phone', receipt.customerPhone);
+  appendLabeledValue(builder, 'Place', receipt.customerAddress);
+  builder.textLine(labelValueEscPosLine('Pincode', receipt.customerPincode, RECEIPT_CHAR_WIDTH));
+  builder.textLine(labelValueEscPosLine('District', receipt.customerDistrict, RECEIPT_CHAR_WIDTH));
+  builder.textLine(labelValueEscPosLine('State', receipt.customerState, RECEIPT_CHAR_WIDTH));
 
   builder.textLine(dashedRule());
   builder.textLine(leftRightEscPosLine('Description', 'Amount (Rs.)', RECEIPT_CHAR_WIDTH));
@@ -78,14 +93,8 @@ export function buildVerificationReceiptEscPosPayload(
 
   builder.textLine(dashedRule());
   builder.textLine('Payment Mode');
-  builder.textLine(VERIFICATION_RECEIPT_BRANDING.paymentMode);
+  builder.textLine(issuer.paymentMode);
 
-  builder.textLine(dashedRule());
-  builder.align('center');
-  for (const line of VERIFICATION_RECEIPT_BRANDING.footerLines) {
-    builder.textLine(line);
-  }
-  builder.align('left');
   builder.textLine(dashedRule());
   builder.align('center');
   builder.textLine('This is a computer generated receipt.');

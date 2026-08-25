@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { QRCode } from 'react-qr-code';
 import { MessageCircle, Tags, X } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
-import { useAppSettings } from '../hooks/useAppSettings';
 import {
   getRememberedBluetoothPrinter,
   isBluetoothEscposSupported,
@@ -15,14 +15,21 @@ import {
   buildVerificationGstBillShareMessage,
   formatGstBillLineAmount,
   formatGstBillMoney,
+  groupGstBillInstrumentRows,
   VERIFICATION_GST_BILL_BRANDING,
+  VERIFICATION_GST_BILL_LINE_DESCRIPTION,
+  VERIFICATION_GST_BILL_QR_CAPTION,
   VERIFICATION_GST_BILL_RECEIPT,
+  VERIFICATION_GST_BILL_SAC_LINE,
 } from '../lib/verificationGstBill';
 import { buildWhatsAppShareUrl } from '../lib/verificationWhatsAppShare';
 import {
   formatBluetoothPrintError,
   printVerificationGstBillToBluetooth,
 } from '../lib/verificationGstBillPrint';
+import { useVerificationDetailDocs } from '../hooks/useVerificationDetailDocs';
+import { readEmaapCertificatePdfUrl } from '../lib/certificateVerifyUrl';
+import { resolveCertificatePdfQrUrl } from '../lib/certificatePdfQr';
 import type { Customer, SiteCalibration } from '../types';
 
 type VerificationGstBillModalProps = {
@@ -31,8 +38,28 @@ type VerificationGstBillModalProps = {
   onClose: () => void;
 };
 
-function GstBillRule() {
-  return <div className="verification-gst-bill-rule" aria-hidden />;
+function GstBillRule({ solid = false }: { solid?: boolean }) {
+  return (
+    <div
+      className={`verification-gst-bill-rule${solid ? ' verification-gst-bill-rule--solid' : ''}`}
+      aria-hidden
+    />
+  );
+}
+
+function GstBillInstrumentField({
+  line,
+  loading,
+}: {
+  line: { label: string; value: string };
+  loading: boolean;
+}) {
+  return (
+    <>
+      <span className="verification-gst-bill-instrument-k">{line.label} :</span>
+      <span className="verification-gst-bill-instrument-v">{loading ? '…' : line.value}</span>
+    </>
+  );
 }
 
 function GstBillRow({
@@ -61,14 +88,17 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
   onClose,
 }) => {
   const receiptRef = useRef<HTMLElement>(null);
+  const [liveRecord, setLiveRecord] = useState<SiteCalibration | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
+  const billRecord = liveRecord ?? record;
+  const { product } = useVerificationDetailDocs(billRecord);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [printMessage, setPrintMessage] = useState<string | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const [savedPrinter, setSavedPrinter] = useState<RememberedBluetoothPrinter | null>(null);
+  const [pdfQrUrl, setPdfQrUrl] = useState<string | null>(null);
   const bluetoothPrintSupported = isBluetoothEscposSupported();
-  const { appSettings } = useAppSettings();
 
   useHistoryOverlay(open, onClose);
 
@@ -78,17 +108,57 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
   }, [open]);
 
   useEffect(() => {
+    if (!open) {
+      setLiveRecord(null);
+      return;
+    }
+
+    let cancelled = false;
+    void getDoc(doc(db, 'siteCalibrations', record.id))
+      .then(snap => {
+        if (cancelled || !snap.exists()) return;
+        const data = snap.data() as Record<string, unknown>;
+        const emaapCertificatePdfUrl = readEmaapCertificatePdfUrl(data);
+        setLiveRecord({
+          id: snap.id,
+          ...data,
+          ...(emaapCertificatePdfUrl ? { emaapCertificatePdfUrl } : {}),
+        } as SiteCalibration);
+      })
+      .catch(() => {
+        if (!cancelled) setLiveRecord(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, record.id]);
+
+  useEffect(() => {
     if (!open) return;
 
-    const customerId = record.customerId?.trim();
+    const ids = [
+      ...new Set(
+        [record.customerId, record.sourceCustomerId]
+          .map(id => id?.trim())
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
     let cancelled = false;
     setLoading(true);
 
     void (async () => {
       try {
-        const customerSnap = customerId ? await getDoc(doc(db, 'customers', customerId)) : null;
-        if (cancelled) return;
-        setCustomer(customerSnap?.exists() ? ({ id: customerSnap.id, ...customerSnap.data() } as Customer) : null);
+        let loaded: Customer | null = null;
+        for (const id of ids) {
+          const customerSnap = await getDoc(doc(db, 'customers', id));
+          if (cancelled) return;
+          if (customerSnap.exists()) {
+            loaded = { id: customerSnap.id, ...customerSnap.data() } as Customer;
+            break;
+          }
+        }
+        if (!cancelled) setCustomer(loaded);
       } catch {
         if (!cancelled) setCustomer(null);
       } finally {
@@ -99,12 +169,39 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
     return () => {
       cancelled = true;
     };
-  }, [open, record.customerId]);
+  }, [open, record.customerId, record.sourceCustomerId]);
 
-  const billData = useMemo(
-    () => buildVerificationGstBillData(record, customer, appSettings),
-    [record, customer, appSettings],
-  );
+  useEffect(() => {
+    if (!open) {
+      setPdfQrUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    void resolveCertificatePdfQrUrl(billRecord).then(url => {
+      if (!cancelled) setPdfQrUrl(url);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    open,
+    billRecord.id,
+    billRecord.emaapCertificatePdfUrl,
+    billRecord.certificatePdfUrl,
+    billRecord.certificatePdfPath,
+    billRecord.signedCertificatePdfUrl,
+    billRecord.signedCertificatePdfPath,
+  ]);
+
+  const billData = useMemo(() => {
+    const built = buildVerificationGstBillData(billRecord, customer, product);
+    return {
+      ...built,
+      verifyUrl: pdfQrUrl || built.verifyUrl,
+    };
+  }, [billRecord, customer, product, pdfQrUrl]);
 
   const whatsAppShareUrl = useMemo(() => {
     if (loading) return null;
@@ -205,7 +302,11 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
 
           <section className="verification-gst-bill-section" aria-label="Customer details">
             <GstBillRow label="Customer Name" value={loading ? '…' : billData.customerName} />
-            <GstBillRow label="Location" value={loading ? '…' : billData.customerLocation} />
+            <GstBillRow label="Phone" value={loading ? '…' : billData.customerPhone} />
+            <GstBillRow label="Place" value={loading ? '…' : billData.customerAddress} />
+            <GstBillRow label="Pincode" value={loading ? '…' : billData.customerPincode} />
+            <GstBillRow label="District" value={loading ? '…' : billData.customerDistrict} />
+            <GstBillRow label="State" value={loading ? '…' : billData.customerState} />
           </section>
 
           <GstBillRule />
@@ -215,13 +316,14 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
               <span>Description</span>
               <span>Amount (₹)</span>
             </div>
-            <div className="verification-gst-bill-line-item">
-              <span>Verification Fees</span>
+            <div className="verification-gst-bill-line-item verification-gst-bill-line-item--strong">
+              <span>{VERIFICATION_GST_BILL_LINE_DESCRIPTION}</span>
               <span>{formatGstBillLineAmount(billData.taxableValue)}</span>
             </div>
+            <p className="verification-gst-bill-line-meta mb-0">{VERIFICATION_GST_BILL_SAC_LINE}</p>
           </section>
 
-          <GstBillRule />
+          <GstBillRule solid />
 
           <section className="verification-gst-bill-section" aria-label="Tax breakdown">
             <GstBillRow label="Taxable Value" value={formatGstBillMoney(billData.taxableValue)} />
@@ -254,10 +356,47 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
 
           <GstBillRule />
 
-          <section className="verification-gst-bill-section verification-gst-bill-section--block">
-            <p className="verification-gst-bill-block-label mb-0">Verification Certificate</p>
-            <p className="verification-gst-bill-block-value mb-0">Certificate No :</p>
-            <p className="verification-gst-bill-block-value mb-0">{billData.certificateNumber}</p>
+          <section className="verification-gst-bill-instrument" aria-label="Instrument details">
+            <p className="verification-gst-bill-block-label mb-0">Instrument Details</p>
+            <div className="verification-gst-bill-instrument-grid">
+              {groupGstBillInstrumentRows(billData.instrumentLines).map(row =>
+                row.kind === 'pair' ? (
+                  <div
+                    key={`${row.left.label}-${row.right.label}`}
+                    className="verification-gst-bill-instrument-pair"
+                  >
+                    <GstBillInstrumentField line={row.left} loading={loading} />
+                    <GstBillInstrumentField line={row.right} loading={loading} />
+                  </div>
+                ) : row.line.plain ? (
+                  <p key="instrument-spec" className="verification-gst-bill-instrument-spec mb-0">
+                    {loading ? '…' : row.line.value}
+                  </p>
+                ) : (
+                  <div key={row.line.label} className="verification-gst-bill-instrument-full">
+                    <GstBillInstrumentField line={row.line} loading={loading} />
+                  </div>
+                ),
+              )}
+            </div>
+            {billData.verifyUrl ? (
+              <div className="verification-gst-bill-verify-qr">
+                <div className="verification-gst-bill-verify-qr-frame">
+                  <QRCode
+                    value={billData.verifyUrl}
+                    size={192}
+                    bgColor="#FFFFFF"
+                    fgColor="#000000"
+                    level="M"
+                    style={{ width: '100%', height: 'auto', display: 'block' }}
+                    aria-hidden
+                  />
+                </div>
+                <p className="verification-gst-bill-verify-qr-caption mb-0">
+                  {VERIFICATION_GST_BILL_QR_CAPTION}
+                </p>
+              </div>
+            ) : null}
           </section>
 
           <GstBillRule />
@@ -269,13 +408,6 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
               </p>
             ))}
           </footer>
-
-          <GstBillRule />
-
-          <div className="verification-gst-bill-footer verification-gst-bill-footnotes">
-            <p className="verification-gst-bill-footnote mb-0">This is a computer generated invoice.</p>
-            <p className="verification-gst-bill-footnote mb-0">No signature required.</p>
-          </div>
           </article>
         </div>
 

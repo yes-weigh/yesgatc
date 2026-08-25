@@ -16,7 +16,11 @@ import {
   stampRcRevenueShare,
   stampRevenueShare,
 } from '../../lib/reportRevenueShare';
-import { subscribeContractorFeePayments, type ContractorFeePayment } from '../../lib/contractorFeePayment';
+import {
+  carryForwardContractorFeeDues,
+  subscribeContractorFeePayments,
+  type ContractorFeePayment,
+} from '../../lib/contractorFeePayment';
 import { buildReportPdf, shareReportPdf } from '../../lib/reportPdf';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { getVerificationDisplayStatus } from '../../lib/verificationRequest';
@@ -465,6 +469,49 @@ export const Reports: React.FC = () => {
     [revenueRows],
   );
 
+  const contractorDueByDate = useMemo(() => {
+    if (!isRcRevenue || !rcFilter || rcFilter === 'all') return new Map<string, number>();
+    const byDay = new Map<string, number>();
+    for (const record of records) {
+      if ((record.rcId || '') !== rcFilter) continue;
+      if (typeFilter !== 'all' && recordType(record) !== typeFilter) continue;
+      if (getVerificationDisplayStatus(record) !== 'certified') continue;
+      const date = recordReportDate(record);
+      if (!date) continue;
+      if (monthKeyFromDate(date) < GATC_START_MONTH_KEY) continue;
+      const dateKey = dayKeyFromDate(date);
+      const share = stampRcRevenueShare(
+        record,
+        productsById,
+        dateKey,
+        appSettings.contractorFeeSchedules,
+      );
+      if (!share) continue;
+      byDay.set(dateKey, (byDay.get(dateKey) ?? 0) + share.contractor + share.handling);
+    }
+    for (const dateKey of paymentsByDate.keys()) {
+      if (!byDay.has(dateKey)) byDay.set(dateKey, 0);
+    }
+    const days = [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dateKey, amountInr]) => ({ dateKey, amountInr }));
+    return carryForwardContractorFeeDues(days, paymentsByDate);
+  }, [
+    appSettings.contractorFeeSchedules,
+    isRcRevenue,
+    paymentsByDate,
+    productsById,
+    rcFilter,
+    records,
+    typeFilter,
+  ]);
+
+  const outstandingDue = useMemo(() => {
+    if (revenueRows.length === 0) return 0;
+    const last = revenueRows[revenueRows.length - 1];
+    return contractorDueByDate.get(last.dateKey) ?? 0;
+  }, [contractorDueByDate, revenueRows]);
+
   const isRevenue = reportView === 'revenue_share';
   const listLength = isRevenue ? revenueRows.length : dayRows.length;
   const showHandling = isRcRevenue && revenueTotals.handling > 0;
@@ -703,7 +750,7 @@ export const Reports: React.FC = () => {
                 ))}
                 <option value={LIFETIME_MONTH_KEY}>Lifetime</option>
               </select>
-            </div>
+        </div>
           </div>
           <div className="verification-app-filter__foot reports-filter__foot">
             <button type="button" className="reports-filter__apply" onClick={applyFilters}>
@@ -715,7 +762,7 @@ export const Reports: React.FC = () => {
           </div>
         </div>
       ) : null}
-    </div>
+      </div>
   );
 
   return (
@@ -769,13 +816,13 @@ export const Reports: React.FC = () => {
                     </div>
                     {isRcRevenue ? (
                       <>
-                        <div className="reports-rev-total reports-rev-total--contractor" aria-label={`Contractor ${formatReportInr(revenueTotals.contractor)}`}>
+                        <div className="reports-rev-total reports-rev-total--due" aria-label={`Due ${formatReportInr(outstandingDue)}`}>
                           <span className="reports-rev-total__label">
-                            <span className="reports-rev-total__full">Contractor</span>
-                            <span className="reports-rev-total__abbr" aria-hidden>Contr.</span>
+                            <span className="reports-rev-total__full">Due</span>
+                            <span className="reports-rev-total__abbr" aria-hidden>Due</span>
                           </span>
                           <span className="reports-rev-total__value">
-                            {formatReportInr(revenueTotals.contractor)}
+                            {formatReportInr(outstandingDue)}
                           </span>
                         </div>
                         {showHandling ? (
@@ -821,7 +868,7 @@ export const Reports: React.FC = () => {
                         </div>
                       </>
                     )}
-                  </div>
+          </div>
                 ) : null}
                 <div className={`reports-toolbar${isRevenue ? ' reports-toolbar--pager' : ''}`}>
                   <TablePagination
@@ -837,8 +884,8 @@ export const Reports: React.FC = () => {
                       <strong>{dayVerifiedTotal}</strong>
                     </p>
                   ) : null}
-                </div>
-              </div>
+          </div>
+        </div>
               {isRevenue ? (
                 <>
                   <ul className="reports-rev-cards">
@@ -848,7 +895,7 @@ export const Reports: React.FC = () => {
                           <span className="reports-rev-card__sl">{pageStart + index}</span>
                           <span className="reports-rev-card__date">{row.dateLabel}</span>
                           <span className="reports-rev-card__qty">{row.qty} qty</span>
-                        </div>
+          </div>
                         <div className="reports-rev-card__body">
                         <div className="reports-rev-card__main">
                         <dl
@@ -905,7 +952,7 @@ export const Reports: React.FC = () => {
                           <ContractorFeePayControl
                             rcId={rcFilter}
                             dateKey={row.dateKey}
-                            amountInr={row.contractor + row.handling}
+                            dueInr={contractorDueByDate.get(row.dateKey) ?? row.contractor + row.handling}
                             qty={row.qty}
                             payment={paymentsByDate.get(row.dateKey) ?? null}
                             canPay={isRcAdmin}
@@ -967,7 +1014,7 @@ export const Reports: React.FC = () => {
                                   <ContractorFeePayControl
                                     rcId={rcFilter}
                                     dateKey={row.dateKey}
-                                    amountInr={row.contractor + row.handling}
+                                    dueInr={contractorDueByDate.get(row.dateKey) ?? row.contractor + row.handling}
                                     qty={row.qty}
                                     payment={paymentsByDate.get(row.dateKey) ?? null}
                                     canPay={isRcAdmin}
@@ -1005,7 +1052,7 @@ export const Reports: React.FC = () => {
                           {isRcRevenue ? (
                             <>
                               <td className="reports-col-inr reports-amt--contractor text-mono">
-                                {formatReportInr(revenueTotals.contractor)}
+                                {formatReportInr(outstandingDue)}
                               </td>
                               {showHandling ? (
                                 <td className="reports-col-inr reports-amt--handling text-mono">
@@ -1030,7 +1077,7 @@ export const Reports: React.FC = () => {
                         </tr>
                       </tfoot>
                     </table>
-                  </div>
+          </div>
                 </>
               ) : (
                 <>
@@ -1112,7 +1159,7 @@ export const Reports: React.FC = () => {
                         </tr>
                       </tfoot>
                     </table>
-                  </div>
+        </div>
                 </>
               )}
               <TablePagination

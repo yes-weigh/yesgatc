@@ -60,6 +60,21 @@ export class EscPosTextBuilder {
     return this.command([ESC, 0x64, lines]);
   }
 
+  /** Native ESC/POS QR (GS ( k). Payload must be printable ASCII. */
+  qrCode(payload: string, moduleSize = 4): this {
+    const data = encodeText(payload.trim());
+    if (!data.length) return this;
+
+    this.command([GS, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]);
+    this.command([GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, Math.min(16, Math.max(1, moduleSize))]);
+    this.command([GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31]);
+
+    const storeLen = data.length + 3;
+    this.command([GS, 0x28, 0x6b, storeLen & 0xff, (storeLen >> 8) & 0xff, 0x31, 0x50, 0x30]);
+    this.chunks.push(data);
+    return this.command([GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30]);
+  }
+
   build(): Uint8Array {
     const total = this.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
     const out = new Uint8Array(total);

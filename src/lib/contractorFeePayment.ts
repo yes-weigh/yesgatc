@@ -27,6 +27,43 @@ export function contractorFeePaymentId(rcId: string, dateKey: string): string {
   return `${rcId}_${dateKey}`;
 }
 
+export function contractorFeeProofUploaded(
+  payment: Pick<ContractorFeePayment, 'proofUrl' | 'proofPath'> | null | undefined,
+): boolean {
+  return Boolean(payment?.proofUrl?.trim() || payment?.proofPath?.trim());
+}
+
+export type ContractorFeeDayCharge = {
+  dateKey: string;
+  amountInr: number;
+};
+
+/**
+ * Unpaid contractor + handling rolls to the next date.
+ * Screenshot on a date clears the running due from that date forward.
+ */
+export function carryForwardContractorFeeDues(
+  days: ContractorFeeDayCharge[],
+  payments: {
+    get: (
+      dateKey: string,
+    ) => Pick<ContractorFeePayment, 'proofUrl' | 'proofPath'> | null | undefined;
+  },
+): Map<string, number> {
+  const dues = new Map<string, number>();
+  let running = 0;
+  for (const day of [...days].sort((a, b) => a.dateKey.localeCompare(b.dateKey))) {
+    running += day.amountInr;
+    if (contractorFeeProofUploaded(payments.get(day.dateKey))) {
+      dues.set(day.dateKey, 0);
+      running = 0;
+      continue;
+    }
+    dues.set(day.dateKey, running);
+  }
+  return dues;
+}
+
 function mapStorageError(err: unknown): Error {
   const code =
     typeof err === 'object' && err !== null && 'code' in err

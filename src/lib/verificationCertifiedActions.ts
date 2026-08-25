@@ -10,8 +10,6 @@ export type VerificationCertifiedActionId =
   | 'receipt'
   | 'gst-bill';
 
-export type VerificationCertifiedPrintPlaceholderId = 'test-report';
-
 export type VerificationCertifiedAction =
   | {
       id: 'certificate';
@@ -25,6 +23,11 @@ export type VerificationCertifiedAction =
       kind: 'label-modal';
     }
   | {
+      id: 'test-report';
+      label: string;
+      kind: 'test-report-modal';
+    }
+  | {
       id: 'gst-bill';
       label: string;
       kind: 'gst-bill-modal';
@@ -33,22 +36,13 @@ export type VerificationCertifiedAction =
       id: 'receipt';
       label: string;
       kind: 'receipt-modal';
-    }
-  | {
-      id: VerificationCertifiedPrintPlaceholderId;
-      label: string;
-      kind: 'print-placeholder';
     };
-
-const PRINT_PLACEHOLDER_ACTIONS: VerificationCertifiedAction[] = [
-  { id: 'test-report', label: 'Test report', kind: 'print-placeholder' },
-];
 
 /** Fixed toolbar order — matches product mockup. */
 export const VERIFICATION_CERTIFIED_ACTION_ORDER: VerificationCertifiedActionId[] = [
   'certificate',
-  'label',
   'test-report',
+  'label',
   'receipt',
   'gst-bill',
 ];
@@ -79,6 +73,12 @@ export function buildVerificationCertifiedActions(
     });
   }
 
+  byId.set('test-report', {
+    id: 'test-report',
+    label: 'Test Report',
+    kind: 'test-report-modal',
+  });
+
   byId.set('label', {
     id: 'label',
     label: 'Label',
@@ -99,10 +99,6 @@ export function buildVerificationCertifiedActions(
         kind: 'receipt-modal',
       });
     }
-  }
-
-  for (const placeholder of PRINT_PLACEHOLDER_ACTIONS) {
-    byId.set(placeholder.id, placeholder);
   }
 
   return VERIFICATION_CERTIFIED_ACTION_ORDER.map(id => byId.get(id)).filter(
