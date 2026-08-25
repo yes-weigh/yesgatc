@@ -34,7 +34,7 @@ service firebase.storage {
     match /users/{userId}/{docKind}/{fileName} {
       allow read: if docKind != 'pan-card' || isSuperAdmin();
       allow write: if isSuperAdmin()
-        || (isAuthenticated() && docKind != 'logo' && docKind != 'pan-card');
+        || (isAuthenticated() && docKind != 'logo' && docKind != 'pan-card' && docKind != 'pdf-signer');
     }
 
     // RC fleet documents — folders: rc, insurance, pollution, f2-weight, photo.

@@ -3167,6 +3167,10 @@ select.input-field option {
   right: 0.15rem;
 }
 
+.rc-pdf-signer-upload {
+  margin-top: 0.15rem;
+}
+
 .product-modal--wide.rc-modal .product-upload-field--compact {
   min-height: 3rem;
 }

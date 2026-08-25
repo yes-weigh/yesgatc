@@ -267,6 +267,11 @@ export interface FirestoreUserDoc {
   panCardContentType?: string;
   /** Super Admin only — how this RC issues certificates. */
   certificationMethod?: 'auto_dsc' | 'pdf_signer' | 'manual_upload';
+  /** PDF signer: officer signature + name image (JPG/PNG). */
+  pdfSignerSignUrl?: string;
+  pdfSignerSignPath?: string;
+  pdfSignerSignName?: string;
+  pdfSignerSignContentType?: string;
   /** Square RC logo / display picture. */
   logoUrl?: string;
   logoPath?: string;

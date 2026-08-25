@@ -482,11 +482,12 @@ export type RcFormUploads = {
   seal: ProductFileMeta | null;
   panCard: ProductFileMeta | null;
   logo: ProductFileMeta | null;
+  pdfSignerSign: ProductFileMeta | null;
 };
 
 function applyFileMeta(
   base: Partial<FirestoreUserDoc>,
-  prefix: 'standardWeightsCert' | 'seal' | 'panCard' | 'logo',
+  prefix: 'standardWeightsCert' | 'seal' | 'panCard' | 'logo' | 'pdfSignerSign',
   file: ProductFileMeta | null,
   isCreate: boolean,
 ): void {
@@ -545,6 +546,7 @@ export function buildRcFirestoreFields(
   applyFileMeta(base, 'seal', uploads.seal, Boolean(options.isCreate));
   applyFileMeta(base, 'panCard', uploads.panCard, Boolean(options.isCreate));
   applyFileMeta(base, 'logo', uploads.logo, Boolean(options.isCreate));
+  applyFileMeta(base, 'pdfSignerSign', uploads.pdfSignerSign, Boolean(options.isCreate));
 
   if (options.includePassword) {
     base.clearTextPassword = options.includePassword;

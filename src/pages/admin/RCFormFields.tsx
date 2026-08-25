@@ -36,6 +36,10 @@ type RCFormFieldsProps = {
   panCardProgress: number;
   onPanCardSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onPanCardRemove: () => void;
+  signerSign: ProductFileMeta | null;
+  signerUploading: boolean;
+  onSignerSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onSignerRemove: () => void;
   submitting: boolean;
   showPassword: boolean;
   onTogglePassword: () => void;
@@ -64,6 +68,10 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
   panCardProgress,
   onPanCardSelect,
   onPanCardRemove,
+  signerSign,
+  signerUploading,
+  onSignerSelect,
+  onSignerRemove,
   submitting,
   showPassword,
   onTogglePassword,
@@ -76,6 +84,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
   const certInputRef = useRef<HTMLInputElement>(null);
   const panCardInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const signerInputRef = useRef<HTMLInputElement>(null);
   const certDueDate = standardWeightsCertExpiryFromDate(values.standardWeightsCertDate);
   const locked = mode === 'edit' && !editing;
   const canUploadFiles = !locked && (mode === 'edit' ? Boolean(loginAadhar) : values.aadhar.trim().length === 12);
@@ -483,6 +492,37 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
         </div>
         {!canEditCertification ? (
           <p className="text-muted text-xs mb-0 mt-2 rc-form-hint">Only Super Admin can change this.</p>
+        ) : null}
+        {values.certificationMethod === 'pdf_signer' ? (
+          <div className="rc-pdf-signer-upload">
+            <p className="text-muted text-xs mb-2 mt-3 rc-form-hint">
+              Upload officer signature and name as one JPG or PNG.
+            </p>
+            <UploadField
+              label="Signature & name"
+              hint="JPG / PNG · required"
+              uploadDisabled={!canUploadFiles || !canEditCertification}
+              disabledReason={
+                !canEditCertification
+                  ? 'Only Super Admin can change this.'
+                  : fileUploadTitle
+              }
+              file={signerSign}
+              uploading={signerUploading}
+              progress={0}
+              accept="image/jpeg,image/png"
+              uploadLabel="Upload"
+              formats="JPG or PNG"
+              inputRef={signerInputRef}
+              onSelect={onSignerSelect}
+              onRemove={onSignerRemove}
+              submitting={submitting}
+              variant="image"
+              compact
+              iconActions
+              readOnly={locked}
+            />
+          </div>
         ) : null}
       </div>
       </fieldset>

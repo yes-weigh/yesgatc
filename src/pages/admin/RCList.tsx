@@ -15,7 +15,6 @@ import {
   normalizeAadhar,
   syncAuthPassword,
 } from '../../lib/aadharAuth';
-import { releaseAadharIndex } from '../../lib/aadharIndex';
 import { rollbackCreatedAuthUser } from '../../lib/authUserAdmin';
 import { isValidPhone, requireValidEmail } from '../../lib/contactFields';
 import {
@@ -40,6 +39,7 @@ import {
   deleteRcStorageFile,
   uploadRcLogo,
   uploadRcPanCard,
+  uploadRcPdfSignerSign,
   uploadRcStandardWeightsCert,
 } from '../../lib/rcCertificateUpload';
 import { isRcAccountActive, isRcActive, rcActivationLabel } from '../../lib/rcActivation';
@@ -81,6 +81,16 @@ function logoMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
     path: rc.logoPath || '',
     name: rc.logoName || 'Logo',
     contentType: rc.logoContentType || 'image/jpeg',
+  };
+}
+
+function pdfSignerSignMetaFromUser(rc: FirestoreUserDoc): ProductFileMeta | null {
+  if (!rc.pdfSignerSignUrl && !rc.pdfSignerSignPath) return null;
+  return {
+    url: rc.pdfSignerSignUrl || '',
+    path: rc.pdfSignerSignPath || '',
+    name: rc.pdfSignerSignName || 'Signature',
+    contentType: rc.pdfSignerSignContentType || 'image/png',
   };
 }
 
@@ -177,8 +187,11 @@ export const RCList: React.FC = () => {
   const [logo, setLogo] = useState<ProductFileMeta | null>(null);
   const [logoRemoved, setLogoRemoved] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
-  const [logoProgress, setLogoProgress] = useState(0);
   const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null);
+  const [signerSign, setSignerSign] = useState<ProductFileMeta | null>(null);
+  const [signerRemoved, setSignerRemoved] = useState(false);
+  const [signerUploading, setSignerUploading] = useState(false);
+  const [pendingSignerFile, setPendingSignerFile] = useState<File | null>(null);
   const [formEditing, setFormEditing] = useState(false);
 
   const fetchRCs = useCallback(async () => {
@@ -236,7 +249,7 @@ export const RCList: React.FC = () => {
   }, [fetchRCs]);
 
   const showForm = showAddForm || editingUid !== null;
-  const formBusy = submitting || certUploading || panCardUploading || logoUploading;
+  const formBusy = submitting || certUploading || panCardUploading || logoUploading || signerUploading;
   const editingRc = editingUid ? rcList.find(r => r.uid === editingUid) : null;
   const formMode = showAddForm ? 'create' : 'edit';
   const fieldsEditing = showAddForm || formEditing;
@@ -253,7 +266,9 @@ export const RCList: React.FC = () => {
     setLogo(null);
     setLogoRemoved(false);
     setPendingLogoFile(null);
-    setLogoProgress(0);
+    setSignerSign(null);
+    setSignerRemoved(false);
+    setPendingSignerFile(null);
   };
 
   const handleCloseModal = () => {
@@ -326,6 +341,12 @@ export const RCList: React.FC = () => {
     }
     if (mode === 'edit' && formValues.password.trim().length > 0 && formValues.password.trim().length < 6) {
       return 'New password must be at least 6 characters.';
+    }
+    if (formValues.certificationMethod === 'pdf_signer') {
+      const hasSign = Boolean(signerSign?.url) && !signerRemoved;
+      if (!hasSign) {
+        return 'PDF signer needs signature and name image (JPG or PNG).';
+      }
     }
     return null;
   };
@@ -426,10 +447,9 @@ export const RCList: React.FC = () => {
     if (!uid) return;
 
     setLogoUploading(true);
-    setLogoProgress(0);
     setError('');
     try {
-      const meta = await uploadRcLogo(uid, file, setLogoProgress);
+      const meta = await uploadRcLogo(uid, file);
       const prevPath = logo?.path || editingRc?.logoPath || editingRc?.sealPath;
       if (prevPath && prevPath !== meta.path) {
         await deleteRcStorageFile(prevPath).catch(() => undefined);
@@ -442,6 +462,49 @@ export const RCList: React.FC = () => {
     } finally {
       setLogoUploading(false);
     }
+  };
+
+  const handleSignerSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const uid = editingUid;
+    if (!uid && formMode === 'create') {
+      setPendingSignerFile(file);
+      setSignerRemoved(false);
+      setSignerSign({
+        url: URL.createObjectURL(file),
+        path: '',
+        name: file.name,
+        contentType: file.type,
+      });
+      return;
+    }
+    if (!uid) return;
+
+    setSignerUploading(true);
+    setError('');
+    try {
+      const meta = await uploadRcPdfSignerSign(uid, file);
+      const prevPath = signerSign?.path || editingRc?.pdfSignerSignPath;
+      if (prevPath && prevPath !== meta.path) {
+        await deleteRcStorageFile(prevPath).catch(() => undefined);
+      }
+      setSignerSign(meta);
+      setSignerRemoved(false);
+      setPendingSignerFile(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Signature upload failed.');
+    } finally {
+      setSignerUploading(false);
+    }
+  };
+
+  const handleSignerRemove = () => {
+    setSignerSign(null);
+    setSignerRemoved(true);
+    setPendingSignerFile(null);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -475,6 +538,7 @@ export const RCList: React.FC = () => {
       let certMeta: ProductFileMeta | null = null;
       let panMeta: ProductFileMeta | null = null;
       let logoMeta: ProductFileMeta | null = null;
+      let signerMeta: ProductFileMeta | null = null;
       if (pendingCertFile) {
         setCertUploading(true);
         try {
@@ -494,9 +558,17 @@ export const RCList: React.FC = () => {
       if (pendingLogoFile) {
         setLogoUploading(true);
         try {
-          logoMeta = await uploadRcLogo(uid, pendingLogoFile, setLogoProgress);
+          logoMeta = await uploadRcLogo(uid, pendingLogoFile);
         } finally {
           setLogoUploading(false);
+        }
+      }
+      if (pendingSignerFile) {
+        setSignerUploading(true);
+        try {
+          signerMeta = await uploadRcPdfSignerSign(uid, pendingSignerFile);
+        } finally {
+          setSignerUploading(false);
         }
       }
 
@@ -506,10 +578,14 @@ export const RCList: React.FC = () => {
         createdAt: new Date().toISOString(),
         createdByUid: user?.uid,
         rcId: uid,
-        ...buildRcFirestoreFields(formValues, { cert: certMeta, seal: null, panCard: panMeta, logo: logoMeta }, {
-          includePassword: formValues.password,
-          isCreate: true,
-        }),
+        ...buildRcFirestoreFields(
+          formValues,
+          { cert: certMeta, seal: null, panCard: panMeta, logo: logoMeta, pdfSignerSign: signerMeta },
+          {
+            includePassword: formValues.password,
+            isCreate: true,
+          },
+        ),
       } as FirestoreUserDoc;
 
       const batch = writeBatch(db);
@@ -546,6 +622,9 @@ export const RCList: React.FC = () => {
     setLogo(logoMetaFromUser(rc));
     setLogoRemoved(false);
     setPendingLogoFile(null);
+    setSignerSign(pdfSignerSignMetaFromUser(rc));
+    setSignerRemoved(false);
+    setPendingSignerFile(null);
     setFormEditing(false);
   };
 
@@ -564,11 +643,15 @@ export const RCList: React.FC = () => {
     try {
       const updates = buildRcFirestoreFields(
         formValues,
-        { cert, seal: null, panCard: panCardImage, logo },
+        { cert, seal: null, panCard: panCardImage, logo, pdfSignerSign: signerSign },
         { isCreate: false },
       );
       if (!canEditRcCertificationSettings(user)) {
         delete updates.certificationMethod;
+        delete updates.pdfSignerSignUrl;
+        delete updates.pdfSignerSignPath;
+        delete updates.pdfSignerSignName;
+        delete updates.pdfSignerSignContentType;
       }
 
       if (certRemoved && !cert) {
@@ -586,6 +669,15 @@ export const RCList: React.FC = () => {
         updates.logoName = '';
         updates.logoContentType = '';
         const oldPath = rc.logoPath;
+        if (oldPath) await deleteRcStorageFile(oldPath).catch(() => undefined);
+      }
+
+      if (signerRemoved && !signerSign && canEditRcCertificationSettings(user)) {
+        updates.pdfSignerSignUrl = '';
+        updates.pdfSignerSignPath = '';
+        updates.pdfSignerSignName = '';
+        updates.pdfSignerSignContentType = '';
+        const oldPath = rc.pdfSignerSignPath;
         if (oldPath) await deleteRcStorageFile(oldPath).catch(() => undefined);
       }
 
@@ -715,6 +807,10 @@ export const RCList: React.FC = () => {
                   panCardProgress={panCardProgress}
                   onPanCardSelect={handlePanCardSelect}
                   onPanCardRemove={handlePanCardRemove}
+                  signerSign={signerSign}
+                  signerUploading={signerUploading}
+                  onSignerSelect={handleSignerSelect}
+                  onSignerRemove={handleSignerRemove}
                   submitting={submitting}
                   showPassword={showPw}
                   onTogglePassword={() => setShowPw(p => !p)}
