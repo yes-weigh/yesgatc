@@ -44,7 +44,7 @@ import {
   formatVerificationListTime,
 } from '../lib/verificationListFormat';
 import {
-  hasSignedCertificatePdf,
+  canShowSignedCertificatePdf,
   resolveCertificatePdfFileUrl,
   resolveCertificatePdfStoragePath,
 } from '../lib/signedCertificatePdf';
@@ -274,7 +274,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const showEdit = mode === 'rc' && editable && onEdit;
             const showSubmit = canSubmitVerification(record) && Boolean(onSubmit);
             const showDownload =
-              canDownloadVerificationCertificate(record) || hasSignedCertificatePdf(record);
+              canDownloadVerificationCertificate(record) || canShowSignedCertificatePdf(record);
             const showDelete =
               onDelete
               && (canDeleteVerification(record)
@@ -443,7 +443,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                     <button
                       type="button"
                       className="verification-list-card-download"
-                      title={hasSignedCertificatePdf(record) ? 'View signed certificate PDF' : 'View certificate PDF'}
+                      title={canShowSignedCertificatePdf(record) ? 'View signed certificate PDF' : 'View certificate PDF'}
                       aria-label={`View certificate for ${record.customerName}`}
                       onClick={() => setPdfRecord(record)}
                     >
@@ -516,7 +516,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
         url={pdfRecord ? resolveCertificatePdfFileUrl(pdfRecord) : null}
         storagePath={pdfRecord ? resolveCertificatePdfStoragePath(pdfRecord) : null}
         heading={
-          pdfRecord && hasSignedCertificatePdf(pdfRecord) ? 'Signed certificate' : undefined
+          pdfRecord && canShowSignedCertificatePdf(pdfRecord) ? 'Signed certificate' : undefined
         }
         onClose={() => setPdfRecord(null)}
       />

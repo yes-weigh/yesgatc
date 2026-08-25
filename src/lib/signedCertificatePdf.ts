@@ -23,14 +23,6 @@ export function certificateRequiresSignedUpload(record: SiteCalibration): boolea
   return sequence > LEGACY_SIGNED_CERTIFICATE_SEQUENCE_MAX;
 }
 
-export function certificateSignStatus(record: SiteCalibration): CertificateSignStatus {
-  if (isVerificationCertificateVoided(record)) return 'voided';
-  if (record.signedCertificatePdfUrl?.trim()) return 'signed';
-  const sequence = parseCertificateSequenceNumber(record.certificateNumber);
-  if (sequence != null && sequence <= LEGACY_SIGNED_CERTIFICATE_SEQUENCE_MAX) return 'signed';
-  return 'not_signed';
-}
-
 export function hasSignedCertificatePdf(record: SiteCalibration): boolean {
   return Boolean(record.signedCertificatePdfUrl?.trim() || record.signedCertificatePdfPath?.trim());
 }
@@ -39,25 +31,43 @@ export function hasEmaapSignedPdfUpload(record: SiteCalibration): boolean {
   return Boolean(record.emaapSignedPdfUploadedAt?.trim());
 }
 
+export function isLegacySignedSequence(record: SiteCalibration): boolean {
+  const sequence = parseCertificateSequenceNumber(record.certificateNumber);
+  return sequence != null && sequence <= LEGACY_SIGNED_CERTIFICATE_SEQUENCE_MAX;
+}
+
+/** Show/download the DSC PDF only after eMAAP Issued upload (legacy seq ≤2304 needs no upload). */
+export function canShowSignedCertificatePdf(record: SiteCalibration): boolean {
+  if (isVerificationCertificateVoided(record)) return false;
+  if (!hasSignedCertificatePdf(record)) return false;
+  if (isLegacySignedSequence(record)) return true;
+  return hasEmaapSignedPdfUpload(record);
+}
+
+export function certificateSignStatus(record: SiteCalibration): CertificateSignStatus {
+  if (isVerificationCertificateVoided(record)) return 'voided';
+  if (canShowSignedCertificatePdf(record)) return 'signed';
+  if (isLegacySignedSequence(record)) return 'signed';
+  return 'not_signed';
+}
+
 export type SignedCertificateAvailability = 'available' | 'missing' | 'legacy' | 'voided';
 
-/** Issued certs only. Whether the DSC-signed PDF file exists in Firebase. */
+/** Issued certs. Public "signed" means on eMAAP (or legacy). Firebase-only stays hidden. */
 export function signedCertificateAvailability(
   record: SiteCalibration,
 ): SignedCertificateAvailability | null {
   if (!record.certificateNumber?.trim()) return null;
   if (isVerificationCertificateVoided(record)) return 'voided';
-  if (hasSignedCertificatePdf(record)) return 'available';
-  const sequence = parseCertificateSequenceNumber(record.certificateNumber);
-  if (sequence != null && sequence <= LEGACY_SIGNED_CERTIFICATE_SEQUENCE_MAX) return 'legacy';
+  if (canShowSignedCertificatePdf(record)) return 'available';
+  if (isLegacySignedSequence(record)) return 'legacy';
   return 'missing';
 }
 
 export function signedCertificateAvailabilityLabel(
   availability: SignedCertificateAvailability,
-  onEmaap = false,
 ): string {
-  if (availability === 'available') return onEmaap ? 'Signed PDF · eMAAP' : 'Signed PDF';
+  if (availability === 'available') return 'Signed PDF';
   if (availability === 'missing') return 'No signed PDF';
   if (availability === 'legacy') return 'Pre-2304';
   return 'Voided';
@@ -149,10 +159,20 @@ export function resolveUnsignedCertificatePdfStoragePath(record: SiteCalibration
 }
 
 export function resolveSignedCertificatePdfOnlyUrl(record: SiteCalibration): string | null {
+  if (!canShowSignedCertificatePdf(record)) return null;
   return record.signedCertificatePdfUrl?.trim() || null;
 }
 
 export function resolveSignedCertificatePdfOnlyPath(record: SiteCalibration): string | null {
+  if (!canShowSignedCertificatePdf(record)) return null;
+  return record.signedCertificatePdfPath?.trim() || null;
+}
+
+export function storedSignedCertificatePdfUrl(record: SiteCalibration): string | null {
+  return record.signedCertificatePdfUrl?.trim() || null;
+}
+
+export function storedSignedCertificatePdfPath(record: SiteCalibration): string | null {
   return record.signedCertificatePdfPath?.trim() || null;
 }
 
@@ -173,12 +193,12 @@ export function certificatePdfDownloadedAt(recordId: string): string | null {
 }
 
 export function resolveCertificateDownloadUrl(record: SiteCalibration): string | null {
-  return record.signedCertificatePdfUrl?.trim() || resolveCertificatePreviewUrl(record);
+  return resolveSignedCertificatePdfOnlyUrl(record) || resolveCertificatePreviewUrl(record);
 }
 
-/** Direct PDF file for in-app view / native share (Epson, WhatsApp). */
+/** Direct PDF file for in-app view / native share (Epson, WhatsApp). Signed only after eMAAP upload. */
 export function resolveCertificatePdfFileUrl(record: SiteCalibration): string | null {
-  const signed = record.signedCertificatePdfUrl?.trim();
+  const signed = resolveSignedCertificatePdfOnlyUrl(record);
   if (signed) return signed;
   const emaap = record.emaapCertificatePdfUrl?.trim();
   if (emaap && isEmaapCertificatePdfUrl(emaap)) return emaap;
@@ -188,7 +208,7 @@ export function resolveCertificatePdfFileUrl(record: SiteCalibration): string | 
 }
 
 export function resolveCertificatePdfStoragePath(record: SiteCalibration): string | null {
-  return record.signedCertificatePdfPath?.trim() || record.certificatePdfPath?.trim() || null;
+  return resolveSignedCertificatePdfOnlyPath(record) || record.certificatePdfPath?.trim() || null;
 }
 
 export function validateSignedCertificatePdf(file: File): string | null {

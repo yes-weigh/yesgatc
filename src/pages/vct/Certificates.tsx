@@ -17,7 +17,7 @@ import { inferVerificationSubject } from '../../lib/siteCalibrationProfileFields
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
 import {
   certificateSignStatus,
-  hasSignedCertificatePdf,
+  canShowSignedCertificatePdf,
   resolveCertificatePdfFileUrl,
   resolveCertificatePdfStoragePath,
   type CertificateSignStatus,
@@ -464,7 +464,7 @@ export const Certificates: React.FC = () => {
         url={viewingRecord ? resolveCertificatePdfFileUrl(viewingRecord) : null}
         storagePath={viewingRecord ? resolveCertificatePdfStoragePath(viewingRecord) : null}
         heading={
-          viewingRecord && hasSignedCertificatePdf(viewingRecord) ? 'Signed certificate' : undefined
+          viewingRecord && canShowSignedCertificatePdf(viewingRecord) ? 'Signed certificate' : undefined
         }
         onClose={() => setViewingRecord(null)}
       />

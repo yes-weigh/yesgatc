@@ -3,7 +3,7 @@ import { Download, Printer, Share2 } from 'lucide-react';
 import { isVerificationCertificateVoided } from '../lib/verificationCertificateVoid';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
 import {
-  hasSignedCertificatePdf,
+  canShowSignedCertificatePdf,
   resolveSignedCertificatePdfOnlyPath,
   resolveSignedCertificatePdfOnlyUrl,
   resolveUnsignedCertificatePdfStoragePath,
@@ -32,7 +32,7 @@ export const VerificationCertificatePreview: React.FC<VerificationCertificatePre
   const show = canShowVerificationCertifiedActions(record);
   const signedUrl = resolveSignedCertificatePdfOnlyUrl(record);
   const originalUrl = resolveUnsignedCertificatePdfUrl(record);
-  const hasSigned = hasSignedCertificatePdf(record);
+  const hasSigned = canShowSignedCertificatePdf(record);
   const [kind, setKind] = useState<PreviewKind>('signed');
 
   const activeKind: PreviewKind = hasSigned && kind === 'signed' ? 'signed' : 'original';

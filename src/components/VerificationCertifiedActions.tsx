@@ -8,12 +8,13 @@ import {
 } from '../lib/verificationCertifiedActions';
 import { canShowVerificationCertifiedActions } from '../lib/verificationRequest';
 import {
+  canShowSignedCertificatePdf,
   certificateRequiresSignedUpload,
-  hasSignedCertificatePdf,
   resolveSignedCertificatePdfOnlyPath,
   resolveSignedCertificatePdfOnlyUrl,
   resolveUnsignedCertificatePdfStoragePath,
   resolveUnsignedCertificatePdfUrl,
+  signedCertificateAvailability,
 } from '../lib/signedCertificatePdf';
 import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
 import { SignedCertificateAvailabilityBadge } from './SignedCertificateAvailabilityBadge';
@@ -159,9 +160,9 @@ function SignedCertificateTile({
   onOpen: () => void;
 }) {
   const signedUrl = resolveSignedCertificatePdfOnlyUrl(record);
-  const hasSigned = hasSignedCertificatePdf(record);
-  const needsSign = certificateRequiresSignedUpload(record);
-  if (!hasSigned && !needsSign) return null;
+  const hasSigned = canShowSignedCertificatePdf(record);
+  const waitingEmaap = signedCertificateAvailability(record) === 'missing';
+  if (!hasSigned && !waitingEmaap && !certificateRequiresSignedUpload(record)) return null;
 
   const className =
     'verification-certified-action verification-certified-action--signed-certificate';
@@ -182,7 +183,7 @@ function SignedCertificateTile({
         type="button"
         className={`${className} verification-certified-action--placeholder`}
         disabled
-        title="DSC-signed PDF is not in Firebase yet."
+        title="Signed PDF is not on eMAAP yet."
         aria-label="Signed PDF not available"
       >
         {content}

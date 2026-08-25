@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { db } from '../../firebase';
 import { CertificatePdfShareViewer } from '../../components/CertificatePdfShareViewer';
-import { SignedCertificateAvailabilityBadge } from '../../components/SignedCertificateAvailabilityBadge';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { useMobileViewport } from '../../hooks/useMobileViewport';
 import { useAuth } from '../../context/AuthContext';
@@ -27,8 +26,9 @@ import {
   certificateRequiresSignedUpload,
   certificateSignStatus,
   markCertificatePdfDownloaded,
-  resolveCertificatePdfFileUrl,
-  resolveCertificatePdfStoragePath,
+  resolveUnsignedCertificatePdfUrl,
+  storedSignedCertificatePdfPath,
+  storedSignedCertificatePdfUrl,
   uploadSignedCertificatePdf,
   validateSignedCertificatePdf,
 } from '../../lib/signedCertificatePdf';
@@ -120,10 +120,11 @@ export const CertificateSign: React.FC = () => {
   }, [load]);
 
   const signStatus = record ? certificateSignStatus(record) : 'not_signed';
-  const pdfUrl = record ? resolveCertificatePdfFileUrl(record) : null;
+  const storedSignedUrl = record ? storedSignedCertificatePdfUrl(record) : null;
+  const pdfUrl = storedSignedUrl || (record ? resolveUnsignedCertificatePdfUrl(record) : null);
   const canUpload = Boolean(record && isRcAdmin && certificateRequiresSignedUpload(record));
-  const downloaded = Boolean(downloadedAt) || signStatus === 'signed';
-  const signed = signStatus === 'signed';
+  const signed = Boolean(record && hasSignedCertificatePdf(record));
+  const downloaded = Boolean(downloadedAt) || signed;
   const voided = signStatus === 'voided';
 
   const step = voided ? 0 : signed ? 3 : downloaded ? 2 : 1;
@@ -223,7 +224,7 @@ export const CertificateSign: React.FC = () => {
           </div>
         </div>
         <div className="wl-cert-sign-hero__status">
-          <p className={`wl-cert-sign-status wl-cert-sign-status--${signStatus}`}>
+          <p className={`wl-cert-sign-status wl-cert-sign-status--${voided ? 'voided' : signed ? 'signed' : 'not_signed'}`}>
             {signed ? <Check size={16} strokeWidth={2.4} aria-hidden /> : null}
             {statusLabel}
           </p>
@@ -292,7 +293,6 @@ export const CertificateSign: React.FC = () => {
               <h2>Apply Digital Signature</h2>
               <strong>{signed ? 'Signed' : downloaded ? 'Sign now' : 'Waiting'}</strong>
             </header>
-            {record ? <SignedCertificateAvailabilityBadge record={record} /> : null}
             {signed ? (
               <p className="wl-cert-sign-muted">
                 Signed PDF on file
@@ -324,8 +324,8 @@ export const CertificateSign: React.FC = () => {
             </header>
             {signed ? (
               <p className="wl-cert-sign-muted">
-                {record.signedCertificatePdfName || 'Signed PDF'} saved. Available for download and
-                share.
+                {record.signedCertificatePdfName || 'Signed PDF'} kept in Firebase. Lists and
+                downloads show it after the worker uploads it on eMAAP Issued.
               </p>
             ) : canUpload ? (
               <>
@@ -455,7 +455,11 @@ export const CertificateSign: React.FC = () => {
         open={viewingPdf}
         record={record}
         url={pdfUrl}
-        storagePath={record ? resolveCertificatePdfStoragePath(record) : null}
+        storagePath={
+          record
+            ? storedSignedCertificatePdfPath(record) || record.certificatePdfPath?.trim() || null
+            : null
+        }
         heading={record && hasSignedCertificatePdf(record) ? 'Signed certificate' : undefined}
         onClose={() => setViewingPdf(false)}
       />

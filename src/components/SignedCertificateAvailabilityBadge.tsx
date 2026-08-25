@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  hasEmaapSignedPdfUpload,
   signedCertificateAvailability,
   signedCertificateAvailabilityLabel,
 } from '../lib/signedCertificatePdf';
@@ -17,21 +16,18 @@ export const SignedCertificateAvailabilityBadge: React.FC<
   const availability = signedCertificateAvailability(record);
   if (!availability || availability === 'voided') return null;
 
-  const onEmaap = availability === 'available' && hasEmaapSignedPdfUpload(record);
-  const label = signedCertificateAvailabilityLabel(availability, onEmaap);
+  const label = signedCertificateAvailabilityLabel(availability);
 
   return (
     <span
       className={`signed-cert-avail signed-cert-avail--${availability}${
-        onEmaap ? ' signed-cert-avail--emaap' : ''
+        availability === 'available' ? ' signed-cert-avail--emaap' : ''
       }${className ? ` ${className}` : ''}`}
       title={
         availability === 'available'
-          ? onEmaap
-            ? 'DSC-signed PDF is in Firebase and uploaded to eMAAP.'
-            : 'DSC-signed PDF is in Firebase. Waiting for eMAAP Certificates Issued upload.'
+          ? 'DSC-signed PDF is uploaded on eMAAP Certificates Issued.'
           : availability === 'missing'
-            ? 'No DSC-signed PDF in Firebase yet.'
+            ? 'Signed PDF is not on eMAAP yet. File may still be in Firebase.'
             : 'Sequence 2304 or earlier — no separate signed PDF required.'
       }
     >
