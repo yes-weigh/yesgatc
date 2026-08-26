@@ -19,7 +19,11 @@ public sealed class CertificationQueueItem : INotifyPropertyChanged
     public string CustomerName => Record.CustomerName;
     public string ProductName => Record.ProductName;
     public string SerialNumber => Record.SerialNumber;
-    public string VerificationTypeLabel => Record.VerificationTypeLabel;
+    public string CertificateNumber => Record.CertificateNumber?.Trim() is { Length: > 0 } number
+        ? number
+        : "—";
+    public string TypeShort =>
+        Record.IsRv ? "RV" : Record.IsOv ? "OV" : string.IsNullOrWhiteSpace(Record.VerificationType) ? "—" : Record.VerificationType;
     public string StatusLabel => Record.StatusLabel;
     public string NextStepLabel => Record.NextStepLabel;
     public string PipelineDateDisplay => Record.PipelineDateDisplay;

@@ -56,7 +56,10 @@ public sealed class LocalCredentialsStore
         int? docaSessionProbeMinutes = null,
         string? chromeProfileDirectory = null,
         bool? autoWorkerEnabled = null,
-        bool? startWithWindows = null)
+        bool? startWithWindows = null,
+        bool? processFillQueue = null,
+        bool? processSignerQueue = null,
+        bool? processSignedUploadQueue = null)
     {
         var existing = Load();
         Save(new StoredCredentials
@@ -69,6 +72,9 @@ public sealed class LocalCredentialsStore
             ChromeProfileDirectory = chromeProfileDirectory?.Trim() ?? string.Empty,
             AutoWorkerEnabled = autoWorkerEnabled ?? existing.AutoWorkerEnabled,
             StartWithWindows = startWithWindows ?? existing.StartWithWindows,
+            ProcessFillQueue = processFillQueue ?? existing.ProcessFillQueue,
+            ProcessSignerQueue = processSignerQueue ?? existing.ProcessSignerQueue,
+            ProcessSignedUploadQueue = processSignedUploadQueue ?? existing.ProcessSignedUploadQueue,
         });
     }
 }
@@ -100,6 +106,15 @@ public sealed class StoredCredentials
     /// Start Certificate Worker when Windows starts / user logs on. Null = default true.
     /// </summary>
     public bool? StartWithWindows { get; set; }
+
+    /// <summary>Auto-worker fill &amp; certify stage. Null = on.</summary>
+    public bool? ProcessFillQueue { get; set; }
+
+    /// <summary>Auto-worker PDF signer stage. Null = on.</summary>
+    public bool? ProcessSignerQueue { get; set; }
+
+    /// <summary>Auto-worker signed PDF → eMAAP stage. Null = on.</summary>
+    public bool? ProcessSignedUploadQueue { get; set; }
 
     [JsonPropertyName("rc")]
     public CredentialSettings? LegacyRc { get; set; }

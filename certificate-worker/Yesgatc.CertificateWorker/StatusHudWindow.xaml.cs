@@ -20,6 +20,7 @@ public partial class StatusHudWindow : Window
 
     private readonly DispatcherTimer _topmostTimer;
     private bool _collapsed;
+    private bool _overlayAllowed;
     private string _fullMessage = string.Empty;
     private string _contextLine = string.Empty;
 
@@ -27,11 +28,23 @@ public partial class StatusHudWindow : Window
     {
         InitializeComponent();
         Loaded += (_, _) => PlaceBottomRight();
-        SourceInitialized += (_, _) => ReassertTopmost();
+        SourceInitialized += (_, _) =>
+        {
+            if (_overlayAllowed)
+            {
+                ReassertTopmost();
+            }
+        };
 
         // Soft interval — avoid fighting Chrome for focus every tick.
         _topmostTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        _topmostTimer.Tick += (_, _) => ReassertTopmost();
+        _topmostTimer.Tick += (_, _) =>
+        {
+            if (_overlayAllowed && IsVisible)
+            {
+                ReassertTopmost();
+            }
+        };
         _topmostTimer.Start();
     }
 
@@ -52,12 +65,10 @@ public partial class StatusHudWindow : Window
             StateDot.Fill = dotBrush;
         }
 
-        if (!IsVisible)
+        if (_overlayAllowed)
         {
-            Show();
+            ShowOverlay();
         }
-
-        ReassertTopmost();
     }
 
     public void UpdateContext(string? contextLine)
@@ -78,6 +89,56 @@ public partial class StatusHudWindow : Window
 
         ContextText.Text = _contextLine;
         ContextText.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Show only when the main worker window is not the foreground window.
+    /// HUD itself does not count as the main window.
+    /// </summary>
+    public void FollowMainWindowForeground(IntPtr mainWindowHandle)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.InvokeAsync(() => FollowMainWindowForeground(mainWindowHandle));
+            return;
+        }
+
+        if (mainWindowHandle == IntPtr.Zero)
+        {
+            SetOverlayAllowed(false);
+            return;
+        }
+
+        var foreground = GetForegroundWindow();
+        var hudHandle = new WindowInteropHelper(this).Handle;
+        var mainIsForeground = foreground != hudHandle
+            && WindowIsSelfOrOwnedBy(foreground, mainWindowHandle);
+        SetOverlayAllowed(!mainIsForeground);
+    }
+
+    private void SetOverlayAllowed(bool allowed)
+    {
+        _overlayAllowed = allowed;
+        if (allowed)
+        {
+            ShowOverlay();
+            return;
+        }
+
+        if (IsVisible)
+        {
+            Hide();
+        }
+    }
+
+    private void ShowOverlay()
+    {
+        if (!IsVisible)
+        {
+            Show();
+        }
+
+        ReassertTopmost();
     }
 
     protected override void OnClosed(EventArgs e)
@@ -120,6 +181,11 @@ public partial class StatusHudWindow : Window
 
     private void ReassertTopmost()
     {
+        if (!_overlayAllowed)
+        {
+            return;
+        }
+
         try
         {
             // Keep Topmost=true; do NOT flip false→true (steals focus / freezes peers).
@@ -147,6 +213,22 @@ public partial class StatusHudWindow : Window
         }
     }
 
+    private static bool WindowIsSelfOrOwnedBy(IntPtr hwnd, IntPtr root)
+    {
+        for (var i = 0; i < 16 && hwnd != IntPtr.Zero; i++)
+        {
+            if (hwnd == root)
+            {
+                return true;
+            }
+
+            var owner = GetWindow(hwnd, GwOwner);
+            hwnd = owner != IntPtr.Zero ? owner : GetParent(hwnd);
+        }
+
+        return false;
+    }
+
     private static string Truncate(string text, int max)
     {
         if (string.IsNullOrEmpty(text) || text.Length <= max)
@@ -166,4 +248,15 @@ public partial class StatusHudWindow : Window
         int cx,
         int cy,
         uint uFlags);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetParent(IntPtr hWnd);
+
+    private const uint GwOwner = 4;
 }

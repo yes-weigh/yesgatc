@@ -60,6 +60,25 @@ public sealed class FirestoreService
         return EmaapSignedPdfUploadFilter.Apply(rows, QueueRcIdFilter);
     }
 
+    public async Task<IReadOnlyList<SiteCalibrationRecord>> GetPendingPdfSignerQueueAsync(
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            return [];
+        }
+
+        var signerRcIds = await GetPdfSignerRcIdsAsync(idToken, cancellationToken);
+        if (signerRcIds.Count == 0)
+        {
+            return [];
+        }
+
+        var certified = await GetVerificationsByStatusAsync("certified", idToken, cancellationToken);
+        return PdfSignerQueueFilter.Apply(certified, signerRcIds, QueueRcIdFilter);
+    }
+
     public async Task MarkEmaapSignedPdfUploadedAsync(
         SiteCalibrationRecord job,
         string idToken,
@@ -876,6 +895,57 @@ public sealed class FirestoreService
         {
             return new Dictionary<string, string>(StringComparer.Ordinal);
         }
+    }
+
+    private async Task<HashSet<string>> GetPdfSignerRcIdsAsync(
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(QueueRcIdFilter))
+        {
+            return ids;
+        }
+
+        try
+        {
+            var rows = await RunQueryAsync(
+                new StructuredQuery(
+                    [new CollectionSelector("users")],
+                    new QueryFilter(
+                        new FieldFilter(
+                            new FieldReference("role"),
+                            "EQUAL",
+                            new FirestoreValue { StringValue = "rc_admin" }))),
+                idToken,
+                cancellationToken);
+
+            foreach (var row in rows)
+            {
+                if (row.Document?.Name is null)
+                {
+                    continue;
+                }
+
+                var uid = row.Document.Name.Split('/').LastOrDefault();
+                if (string.IsNullOrWhiteSpace(uid))
+                {
+                    continue;
+                }
+
+                var fields = row.Document.Fields ?? new Dictionary<string, JsonElement>();
+                if (RcCertificationMethods.IsPdfSigner(
+                        FirestoreFieldReader.ReadString(fields, "certificationMethod")))
+                {
+                    ids.Add(uid);
+                }
+            }
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        return ids;
     }
 
     private async Task<List<RunQueryRow>> RunQueryAsync(
