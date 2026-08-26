@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Save, Send, Webhook } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -12,15 +12,19 @@ import { testYesoneWebhook } from '../../lib/yesoneWebhookClient';
 import {
   normalizeYesoneWebhookUrl,
   validateYesoneWebhookUrlInput,
+  yesonePushCounts,
   type YesonePushLog,
 } from '../../lib/yesoneWebhookSettings';
 
 function formatPushLog(log: YesonePushLog): string {
+  const remaining = Math.max(0, log.certTotal - log.certSent - log.certFailed);
   const parts = [
-    `RC ${log.rcSent}/${log.rcTotal} sent`,
-    log.rcFailed ? `${log.rcFailed} failed` : null,
-    `certs ${log.certSent}/${log.certTotal} sent`,
-    log.certFailed ? `${log.certFailed} failed` : null,
+    `RC ${log.rcSent + log.rcFailed}/${log.rcTotal}`,
+    log.rcFailed ? `${log.rcFailed} RC failed` : null,
+    `certs ${log.certSent + log.certFailed}/${log.certTotal} in yesgatc`,
+    log.certLatestSequence ? `latest serial ${log.certLatestSequence}` : null,
+    log.certFailed ? `${log.certFailed} cert failed` : null,
+    remaining && log.incomplete ? `${remaining} remaining` : null,
     log.certSkipped ? `${log.certSkipped} skipped` : null,
     log.incomplete ? 'stopped early' : null,
   ].filter(Boolean);
@@ -44,6 +48,13 @@ export function WebbookPanel() {
   useEffect(() => {
     if (appSettings.yesoneLastPushLog) setPushLog(appSettings.yesoneLastPushLog);
   }, [appSettings.yesoneLastPushLog]);
+
+  const displayLog = useMemo(() => {
+    if (testing && appSettings.yesonePushProgress) return appSettings.yesonePushProgress;
+    return pushLog;
+  }, [testing, appSettings.yesonePushProgress, pushLog]);
+
+  const counts = displayLog ? yesonePushCounts(displayLog) : null;
 
   const persistUrl = async (nextUrl: string, enabled: boolean) => {
     await setDoc(
@@ -153,16 +164,19 @@ export function WebbookPanel() {
             disabled={saving || testing || appSettingsLoading}
           >
             {testing ? <span className="spinner-inline" /> : <Send size={16} aria-hidden />}
-            {testing ? 'Pushing…' : 'Send test'}
+            {testing && counts && counts.total > 0 ? `${counts.done}/${counts.total}` : testing ? 'Pushing…' : 'Send test'}
           </button>
         </div>
-        {pushLog ? (
+        {displayLog ? (
           <div className="admin-setting-webbook-log" role="status">
             <h3>Log status</h3>
-            <p className={pushLog.ok ? 'text-muted' : undefined}>{formatPushLog(pushLog)}</p>
-            {pushLog.errors.length > 0 ? (
+            {counts && counts.total > 0 ? (
+              <p className="admin-setting-webbook-log-count">{counts.done}/{counts.total}</p>
+            ) : null}
+            <p className={displayLog.ok ? 'text-muted' : undefined}>{formatPushLog(displayLog)}</p>
+            {displayLog.errors.length > 0 ? (
               <ul className="admin-setting-webbook-log-errors">
-                {pushLog.errors.map(item => (
+                {displayLog.errors.map(item => (
                   <li key={`${item.kind}-${item.id}`}>
                     {item.kind} {item.id}: {item.error}
                   </li>

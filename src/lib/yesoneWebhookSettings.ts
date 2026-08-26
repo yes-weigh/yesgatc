@@ -8,6 +8,7 @@ export type YesonePushError = {
 export type YesonePushLog = {
   at: string;
   ok: boolean;
+  phase?: string;
   rcTotal: number;
   rcSent: number;
   rcFailed: number;
@@ -15,7 +16,9 @@ export type YesonePushLog = {
   certSent: number;
   certFailed: number;
   certSkipped: number;
+  certLatestSequence?: number;
   incomplete: boolean;
+  running?: boolean;
   errors: YesonePushError[];
 };
 
@@ -24,6 +27,7 @@ export type YesoneWebhookSettings = {
   yesoneWebhookEnabled: boolean;
   yesoneLastPushAt: string;
   yesoneLastPushLog: YesonePushLog | null;
+  yesonePushProgress: YesonePushLog | null;
 };
 
 export const DEFAULT_YESONE_WEBHOOK_SETTINGS: YesoneWebhookSettings = {
@@ -31,7 +35,57 @@ export const DEFAULT_YESONE_WEBHOOK_SETTINGS: YesoneWebhookSettings = {
   yesoneWebhookEnabled: false,
   yesoneLastPushAt: '',
   yesoneLastPushLog: null,
+  yesonePushProgress: null,
 };
+
+function asCount(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export function normalizeYesonePushLog(raw: unknown): YesonePushLog | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const data = raw as Record<string, unknown>;
+  const errors = Array.isArray(data.errors)
+    ? data.errors.filter((item): item is YesonePushError => (
+      Boolean(item)
+      && typeof item === 'object'
+      && typeof (item as YesonePushError).kind === 'string'
+      && typeof (item as YesonePushError).id === 'string'
+      && typeof (item as YesonePushError).error === 'string'
+    ))
+    : [];
+  return {
+    at: String(data.at ?? ''),
+    ok: data.ok === true,
+    phase: String(data.phase ?? ''),
+    rcTotal: asCount(data.rcTotal),
+    rcSent: asCount(data.rcSent),
+    rcFailed: asCount(data.rcFailed),
+    certTotal: asCount(data.certTotal),
+    certSent: asCount(data.certSent),
+    certFailed: asCount(data.certFailed),
+    certSkipped: asCount(data.certSkipped),
+    certLatestSequence: asCount(data.certLatestSequence) || undefined,
+    incomplete: data.incomplete === true,
+    running: data.running === true,
+    errors,
+  };
+}
+
+export function yesonePushCounts(log: Pick<
+  YesonePushLog,
+  'rcSent' | 'rcFailed' | 'rcTotal' | 'certSent' | 'certFailed' | 'certTotal'
+>) {
+  const rcDone = log.rcSent + log.rcFailed;
+  const certDone = log.certSent + log.certFailed;
+  return {
+    rcDone,
+    certDone,
+    done: rcDone + certDone,
+    total: log.rcTotal + log.certTotal,
+  };
+}
 
 export function normalizeYesoneWebhookUrl(value: unknown): string {
   return String(value ?? '').trim();
@@ -64,10 +118,8 @@ export function normalizeYesoneWebhookSettings(
     yesoneWebhookUrl,
     yesoneWebhookEnabled: yesoneWebhookEnabled && isAllowedYesoneWebhookUrl(yesoneWebhookUrl),
     yesoneLastPushAt: String(data?.yesoneLastPushAt ?? '').trim(),
-    yesoneLastPushLog:
-      data?.yesoneLastPushLog && typeof data.yesoneLastPushLog === 'object'
-        ? (data.yesoneLastPushLog as YesonePushLog)
-        : null,
+    yesoneLastPushLog: normalizeYesonePushLog(data?.yesoneLastPushLog),
+    yesonePushProgress: normalizeYesonePushLog(data?.yesonePushProgress),
   };
 }
 

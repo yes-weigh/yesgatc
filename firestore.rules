@@ -452,6 +452,8 @@ service cloud.firestore {
     }
 
     // ── app settings (global toggles) ─────────────────────────────
+    // Super Admin writes yesoneWebhookUrl, yesoneLastPushLog, yesonePushProgress.
+    // Cloud Functions also merge those fields via Admin SDK (bypasses these rules).
     match /appSettings/{docId} {
       allow read: if isAuthenticated();
       allow create, delete: if isSuperAdmin();

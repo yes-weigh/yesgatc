@@ -674,6 +674,15 @@ body.embed-mode {
   font-size: 0.82rem;
 }
 
+.admin-setting-webbook-log-count {
+  margin: 0 0 0.35rem !important;
+  font-size: 1.35rem !important;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: #f8fafc;
+}
+
 .admin-setting-webbook-log-errors {
   margin: 0.55rem 0 0;
   padding-left: 1.1rem;

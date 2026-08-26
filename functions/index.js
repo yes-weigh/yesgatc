@@ -520,7 +520,7 @@ exports.testYesoneWebhook = onRequest(
     cors: true,
     invoker: 'public',
     timeoutSeconds: 540,
-    memory: '512MiB',
+    memory: '1GiB',
   },
   async (req, res) => testYesoneWebhookHttpHandler(req, res, adminDb(), adminAuth()),
 );

@@ -13,7 +13,34 @@ const {
   buildYesoneRc,
   buildYesoneCertificatePayload,
   payloadFingerprint,
+  uniqueIssuedCertificates,
 } = require('./yesoneWebhook');
+
+test('unique issued certificates keep one row per number', () => {
+  const rows = uniqueIssuedCertificates([
+    {
+      id: 'draft',
+      data: () => ({ certificateNumber: 'IND/GATC/KL/26/04/26/10', status: 'draft' }),
+    },
+    {
+      id: 'pdf',
+      data: () => ({
+        certificateNumber: 'IND/GATC/KL/26/04/26/10',
+        status: 'certified',
+        certificatePdfUrl: 'https://storage.example/a.pdf',
+      }),
+    },
+    {
+      id: 'other',
+      data: () => ({
+        certificateNumber: 'IND/GATC/KL/26/04/26/11',
+        status: 'submitted',
+      }),
+    },
+  ]);
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find(row => row.record.certificateNumber.endsWith('/10'))?.id, 'pdf');
+});
 
 test('https URLs allowed; http only on localhost', () => {
   assert.equal(isAllowedYesoneWebhookUrl('https://yesone.app/hooks/yesgatc'), true);

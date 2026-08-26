@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { FieldPath } = require('firebase-admin/firestore');
 const { HttpsError } = require('firebase-functions/v2/https');
 const {
   isIssuedPublicCertificate,
@@ -10,6 +11,7 @@ const APP_SETTINGS_COLLECTION = 'appSettings';
 const APP_SETTINGS_GLOBAL_DOC = 'global';
 const POST_TIMEOUT_MS = 15_000;
 const LEGACY_SIGNED_CERTIFICATE_SEQUENCE_MAX = 2304;
+const LAST_CERTIFICATE_SEQUENCE_FLOOR = 3740;
 const YESONE_META_KEYS = new Set([
   'yesonePushStatus',
   'yesonePushedAt',
@@ -268,9 +270,36 @@ function buildYesoneRcPayload(uid, record, event, occurredAt) {
   });
 }
 
+function toJsonable(value, seen = new WeakSet(), depth = 0) {
+  if (value == null) return null;
+  if (typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'object') return String(value);
+  if (depth > 8) return null;
+  if (typeof value.toDate === 'function') {
+    try {
+      return value.toDate().toISOString();
+    } catch {
+      return null;
+    }
+  }
+  if (Number.isFinite(value._seconds) && Number.isFinite(value._nanoseconds)) {
+    return new Date(value._seconds * 1000).toISOString();
+  }
+  if (seen.has(value)) return null;
+  seen.add(value);
+  if (Array.isArray(value)) return value.map(item => toJsonable(item, seen, depth + 1));
+  const out = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (item === undefined || typeof item === 'function') continue;
+    out[key] = toJsonable(item, seen, depth + 1);
+  }
+  return out;
+}
+
 function serializeYesonePayload(payload) {
   try {
-    return JSON.stringify(payload);
+    return JSON.stringify(toJsonable(payload));
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown';
     throw new Error(`Yesone payload is not JSON-serializable: ${message}`);
@@ -328,8 +357,7 @@ async function writeYesonePushResult(db, path, patch) {
   );
 }
 
-async function postYesoneWebhook(url, payload) {
-  const body = serializeYesonePayload(payload);
+async function postYesoneWebhookOnce(url, payload, body) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS);
   try {
@@ -357,6 +385,16 @@ async function postYesoneWebhook(url, payload) {
   }
 }
 
+async function postYesoneWebhook(url, payload) {
+  const body = serializeYesonePayload(payload);
+  let result = await postYesoneWebhookOnce(url, payload, body);
+  if (!result.ok && result.status >= 500) {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    result = await postYesoneWebhookOnce(url, payload, body);
+  }
+  return result;
+}
+
 async function deliverYesone(db, path, record, payload, options = {}) {
   const url = optionalTrimmed(options.url);
   const settings = url ? null : await loadYesoneSettings(db);
@@ -380,13 +418,15 @@ async function deliverYesone(db, path, record, payload, options = {}) {
   } catch (err) {
     if (!options.continueOnError) throw err;
     const message = err instanceof Error ? err.message : 'Yesone webhook request failed.';
-    await writeYesonePushResult(db, path, {
-      yesonePushFingerprint: fingerprint,
-      yesonePushEvent: payload.event,
-      yesonePushedAt: payload.occurredAt,
-      yesonePushStatus: 'failed',
-      yesonePushError: message.slice(0, 500),
-    });
+    if (!options.skipMetaWrite) {
+      await writeYesonePushResult(db, path, {
+        yesonePushFingerprint: fingerprint,
+        yesonePushEvent: payload.event,
+        yesonePushedAt: payload.occurredAt,
+        yesonePushStatus: 'failed',
+        yesonePushError: message.slice(0, 500),
+      });
+    }
     return { ok: false, event: payload.event, error: message };
   }
 
@@ -397,11 +437,13 @@ async function deliverYesone(db, path, record, payload, options = {}) {
   };
 
   if (result.ok) {
-    await writeYesonePushResult(db, path, {
-      ...patch,
-      yesonePushStatus: 'sent',
-      yesonePushError: null,
-    });
+    if (!options.skipMetaWrite) {
+      await writeYesonePushResult(db, path, {
+        ...patch,
+        yesonePushStatus: 'sent',
+        yesonePushError: null,
+      });
+    }
     return { ok: true, event: payload.event, status: result.status };
   }
 
@@ -410,16 +452,22 @@ async function deliverYesone(db, path, record, payload, options = {}) {
     throw new Error(`Yesone webhook HTTP ${result.status}`);
   }
 
-  await writeYesonePushResult(db, path, {
-    ...patch,
-    yesonePushStatus: 'failed',
-    yesonePushError: error,
-  });
+  if (!options.skipMetaWrite) {
+    await writeYesonePushResult(db, path, {
+      ...patch,
+      yesonePushStatus: 'failed',
+      yesonePushError: error,
+    });
+  }
   return { ok: false, event: payload.event, status: result.status, error };
 }
 
 async function processYesoneCertificatePush(db, recordId, record, before, options = {}) {
-  if (!certificateReadyForYesone(record)) {
+  const issuedOnly = options.allowIssuedWithoutPdf === true;
+  const ready = issuedOnly
+    ? isIssuedPublicCertificate(record)
+    : certificateReadyForYesone(record);
+  if (!ready) {
     return { skipped: true, reason: 'not_ready' };
   }
   const customer = options.customer === undefined
@@ -442,28 +490,54 @@ async function processYesoneRcPush(db, uid, record, before, options = {}) {
   return deliverYesone(db, `users/${uid}`, record, payload, options);
 }
 
-const PUSH_ALL_BUDGET_MS = 500_000;
+const PUSH_ALL_BUDGET_MS = 520_000;
 const PUSH_ALL_ERROR_CAP = 40;
+const PUSH_CONCURRENCY = 16;
+const PROGRESS_MIN_INTERVAL_MS = 400;
 
-async function listStatusDocs(db, collectionName, status) {
+async function listCollectionDocs(db, collectionName) {
   const docs = [];
   let last = null;
   for (;;) {
-    let query = db.collection(collectionName).where('status', '==', status).limit(100);
+    let query = db.collection(collectionName).orderBy(FieldPath.documentId()).limit(500);
     if (last) query = query.startAfter(last);
     const page = await query.get();
     if (page.empty) break;
     docs.push(...page.docs);
     last = page.docs[page.docs.length - 1];
-    if (page.size < 100) break;
+    if (page.size < 500) break;
   }
   return docs;
+}
+
+function issuedRecordScore(record) {
+  let score = 0;
+  if (hasSignedCertificatePdf(record)) score += 4;
+  if (unsignedPdfUrl(record) || resolvePublicCertificatePdfUrl(record)) score += 2;
+  if (String(record.status || '') === 'certified') score += 1;
+  return score;
+}
+
+function uniqueIssuedCertificates(docs) {
+  const byNumber = new Map();
+  for (const doc of docs) {
+    const record = doc.data();
+    if (!isIssuedPublicCertificate(record)) continue;
+    const number = String(record.certificateNumber || '').trim();
+    if (!number) continue;
+    const prev = byNumber.get(number);
+    if (!prev || issuedRecordScore(record) > issuedRecordScore(prev.record)) {
+      byNumber.set(number, { id: doc.id, record });
+    }
+  }
+  return [...byNumber.values()];
 }
 
 function emptyPushLog(at) {
   return {
     at,
     ok: false,
+    phase: 'counting',
     rcTotal: 0,
     rcSent: 0,
     rcFailed: 0,
@@ -471,8 +545,27 @@ function emptyPushLog(at) {
     certSent: 0,
     certFailed: 0,
     certSkipped: 0,
+    certLatestSequence: LAST_CERTIFICATE_SEQUENCE_FLOOR,
     incomplete: false,
     errors: [],
+  };
+}
+
+function publicPushLog(log, includeErrors) {
+  return {
+    at: log.at,
+    ok: Boolean(log.ok),
+    phase: log.phase || '',
+    rcTotal: log.rcTotal,
+    rcSent: log.rcSent,
+    rcFailed: log.rcFailed,
+    certTotal: log.certTotal,
+    certSent: log.certSent,
+    certFailed: log.certFailed,
+    certSkipped: log.certSkipped,
+    certLatestSequence: log.certLatestSequence || LAST_CERTIFICATE_SEQUENCE_FLOOR,
+    incomplete: Boolean(log.incomplete),
+    errors: includeErrors ? log.errors : [],
   };
 }
 
@@ -481,7 +574,101 @@ function appendPushError(log, entry) {
   log.errors.push(entry);
 }
 
-async function pushAllYesone(db) {
+async function runPool(items, concurrency, worker) {
+  if (items.length === 0) return;
+  let next = 0;
+  const n = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: n }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= items.length) return;
+      await worker(items[index], index);
+    }
+  }));
+}
+
+function memoLoad(map, id, loader) {
+  if (!id) return Promise.resolve(null);
+  let pending = map.get(id);
+  if (!pending) {
+    pending = loader();
+    map.set(id, pending);
+  }
+  return pending;
+}
+
+function createProgressSink(db, onProgress) {
+  let lastWrite = 0;
+  let timer = null;
+  let latest = null;
+
+  async function writeProgress(log, running) {
+    await db.doc(`${APP_SETTINGS_COLLECTION}/${APP_SETTINGS_GLOBAL_DOC}`).set(
+      {
+        yesonePushProgress: {
+          ...publicPushLog(log, false),
+          running,
+        },
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  }
+
+  function emit(log, force = false) {
+    latest = log;
+    onProgress?.(log);
+    const now = Date.now();
+    if (!force && now - lastWrite < PROGRESS_MIN_INTERVAL_MS) {
+      if (!timer) {
+        timer = setTimeout(() => {
+          timer = null;
+          if (latest) {
+            lastWrite = Date.now();
+            void writeProgress(latest, true).catch(err => {
+              console.error('yesone progress write', err);
+            });
+          }
+        }, PROGRESS_MIN_INTERVAL_MS - (now - lastWrite));
+      }
+      return;
+    }
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    lastWrite = now;
+    void writeProgress(log, true).catch(err => {
+      console.error('yesone progress write', err);
+    });
+  }
+
+  async function finish(log) {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    log.phase = 'done';
+    onProgress?.(log);
+    await db.doc(`${APP_SETTINGS_COLLECTION}/${APP_SETTINGS_GLOBAL_DOC}`).set(
+      {
+        yesoneLastPushAt: log.at,
+        yesoneLastPushLog: publicPushLog(log, true),
+        yesonePushProgress: {
+          ...publicPushLog(log, false),
+          running: false,
+        },
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  }
+
+  return { emit, finish };
+}
+
+async function pushAllYesone(db, options = {}) {
   const settings = await loadYesoneSettings(db);
   if (!settings.yesoneWebhookEnabled || !settings.yesoneWebhookUrl) {
     throw new HttpsError('failed-precondition', 'Save a yesone URL first.');
@@ -490,125 +677,147 @@ async function pushAllYesone(db) {
   const started = Date.now();
   const at = new Date().toISOString();
   const log = emptyPushLog(at);
+  const sink = createProgressSink(db, options.onProgress);
   const deliverOpts = {
     url: settings.yesoneWebhookUrl,
     force: true,
     continueOnError: true,
+    skipMetaWrite: true,
+    allowIssuedWithoutPdf: true,
   };
 
-  const rcSnap = await db.collection('users').where('role', '==', 'rc_admin').get();
-  const rcById = new Map();
-  log.rcTotal = rcSnap.size;
-  for (const doc of rcSnap.docs) {
-    if (Date.now() - started > PUSH_ALL_BUDGET_MS) {
-      log.incomplete = true;
-      break;
+  try {
+    sink.emit(log, true);
+
+    const rcSnap = await db.collection('users').where('role', '==', 'rc_admin').get();
+    const rcById = new Map();
+    for (const doc of rcSnap.docs) {
+      rcById.set(doc.id, { id: doc.id, ...doc.data() });
     }
-    const data = doc.data();
-    rcById.set(doc.id, { id: doc.id, ...data });
-    let result;
-    try {
-      result = await processYesoneRcPush(db, doc.id, data, null, {
-        ...deliverOpts,
-        event: 'rc.sync',
-      });
-    } catch (err) {
-      log.rcFailed += 1;
-      appendPushError(log, {
-        kind: 'rc',
-        id: doc.id,
-        event: 'rc.sync',
-        error: err instanceof Error ? err.message : 'Push failed.',
-      });
-      continue;
+    log.rcTotal = rcSnap.size;
+    log.phase = 'rc';
+    sink.emit(log, true);
+
+    await runPool(rcSnap.docs, Math.min(PUSH_CONCURRENCY, 8), async doc => {
+      if (Date.now() - started > PUSH_ALL_BUDGET_MS) {
+        log.incomplete = true;
+        return;
+      }
+      const data = doc.data();
+      let result;
+      try {
+        result = await processYesoneRcPush(db, doc.id, data, null, {
+          ...deliverOpts,
+          event: 'rc.sync',
+        });
+      } catch (err) {
+        log.rcFailed += 1;
+        appendPushError(log, {
+          kind: 'rc',
+          id: doc.id,
+          event: 'rc.sync',
+          error: err instanceof Error ? err.message : 'Push failed.',
+        });
+        sink.emit(log);
+        return;
+      }
+      if (result?.skipped) return;
+      if (result?.ok) log.rcSent += 1;
+      else {
+        log.rcFailed += 1;
+        appendPushError(log, {
+          kind: 'rc',
+          id: doc.id,
+          event: result?.event || 'rc.sync',
+          error: result?.error || 'Push failed.',
+        });
+      }
+      sink.emit(log);
+    });
+
+    log.phase = 'counting';
+    sink.emit(log, true);
+
+    const ready = uniqueIssuedCertificates(await listCollectionDocs(db, 'siteCalibrations'));
+    log.certTotal = ready.length;
+    let latestSequence = LAST_CERTIFICATE_SEQUENCE_FLOOR;
+    for (const item of ready) {
+      const sequence = parseCertificateSequenceNumber(item.record.certificateNumber);
+      if (sequence != null && sequence > latestSequence) latestSequence = sequence;
     }
-    if (result?.skipped) continue;
-    if (result?.ok) log.rcSent += 1;
-    else {
-      log.rcFailed += 1;
-      appendPushError(log, {
-        kind: 'rc',
-        id: doc.id,
-        event: result?.event || 'rc.sync',
-        error: result?.error || 'Push failed.',
-      });
-    }
+    log.certLatestSequence = latestSequence;
+    log.phase = 'certificate';
+    sink.emit(log, true);
+
+    const customerCache = new Map();
+    await runPool(ready, PUSH_CONCURRENCY, async item => {
+      if (Date.now() - started > PUSH_ALL_BUDGET_MS) {
+        log.incomplete = true;
+        return;
+      }
+      const { id, record } = item;
+      const customerId = optionalTrimmed(record.customerId);
+      const rcId = optionalTrimmed(record.rcId);
+      const event = isCertificateSigned(record)
+        ? 'certificate.certified_signed'
+        : 'certificate.certified_unsigned';
+      let result;
+      try {
+        const customer = await memoLoad(customerCache, customerId, () => loadCustomer(db, customerId));
+        const rc = rcId
+          ? rcById.get(rcId) || await memoLoad(customerCache, `rc:${rcId}`, () => loadRc(db, rcId))
+          : null;
+        result = await processYesoneCertificatePush(db, id, record, null, {
+          ...deliverOpts,
+          event,
+          customer,
+          rc,
+        });
+      } catch (err) {
+        log.certFailed += 1;
+        appendPushError(log, {
+          kind: 'certificate',
+          id,
+          event,
+          error: err instanceof Error ? err.message : 'Push failed.',
+        });
+        sink.emit(log);
+        return;
+      }
+      if (result?.skipped) {
+        log.certSkipped += 1;
+        sink.emit(log);
+        return;
+      }
+      if (result?.ok) log.certSent += 1;
+      else {
+        log.certFailed += 1;
+        appendPushError(log, {
+          kind: 'certificate',
+          id,
+          event: result?.event || event,
+          error: result?.error || 'Push failed.',
+        });
+      }
+      sink.emit(log);
+    });
+
+    log.ok = log.rcFailed === 0 && log.certFailed === 0 && !log.incomplete
+      && (log.rcSent + log.rcFailed) >= log.rcTotal
+      && (log.certSent + log.certFailed) >= log.certTotal;
+    await sink.finish(log);
+    return log;
+  } catch (err) {
+    log.ok = false;
+    log.incomplete = true;
+    appendPushError(log, {
+      kind: 'run',
+      id: 'pushAll',
+      error: err instanceof Error ? err.message : 'Yesone push failed.',
+    });
+    await sink.finish(log).catch(() => {});
+    throw err;
   }
-
-  const seen = new Set();
-  const certDocs = [
-    ...(await listStatusDocs(db, 'siteCalibrations', 'certified')),
-    ...(await listStatusDocs(db, 'siteCalibrations', 'approved')),
-  ];
-  const customerCache = new Map();
-
-  for (const doc of certDocs) {
-    if (seen.has(doc.id)) continue;
-    seen.add(doc.id);
-    const record = doc.data();
-    if (!certificateReadyForYesone(record)) {
-      log.certSkipped += 1;
-      continue;
-    }
-    log.certTotal += 1;
-    if (log.incomplete || Date.now() - started > PUSH_ALL_BUDGET_MS) {
-      log.incomplete = true;
-      log.certSkipped += 1;
-      continue;
-    }
-
-    const customerId = optionalTrimmed(record.customerId);
-    if (customerId && !customerCache.has(customerId)) {
-      customerCache.set(customerId, await loadCustomer(db, customerId));
-    }
-    const rcId = optionalTrimmed(record.rcId);
-    const event = isCertificateSigned(record)
-      ? 'certificate.certified_signed'
-      : 'certificate.certified_unsigned';
-    let result;
-    try {
-      result = await processYesoneCertificatePush(db, doc.id, record, null, {
-        ...deliverOpts,
-        event,
-        customer: customerId ? customerCache.get(customerId) : null,
-        rc: rcId ? rcById.get(rcId) || await loadRc(db, rcId) : null,
-      });
-    } catch (err) {
-      log.certFailed += 1;
-      appendPushError(log, {
-        kind: 'certificate',
-        id: doc.id,
-        event,
-        error: err instanceof Error ? err.message : 'Push failed.',
-      });
-      continue;
-    }
-    if (result?.skipped) {
-      log.certSkipped += 1;
-      continue;
-    }
-    if (result?.ok) log.certSent += 1;
-    else {
-      log.certFailed += 1;
-      appendPushError(log, {
-        kind: 'certificate',
-        id: doc.id,
-        event: result?.event || event,
-        error: result?.error || 'Push failed.',
-      });
-    }
-  }
-
-  log.ok = log.rcFailed === 0 && log.certFailed === 0 && !log.incomplete;
-  await db.doc(`${APP_SETTINGS_COLLECTION}/${APP_SETTINGS_GLOBAL_DOC}`).set(
-    {
-      yesoneLastPushAt: at,
-      yesoneLastPushLog: log,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true },
-  );
-  return log;
 }
 
 async function onSiteCalibrationYesoneWebhookHandler(event, db) {
@@ -632,13 +841,13 @@ async function assertSuperAdmin(db, uid) {
   }
 }
 
-async function testYesoneWebhookHandler(request, db) {
+async function testYesoneWebhookHandler(request, db, options = {}) {
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'Sign in required.');
   }
   await assertSuperAdmin(db, request.auth.uid);
   try {
-    return await pushAllYesone(db);
+    return await pushAllYesone(db, options);
   } catch (err) {
     if (err instanceof HttpsError) throw err;
     const message = err instanceof Error ? err.message : 'Yesone push failed.';
@@ -698,6 +907,7 @@ module.exports = {
   yesoneRcEvent,
   buildYesoneRc,
   buildYesoneCertificatePayload,
+  uniqueIssuedCertificates,
   payloadFingerprint,
   onSiteCalibrationYesoneWebhookHandler,
   onUserYesoneWebhookHandler,
