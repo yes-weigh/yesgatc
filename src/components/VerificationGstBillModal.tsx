@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { QRCode } from 'react-qr-code';
-import { MessageCircle, Tags, X } from 'lucide-react';
+import { Printer, Share2, X } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
@@ -248,20 +248,36 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
       onClick={onClose}
     >
       <div
-        className="verification-gst-bill-dialog"
+        className="verification-gst-bill-dialog verification-gst-bill-dialog--doc-chrome"
         role="dialog"
         aria-modal="true"
         aria-labelledby="verification-gst-bill-title"
         onClick={event => event.stopPropagation()}
       >
-        <button
-          type="button"
-          className="verification-gst-bill-close"
-          onClick={onClose}
-          aria-label="Close GST bill preview"
-        >
-          <X size={18} aria-hidden />
-        </button>
+        <div className="verification-gst-bill-chrome">
+          <button
+            type="button"
+            className="verification-gst-bill-icon-btn verification-gst-bill-icon-btn--close"
+            onClick={onClose}
+            aria-label="Close GST bill preview"
+          >
+            <X size={18} aria-hidden />
+          </button>
+          {whatsAppShareUrl ? (
+            <a
+              href={whatsAppShareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="verification-gst-bill-icon-btn verification-gst-bill-icon-btn--share"
+              aria-label="Share GST bill on WhatsApp"
+              title="Share GST bill on WhatsApp"
+            >
+              <Share2 size={18} aria-hidden />
+            </a>
+          ) : (
+            <span className="verification-gst-bill-chrome-spacer" aria-hidden />
+          )}
+        </div>
 
         <div className="verification-gst-bill-scroll">
           <article
@@ -433,20 +449,8 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
                   : 'Printing requires Chrome on Android over HTTPS'
               }
             >
-              <Tags size={18} aria-hidden />
+              <Printer size={18} aria-hidden />
             </button>
-            {whatsAppShareUrl && (
-              <a
-                href={whatsAppShareUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-secondary btn-sm verification-gst-bill-whatsapp-btn"
-                aria-label="Share GST bill on WhatsApp"
-                title="Share GST bill on WhatsApp"
-              >
-                <MessageCircle size={18} aria-hidden />
-              </a>
-            )}
             {bluetoothPrintSupported && savedPrinter && (
               <button
                 type="button"
