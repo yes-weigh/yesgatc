@@ -277,6 +277,12 @@ export interface FirestoreUserDoc {
   logoPath?: string;
   logoName?: string;
   logoContentType?: string;
+  /** Yesone outbound webhook — last delivery for this RC. */
+  yesonePushStatus?: 'pending' | 'sent' | 'failed' | 'skipped';
+  yesonePushedAt?: string;
+  yesonePushError?: string;
+  yesonePushFingerprint?: string;
+  yesonePushEvent?: string;
 }
 
 /** Verification fees for a weight tier (amounts in INR). */
@@ -479,6 +485,12 @@ export interface SiteCalibration {
   zohoInvoiceReferenceSynced?: boolean;
   zohoInvoiceReferenceSyncedAt?: string;
   zohoInvoiceReferenceSyncError?: string;
+  /** Yesone outbound webhook — last delivery for this certificate. */
+  yesonePushStatus?: 'pending' | 'sent' | 'failed' | 'skipped';
+  yesonePushedAt?: string;
+  yesonePushError?: string;
+  yesonePushFingerprint?: string;
+  yesonePushEvent?: string;
   /** Stored for future DOCA automation; worker currently submits 0. */
   carriageConveyanceFee?: number;
   totalDeposited?: number;

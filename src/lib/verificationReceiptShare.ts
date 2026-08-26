@@ -1,5 +1,4 @@
 import { toCanvas } from 'html-to-image';
-import { normalizePhone } from './contactFields';
 
 export async function captureVerificationReceiptCanvas(
   element: HTMLElement,
@@ -30,16 +29,6 @@ export async function captureVerificationReceiptImageFile(
   return new File([blob], fileName, { type: 'image/jpeg' });
 }
 
-function canShareReceiptImage(file: File): boolean {
-  return typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
-}
-
-function openWhatsAppChat(phone?: string | null): void {
-  const digits = phone ? normalizePhone(phone) : '';
-  const url = digits.length === 10 ? `https://wa.me/91${digits}` : 'https://wa.me/';
-  window.open(url, '_blank', 'noopener,noreferrer');
-}
-
 function downloadReceiptImage(file: File): void {
   const url = URL.createObjectURL(file);
   const anchor = document.createElement('a');
@@ -51,20 +40,24 @@ function downloadReceiptImage(file: File): void {
 
 export type ShareVerificationReceiptResult = 'shared' | 'downloaded';
 
-/** Share wallet receipt preview as a JPEG — native share sheet or download + WhatsApp fallback. */
-export async function shareVerificationReceiptOnWhatsApp(options: {
+/** Native phone share sheet with the image file. Download if share-with-files is unavailable. */
+export async function shareElementImageOnPhone(options: {
   element: HTMLElement;
-  phone?: string | null;
+  fileName: string;
+  title: string;
 }): Promise<ShareVerificationReceiptResult> {
-  const file = await captureVerificationReceiptImageFile(options.element);
+  const file = await captureVerificationReceiptImageFile(options.element, options.fileName);
+  const files = [file];
+  const canShareFiles =
+    typeof navigator.share === 'function'
+    && (typeof navigator.canShare !== 'function' || navigator.canShare({ files }));
 
-  if (canShareReceiptImage(file)) {
-    await navigator.share({ files: [file], title: 'Wallet receipt' });
+  if (canShareFiles) {
+    await navigator.share({ files, title: options.title });
     return 'shared';
   }
 
   downloadReceiptImage(file);
-  openWhatsAppChat(options.phone);
   return 'downloaded';
 }
 

@@ -12,7 +12,6 @@ import {
 import type { RememberedBluetoothPrinter } from '../lib/bluetoothPrinterStorage';
 import {
   buildVerificationGstBillData,
-  buildVerificationGstBillShareMessage,
   formatGstBillLineAmount,
   formatGstBillMoney,
   groupGstBillInstrumentRows,
@@ -22,7 +21,10 @@ import {
   VERIFICATION_GST_BILL_RECEIPT,
   VERIFICATION_GST_BILL_SAC_LINE,
 } from '../lib/verificationGstBill';
-import { buildWhatsAppShareUrl } from '../lib/verificationWhatsAppShare';
+import {
+  formatReceiptShareError,
+  shareElementImageOnPhone,
+} from '../lib/verificationReceiptShare';
 import {
   formatBluetoothPrintError,
   printVerificationGstBillToBluetooth,
@@ -93,6 +95,7 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
   const billRecord = liveRecord ?? record;
   const { product } = useVerificationDetailDocs(billRecord);
   const [loading, setLoading] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [printMessage, setPrintMessage] = useState<string | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
@@ -203,13 +206,26 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
     };
   }, [billRecord, customer, product, pdfQrUrl]);
 
-  const whatsAppShareUrl = useMemo(() => {
-    if (loading) return null;
-    return buildWhatsAppShareUrl(
-      buildVerificationGstBillShareMessage(billData),
-      customer?.phone,
-    );
-  }, [billData, customer?.phone, loading]);
+  const handleShare = async () => {
+    const node = receiptRef.current;
+    if (!node || sharing || loading) return;
+    setSharing(true);
+    setPrintMessage(null);
+    setPrintError(null);
+    try {
+      const invoice = billData.invoiceNumber.replace(/[^\w.-]+/g, '-') || 'gst-bill';
+      await shareElementImageOnPhone({
+        element: node,
+        fileName: `${invoice}.jpg`,
+        title: `GST bill ${billData.invoiceNumber}`.trim(),
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setPrintError(formatReceiptShareError(error));
+    } finally {
+      setSharing(false);
+    }
+  };
 
   const handleBluetoothPrint = async (forcePicker = false) => {
     if (printing || loading) return;
@@ -263,20 +279,16 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
           >
             <X size={18} aria-hidden />
           </button>
-          {whatsAppShareUrl ? (
-            <a
-              href={whatsAppShareUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="verification-gst-bill-icon-btn verification-gst-bill-icon-btn--share"
-              aria-label="Share GST bill on WhatsApp"
-              title="Share GST bill on WhatsApp"
-            >
-              <Share2 size={18} aria-hidden />
-            </a>
-          ) : (
-            <span className="verification-gst-bill-chrome-spacer" aria-hidden />
-          )}
+          <button
+            type="button"
+            className="verification-gst-bill-icon-btn verification-gst-bill-icon-btn--share"
+            onClick={() => void handleShare()}
+            disabled={sharing || loading}
+            aria-label="Share GST bill"
+            title="Share"
+          >
+            <Share2 size={18} aria-hidden />
+          </button>
         </div>
 
         <div className="verification-gst-bill-scroll">

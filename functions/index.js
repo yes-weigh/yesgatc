@@ -44,6 +44,11 @@ const { emaapOtpWebhookHandler } = require('./emaapOtpInbox');
 const { mintYesweighEmbedTokenHandler } = require('./yesweighEmbed');
 const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertificates');
 const {
+  onSiteCalibrationYesoneWebhookHandler,
+  onUserYesoneWebhookHandler,
+  testYesoneWebhookHandler,
+} = require('./yesoneWebhook');
+const {
   reviewWalletTopUpHandler,
   payRvFromWalletHandler,
   refundRvWalletPaymentHandler,
@@ -481,6 +486,39 @@ exports.lookupPublicCertificates = onRequest(
     memory: '256MiB',
   },
   async (req, res) => lookupPublicCertificatesHttpHandler(req, res, adminDb()),
+);
+
+/** Outbound yesone webhook — POST certificate details + PDF URL when a cert is issued/updated. */
+exports.onSiteCalibrationYesoneWebhook = onDocumentWritten(
+  {
+    document: 'siteCalibrations/{recordId}',
+    region: FIRESTORE_REGION,
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  async event => onSiteCalibrationYesoneWebhookHandler(event, adminDb()),
+);
+
+/** Outbound yesone webhook — RC created / deactivated / modified. */
+exports.onUserYesoneWebhook = onDocumentWritten(
+  {
+    document: 'users/{userId}',
+    region: FIRESTORE_REGION,
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  async event => onUserYesoneWebhookHandler(event, adminDb()),
+);
+
+/** Super Admin: push all RC + issued certificate payloads to yesone and return a log. */
+exports.testYesoneWebhook = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    timeoutSeconds: 540,
+    memory: '512MiB',
+  },
+  async request => testYesoneWebhookHandler(request, adminDb()),
 );
 
 /**

@@ -24,8 +24,9 @@ import {
 } from '../../lib/zohoSettings';
 import { ROLE_LABELS } from '../../types';
 import { ContractorFeePanel } from '../shared/ContractorFeeSettings';
+import { WebbookPanel } from './WebbookPanel';
 
-type SettingTab = 'account' | 'fees' | 'contractor';
+type SettingTab = 'account' | 'fees' | 'contractor' | 'webbook';
 
 function PasswordField({
   id,
@@ -338,7 +339,7 @@ export const AdminPortalSettings: React.FC = () => {
           Setting
         </h1>
         <p className="admin-setting-subtitle text-muted text-sm mb-0">
-          Account, invoice fees, and contractor fees.
+          Account, invoice fees, contractor fees, and yesone webbook.
         </p>
       </header>
 
@@ -369,6 +370,15 @@ export const AdminPortalSettings: React.FC = () => {
           onClick={() => setTab('contractor')}
         >
           Contractor fees
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'webbook'}
+          className={`admin-setting-tab${tab === 'webbook' ? ' admin-setting-tab--active' : ''}`}
+          onClick={() => setTab('webbook')}
+        >
+          Webbook
         </button>
       </div>
 
@@ -528,8 +538,10 @@ export const AdminPortalSettings: React.FC = () => {
             </button>
           </form>
         </div>
-      ) : (
+      ) : tab === 'contractor' ? (
         <ContractorFeePanel />
+      ) : (
+        <WebbookPanel />
       )}
     </div>
   );

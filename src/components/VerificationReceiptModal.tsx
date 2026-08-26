@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, X } from 'lucide-react';
+import { Share2, X } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAppContext } from '../context/AppContext';
@@ -14,7 +14,7 @@ import {
 } from '../lib/verificationReceipt';
 import {
   formatReceiptShareError,
-  shareVerificationReceiptOnWhatsApp,
+  shareElementImageOnPhone,
 } from '../lib/verificationReceiptShare';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../types';
 
@@ -60,7 +60,6 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
   const [rc, setRc] = useState<FirestoreUserDoc | null>(null);
   const [loading, setLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
-  const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
 
   useHistoryOverlay(open, onClose);
@@ -104,24 +103,22 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
     [record, customer, products, fees, rc],
   );
 
-  const handleWhatsAppShare = async () => {
-    if (!receiptRef.current || sharing || loading) return;
+  const handleShare = async () => {
+    const node = receiptRef.current;
+    if (!node || sharing || loading) return;
 
     setSharing(true);
-    setShareMessage(null);
     setShareError(null);
 
     try {
-      const result = await shareVerificationReceiptOnWhatsApp({
-        element: receiptRef.current,
-        phone: customer?.phone,
+      const receiptNo = receiptData.receiptNumber.replace(/[^\w.-]+/g, '-') || 'wallet-receipt';
+      await shareElementImageOnPhone({
+        element: node,
+        fileName: `${receiptNo}.jpg`,
+        title: `Cash receipt ${receiptData.receiptNumber}`.trim(),
       });
-      setShareMessage(
-        result === 'shared'
-          ? 'Receipt image shared.'
-          : 'Receipt image downloaded. Attach it in the WhatsApp chat that opened.',
-      );
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       setShareError(formatReceiptShareError(error));
     } finally {
       setSharing(false);
@@ -145,20 +142,32 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
       onClick={onClose}
     >
       <div
-        className="verification-gst-bill-dialog"
+        className="verification-gst-bill-dialog verification-gst-bill-dialog--doc-chrome"
         role="dialog"
         aria-modal="true"
         aria-labelledby="verification-receipt-title"
         onClick={event => event.stopPropagation()}
       >
-        <button
-          type="button"
-          className="verification-gst-bill-close"
-          onClick={onClose}
-          aria-label="Close receipt preview"
-        >
-          <X size={18} aria-hidden />
-        </button>
+        <div className="verification-gst-bill-chrome">
+          <button
+            type="button"
+            className="verification-gst-bill-icon-btn verification-gst-bill-icon-btn--close"
+            onClick={onClose}
+            aria-label="Close receipt preview"
+          >
+            <X size={18} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="verification-gst-bill-icon-btn verification-gst-bill-icon-btn--share"
+            onClick={() => void handleShare()}
+            disabled={sharing || loading}
+            aria-label="Share cash receipt"
+            title="Share"
+          >
+            <Share2 size={18} aria-hidden />
+          </button>
+        </div>
 
         <div className="verification-gst-bill-scroll">
           <article
@@ -251,38 +260,21 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
           </article>
         </div>
 
-        <div className="verification-gst-bill-toolbar">
-          <div className="verification-gst-bill-actions">
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm verification-gst-bill-whatsapp-btn"
-              onClick={() => void handleWhatsAppShare()}
-              disabled={sharing || loading}
-              aria-label={sharing ? 'Sharing receipt image' : 'Share receipt image on WhatsApp'}
-              title="Share receipt image on WhatsApp"
-            >
-              <MessageCircle size={18} aria-hidden />
-            </button>
+        {(shareError || (receiptData.missingFields.length > 0 && !loading)) && (
+          <div className="verification-gst-bill-toolbar">
+            {shareError && (
+              <p className="verification-gst-bill-print-error text-sm mb-0" role="alert">
+                {shareError}
+              </p>
+            )}
+
+            {receiptData.missingFields.length > 0 && !loading && (
+              <p className="verification-gst-bill-hint text-muted text-sm mb-0" role="status">
+                Incomplete receipt data: {receiptData.missingFields.join(', ')}.
+              </p>
+            )}
           </div>
-
-          {shareMessage && (
-            <p className="verification-gst-bill-print-status text-sm mb-0" role="status">
-              {shareMessage}
-            </p>
-          )}
-
-          {shareError && (
-            <p className="verification-gst-bill-print-error text-sm mb-0" role="alert">
-              {shareError}
-            </p>
-          )}
-
-          {receiptData.missingFields.length > 0 && !loading && (
-            <p className="verification-gst-bill-hint text-muted text-sm mb-0" role="status">
-              Incomplete receipt data: {receiptData.missingFields.join(', ')}.
-            </p>
-          )}
-        </div>
+        )}
 
         <h2 id="verification-receipt-title" className="sr-only">
           Wallet receipt for {record.serialNumber || 'device'}
