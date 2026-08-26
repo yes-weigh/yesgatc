@@ -1055,8 +1055,8 @@ public sealed class AutomationService : IAsyncDisposable
             job.CertificateNumber!,
             localPath,
             cancellationToken);
-        await _firestoreService.MarkEmaapSignedPdfUploadedAsync(job.Id, token, cancellationToken);
-        return $"Uploaded signed PDF for {job.CertificateNumber} to eMAAP. Unsigned Firebase PDF kept.";
+        await _firestoreService.MarkEmaapSignedPdfUploadedAsync(job, token, cancellationToken);
+        return $"Uploaded signed PDF for {job.CertificateNumber} to eMAAP. Unsigned Firebase PDF removed.";
     }
 
     private async Task<string> SaveSignedPdfLocalAsync(

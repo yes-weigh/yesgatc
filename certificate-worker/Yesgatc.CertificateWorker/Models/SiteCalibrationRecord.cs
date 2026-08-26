@@ -14,6 +14,7 @@ public sealed class SiteCalibrationRecord
     public string? ApprovedAt { get; init; }
     public string? CertifiedAt { get; init; }
     public string? CertificatePdfUrl { get; init; }
+    public string? CertificatePdfPath { get; init; }
     public string? CertificateNumber { get; init; }
     public string? SignedCertificatePdfUrl { get; init; }
     public string? SignedCertificatePdfPath { get; init; }

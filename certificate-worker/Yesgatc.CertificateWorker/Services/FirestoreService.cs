@@ -61,27 +61,47 @@ public sealed class FirestoreService
     }
 
     public async Task MarkEmaapSignedPdfUploadedAsync(
-        string jobId,
+        SiteCalibrationRecord job,
         string idToken,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(jobId))
+        if (string.IsNullOrWhiteSpace(job.Id))
         {
             return;
         }
 
+        var unsignedPath = UnsignedCertificatePdfCleanup.ResolveStoragePath(job);
         var now = DateTime.UtcNow.ToString("O");
         var documents = new FirestoreDocumentClient(_settings);
-        await documents.PatchStringFieldsAsync(
+        await documents.PatchFieldsAsync(
             "siteCalibrations",
-            jobId,
-            new Dictionary<string, string>
+            job.Id,
+            new Dictionary<string, object?>
             {
                 ["emaapSignedPdfUploadedAt"] = now,
                 ["updatedAt"] = now,
+                ["certificatePdfUrl"] = null,
+                ["certificatePdfPath"] = null,
+                ["certificatePdfName"] = null,
+                ["certificatePdfContentType"] = null,
             },
             idToken,
             cancellationToken);
+
+        if (string.IsNullOrWhiteSpace(unsignedPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var storage = new FirebaseStorageUploadService(_settings);
+            await storage.TryDeleteFileAsync(unsignedPath, idToken, cancellationToken);
+        }
+        catch
+        {
+            // Signed status already written. Leftover Storage object is non-fatal.
+        }
     }
 
     public async Task<bool> TryClaimJobAsync(
@@ -913,6 +933,7 @@ public sealed class FirestoreService
             ApprovedAt = FirestoreFieldReader.ReadString(fields, "approvedAt"),
             CertifiedAt = FirestoreFieldReader.ReadString(fields, "certifiedAt"),
             CertificatePdfUrl = FirestoreFieldReader.ReadString(fields, "certificatePdfUrl"),
+            CertificatePdfPath = FirestoreFieldReader.ReadString(fields, "certificatePdfPath"),
             CertificateNumber = FirestoreFieldReader.ReadString(fields, "certificateNumber"),
             SignedCertificatePdfUrl = FirestoreFieldReader.ReadString(fields, "signedCertificatePdfUrl"),
             SignedCertificatePdfPath = FirestoreFieldReader.ReadString(fields, "signedCertificatePdfPath"),

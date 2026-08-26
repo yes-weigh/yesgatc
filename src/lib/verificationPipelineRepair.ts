@@ -16,6 +16,7 @@ import {
   isVerificationFailedAtSubmit,
   isVerificationRejected,
   isValidVerificationIsoTimestamp,
+  hasStoredCertificatePdf,
 } from './verificationRequest';
 import type { SiteCalibration, VerificationRequestStatus } from '../types';
 
@@ -63,7 +64,7 @@ export function diagnoseVerificationPipeline(record: SiteCalibration): PipelineR
   const corrupted = isCorruptedVerificationRecord(record);
   const inferredStatus = inferVerificationStatus(record);
   const status = corrupted ? `(corrupted → ${inferredStatus})` : record.status || '(missing)';
-  const hasPdf = Boolean(record.certificatePdfUrl?.trim());
+  const hasPdf = hasStoredCertificatePdf(record);
   const hasCertNumber = Boolean(
     record.certificateNumber?.trim() && !isCorruptedFirestoreString(record.certificateNumber),
   );

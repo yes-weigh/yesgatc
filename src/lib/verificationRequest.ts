@@ -161,11 +161,17 @@ export function canSubmitVerification(record: VerificationStatusSource): boolean
   return normalizeVerificationStatus(record) === 'draft';
 }
 
+export function hasStoredCertificatePdf(
+  record: Pick<SiteCalibration, 'certificatePdfUrl' | 'signedCertificatePdfUrl'>,
+): boolean {
+  return Boolean(record.certificatePdfUrl?.trim() || record.signedCertificatePdfUrl?.trim());
+}
+
 export function canDownloadVerificationCertificate(record: SiteCalibration): boolean {
   const status = normalizeVerificationStatus(record);
   return (
     (status === 'approved' || status === 'certified') &&
-    Boolean(record.certificatePdfUrl?.trim())
+    hasStoredCertificatePdf(record)
   );
 }
 
@@ -205,7 +211,7 @@ export function isVerificationFullyCertified(record: SiteCalibration): boolean {
   return (
     normalizeVerificationStatus(record) === 'certified' &&
     Boolean(record.certificateNumber?.trim()) &&
-    Boolean(record.certificatePdfUrl?.trim())
+    hasStoredCertificatePdf(record)
   );
 }
 
@@ -288,7 +294,7 @@ export function verificationDisplayStatusLabel(record: SiteCalibration): string 
 }
 
 export function verificationDisplayStatusTitle(record: SiteCalibration): string | undefined {
-  if (isVerificationCertifiedOnDoca(record) && !record.certificatePdfUrl?.trim()) {
+  if (isVerificationCertifiedOnDoca(record) && !hasStoredCertificatePdf(record)) {
     return 'Certificate issued — eMAAP PDF is not stored in Firebase yet.';
   }
   if (

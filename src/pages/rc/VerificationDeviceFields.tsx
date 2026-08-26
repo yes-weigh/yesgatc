@@ -6,11 +6,8 @@ import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
 import { ManufacturingYearPicker } from '../../components/ManufacturingYearPicker';
 import { UploadField } from '../admin/productFormUi';
 import { useAppContext } from '../../context/AppContext';
-import { useAppSettings } from '../../hooks/useAppSettings';
-import { rvSettingFeeLineFromProduct } from '../../lib/zohoRvSubmit';
-import {
-  defaultRvServiceFee,
-} from '../../lib/rcProfileFields';
+import { DEFAULT_RC_FEES_STRUCTURE } from '../../lib/rcProfileFields';
+import { computeRvCustomerFeeLine } from '../../lib/rvFeeBreakdown';
 import { VerificationFeeBreakdown } from '../../components/VerificationFeeBreakdown';
 import {
   mpeStringFromProduct,
@@ -200,36 +197,36 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   laboratorySealIdentification = '',
   verificationLocation: _verificationLocation = '',
   verificationSubject: _verificationSubject = 'customer',
-  feesStructure: _feesStructure,
+  feesStructure,
 }) => {
   const { products } = useAppContext();
-  const { appSettings } = useAppSettings();
   const selectAllRef = useRef<HTMLInputElement>(null);
   const locked = submitting || readOnly;
   const isRv = verificationType === 'RV';
+  const fees = feesStructure ?? DEFAULT_RC_FEES_STRUCTURE;
   const visibleDevices = visibleDeviceLocalId
     ? devices.filter(row => row.localId === visibleDeviceLocalId)
     : devices;
   const singleDeviceMode = Boolean(visibleDeviceLocalId);
 
-  const buildServiceFeeProps = (row: VerificationDeviceRowValues) => ({
-    value: row.serviceFee,
-    readOnly: locked || !row.included,
-    onChange: locked || !row.included
-      ? undefined
-      : (value: string) => onDeviceChange(row.localId, { serviceFee: value }),
-    inputId: `verification-service-fee-${row.localId}`,
-    ariaLabel: 'Service fee',
-  });
-
   const buildAdditionalFeeProps = (row: VerificationDeviceRowValues) => ({
-    value: row.additionalFee,
+    value: row.additionalFee ?? '0',
     readOnly: locked || !row.included,
     onChange: locked || !row.included
       ? undefined
       : (value: string) => onDeviceChange(row.localId, { additionalFee: value }),
     inputId: `verification-additional-fee-${row.localId}`,
-    ariaLabel: 'Additional fee',
+    ariaLabel: 'Additional fees',
+  });
+
+  const buildDiscountFeeProps = (row: VerificationDeviceRowValues) => ({
+    value: row.discountFee ?? '0',
+    readOnly: locked || !row.included,
+    onChange: locked || !row.included
+      ? undefined
+      : (value: string) => onDeviceChange(row.localId, { discountFee: value }),
+    inputId: `verification-discount-fee-${row.localId}`,
+    ariaLabel: 'Discount',
   });
 
   const showFeeColumn = isRv;
@@ -312,7 +309,6 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
       productId: next.productId,
       productName: next.productName,
       maximumPermissibleError: mpeStringFromProduct(product),
-      ...(isRv ? { serviceFee: defaultRvServiceFee(product) } : {}),
     });
   };
 
@@ -490,7 +486,14 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
               const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
               const product = selectedProduct(products, row);
-              const feeLine = isRv ? rvSettingFeeLineFromProduct(product, appSettings) : null;
+              const feeLine = isRv
+                ? computeRvCustomerFeeLine({
+                    product,
+                    fees,
+                    additionalFee: row.additionalFee,
+                    discountFee: row.discountFee,
+                  })
+                : null;
 
               return (
                 <tr key={row.localId} className={row.included ? '' : 'verification-device-row--skipped'}>
@@ -600,11 +603,10 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         <span className="text-muted text-sm">—</span>
                       ) : feeLine ? (
                         <VerificationFeeBreakdown
-                          baseAmount={feeLine.baseInr}
+                          line={feeLine}
                           variant="cell"
-                          tdsAmount={feeLine.tdsInr}
-                          serviceFee={buildServiceFeeProps(row)}
                           additionalFee={buildAdditionalFeeProps(row)}
+                          discountFee={buildDiscountFeeProps(row)}
                         />
                       ) : (
                         <span className="text-muted text-xs">{product ? '—' : 'Select product'}</span>
@@ -637,7 +639,14 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
           const rvDocuments = deviceRvImages[row.localId] ?? emptyDeviceRvDocumentsState();
           const product = selectedProduct(products, row);
-          const feeLine = isRv ? rvSettingFeeLineFromProduct(product, appSettings) : null;
+          const feeLine = isRv
+            ? computeRvCustomerFeeLine({
+                product,
+                fees,
+                additionalFee: row.additionalFee,
+                discountFee: row.discountFee,
+              })
+            : null;
 
           return (
             <div
@@ -853,11 +862,10 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   <div className="verification-device-fee-tile">
                     {feeLine ? (
                       <VerificationFeeBreakdown
-                        baseAmount={feeLine.baseInr}
+                        line={feeLine}
                         variant="cell"
-                        tdsAmount={feeLine.tdsInr}
-                        serviceFee={buildServiceFeeProps(row)}
                         additionalFee={buildAdditionalFeeProps(row)}
+                        discountFee={buildDiscountFeeProps(row)}
                       />
                     ) : (
                       <span className="text-muted text-xs">{product ? '—' : 'Select product'}</span>

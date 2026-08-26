@@ -69,7 +69,7 @@ export function signedCertificateAvailabilityLabel(
 ): string {
   if (availability === 'available') return 'Signed PDF';
   if (availability === 'missing') return 'No signed PDF';
-  if (availability === 'legacy') return 'Pre-2304';
+  if (availability === 'legacy') return 'Signed PDF';
   return 'Voided';
 }
 

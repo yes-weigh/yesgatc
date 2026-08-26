@@ -18,17 +18,19 @@ export const SignedCertificateAvailabilityBadge: React.FC<
 
   const label = signedCertificateAvailabilityLabel(availability);
 
+  const signedLook = availability === 'available' || availability === 'legacy';
+
   return (
     <span
       className={`signed-cert-avail signed-cert-avail--${availability}${
-        availability === 'available' ? ' signed-cert-avail--emaap' : ''
+        signedLook ? ' signed-cert-avail--emaap' : ''
       }${className ? ` ${className}` : ''}`}
       title={
         availability === 'available'
           ? 'DSC-signed PDF is uploaded on eMAAP Certificates Issued.'
           : availability === 'missing'
             ? 'Signed PDF is not on eMAAP yet. File may still be in Firebase.'
-            : 'Sequence 2304 or earlier — no separate signed PDF required.'
+            : 'Certificate is signed.'
       }
     >
       {label}

@@ -225,6 +225,7 @@ function verificationDocaFirestorePatch(
       verificationFeeTotal: deleteField(),
       serviceFee: deleteField(),
       additionalFee: deleteField(),
+      discountFee: deleteField(),
       carriageConveyanceFee: deleteField(),
       totalDeposited: deleteField(),
       gstBill: deleteField(),
@@ -1476,6 +1477,7 @@ export const RCSiteCalibration: React.FC = () => {
             docaCharges,
             filingPincode,
             rcFilingPartyFromProfile(rcUid, rcProfile),
+            fees,
           ),
           ...imageFields,
           ...performerImageFields,
@@ -1603,6 +1605,7 @@ export const RCSiteCalibration: React.FC = () => {
       await updateDoc(doc(db, 'siteCalibrations', recordId), {
         ...buildSiteCalibrationFromRow(sessionForSave, row, {
           product,
+          feesStructure: resolveRcFeesStructure(rcProfile),
           partyPincode: partyPincodeForFiling(
             sessionForSave,
             customers,
@@ -1825,6 +1828,7 @@ export const RCSiteCalibration: React.FC = () => {
       await updateDoc(doc(db, 'siteCalibrations', editingId), {
         ...buildSiteCalibrationFromRow(sessionForSave, row, {
           product,
+          feesStructure: fees,
           partyPincode: filingPincode,
           rcUid,
           rcCompanyName: rcProfile?.companyName || rcProfile?.username,

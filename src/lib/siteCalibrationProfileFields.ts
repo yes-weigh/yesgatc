@@ -1,7 +1,8 @@
-import type { Customer, CustomerDevice, JobType, Product, SiteCalibration, VerificationLocation } from '../types';
+import type { Customer, CustomerDevice, JobType, Product, RcFeesStructure, SiteCalibration, VerificationLocation } from '../types';
 import { rcFilingPartyPatch } from './keralaRegion';
-import { defaultRvServiceFee } from './rcProfileFields';
-import { parseAdditionalFeeInput, parseServiceFeeInput } from './verificationDocaCharges';
+import { DEFAULT_RC_FEES_STRUCTURE } from './rcProfileFields';
+import { computeRvCustomerFeeLine } from './rvFeeBreakdown';
+import { parseAdditionalFeeInput } from './verificationDocaCharges';
 import {
   isCustomerPartyReadyToPersist,
   isPendingNewCustomerParty,
@@ -79,10 +80,12 @@ export type VerificationDeviceRowValues = {
   manufacturingYear: string;
   /** Carriage / conveyance (INR) — stored for DOCA; automation uses 0 until wired. */
   carriageConveyanceFee: string;
-  /** RV service fee (INR) — prefilled by capacity tier; editable per device. */
+  /** RV RC fees (INR) — computed Total − (GATC + GST); stored on save. */
   serviceFee: string;
   /** RV additional fee (INR) — editable per device. */
   additionalFee: string;
+  /** RV discount (INR) — editable per device. */
+  discountFee: string;
   /** @deprecated session-level verificationLocation is used instead */
   verificationLocation: VerificationLocation | '';
 };
@@ -203,6 +206,7 @@ export function createEmptyVerificationDeviceRow(): VerificationDeviceRowValues 
     carriageConveyanceFee: '0',
     serviceFee: '',
     additionalFee: '0',
+    discountFee: '0',
     verificationLocation: '',
   };
 }
@@ -236,8 +240,9 @@ export function deviceRowFromCustomerDevice(
     sealIdentificationNumber: '',
     manufacturingYear: '',
     carriageConveyanceFee: '0',
-    serviceFee: defaultRvServiceFee(product),
+    serviceFee: '',
     additionalFee: '0',
+    discountFee: '0',
     verificationLocation: '',
   };
 }
@@ -270,7 +275,8 @@ export function syncVerificationDevicesAfterCustomerUpdate(
       manufacturingYear: existing.manufacturingYear,
       carriageConveyanceFee: existing.carriageConveyanceFee,
       serviceFee: existing.serviceFee,
-      additionalFee: existing.additionalFee,
+      additionalFee: existing.additionalFee ?? '0',
+      discountFee: existing.discountFee ?? '0',
     };
   });
 
@@ -316,19 +322,14 @@ export function verificationSessionFromRecord(
         serviceFee:
           record.serviceFee !== undefined && record.serviceFee !== null
             ? String(record.serviceFee)
-            : record.verificationType === 'RV'
-              ? defaultRvServiceFee(
-                  record.maximumCapacity != null
-                    ? {
-                        maximumCapacity: record.maximumCapacity,
-                        unitOfMeasurement: record.unitOfMeasurement ?? 'kg',
-                      }
-                    : null,
-                )
-              : '',
+            : '',
         additionalFee:
           record.additionalFee !== undefined && record.additionalFee !== null
             ? String(record.additionalFee)
+            : '0',
+        discountFee:
+          record.discountFee !== undefined && record.discountFee !== null
+            ? String(record.discountFee)
             : '0',
       },
     ],
@@ -357,6 +358,7 @@ export function buildSiteCalibrationFromRow(
   row: VerificationDeviceRowValues,
   options?: {
     product?: Product | null;
+    feesStructure?: RcFeesStructure | null;
     docaCharges?: import('./verificationDocaCharges').VerificationDocaChargeFields | null;
     partyPincode?: string | null;
     rcUid?: string | null;
@@ -399,8 +401,15 @@ export function buildSiteCalibrationFromRow(
   if (session.verificationType === 'RV') {
     const year = row.manufacturingYear.trim();
     if (year) fields.manufacturingYear = Number(year);
-    fields.serviceFee = parseServiceFeeInput(row.serviceFee);
-    fields.additionalFee = parseAdditionalFeeInput(row.additionalFee);
+    const feeLine = computeRvCustomerFeeLine({
+      product: options?.product,
+      fees: options?.feesStructure ?? DEFAULT_RC_FEES_STRUCTURE,
+      additionalFee: row.additionalFee,
+      discountFee: row.discountFee,
+    });
+    fields.serviceFee = feeLine?.rcFees ?? 0;
+    fields.additionalFee = feeLine?.additionalFee ?? parseAdditionalFeeInput(row.additionalFee);
+    fields.discountFee = feeLine?.discount ?? 0;
   }
   if (options?.docaCharges) {
     Object.assign(fields, options.docaCharges);
@@ -416,10 +425,12 @@ export function buildNewSiteCalibrationRecord(
   docaCharges?: import('./verificationDocaCharges').VerificationDocaChargeFields | null,
   partyPincode?: string | null,
   rcParty?: { uid: string; name: string } | null,
+  feesStructure?: RcFeesStructure | null,
 ): Omit<SiteCalibration, 'id' | 'rcId' | 'createdAt' | 'createdByUid' | 'updatedAt'> {
   return {
     ...buildSiteCalibrationFromRow(session, row, {
       product,
+      feesStructure,
       docaCharges,
       partyPincode,
       rcUid: rcParty?.uid,
@@ -460,6 +471,7 @@ export function buildSiteCalibrationFields(
       carriageConveyanceFee: '0',
       serviceFee: '',
       additionalFee: '0',
+      discountFee: '0',
       verificationLocation: '',
     },
   );

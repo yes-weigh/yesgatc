@@ -1,14 +1,14 @@
-import { resolveRvWalletDisplayAmount } from './rvPaymentAmount';
 import { inrAmountToWords } from './inrAmountToWords';
+import { computeRvCustomerFeeLineForRecord } from './rvFeeBreakdown';
 import { resolveGstBillCustomerContact, VERIFICATION_GST_BILL_RECEIPT } from './verificationGstBill';
 import type { Customer, FirestoreUserDoc, Product, RcFeesStructure, SiteCalibration } from '../types';
 
 /** Thermal receipt width for wallet charge preview / print — same as GST bill. */
 export const VERIFICATION_RECEIPT_THERMAL = VERIFICATION_GST_BILL_RECEIPT;
 
-export const VERIFICATION_RECEIPT_PAYMENT_MODE = 'Wallet';
+export const VERIFICATION_RECEIPT_PAYMENT_MODE = 'UPI/Cash';
 
-export const VERIFICATION_RECEIPT_LINE_DESCRIPTION = 'Wallet Charge';
+export const VERIFICATION_RECEIPT_LINE_DESCRIPTION = 'Service charges';
 
 export type VerificationReceiptIssuer = {
   companyName: string;
@@ -163,12 +163,13 @@ function resolveReceiptNumber(record: SiteCalibration): string {
   return '—';
 }
 
-export function resolveRvWalletChargeAmount(
+export function resolveRvCashReceiptAmount(
   record: SiteCalibration,
   products: Product[],
   fees: RcFeesStructure,
 ): number | null {
-  return resolveRvWalletDisplayAmount(record, products, fees);
+  const total = computeRvCustomerFeeLineForRecord(record, products, fees)?.total;
+  return total != null && total > 0 ? total : null;
 }
 
 export function canShowVerificationWalletReceipt(record: SiteCalibration): boolean {
@@ -204,8 +205,8 @@ export function buildVerificationReceiptData(
   const contact = resolveGstBillCustomerContact(record, customer);
   if (contact.name === '—') missingFields.push('Customer name');
 
-  const amount = resolveRvWalletChargeAmount(record, products, fees);
-  if (amount == null || amount <= 0) missingFields.push('Wallet charge');
+  const amount = resolveRvCashReceiptAmount(record, products, fees);
+  if (amount == null || amount <= 0) missingFields.push('Total');
 
   const totalAmount = amount ?? 0;
 

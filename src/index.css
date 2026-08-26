@@ -12074,6 +12074,33 @@ body.verification-mobile-wizard-active {
   color: rgba(248, 250, 252, 0.95);
 }
 
+.verification-certified-action-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  padding: 0.08rem 0.32rem;
+  border-radius: 999px;
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.verification-certified-action-tag--signed {
+  color: #bbf7d0;
+  background: rgba(22, 163, 74, 0.22);
+  border: 1px solid rgba(74, 222, 128, 0.4);
+}
+
+.verification-certified-action-tag--unsigned {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+}
+
 .verification-certified-action--certificate .verification-certified-action-icon {
   color: #4ade80;
   border-color: rgba(74, 222, 128, 0.35);
@@ -14698,6 +14725,11 @@ body.verification-mobile-wizard-active {
   .verification-certified-action-label {
     font-size: 0.58rem;
   }
+
+  .verification-certified-action-tag {
+    font-size: 0.46rem;
+    padding: 0.06rem 0.26rem;
+  }
 }
 
 .data-table--site-calibration .site-calibration-col-serial {
@@ -17288,6 +17320,16 @@ body.verification-photo-viewer-open {
 
 .verification-fees-total-line--section {
   padding-top: 0.12rem;
+}
+
+.verification-fees-total-line--net {
+  padding-top: 0.12rem;
+}
+
+.verification-fees-total-line--net > span:first-child,
+.verification-fees-total-line--net > span:last-child {
+  color: rgba(226, 232, 240, 0.92);
+  font-weight: 650;
 }
 
 .verification-fees-total-line--grand {

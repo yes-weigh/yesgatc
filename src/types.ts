@@ -441,10 +441,12 @@ export interface SiteCalibration {
   verificationFeeGst?: number;
   /** Verification fee incl. 18% GST — filled on eMAAP as Verification Fee and Total deposited. */
   verificationFeeTotal?: number;
-  /** RV service fee (INR) — app-only; stored on Firebase, not used by certificate worker. */
+  /** RV RC fees (INR) — Total − (GATC + GST); app-only. */
   serviceFee?: number;
   /** RV additional fee (INR) — app-only; stored on Firebase, not used by certificate worker. */
   additionalFee?: number;
+  /** RV discount (INR) — app-only. */
+  discountFee?: number;
   /** RV wallet payment for administrative fees + GST. */
   rvPaymentStatus?: 'not_required' | 'pending' | 'paid';
   rvPaymentId?: string;

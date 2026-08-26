@@ -1,10 +1,7 @@
 import React from 'react';
-import {
-  formatRcFeeAmount,
-  verificationFeeWithGst,
-  VERIFICATION_FEE_GST_RATE,
-} from '../lib/rcProfileFields';
-import { parseAdditionalFeeInput, parseServiceFeeInput } from '../lib/verificationDocaCharges';
+import { formatRcFeeAmount, VERIFICATION_FEE_GST_RATE } from '../lib/rcProfileFields';
+import type { RvCustomerFeeLine } from '../lib/rvFeeBreakdown';
+import { parseAdditionalFeeInput } from '../lib/verificationDocaCharges';
 
 const GST_PERCENT_LABEL = `${Math.round(VERIFICATION_FEE_GST_RATE * 100)}%`;
 
@@ -19,23 +16,16 @@ export type VerificationEditableFeeProps = {
 };
 
 type VerificationFeeBreakdownProps = {
-  /** Quoted RC verification fee (₹150 / ₹250). TDS and gateway are shown as a breakdown within this amount. */
-  baseAmount: number;
+  line: RvCustomerFeeLine;
   variant?: VerificationFeeBreakdownVariant;
   className?: string;
-  tdsAmount?: number;
-  gatewayFeeAmount?: number;
-  serviceFee?: VerificationEditableFeeProps;
   additionalFee?: VerificationEditableFeeProps;
-  tdsTotal?: number;
-  gatewayFeeTotal?: number;
-  serviceFeeTotal?: number;
-  additionalFeeTotal?: number;
+  discountFee?: VerificationEditableFeeProps;
 };
 
-function editableFeeAmount(fee?: VerificationEditableFeeProps, parse = parseServiceFeeInput): number {
+function editableFeeAmount(fee?: VerificationEditableFeeProps): number {
   if (!fee) return 0;
-  return parse(fee.value);
+  return parseAdditionalFeeInput(fee.value);
 }
 
 function EditableFeeValue({ fee }: { fee: VerificationEditableFeeProps }) {
@@ -61,75 +51,76 @@ function EditableFeeValue({ fee }: { fee: VerificationEditableFeeProps }) {
     );
   }
 
-  return <span>{formatRcFeeAmount(parseServiceFeeInput(fee.value))}</span>;
+  return <span>{formatRcFeeAmount(parseAdditionalFeeInput(fee.value))}</span>;
 }
 
-function extraFeesTotal(
-  serviceFee?: VerificationEditableFeeProps,
-  additionalFee?: VerificationEditableFeeProps,
-): number {
-  return (
-    editableFeeAmount(serviceFee, parseServiceFeeInput)
-    + editableFeeAmount(additionalFee, parseAdditionalFeeInput)
-  );
-}
-
-function QuotedBaseLines({
-  quotedBase,
-  tds,
-  gateway,
+function FeeRows({
+  line,
   lineClassName,
-  grouped = false,
+  additionalFee,
+  discountFee,
+  showZeroExtras,
 }: {
-  quotedBase: number;
-  tds: number;
-  gateway: number;
+  line: RvCustomerFeeLine;
   lineClassName: string;
-  grouped?: boolean;
+  additionalFee?: VerificationEditableFeeProps;
+  discountFee?: VerificationEditableFeeProps;
+  showZeroExtras: boolean;
 }) {
-  const lines = (
+  const additionalAmount = editableFeeAmount(additionalFee);
+  const discountAmount = editableFeeAmount(discountFee);
+  const showAdditional =
+    Boolean(additionalFee) &&
+    (showZeroExtras || additionalAmount > 0 || Boolean(additionalFee?.onChange && !additionalFee.readOnly));
+  const showDiscount =
+    Boolean(discountFee) &&
+    (showZeroExtras || discountAmount > 0 || Boolean(discountFee?.onChange && !discountFee.readOnly));
+
+  return (
     <>
       <div className={`${lineClassName} verification-fees-total-line--primary`}>
-        <span>Verification fee</span>
-        <span>{formatRcFeeAmount(quotedBase)}</span>
+        <span>GATC verification fees</span>
+        <span>{formatRcFeeAmount(line.gatcFee)}</span>
       </div>
-      <div className="verification-fees-fee-chip" aria-label="Administrative fees">
-        <p className="verification-fees-fee-chip-title">Administrative fees</p>
-        <div className="verification-fees-fee-chip-row">
-          <span>TDS</span>
-          <span>{formatRcFeeAmount(tds)}</span>
+      <div className={`${lineClassName} verification-fees-total-line--section`}>
+        <span>GST ({GST_PERCENT_LABEL})</span>
+        <span>{formatRcFeeAmount(line.gst)}</span>
+      </div>
+      <div className={lineClassName}>
+        <span>RC fees</span>
+        <span>{formatRcFeeAmount(line.rcFees)}</span>
+      </div>
+      {showAdditional && additionalFee ? (
+        <div className={`${lineClassName} verification-fees-total-line--editable`}>
+          <span>Additional fees</span>
+          <EditableFeeValue fee={additionalFee} />
         </div>
-        {gateway > 0 && (
-          <div className="verification-fees-fee-chip-row">
-            <span>Gateway</span>
-            <span>{formatRcFeeAmount(gateway)}</span>
-          </div>
-        )}
+      ) : null}
+      {showDiscount && discountFee ? (
+        <div className={`${lineClassName} verification-fees-total-line--editable`}>
+          <span>Discount</span>
+          <EditableFeeValue fee={discountFee} />
+        </div>
+      ) : null}
+      <div className={`${lineClassName} verification-fees-total-line--net`}>
+        <span>Net RC fees</span>
+        <span>{formatRcFeeAmount(line.netRcFees)}</span>
+      </div>
+      <div className={`${lineClassName} verification-fees-total-line--grand`}>
+        <span>Total</span>
+        <strong>{formatRcFeeAmount(line.total)}</strong>
       </div>
     </>
   );
-
-  if (!grouped) return lines;
-
-  return <div className="verification-fees-total-group">{lines}</div>;
 }
 
 export const VerificationFeeBreakdown: React.FC<VerificationFeeBreakdownProps> = ({
-  baseAmount,
+  line,
   variant = 'cell',
   className = '',
-  tdsAmount = 0,
-  gatewayFeeAmount = 0,
-  serviceFee,
   additionalFee,
-  tdsTotal = 0,
-  gatewayFeeTotal = 0,
-  serviceFeeTotal = 0,
-  additionalFeeTotal = 0,
+  discountFee,
 }) => {
-  const { gst } = verificationFeeWithGst(baseAmount);
-  const lineExtras = extraFeesTotal(serviceFee, additionalFee);
-  const lineGrandTotal = baseAmount + gst + lineExtras;
   const rootClass = ['verification-fee-breakdown', `verification-fee-breakdown--${variant}`, className]
     .filter(Boolean)
     .join(' ');
@@ -137,130 +128,23 @@ export const VerificationFeeBreakdown: React.FC<VerificationFeeBreakdownProps> =
   if (variant === 'inline') {
     return (
       <span className={rootClass}>
-        <span className="verification-fee-breakdown-base">{formatRcFeeAmount(baseAmount)}</span>
-        <span className="verification-fee-breakdown-plus" aria-hidden>
-          +
-        </span>
-        <span className="verification-fee-breakdown-gst">
-          {formatRcFeeAmount(gst)} <span className="verification-fee-breakdown-gst-label">GST</span>
-        </span>
-        {(serviceFee || additionalFee) && (
-          <>
-            <span className="verification-fee-breakdown-plus" aria-hidden>
-              +
-            </span>
-            <span className="verification-fee-breakdown-extra">
-              {formatRcFeeAmount(lineExtras)}
-            </span>
-          </>
-        )}
-        <span className="verification-fee-breakdown-eq" aria-hidden>
-          =
-        </span>
-        <strong className="verification-fee-breakdown-total">{formatRcFeeAmount(lineGrandTotal)}</strong>
+        <span className="verification-fee-breakdown-base">{formatRcFeeAmount(line.total)}</span>
       </span>
     );
   }
 
-  if (variant === 'summary-rows') {
-    return (
-      <div className={rootClass}>
-        <QuotedBaseLines
-          quotedBase={baseAmount}
-          tds={tdsAmount}
-          gateway={gatewayFeeAmount}
-          lineClassName="verification-fee-breakdown-row"
-        />
-        <div className="verification-fee-breakdown-row">
-          <span>GST ({GST_PERCENT_LABEL})</span>
-          <span>{formatRcFeeAmount(gst)}</span>
-        </div>
-        {serviceFee && (
-          <div className="verification-fee-breakdown-row">
-            <span>Service fee</span>
-            <EditableFeeValue fee={serviceFee} />
-          </div>
-        )}
-        {additionalFee && (
-          <div className="verification-fee-breakdown-row">
-            <span>Additional fee</span>
-            <EditableFeeValue fee={additionalFee} />
-          </div>
-        )}
-        <div className="verification-fee-breakdown-row verification-fee-breakdown-row--total">
-          <span>Total</span>
-          <strong>{formatRcFeeAmount(lineGrandTotal)}</strong>
-        </div>
-      </div>
-    );
-  }
-
-  if (variant === 'total-footer') {
-    const grandTotal = baseAmount + gst + serviceFeeTotal + additionalFeeTotal;
-    return (
-      <div className={rootClass}>
-        <QuotedBaseLines
-          quotedBase={baseAmount}
-          tds={tdsTotal}
-          gateway={gatewayFeeTotal}
-          lineClassName="verification-fees-total-line"
-          grouped
-        />
-        <div className="verification-fees-total-line verification-fees-total-line--section">
-          <span>GST ({GST_PERCENT_LABEL})</span>
-          <span>{formatRcFeeAmount(gst)}</span>
-        </div>
-        {serviceFeeTotal > 0 && (
-          <div className="verification-fees-total-line">
-            <span>Service fee</span>
-            <span>{formatRcFeeAmount(serviceFeeTotal)}</span>
-          </div>
-        )}
-        {additionalFeeTotal > 0 && (
-          <div className="verification-fees-total-line">
-            <span>Additional fee</span>
-            <span>{formatRcFeeAmount(additionalFeeTotal)}</span>
-          </div>
-        )}
-        <div className="verification-fees-total-line verification-fees-total-line--grand">
-          <span>Total</span>
-          <strong>{formatRcFeeAmount(grandTotal)}</strong>
-        </div>
-      </div>
-    );
-  }
-
-  const additionalFeeAmount = editableFeeAmount(additionalFee, parseAdditionalFeeInput);
+  const lineClassName =
+    variant === 'summary-rows' ? 'verification-fee-breakdown-row' : 'verification-fees-total-line';
 
   return (
     <div className={rootClass}>
-      <QuotedBaseLines
-        quotedBase={baseAmount}
-        tds={tdsAmount}
-        gateway={gatewayFeeAmount}
-        lineClassName="verification-fees-total-line"
-        grouped
+      <FeeRows
+        line={line}
+        lineClassName={lineClassName}
+        additionalFee={additionalFee}
+        discountFee={discountFee}
+        showZeroExtras={variant === 'cell' || variant === 'total-footer'}
       />
-      <div className="verification-fees-total-line verification-fees-total-line--section">
-        <span>GST ({GST_PERCENT_LABEL})</span>
-        <span>{formatRcFeeAmount(gst)}</span>
-      </div>
-      {serviceFee && (
-        <div className="verification-fees-total-line verification-fees-total-line--editable">
-          <span>Service fee</span>
-          <EditableFeeValue fee={serviceFee} />
-        </div>
-      )}
-      {additionalFee && (additionalFeeAmount > 0 || (additionalFee.onChange && !additionalFee.readOnly)) && (
-        <div className="verification-fees-total-line verification-fees-total-line--editable">
-          <span>Additional fee</span>
-          <EditableFeeValue fee={additionalFee} />
-        </div>
-      )}
-      <div className="verification-fees-total-line verification-fees-total-line--grand">
-        <span>Total</span>
-        <strong>{formatRcFeeAmount(lineGrandTotal)}</strong>
-      </div>
     </div>
   );
 };

@@ -1,9 +1,8 @@
 import React, { useMemo } from 'react';
 import { IndianRupee } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import { useAppSettings } from '../hooks/useAppSettings';
-import { rvSettingFeeLineFromProduct } from '../lib/zohoRvSubmit';
-import { parseAdditionalFeeInput, parseServiceFeeInput } from '../lib/verificationDocaCharges';
+import { DEFAULT_RC_FEES_STRUCTURE } from '../lib/rcProfileFields';
+import { computeRvCustomerFeeLine, sumRvCustomerFeeLines } from '../lib/rvFeeBreakdown';
 import type { VerificationDeviceRowValues } from '../lib/siteCalibrationProfileFields';
 import { VerificationFeeBreakdown } from './VerificationFeeBreakdown';
 import type { JobType, RcFeesStructure, VerificationLocation } from '../types';
@@ -15,61 +14,49 @@ type VerificationFeesTotalSummaryProps = {
   verificationSubject?: 'self' | 'customer';
   feesStructure?: RcFeesStructure;
   compact?: boolean;
+  readOnly?: boolean;
+  onDeviceChange?: (localId: string, patch: Partial<VerificationDeviceRowValues>) => void;
 };
 
 export const VerificationFeesTotalSummary: React.FC<VerificationFeesTotalSummaryProps> = ({
   devices,
   verificationType = 'OV',
-  verificationLocation = '',
-  verificationSubject = 'customer',
+  feesStructure,
   compact = false,
+  readOnly = false,
+  onDeviceChange,
 }) => {
   const { products } = useAppContext();
-  const { appSettings } = useAppSettings();
   const isRv = verificationType === 'RV';
-  const useSelfFees = verificationSubject === 'self';
+  const fees = feesStructure ?? DEFAULT_RC_FEES_STRUCTURE;
 
   const includedDevices = useMemo(
     () => devices.filter(device => device.included),
     [devices],
   );
 
-  const feeLines = useMemo(
+  const lines = useMemo(
     () => {
       if (!isRv) return [];
-      return includedDevices.map(row => {
+      return includedDevices.flatMap(row => {
         const product = products.find(entry => entry.id === row.productId) ?? null;
-        return rvSettingFeeLineFromProduct(product, appSettings);
+        const line = computeRvCustomerFeeLine({
+          product,
+          fees,
+          additionalFee: row.additionalFee,
+          discountFee: row.discountFee,
+        });
+        return line ? [line] : [];
       });
     },
-    [appSettings, includedDevices, isRv, products],
+    [fees, includedDevices, isRv, products],
   );
 
-  const serviceFeeTotal = useMemo(
-    () =>
-      includedDevices.reduce((sum, row) => sum + parseServiceFeeInput(row.serviceFee), 0),
-    [includedDevices],
-  );
+  const summed = useMemo(() => sumRvCustomerFeeLines(lines), [lines]);
+  const editRow = includedDevices.length === 1 ? includedDevices[0] : null;
+  const canEdit = Boolean(editRow && onDeviceChange && !readOnly);
 
-  const additionalFeeTotal = useMemo(
-    () =>
-      includedDevices.reduce((sum, row) => sum + parseAdditionalFeeInput(row.additionalFee), 0),
-    [includedDevices],
-  );
-
-  const tdsTotal = useMemo(
-    () => feeLines.reduce((sum, line) => sum + (line?.tdsInr ?? 0), 0),
-    [feeLines],
-  );
-
-  const baseAmount = useMemo(
-    () => feeLines.reduce((sum, line) => sum + (line?.baseInr ?? 0), 0),
-    [feeLines],
-  );
-
-  const canCalculateFees = isRv || Boolean(verificationLocation) || useSelfFees;
-
-  if (!isRv || includedDevices.length === 0) {
+  if (!isRv || includedDevices.length === 0 || !summed) {
     return null;
   }
 
@@ -83,23 +70,34 @@ export const VerificationFeesTotalSummary: React.FC<VerificationFeesTotalSummary
           <IndianRupee size={compact ? 14 : 16} aria-hidden />
           <p className="verification-fees-summary-title mb-0">Total fees</p>
         </div>
-        {canCalculateFees ? (
-          <span className="verification-fees-summary-meta">{deviceCountLabel}</span>
-        ) : (
-          <span className="text-muted text-xs">Select location to calculate fees</span>
-        )}
+        <span className="verification-fees-summary-meta">{deviceCountLabel}</span>
       </div>
 
-      {canCalculateFees && (
-        <VerificationFeeBreakdown
-          baseAmount={baseAmount}
-          variant="total-footer"
-          className="verification-fees-summary-breakdown"
-          tdsTotal={tdsTotal}
-          serviceFeeTotal={serviceFeeTotal}
-          additionalFeeTotal={additionalFeeTotal}
-        />
-      )}
+      <VerificationFeeBreakdown
+        line={summed}
+        variant="total-footer"
+        className="verification-fees-summary-breakdown"
+        additionalFee={{
+          value: editRow ? editRow.additionalFee : String(summed.additionalFee),
+          readOnly: !canEdit,
+          onChange:
+            canEdit && editRow
+              ? value => onDeviceChange!(editRow.localId, { additionalFee: value })
+              : undefined,
+          inputId: editRow ? `verification-review-additional-fee-${editRow.localId}` : undefined,
+          ariaLabel: 'Additional fees',
+        }}
+        discountFee={{
+          value: editRow ? editRow.discountFee : String(summed.discount),
+          readOnly: !canEdit,
+          onChange:
+            canEdit && editRow
+              ? value => onDeviceChange!(editRow.localId, { discountFee: value })
+              : undefined,
+          inputId: editRow ? `verification-review-discount-${editRow.localId}` : undefined,
+          ariaLabel: 'Discount',
+        }}
+      />
     </div>
   );
 };
