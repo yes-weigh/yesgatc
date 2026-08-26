@@ -268,10 +268,19 @@ function buildYesoneRcPayload(uid, record, event, occurredAt) {
   });
 }
 
+function serializeYesonePayload(payload) {
+  try {
+    return JSON.stringify(payload);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'unknown';
+    throw new Error(`Yesone payload is not JSON-serializable: ${message}`);
+  }
+}
+
 function payloadFingerprint(payload) {
   return crypto
     .createHash('sha256')
-    .update(JSON.stringify({
+    .update(serializeYesonePayload({
       event: payload.event,
       rc: payload.rc ?? null,
       certificate: payload.certificate ?? null,
@@ -320,7 +329,7 @@ async function writeYesonePushResult(db, path, patch) {
 }
 
 async function postYesoneWebhook(url, payload) {
-  const body = JSON.stringify(payload);
+  const body = serializeYesonePayload(payload);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS);
   try {
@@ -497,10 +506,22 @@ async function pushAllYesone(db) {
     }
     const data = doc.data();
     rcById.set(doc.id, { id: doc.id, ...data });
-    const result = await processYesoneRcPush(db, doc.id, data, null, {
-      ...deliverOpts,
-      event: 'rc.sync',
-    });
+    let result;
+    try {
+      result = await processYesoneRcPush(db, doc.id, data, null, {
+        ...deliverOpts,
+        event: 'rc.sync',
+      });
+    } catch (err) {
+      log.rcFailed += 1;
+      appendPushError(log, {
+        kind: 'rc',
+        id: doc.id,
+        event: 'rc.sync',
+        error: err instanceof Error ? err.message : 'Push failed.',
+      });
+      continue;
+    }
     if (result?.skipped) continue;
     if (result?.ok) log.rcSent += 1;
     else {
@@ -544,12 +565,24 @@ async function pushAllYesone(db) {
     const event = isCertificateSigned(record)
       ? 'certificate.certified_signed'
       : 'certificate.certified_unsigned';
-    const result = await processYesoneCertificatePush(db, doc.id, record, null, {
-      ...deliverOpts,
-      event,
-      customer: customerId ? customerCache.get(customerId) : null,
-      rc: rcId ? rcById.get(rcId) || await loadRc(db, rcId) : null,
-    });
+    let result;
+    try {
+      result = await processYesoneCertificatePush(db, doc.id, record, null, {
+        ...deliverOpts,
+        event,
+        customer: customerId ? customerCache.get(customerId) : null,
+        rc: rcId ? rcById.get(rcId) || await loadRc(db, rcId) : null,
+      });
+    } catch (err) {
+      log.certFailed += 1;
+      appendPushError(log, {
+        kind: 'certificate',
+        id: doc.id,
+        event,
+        error: err instanceof Error ? err.message : 'Push failed.',
+      });
+      continue;
+    }
     if (result?.skipped) {
       log.certSkipped += 1;
       continue;
@@ -604,7 +637,52 @@ async function testYesoneWebhookHandler(request, db) {
     throw new HttpsError('unauthenticated', 'Sign in required.');
   }
   await assertSuperAdmin(db, request.auth.uid);
-  return pushAllYesone(db);
+  try {
+    return await pushAllYesone(db);
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    const message = err instanceof Error ? err.message : 'Yesone push failed.';
+    console.error('testYesoneWebhook failed', err);
+    throw new HttpsError('failed-precondition', message);
+  }
+}
+
+async function testYesoneWebhookHttpHandler(req, res, db, auth) {
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'POST only.' });
+    return;
+  }
+
+  const header = String(req.headers.authorization || '');
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) {
+    res.status(401).json({ error: 'Sign in required.' });
+    return;
+  }
+
+  try {
+    const decoded = await auth.verifyIdToken(token);
+    const log = await testYesoneWebhookHandler({ auth: { uid: decoded.uid } }, db);
+    res.status(200).json(log);
+  } catch (err) {
+    const authCode = String(err?.code || '');
+    if (authCode.startsWith('auth/')) {
+      res.status(401).json({ error: 'Sign in required.' });
+      return;
+    }
+    if (err instanceof HttpsError) {
+      const status = Number(err.httpErrorCode?.status) || 400;
+      res.status(status).json({ error: err.message });
+      return;
+    }
+    const message = err instanceof Error ? err.message : 'Yesone push failed.';
+    console.error('testYesoneWebhook failed', err);
+    res.status(400).json({ error: message });
+  }
 }
 
 module.exports = {
@@ -624,6 +702,7 @@ module.exports = {
   onSiteCalibrationYesoneWebhookHandler,
   onUserYesoneWebhookHandler,
   testYesoneWebhookHandler,
+  testYesoneWebhookHttpHandler,
   processYesoneCertificatePush,
   processYesoneRcPush,
   pushAllYesone,

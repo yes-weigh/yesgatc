@@ -46,7 +46,7 @@ const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertifica
 const {
   onSiteCalibrationYesoneWebhookHandler,
   onUserYesoneWebhookHandler,
-  testYesoneWebhookHandler,
+  testYesoneWebhookHttpHandler,
 } = require('./yesoneWebhook');
 const {
   reviewWalletTopUpHandler,
@@ -510,15 +510,19 @@ exports.onUserYesoneWebhook = onDocumentWritten(
   async event => onUserYesoneWebhookHandler(event, adminDb()),
 );
 
-/** Super Admin: push all RC + issued certificate payloads to yesone and return a log. */
-exports.testYesoneWebhook = onCall(
+/**
+ * Super Admin: push all RC + issued certificate payloads to yesone and return a log.
+ * HTTP + public invoker so localhost CORS preflight is not blocked by Cloud Run IAM.
+ */
+exports.testYesoneWebhook = onRequest(
   {
     region: CALLABLE_REGION,
-    cors: CALLABLE_CORS,
+    cors: true,
+    invoker: 'public',
     timeoutSeconds: 540,
     memory: '512MiB',
   },
-  async request => testYesoneWebhookHandler(request, adminDb()),
+  async (req, res) => testYesoneWebhookHttpHandler(req, res, adminDb(), adminAuth()),
 );
 
 /**

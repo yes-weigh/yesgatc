@@ -72,10 +72,15 @@ export async function submitRvWithZohoGate(
 }
 
 export function callableErrorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === 'object' && err !== null && 'message' in err) {
-    return String((err as { message: unknown }).message);
+  if (typeof err === 'object' && err !== null) {
+    const e = err as { message?: unknown; details?: unknown };
+    const message = typeof e.message === 'string' ? e.message.trim() : '';
+    const details = typeof e.details === 'string' ? e.details.trim() : '';
+    if (message && message !== 'internal') return message;
+    if (details) return details;
+    if (message) return message;
   }
+  if (err instanceof Error) return err.message;
   return '';
 }
 
