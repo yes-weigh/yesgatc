@@ -13,10 +13,15 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
     private readonly int _tokenRefreshMinutes;
     private readonly object _gate = new();
     private readonly Dictionary<string, SiteCalibrationRecord> _submitted = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SiteCalibrationRecord> _signedUploads = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SiteCalibrationRecord> _certified = new(StringComparer.Ordinal);
 
     private FirestoreDb? _db;
     private FirestoreChangeListener? _submittedListener;
+    private FirestoreChangeListener? _signedUploadListener;
+    private FirestoreChangeListener? _certifiedListener;
     private Dictionary<string, string> _rcNames = new(StringComparer.Ordinal);
+    private HashSet<string> _pdfSignerRcIds = new(StringComparer.Ordinal);
     private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _lifetimeCts;
     private Task? _tokenRefreshTask;
@@ -33,6 +38,10 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
     public string? ScopeRcId { get; set; }
 
     public event Action<IReadOnlyList<SiteCalibrationRecord>>? QueueUpdated;
+
+    public event Action<IReadOnlyList<SiteCalibrationRecord>>? SignedUploadQueueUpdated;
+
+    public event Action<IReadOnlyList<SiteCalibrationRecord>>? PdfSignerQueueUpdated;
 
     public event Action<string>? ListenerError;
 
@@ -79,6 +88,8 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         lock (_gate)
         {
             _submitted.Clear();
+            _signedUploads.Clear();
+            _certified.Clear();
         }
 
         CancelDebounce();
@@ -99,11 +110,14 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         };
         _db = await builder.BuildAsync(cancellationToken);
 
-        _rcNames = await LoadRcCenterNamesAsync(_db, ScopeRcId, cancellationToken);
-
+        var directory = await LoadRcDirectoryAsync(_db, ScopeRcId, cancellationToken);
         lock (_gate)
         {
+            _rcNames = directory.Names;
+            _pdfSignerRcIds = directory.PdfSignerRcIds;
             _submitted.Clear();
+            _signedUploads.Clear();
+            _certified.Clear();
         }
 
         Query submittedQuery = _db.Collection("siteCalibrations")
@@ -116,6 +130,37 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         _submittedListener = submittedQuery.Listen((snapshot, _) =>
         {
             HandleSnapshot(snapshot, _submitted);
+            return Task.CompletedTask;
+        });
+
+        if (WorkerProduct.IsEmaapEngineBuild)
+        {
+            return;
+        }
+
+        Query signedQuery = _db.Collection("siteCalibrations")
+            .WhereNotEqualTo("signedCertificatePdfUrl", "");
+        if (!string.IsNullOrWhiteSpace(ScopeRcId))
+        {
+            signedQuery = signedQuery.WhereEqualTo("rcId", ScopeRcId);
+        }
+
+        _signedUploadListener = signedQuery.Listen((snapshot, _) =>
+        {
+            HandleSnapshot(snapshot, _signedUploads);
+            return Task.CompletedTask;
+        });
+
+        Query certifiedQuery = _db.Collection("siteCalibrations")
+            .WhereEqualTo("status", VerificationStatuses.Certified);
+        if (!string.IsNullOrWhiteSpace(ScopeRcId))
+        {
+            certifiedQuery = certifiedQuery.WhereEqualTo("rcId", ScopeRcId);
+        }
+
+        _certifiedListener = certifiedQuery.Listen((snapshot, _) =>
+        {
+            HandleSnapshot(snapshot, _certified);
             return Task.CompletedTask;
         });
     }
@@ -183,8 +228,9 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
             try
             {
                 await Task.Delay(250, token);
-                var merged = BuildMergedQueue();
-                QueueUpdated?.Invoke(merged);
+                QueueUpdated?.Invoke(BuildGenerateQueue());
+                SignedUploadQueueUpdated?.Invoke(BuildSignedUploadQueue());
+                PdfSignerQueueUpdated?.Invoke(BuildPdfSignerQueue());
             }
             catch (OperationCanceledException)
             {
@@ -204,7 +250,7 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         _debounceCts = null;
     }
 
-    private IReadOnlyList<SiteCalibrationRecord> BuildMergedQueue()
+    private IReadOnlyList<SiteCalibrationRecord> BuildGenerateQueue()
     {
         lock (_gate)
         {
@@ -212,12 +258,33 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         }
     }
 
-    private static async Task<Dictionary<string, string>> LoadRcCenterNamesAsync(
+    private IReadOnlyList<SiteCalibrationRecord> BuildSignedUploadQueue()
+    {
+        lock (_gate)
+        {
+            return EmaapSignedPdfUploadFilter.Apply(_signedUploads.Values, ScopeRcId);
+        }
+    }
+
+    private IReadOnlyList<SiteCalibrationRecord> BuildPdfSignerQueue()
+    {
+        lock (_gate)
+        {
+            return PdfSignerQueueFilter.Apply(_certified.Values, _pdfSignerRcIds, ScopeRcId);
+        }
+    }
+
+    private sealed record RcDirectory(
+        Dictionary<string, string> Names,
+        HashSet<string> PdfSignerRcIds);
+
+    private static async Task<RcDirectory> LoadRcDirectoryAsync(
         FirestoreDb db,
         string? scopeRcId,
         CancellationToken cancellationToken)
     {
         var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pdfSignerRcIds = new HashSet<string>(StringComparer.Ordinal);
         if (!string.IsNullOrWhiteSpace(scopeRcId))
         {
             var document = await db.Collection("users").Document(scopeRcId).GetSnapshotAsync(cancellationToken);
@@ -225,10 +292,15 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
             {
                 document.TryGetValue<string>("companyName", out var companyName);
                 document.TryGetValue<string>("username", out var username);
+                document.TryGetValue<string>("certificationMethod", out var method);
                 names[scopeRcId] = FirstNonEmpty(companyName, username, document.Id);
+                if (RcCertificationMethods.IsPdfSigner(method))
+                {
+                    pdfSignerRcIds.Add(scopeRcId);
+                }
             }
 
-            return names;
+            return new RcDirectory(names, pdfSignerRcIds);
         }
 
         try
@@ -241,16 +313,21 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
             {
                 document.TryGetValue<string>("companyName", out var companyName);
                 document.TryGetValue<string>("username", out var username);
+                document.TryGetValue<string>("certificationMethod", out var method);
                 var label = FirstNonEmpty(companyName, username, document.Id);
                 names[document.Id] = label;
+                if (RcCertificationMethods.IsPdfSigner(method))
+                {
+                    pdfSignerRcIds.Add(document.Id);
+                }
             }
         }
         catch (Exception)
         {
-            return names;
+            return new RcDirectory(names, pdfSignerRcIds);
         }
 
-        return names;
+        return new RcDirectory(names, pdfSignerRcIds);
     }
 
     private static string FirstNonEmpty(params string?[] values)
@@ -272,6 +349,18 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         {
             await _submittedListener.StopAsync(CancellationToken.None);
             _submittedListener = null;
+        }
+
+        if (_signedUploadListener is not null)
+        {
+            await _signedUploadListener.StopAsync(CancellationToken.None);
+            _signedUploadListener = null;
+        }
+
+        if (_certifiedListener is not null)
+        {
+            await _certifiedListener.StopAsync(CancellationToken.None);
+            _certifiedListener = null;
         }
 
         _db = null;

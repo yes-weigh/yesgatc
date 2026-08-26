@@ -84,6 +84,16 @@ public sealed class SiteCalibrationRecord
         && !string.IsNullOrWhiteSpace(SignedCertificatePdfUrl)
         && string.IsNullOrWhiteSpace(EmaapSignedPdfUploadedAt);
 
+    /// <summary>
+    /// Certified, seq &gt; 2304, no signed PDF yet. RC must also be Super Admin “PDF signer”.
+    /// </summary>
+    public bool IsEligibleForPdfSignerQueue =>
+        IsCertified
+        && !IsSuperseded
+        && !IsVoided
+        && IsAfterLegacySequence
+        && string.IsNullOrWhiteSpace(SignedCertificatePdfUrl);
+
     /// <summary>Single production stage: Submitted → eMAAP fill+certify → PDF → Firebase certified.</summary>
     public bool NeedsPipelineWork => IsSubmitted;
 
@@ -92,7 +102,9 @@ public sealed class SiteCalibrationRecord
             ? "eMAAP · Fill & certify"
             : IsEligibleForSignedPdfUpload
                 ? "eMAAP · Upload signed PDF"
-                : "Complete";
+                : IsEligibleForPdfSignerQueue
+                    ? "PDF signer"
+                    : "Complete";
 
     public string PipelineDateDisplay =>
         IsSubmitted ? SubmittedAtDisplay

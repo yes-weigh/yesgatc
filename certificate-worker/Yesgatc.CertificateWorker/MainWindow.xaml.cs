@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -27,7 +28,8 @@ public partial class MainWindow : Window
         bool LoginRequired,
         string Message,
         bool BrowserDisconnected = false,
-        bool HaltBatch = false);
+        bool HaltBatch = false,
+        bool SoftFail = false);
 
     private sealed class ParallelBatchStats
     {
@@ -38,13 +40,17 @@ public partial class MainWindow : Window
     }
 
     private readonly ObservableCollection<CertificationQueueItem> _jobs = [];
+    private readonly ObservableCollection<CertificationQueueItem> _pdfSignerJobs = [];
+    private readonly ObservableCollection<CertificationQueueItem> _signedUploadJobs = [];
     private readonly ObservableCollection<ActivityLogEntry> _activityLog = [];
+    private bool _syncingQueueSelection;
     private readonly FirebaseAuthService _authService;
     private readonly FirestoreService _firestoreService;
     private readonly FirestoreQueueListener _queueListener;
     private readonly PartyDetailsService _partyDetailsService;
     private readonly InstrumentDetailsService _instrumentDetailsService;
     private readonly AutomationService _automationService;
+    private readonly PdfImageStampService _pdfImageStampService;
     private readonly LocalCredentialsStore _credentialStore = new();
     private readonly JobRetryTracker _jobRetries = new();
     private readonly WorkerTelemetryService _telemetry;
@@ -58,6 +64,10 @@ public partial class MainWindow : Window
     private CertificationQueueItem? _selectedQueueItem;
     private bool _isBusy;
     private bool _autoWorkerEnabled;
+    private bool _processFillQueue = true;
+    private bool _processSignerQueue = true;
+    private bool _processSignedUploadQueue = true;
+    private bool _suppressProcessQueueSwitchEvent;
     private bool _autoWorkerPausedForDoca;
     private bool _emaapReadyForJobs;
     private bool _startWithWindows = true;
@@ -77,11 +87,13 @@ public partial class MainWindow : Window
     private DispatcherTimer? _docaSessionWatchdogTimer;
     private DispatcherTimer? _telemetryTimer;
     private bool _autoWorkerCyclePending;
+    private WorkerQueueStage? _lastEmaapStage;
     private bool _sessionProbeRunning;
     private int _docaSessionProbeMinutes;
     private Task _docaBrowserStartupTask = Task.CompletedTask;
     private StatusKind _lastStatusKind = StatusKind.Idle;
     private StatusHudWindow? _statusHud;
+    private DispatcherTimer? _hudVisibilityTimer;
 
     public MainWindow()
     {
@@ -95,6 +107,8 @@ public partial class MainWindow : Window
             settings.AutoWorker.ListenerTokenRefreshMinutes);
         _queueListener.ResolveIdToken = () => GetFreshIdTokenAsync();
         _queueListener.QueueUpdated += OnQueueListenerUpdated;
+        _queueListener.SignedUploadQueueUpdated += OnSignedUploadQueueListenerUpdated;
+        _queueListener.PdfSignerQueueUpdated += OnPdfSignerQueueListenerUpdated;
         _queueListener.ListenerError += OnQueueListenerError;
         _useRealtimeListener = settings.AutoWorker.UseRealtimeListener;
         _partyDetailsService = new PartyDetailsService(settings.Firebase);
@@ -102,6 +116,7 @@ public partial class MainWindow : Window
         _telemetry = new WorkerTelemetryService(settings.Firebase);
         _presence = new WorkerPresenceService(settings.Firebase);
         _automationService = new AutomationService(settings.Automation, _firestoreService);
+        _pdfImageStampService = new PdfImageStampService(settings.Firebase);
         _automationService.Firebase = settings.Firebase;
         _automationService.ResolveFirebaseIdToken = GetFreshIdTokenAsync;
         _automationService.CaptchaAttemptReporter = ReportCaptchaAttemptAsync;
@@ -109,6 +124,8 @@ public partial class MainWindow : Window
         App.AutomationService = _automationService;
 
         JobsGrid.ItemsSource = _jobs;
+        SignerJobsGrid.ItemsSource = _pdfSignerJobs;
+        SignedJobsGrid.ItemsSource = _signedUploadJobs;
         ActivityLogList.ItemsSource = _activityLog;
         LoadChromeProfilePicker(settings);
         LoadSavedCredentials(settings);
@@ -118,6 +135,9 @@ public partial class MainWindow : Window
 
         Loaded += MainWindow_Loaded;
         Closed += MainWindow_Closed;
+        Activated += (_, _) => SyncStatusHudVisibility();
+        Deactivated += (_, _) => SyncStatusHudVisibility();
+        StateChanged += (_, _) => SyncStatusHudVisibility();
     }
 
     private void ApplyProductBranding()
@@ -502,7 +522,10 @@ public partial class MainWindow : Window
             _docaSessionProbeMinutes,
             chromeProfile,
             autoWorkerEnabled: _autoWorkerEnabled,
-            startWithWindows: _startWithWindows);
+            startWithWindows: _startWithWindows,
+            processFillQueue: _processFillQueue,
+            processSignerQueue: _processSignerQueue,
+            processSignedUploadQueue: _processSignedUploadQueue);
     }
 
     private bool TryApplyDocaSessionProbeMinutesFromUi(bool persist, bool restartWatchdog)
@@ -849,11 +872,41 @@ public partial class MainWindow : Window
         _statusHud = new StatusHudWindow();
         _statusHud.UpdateStatus("Idle", StatusText.Text, (Brush)FindResource("TextMutedBrush"));
         UpdateAutoWorkerStatusText();
-        _statusHud.Show();
+        StartHudVisibilityTimer();
+        SyncStatusHudVisibility();
+    }
+
+    private void StartHudVisibilityTimer()
+    {
+        if (_hudVisibilityTimer is not null)
+        {
+            return;
+        }
+
+        _hudVisibilityTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _hudVisibilityTimer.Tick += (_, _) => SyncStatusHudVisibility();
+        _hudVisibilityTimer.Start();
+    }
+
+    private void SyncStatusHudVisibility()
+    {
+        if (_statusHud is null)
+        {
+            return;
+        }
+
+        var handle = new WindowInteropHelper(this).Handle;
+        _statusHud.FollowMainWindowForeground(handle);
     }
 
     private void CloseStatusHud()
     {
+        if (_hudVisibilityTimer is not null)
+        {
+            _hudVisibilityTimer.Stop();
+            _hudVisibilityTimer = null;
+        }
+
         if (_statusHud is null)
         {
             return;
@@ -914,6 +967,9 @@ public partial class MainWindow : Window
         var saved = _credentialStore.Load();
         // Persist last checkbox choice; fall back to appsettings when never saved.
         _autoWorkerEnabled = saved.AutoWorkerEnabled ?? settings.Enabled;
+        _processFillQueue = saved.ProcessFillQueue ?? true;
+        _processSignerQueue = saved.ProcessSignerQueue ?? true;
+        _processSignedUploadQueue = saved.ProcessSignedUploadQueue ?? true;
         if (WorkerProduct.IsEmaapEngineBuild)
         {
             _autoWorkerEnabled = true;
@@ -929,7 +985,23 @@ public partial class MainWindow : Window
             _suppressAutoRunCheckBoxEvent = false;
         }
 
+        ApplyProcessQueueSwitchesToUi();
         UpdateAutoWorkerStatusText();
+    }
+
+    private void ApplyProcessQueueSwitchesToUi()
+    {
+        _suppressProcessQueueSwitchEvent = true;
+        try
+        {
+            ProcessFillQueueSwitch.IsChecked = _processFillQueue;
+            ProcessSignerQueueSwitch.IsChecked = _processSignerQueue;
+            ProcessSignedQueueSwitch.IsChecked = _processSignedUploadQueue;
+        }
+        finally
+        {
+            _suppressProcessQueueSwitchEvent = false;
+        }
     }
 
     private void ConfigureStartWithWindowsFromStore()
@@ -1015,37 +1087,80 @@ public partial class MainWindow : Window
         if (on)
         {
             AddActivityEntry("Auto-run ON — batch processing enabled.");
-            SetStatus("Auto-run on — worker will process Submitted jobs unattended.", StatusKind.Info);
+            SetStatus("Auto-run on — worker processes queues whose Process switch is on.", StatusKind.Info);
             UpdateAutoWorkerStatusText();
-
-            if (_session is not null && !_remotePaused && !_autoWorkerPausedForDoca)
-            {
-                _ = Dispatcher.BeginInvoke(
-                    DispatcherPriority.ApplicationIdle,
-                    new Action(async () =>
-                    {
-                        if (!_autoWorkerEnabled || _session is null || _remotePaused || _autoWorkerPausedForDoca)
-                        {
-                            return;
-                        }
-
-                        if (_useRealtimeListener && !_realtimeListenerActive)
-                        {
-                            await StartQueueListenerAsync();
-                        }
-
-                        StartAutoWorkerTimers();
-                        await RunAutoWorkerCycleAsync();
-                    }));
-            }
-
+            RequestAutoWorkerCycle();
             return;
         }
 
         StopAutoWorkerTimers();
-        AddActivityEntry("Auto-run OFF — use Process all submitted.");
-        SetStatus("Auto-run off — use Process all submitted.", StatusKind.Info);
+        AddActivityEntry("Auto-run OFF — queue process switches ignored until Auto-run is on.");
+        SetStatus("Auto-run off — turn Auto-run on to process queues.", StatusKind.Info);
         UpdateAutoWorkerStatusText();
+    }
+
+    private void ProcessQueueSwitch_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_suppressProcessQueueSwitchEvent
+            || ProcessFillQueueSwitch is null
+            || ProcessSignerQueueSwitch is null
+            || ProcessSignedQueueSwitch is null
+            || !IsLoaded)
+        {
+            return;
+        }
+
+        _processFillQueue = ProcessFillQueueSwitch.IsChecked == true;
+        _processSignerQueue = ProcessSignerQueueSwitch.IsChecked == true;
+        _processSignedUploadQueue = ProcessSignedQueueSwitch.IsChecked == true;
+        PersistCredentials();
+        UpdateEmptyState();
+        UpdateQueueSummary();
+        UpdateAutoWorkerStatusText();
+
+        var label = sender == ProcessFillQueueSwitch
+            ? "Fill & certify"
+            : sender == ProcessSignerQueueSwitch
+                ? "PDF signer"
+                : "Signed PDF → eMAAP";
+        var on = sender is CheckBox box && box.IsChecked == true;
+        AddActivityEntry($"{label} process switch {(on ? "ON" : "OFF")}.");
+        SetStatus(
+            on
+                ? $"{label} will process when Auto-run is on (fill ↔ signed upload, stamp bursts between)."
+                : $"{label} skipped until switch is on.",
+            StatusKind.Info);
+
+        if (_autoWorkerEnabled)
+        {
+            RequestAutoWorkerCycle();
+        }
+    }
+
+    private void RequestAutoWorkerCycle()
+    {
+        if (_session is null || _remotePaused || !_autoWorkerEnabled)
+        {
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.ApplicationIdle,
+            new Action(async () =>
+            {
+                if (!_autoWorkerEnabled || _session is null || _remotePaused)
+                {
+                    return;
+                }
+
+                if (_useRealtimeListener && !_realtimeListenerActive)
+                {
+                    await StartQueueListenerAsync();
+                }
+
+                StartAutoWorkerTimers();
+                await RunAutoWorkerCycleAsync();
+            }));
     }
 
     private async Task StartQueueListenerAsync()
@@ -1083,19 +1198,47 @@ public partial class MainWindow : Window
         _ = Dispatcher.InvokeAsync(async () =>
         {
             ApplyQueueRecords(records, "Queue updated from Firestore.", quietStatus: true);
-            if (!_autoWorkerEnabled || _autoWorkerPausedForDoca)
-            {
-                return;
-            }
-
-            if (_isBusy)
-            {
-                _autoWorkerCyclePending = true;
-                return;
-            }
-
-            await RunAutoWorkerCycleAsync();
+            await KickAutoWorkerAfterQueueChangeAsync();
         }, DispatcherPriority.Background);
+    }
+
+    private void OnSignedUploadQueueListenerUpdated(IReadOnlyList<SiteCalibrationRecord> records)
+    {
+        _ = Dispatcher.InvokeAsync(async () =>
+        {
+            ApplySignedUploadRecords(records);
+            await KickAutoWorkerAfterQueueChangeAsync();
+        }, DispatcherPriority.Background);
+    }
+
+    private void OnPdfSignerQueueListenerUpdated(IReadOnlyList<SiteCalibrationRecord> records)
+    {
+        _ = Dispatcher.InvokeAsync(async () =>
+        {
+            ApplyPdfSignerRecords(records);
+            await KickAutoWorkerAfterQueueChangeAsync();
+        }, DispatcherPriority.Background);
+    }
+
+    private async Task KickAutoWorkerAfterQueueChangeAsync()
+    {
+        if (!_autoWorkerEnabled || _session is null || _remotePaused)
+        {
+            return;
+        }
+
+        if (WorkerProduct.IsEmaapEngineBuild && !_emaapReadyForJobs)
+        {
+            return;
+        }
+
+        if (_isBusy)
+        {
+            _autoWorkerCyclePending = true;
+            return;
+        }
+
+        await RunAutoWorkerCycleAsync();
     }
 
     private void OnQueueListenerError(string message)
@@ -1206,7 +1349,7 @@ public partial class MainWindow : Window
     private async void RetryDueTimer_Tick(object? sender, EventArgs e)
     {
         StopRetryDueTimer();
-        if (_autoWorkerEnabled && _session is not null && !_isBusy && !_autoWorkerPausedForDoca && !_remotePaused)
+        if (_autoWorkerEnabled && _session is not null && !_isBusy && !_remotePaused)
         {
             await RunAutoWorkerCycleAsync();
         }
@@ -1419,7 +1562,7 @@ public partial class MainWindow : Window
                     AutoWorkerEnabled = _autoWorkerEnabled,
                     RemotePaused = _remotePaused || _yieldedToRcEngine,
                     DocaSessionState = _autoWorkerPausedForDoca ? "login_required" : "logged_in",
-                    QueueTotal = _jobs.Count,
+                    QueueTotal = _jobs.Count + _pdfSignerJobs.Count + _signedUploadJobs.Count,
                     QueueEligible = eligible,
                     QueueSubmitted = submitted,
                     JobsCompletedSession = _telemetry.JobsCompletedSession,
@@ -1916,6 +2059,11 @@ public partial class MainWindow : Window
                 await TryResumeAutoWorkerAfterDocaLoginAsync();
             }
 
+            if (!_isBusy)
+            {
+                await RunAutoWorkerCycleAsync();
+            }
+
             return;
         }
 
@@ -1974,7 +2122,7 @@ public partial class MainWindow : Window
 
     private async Task RunAutoWorkerCycleAsync()
     {
-        if (!_autoWorkerEnabled || _session is null || _autoWorkerPausedForDoca || _remotePaused)
+        if (!_autoWorkerEnabled || _session is null || _remotePaused)
         {
             return;
         }
@@ -1995,20 +2143,72 @@ public partial class MainWindow : Window
             await LoadQueueAsync().ConfigureAwait(false);
         }
 
-        var queue = await RunOnUiAsync(() => _jobs
-            .Where(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id))
-            .Select(item => item.Record)
-            .ToList()).ConfigureAwait(false);
-
-        if (queue.Count == 0 && _session is not null)
-        {
-            var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
-            queue = (await _firestoreService.GetPendingSignedPdfUploadQueueAsync(token).ConfigureAwait(false))
+        var snapshot = await RunOnUiAsync(() => (
+            ProcessFill: _processFillQueue,
+            ProcessSigner: _processSignerQueue,
+            ProcessSigned: _processSignedUploadQueue,
+            FillJobs: _jobs
+                .Where(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id))
+                .Select(item => item.Record)
+                .ToList(),
+            SignerJobs: _pdfSignerJobs
                 .Where(item => _jobRetries.IsEligible(item.Id))
-                .ToList();
+                .Select(item => item.Record)
+                .ToList(),
+            SignedJobs: _signedUploadJobs
+                .Where(item => _jobRetries.IsEligible(item.Id))
+                .Select(item => item.Record)
+                .ToList())).ConfigureAwait(false);
+
+        var fillQueue = snapshot.ProcessFill ? snapshot.FillJobs : [];
+        var signerQueue = snapshot.ProcessSigner ? snapshot.SignerJobs : [];
+        var signedQueue = snapshot.ProcessSigned ? snapshot.SignedJobs : [];
+
+        if (_autoWorkerPausedForDoca)
+        {
+            if (signerQueue.Count == 0)
+            {
+                await RunOnUiAsync(UpdateAutoWorkerStatusText).ConfigureAwait(false);
+                return;
+            }
+
+            await RunWithBusyStateAsync(async () =>
+            {
+                SetStatusSafe(
+                    $"Auto worker — PDF signer burst ({Math.Min(signerQueue.Count, WorkerQueueStagePicker.StampBurstMax)}) while eMAAP paused…",
+                    StatusKind.Working);
+                await ProcessStampBurstAsync(signerQueue).ConfigureAwait(false);
+                await RunOnUiAsync(UpdateAutoWorkerStatusText).ConfigureAwait(false);
+            }, offUiThread: true).ConfigureAwait(false);
+            return;
         }
 
-        if (queue.Count == 0)
+        var emaap = WorkerQueueStagePicker.NextEmaap(
+            snapshot.ProcessFill,
+            snapshot.ProcessSigned,
+            fillQueue.Count,
+            signedQueue.Count,
+            _lastEmaapStage);
+
+        if (emaap is null
+            && snapshot.ProcessSigned
+            && fillQueue.Count == 0
+            && signedQueue.Count == 0
+            && _session is not null)
+        {
+            var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+            signedQueue = (await _firestoreService.GetPendingSignedPdfUploadQueueAsync(token).ConfigureAwait(false))
+                .Where(item => _jobRetries.IsEligible(item.Id))
+                .ToList();
+            emaap = WorkerQueueStagePicker.NextEmaap(
+                snapshot.ProcessFill,
+                snapshot.ProcessSigned,
+                fillQueue.Count,
+                signedQueue.Count,
+                _lastEmaapStage);
+        }
+
+        if (emaap is null && signerQueue.Count == 0)
         {
             await RunOnUiAsync(UpdateAutoWorkerStatusText).ConfigureAwait(false);
             return;
@@ -2016,9 +2216,40 @@ public partial class MainWindow : Window
 
         await RunWithBusyStateAsync(async () =>
         {
-            SetStatusSafe($"Auto worker — processing {queue.Count} eligible job(s)…", StatusKind.Working);
-            await ProcessQueueInternalAsync(queue, sequentialOnly: true, fromAutoWorker: true)
-                .ConfigureAwait(false);
+            if (emaap == WorkerQueueStage.FillCertify)
+            {
+                _lastEmaapStage = WorkerQueueStage.FillCertify;
+                SetStatusSafe(
+                    $"Auto worker — fill & certify · {fillQueue.Count} waiting…",
+                    StatusKind.Working);
+                await ProcessAllJobsSequentiallyAsync(fillQueue, fromAutoWorker: true, maxJobs: 1)
+                    .ConfigureAwait(false);
+            }
+            else if (emaap == WorkerQueueStage.SignedEmaapUpload)
+            {
+                _lastEmaapStage = WorkerQueueStage.SignedEmaapUpload;
+                SetStatusSafe(
+                    $"Auto worker — signed PDF → eMAAP · {signedQueue.Count} waiting…",
+                    StatusKind.Working);
+                await ProcessAllJobsSequentiallyAsync(signedQueue, fromAutoWorker: true, maxJobs: 1)
+                    .ConfigureAwait(false);
+            }
+
+            if (_processSignerQueue && _session is not null)
+            {
+                var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+                var freshSigner = (await _firestoreService.GetPendingPdfSignerQueueAsync(token).ConfigureAwait(false))
+                    .Where(item => _jobRetries.IsEligible(item.Id))
+                    .ToList();
+                if (freshSigner.Count > 0)
+                {
+                    SetStatusSafe(
+                        $"Auto worker — PDF signer burst ({Math.Min(freshSigner.Count, WorkerQueueStagePicker.StampBurstMax)})…",
+                        StatusKind.Working);
+                    await ProcessStampBurstAsync(freshSigner).ConfigureAwait(false);
+                }
+            }
+
             await RunOnUiAsync(UpdateAutoWorkerStatusText).ConfigureAwait(false);
         }, offUiThread: true).ConfigureAwait(false);
     }
@@ -2036,6 +2267,16 @@ public partial class MainWindow : Window
             item.RetryBadge = _jobRetries.BadgeFor(item.Id);
         }
 
+        foreach (var item in _pdfSignerJobs)
+        {
+            item.RetryBadge = _jobRetries.BadgeFor(item.Id);
+        }
+
+        foreach (var item in _signedUploadJobs)
+        {
+            item.RetryBadge = _jobRetries.BadgeFor(item.Id);
+        }
+
         UpdateAutoWorkerStatusText();
     }
 
@@ -2043,11 +2284,12 @@ public partial class MainWindow : Window
     private static int ResolveMaxRetriesFor(SiteCalibrationRecord job) =>
         Math.Max(1, App.Settings.AutoWorker.MaxSubmitRetries);
 
-    private void ScheduleJobRetry(SiteCalibrationRecord job, string error)
+    private void ScheduleJobRetry(SiteCalibrationRecord job, string error, int? maxRetries = null)
     {
+        var max = maxRetries ?? ResolveMaxRetriesFor(job);
         if (PipelineFailureClassifier.IsPermanentDataFailure(error))
         {
-            _jobRetries.MarkExhausted(job.Id, error, ResolveMaxRetriesFor(job));
+            _jobRetries.MarkExhausted(job.Id, error, max);
             RefreshRetryBadges();
             return;
         }
@@ -2056,7 +2298,7 @@ public partial class MainWindow : Window
             job.Id,
             error,
             TimeSpan.FromSeconds(App.Settings.AutoWorker.RetryDelaySeconds),
-            ResolveMaxRetriesFor(job));
+            max);
         RefreshRetryBadges();
         ArmRetryDueTimer();
     }
@@ -2109,7 +2351,7 @@ public partial class MainWindow : Window
 
         if (!_autoWorkerEnabled)
         {
-            AutoWorkerStatusText.Text = "Auto-run off — use Process all submitted.";
+            AutoWorkerStatusText.Text = "Auto-run off — turn on to process queues whose Process switch is on.";
             _statusHud?.UpdateContext(AutoWorkerStatusText.Text);
             return;
         }
@@ -2130,22 +2372,68 @@ public partial class MainWindow : Window
 
         if (_autoWorkerPausedForDoca)
         {
-            AutoWorkerStatusText.Text =
-                "Paused — eMAAP login / HALT. Finish login, then turn Auto-run on.";
+            var signerWaiting = _processSignerQueue
+                ? _pdfSignerJobs.Count(item => _jobRetries.IsEligible(item.Id))
+                : 0;
+            AutoWorkerStatusText.Text = signerWaiting > 0
+                ? $"eMAAP paused — still stamping PDF signer ({signerWaiting}). Fix login to resume fill/upload."
+                : "Paused — eMAAP login / HALT. Finish login, then turn Auto-run on.";
             _statusHud?.UpdateContext(AutoWorkerStatusText.Text);
             return;
         }
 
         var waitingRetries = _jobRetries.Snapshot().Count(pair => DateTimeOffset.Now < pair.Value.RetryAt);
-        var eligible = _jobs.Count(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id));
+        var fillEligible = _processFillQueue
+            ? _jobs.Count(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id))
+            : 0;
+        var signerEligible = _processSignerQueue
+            ? _pdfSignerJobs.Count(item => _jobRetries.IsEligible(item.Id))
+            : 0;
+        var signedEligible = _processSignedUploadQueue
+            ? _signedUploadJobs.Count(item => _jobRetries.IsEligible(item.Id))
+            : 0;
+        var stage = WorkerQueueStagePicker.Next(
+            _processFillQueue,
+            _processSignerQueue,
+            _processSignedUploadQueue,
+            fillEligible,
+            signerEligible,
+            signedEligible,
+            _lastEmaapStage);
         var watchMode = _realtimeListenerActive
             ? "watching Firestore live"
             : $"polling every {App.Settings.AutoWorker.PollIntervalSeconds}s";
         var probeMinutes = DocaSessionProbeMinutesSetting;
         var probeNote = probeMinutes > 0 ? $" · eMAAP session probe every {probeMinutes} min" : string.Empty;
+        var skipped = new List<string>();
+        if (!_processFillQueue)
+        {
+            skipped.Add("fill off");
+        }
+
+        if (!_processSignerQueue)
+        {
+            skipped.Add("signer off");
+        }
+
+        if (!_processSignedUploadQueue)
+        {
+            skipped.Add("signed off");
+        }
+
+        var skipNote = skipped.Count > 0 ? $" · {string.Join(", ", skipped)}" : string.Empty;
+        var nextNote = stage switch
+        {
+            WorkerQueueStage.FillCertify => $"{fillEligible} fill & certify next",
+            WorkerQueueStage.PdfSigner => $"{signerEligible} PDF signer next",
+            WorkerQueueStage.SignedEmaapUpload => $"{signedEligible} signed PDF upload next",
+            _ => !_processFillQueue && !_processSignerQueue && !_processSignedUploadQueue
+                ? "all process switches off"
+                : "queues empty",
+        };
         AutoWorkerStatusText.Text = waitingRetries > 0
-            ? $"Running — {eligible} job(s) ready, {waitingRetries} waiting for retry ({watchMode}{probeNote})."
-            : $"Running — {watchMode} · {eligible} job(s) ready{probeNote}.";
+            ? $"Running — {nextNote}{skipNote}, {waitingRetries} waiting for retry ({watchMode}{probeNote})."
+            : $"Running — {watchMode} · {nextNote}{skipNote}{probeNote}.";
 
         _statusHud?.UpdateContext(AutoWorkerStatusText.Text);
     }
@@ -2198,15 +2486,91 @@ public partial class MainWindow : Window
 
     private async void JobsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_syncingQueueSelection)
+        {
+            return;
+        }
+
         var item = JobsGrid.SelectedItem as CertificationQueueItem;
-        SetSelectedQueueItem(item);
+        if (item is not null)
+        {
+            _syncingQueueSelection = true;
+            try
+            {
+                SignerJobsGrid.SelectedItem = null;
+                SignedJobsGrid.SelectedItem = null;
+            }
+            finally
+            {
+                _syncingQueueSelection = false;
+            }
+        }
+
+        SetSelectedQueueItem(item ?? SignerJobsGrid.SelectedItem as CertificationQueueItem
+            ?? SignedJobsGrid.SelectedItem as CertificationQueueItem);
         UpdateProcessSubmittedButtonVisibility();
-        await ShowSelectedJobDocumentAsync(item);
+        await ShowSelectedJobDocumentAsync(_selectedQueueItem);
+    }
+
+    private async void SignedJobsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingQueueSelection)
+        {
+            return;
+        }
+
+        var item = SignedJobsGrid.SelectedItem as CertificationQueueItem;
+        if (item is not null)
+        {
+            _syncingQueueSelection = true;
+            try
+            {
+                JobsGrid.SelectedItem = null;
+                SignerJobsGrid.SelectedItem = null;
+            }
+            finally
+            {
+                _syncingQueueSelection = false;
+            }
+        }
+
+        SetSelectedQueueItem(item ?? JobsGrid.SelectedItem as CertificationQueueItem
+            ?? SignerJobsGrid.SelectedItem as CertificationQueueItem);
+        UpdateProcessSubmittedButtonVisibility();
+        await ShowSelectedJobDocumentAsync(_selectedQueueItem);
+    }
+
+    private async void SignerJobsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingQueueSelection)
+        {
+            return;
+        }
+
+        var item = SignerJobsGrid.SelectedItem as CertificationQueueItem;
+        if (item is not null)
+        {
+            _syncingQueueSelection = true;
+            try
+            {
+                JobsGrid.SelectedItem = null;
+                SignedJobsGrid.SelectedItem = null;
+            }
+            finally
+            {
+                _syncingQueueSelection = false;
+            }
+        }
+
+        SetSelectedQueueItem(item ?? JobsGrid.SelectedItem as CertificationQueueItem
+            ?? SignedJobsGrid.SelectedItem as CertificationQueueItem);
+        UpdateProcessSubmittedButtonVisibility();
+        await ShowSelectedJobDocumentAsync(_selectedQueueItem);
     }
 
     private void UpdateProcessSubmittedButtonVisibility()
     {
-        var item = JobsGrid.SelectedItem as CertificationQueueItem;
+        var item = _selectedQueueItem;
         var selectedSubmitted = item?.Record.IsSubmitted == true && _session is not null;
         ProcessSelectedEmaapButton.Visibility = selectedSubmitted
             ? Visibility.Visible
@@ -2215,10 +2579,22 @@ public partial class MainWindow : Window
             ? Visibility.Visible
             : Visibility.Collapsed;
 
-        var hasSubmitted = _jobs.Any(j => j.Record.IsSubmitted && _jobRetries.IsEligible(j.Id));
-        ProcessSubmittedEmaapButton.Visibility = hasSubmitted && _session is not null
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        var signerRow = IsPdfSignerRow(item);
+        PdfSignerSignButton.Visibility = signerRow ? Visibility.Visible : Visibility.Collapsed;
+        PdfSignerDownloadButton.Visibility = signerRow ? Visibility.Visible : Visibility.Collapsed;
+        PdfSignerSignButton.IsEnabled = signerRow;
+    }
+
+    private void SetManualQueueButtonsEnabled(bool enabled)
+    {
+        FillOnlySelectedEmaapButton.IsEnabled = enabled;
+        ProcessSelectedEmaapButton.IsEnabled = enabled;
+        PdfSignerSignButton.IsEnabled = enabled;
+        PdfSignerDownloadButton.IsEnabled = enabled;
+        if (enabled)
+        {
+            UpdateProcessSubmittedButtonVisibility();
+        }
     }
 
     private async void ProcessSelectedEmaapButton_Click(object sender, RoutedEventArgs e)
@@ -2255,9 +2631,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        ProcessSelectedEmaapButton.IsEnabled = false;
-        ProcessSubmittedEmaapButton.IsEnabled = false;
-        FillOnlySelectedEmaapButton.IsEnabled = false;
+        SetManualQueueButtonsEnabled(false);
         try
         {
             await RunWithBusyStateAsync(async () =>
@@ -2300,10 +2674,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            ProcessSelectedEmaapButton.IsEnabled = true;
-            ProcessSubmittedEmaapButton.IsEnabled = true;
-            FillOnlySelectedEmaapButton.IsEnabled = true;
-            UpdateProcessSubmittedButtonVisibility();
+            SetManualQueueButtonsEnabled(true);
         }
     }
 
@@ -2341,9 +2712,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        ProcessSelectedEmaapButton.IsEnabled = false;
-        ProcessSubmittedEmaapButton.IsEnabled = false;
-        FillOnlySelectedEmaapButton.IsEnabled = false;
+        SetManualQueueButtonsEnabled(false);
         try
         {
             await RunWithBusyStateAsync(async () =>
@@ -2385,15 +2754,23 @@ public partial class MainWindow : Window
         }
         finally
         {
-            ProcessSelectedEmaapButton.IsEnabled = true;
-            ProcessSubmittedEmaapButton.IsEnabled = true;
-            FillOnlySelectedEmaapButton.IsEnabled = true;
-            UpdateProcessSubmittedButtonVisibility();
+            SetManualQueueButtonsEnabled(true);
         }
     }
 
-    private async void ProcessSubmittedEmaapButton_Click(object sender, RoutedEventArgs e)
+    private bool IsPdfSignerRow(CertificationQueueItem? item) =>
+        item is not null
+        && _pdfSignerJobs.Any(job => string.Equals(job.Id, item.Id, StringComparison.Ordinal));
+
+    private async void PdfSignerSignButton_Click(object sender, RoutedEventArgs e)
     {
+        var item = _selectedQueueItem;
+        if (!IsPdfSignerRow(item) || item is null)
+        {
+            SetStatus("Select a PDF signer job first.", StatusKind.Info);
+            return;
+        }
+
         if (_session is null)
         {
             SetStatus($"Sign in as {WorkerProduct.SignInRoleLabel} first.", StatusKind.Info);
@@ -2401,53 +2778,148 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!_automationService.IsBrowserConnected)
+        if (string.IsNullOrWhiteSpace(item.Record.RcId))
         {
-            SetStatus("Opening eMAAP browser…", StatusKind.Working);
-            await StartDocaBrowserAsync();
-            if (!_automationService.IsBrowserConnected)
-            {
-                SetStatus("eMAAP browser did not open. Pick Chrome profile in Account, then retry.", StatusKind.Info);
-                ExpandAccountPanel();
-                return;
-            }
-        }
-
-        var queue = _jobs
-            .Where(item => item.Record.IsSubmitted && _jobRetries.IsEligible(item.Id))
-            .Select(item => item.Record)
-            .ToList();
-
-        if (queue.Count == 0)
-        {
-            SetStatus("No eligible Submitted jobs in the queue.", StatusKind.Info);
+            SetStatus("RC id is missing for this job.", StatusKind.Info);
             return;
         }
 
-        ProcessSubmittedEmaapButton.IsEnabled = false;
-        FillOnlySelectedEmaapButton.IsEnabled = false;
-        ProcessSelectedEmaapButton.IsEnabled = false;
+        var record = item.Record;
+        var uid = _session.UserId;
+        var label = string.IsNullOrWhiteSpace(record.CertificateNumber)
+            ? record.SerialNumber
+            : record.CertificateNumber;
+
+        SetManualQueueButtonsEnabled(false);
         try
         {
             await RunWithBusyStateAsync(async () =>
             {
-                SetStatusSafe($"eMAAP fill+certify → PDF → certified — {queue.Count} job(s)…", StatusKind.Working);
-                AddActivityEntry($"eMAAP batch start — {queue.Count} submitted.");
-                await ProcessQueueInternalAsync(queue, sequentialOnly: true, fromAutoWorker: false);
+                SetStatusSafe($"Stamping officer signature on {label}…", StatusKind.Working);
+                var claimed = await TryClaimCurrentJobAsync(record).ConfigureAwait(false);
+                if (!claimed)
+                {
+                    SetStatusSafe($"{label} held by another worker.", StatusKind.Info);
+                    return;
+                }
+
+                try
+                {
+                    var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+                    var outcome = await _pdfImageStampService
+                        .StampAndUploadAsync(record, token, uid)
+                        .ConfigureAwait(false);
+                    var message = outcome switch
+                    {
+                        PdfStampOutcome.Uploaded => $"Signed {label}. Stamped PDF uploaded to Firebase.",
+                        PdfStampOutcome.SkippedAlreadySigned => $"{label} already has a signed PDF.",
+                        PdfStampOutcome.SkippedNotPdfSigner => $"{label} RC is not PDF signer.",
+                        PdfStampOutcome.SkippedDead => $"{label} is voided or superseded.",
+                        PdfStampOutcome.MissingUnsignedPdf => $"No unsigned PDF yet for {label}.",
+                        _ => $"PDF signer finished {label}.",
+                    };
+                    if (outcome == PdfStampOutcome.Uploaded)
+                    {
+                        var local = Path.Combine(
+                            WorkerDataPaths.CertificatePdfDirectory(record.Id),
+                            PdfImageStampService.SuggestedSignedFileName(record));
+                        if (File.Exists(local))
+                        {
+                            var download = PdfImageStampService.UniquePath(
+                                Path.Combine(DefaultDownloadsDirectory(), Path.GetFileName(local)));
+                            File.Copy(local, download, overwrite: false);
+                            await RunOnUiAsync(() => OpenSavedPath(download));
+                        }
+                    }
+
+                    AddActivityEntry(message);
+                    SetStatusSafe(
+                        message,
+                        outcome == PdfStampOutcome.Uploaded ? StatusKind.Success : StatusKind.Info);
+                    await LoadQueueAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (_session is not null)
+                    {
+                        await _firestoreService.ReleaseClaimAsync(record.Id, _session).ConfigureAwait(false);
+                    }
+                }
             }, offUiThread: true);
         }
         catch (Exception ex)
         {
-            SetStatus($"eMAAP batch failed: {ex.Message}", ex, StatusKind.Error);
-            AddActivityEntry($"eMAAP batch failed: {ex.Message}");
+            SetStatus($"PDF signer failed: {ex.Message}", ex, StatusKind.Error);
+            AddActivityEntry($"PDF signer failed: {ex.Message}");
         }
         finally
         {
-            ProcessSubmittedEmaapButton.IsEnabled = true;
-            FillOnlySelectedEmaapButton.IsEnabled = true;
-            ProcessSelectedEmaapButton.IsEnabled = true;
-            UpdateProcessSubmittedButtonVisibility();
+            SetManualQueueButtonsEnabled(true);
         }
+    }
+
+    private async void PdfSignerDownloadButton_Click(object sender, RoutedEventArgs e)
+    {
+        var item = _selectedQueueItem;
+        if (!IsPdfSignerRow(item) || item is null)
+        {
+            SetStatus("Select a PDF signer job first.", StatusKind.Info);
+            return;
+        }
+
+        if (_session is null)
+        {
+            SetStatus($"Sign in as {WorkerProduct.SignInRoleLabel} first.", StatusKind.Info);
+            ExpandAccountPanel();
+            return;
+        }
+
+        var record = item.Record;
+        var destination = PdfImageStampService.UniquePath(
+            Path.Combine(DefaultDownloadsDirectory(), PdfImageStampService.SuggestedFileName(record, signed: false)));
+        SetManualQueueButtonsEnabled(false);
+        try
+        {
+            await RunWithBusyStateAsync(async () =>
+            {
+                SetStatusSafe($"Downloading {Path.GetFileName(destination)}…", StatusKind.Working);
+                var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+                await _pdfImageStampService
+                    .DownloadPdfAsync(record, token, destination, preferSigned: false)
+                    .ConfigureAwait(false);
+                await RunOnUiAsync(() => OpenSavedPath(destination));
+                SetStatusSafe($"Saved {Path.GetFileName(destination)} to Downloads.", StatusKind.Success);
+                AddActivityEntry($"Downloaded unsigned PDF {Path.GetFileName(destination)}");
+            }, offUiThread: true);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Download failed: {ex.Message}", ex, StatusKind.Error);
+            AddActivityEntry($"Download failed: {ex.Message}");
+        }
+        finally
+        {
+            SetManualQueueButtonsEnabled(true);
+        }
+    }
+
+    private static string DefaultDownloadsDirectory()
+    {
+        var downloads = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "Downloads");
+        Directory.CreateDirectory(downloads);
+        return downloads;
+    }
+
+    private static void OpenSavedPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
     }
 
     private async Task ShowSelectedJobDocumentAsync(CertificationQueueItem? item)
@@ -2471,7 +2943,7 @@ public partial class MainWindow : Window
             var token = await GetFreshIdTokenAsync();
             var text = await _firestoreService.FormatSiteCalibrationDocumentAsync(jobId, token);
             // Selection may have changed while loading.
-            if (JobsGrid.SelectedItem is CertificationQueueItem selected
+            if (_selectedQueueItem is { } selected
                 && string.Equals(selected.Id, jobId, StringComparison.Ordinal))
             {
                 JobDetailBox.Text = text;
@@ -2767,12 +3239,16 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ProcessAllJobsSequentiallyAsync(IReadOnlyList<SiteCalibrationRecord> queue, bool fromAutoWorker)
+    private async Task ProcessAllJobsSequentiallyAsync(
+        IReadOnlyList<SiteCalibrationRecord> queue,
+        bool fromAutoWorker,
+        int maxJobs = int.MaxValue)
     {
         var completed = 0;
         var failed = 0;
         string? lastError = null;
         var continueSession = _automationService.IsBrowserConnected;
+        var attempts = 0;
 
         for (var i = 0; i < queue.Count; i++)
         {
@@ -2785,19 +3261,16 @@ public partial class MainWindow : Window
             var claimed = false;
             try
             {
-                if (fromAutoWorker && job.IsEligibleForSignedPdfUpload)
+                if (fromAutoWorker && !IsAutoWorkerStageEnabled(job))
                 {
-                    var generateWaiting = await _firestoreService
-                        .GetPendingCertificationQueueAsync(await GetFreshIdTokenAsync())
-                        .ConfigureAwait(false);
-                    if (generateWaiting.Count > 0)
+                    AddActivityEntry($"{batchLabel} stopped — process switch off for this queue.");
+                    await LoadQueueAsync();
+                    if (maxJobs == int.MaxValue)
                     {
-                        AddActivityEntry(
-                            "Generate work waiting — pausing signed PDF uploads until fill+certify is empty.");
-                        await LoadQueueAsync();
                         ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
-                        return;
                     }
+
+                    return;
                 }
 
                 claimed = await TryClaimCurrentJobAsync(job).ConfigureAwait(false);
@@ -2807,6 +3280,7 @@ public partial class MainWindow : Window
                     continue;
                 }
 
+                attempts++;
                 var result = await ProcessJobWithRecoveryAsync(
                     job,
                     _automationService,
@@ -2833,9 +3307,24 @@ public partial class MainWindow : Window
                     if (stopBatch)
                     {
                         await LoadQueueAsync();
-                        ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: result.LoginRequired);
+                        if (maxJobs == int.MaxValue)
+                        {
+                            ReportBatchSummary(
+                                queue.Count,
+                                completed,
+                                failed,
+                                lastError,
+                                loginStopped: result.LoginRequired);
+                        }
+
                         return;
                     }
+                }
+
+                if (attempts >= maxJobs)
+                {
+                    await LoadQueueAsync();
+                    return;
                 }
             }
             catch (Exception ex)
@@ -2851,16 +3340,149 @@ public partial class MainWindow : Window
                     || AutomationService.IsBrowserDisconnectedError(ex))
                 {
                     HaltWorkerPipeline(
-                        $"{batchLabel} — halted. Fix the issue, then Process all submitted / resume auto worker.");
+                        $"{batchLabel} — halted. Fix the issue, then turn Auto-run on.");
                     await LoadQueueAsync();
-                    ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
+                    if (maxJobs == int.MaxValue)
+                    {
+                        ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
+                    }
+
+                    return;
+                }
+
+                if (attempts >= maxJobs)
+                {
+                    await LoadQueueAsync();
                     return;
                 }
             }
         }
 
         await LoadQueueAsync();
-        ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
+        if (maxJobs == int.MaxValue)
+        {
+            ReportBatchSummary(queue.Count, completed, failed, lastError, loginStopped: false);
+        }
+    }
+
+    private bool IsAutoWorkerStageEnabled(SiteCalibrationRecord job)
+    {
+        if (job.IsSubmitted)
+        {
+            return _processFillQueue;
+        }
+
+        if (job.IsEligibleForSignedPdfUpload)
+        {
+            return _processSignedUploadQueue;
+        }
+
+        return _processSignerQueue;
+    }
+
+    private async Task ProcessStampBurstAsync(IReadOnlyList<SiteCalibrationRecord> queue)
+    {
+        if (WorkerProduct.IsEmaapEngineBuild || !_processSignerQueue)
+        {
+            return;
+        }
+
+        var take = queue
+            .Where(job => _jobRetries.IsEligible(job.Id))
+            .Take(WorkerQueueStagePicker.StampBurstMax)
+            .ToList();
+        foreach (var job in take)
+        {
+            if (!_processSignerQueue || !_autoWorkerEnabled || _remotePaused)
+            {
+                break;
+            }
+
+            SelectJobOnUiThread(job.Id);
+            var label = string.IsNullOrWhiteSpace(job.CertificateNumber)
+                ? job.SerialNumber
+                : job.CertificateNumber;
+            SetStatusSafe($"PDF signer · {label}…", StatusKind.Working);
+
+            var claimed = await TryClaimCurrentJobAsync(job).ConfigureAwait(false);
+            if (!claimed)
+            {
+                AddActivityEntry($"PDF signer skipped — claimed by another worker ({job.SerialNumber}).");
+                continue;
+            }
+
+            try
+            {
+                var result = await ProcessStampJobAsync(job).ConfigureAwait(false);
+                if (result.Completed)
+                {
+                    _jobRetries.Clear(job.Id);
+                    SetStatusSafe(result.Message, StatusKind.Success);
+                }
+                else
+                {
+                    var max = result.Message.Contains("unsigned PDF", StringComparison.OrdinalIgnoreCase)
+                        ? 20
+                        : ResolveMaxRetriesFor(job);
+                    ScheduleJobRetry(job, result.Message, max);
+                    SetStatusSafe(result.Message, StatusKind.Info);
+                }
+
+                AddActivityEntry(result.Message);
+            }
+            catch (Exception ex)
+            {
+                ScheduleJobRetry(job, ex.Message);
+                SetStatusSafe($"PDF signer failed {job.SerialNumber}: {ex.Message}", ex, StatusKind.Error);
+                AddActivityEntry($"PDF signer failed {job.SerialNumber}: {ex.Message}");
+            }
+            finally
+            {
+                if (_session is not null)
+                {
+                    await _firestoreService.ReleaseClaimAsync(job.Id, _session).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    private async Task<JobPipelineResult> ProcessStampJobAsync(SiteCalibrationRecord job)
+    {
+        if (_session is null)
+        {
+            throw new InvalidOperationException($"Sign in as {WorkerProduct.SignInRoleLabel} first.");
+        }
+
+        var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+        var outcome = await _pdfImageStampService
+            .StampAndUploadAsync(job, token, _session.UserId)
+            .ConfigureAwait(false);
+        var cert = string.IsNullOrWhiteSpace(job.CertificateNumber) ? job.SerialNumber : job.CertificateNumber;
+        return outcome switch
+        {
+            PdfStampOutcome.Uploaded => new JobPipelineResult(
+                true,
+                false,
+                $"Stamped and uploaded signed PDF for {cert}."),
+            PdfStampOutcome.SkippedAlreadySigned => new JobPipelineResult(
+                true,
+                false,
+                $"{cert} already has a signed PDF — skipped stamp."),
+            PdfStampOutcome.SkippedNotPdfSigner => new JobPipelineResult(
+                true,
+                false,
+                $"{cert} RC is not PDF signer — skipped stamp."),
+            PdfStampOutcome.SkippedDead => new JobPipelineResult(
+                true,
+                false,
+                $"{cert} voided or superseded — skipped stamp."),
+            PdfStampOutcome.MissingUnsignedPdf => new JobPipelineResult(
+                false,
+                false,
+                $"No unsigned PDF yet for {cert} — will retry.",
+                SoftFail: true),
+            _ => new JobPipelineResult(false, false, $"PDF signer unknown result for {cert}.", SoftFail: true),
+        };
     }
 
     private bool TryHandleSequentialJobResult(
@@ -2941,6 +3563,16 @@ public partial class MainWindow : Window
             return true;
         }
 
+        if (result.SoftFail)
+        {
+            failed++;
+            lastError = result.Message;
+            ScheduleJobRetry(job, result.Message);
+            SetStatusSafe($"{batchLabel} · {result.Message}", StatusKind.Info);
+            AddActivityEntry($"{batchLabel} · {result.Message}");
+            return true;
+        }
+
         failed++;
         lastError = result.Message;
         ScheduleJobRetry(job, result.Message);
@@ -2961,7 +3593,6 @@ public partial class MainWindow : Window
         }
 
         _autoWorkerPausedForDoca = true;
-        StopAutoWorkerTimers();
         SetDocaLoginPaused(true, startResumeProbe: true, blockAutoLogin: false);
         SetStatus(message, StatusKind.Error);
         AddActivityEntry(message);
@@ -3404,13 +4035,24 @@ public partial class MainWindow : Window
 
     private void SelectJobById(string jobId)
     {
-        for (var i = 0; i < _jobs.Count; i++)
+        var generate = _jobs.FirstOrDefault(item => string.Equals(item.Id, jobId, StringComparison.Ordinal));
+        if (generate is not null)
         {
-            if (string.Equals(_jobs[i].Id, jobId, StringComparison.Ordinal))
-            {
-                SelectJobAtIndex(i);
-                return;
-            }
+            SelectQueueItem(generate);
+            return;
+        }
+
+        var signer = _pdfSignerJobs.FirstOrDefault(item => string.Equals(item.Id, jobId, StringComparison.Ordinal));
+        if (signer is not null)
+        {
+            SelectQueueItem(signer);
+            return;
+        }
+
+        var signed = _signedUploadJobs.FirstOrDefault(item => string.Equals(item.Id, jobId, StringComparison.Ordinal));
+        if (signed is not null)
+        {
+            SelectQueueItem(signed);
         }
     }
 
@@ -3576,9 +4218,35 @@ public partial class MainWindow : Window
         }
 
         var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
-        var records = await _firestoreService.GetPendingCertificationQueueAsync(token).ConfigureAwait(false);
+        var generate = await _firestoreService.GetPendingCertificationQueueAsync(token).ConfigureAwait(false);
+        IReadOnlyList<SiteCalibrationRecord> signer = [];
+        IReadOnlyList<SiteCalibrationRecord> signed;
+        try
+        {
+            signer = await _firestoreService.GetPendingPdfSignerQueueAsync(token).ConfigureAwait(false);
+        }
+        catch
+        {
+            signer = [];
+        }
+
+        try
+        {
+            signed = await _firestoreService.GetPendingSignedPdfUploadQueueAsync(token).ConfigureAwait(false);
+        }
+        catch
+        {
+            signed = [];
+        }
+
         await RunOnUiAsync(() =>
-            ApplyQueueRecords(records, $"Loaded {records.Count} job(s) from Firestore."));
+        {
+            ApplyQueueRecords(
+                generate,
+                $"Loaded {generate.Count} fill & certify · {signer.Count} PDF signer · {signed.Count} signed upload.");
+            ApplyPdfSignerRecords(signer);
+            ApplySignedUploadRecords(signed);
+        });
     }
 
     private void ApplyQueueRecords(
@@ -3593,12 +4261,71 @@ public partial class MainWindow : Window
         }
 
         var previousId = _selectedQueueItem?.Id;
-        var sameIds = _jobs.Count == records.Count;
+        SyncQueueItems(_jobs, records);
+        RestoreSelection(previousId);
+        UpdateQueueSummary();
+        UpdateEmptyState();
+        UpdateProcessSubmittedButtonVisibility();
+        _ = ShowSelectedJobDocumentAsync(_selectedQueueItem);
+
+        var pending = _jobs.Count(job => job.NeedsPipelineWork);
+        var eligible = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
+        if (!quietStatus)
+        {
+            SetStatus(
+                $"{statusMessage} ({eligible}/{pending} fill & certify · {_pdfSignerJobs.Count} PDF signer · {_signedUploadJobs.Count} signed waiting).",
+                StatusKind.Success);
+        }
+
+        UpdateAutoWorkerStatusText();
+    }
+
+    private void ApplySignedUploadRecords(IReadOnlyList<SiteCalibrationRecord> records)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.InvokeAsync(() => ApplySignedUploadRecords(records));
+            return;
+        }
+
+        var previousId = _selectedQueueItem?.Id;
+        SyncQueueItems(_signedUploadJobs, records);
+        RestoreSelection(previousId);
+        UpdateQueueSummary();
+        UpdateEmptyState();
+        UpdateProcessSubmittedButtonVisibility();
+        _ = ShowSelectedJobDocumentAsync(_selectedQueueItem);
+        UpdateAutoWorkerStatusText();
+    }
+
+    private void ApplyPdfSignerRecords(IReadOnlyList<SiteCalibrationRecord> records)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.InvokeAsync(() => ApplyPdfSignerRecords(records));
+            return;
+        }
+
+        var previousId = _selectedQueueItem?.Id;
+        SyncQueueItems(_pdfSignerJobs, records);
+        RestoreSelection(previousId);
+        UpdateQueueSummary();
+        UpdateEmptyState();
+        UpdateProcessSubmittedButtonVisibility();
+        _ = ShowSelectedJobDocumentAsync(_selectedQueueItem);
+        UpdateAutoWorkerStatusText();
+    }
+
+    private void SyncQueueItems(
+        ObservableCollection<CertificationQueueItem> target,
+        IReadOnlyList<SiteCalibrationRecord> records)
+    {
+        var sameIds = target.Count == records.Count;
         if (sameIds)
         {
             for (var i = 0; i < records.Count; i++)
             {
-                if (!string.Equals(_jobs[i].Id, records[i].Id, StringComparison.Ordinal))
+                if (!string.Equals(target[i].Id, records[i].Id, StringComparison.Ordinal))
                 {
                     sameIds = false;
                     break;
@@ -3610,68 +4337,189 @@ public partial class MainWindow : Window
         {
             for (var i = 0; i < records.Count; i++)
             {
-                _jobs[i] = new CertificationQueueItem(records[i])
+                target[i] = new CertificationQueueItem(records[i])
                 {
                     RetryBadge = _jobRetries.BadgeFor(records[i].Id),
                 };
             }
+
+            return;
         }
-        else
+
+        target.Clear();
+        foreach (var record in records)
         {
-            _jobs.Clear();
-            foreach (var record in records)
+            target.Add(new CertificationQueueItem(record)
             {
-                _jobs.Add(new CertificationQueueItem(record)
-                {
-                    RetryBadge = _jobRetries.BadgeFor(record.Id),
-                });
-            }
+                RetryBadge = _jobRetries.BadgeFor(record.Id),
+            });
         }
-
-        RestoreSelection(previousId);
-        UpdateQueueSummary();
-        UpdateEmptyState();
-        UpdateProcessSubmittedButtonVisibility();
-        _ = ShowSelectedJobDocumentAsync(JobsGrid.SelectedItem as CertificationQueueItem);
-
-        var pending = _jobs.Count(job => job.NeedsPipelineWork);
-        var eligible = _jobs.Count(job => job.NeedsPipelineWork && _jobRetries.IsEligible(job.Id));
-        if (!quietStatus)
-        {
-            SetStatus($"{statusMessage} ({eligible}/{pending} ready in pipeline).", StatusKind.Success);
-        }
-
-        UpdateAutoWorkerStatusText();
     }
 
     private void RestoreSelection(string? previousId)
     {
-        _selectedQueueItem = previousId is null
-            ? null
-            : _jobs.FirstOrDefault(job => job.Id == previousId);
+        if (!string.IsNullOrWhiteSpace(previousId))
+        {
+            var keep = _jobs.FirstOrDefault(job => job.Id == previousId)
+                ?? _pdfSignerJobs.FirstOrDefault(job => job.Id == previousId)
+                ?? _signedUploadJobs.FirstOrDefault(job => job.Id == previousId);
+            if (keep is not null)
+            {
+                SelectQueueItem(keep, scroll: false);
+                return;
+            }
+        }
 
-        JobsGrid.SelectedItem = _selectedQueueItem ?? (_jobs.Count > 0 ? _jobs[0] : null);
-        _selectedQueueItem = JobsGrid.SelectedItem as CertificationQueueItem;
+        SelectQueueItem(
+            _jobs.FirstOrDefault() ?? _pdfSignerJobs.FirstOrDefault() ?? _signedUploadJobs.FirstOrDefault(),
+            scroll: false);
+    }
+
+    private void SelectQueueItem(CertificationQueueItem? item, bool scroll = true)
+    {
+        _syncingQueueSelection = true;
+        try
+        {
+            if (item is null)
+            {
+                JobsGrid.SelectedItem = null;
+                SignerJobsGrid.SelectedItem = null;
+                SignedJobsGrid.SelectedItem = null;
+                SetSelectedQueueItem(null);
+                return;
+            }
+
+            var generate = _jobs.FirstOrDefault(job => job.Id == item.Id);
+            if (generate is not null)
+            {
+                SignerJobsGrid.SelectedItem = null;
+                SignedJobsGrid.SelectedItem = null;
+                JobsGrid.SelectedItem = generate;
+                if (scroll)
+                {
+                    JobsGrid.ScrollIntoView(generate);
+                }
+
+                SetSelectedQueueItem(generate);
+                return;
+            }
+
+            var signer = _pdfSignerJobs.FirstOrDefault(job => job.Id == item.Id);
+            if (signer is not null)
+            {
+                JobsGrid.SelectedItem = null;
+                SignedJobsGrid.SelectedItem = null;
+                SignerJobsGrid.SelectedItem = signer;
+                if (scroll)
+                {
+                    SignerJobsGrid.ScrollIntoView(signer);
+                }
+
+                SetSelectedQueueItem(signer);
+                return;
+            }
+
+            var signed = _signedUploadJobs.FirstOrDefault(job => job.Id == item.Id);
+            JobsGrid.SelectedItem = null;
+            SignerJobsGrid.SelectedItem = null;
+            SignedJobsGrid.SelectedItem = signed;
+            if (signed is not null && scroll)
+            {
+                SignedJobsGrid.ScrollIntoView(signed);
+            }
+
+            SetSelectedQueueItem(signed);
+        }
+        finally
+        {
+            _syncingQueueSelection = false;
+        }
     }
 
     private void UpdateQueueSummary()
     {
-        var submitted = _jobs.Count(job => job.Record.IsSubmitted);
-        QueueCountText.Text = _jobs.Count == 0
-            ? "0 jobs pending"
-            : $"{_jobs.Count} jobs · {submitted} to eMAAP-certify";
+        var fillEligible = _processFillQueue
+            ? _jobs.Count(item => item.NeedsPipelineWork && _jobRetries.IsEligible(item.Id))
+            : 0;
+        var signerEligible = _processSignerQueue
+            ? _pdfSignerJobs.Count(item => _jobRetries.IsEligible(item.Id))
+            : 0;
+        var signedEligible = _processSignedUploadQueue
+            ? _signedUploadJobs.Count(item => _jobRetries.IsEligible(item.Id))
+            : 0;
+        var stage = WorkerQueueStagePicker.Next(
+            _processFillQueue,
+            _processSignerQueue,
+            _processSignedUploadQueue,
+            fillEligible,
+            signerEligible,
+            signedEligible,
+            _lastEmaapStage);
+
+        if (_session is null)
+        {
+            QueueCountText.Text = "Sign in to load queues.";
+            return;
+        }
+
+        QueueCountText.Text = stage switch
+        {
+            WorkerQueueStage.FillCertify =>
+                $"Next: fill & certify ({fillEligible}). Then signed PDF ({signedEligible}) · PDF signer ({signerEligible}).",
+            WorkerQueueStage.PdfSigner =>
+                $"Next: PDF signer ({signerEligible}). Fill {fillEligible} · signed upload {signedEligible}.",
+            WorkerQueueStage.SignedEmaapUpload =>
+                $"Next: upload signed PDFs ({signedEligible}). Then fill ({fillEligible}) · PDF signer ({signerEligible}).",
+            _ => !_processFillQueue && !_processSignerQueue && !_processSignedUploadQueue
+                ? "All process switches off."
+                : "Idle — no eligible jobs on ON queues.",
+        };
     }
 
     private void UpdateEmptyState()
     {
-        var count = _jobs.Count;
-        EmptyStateText.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        JobsGrid.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        var generateEmpty = _jobs.Count == 0;
+        JobsGrid.Visibility = generateEmpty ? Visibility.Collapsed : Visibility.Visible;
+        GenerateEmptyText.Visibility = generateEmpty ? Visibility.Visible : Visibility.Collapsed;
+        GenerateEmptyText.Text = _session is null
+            ? "Sign in to load submitted jobs."
+            : _processFillQueue
+                ? "None. Next ON queue can run."
+                : "Empty. Switch is off — skipped.";
+        GenerateQueueTitleText.Text = $"1 · Fill & certify ({_jobs.Count})";
+        GenerateQueueHintText.Text = !_processFillQueue
+            ? "Off — skipped even if jobs wait"
+            : _jobs.Count > 0
+                ? "On · submitted · fill → certify → unsigned PDF"
+                : "On · empty · next ON queue in order";
 
-        EmptyStateTitleText.Text = "No pending verifications";
-        EmptyStateBodyText.Text = _session is null
-            ? "Sign in and refresh to load jobs from all RCs."
-            : "All submitted jobs are certified.";
+        SignerQueueTitleText.Text = $"2 · PDF signer ({_pdfSignerJobs.Count})";
+        SignerQueueHintText.Text = !_processSignerQueue
+            ? "Off — listed only, not processed"
+            : _pdfSignerJobs.Count > 0
+                ? "On · auto-stamp bursts between eMAAP jobs"
+                : "On · pdf_signer RCs · seq >2304 · no signed PDF";
+        var signerEmpty = _pdfSignerJobs.Count == 0;
+        SignerJobsGrid.Visibility = signerEmpty ? Visibility.Collapsed : Visibility.Visible;
+        SignerEmptyText.Visibility = signerEmpty ? Visibility.Visible : Visibility.Collapsed;
+        SignerEmptyText.Text = _session is null
+            ? "Sign in to load PDF signer jobs."
+            : "None. Certified seq >2304, unsigned, pdf_signer RCs.";
+
+        var signedEmpty = _signedUploadJobs.Count == 0;
+        SignedJobsGrid.Visibility = signedEmpty ? Visibility.Collapsed : Visibility.Visible;
+        SignedEmptyText.Visibility = signedEmpty ? Visibility.Visible : Visibility.Collapsed;
+        SignedEmptyText.Text = _session is null
+            ? "Sign in to load signed-upload jobs."
+            : _processSignedUploadQueue
+                ? "None waiting."
+                : "Empty. Switch is off — skipped.";
+        SignedQueueTitleText.Text = $"3 · Signed PDF → eMAAP ({_signedUploadJobs.Count})";
+        SignedQueueHintText.Text = !_processSignedUploadQueue
+            ? "Off — skipped even if jobs wait"
+            : _signedUploadJobs.Count > 0
+                ? "On · interleave with fill · Issued → Upload Signed PDF"
+                : "On · seq >2304 · Firebase signed · not on eMAAP yet";
     }
 
     private int SelectedJobIndex()
@@ -3697,22 +4545,18 @@ public partial class MainWindow : Window
     {
         if (index < 0 || index >= _jobs.Count)
         {
-            SetSelectedQueueItem(null);
-            JobsGrid.SelectedItem = null;
+            SelectQueueItem(_pdfSignerJobs.FirstOrDefault() ?? _signedUploadJobs.FirstOrDefault());
             return;
         }
 
-        var job = _jobs[index];
-        JobsGrid.SelectedItem = job;
-        JobsGrid.ScrollIntoView(job);
-        SetSelectedQueueItem(job);
+        SelectQueueItem(_jobs[index]);
     }
 
     private void SelectJobAtIndexAfterRemoval(int removedIndex)
     {
         if (_jobs.Count == 0)
         {
-            SelectJobAtIndex(-1);
+            SelectQueueItem(_pdfSignerJobs.FirstOrDefault() ?? _signedUploadJobs.FirstOrDefault());
             return;
         }
 
@@ -3780,7 +4624,7 @@ public partial class MainWindow : Window
                 SignInButton.IsEnabled = true;
                 RefreshButton.IsEnabled = true;
 
-                if (_autoWorkerCyclePending && _autoWorkerEnabled && !_autoWorkerPausedForDoca && _session is not null)
+                if (_autoWorkerCyclePending && _autoWorkerEnabled && _session is not null && !_remotePaused)
                 {
                     _autoWorkerCyclePending = false;
                     _ = RunAutoWorkerCycleAsync();

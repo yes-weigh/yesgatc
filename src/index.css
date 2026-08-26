@@ -3283,6 +3283,36 @@ select.input-field option {
   margin-top: 0.15rem;
 }
 
+.rc-pdf-signer-upload .product-upload-preview--compact,
+.inline-form-panel--rc .rc-pdf-signer-upload .product-upload-preview--compact {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.rc-pdf-signer-upload .product-upload-avatar-wrap {
+  align-items: flex-start;
+}
+
+.product-modal--wide .rc-pdf-signer-upload .product-upload-preview-img,
+.product-modal--wide.rc-modal .rc-pdf-signer-upload .product-upload-preview-img,
+.inline-form-panel--rc .rc-pdf-signer-upload .product-upload-preview-img,
+.inline-form-panel--rc .rc-pdf-signer-upload .product-upload-preview--compact .product-upload-preview-img,
+.inline-form-panel--rc .rc-pdf-signer-upload .product-upload-field--readonly .product-upload-preview-img--readonly,
+.rc-pdf-signer-upload .product-upload-preview-img {
+  width: min(100%, 20rem);
+  max-width: 20rem;
+  min-width: 12rem;
+  height: auto;
+  max-height: 12rem;
+  min-height: 6rem;
+  object-fit: contain;
+  object-position: center;
+  background: #fff;
+  border-radius: 10px;
+  padding: 0.65rem;
+  border: 1px solid var(--border-glass);
+}
+
 .product-modal--wide.rc-modal .product-upload-field--compact {
   min-height: 3rem;
 }

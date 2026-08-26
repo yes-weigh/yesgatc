@@ -165,7 +165,7 @@
                                   DockPanel.Dock="Top"
                                   IsItemsHost="True"
                                   Background="Transparent"
-                                  Margin="0,0,0,12"/>
+                                  Margin="0,0,0,4"/>
                         <Border Background="Transparent"
                                 BorderThickness="0"
                                 Padding="0">
@@ -181,10 +181,10 @@
 
     <Style x:Key="MainTabItem" TargetType="TabItem">
         <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
-        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontSize" Value="13"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
-        <Setter Property="Padding" Value="18,10"/>
-        <Setter Property="Margin" Value="0,0,10,0"/>
+        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="Margin" Value="0,0,4,0"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabItem">
@@ -195,7 +195,7 @@
                             CornerRadius="10"
                             Padding="{TemplateBinding Padding}"
                             Cursor="Hand"
-                            MinWidth="110">
+                            MinWidth="72">
                         <ContentPresenter ContentSource="Header"
                                           HorizontalAlignment="Center"
                                           VerticalAlignment="Center"/>
@@ -417,13 +417,108 @@
 
     <Style x:Key="DataGridCellMuted" TargetType="TextBlock" BasedOn="{StaticResource DataGridCellText}">
         <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
-        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="FontSize" Value="12"/>
     </Style>
 
     <Style x:Key="DataGridCellRetryBadge" TargetType="TextBlock" BasedOn="{StaticResource DataGridCellText}">
         <Setter Property="Foreground" Value="#FBBF24"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style x:Key="QueueSectionTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{StaticResource TextMainBrush}"/>
+    </Style>
+
+    <Style x:Key="QueueSectionHint" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        <Setter Property="Margin" Value="0,0,0,2"/>
+    </Style>
+
+    <Style x:Key="QueueProcessSwitch" TargetType="CheckBox">
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{StaticResource TextMainBrush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal">
+                        <Border x:Name="Track"
+                                Width="32"
+                                Height="18"
+                                CornerRadius="9"
+                                Background="#3F3F46"
+                                VerticalAlignment="Center">
+                            <Canvas Width="32" Height="18">
+                                <Ellipse x:Name="Thumb"
+                                         Canvas.Left="2"
+                                         Canvas.Top="2"
+                                         Width="14"
+                                         Height="14"
+                                         Fill="White"/>
+                            </Canvas>
+                        </Border>
+                        <ContentPresenter Margin="6,0,0,0"
+                                          VerticalAlignment="Center"
+                                          RecognizesAccessKey="True"/>
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="#3B82F6"/>
+                            <Setter TargetName="Thumb" Property="Canvas.Left" Value="16"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="QueueDenseRow" TargetType="DataGridRow">
+        <Setter Property="MinHeight" Value="24"/>
+        <Setter Property="Height" Value="24"/>
+        <Setter Property="Margin" Value="0"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource TextMainBrush}"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#14FFFFFF"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="#243B82F6"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="QueueDenseDataGrid" TargetType="DataGrid">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource TextMainBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="RowHeight" Value="24"/>
+        <Setter Property="EnableRowVirtualization" Value="True"/>
+        <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+        <Setter Property="HorizontalGridLinesBrush" Value="#1AFFFFFF"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="#22FFFFFF"/>
+        <Setter Property="HeadersVisibility" Value="Column"/>
+        <Setter Property="RowBackground" Value="Transparent"/>
+        <Setter Property="AlternatingRowBackground" Value="Transparent"/>
+        <Setter Property="CanUserAddRows" Value="False"/>
+        <Setter Property="CanUserDeleteRows" Value="False"/>
+        <Setter Property="IsReadOnly" Value="True"/>
+        <Setter Property="SelectionMode" Value="Single"/>
+        <Setter Property="SelectionUnit" Value="FullRow"/>
+        <Setter Property="AutoGenerateColumns" Value="False"/>
+        <Setter Property="RowHeaderWidth" Value="0"/>
+        <Setter Property="CanUserResizeRows" Value="False"/>
+        <Setter Property="RowStyle" Value="{StaticResource QueueDenseRow}"/>
     </Style>
 
     <Style x:Key="QueueDataGridRow" TargetType="DataGridRow">
@@ -511,7 +606,7 @@
         <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="FontSize" Value="11"/>
-        <Setter Property="Padding" Value="18,0,18,14"/>
+        <Setter Property="Padding" Value="6,4"/>
         <Setter Property="BorderBrush" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -521,7 +616,7 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderBrush" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
-        <Setter Property="Padding" Value="18,0"/>
+        <Setter Property="Padding" Value="6,1"/>
         <Setter Property="Foreground" Value="{StaticResource TextMainBrush}"/>
         <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Style.Triggers>
