@@ -53,20 +53,79 @@ function isIssuedPublicCertificate(data) {
   return Boolean(certificateNumber) && !certificateNumber.includes(CORRUPTED_FIRESTORE_MARKER);
 }
 
+function optionalTrimmed(value) {
+  const text = String(value == null ? '' : value).trim();
+  return text || null;
+}
+
+function optionalFiniteNumber(value) {
+  if (value == null || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
+const STORAGE_BUCKET = 'yesgatc.firebasestorage.app';
+
+function publicUrlFromStoragePath(path) {
+  const trimmed = optionalTrimmed(path);
+  if (!trimmed) return null;
+  return `https://firebasestorage.googleapis.com/v0/b/${STORAGE_BUCKET}/o/${encodeURIComponent(trimmed)}?alt=media`;
+}
+
+function publicPhotoUrl(data, urlKey, pathKey) {
+  const url = optionalTrimmed(data[urlKey]);
+  if (url && isHttpUrl(url)) return url;
+  return publicUrlFromStoragePath(data[pathKey]);
+}
+
+const PUBLIC_PHOTO_SLOTS = [
+  { kind: 'stamping', label: 'Serial plate', urlKey: 'stampingImageUrl', pathKey: 'stampingImagePath' },
+  { kind: 'scale', label: 'Front', urlKey: 'scaleImageUrl', pathKey: 'scaleImagePath' },
+  { kind: 'instrumentRear', label: 'Rear', urlKey: 'instrumentRearImageUrl', pathKey: 'instrumentRearImagePath' },
+  { kind: 'standardWeight', label: 'F2 test weight', urlKey: 'standardWeightImageUrl', pathKey: 'standardWeightImagePath' },
+  { kind: 'verificationSeal', label: 'Seal', urlKey: 'verificationSealImageUrl', pathKey: 'verificationSealImagePath' },
+];
+
+function publicCertificatePhotos(data) {
+  const photos = [];
+  for (const slot of PUBLIC_PHOTO_SLOTS) {
+    const url = publicPhotoUrl(data, slot.urlKey, slot.pathKey);
+    if (!url) continue;
+    photos.push({ kind: slot.kind, label: slot.label, url });
+  }
+  return photos;
+}
+
+function publicUnitOfMeasurement(value) {
+  const unit = optionalTrimmed(value);
+  return unit === 'kg' || unit === 'g' ? unit : null;
+}
+
 function toPublicCertificate(data) {
   const voided = Boolean(String(data.certificateVoidedAt || '').trim());
   const verificationType = data.verificationType === 'RV' || data.verificationType === 'OV'
     ? data.verificationType
     : null;
+  const photos = publicCertificatePhotos(data);
 
   return {
-    certificateNumber: String(data.certificateNumber || '').trim() || null,
-    serialNumber: String(data.serialNumber || '').trim() || null,
-    customerName: String(data.customerName || '').trim() || null,
-    certifiedAt: String(data.certifiedAt || '').trim() || null,
+    certificateNumber: optionalTrimmed(data.certificateNumber),
+    serialNumber: optionalTrimmed(data.serialNumber),
+    customerName: optionalTrimmed(data.customerName),
+    certifiedAt: optionalTrimmed(data.certifiedAt),
     verificationType,
     voided,
     pdfUrl: voided ? null : resolvePublicCertificatePdfUrl(data),
+    machinePhotoUrl: photos[0]?.url ?? null,
+    photos,
+    maximumCapacity: optionalFiniteNumber(data.maximumCapacity),
+    verificationScaleInterval: optionalFiniteNumber(data.verificationScaleInterval),
+    unitOfMeasurement: publicUnitOfMeasurement(data.unitOfMeasurement),
+    accuracyClass: optionalTrimmed(data.accuracyClass),
   };
 }
 

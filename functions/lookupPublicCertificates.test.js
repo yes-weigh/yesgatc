@@ -74,3 +74,55 @@ test('voided certificates keep summary but drop the PDF', () => {
   assert.equal(hit.pdfUrl, null);
   assert.equal(hit.customerName, 'Acme');
 });
+
+test('public hit includes serial plate photo and scale fields', () => {
+  const hit = toPublicCertificate({
+    certificateNumber: 'IND/GATC/KL/26/04/26/12',
+    serialNumber: 'Y10313',
+    customerName: 'INTERWEIGHING PVT LTD',
+    certifiedAt: '2026-08-24T00:00:00.000Z',
+    verificationType: 'OV',
+    scaleImageUrl: 'https://storage.example/scale.jpg',
+    stampingImageUrl: 'https://storage.example/serial.jpg',
+    maximumCapacity: 50,
+    verificationScaleInterval: 5,
+    unitOfMeasurement: 'kg',
+    accuracyClass: 'III',
+  });
+  assert.equal(hit.machinePhotoUrl, 'https://storage.example/serial.jpg');
+  assert.deepEqual(hit.photos.map(photo => photo.kind), ['stamping', 'scale']);
+  assert.equal(hit.maximumCapacity, 50);
+  assert.equal(hit.verificationScaleInterval, 5);
+  assert.equal(hit.unitOfMeasurement, 'kg');
+  assert.equal(hit.accuracyClass, 'III');
+});
+
+test('photos include all five verification images in order', () => {
+  const hit = toPublicCertificate({
+    certificateNumber: 'IND/GATC/KL/26/04/26/12',
+    stampingImageUrl: 'https://a/1.jpg',
+    scaleImageUrl: 'https://a/2.jpg',
+    instrumentRearImageUrl: 'https://a/3.jpg',
+    standardWeightImageUrl: 'https://a/4.jpg',
+    verificationSealImageUrl: 'https://a/5.jpg',
+  });
+  assert.deepEqual(hit.photos.map(photo => photo.kind), [
+    'stamping',
+    'scale',
+    'instrumentRear',
+    'standardWeight',
+    'verificationSeal',
+  ]);
+  assert.equal(hit.machinePhotoUrl, 'https://a/1.jpg');
+});
+
+test('serial plate photo prefers stamping path', () => {
+  const fromPath = toPublicCertificate({
+    certificateNumber: 'IND/GATC/KL/26/04/26/12',
+    stampingImagePath: 'siteCalibrations/abc/stamping-image/plate.jpg',
+  });
+  assert.equal(
+    fromPath.machinePhotoUrl,
+    'https://firebasestorage.googleapis.com/v0/b/yesgatc.firebasestorage.app/o/siteCalibrations%2Fabc%2Fstamping-image%2Fplate.jpg?alt=media',
+  );
+});

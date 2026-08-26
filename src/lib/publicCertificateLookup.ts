@@ -1,3 +1,13 @@
+import { formatVerificationInstrumentFields } from './productCalculations';
+import { verificationValidUptoDate } from './verificationLabel';
+import { downloadCertificatePdfFile } from './certificatePdfFile';
+
+export type PublicCertificatePhoto = {
+  kind: string;
+  label: string;
+  url: string;
+};
+
 export type PublicCertificateHit = {
   certificateNumber: string | null;
   serialNumber: string | null;
@@ -6,6 +16,12 @@ export type PublicCertificateHit = {
   verificationType: 'OV' | 'RV' | null;
   voided: boolean;
   pdfUrl: string | null;
+  machinePhotoUrl?: string | null;
+  photos?: PublicCertificatePhoto[];
+  maximumCapacity?: number | null;
+  verificationScaleInterval?: number | null;
+  unitOfMeasurement?: 'kg' | 'g' | null;
+  accuracyClass?: string | null;
 };
 
 export type PublicCertificateLookupResult = {
@@ -58,6 +74,41 @@ export async function lookupPublicCertificates(query: string): Promise<PublicCer
   throw lastError ?? new Error('Lookup service unavailable. Try again.');
 }
 
+export function publicCertificatePhotos(hit: PublicCertificateHit): PublicCertificatePhoto[] {
+  if (hit.photos?.length) {
+    return hit.photos.filter(photo => photo.url?.trim());
+  }
+  const fallback = hit.machinePhotoUrl?.trim();
+  return fallback ? [{ kind: 'stamping', label: 'Serial plate', url: fallback }] : [];
+}
+
+export function formatPublicCertificateSpecs(hit: PublicCertificateHit): {
+  max: string;
+  min: string;
+  e: string;
+  accuracyClass: string;
+} {
+  const fields = formatVerificationInstrumentFields({
+    maximumCapacity: hit.maximumCapacity ?? undefined,
+    unitOfMeasurement: hit.unitOfMeasurement ?? undefined,
+    verificationScaleInterval: hit.verificationScaleInterval ?? undefined,
+  });
+  return {
+    ...fields,
+    accuracyClass: hit.accuracyClass?.trim() || '—',
+  };
+}
+
+export function formatPublicCertificateNextDue(certifiedAt: string | null): string {
+  const date = verificationValidUptoDate(certifiedAt ?? undefined);
+  if (!date) return '—';
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 export function publicCertificateFileName(hit: PublicCertificateHit): string {
   const raw = hit.certificateNumber || hit.serialNumber || 'certificate';
   return `${raw.replace(/[^\w.-]+/g, '-')}.pdf`;
@@ -80,4 +131,21 @@ export async function downloadPublicCertificatePdf(url: string, filename: string
   } catch {
     window.open(url, '_blank', 'noopener,noreferrer');
   }
+}
+
+/** Native phone share sheet with the PDF file. No WhatsApp / URL share. */
+export async function sharePublicCertificatePdf(file: File, title: string): Promise<void> {
+  const name = file.name.toLowerCase().endsWith('.pdf') ? file.name : `${file.name}.pdf`;
+  const pdf = new File([file], name, { type: 'application/pdf' });
+  const files = [pdf];
+  const canShareFiles =
+    typeof navigator.share === 'function'
+    && (typeof navigator.canShare !== 'function' || navigator.canShare({ files }));
+
+  if (canShareFiles) {
+    await navigator.share({ files, title });
+    return;
+  }
+
+  downloadCertificatePdfFile(pdf);
 }
