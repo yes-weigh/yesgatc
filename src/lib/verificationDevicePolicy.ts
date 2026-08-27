@@ -25,5 +25,5 @@ export function verificationRequiresMobileCapture(_role: Role | undefined): bool
 
 /** Whether this role may start or edit verification capture (photos, submit). */
 export function canUseVerificationCapture(role: Role | undefined): boolean {
-  return role === 'rc_admin' || role === 'vct';
+  return role === 'rc_admin' || role === 'vct' || role === 'verifier';
 }

@@ -15,6 +15,7 @@ import {
   Car,
   Trophy,
   UserCircle,
+  UserCheck,
 } from 'lucide-react';
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
 import { DashboardPeriodFilter } from '../../components/DashboardPeriodFilter';
@@ -129,7 +130,7 @@ function rankVctsByCertified(
 }
 
 export const RCDashboard: React.FC = () => {
-  const { rcUid, actorUid, isVct, isRcAdmin } = useRcScope();
+  const { rcUid, actorUid, isVct, isVerifier, isFieldStaff, isRcAdmin } = useRcScope();
   const basePath = useRoleBasePath();
   const navigate = useNavigate();
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
@@ -151,20 +152,20 @@ export const RCDashboard: React.FC = () => {
     if (!rcUid) return;
     setLoadingVerifications(true);
     try {
-      const q = verificationRecordsQuery(db, rcUid, { isVct, actorUid });
+      const q = verificationRecordsQuery(db, rcUid, { isFieldStaff, actorUid });
       const snap = await getDocs(q);
       setVerifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as SiteCalibration)));
     } finally {
       setLoadingVerifications(false);
     }
-  }, [rcUid, isVct, actorUid]);
+  }, [rcUid, isFieldStaff, actorUid]);
 
   useEffect(() => {
     void fetchVerifications();
   }, [fetchVerifications]);
 
   useEffect(() => {
-    if (!rcUid) {
+    if (!rcUid || isVerifier) {
       setVehicleCount(0);
       setVctCount(0);
       setVctById(new Map());
@@ -194,7 +195,7 @@ export const RCDashboard: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [rcUid, isRcAdmin]);
+  }, [rcUid, isRcAdmin, isVerifier]);
 
   useEffect(() => {
     if (!rcUid) {
@@ -218,7 +219,7 @@ export const RCDashboard: React.FC = () => {
   }, [rcUid]);
 
   useEffect(() => {
-    if (!rcUid) {
+    if (!rcUid || isVerifier) {
       setWalletBalance(0);
       setPendingTopUps(0);
       setWalletLoading(false);
@@ -247,7 +248,7 @@ export const RCDashboard: React.FC = () => {
       unsubBalance();
       unsubTopUps();
     };
-  }, [rcUid, isVct]);
+  }, [rcUid, isVct, isVerifier]);
 
   const scopedVerifications = useMemo(
     () =>
@@ -276,8 +277,8 @@ export const RCDashboard: React.FC = () => {
   ) =>
     verificationListPath(`${basePath}/verification`, { status, duration });
 
-  const stages = useMemo<StageCard[]>(
-    () => [
+  const stages = useMemo<StageCard[]>(() => {
+    const cards: StageCard[] = [
       {
         key: 'submitted',
         label: 'Submitted',
@@ -301,6 +302,14 @@ export const RCDashboard: React.FC = () => {
         tone: 'violet',
         icon: <FileText size={18} strokeWidth={1.9} />,
         href: verificationHref('draft'),
+      },
+      {
+        key: 'pending_rc',
+        label: 'Pending RC',
+        count: tally.pending_rc,
+        tone: 'orange',
+        icon: <UserCheck size={18} strokeWidth={1.9} />,
+        href: verificationHref('pending_rc'),
       },
       {
         key: 'certified',
@@ -351,9 +360,12 @@ export const RCDashboard: React.FC = () => {
         icon: <Trophy size={18} strokeWidth={1.9} />,
         href: verificationHref('certified'),
       },
-    ],
-    [tally, lifetimeCertified, vehicleCount, vctCount, rcRank, rcCompanyName, isRcAdmin, basePath, listDuration],
-  );
+    ];
+    if (isVerifier) {
+      return cards.filter(card => card.key !== 'cars' && card.key !== 'vcts' && card.key !== 'rc_rank');
+    }
+    return cards;
+  }, [tally, lifetimeCertified, vehicleCount, vctCount, rcRank, rcCompanyName, isRcAdmin, isVerifier, basePath, listDuration]);
 
   const recent = useMemo(
     () =>
@@ -384,7 +396,7 @@ export const RCDashboard: React.FC = () => {
     <div className="fade-in wl-dash">
       {isRcAdmin && rcHasVehicle === false ? <RcVehicleRequiredNotice variant="rc" /> : null}
 
-      {rcUid ? (
+      {rcUid && !isVerifier ? (
         isVct ? (
           <section className="wl-wallet" aria-label="Wallet balance">
             <div className="wl-wallet__icon" aria-hidden>
@@ -520,7 +532,8 @@ export const RCDashboard: React.FC = () => {
         </Link>
       </section>
 
-      <section className="wl-section" aria-labelledby="wl-vct-cert-title">
+      {!isVerifier ? (
+        <section className="wl-section" aria-labelledby="wl-vct-cert-title">
         <div className="wl-section__head">
           <h2 id="wl-vct-cert-title" className="wl-section__title">
             Verification Officer
@@ -566,7 +579,8 @@ export const RCDashboard: React.FC = () => {
             ))}
           </ul>
         )}
-      </section>
+        </section>
+      ) : null}
 
       <section className="wl-section" aria-labelledby="wl-recent-title">
         <div className="wl-section__head">

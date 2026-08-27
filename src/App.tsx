@@ -22,6 +22,7 @@ import { AdminEmaapSessionLogs } from './pages/admin/AdminEmaapSessionLogs';
 import { AdminNotifications } from './pages/admin/AdminMenuPages';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
+import { VerifierManagement } from './pages/rc/VerifierManagement';
 import { RCProfile } from './pages/rc/RCProfile';
 import { RCWallet } from './pages/rc/RCWallet';
 import { NewJobComingSoon } from './pages/rc/RCMenuPages';
@@ -35,6 +36,7 @@ import {
   RCLeads,
 } from './pages/rc/RCMenuPages';
 import { VCTProfile } from './pages/vct/VCTProfile';
+import { VerifierProfile } from './pages/verifier/VerifierProfile';
 import { VCTTraining } from './pages/vct/VCTMenuPages';
 import { Certificates } from './pages/vct/Certificates';
 import { CertificateSign } from './pages/vct/CertificateSign';
@@ -93,6 +95,7 @@ const App: React.FC = () => {
                 <Route path="leads" element={<RCLeads />} />
                 <Route path="products" element={<RCProducts />} />
                 <Route path="vct" element={<VCTManagement />} />
+                <Route path="verifier" element={<VerifierManagement />} />
                 <Route path="vehicles" element={<RCVehicles />} />
                 <Route path="laboratory" element={<RCLaboratory />} />
                 <Route path="certificates" element={<Certificates />} />
@@ -127,6 +130,18 @@ const App: React.FC = () => {
                 <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<VCTProfile />} />
                 <Route path="queue" element={<Navigate to="/vct/new-job" replace />} />
+              </Route>
+            </Route>
+
+            {/* Verifier — temporary RC staff. No Super Admin portal. */}
+            <Route element={<ProtectedRoute allowedRoles={['verifier']} />}>
+              <Route path="/verifier" element={<Layout />}>
+                <Route index element={<RCDashboard />} />
+                <Route path="verification" element={<RCSiteCalibration />} />
+                <Route path="certificates" element={<Certificates />} />
+                <Route path="certificates/:recordId" element={<CertificateSign />} />
+                <Route path="customers" element={<RCCustomers />} />
+                <Route path="profile" element={<VerifierProfile />} />
               </Route>
             </Route>
 

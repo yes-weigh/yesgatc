@@ -42,7 +42,7 @@ import {
 } from './CustomerFormFields';
 
 export const RCCustomers: React.FC = () => {
-  const { rcUid, actorUid, isVct } = useRcScope();
+  const { rcUid, actorUid, isFieldStaff } = useRcScope();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +123,7 @@ export const RCCustomers: React.FC = () => {
     try {
       const [customerSnap, verificationSnap] = await Promise.all([
         getDocs(query(collection(db, 'customers'), where('rcId', '==', rcUid))),
-        getDocs(verificationRecordsQuery(db, rcUid, { isVct, actorUid })),
+        getDocs(verificationRecordsQuery(db, rcUid, { isFieldStaff, actorUid })),
       ]);
 
       const rows = customerSnap.docs
@@ -153,7 +153,7 @@ export const RCCustomers: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [rcUid, isVct, actorUid]);
+  }, [rcUid, isFieldStaff, actorUid]);
 
   useEffect(() => {
     Promise.resolve().then(() => fetchCustomers());

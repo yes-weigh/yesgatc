@@ -18,6 +18,7 @@ service cloud.firestore {
     function isSuperAdmin()    { return isAuthenticated() && role() == 'super_admin'; }
     function isRCAdmin()       { return isAuthenticated() && role() == 'rc_admin'; }
     function isVCT()           { return isAuthenticated() && role() == 'vct'; }
+    function isVerifier()      { return isAuthenticated() && role() == 'verifier'; }
 
     function requestUser() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
@@ -31,6 +32,14 @@ service cloud.firestore {
       return isVCT()
         && vctApprovalStatus(requestUser()) == 'approved'
         && requestUser().get('active', true) != false;
+    }
+
+    function isOperationalVerifier() {
+      return isVerifier() && requestUser().get('active', true) != false;
+    }
+
+    function isOperationalFieldStaff() {
+      return isOperationalVct() || isOperationalVerifier();
     }
 
     function vctApprovalStatus(data) {
@@ -130,6 +139,10 @@ service cloud.firestore {
         && uid == vctRcId()
         && resource.data.role == 'rc_admin';
 
+      allow get: if isOperationalVerifier()
+        && uid == vctRcId()
+        && resource.data.role == 'rc_admin';
+
       allow get: if isOperationalVct()
         && resource.data.role == 'vct'
         && resource.data.rcId == vctRcId();
@@ -138,6 +151,10 @@ service cloud.firestore {
 
       allow read: if isRCAdmin()
         && resource.data.role == 'vct'
+        && resource.data.rcId == request.auth.uid;
+
+      allow read: if isRCAdmin()
+        && resource.data.role == 'verifier'
         && resource.data.rcId == request.auth.uid;
 
       allow create: if isAuthenticated()
@@ -149,6 +166,11 @@ service cloud.firestore {
         && request.resource.data.rcId == request.auth.uid
         && validAadhar(request.resource.data)
         && request.resource.data.approvalStatus == 'pending';
+
+      allow create: if isRCAdmin()
+        && request.resource.data.role == 'verifier'
+        && request.resource.data.rcId == request.auth.uid
+        && validAadhar(request.resource.data);
 
       allow update: if isRCAdmin()
         && request.auth.uid == uid
@@ -186,6 +208,14 @@ service cloud.firestore {
         && request.resource.data.get('approvedAt', null) == resource.data.get('approvedAt', null)
         && request.resource.data.get('approvedByUid', null) == resource.data.get('approvedByUid', null);
 
+      allow update: if isRCAdmin()
+        && resource.data.role == 'verifier'
+        && resource.data.rcId == request.auth.uid
+        && request.resource.data.role == 'verifier'
+        && request.resource.data.rcId == request.auth.uid
+        && request.resource.data.aadhar == resource.data.aadhar
+        && validAadhar(request.resource.data);
+
       allow delete: if isRCAdmin()
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid
@@ -197,6 +227,7 @@ service cloud.firestore {
             request.auth.uid == uid
             || isSuperAdmin()
             || (isOperationalVct() && vctRcId() == uid)
+            || (isOperationalVerifier() && vctRcId() == uid)
           );
         allow create, update: if isAuthenticated() && request.auth.uid == uid;
         allow delete: if isSuperAdmin()
@@ -229,6 +260,16 @@ service cloud.firestore {
         allow delete: if isRCAdmin()
           && request.auth.uid == rcId
           && vctApprovalStatus(resource.data) == 'pending';
+      }
+    }
+
+    // ── rcVerifiers (RC temporary verifier roster — RC only, no Super Admin UI) ──
+    match /rcVerifiers/{rcId} {
+      match /members/{verifierUid} {
+        allow read: if isRCAdmin() && request.auth.uid == rcId;
+        allow create: if isRCAdmin() && request.auth.uid == rcId;
+        allow update: if isRCAdmin() && request.auth.uid == rcId;
+        allow delete: if isRCAdmin() && request.auth.uid == rcId;
       }
     }
 
@@ -267,6 +308,8 @@ service cloud.firestore {
 
       allow read: if isOperationalVct() && resource.data.rcId == vctRcId();
 
+      allow read: if isOperationalVerifier() && resource.data.rcId == vctRcId();
+
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid;
 
@@ -285,10 +328,16 @@ service cloud.firestore {
 
       allow read: if isOperationalVct() && resource.data.rcId == vctRcId();
 
+      allow read: if isOperationalVerifier() && resource.data.rcId == vctRcId();
+
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid;
 
       allow create: if isOperationalVct()
+        && request.resource.data.rcId == vctRcId()
+        && request.resource.data.get('createdByUid', '') == request.auth.uid;
+
+      allow create: if isOperationalVerifier()
         && request.resource.data.rcId == vctRcId()
         && request.resource.data.get('createdByUid', '') == request.auth.uid;
 
@@ -297,6 +346,10 @@ service cloud.firestore {
         && request.resource.data.rcId == request.auth.uid;
 
       allow update: if isOperationalVct()
+        && resource.data.rcId == vctRcId()
+        && request.resource.data.rcId == vctRcId();
+
+      allow update: if isOperationalVerifier()
         && resource.data.rcId == vctRcId()
         && request.resource.data.rcId == vctRcId();
 
@@ -321,11 +374,23 @@ service cloud.firestore {
         && resource.data.rcId == vctRcId()
         && vctOwnsVerification(resource.data);
 
+      allow read: if isOperationalVerifier()
+        && resource.data.rcId == vctRcId()
+        && vctOwnsVerification(resource.data);
+
       allow create: if isOperationalVct()
         && request.resource.data.rcId == vctRcId()
         && request.resource.data.get('createdByUid', '') == request.auth.uid
         && request.resource.data.get('vctId', '') == request.auth.uid
         && request.resource.data.get('performedBy', '') == 'vct'
+        && verificationRecordStatus(request.resource.data) == 'draft'
+        && validVerificationApplicationNumber(request.resource.data);
+
+      allow create: if isOperationalVerifier()
+        && request.resource.data.rcId == vctRcId()
+        && request.resource.data.get('createdByUid', '') == request.auth.uid
+        && request.resource.data.get('vctId', '') == request.auth.uid
+        && request.resource.data.get('performedBy', '') == 'verifier'
         && verificationRecordStatus(request.resource.data) == 'draft'
         && validVerificationApplicationNumber(request.resource.data);
 
@@ -372,6 +437,24 @@ service cloud.firestore {
         && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
         && verificationZohoFieldsUnchanged();
 
+      allow update: if isOperationalVerifier()
+        && resource.data.rcId == vctRcId()
+        && request.resource.data.rcId == resource.data.rcId
+        && vctOwnsVerification(resource.data)
+        && verificationRecordStatus(resource.data) == 'draft'
+        && verificationRecordStatus(request.resource.data) in ['draft', 'pending_rc']
+        && verificationApplicationNumberUnchanged()
+        && verificationZohoFieldsUnchanged();
+
+      allow update: if isRCAdmin()
+        && resource.data.rcId == request.auth.uid
+        && request.resource.data.rcId == resource.data.rcId
+        && verificationRecordStatus(resource.data) == 'pending_rc'
+        && verificationRecordStatus(request.resource.data) in ['pending_rc', 'submitted']
+        && verificationApplicationNumberUnchanged()
+        && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
+        && verificationZohoFieldsUnchanged();
+
       // RC emaapengine — certify / fail / void own submitted jobs (same pipeline as VPS worker).
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
@@ -411,6 +494,11 @@ service cloud.firestore {
         && resource.data.rcId == vctRcId()
         && vctOwnsVerification(resource.data)
         && verificationRecordStatus(resource.data) == 'draft';
+
+      allow delete: if isOperationalVerifier()
+        && resource.data.rcId == vctRcId()
+        && vctOwnsVerification(resource.data)
+        && verificationRecordStatus(resource.data) == 'draft';
     }
 
     // ── internal counters (verification application numbers) ─────
@@ -422,11 +510,11 @@ service cloud.firestore {
       allow read: if isSuperAdmin() && isVerificationApplicationCounter();
 
       allow read: if isAuthenticated()
-        && (isRCAdmin() || isOperationalVct())
+        && (isRCAdmin() || isOperationalFieldStaff())
         && isVerificationApplicationCounter();
 
       allow create: if isAuthenticated()
-        && (isRCAdmin() || isOperationalVct())
+        && (isRCAdmin() || isOperationalFieldStaff())
         && isVerificationApplicationCounter()
         && request.resource.data.keys().hasOnly(['nextSeq', 'year'])
         && request.resource.data.nextSeq is int
@@ -436,7 +524,7 @@ service cloud.firestore {
       allow create: if isSuperAdmin();
 
       allow update: if isAuthenticated()
-        && (isRCAdmin() || isOperationalVct())
+        && (isRCAdmin() || isOperationalFieldStaff())
         && isVerificationApplicationCounter()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nextSeq', 'year'])
         && request.resource.data.nextSeq is int

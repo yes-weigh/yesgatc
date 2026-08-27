@@ -310,6 +310,7 @@ export function tallyVerificationStatusFiltersCollapsed(
 ): VerificationStatusFilterCounts {
   const statusBuckets: Exclude<VerificationStatusFilter, 'all' | 'duplicates'>[] = [
     'draft',
+    'pending_rc',
     'submitted',
     'approved',
     'certified',
@@ -328,6 +329,7 @@ export function tallyVerificationStatusFiltersCollapsed(
       'status',
     ).length,
     draft: 0,
+    pending_rc: 0,
     submitted: 0,
     approved: 0,
     certified: 0,

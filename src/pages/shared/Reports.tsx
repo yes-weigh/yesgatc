@@ -148,7 +148,7 @@ function buildMonthOptions(records: SiteCalibration[], now = new Date()): string
 
 export const Reports: React.FC = () => {
   const { user } = useAuth();
-  const { rcUid, actorUid, isVct, isRcAdmin } = useRcScope();
+  const { rcUid, actorUid, isFieldStaff, isRcAdmin } = useRcScope();
   const { appSettings } = useAppSettings();
   const setReportsAppBar = useSetReportsAppBar();
   const isSuper = user?.role === 'super_admin';
@@ -225,7 +225,7 @@ export const Reports: React.FC = () => {
       }
 
       const [snap, rcSnap, productSnap] = await Promise.all([
-        getDocs(verificationRecordsQuery(db, rcUid, { isVct, actorUid })),
+        getDocs(verificationRecordsQuery(db, rcUid, { isFieldStaff, actorUid })),
         getDoc(doc(db, 'users', rcUid)),
         getDocs(collection(db, 'products')),
       ]);
@@ -256,7 +256,7 @@ export const Reports: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [actorUid, isSuper, isVct, rcUid]);
+  }, [actorUid, isSuper, isFieldStaff, rcUid]);
 
   useEffect(() => {
     void load();

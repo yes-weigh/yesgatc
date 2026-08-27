@@ -42,12 +42,13 @@ import {
   Share2,
   HardHat,
   Plus,
+  UserCheck,
 } from 'lucide-react';
 
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { embedVerificationPath, isEmbedSession, rememberEmbedMode } from '../lib/embedMode';
 import { APP_VERSION } from '../lib/appVersion';
-import type { FirestoreUserDoc } from '../types';
+import { ROLE_LABELS, type FirestoreUserDoc } from '../types';
 
 type NavItem = {
   path: string;
@@ -74,7 +75,13 @@ export const Layout: React.FC = () => {
   const [rcListChrome, setRcListChrome] = useState<RcListAppBarChrome | null>(null);
 
   const profilePath =
-    user?.role === 'rc_admin' ? '/rc/profile' : user?.role === 'vct' ? '/vct/profile' : null;
+    user?.role === 'rc_admin'
+      ? '/rc/profile'
+      : user?.role === 'vct'
+        ? '/vct/profile'
+        : user?.role === 'verifier'
+          ? '/verifier/profile'
+          : null;
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768);
@@ -118,7 +125,7 @@ export const Layout: React.FC = () => {
   });
 
   useEffect(() => {
-    if (!user?.uid || (user.role !== 'rc_admin' && user.role !== 'vct')) {
+    if (!user?.uid || (user.role !== 'rc_admin' && user.role !== 'vct' && user.role !== 'verifier')) {
       setProfilePhoto(null);
       return;
     }
@@ -204,6 +211,12 @@ export const Layout: React.FC = () => {
             label: 'VCT',
             pageTitle: 'Verification and Calibration Technician',
           },
+          {
+            path: '/rc/verifier',
+            icon: <UserCheck size={20} />,
+            label: 'Verifier',
+            pageTitle: 'Temporary verifiers',
+          },
           { path: '/rc/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
           { path: '/rc/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
           { path: '/rc/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
@@ -225,6 +238,14 @@ export const Layout: React.FC = () => {
           { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
           { path: '/vct/profile', icon: <Settings size={20} />, label: 'My Profile' },
         ];
+      case 'verifier':
+        return [
+          { path: '/verifier', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
+          { path: '/verifier/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
+          { path: '/verifier/certificates', icon: <Award size={20} />, label: 'Certificates' },
+          { path: '/verifier/customers', icon: <UserRound size={20} />, label: 'Customers' },
+          { path: '/verifier/profile', icon: <Settings size={20} />, label: 'My Profile' },
+        ];
       default:
         return [];
     }
@@ -232,7 +253,7 @@ export const Layout: React.FC = () => {
 
   const navItems = getNavItems();
   const isNavActive = (path: string) => {
-    if (path === '/admin' || path === '/rc' || path === '/vct') {
+    if (path === '/admin' || path === '/rc' || path === '/vct' || path === '/verifier') {
       return location.pathname === path;
     }
     return location.pathname === path || location.pathname.startsWith(`${path}/`);
@@ -244,14 +265,15 @@ export const Layout: React.FC = () => {
     : currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
-  const isCertificatesList = /\/(rc|vct)\/certificates\/?$/.test(location.pathname);
-  const isCustomersList = /\/(rc|vct)\/customers\/?$/.test(location.pathname);
+  const isCertificatesList = /\/(rc|vct|verifier)\/certificates\/?$/.test(location.pathname);
+  const isCustomersList = /\/(rc|vct|verifier)\/customers\/?$/.test(location.pathname);
   const isReportsList = /\/(admin|rc|vct)\/reports\/?$/.test(location.pathname);
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
   const isRcCentersPage = /^\/admin\/rc\/?$/.test(location.pathname);
   const isHomeDashboard =
     location.pathname === '/rc' ||
     location.pathname === '/vct' ||
+    location.pathname === '/verifier' ||
     location.pathname === '/admin';
   const showAppFilterSlot =
     useShieldBrand || isCertificatesList || isCustomersList || isReportsList;
@@ -264,11 +286,7 @@ export const Layout: React.FC = () => {
     isRcCentersPage ||
     isSettingsPage;
 
-  const roleLabel = {
-    super_admin: 'Super Admin',
-    rc_admin: 'RC Admin',
-    vct: 'VCT Technician',
-  }[user.role];
+  const roleLabel = ROLE_LABELS[user.role];
 
   const sidebarContent = (mobile: boolean) => (
     <>

@@ -12,10 +12,11 @@ import type { SiteCalibration } from '../types';
 export function verificationRecordsQuery(
   db: Firestore,
   rcUid: string,
-  scope: { isVct: boolean; actorUid: string | null },
+  scope: { isVct?: boolean; isVerifier?: boolean; isFieldStaff?: boolean; actorUid: string | null },
 ): Query {
   const base = collection(db, 'siteCalibrations');
-  if (scope.isVct && scope.actorUid) {
+  const fieldStaff = scope.isFieldStaff ?? Boolean(scope.isVct || scope.isVerifier);
+  if (fieldStaff && scope.actorUid) {
     return query(
       base,
       where('rcId', '==', rcUid),

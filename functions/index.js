@@ -110,6 +110,9 @@ async function callerCanDeleteAuth(callerUid, targetUid) {
   if (callerRole === 'rc_admin' && target.role === 'vct' && target.rcId === callerUid) {
     return true;
   }
+  if (callerRole === 'rc_admin' && target.role === 'verifier' && target.rcId === callerUid) {
+    return true;
+  }
   return false;
 }
 

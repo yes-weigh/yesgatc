@@ -10,6 +10,7 @@ import type {
 
 export const VERIFICATION_REQUEST_STATUSES: VerificationRequestStatus[] = [
   'draft',
+  'pending_rc',
   'submitted',
   'approved',
   'certified',
@@ -64,6 +65,7 @@ export function normalizeVerificationStatus(
   const raw = record.status;
   if (
     raw === 'submitted' ||
+    raw === 'pending_rc' ||
     raw === 'approved' ||
     raw === 'certified' ||
     raw === 'draft' ||
@@ -161,6 +163,45 @@ export function canSubmitVerification(record: VerificationStatusSource): boolean
   return normalizeVerificationStatus(record) === 'draft';
 }
 
+export function isVerifierPerformed(
+  record: Pick<SiteCalibration, 'performedBy' | 'requestSource'>,
+): boolean {
+  return record.performedBy === 'verifier' || record.requestSource === 'verifier_manual';
+}
+
+export function canRcApproveVerifierVerification(
+  record: Pick<SiteCalibration, 'status' | 'performedBy' | 'requestSource'>,
+): boolean {
+  return normalizeVerificationStatus(record) === 'pending_rc' && isVerifierPerformed(record);
+}
+
+export function buildVerifierRcReviewPatch(now = new Date().toISOString()): {
+  status: VerificationRequestStatus;
+  pendingRcAt: string;
+  updatedAt: string;
+} {
+  return {
+    status: 'pending_rc',
+    pendingRcAt: now,
+    updatedAt: now,
+  };
+}
+
+export function buildRcApproveVerifierPatch(
+  rcUid: string,
+  now = new Date().toISOString(),
+): {
+  rcApprovedAt: string;
+  rcApprovedByUid: string;
+  updatedAt: string;
+} {
+  return {
+    rcApprovedAt: now,
+    rcApprovedByUid: rcUid,
+    updatedAt: now,
+  };
+}
+
 export function hasStoredCertificatePdf(
   record: Pick<SiteCalibration, 'certificatePdfUrl' | 'signedCertificatePdfUrl'>,
 ): boolean {
@@ -198,6 +239,7 @@ export interface VerificationTypeFilterCounts {
 export interface VerificationStatusFilterCounts {
   all: number;
   draft: number;
+  pending_rc: number;
   submitted: number;
   approved: number;
   certified: number;
@@ -310,6 +352,7 @@ export function verificationDisplayStatusTitle(record: SiteCalibration): string 
   }
   if (
     display === 'draft' ||
+    display === 'pending_rc' ||
     display === 'submitted' ||
     display === 'approved' ||
     display === 'certified' ||
@@ -329,6 +372,7 @@ export function verificationStatusFilterBucket(
   if (isVerificationFullyCertified(record)) return 'certified';
   const status = normalizeVerificationStatus(record);
   if (status === 'draft') return 'draft';
+  if (status === 'pending_rc') return 'pending_rc';
   // Submitted queue (incl. legacy approved / incomplete certified awaiting repair).
   if (status === 'submitted' || status === 'approved' || status === 'certified') {
     return 'submitted';
@@ -393,6 +437,7 @@ export function tallyVerificationStatusFilters(
   const tally: VerificationStatusFilterCounts = {
     all: records.length,
     draft: 0,
+    pending_rc: 0,
     submitted: 0,
     approved: 0,
     certified: 0,
@@ -415,6 +460,7 @@ export function buildVerificationStatusFilterOptions(
   return [
     { value: 'all', label: 'All stages', count: counts.all },
     { value: 'draft', label: 'Draft', count: counts.draft },
+    { value: 'pending_rc', label: 'Pending RC', count: counts.pending_rc },
     { value: 'submitted', label: 'Submitted', count: counts.submitted },
     { value: 'certified', label: 'Certified', count: counts.certified },
     { value: 'failed_submit', label: 'Failed at submit', count: counts.failed_submit },
@@ -424,6 +470,7 @@ export function buildVerificationStatusFilterOptions(
 
 export function verificationStatusLabel(status: VerificationRequestStatus): string {
   if (status === 'draft') return 'Draft';
+  if (status === 'pending_rc') return 'Pending RC';
   if (status === 'submitted') return 'Submitted';
   if (status === 'certified') return 'Certified';
   if (status === 'rejected') return 'Rejected';
@@ -432,6 +479,7 @@ export function verificationStatusLabel(status: VerificationRequestStatus): stri
 
 export function verificationStatusDescription(status: VerificationRequestStatus): string {
   if (status === 'draft') return 'Open and edit before submitting for certificate generation.';
+  if (status === 'pending_rc') return 'Sent to RC Admin — approve to start certificate generation.';
   if (status === 'submitted') return 'Locked — awaiting eMAAP certificate generation.';
   if (status === 'certified') return 'Certificate issued and stored in Firebase.';
   if (status === 'rejected') return 'Certification failed — closed; not retried by the worker.';
@@ -442,6 +490,9 @@ export function verificationVctLabel(
   record: SiteCalibration,
   options?: { rcContactPerson?: string | null },
 ): string {
+  if (record.performedBy === 'verifier' || record.requestSource === 'verifier_manual') {
+    return record.vctName?.trim() || record.vctId || 'Verifier';
+  }
   if (record.performedBy === 'vct' || record.vctId?.trim()) {
     return record.vctName?.trim() || record.vctId || 'VCT';
   }
@@ -503,13 +554,24 @@ export function buildRcDirectVerificationMeta(contactPerson?: string): {
 
 export type VerificationDraftActorMeta =
   | { actor: 'rc'; contactPerson?: string }
-  | { actor: 'vct'; vctId: string; vctName: string; workflowMode?: WorkflowMode };
+  | { actor: 'vct'; vctId: string; vctName: string; workflowMode?: WorkflowMode }
+  | { actor: 'verifier'; verifierId: string; verifierName: string };
 
 export function buildVerificationDraftMeta(
   actor: VerificationDraftActorMeta,
 ): Pick<SiteCalibration, 'status' | 'performedBy' | 'requestSource' | 'vctId' | 'vctName'> {
   if (actor.actor === 'rc') {
     return buildRcDirectVerificationMeta(actor.contactPerson);
+  }
+
+  if (actor.actor === 'verifier') {
+    return {
+      status: 'draft',
+      performedBy: 'verifier',
+      requestSource: 'verifier_manual',
+      vctId: actor.verifierId,
+      vctName: actor.verifierName.trim() || 'Verifier',
+    };
   }
 
   return {
@@ -523,11 +585,20 @@ export function buildVerificationDraftMeta(
 
 export function resolveVerificationDraftActorMeta(params: {
   isVct: boolean;
+  isVerifier?: boolean;
   actorUid: string | null;
   actorUsername?: string;
   actorWorkflowMode?: WorkflowMode;
   rcContactPerson?: string;
 }): VerificationDraftActorMeta {
+  if (params.isVerifier && params.actorUid) {
+    return {
+      actor: 'verifier',
+      verifierId: params.actorUid,
+      verifierName: params.actorUsername?.trim() || 'Verifier',
+    };
+  }
+
   if (!params.isVct || !params.actorUid) {
     return { actor: 'rc', contactPerson: params.rcContactPerson };
   }
@@ -551,6 +622,7 @@ export function resolveVerificationDraftActorForSession(
   assignedVctId: string | undefined,
   params: {
     isVct: boolean;
+    isVerifier?: boolean;
     actorUid: string | null;
     actorUsername?: string;
     actorWorkflowMode?: WorkflowMode;
@@ -558,6 +630,15 @@ export function resolveVerificationDraftActorForSession(
     rcContactPerson?: string;
   },
 ): VerificationDraftActorMeta {
+  if (params.isVerifier) {
+    return resolveVerificationDraftActorMeta({
+      isVerifier: true,
+      isVct: false,
+      actorUid: params.actorUid,
+      actorUsername: params.actorUsername,
+    });
+  }
+
   if (params.isVct) {
     return resolveVerificationDraftActorMeta({
       isVct: true,
@@ -587,14 +668,18 @@ export function verificationPerformerCreatedByUid(
   actor: VerificationDraftActorMeta,
   rcAdminUid: string | null,
 ): string | undefined {
-  return actor.actor === 'vct' ? actor.vctId : rcAdminUid ?? undefined;
+  return actor.actor === 'vct'
+    ? actor.vctId
+    : actor.actor === 'verifier'
+      ? actor.verifierId
+      : rcAdminUid ?? undefined;
 }
 
 export function shouldClearVerificationVctFields(
   actor: VerificationDraftActorMeta,
   previousRecord?: Pick<SiteCalibration, 'vctId' | 'performedBy'> | null,
 ): boolean {
-  return actor.actor === 'rc' && Boolean(previousRecord?.vctId || previousRecord?.performedBy === 'vct');
+  return actor.actor === 'rc' && Boolean(previousRecord?.vctId || previousRecord?.performedBy === 'vct' || previousRecord?.performedBy === 'verifier');
 }
 
 export function buildVerificationSubmitPatch(now = new Date().toISOString()): {

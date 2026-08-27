@@ -340,6 +340,10 @@ async function createRvInvoice(db, record, rcZohoId, settings) {
   };
 }
 
+function isPreSubmitVerificationStatus(status) {
+  return status === 'draft' || status === 'pending_rc';
+}
+
 function shouldProcessRvZohoInvoice(before, after) {
   if (!after || after.verificationType !== 'RV') return false;
   if (after.resubmittedFromId) return false;
@@ -347,10 +351,10 @@ function shouldProcessRvZohoInvoice(before, after) {
   if (after.zohoPushStatus === 'sent') return false;
 
   const afterStatus = verificationRecordStatus(after);
-  if (afterStatus === 'draft') return false;
+  if (isPreSubmitVerificationStatus(afterStatus)) return false;
 
   const beforeStatus = before ? verificationRecordStatus(before) : 'draft';
-  if (beforeStatus !== 'draft') return false;
+  if (!isPreSubmitVerificationStatus(beforeStatus)) return false;
 
   return true;
 }
@@ -367,7 +371,13 @@ async function writeZohoPushResult(db, recordId, patch) {
 
 function verificationRecordStatus(record) {
   const status = String(record?.status || '').trim();
-  if (status === 'draft' || status === 'submitted' || status === 'approved' || status === 'certified') {
+  if (
+    status === 'draft'
+    || status === 'pending_rc'
+    || status === 'submitted'
+    || status === 'approved'
+    || status === 'certified'
+  ) {
     return status;
   }
   if (record?.submittedAt?.trim()) return 'submitted';
@@ -381,16 +391,16 @@ function canPushRvZohoInvoice(record) {
   if (record.resubmittedFromId) return false;
   if (record.zohoInvoiceId) return false;
   if (record.zohoPushStatus === 'sent') return false;
-  return verificationRecordStatus(record) !== 'draft';
+  return !isPreSubmitVerificationStatus(verificationRecordStatus(record));
 }
 
-/** Draft RV awaiting pre-submit Zoho invoice (submit gate). */
+/** Draft / pending-RC RV awaiting pre-submit Zoho invoice (submit gate). */
 function canPushRvZohoInvoicePreSubmit(record) {
   if (!record || record.verificationType !== 'RV') return false;
   if (record.resubmittedFromId) return false;
   if (record.zohoInvoiceId) return false;
   if (record.zohoPushStatus === 'sent') return false;
-  return verificationRecordStatus(record) === 'draft';
+  return isPreSubmitVerificationStatus(verificationRecordStatus(record));
 }
 
 function assertRvZohoInvoiceRecord(record, { preSubmit = false } = {}) {
@@ -405,10 +415,10 @@ function assertRvZohoInvoiceRecord(record, { preSubmit = false } = {}) {
   }
   const status = verificationRecordStatus(record);
   if (preSubmit) {
-    if (status !== 'draft') {
-      throw new Error('Pre-submit Zoho invoice requires a draft verification.');
+    if (!isPreSubmitVerificationStatus(status)) {
+      throw new Error('Pre-submit Zoho invoice requires a draft or pending-RC verification.');
     }
-  } else if (status === 'draft') {
+  } else if (isPreSubmitVerificationStatus(status)) {
     throw new Error('Submit the verification before pushing to Zoho.');
   }
   if (!String(record.applicationNumber || '').trim()) {
@@ -663,10 +673,10 @@ async function submitRvWithZohoGateHandler(request, db) {
     if (record.verificationType !== 'RV') {
       throw new HttpsError('failed-precondition', 'Only RV verifications use the Zoho submit gate.');
     }
-    if (verificationRecordStatus(record) !== 'draft') {
+    if (!isPreSubmitVerificationStatus(verificationRecordStatus(record))) {
       throw new HttpsError(
         'failed-precondition',
-        'Only draft RV verifications can be submitted through the Zoho gate.',
+        'Only draft or pending-RC RV verifications can be submitted through the Zoho gate.',
       );
     }
 

@@ -1,6 +1,6 @@
 import { doc, updateDoc, type Firestore } from 'firebase/firestore';
 import { db } from '../firebase';
-import { buildVerificationSubmitPatch } from './verificationRequest';
+import { buildVerificationSubmitPatch, buildVerifierRcReviewPatch } from './verificationRequest';
 import { queueRvZohoInvoicesAfterSubmit, submitRvWithZohoGate } from './zohoRvInvoice';
 import type { JobType } from '../types';
 import type { RcFilingPartyPatch } from './keralaRegion';
@@ -86,4 +86,15 @@ export async function submitVerificationRecord(
   options?: VerificationSubmitOptions,
 ): Promise<void> {
   return submitVerificationRecords([target], firestore, options);
+}
+
+export async function submitVerifierWorkForRcReview(
+  recordIds: string[],
+  firestore: Firestore = db,
+): Promise<void> {
+  if (recordIds.length === 0) return;
+  const patch = buildVerifierRcReviewPatch();
+  await Promise.all(
+    recordIds.map(recordId => updateDoc(doc(firestore, 'siteCalibrations', recordId), patch)),
+  );
 }

@@ -1,10 +1,11 @@
 // Core role type — stored directly in Firestore as-is
-export type Role = 'super_admin' | 'rc_admin' | 'vct';
+export type Role = 'super_admin' | 'rc_admin' | 'vct' | 'verifier';
 
 export const ROLE_LABELS: Record<Role, string> = {
   super_admin: 'Super Admin',
   rc_admin: 'RC Admin',
   vct: 'VCT Technician',
+  verifier: 'Verifier',
 };
 
 export interface User {
@@ -12,7 +13,7 @@ export interface User {
   aadhar: string;       // login ID only
   username: string;
   role: Role;
-  rcId?: string;        // for vct: UID of their RC Admin; for rc_admin: their own UID
+  rcId?: string;        // vct/verifier → RC Admin UID; rc_admin → own UID
   email?: string;       // contact / business (not auth)
   phone?: string;       // contact / business (not auth)
 }
@@ -56,18 +57,25 @@ export type VerificationLocation = 'in_situ' | 'in_premises';
  * Verification request lifecycle — client may create/edit draft and submit.
  * Only the certificate server (Admin SDK) should set `approved` and certificate fields.
  */
-export type VerificationRequestStatus = 'draft' | 'submitted' | 'approved' | 'certified' | 'rejected';
+export type VerificationRequestStatus =
+  | 'draft'
+  | 'pending_rc'
+  | 'submitted'
+  | 'approved'
+  | 'certified'
+  | 'rejected';
 
 /** Who performed the verification in the field. */
-export type VerificationPerformedBy = 'rc' | 'vct';
+export type VerificationPerformedBy = 'rc' | 'vct' | 'verifier';
 
 /**
  * How the request entered the pipeline (for the certificate server).
  * - rc_direct: RC entered verification directly
  * - vct_manual: VCT job approved by RC before certificate generation
  * - vct_auto: VCT with auto-approval workflow
+ * - verifier_manual: temporary RC verifier — RC must approve before eMAAP
  */
-export type VerificationRequestSource = 'rc_direct' | 'vct_manual' | 'vct_auto';
+export type VerificationRequestSource = 'rc_direct' | 'vct_manual' | 'vct_auto' | 'verifier_manual';
 
 export type JobStatus = 'assigned' | 'pending_review' | 'completed';
 export type PaymentStatus = 'not_required' | 'pending' | 'paid';
@@ -178,7 +186,7 @@ export interface FirestoreUserDoc {
   createdAt: string;
   createdByUid?: string;
   clearTextPassword?: string; // admin password reveal / reset helper
-  rcId?: string;        // VCT → UID of their RC Admin; RC Admin → their own UID
+  rcId?: string;        // VCT/verifier → UID of their RC Admin; RC Admin → their own UID
   workflowMode?: WorkflowMode; // VCT only — set by RC Admin (auto | manual)
 
   // VCT profile — managed by RC Admin (address & phone shared with RC contact fields above)
@@ -531,11 +539,15 @@ export interface SiteCalibration {
   emaapSignedPdfUploadedAt?: string;
   /** Public eMAAP gatcapi third-party PDF URL — QR / verify target (not Firebase Storage). */
   emaapCertificatePdfUrl?: string;
-  /** VCT display — RC direct uses contact person in `vctName` when performedBy is `rc`. */
+  /** VCT/verifier display — RC direct uses contact person in `vctName` when performedBy is `rc`. */
   performedBy?: VerificationPerformedBy;
   vctId?: string;
   vctName?: string;
   requestSource?: VerificationRequestSource;
+  /** Verifier sent the draft to RC; eMAAP does not run until RC approves. */
+  pendingRcAt?: string;
+  rcApprovedAt?: string;
+  rcApprovedByUid?: string;
   /** Optional link to a VCT job when request originates from the job queue. */
   jobId?: string;
   scaleImageUrl?: string;

@@ -16,11 +16,12 @@ import {
 } from '../lib/aadharAuth';
 import { clearEmbedToken, takeEmbedTokenFromLocation } from '../lib/embedMode';
 import { isVctApproved, isVctActive, VCT_INACTIVE_LOGIN_MESSAGE, VCT_PENDING_LOGIN_MESSAGE } from '../lib/vctApproval';
+import { isVerifierActive, VERIFIER_INACTIVE_LOGIN_MESSAGE } from '../lib/verifierAccount';
 import { isRcAccountActive, RC_ACCOUNT_INACTIVE_LOGIN_MESSAGE } from '../lib/rcActivation';
 import type { User, Role, FirestoreUserDoc } from '../types';
 import { AuthContext } from './auth-context';
 
-const VALID_ROLES: Role[] = ['super_admin', 'rc_admin', 'vct'];
+const VALID_ROLES: Role[] = ['super_admin', 'rc_admin', 'vct', 'verifier'];
 
 const resolveUser = async (fbUser: FirebaseUser): Promise<User | null> => {
   try {
@@ -34,6 +35,7 @@ const resolveUser = async (fbUser: FirebaseUser): Promise<User | null> => {
 
     if (role === 'vct' && !isVctApproved(data)) return null;
     if (role === 'vct' && !isVctActive(data)) return null;
+    if (role === 'verifier' && !isVerifierActive(data)) return null;
     if (role === 'rc_admin' && !isRcAccountActive(data)) return null;
 
     return {
@@ -112,6 +114,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (data.role === 'vct' && !isVctActive(data)) {
           await signOut(auth);
           throw new Error(VCT_INACTIVE_LOGIN_MESSAGE);
+        }
+        if (data.role === 'verifier' && !isVerifierActive(data)) {
+          await signOut(auth);
+          throw new Error(VERIFIER_INACTIVE_LOGIN_MESSAGE);
         }
         if (data.role === 'rc_admin' && !isRcAccountActive(data)) {
           await signOut(auth);

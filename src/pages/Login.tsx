@@ -28,6 +28,7 @@ export const Login: React.FC = () => {
       }
       if (user.role === 'super_admin') navigate('/admin', { replace: true });
       else if (user.role === 'rc_admin') navigate('/rc', { replace: true });
+      else if (user.role === 'verifier') navigate('/verifier', { replace: true });
       else navigate('/vct', { replace: true });
     }
   }, [user, loading, navigate]);

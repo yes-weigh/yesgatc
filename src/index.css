@@ -5679,6 +5679,12 @@ body.pcd-pdf-open {
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
+.badge-verifier {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
 /* ---- 5-column form grid (User Management) ---- */
 .form-grid-5 {
   display: grid;
@@ -12433,6 +12439,11 @@ body.verification-mobile-wizard-active {
 .verification-status--submitted {
   background: rgba(59, 130, 246, 0.12);
   color: var(--accent-primary, #3b82f6);
+}
+
+.verification-status--pending_rc {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
 }
 
 .verification-status--approved {
@@ -22166,6 +22177,16 @@ body.verification-photo-viewer-open {
   color: #60a5fa;
 }
 
+.verification-list-card--pending_rc .verification-list-card-status-ring {
+  border-color: rgba(251, 146, 60, 0.6);
+  color: #fb923c;
+  box-shadow: 0 0 18px rgba(251, 146, 60, 0.14);
+}
+
+.verification-list-card--pending_rc .verification-list-card-status-label {
+  color: #fb923c;
+}
+
 .verification-list-card--approved .verification-list-card-status-ring,
 .verification-list-card--certified .verification-list-card-status-ring {
   border-color: rgba(52, 211, 153, 0.55);
@@ -22426,6 +22447,10 @@ body.verification-photo-viewer-open {
 
 .verification-list-card-icon-btn--submit {
   color: #60a5fa;
+}
+
+.verification-list-card-icon-btn--approve {
+  color: #34d399;
 }
 
 .verification-list-card-icon-btn--delete {

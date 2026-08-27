@@ -44,6 +44,8 @@ import {
   canDeleteVerification,
   canShowVerificationCertifiedActions,
   canSubmitVerification,
+  canRcApproveVerifierVerification,
+  buildRcApproveVerifierPatch,
   isCorruptedVerificationRecord,
   isVerificationEditable,
   isVerificationViewable,
@@ -82,7 +84,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import {
-  Pencil, Plus, Save, Send, Eye, X,
+  Pencil, Plus, Save, Send, Eye, X, Check,
 } from 'lucide-react';
 
 import {
@@ -107,6 +109,7 @@ import {
 import {
   submitVerificationRecord,
   submitVerificationRecords,
+  submitVerifierWorkForRcReview,
   type VerificationSubmitOptions,
 } from '../../lib/verificationSubmit';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
@@ -150,6 +153,7 @@ import {
   isZohoRvInvoicingEnabled,
   rcZohoIdReady,
   RV_ZOHO_SUBMIT_BLOCK_MESSAGE,
+  validateRvZohoSubmitReady,
   verificationZohoInvoiceNumber,
   type RvWalletFeeSettings,
 } from '../../lib/zohoRvSubmit';
@@ -331,13 +335,13 @@ function verificationCreateGateSatisfied(
   gatesLoading: boolean,
   gatesError: string,
 ): boolean {
-  if (role !== 'vct' && role !== 'rc_admin') return false;
+  if (role !== 'vct' && role !== 'rc_admin' && role !== 'verifier') return false;
   if (gatesLoading || gatesError) return false;
   return rcHasWeightsCert === true && rcHasVehicle === true;
 }
 
 export const RCSiteCalibration: React.FC = () => {
-  const { rcUid, actorUid, isVct, isRcAdmin } = useRcScope();
+  const { rcUid, actorUid, isVct, isVerifier, isFieldStaff, isRcAdmin } = useRcScope();
   const { user } = useAuth();
   const { products } = useAppContext();
   const { appSettings } = useAppSettings();
@@ -402,7 +406,7 @@ export const RCSiteCalibration: React.FC = () => {
       customerPincode: listedCustomer?.pincode ?? null,
       rcPincode: rcProfile?.pincode ?? null,
       rcZohoId: rcProfile?.zohoId,
-      zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
+      zohoRvInvoicingEnabled: isVerifier ? false : isZohoRvInvoicingEnabled(appSettings),
       performerPhotos,
       skipPerformerPhotos:
         sessionValues.verificationType !== 'RV'
@@ -422,6 +426,7 @@ export const RCSiteCalibration: React.FC = () => {
     records,
     sessionValues.verificationType,
     sessionValues.customerId,
+    isVerifier,
   ]);
 
   const recordSubmitOptions = useCallback(
@@ -448,7 +453,8 @@ export const RCSiteCalibration: React.FC = () => {
   );
 
   const rvZohoSubmitBlocked =
-    sessionValues.verificationType === 'RV'
+    !isVerifier
+    && sessionValues.verificationType === 'RV'
     && isZohoRvInvoicingEnabled(appSettings)
     && !rcZohoIdReady(rcProfile?.zohoId);
 
@@ -456,6 +462,7 @@ export const RCSiteCalibration: React.FC = () => {
     () =>
       resolveVerificationDraftActorForSession(sessionValues.assignedVctId, {
         isVct,
+        isVerifier,
         actorUid,
         actorUsername: actorProfile?.username ?? user?.username,
         actorWorkflowMode: actorProfile?.workflowMode,
@@ -465,6 +472,7 @@ export const RCSiteCalibration: React.FC = () => {
     [
       sessionValues.assignedVctId,
       isVct,
+      isVerifier,
       actorUid,
       actorProfile?.username,
       actorProfile?.workflowMode,
@@ -478,6 +486,7 @@ export const RCSiteCalibration: React.FC = () => {
     (session: VerificationSessionValues, previousRecord?: SiteCalibration | null) => {
       const actor = resolveVerificationDraftActorForSession(session.assignedVctId, {
         isVct,
+        isVerifier,
         actorUid,
         actorUsername: actorProfile?.username ?? user?.username,
         actorWorkflowMode: actorProfile?.workflowMode,
@@ -502,6 +511,7 @@ export const RCSiteCalibration: React.FC = () => {
     },
     [
       isVct,
+      isVerifier,
       actorUid,
       actorProfile?.username,
       actorProfile?.workflowMode,
@@ -546,7 +556,7 @@ export const RCSiteCalibration: React.FC = () => {
     setLoading(true);
     setListError('');
     try {
-      const q = verificationRecordsQuery(db, rcUid, { isVct, actorUid });
+      const q = verificationRecordsQuery(db, rcUid, { isFieldStaff, actorUid });
       const snap = await getDocs(q);
       const rows = snap.docs
         .map(d => ({ id: d.id, ...(d.data() as Omit<SiteCalibration, 'id'>) }))
@@ -568,7 +578,7 @@ export const RCSiteCalibration: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [rcUid, isVct, actorUid]);
+  }, [rcUid, isFieldStaff, actorUid]);
 
   const refreshRcVerificationGates = useCallback(async () => {
     if (!rcUid) {
@@ -607,7 +617,7 @@ export const RCSiteCalibration: React.FC = () => {
   }, [rcUid]);
 
   const desktopVerification =
-    (isRcAdmin || isVct) && !isVerificationCaptureDevice();
+    (isRcAdmin || isFieldStaff) && !isVerificationCaptureDevice();
   const rcProfileGeoStampCoords = useMemo(() => {
     const lat = rcProfile?.location?.lat;
     const lng = rcProfile?.location?.lng;
@@ -637,7 +647,7 @@ export const RCSiteCalibration: React.FC = () => {
   }, [rcUid]);
 
   useEffect(() => {
-    if (!rcUid || isVct) {
+    if (!rcUid || isFieldStaff) {
       setAssignableVcts([]);
       return;
     }
@@ -668,10 +678,10 @@ export const RCSiteCalibration: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [rcUid, isVct]);
+  }, [rcUid, isFieldStaff]);
 
   useEffect(() => {
-    if (!isVct || !actorUid) {
+    if (!isFieldStaff || !actorUid) {
       setActorProfile(null);
       return;
     }
@@ -689,7 +699,7 @@ export const RCSiteCalibration: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [isVct, actorUid]);
+  }, [isFieldStaff, actorUid]);
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -1280,8 +1290,8 @@ export const RCSiteCalibration: React.FC = () => {
       if (record && isCorruptedVerificationRecord(record) && normalizeVerificationStatus(record) !== 'draft') {
         return 'This verification was already submitted but its status was damaged by a server bug. It cannot be resubmitted from the app — contact super admin to repair it from Automation Worker → Pipeline recovery.';
       }
-      if (isVct) {
-        return 'Permission denied. Ensure your technician account is approved and linked to your RC centre, then try again.';
+      if (isFieldStaff) {
+        return 'Permission denied. Ensure your account is active and linked to your RC centre, then try again.';
       }
       return 'Missing or insufficient permissions. Deploy Firestore rules: firebase deploy --only firestore:rules';
     }
@@ -1410,6 +1420,7 @@ export const RCSiteCalibration: React.FC = () => {
 
       if (
         submitAfterSave
+        && !isVerifier
         && sessionForSave.verificationType === 'RV'
         && isRvPaymentRequired(sessionForSave.verificationType)
         && !rvPayment
@@ -1497,22 +1508,26 @@ export const RCSiteCalibration: React.FC = () => {
       }
 
       if (submitAfterSave) {
-        await submitVerificationRecords(
-          draftRecordIds.map(recordId => ({
-            id: recordId,
-            verificationType: sessionForSave.verificationType,
-            ...rcFilingFieldsForSession(
-              sessionForSave,
-              filingPincode,
-              rcFilingPartyFromProfile(rcUid, rcProfile),
-            ),
-          })),
-          db,
-          submitOptions,
-        );
+        if (isVerifier) {
+          await submitVerifierWorkForRcReview(draftRecordIds);
+        } else {
+          await submitVerificationRecords(
+            draftRecordIds.map(recordId => ({
+              id: recordId,
+              verificationType: sessionForSave.verificationType,
+              ...rcFilingFieldsForSession(
+                sessionForSave,
+                filingPincode,
+                rcFilingPartyFromProfile(rcUid, rcProfile),
+              ),
+            })),
+            db,
+            submitOptions,
+          );
+        }
       }
 
-      const submittedRecordIds = submitAfterSave ? draftRecordIds : [];
+      const submittedRecordIds = submitAfterSave && !isVerifier ? draftRecordIds : [];
 
       handleCloseForm();
       await fetchRecords();
@@ -1647,6 +1662,12 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      if (isVerifier) {
+        await submitVerifierWorkForRcReview([record.id]);
+        if (editingId === record.id) handleCloseForm();
+        await fetchRecords();
+        return;
+      }
       await ensureRvWalletDebitedForRecords({
         records: [record],
         products,
@@ -1694,6 +1715,13 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
+      if (isVerifier) {
+        await submitVerifierWorkForRcReview(selectedRecords.map(record => record.id));
+        setSelectedDraftIds(new Set());
+        if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
+        await fetchRecords();
+        return;
+      }
       await ensureRvWalletDebitedForRecords({
         records: selectedRecords,
         products,
@@ -1719,6 +1747,64 @@ export const RCSiteCalibration: React.FC = () => {
           ? formatZohoInvoiceGateError(err)
           : formatSaveError(err, 'Failed to submit selected verifications.'),
       );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleApproveVerifierWork = async (record: SiteCalibration) => {
+    if (!isRcAdmin || !canRcApproveVerifierVerification(record) || !user?.uid) return;
+
+    const zohoError = validateRvZohoSubmitReady(
+      record.verificationType,
+      rcProfile?.zohoId,
+      { zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings) },
+    );
+    if (zohoError) {
+      setListError(zohoError);
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Approve verifier work?',
+      message: `Approve verification for "${record.customerName || record.serialNumber || 'this device'}"? Certificate generation starts after approval.`,
+      confirmLabel: 'Approve',
+    });
+    if (!ok) return;
+
+    unlockVerificationSuccessAudio();
+    setSubmitting(true);
+    setListError('');
+    setError('');
+    try {
+      await updateDoc(
+        doc(db, 'siteCalibrations', record.id),
+        buildRcApproveVerifierPatch(user.uid),
+      );
+      await ensureRvWalletDebitedForRecords({
+        records: [record],
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(rcProfile),
+      });
+      await submitVerificationRecord(
+        {
+          id: record.id,
+          verificationType: record.verificationType,
+          ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
+        },
+        db,
+        submitOptions,
+      );
+      if (editingId === record.id) handleCloseForm();
+      await fetchRecords();
+      beginSubmitProgress([record.id]);
+    } catch (err: unknown) {
+      const message = isZohoInvoiceGateError(err)
+        ? formatZohoInvoiceGateError(err)
+        : formatSaveError(err, 'Failed to approve verifier work.', record);
+      setListError(message);
+      setError(message);
     } finally {
       setSubmitting(false);
     }
@@ -1847,23 +1933,29 @@ export const RCSiteCalibration: React.FC = () => {
         });
       }
 
-      await submitVerificationRecord(
-        {
-          id: editingId,
-          verificationType: sessionForSave.verificationType,
-          ...rcFilingFieldsForSession(
-            sessionForSave,
-            filingPincode,
-            rcFilingPartyFromProfile(rcUid, rcProfile),
-          ),
-        },
-        db,
-        submitOptions,
-      );
+      if (isVerifier) {
+        await submitVerifierWorkForRcReview([editingId]);
+      } else {
+        await submitVerificationRecord(
+          {
+            id: editingId,
+            verificationType: sessionForSave.verificationType,
+            ...rcFilingFieldsForSession(
+              sessionForSave,
+              filingPincode,
+              rcFilingPartyFromProfile(rcUid, rcProfile),
+            ),
+          },
+          db,
+          submitOptions,
+        );
+      }
 
       handleCloseForm();
       await fetchRecords();
-      beginSubmitProgress([editingId]);
+      if (!isVerifier) {
+        beginSubmitProgress([editingId]);
+      }
     } catch (err: unknown) {
       if (isZohoInvoiceGateError(err)) {
         await fetchRecords();
@@ -1910,7 +2002,7 @@ export const RCSiteCalibration: React.FC = () => {
     }
 
     if (showAddForm && wizardOnLastStep && !verificationDeclarationAccepted) {
-      setError('Accept the declaration before submitting for certification.');
+      setError(isVerifier ? 'Accept the declaration before sending to RC.' : 'Accept the declaration before submitting for certification.');
       return;
     }
 
@@ -1921,7 +2013,7 @@ export const RCSiteCalibration: React.FC = () => {
       if (!applied.ok) return;
 
       const isRv = sessionValues.verificationType === 'RV';
-      const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType);
+      const rvPaymentRequired = !isVerifier && isRvPaymentRequired(sessionValues.verificationType);
 
       if (isRv && rvPaymentRequired) {
         if (!rvPaymentBreakdown || rvPaymentBreakdown.total <= 0) {
@@ -2265,18 +2357,22 @@ export const RCSiteCalibration: React.FC = () => {
     showAddForm && includedDeviceCount > 1
       ? `Save ${includedDeviceCount} drafts`
       : 'Save draft';
-  const rvPaymentRequired = isRvPaymentRequired(sessionValues.verificationType);
+  const rvPaymentRequired = !isVerifier && isRvPaymentRequired(sessionValues.verificationType);
   const editingRecord = editingId ? records.find(r => r.id === editingId) ?? null : null;
   const zohoGateRetry = isRvZohoSubmitGateRetry(editingRecord);
-  const submitLabel = zohoGateRetry
-    ? 'Retry Zoho & submit for certification'
-    : rvPaymentRequired
-      ? showAddForm && includedDeviceCount > 1
-        ? `Pay & submit ${includedDeviceCount} for certification`
-        : 'Pay & submit for certification'
-      : showAddForm && includedDeviceCount > 1
-        ? `Submit ${includedDeviceCount} for certification`
-        : 'Submit for certification';
+  const submitLabel = isVerifier
+    ? showAddForm && includedDeviceCount > 1
+      ? `Send ${includedDeviceCount} to RC`
+      : 'Send to RC for approval'
+    : zohoGateRetry
+      ? 'Retry Zoho & submit for certification'
+      : rvPaymentRequired
+        ? showAddForm && includedDeviceCount > 1
+          ? `Pay & submit ${includedDeviceCount} for certification`
+          : 'Pay & submit for certification'
+        : showAddForm && includedDeviceCount > 1
+          ? `Submit ${includedDeviceCount} for certification`
+          : 'Submit for certification';
   const editingDraft = editingRecord ? isVerificationEditable(editingRecord) : showAddForm;
   const isViewMode = Boolean(editingRecord && !editingDraft);
   const showRetroactiveRvPayment =
@@ -2334,7 +2430,9 @@ export const RCSiteCalibration: React.FC = () => {
     );
     if (validationError) return validationError;
     if (showAddForm && wizardOnLastStep && !verificationDeclarationAccepted) {
-      return 'Accept the declaration before submitting for certification.';
+      return isVerifier
+        ? 'Accept the declaration before sending to RC.'
+        : 'Accept the declaration before submitting for certification.';
     }
     return null;
   }, [
@@ -2346,6 +2444,7 @@ export const RCSiteCalibration: React.FC = () => {
     showAddForm,
     wizardOnLastStep,
     verificationDeclarationAccepted,
+    isVerifier,
   ]);
 
   const canSubmitFromForm = !submitBlockReason;
@@ -2659,6 +2758,21 @@ export const RCSiteCalibration: React.FC = () => {
                         )}
                       </div>
                     )}
+                    {isViewMode && editingRecord && isRcAdmin && canRcApproveVerifierVerification(editingRecord) && (
+                      <button
+                        type="button"
+                        className="btn btn-primary text-sm py-1.5 px-3 mt-2 flex items-center gap-1.5"
+                        onClick={() => void handleApproveVerifierWork(editingRecord)}
+                        disabled={submitting}
+                      >
+                        {submitting ? (
+                          <span className="spinner-inline" aria-hidden />
+                        ) : (
+                          <Check size={16} aria-hidden />
+                        )}
+                        Approve verifier work
+                      </button>
+                    )}
                     {showRetroactiveRvPayment && rvPaymentBreakdown && (
                       <RvOutstandingWalletPaymentBanner breakdown={rvPaymentBreakdown} />
                     )}
@@ -2730,7 +2844,7 @@ export const RCSiteCalibration: React.FC = () => {
                       submitting={formBusy}
                       lockCustomer={isEditMode}
                       readOnly={isViewMode}
-                      allowPerformerAssignment={!isVct && !isViewMode}
+                      allowPerformerAssignment={!isFieldStaff && !isViewMode}
                       assignableVcts={assignableVcts}
                       geoStampCoords={rcProfileGeoStampCoords}
                       laboratorySealIdentification={laboratorySealId}
@@ -2783,7 +2897,7 @@ export const RCSiteCalibration: React.FC = () => {
               </p>
             </div>
           )}
-          {(isVct || isRcAdmin) && gatesError ? (
+          {(isFieldStaff || isRcAdmin) && gatesError ? (
             <div className="rc-vehicle-required-notice" role="alert">
               <p className="rc-vehicle-required-notice__title">Cannot start verification</p>
               <p className="rc-vehicle-required-notice__text mb-0">{gatesError}</p>
@@ -2848,7 +2962,7 @@ export const RCSiteCalibration: React.FC = () => {
                   <span className="spinner-inline"></span>
                 ) : (
                   <>
-                    <Send size={16} /> Submit for certification
+                    <Send size={16} /> {isVerifier ? 'Send to RC' : 'Submit for certification'}
                   </>
                 )}
               </button>
@@ -2877,7 +2991,7 @@ export const RCSiteCalibration: React.FC = () => {
               />
               <VerificationListTable
                 mode="rc"
-                hideVctColumn={isVct}
+                hideVctColumn={isFieldStaff}
                 records={paginatedRecordsWithPhotos}
                 rowOffset={rowOffset}
                 formatDate={formatDate}
@@ -2892,6 +3006,7 @@ export const RCSiteCalibration: React.FC = () => {
                 walletPaymentDueRecordIds={walletPaymentDueRecordIds}
                 onEdit={startEdit}
                 onSubmit={handleSubmitRecord}
+                onApprove={isRcAdmin ? handleApproveVerifierWork : undefined}
                 onDelete={handleDelete}
                 submitting={submitting}
                 bulkSelect={{

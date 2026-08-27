@@ -68,7 +68,7 @@ function matchesCertificateOrMachine(record: SiteCalibration, query: string): bo
 }
 
 export const Certificates: React.FC = () => {
-  const { rcUid, actorUid, isVct } = useRcScope();
+  const { rcUid, actorUid, isFieldStaff } = useRcScope();
   const { products } = useAppContext();
   const basePath = useRoleBasePath();
   const navigate = useNavigate();
@@ -101,7 +101,7 @@ export const Certificates: React.FC = () => {
     setLoading(true);
     try {
       const [calibSnap, customerSnap, rcSnap] = await Promise.all([
-        getDocs(verificationRecordsQuery(db, rcUid, { isVct, actorUid })),
+        getDocs(verificationRecordsQuery(db, rcUid, { isFieldStaff, actorUid })),
         getDocs(query(collection(db, 'customers'), where('rcId', '==', rcUid))),
         getDoc(doc(db, 'users', rcUid)),
       ]);
@@ -114,7 +114,7 @@ export const Certificates: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [rcUid, isVct, actorUid]);
+  }, [rcUid, isFieldStaff, actorUid]);
 
   useEffect(() => {
     void fetchRecords();

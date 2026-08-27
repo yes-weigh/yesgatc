@@ -1,6 +1,8 @@
 import React, { useState, type RefObject } from 'react';
 import {
   AlertCircle,
+  Check,
+  Clock,
   Download,
   FileInput,
   FileText,
@@ -22,6 +24,7 @@ import {
   canDeleteVerification,
   canDownloadVerificationCertificate,
   canSubmitVerification,
+  canRcApproveVerifierVerification,
   getVerificationDisplayStatus,
   isVerificationEditable,
   normalizeVerificationStatus,
@@ -82,6 +85,7 @@ export interface VerificationListTableProps {
   onView: (record: VerificationListTableRecord) => void;
   onEdit?: (record: VerificationListTableRecord) => void;
   onSubmit?: (record: VerificationListTableRecord) => void;
+  onApprove?: (record: VerificationListTableRecord) => void;
   onDelete?: (record: VerificationListTableRecord) => void;
   /** Super Admin — move failed-at-submit back to draft. */
   onMoveToDraft?: (record: VerificationListTableRecord) => void;
@@ -204,6 +208,8 @@ function VerificationListStatusIcon({ tone }: { tone: VerificationListStatusTone
       return <FileText size={size} strokeWidth={stroke} aria-hidden />;
     case 'submitted':
       return <Send size={size} strokeWidth={stroke} aria-hidden />;
+    case 'pending_rc':
+      return <Clock size={size} strokeWidth={stroke} aria-hidden />;
     case 'failed_submit':
     case 'failed_certification':
       return <AlertCircle size={size} strokeWidth={stroke} aria-hidden />;
@@ -222,6 +228,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   onView,
   onEdit,
   onSubmit,
+  onApprove,
   onDelete,
   onMoveToDraft,
   movingToDraftId = null,
@@ -273,6 +280,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const detailTitle = editable ? 'Edit draft verification' : 'View verification details';
             const showEdit = mode === 'rc' && editable && onEdit;
             const showSubmit = canSubmitVerification(record) && Boolean(onSubmit);
+            const showApprove = mode === 'rc' && Boolean(onApprove) && canRcApproveVerifierVerification(record);
             const showDownload =
               canDownloadVerificationCertificate(record) || canShowSignedCertificatePdf(record);
             const showDelete =
@@ -453,7 +461,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                       <span className="verification-list-card-download-label">Download</span>
                     </button>
                   )}
-                  {(showEdit || showSubmit || showDelete || showMoveToDraft) && (
+                  {(showEdit || showSubmit || showApprove || showDelete || showMoveToDraft) && (
                     <div className="verification-list-card-draft-actions">
                       {showEdit && (
                         <button
@@ -476,6 +484,18 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                           aria-label={`Submit verification for ${record.customerName}`}
                         >
                           <Send size={18} />
+                        </button>
+                      )}
+                      {showApprove && (
+                        <button
+                          type="button"
+                          className="verification-list-card-icon-btn verification-list-card-icon-btn--approve"
+                          onClick={() => void onApprove!(record)}
+                          disabled={submitting}
+                          title="Approve verifier work"
+                          aria-label={`Approve verifier work for ${record.customerName}`}
+                        >
+                          <Check size={18} />
                         </button>
                       )}
                       {showMoveToDraft && (
