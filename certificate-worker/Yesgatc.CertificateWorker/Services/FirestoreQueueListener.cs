@@ -20,6 +20,7 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
     private FirestoreChangeListener? _submittedListener;
     private FirestoreChangeListener? _signedUploadListener;
     private FirestoreChangeListener? _certifiedListener;
+    private FirestoreChangeListener? _usersListener;
     private Dictionary<string, string> _rcNames = new(StringComparer.Ordinal);
     private HashSet<string> _pdfSignerRcIds = new(StringComparer.Ordinal);
     private CancellationTokenSource? _debounceCts;
@@ -138,6 +139,13 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
             return;
         }
 
+        Query usersQuery = _db.Collection("users").WhereEqualTo("role", "rc_admin");
+        _usersListener = usersQuery.Listen((snapshot, _) =>
+        {
+            HandleUsersSnapshot(snapshot);
+            return Task.CompletedTask;
+        });
+
         Query signedQuery = _db.Collection("siteCalibrations")
             .WhereNotEqualTo("signedCertificatePdfUrl", "");
         if (!string.IsNullOrWhiteSpace(ScopeRcId))
@@ -187,6 +195,24 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private void HandleUsersSnapshot(QuerySnapshot snapshot)
+    {
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pdfSignerRcIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var document in snapshot.Documents)
+        {
+            AddRcDocument(document, names, pdfSignerRcIds);
+        }
+
+        lock (_gate)
+        {
+            _rcNames = names;
+            _pdfSignerRcIds = pdfSignerRcIds;
+        }
+
+        ScheduleQueueNotify();
     }
 
     private void HandleSnapshot(QuerySnapshot snapshot, Dictionary<string, SiteCalibrationRecord> bucket)
@@ -290,14 +316,7 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
             var document = await db.Collection("users").Document(scopeRcId).GetSnapshotAsync(cancellationToken);
             if (document.Exists)
             {
-                document.TryGetValue<string>("companyName", out var companyName);
-                document.TryGetValue<string>("username", out var username);
-                document.TryGetValue<string>("certificationMethod", out var method);
-                names[scopeRcId] = FirstNonEmpty(companyName, username, document.Id);
-                if (RcCertificationMethods.IsPdfSigner(method))
-                {
-                    pdfSignerRcIds.Add(scopeRcId);
-                }
+                AddRcDocument(document, names, pdfSignerRcIds);
             }
 
             return new RcDirectory(names, pdfSignerRcIds);
@@ -311,15 +330,7 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
 
             foreach (var document in snapshot.Documents)
             {
-                document.TryGetValue<string>("companyName", out var companyName);
-                document.TryGetValue<string>("username", out var username);
-                document.TryGetValue<string>("certificationMethod", out var method);
-                var label = FirstNonEmpty(companyName, username, document.Id);
-                names[document.Id] = label;
-                if (RcCertificationMethods.IsPdfSigner(method))
-                {
-                    pdfSignerRcIds.Add(document.Id);
-                }
+                AddRcDocument(document, names, pdfSignerRcIds);
             }
         }
         catch (Exception)
@@ -328,6 +339,21 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         }
 
         return new RcDirectory(names, pdfSignerRcIds);
+    }
+
+    private static void AddRcDocument(
+        DocumentSnapshot document,
+        Dictionary<string, string> names,
+        HashSet<string> pdfSignerRcIds)
+    {
+        document.TryGetValue<string>("companyName", out var companyName);
+        document.TryGetValue<string>("username", out var username);
+        document.TryGetValue<string>("certificationMethod", out var method);
+        names[document.Id] = FirstNonEmpty(companyName, username, document.Id);
+        if (RcCertificationMethods.IsPdfSigner(method))
+        {
+            pdfSignerRcIds.Add(document.Id);
+        }
     }
 
     private static string FirstNonEmpty(params string?[] values)
@@ -361,6 +387,12 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         {
             await _certifiedListener.StopAsync(CancellationToken.None);
             _certifiedListener = null;
+        }
+
+        if (_usersListener is not null)
+        {
+            await _usersListener.StopAsync(CancellationToken.None);
+            _usersListener = null;
         }
 
         _db = null;

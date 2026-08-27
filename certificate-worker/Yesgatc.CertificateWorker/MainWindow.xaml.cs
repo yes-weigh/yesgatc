@@ -2163,6 +2163,10 @@ public partial class MainWindow : Window
         var fillQueue = snapshot.ProcessFill ? snapshot.FillJobs : [];
         var signerQueue = snapshot.ProcessSigner ? snapshot.SignerJobs : [];
         var signedQueue = snapshot.ProcessSigned ? snapshot.SignedJobs : [];
+        if (signerQueue.Count == 0 && snapshot.ProcessSigner)
+        {
+            signerQueue = await FetchEligiblePdfSignerJobsAsync().ConfigureAwait(false);
+        }
 
         if (_autoWorkerPausedForDoca)
         {
@@ -2237,10 +2241,7 @@ public partial class MainWindow : Window
 
             if (_processSignerQueue && _session is not null)
             {
-                var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
-                var freshSigner = (await _firestoreService.GetPendingPdfSignerQueueAsync(token).ConfigureAwait(false))
-                    .Where(item => _jobRetries.IsEligible(item.Id))
-                    .ToList();
+                var freshSigner = await FetchEligiblePdfSignerJobsAsync().ConfigureAwait(false);
                 if (freshSigner.Count > 0)
                 {
                     SetStatusSafe(
@@ -2252,6 +2253,19 @@ public partial class MainWindow : Window
 
             await RunOnUiAsync(UpdateAutoWorkerStatusText).ConfigureAwait(false);
         }, offUiThread: true).ConfigureAwait(false);
+    }
+
+    private async Task<List<SiteCalibrationRecord>> FetchEligiblePdfSignerJobsAsync()
+    {
+        if (_session is null)
+        {
+            return [];
+        }
+
+        var token = await GetFreshIdTokenAsync().ConfigureAwait(false);
+        return (await _firestoreService.GetPendingPdfSignerQueueAsync(token).ConfigureAwait(false))
+            .Where(item => _jobRetries.IsEligible(item.Id))
+            .ToList();
     }
 
     private void RefreshRetryBadges()
