@@ -1,8 +1,4 @@
-import { normalizeAadhar } from './aadharAuth';
 import type { FirestoreUserDoc, Role } from '../types';
-
-/** Only this Super Admin Aadhar may change RC certification method. */
-export const CERTIFICATION_SETTINGS_ADMIN_AADHAR = '718835126130';
 
 export const RC_CERTIFICATION_METHODS = ['auto_dsc', 'pdf_signer', 'manual_upload'] as const;
 
@@ -40,8 +36,6 @@ export function rcCertificationMethodLabel(
 
 export function canEditRcCertificationSettings(user: {
   role?: Role | null;
-  aadhar?: string | null;
 } | null): boolean {
-  if (user?.role !== 'super_admin') return false;
-  return normalizeAadhar(user.aadhar ?? '') === CERTIFICATION_SETTINGS_ADMIN_AADHAR;
+  return user?.role === 'super_admin';
 }
