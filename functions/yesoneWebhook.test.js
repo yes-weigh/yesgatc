@@ -4,6 +4,7 @@ const {
   isAllowedYesoneWebhookUrl,
   normalizeYesoneWebhookSettings,
   certificateReadyForYesone,
+  verificationReadyForYesone,
   isCertificateSigned,
   onlyYesoneMetaChanged,
   shouldPushYesone,
@@ -99,6 +100,10 @@ test('RC created, deactivated, modified', () => {
   assert.equal(yesoneRcEvent(created, renamed), 'rc.modified');
   assert.equal(shouldPushYesoneRc(null, { role: 'vct' }), false);
   assert.equal(shouldPushYesoneRc(null, created), true);
+  assert.equal(
+    shouldPushYesoneRc(created, { ...created, ovQuota: 40, ovQuotaSource: 'yesone' }),
+    false,
+  );
 });
 
 test('RC payload omits password', () => {
@@ -138,6 +143,19 @@ test('certificate payload includes unsigned and signed PDF fields', () => {
   assert.equal(payload.certificate.productName, 'YESWEIGH');
   assert.equal(payload.rc.companyName, 'Meezan');
   assert.equal(payloadFingerprint(payload).length, 64);
+});
+
+test('live verification writes push before certificate issue', () => {
+  const draft = { rcId: 'rc1', serialNumber: 'Y1', status: 'draft' };
+  const pending = { ...draft, status: 'pending_rc', pendingRcAt: '2026-08-28T00:00:00.000Z' };
+  const submitted = { ...pending, status: 'submitted', submittedAt: '2026-08-28T01:00:00.000Z' };
+  assert.equal(verificationReadyForYesone(draft), true);
+  assert.equal(shouldPushYesone(null, draft), true);
+  assert.equal(shouldPushYesone(null, {}), false);
+  assert.equal(yesoneCertificateEvent(null, draft), 'verification.created');
+  assert.equal(yesoneCertificateEvent(draft, pending), 'verification.pending_rc');
+  assert.equal(yesoneCertificateEvent(pending, submitted), 'verification.submitted');
+  assert.equal(yesoneCertificateEvent(draft, { ...draft, customerName: 'A' }), 'verification.updated');
 });
 
 test('status-only writes do not re-push', () => {

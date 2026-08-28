@@ -25,8 +25,11 @@ import {
 import { ROLE_LABELS } from '../../types';
 import { ContractorFeePanel } from '../shared/ContractorFeeSettings';
 import { WebbookPanel } from './WebbookPanel';
+import { YesoneInboundPanel } from './YesoneInboundPanel';
+import { RcQuotaPanel } from './RcQuotaPanel';
+import { SerialNumberPanel } from './SerialNumberPanel';
 
-type SettingTab = 'account' | 'fees' | 'contractor' | 'webbook';
+type SettingTab = 'account' | 'fees' | 'contractor' | 'webbook' | 'yesone' | 'rcQuota' | 'serialNumber';
 
 function PasswordField({
   id,
@@ -339,7 +342,7 @@ export const AdminPortalSettings: React.FC = () => {
           Setting
         </h1>
         <p className="admin-setting-subtitle text-muted text-sm mb-0">
-          Account, invoice fees, contractor fees, and yesone webbook.
+          Account, invoice fees, contractor fees, yesone webbook, and yesone data.
         </p>
       </header>
 
@@ -379,6 +382,33 @@ export const AdminPortalSettings: React.FC = () => {
           onClick={() => setTab('webbook')}
         >
           Webbook
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'yesone'}
+          className={`admin-setting-tab${tab === 'yesone' ? ' admin-setting-tab--active' : ''}`}
+          onClick={() => setTab('yesone')}
+        >
+          Yesone
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'rcQuota'}
+          className={`admin-setting-tab${tab === 'rcQuota' ? ' admin-setting-tab--active' : ''}`}
+          onClick={() => setTab('rcQuota')}
+        >
+          RC quata
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'serialNumber'}
+          className={`admin-setting-tab${tab === 'serialNumber' ? ' admin-setting-tab--active' : ''}`}
+          onClick={() => setTab('serialNumber')}
+        >
+          Serial number
         </button>
       </div>
 
@@ -540,8 +570,14 @@ export const AdminPortalSettings: React.FC = () => {
         </div>
       ) : tab === 'contractor' ? (
         <ContractorFeePanel />
-      ) : (
+      ) : tab === 'webbook' ? (
         <WebbookPanel />
+      ) : tab === 'yesone' ? (
+        <YesoneInboundPanel />
+      ) : tab === 'rcQuota' ? (
+        <RcQuotaPanel />
+      ) : (
+        <SerialNumberPanel />
       )}
     </div>
   );

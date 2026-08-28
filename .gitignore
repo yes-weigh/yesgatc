@@ -36,3 +36,19 @@ certificate-worker/publish/
 *firebase-adminsdk*.json
 certificate-worker/_build_check/
 certificate-worker/_build_check2/
+
+# Android / Capacitor
+android/.gradle/
+android/app/build/
+android/build/
+android/captures/
+android/local.properties
+android/.idea/
+*.iml
+*.apk
+*.aab
+*.keystore
+!*.keystore.example
+.jdk/
+artifacts/
+

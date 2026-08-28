@@ -95,6 +95,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     setLoading(true);
     const aadhar = normalizeAadhar(aadharInput);
+    if (aadhar.length === 10) {
+      const msg = 'That is a phone number. Use the 12-digit Aadhar on the Verifiers card.';
+      setError(msg);
+      setLoading(false);
+      throw new Error(msg);
+    }
     if (!isValidAadhar(aadhar)) {
       const msg = 'Aadhar number must be exactly 12 digits.';
       setError(msg);
@@ -105,28 +111,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const cred = await signInWithEmailAndPassword(auth, authEmailForAadhar(aadhar), password);
       const snap = await getDoc(doc(db, 'users', cred.user.uid));
-      if (snap.exists()) {
-        const data = snap.data() as FirestoreUserDoc;
-        if (data.role === 'vct' && !isVctApproved(data)) {
-          await signOut(auth);
-          throw new Error(VCT_PENDING_LOGIN_MESSAGE);
-        }
-        if (data.role === 'vct' && !isVctActive(data)) {
-          await signOut(auth);
-          throw new Error(VCT_INACTIVE_LOGIN_MESSAGE);
-        }
-        if (data.role === 'verifier' && !isVerifierActive(data)) {
-          await signOut(auth);
-          throw new Error(VERIFIER_INACTIVE_LOGIN_MESSAGE);
-        }
-        if (data.role === 'rc_admin' && !isRcAccountActive(data)) {
-          await signOut(auth);
-          throw new Error(RC_ACCOUNT_INACTIVE_LOGIN_MESSAGE);
-        }
+      if (!snap.exists()) {
+        await signOut(auth);
+        throw new Error(
+          'No staff profile for this Aadhar. In Verifiers, add them again with the same Aadhar and password.',
+        );
+      }
+      const data = snap.data() as FirestoreUserDoc;
+      if (data.role === 'vct' && !isVctApproved(data)) {
+        await signOut(auth);
+        throw new Error(VCT_PENDING_LOGIN_MESSAGE);
+      }
+      if (data.role === 'vct' && !isVctActive(data)) {
+        await signOut(auth);
+        throw new Error(VCT_INACTIVE_LOGIN_MESSAGE);
+      }
+      if (data.role === 'verifier' && !isVerifierActive(data)) {
+        await signOut(auth);
+        throw new Error(VERIFIER_INACTIVE_LOGIN_MESSAGE);
+      }
+      if (data.role === 'rc_admin' && !isRcAccountActive(data)) {
+        await signOut(auth);
+        throw new Error(RC_ACCOUNT_INACTIVE_LOGIN_MESSAGE);
       }
       const resolved = await resolveUser(cred.user);
       if (!resolved) {
         await signOut(auth);
+        if (!VALID_ROLES.includes(data.role as Role)) {
+          throw new Error('This app version cannot open this account. Hard-refresh YES LAB and try again.');
+        }
         throw new Error('No profile found for this account. Contact your administrator.');
       }
       setUser(resolved);

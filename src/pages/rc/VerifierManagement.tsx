@@ -6,13 +6,17 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { aadharIndexRef } from '../../lib/aadharIndex';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
 import {
+  RcListCardActions,
+  RcListCardToggle,
   RcListDeactivateToggle,
   RcListEditHint,
+  RcListMetaChip,
   RcListPhoneChip,
   RcListPhoto,
   RcListStatusBadge,
@@ -26,21 +30,24 @@ import {
   assertAadharAvailable,
   authErrorMessage,
   createAuthUserForAadhar,
+  formatAadharDisplay,
   isValidAadhar,
   normalizeAadhar,
   syncAuthPassword,
 } from '../../lib/aadharAuth';
-import { rollbackCreatedAuthUser } from '../../lib/authUserAdmin';
+import { deleteAuthUserAccount, rollbackCreatedAuthUser } from '../../lib/authUserAdmin';
 import { isVerifierActive, verifierActiveLabel } from '../../lib/verifierAccount';
 import { uploadVctProfilePhoto } from '../../lib/vctDocumentUpload';
 import { vctProfilePhotoFieldsFromMeta, vctProfilePhotoFromUser } from '../../lib/vctProfileFields';
 import { isValidEmail, isValidPhone, normalizePhone } from '../../lib/contactFields';
 import {
   Check,
+  CreditCard,
   Pencil,
   Plus,
   RefreshCw,
   Save,
+  Trash2,
   UserCircle,
   UserPlus,
   Users,
@@ -196,7 +203,7 @@ export const VerifierManagement: React.FC = () => {
       await assertAadharAvailable(cleanAadhar);
       const cred = await createAuthUserForAadhar(cleanAadhar, formValues.password);
       const uid = cred.user.uid;
-      createdAuthUid = uid;
+      createdAuthUid = cred.created ? uid : undefined;
       const photoFields = await uploadProfilePhoto(uid);
       const createdAt = new Date().toISOString();
       const profile: FirestoreUserDoc = {
@@ -323,6 +330,32 @@ export const VerifierManagement: React.FC = () => {
     await updateDoc(doc(db, 'users', record.uid), updates);
     await updateDoc(rcVerifierMemberRef(user.uid, record.uid), { active: enabling });
     await fetchVerifiers();
+  };
+
+  const handleDelete = async (record: VerifierRecord) => {
+    const label = record.username || record.aadhar || 'verifier';
+    const ok = await confirm({
+      title: 'Delete verifier?',
+      message: `Permanently delete "${label}"? They cannot sign in. You can add this Aadhar again.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok || !user?.uid) return;
+
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'users', record.uid));
+      batch.delete(rcVerifierMemberRef(user.uid, record.uid));
+      if (normalizeAadhar(record.aadhar).length === 12) {
+        batch.delete(aadharIndexRef(record.aadhar));
+      }
+      await batch.commit();
+      await deleteAuthUserAccount(record.uid).catch(() => undefined);
+      if (editingUid === record.uid) handleCloseModal();
+      await fetchVerifiers();
+    } catch (err: unknown) {
+      setListError(authErrorMessage(err, 'Failed to delete verifier.'));
+    }
   };
 
   return (
@@ -462,11 +495,12 @@ export const VerifierManagement: React.FC = () => {
                             <span className="rc-list-card-name">{displayName}</span>
                             <RcListEditHint />
                           </span>
-                          {record.phone ? (
-                            <span className="rc-list-meta-chips">
-                              <RcListPhoneChip phone={record.phone} />
-                            </span>
-                          ) : null}
+                          <span className="rc-list-meta-chips">
+                            <RcListMetaChip icon={<CreditCard size={13} strokeWidth={2.25} />}>
+                              {formatAadharDisplay(record.aadhar)}
+                            </RcListMetaChip>
+                            {record.phone ? <RcListPhoneChip phone={record.phone} /> : null}
+                          </span>
                           <span className="rc-list-card-badges">
                             <RcListStatusBadge
                               tone={active ? 'active' : 'inactive'}
@@ -476,13 +510,23 @@ export const VerifierManagement: React.FC = () => {
                           </span>
                         </span>
                       </button>
-                      <RcListDeactivateToggle
-                        active={active}
-                        noun="verifier"
-                        name={displayName}
-                        iconSize={20}
-                        onClick={() => void handleToggleActive(record)}
-                      />
+                      <RcListCardActions>
+                        <RcListDeactivateToggle
+                          active={active}
+                          noun="verifier"
+                          name={displayName}
+                          iconSize={20}
+                          onClick={() => void handleToggleActive(record)}
+                        />
+                        <RcListCardToggle
+                          className="rc-list-card-toggle--delete"
+                          title="Delete verifier"
+                          ariaLabel={`Delete ${displayName}`}
+                          onClick={() => void handleDelete(record)}
+                        >
+                          <Trash2 size={20} strokeWidth={1.75} />
+                        </RcListCardToggle>
+                      </RcListCardActions>
                     </div>
                   </article>
                 );

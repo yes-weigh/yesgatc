@@ -52,11 +52,41 @@ export async function assertAadharAvailable(aadhar: string, excludeUid?: string)
   await assertAadharIndexAvailable(aadhar, excludeUid);
 }
 
-export async function createAuthUserForAadhar(aadhar: string, password: string) {
+function firebaseAuthCode(err: unknown): string {
+  if (typeof err === 'object' && err !== null && 'code' in err) {
+    return String((err as { code: string }).code);
+  }
+  return '';
+}
+
+/**
+ * Create Firebase Auth for Aadhar, or reuse a leftover Auth user with no Firestore profile
+ * (failed first create after Auth, before users/{uid} write).
+ */
+export async function createAuthUserForAadhar(
+  aadhar: string,
+  password: string,
+): Promise<{ user: { uid: string }; created: boolean }> {
   const email = authEmailForAadhar(aadhar);
-  const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
-  await secondaryAuth.signOut();
-  return cred;
+  try {
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    await secondaryAuth.signOut();
+    return { user: cred.user, created: true };
+  } catch (err: unknown) {
+    if (firebaseAuthCode(err) !== 'auth/email-already-in-use') {
+      throw err;
+    }
+    try {
+      const cred = await signInWithEmailAndPassword(secondaryAuth, email, password);
+      await secondaryAuth.signOut();
+      return { user: cred.user, created: false };
+    } catch {
+      await secondaryAuth.signOut().catch(() => undefined);
+      throw new Error(
+        'This Aadhar already has a login. Use the same password as the first attempt, or ask Super Admin to remove the leftover account.',
+      );
+    }
+  }
 }
 
 /** Sync Firebase Auth password when an admin resets credentials (uses stored current password). */

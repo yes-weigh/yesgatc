@@ -20,6 +20,14 @@ const YESONE_META_KEYS = new Set([
   'yesonePushEvent',
   'updatedAt',
 ]);
+const YESONE_RC_INBOUND_KEYS = new Set([
+  'ovQuota',
+  'ovQuotaUsed',
+  'ovQuotaPeriod',
+  'ovQuotaUpdatedAt',
+  'ovQuotaSource',
+  'yesoneAllottedSerials',
+]);
 
 function optionalTrimmed(value) {
   const text = String(value == null ? '' : value).trim();
@@ -117,11 +125,34 @@ function certificateReadyForYesone(record) {
   return isCertificateCertifiedUnsigned(record) || isCertificateSigned(record);
 }
 
+function verificationReadyForYesone(record) {
+  if (!record) return false;
+  if (certificateReadyForYesone(record)) return true;
+  return Boolean(
+    optionalTrimmed(record.rcId)
+    || optionalTrimmed(record.serialNumber)
+    || optionalTrimmed(record.customerName)
+    || optionalTrimmed(record.applicationNumber)
+    || optionalTrimmed(record.customerId)
+  );
+}
+
 function shouldPushYesone(before, after) {
   if (!after) return false;
-  if (!certificateReadyForYesone(after)) return false;
+  if (!verificationReadyForYesone(after)) return false;
   if (before && onlyYesoneMetaChanged(before, after)) return false;
   return true;
+}
+
+function verificationStatusEvent(after) {
+  const status = String(after?.status || 'draft').trim() || 'draft';
+  if (status === 'pending_rc') return 'verification.pending_rc';
+  if (status === 'submitted') return 'verification.submitted';
+  if (status === 'certified') return 'verification.certified';
+  if (status === 'rejected') return 'verification.rejected';
+  if (status === 'approved') return 'verification.approved';
+  if (status === 'draft') return 'verification.draft';
+  return `verification.status_${status}`;
 }
 
 function yesoneCertificateEvent(before, after) {
@@ -132,7 +163,11 @@ function yesoneCertificateEvent(before, after) {
   if (isCertificateCertifiedUnsigned(after) && !isCertificateCertifiedUnsigned(before)) {
     return 'certificate.certified_unsigned';
   }
-  return 'certificate.updated';
+  if (!before) return 'verification.created';
+  const beforeStatus = String(before.status || 'draft').trim() || 'draft';
+  const afterStatus = String(after.status || 'draft').trim() || 'draft';
+  if (beforeStatus !== afterStatus) return verificationStatusEvent(after);
+  return certificateReadyForYesone(after) ? 'certificate.updated' : 'verification.updated';
 }
 
 function isRcAdminRecord(record) {
@@ -143,9 +178,19 @@ function isRcAccountActive(record) {
   return record?.active !== false;
 }
 
+function onlyYesoneRcNoiseChanged(before, after) {
+  if (!before || !after) return false;
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const key of keys) {
+    if (YESONE_META_KEYS.has(key) || YESONE_RC_INBOUND_KEYS.has(key)) continue;
+    if (!jsonEqual(before[key], after[key])) return false;
+  }
+  return true;
+}
+
 function shouldPushYesoneRc(before, after) {
   if (!after || !isRcAdminRecord(after)) return false;
-  if (before && onlyYesoneMetaChanged(before, after)) return false;
+  if (before && onlyYesoneRcNoiseChanged(before, after)) return false;
   return true;
 }
 
@@ -182,6 +227,10 @@ function buildYesoneRc(uid, record) {
     standardWeightsCertExpiry: optionalTrimmed(record.standardWeightsCertExpiry),
     logoUrl: optionalTrimmed(record.logoUrl),
     sealUrl: optionalTrimmed(record.sealUrl),
+    pdfSignerSignUrl: optionalTrimmed(record.pdfSignerSignUrl),
+    pdfSignerSignScale: optionalFiniteNumber(record.pdfSignerSignScale),
+    pdfSignerSignX: optionalFiniteNumber(record.pdfSignerSignX),
+    pdfSignerSignY: optionalFiniteNumber(record.pdfSignerSignY),
     location: lat != null && lng != null ? { lat, lng } : null,
     feesStructure: record.feesStructure ?? null,
     active: isRcAccountActive(record),
@@ -233,6 +282,9 @@ function buildYesoneCertificate(recordId, record, customer, rc) {
     status: optionalTrimmed(record.status),
     submittedAt: optionalTrimmed(record.submittedAt),
     approvedAt: optionalTrimmed(record.approvedAt),
+    pendingRcAt: optionalTrimmed(record.pendingRcAt),
+    rcApprovedAt: optionalTrimmed(record.rcApprovedAt),
+    rejectedAt: optionalTrimmed(record.rejectedAt),
     createdAt: optionalTrimmed(record.createdAt),
     verificationFeeBase: optionalFiniteNumber(record.verificationFeeBase),
     verificationFeeGst: optionalFiniteNumber(record.verificationFeeGst),
@@ -466,7 +518,7 @@ async function processYesoneCertificatePush(db, recordId, record, before, option
   const issuedOnly = options.allowIssuedWithoutPdf === true;
   const ready = issuedOnly
     ? isIssuedPublicCertificate(record)
-    : certificateReadyForYesone(record);
+    : verificationReadyForYesone(record);
   if (!ready) {
     return { skipped: true, reason: 'not_ready' };
   }
@@ -898,6 +950,7 @@ module.exports = {
   isAllowedYesoneWebhookUrl,
   normalizeYesoneWebhookSettings,
   certificateReadyForYesone,
+  verificationReadyForYesone,
   isCertificateSigned,
   isCertificateCertifiedUnsigned,
   onlyYesoneMetaChanged,

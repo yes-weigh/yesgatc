@@ -16,6 +16,7 @@ import {
   RC_CERTIFICATION_METHOD_OPTIONS,
   type RcCertificationMethod,
 } from '../../lib/rcCertificationMethod';
+import { PdfSignerSignEditor } from '../../components/PdfSignerSignEditor';
 import { UploadField } from './productFormUi';
 
 type RCFormFieldsProps = {
@@ -502,30 +503,48 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
             <p className="text-muted text-xs mb-2 mt-3 rc-form-hint">
               Upload officer signature and name as one JPG or PNG.
             </p>
-            <UploadField
-              label="Signature & name"
-              hint="JPG / PNG · required"
-              uploadDisabled={!canUploadFiles || !canEditCertification}
-              disabledReason={
-                !canEditCertification
-                  ? 'Only Super Admin can change this.'
-                  : fileUploadTitle
-              }
-              file={signerSign}
-              uploading={signerUploading}
-              progress={0}
-              accept="image/jpeg,image/png"
-              uploadLabel="Upload"
-              formats="JPG or PNG"
-              inputRef={signerInputRef}
-              onSelect={onSignerSelect}
-              onRemove={onSignerRemove}
-              submitting={submitting}
-              variant="image"
-              compact
-              iconActions
-              readOnly={locked}
-            />
+            {signerSign ? (
+              <PdfSignerSignEditor
+                file={signerSign}
+                scale={values.pdfSignerSignScale}
+                x={values.pdfSignerSignX}
+                y={values.pdfSignerSignY}
+                onLayoutChange={patch => onChange({
+                  pdfSignerSignScale: patch.scale ?? values.pdfSignerSignScale,
+                  pdfSignerSignX: patch.x ?? values.pdfSignerSignX,
+                  pdfSignerSignY: patch.y ?? values.pdfSignerSignY,
+                })}
+                onReplace={onSignerSelect}
+                disabled={locked || submitting || !canEditCertification}
+                readOnly={locked || !canEditCertification}
+                uploading={signerUploading}
+              />
+            ) : (
+              <UploadField
+                label="Signature & name"
+                hint="JPG / PNG · required"
+                uploadDisabled={!canUploadFiles || !canEditCertification}
+                disabledReason={
+                  !canEditCertification
+                    ? 'Only Super Admin can change this.'
+                    : fileUploadTitle
+                }
+                file={signerSign}
+                uploading={signerUploading}
+                progress={0}
+                accept="image/jpeg,image/png"
+                uploadLabel="Upload"
+                formats="JPG or PNG"
+                inputRef={signerInputRef}
+                onSelect={onSignerSelect}
+                onRemove={onSignerRemove}
+                submitting={submitting}
+                variant="image"
+                compact
+                iconActions
+                readOnly={locked}
+              />
+            )}
           </div>
         ) : null}
       </div>

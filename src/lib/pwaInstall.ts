@@ -1,3 +1,4 @@
+import { isNativeApp } from './nativeApp';
 import { isMobileTouchDevice, isPwaStandalone } from './imageCapture';
 
 export const PWA_INSTALL_AVAILABLE_EVENT = 'yeslab-pwa-install-available';
@@ -58,6 +59,7 @@ export function detectAndroidInstallBrowser(): AndroidInstallBrowser | null {
 
 export function canShowPwaInstallUi(): boolean {
   if (typeof window === 'undefined') return false;
+  if (isNativeApp()) return false;
   if (isPwaStandalone()) return false;
   if (isInstallDismissed()) return false;
   return true;

@@ -43,6 +43,7 @@ const { downloadStorageFileBytesHandler } = require('./docaStorageDownload');
 const { emaapOtpWebhookHandler } = require('./emaapOtpInbox');
 const { mintYesweighEmbedTokenHandler } = require('./yesweighEmbed');
 const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertificates');
+const { yesoneInboundHttpHandler } = require('./yesoneInbound');
 const {
   onSiteCalibrationYesoneWebhookHandler,
   onUserYesoneWebhookHandler,
@@ -491,7 +492,7 @@ exports.lookupPublicCertificates = onRequest(
   async (req, res) => lookupPublicCertificatesHttpHandler(req, res, adminDb()),
 );
 
-/** Outbound yesone webhook — POST certificate details + PDF URL when a cert is issued/updated. */
+/** Outbound yesone webhook — POST verification + certificate payloads on every siteCalibration write. */
 exports.onSiteCalibrationYesoneWebhook = onDocumentWritten(
   {
     document: 'siteCalibrations/{recordId}',
@@ -549,4 +550,19 @@ exports.mintYesweighEmbedToken = onRequest(
       yesweighEmbedSecret.value(),
       yesweighEmbedRcAadhar.value(),
     ),
+);
+
+/**
+ * Inbound yesone webhook — POST serial allotment, RC OV quota, serial updates.
+ * Public invoker so yesone can POST without Firebase Auth. Token query/header required.
+ */
+exports.yesoneInbound = onRequest(
+  {
+    region: CALLABLE_REGION,
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  async (req, res) => yesoneInboundHttpHandler(req, res, adminDb()),
 );

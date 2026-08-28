@@ -6,8 +6,8 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check lookupPublicCertificates.js && node --check yesoneWebhook.js",
-    "test": "node --test lookupPublicCertificates.test.js yesoneWebhook.test.js"
+    "lint": "node --check index.js && node --check lookupPublicCertificates.js && node --check yesoneWebhook.js && node --check yesoneInbound.js",
+    "test": "node --test lookupPublicCertificates.test.js yesoneWebhook.test.js yesoneInbound.test.js"
   },
   "dependencies": {
     "@fastify/busboy": "^3.2.0",

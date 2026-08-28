@@ -10,6 +10,9 @@
     "build": "npm run icons && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "android:sync": "npm run build && node scripts/ensure-android-project.mjs && npx cap sync android && node scripts/patch-android-native.mjs",
+    "android:open": "npx cap open android",
+    "android:apk": "npm run android:sync && node scripts/build-android-apk.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-vct-firestore-rules.mjs\"",
     "audit:cert-pdfs": "node scripts/audit-certificate-pdf-serials.mjs",
     "storage:cors": "gcloud storage buckets update gs://yesgatc.firebasestorage.app --cors-file=storage-cors.json",
@@ -37,10 +40,17 @@
     "react-dom": "^19.2.6",
     "react-qr-code": "^2.0.21",
     "react-router-dom": "^7.15.1",
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/app": "^7.1.0",
+    "@capacitor/core": "^7.4.4",
+    "@capacitor/filesystem": "^7.1.4",
+    "@capacitor/share": "^7.0.2",
+    "@capacitor/status-bar": "^7.0.3",
     "recharts": "^3.8.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.4.4",
     "@eslint/js": "^10.0.1",
     "@firebase/rules-unit-testing": "^5.0.1",
     "@types/node": "^24.12.3",
@@ -56,6 +66,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
-    "vite-plugin-pwa": "^1.3.0"
+    "vite-plugin-pwa": "^1.3.0",
+    "workbox-window": "^7.4.1"
   }
 }

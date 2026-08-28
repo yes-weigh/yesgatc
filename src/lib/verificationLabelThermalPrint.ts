@@ -1,8 +1,8 @@
 import { toCanvas } from 'html-to-image';
 import {
+  beginBluetoothPrinterSelection,
   clearRememberedBluetoothPrinter,
   isBluetoothEscposSupported,
-  resolveBluetoothEscposPrinter,
   sendEscposOverBluetooth,
   shouldRetryBluetoothPrinterWithPicker,
   type ResolveBluetoothEscposPrinterOptions,
@@ -13,6 +13,7 @@ import {
   rotateCanvas,
   type EscPosPrintRotation,
 } from './escposRaster';
+import { isNativeApp } from './nativeApp';
 import { VERIFICATION_LABEL_STICKER } from './verificationLabel';
 
 function labelWidthAcrossPrintHead(rotationDeg: EscPosPrintRotation): number {
@@ -57,21 +58,24 @@ export async function captureVerificationLabelCanvas(
 
 export async function printVerificationLabelToBluetooth(
   element: HTMLElement,
-  options: ResolveBluetoothEscposPrinterOptions = {},
+  options: ResolveBluetoothEscposPrinterOptions & {
+    device?: Promise<BluetoothDevice>;
+  } = {},
 ): Promise<{ deviceName: string }> {
+  const devicePromise = options.device ?? beginBluetoothPrinterSelection(options);
   const rotationDeg = VERIFICATION_LABEL_STICKER.printRotationDeg;
   const captured = await captureVerificationLabelCanvas(element);
   const canvas = rotateCanvas(captured, rotationDeg);
   const raster = canvasToEscPosRaster(canvas, getVerificationLabelPrintWidthDots(rotationDeg));
   const payload = buildEscPosLabelPayload(raster, { rotationDeg });
 
-  let device = await resolveBluetoothEscposPrinter(options);
+  let device = await devicePromise;
   try {
     await sendEscposOverBluetooth(device, payload);
   } catch (error) {
     if (!options.forcePicker && shouldRetryBluetoothPrinterWithPicker(error)) {
       clearRememberedBluetoothPrinter();
-      device = await resolveBluetoothEscposPrinter({ forcePicker: true });
+      device = await beginBluetoothPrinterSelection({ forcePicker: true });
       await sendEscposOverBluetooth(device, payload);
     } else {
       throw error;
@@ -82,6 +86,9 @@ export async function printVerificationLabelToBluetooth(
 }
 
 export function getBluetoothPrintHelpText(): string {
+  if (isNativeApp()) {
+    return 'Bluetooth printers are not available in the Android app (WebView has no Web Bluetooth). Print from Chrome on the phone, or share/save the document.';
+  }
   if (!isBluetoothEscposSupported()) {
     return 'Bluetooth printing needs Chrome on Android over HTTPS. Many ESC/POS printers use Bluetooth Classic only — BLE UART models work best.';
   }
@@ -90,7 +97,9 @@ export function getBluetoothPrintHelpText(): string {
 
 export function formatBluetoothPrintError(error: unknown): string {
   if (error instanceof DOMException) {
-    if (error.name === 'NotFoundError') return 'Printer selection cancelled.';
+    if (error.name === 'NotFoundError') {
+      return 'Bluetooth list closed. Tap Print, then tap your thermal printer in the list and Pair.';
+    }
     if (error.name === 'SecurityError') {
       return 'Bluetooth is blocked. Open the app over HTTPS in Chrome on Android.';
     }

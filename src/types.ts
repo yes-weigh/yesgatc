@@ -256,6 +256,14 @@ export interface FirestoreUserDoc {
   feesStructure?: RcFeesStructure;
   /** Super Admin only — 3-letter code used in certificate remarks (e.g. Original verification by ABC). */
   rcCode?: string;
+  /** Yesone inbound — OV certificates allotted for this RC. */
+  ovQuota?: number;
+  ovQuotaUsed?: number;
+  ovQuotaPeriod?: string;
+  ovQuotaUpdatedAt?: string;
+  ovQuotaSource?: string;
+  /** Yesone inbound — serials allotted to this RC. */
+  yesoneAllottedSerials?: string[];
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
   /** Super Admin only — Zoho Books labour expense account ID (chart of accounts). */
@@ -280,6 +288,11 @@ export interface FirestoreUserDoc {
   pdfSignerSignPath?: string;
   pdfSignerSignName?: string;
   pdfSignerSignContentType?: string;
+  /** PDF signer stamp size (1 = default). */
+  pdfSignerSignScale?: number;
+  /** PDF signer stamp position on the certificate field, percent 0–100. */
+  pdfSignerSignX?: number;
+  pdfSignerSignY?: number;
   /** Square RC logo / display picture. */
   logoUrl?: string;
   logoPath?: string;

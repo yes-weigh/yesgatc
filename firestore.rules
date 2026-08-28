@@ -195,7 +195,11 @@ service cloud.firestore {
         && request.resource.data.get('pdfSignerSignUrl', null) == resource.data.get('pdfSignerSignUrl', null)
         && request.resource.data.get('pdfSignerSignPath', null) == resource.data.get('pdfSignerSignPath', null)
         && request.resource.data.get('pdfSignerSignName', null) == resource.data.get('pdfSignerSignName', null)
-        && request.resource.data.get('pdfSignerSignContentType', null) == resource.data.get('pdfSignerSignContentType', null);
+        && request.resource.data.get('pdfSignerSignContentType', null) == resource.data.get('pdfSignerSignContentType', null)
+        && request.resource.data.get('pdfSignerSignScale', null) == resource.data.get('pdfSignerSignScale', null)
+        && request.resource.data.get('pdfSignerSignX', null) == resource.data.get('pdfSignerSignX', null)
+        && request.resource.data.get('pdfSignerSignY', null) == resource.data.get('pdfSignerSignY', null)
+        && request.resource.data.get('yesoneAllottedSerials', null) == resource.data.get('yesoneAllottedSerials', null);
 
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'
@@ -220,6 +224,10 @@ service cloud.firestore {
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid
         && vctApprovalStatus(resource.data) == 'pending';
+
+      allow delete: if isRCAdmin()
+        && resource.data.role == 'verifier'
+        && resource.data.rcId == request.auth.uid;
 
       match /contractorFeePayments/{dateKey} {
         allow read: if isAuthenticated()
@@ -540,7 +548,7 @@ service cloud.firestore {
     }
 
     // ── app settings (global toggles) ─────────────────────────────
-    // Super Admin writes yesoneWebhookUrl, yesoneLastPushLog, yesonePushProgress.
+    // Super Admin writes yesoneWebhookUrl, yesoneInboundToken, yesoneLastPushLog.
     // Cloud Functions also merge those fields via Admin SDK (bypasses these rules).
     match /appSettings/{docId} {
       allow read: if isAuthenticated();
@@ -688,6 +696,17 @@ service cloud.firestore {
       allow read: if isSuperAdmin()
         || (isRCAdmin() && resource.data.rcId == request.auth.uid)
         || (isOperationalVct() && resource.data.rcId == vctRcId());
+      allow write: if false;
+    }
+
+    // Yesone inbound — serial allotments + OV quota writes via Admin SDK only.
+    match /serialAllotments/{serialId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /yesoneInboundEvents/{eventId} {
+      allow read: if isSuperAdmin();
       allow write: if false;
     }
   }

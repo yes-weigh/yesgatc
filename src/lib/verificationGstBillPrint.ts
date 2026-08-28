@@ -1,33 +1,44 @@
 import {
+  beginBluetoothPrinterSelection,
   clearRememberedBluetoothPrinter,
   isBluetoothEscposSupported,
-  resolveBluetoothEscposPrinter,
   sendEscposOverBluetooth,
   shouldRetryBluetoothPrinterWithPicker,
   type ResolveBluetoothEscposPrinterOptions,
 } from './bluetoothEscposPrinter';
-import type { VerificationGstBillData } from './verificationGstBill';
-import { buildVerificationGstBillEscPosPayload } from './verificationGstBillEscpos';
+import {
+  captureReceiptCanvas,
+  receiptCanvasToEscPosPayload,
+  THERMAL_RECEIPT_WIDTH_DOTS,
+} from './thermalReceiptBitmapPrint';
 import {
   formatBluetoothPrintError,
   getBluetoothPrintHelpText,
 } from './verificationLabelThermalPrint';
+import { VERIFICATION_GST_BILL_RECEIPT } from './verificationGstBill';
 
 export { formatBluetoothPrintError, getBluetoothPrintHelpText, isBluetoothEscposSupported };
 
 export async function printVerificationGstBillToBluetooth(
-  bill: VerificationGstBillData,
-  options: ResolveBluetoothEscposPrinterOptions = {},
+  element: HTMLElement,
+  options: ResolveBluetoothEscposPrinterOptions & {
+    device?: Promise<BluetoothDevice>;
+  } = {},
 ): Promise<{ deviceName: string }> {
-  const payload = buildVerificationGstBillEscPosPayload(bill);
+  const devicePromise = options.device ?? beginBluetoothPrinterSelection(options);
+  const canvas = await captureReceiptCanvas(element);
+  const payload = receiptCanvasToEscPosPayload(
+    canvas,
+    VERIFICATION_GST_BILL_RECEIPT.printWidthDots ?? THERMAL_RECEIPT_WIDTH_DOTS,
+  );
 
-  let device = await resolveBluetoothEscposPrinter(options);
+  let device = await devicePromise;
   try {
     await sendEscposOverBluetooth(device, payload);
   } catch (error) {
     if (!options.forcePicker && shouldRetryBluetoothPrinterWithPicker(error)) {
       clearRememberedBluetoothPrinter();
-      device = await resolveBluetoothEscposPrinter({ forcePicker: true });
+      device = await beginBluetoothPrinterSelection({ forcePicker: true });
       await sendEscposOverBluetooth(device, payload);
     } else {
       throw error;

@@ -652,6 +652,72 @@ body.embed-mode {
   gap: 0.55rem;
 }
 
+label.admin-setting-webbook-yesone-label,
+.form-group label.admin-setting-webbook-yesone-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 650;
+  color: var(--accent-green);
+  margin-bottom: 0.5rem;
+}
+
+.admin-setting-webbook-yesone-hint {
+  margin: -0.15rem 0 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-green);
+}
+
+.admin-setting-webbook-destination {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.admin-setting-webbook-destination-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.45rem;
+}
+
+.admin-setting-webbook-destination-row .input-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-setting-webbook-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  min-width: 5.5rem;
+  padding: 0 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.14);
+  color: var(--accent-green);
+  font-weight: 650;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.admin-setting-webbook-copy:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-setting-webbook-inbound-log {
+  margin: 0.55rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-green);
+}
+
+.admin-setting-webbook-inbound-log--error {
+  color: #fca5a5;
+}
+
 .admin-setting-webbook-log {
   margin: 1rem 0 0;
   padding: 0.75rem 0.85rem;
@@ -687,6 +753,128 @@ body.embed-mode {
   margin: 0.55rem 0 0;
   padding-left: 1.1rem;
   font-size: 0.75rem;
+  color: #fca5a5;
+}
+
+.admin-setting-yesone-section {
+  margin: 0 0 1.25rem;
+}
+
+.admin-setting-yesone-section h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-green);
+}
+
+.admin-setting-yesone-table-wrap {
+  overflow-x: auto;
+}
+
+.admin-setting-yesone-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.admin-setting-yesone-table th,
+.admin-setting-yesone-table td {
+  padding: 0.45rem 0.4rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.admin-setting-yesone-table th {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.admin-setting-serial-list {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.admin-setting-serial-cell {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.admin-setting-serial-unused-btn {
+  flex-shrink: 0;
+  padding: 0.28rem 0.6rem;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.admin-setting-serial-modal {
+  width: min(100%, 28rem);
+}
+
+.admin-setting-serial-unused-list {
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  max-height: min(24rem, 60vh);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.admin-setting-serial-unused-list li {
+  padding: 0.28rem 0.15rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.admin-setting-yesone-table .input-field {
+  min-width: 5.5rem;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.admin-setting-yesone-sub,
+.admin-setting-yesone-prev {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.admin-setting-yesone-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.admin-setting-yesone-events li {
+  display: grid;
+  grid-template-columns: 9.5rem 1fr;
+  gap: 0.55rem;
+  font-size: 0.8rem;
+  color: var(--accent-green);
+}
+
+.admin-setting-yesone-events li.is-bad {
+  color: #fca5a5;
+}
+
+.admin-setting-yesone-status--ok {
+  color: var(--accent-green);
+}
+
+.admin-setting-yesone-status--fail {
   color: #fca5a5;
 }
 
@@ -2513,6 +2701,34 @@ select.input-field option {
   z-index: 10;
 }
 
+.login-quick-login {
+  display: flex;
+  justify-content: center;
+  margin: 0 0 1.15rem;
+}
+
+.login-quick-login-select {
+  min-width: 14rem;
+  max-width: 100%;
+  padding: 0.55rem 2.1rem 0.55rem 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e2e8f0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%94a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  cursor: pointer;
+}
+
+.login-quick-login-select:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .login-header {
   margin-bottom: 3rem;
 }
@@ -3325,6 +3541,100 @@ select.input-field option {
 
 .rc-pdf-signer-upload {
   margin-top: 0.15rem;
+}
+
+.rc-pdf-signer-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.rc-pdf-signer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rc-pdf-signer-btn,
+.rc-pdf-signer-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-glass);
+  background: rgba(15, 23, 42, 0.55);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.rc-pdf-signer-btn {
+  min-height: 2.15rem;
+  padding: 0 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.rc-pdf-signer-icon-btn {
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+}
+
+.rc-pdf-signer-btn:disabled,
+.rc-pdf-signer-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rc-pdf-signer-nudge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: 0.2rem;
+}
+
+.rc-pdf-signer-nudge-mid {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.rc-pdf-signer-stage {
+  position: relative;
+  width: 100%;
+  height: 12.5rem;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid var(--border-glass);
+  touch-action: none;
+}
+
+.rc-pdf-signer-stage.is-locked {
+  touch-action: auto;
+}
+
+.rc-pdf-signer-mark {
+  position: absolute;
+  width: 10rem;
+  user-select: none;
+}
+
+.rc-pdf-signer-mark.is-draggable {
+  cursor: grab;
+}
+
+.rc-pdf-signer-mark.is-draggable:active {
+  cursor: grabbing;
+}
+
+.rc-pdf-signer-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
 }
 
 .rc-pdf-signer-upload .product-upload-preview--compact,
@@ -13515,6 +13825,47 @@ body.verification-mobile-wizard-active {
   cursor: wait;
 }
 
+.verification-gst-bill-icon-btn--print {
+  background: #38bdf8;
+  color: #ffffff;
+  border-radius: 0.7rem;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.38);
+}
+
+.verification-gst-bill-icon-btn--print:hover,
+.verification-gst-bill-icon-btn--print:focus-visible {
+  background: #0ea5e9;
+}
+
+.verification-gst-bill-icon-btn--print:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.verification-gst-bill-change-printer-link {
+  display: block;
+  margin: -0.2rem 0 0.35rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+
+.verification-gst-bill-change-printer-link:hover,
+.verification-gst-bill-change-printer-link:focus-visible {
+  color: #e2e8f0;
+  text-decoration: underline;
+}
+
+.verification-gst-bill-change-printer-link:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .verification-gst-bill-toolbar {
   position: sticky;
   bottom: 0;
@@ -13525,15 +13876,12 @@ body.verification-mobile-wizard-active {
   align-items: center;
   gap: 0.35rem;
   padding: 0.65rem 0.25rem 0.15rem;
-  background: linear-gradient(
-    180deg,
-    rgba(15, 23, 42, 0.72) 0%,
-    rgba(15, 23, 42, 0.96) 28%,
-    rgba(15, 23, 42, 1) 100%
-  );
-  border-top: 1px solid rgba(148, 163, 184, 0.22);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+}
+
+.verification-gst-bill-toolbar--status {
+  background: transparent;
+  border-top: none;
+  padding-top: 0.35rem;
 }
 
 .verification-gst-bill-close {
@@ -13584,11 +13932,14 @@ body.verification-mobile-wizard-active {
 
 .verification-gst-bill-company {
   margin: 0 0 0.28rem;
-  font-size: clamp(1.05rem, 5.6cqi, 1.32rem);
+  font-size: clamp(0.92rem, 4.8cqi, 1.12rem);
   font-weight: 800;
-  line-height: 1.12;
-  letter-spacing: 0.02em;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
   text-transform: uppercase;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
 }
 
 .verification-gst-bill-address,
@@ -13777,8 +14128,9 @@ body.verification-mobile-wizard-active {
 
 .verification-gst-bill-instrument-v {
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .verification-gst-bill-verify-qr {
@@ -13877,6 +14229,7 @@ body.verification-mobile-wizard-active {
   .verification-gst-bill-close,
   .verification-gst-bill-chrome,
   .verification-gst-bill-toolbar,
+  .verification-gst-bill-change-printer-link,
   .verification-gst-bill-hint,
   .verification-gst-bill-print-status,
   .verification-gst-bill-print-error {
