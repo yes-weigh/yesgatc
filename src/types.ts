@@ -264,6 +264,8 @@ export interface FirestoreUserDoc {
   ovQuotaSource?: string;
   /** Yesone inbound — serials allotted to this RC. */
   yesoneAllottedSerials?: string[];
+  /** Super Admin voided serials — excluded from remaining qty. */
+  yesoneVoidedSerials?: string[];
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
   /** Super Admin only — Zoho Books labour expense account ID (chart of accounts). */

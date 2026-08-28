@@ -1,161 +1,278 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
-import { Save } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { parseQuotaInput } from '../../lib/yesoneInboundData';
+import {
+  IWP_USED_FROM_DATE,
+  isMasterRcCode,
+  masterRcPoolSerials,
+  remainingQuotaSerials,
+  rcOvUsedFromRecords,
+  toggleVoidedSerial,
+} from '../../lib/rcMasterQuota';
+import { parseQuotaInput, uniqueSerials, unusedSerials, yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
+import type { SiteCalibration } from '../../types';
+import { SerialSeatOverlay } from './SerialSeatOverlay';
 
-type QuotaDraft = {
+type QuotaRow = {
   uid: string;
   companyName: string;
   rcCode: string;
   ovQuota: string;
   ovQuotaUsed: string;
+  storedSerials: string[];
+  voidedSerials: string[];
 };
 
+function quotaBalanceValue(quota: string, used: string): number | null {
+  const q = parseQuotaInput(quota);
+  const u = parseQuotaInput(used);
+  if (q == null || u == null) return null;
+  return q - u;
+}
+
+function quotaBalance(quota: string, used: string): string {
+  const value = quotaBalanceValue(quota, used);
+  return value == null ? '—' : String(value);
+}
+
+function qtyMismatch(quota: string, used: string, serialCount: number): boolean {
+  const balance = quotaBalanceValue(quota, used);
+  if (balance == null) return serialCount > 0;
+  return balance !== serialCount;
+}
+
+function displayNum(value: string): string {
+  return value.trim() || '—';
+}
+
+function sortQuotaRows(a: QuotaRow, b: QuotaRow): number {
+  const aMaster = isMasterRcCode(a.rcCode);
+  const bMaster = isMasterRcCode(b.rcCode);
+  if (aMaster !== bMaster) return aMaster ? -1 : 1;
+  const soldA = parseQuotaInput(a.ovQuota) ?? -1;
+  const soldB = parseQuotaInput(b.ovQuota) ?? -1;
+  if (soldA !== soldB) return soldB - soldA;
+  return a.companyName.localeCompare(b.companyName);
+}
+
 export function RcQuotaPanel() {
-  const [quotas, setQuotas] = useState<QuotaDraft[]>([]);
-  const [savedQuotas, setSavedQuotas] = useState<QuotaDraft[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [quotas, setQuotas] = useState<QuotaRow[]>([]);
+  const [serialsByRc, setSerialsByRc] = useState<Map<string, string[]>>(new Map());
+  const [usedByRc, setUsedByRc] = useState<Map<string, { count: number; serials: string[] }>>(
+    new Map(),
+  );
   const [error, setError] = useState('');
-  const [saved, setSaved] = useState(false);
+  const [openUid, setOpenUid] = useState('');
+
+  const rcUidsKey = useMemo(
+    () => quotas.map(row => row.uid).sort().join(','),
+    [quotas],
+  );
+  const masterUid = useMemo(
+    () => quotas.find(row => isMasterRcCode(row.rcCode))?.uid || '',
+    [quotas],
+  );
 
   useEffect(() => {
-    const unsub = onSnapshot(
+    const unsubRcs = onSnapshot(
       query(collection(db, 'users'), where('role', '==', 'rc_admin')),
       snap => {
-        const rows = snap.docs
-          .map(item => {
-            const data = item.data();
-            return {
-              uid: item.id,
-              companyName: String(data.companyName || data.username || 'RC').trim(),
-              rcCode: String(data.rcCode || '').trim(),
-              ovQuota: data.ovQuota == null || data.ovQuota === '' ? '' : String(data.ovQuota),
-              ovQuotaUsed: data.ovQuotaUsed == null || data.ovQuotaUsed === '' ? '' : String(data.ovQuotaUsed),
-            } satisfies QuotaDraft;
-          })
-          .sort((a, b) => a.companyName.localeCompare(b.companyName));
-        setQuotas(rows);
-        setSavedQuotas(rows);
-        setLoading(false);
+        setQuotas(
+          snap.docs
+            .map(item => {
+              const data = item.data();
+              return {
+                uid: item.id,
+                companyName: String(data.companyName || data.username || 'RC').trim(),
+                rcCode: String(data.rcCode || '').trim(),
+                ovQuota: data.ovQuota == null || data.ovQuota === '' ? '' : String(data.ovQuota),
+                ovQuotaUsed: data.ovQuotaUsed == null || data.ovQuotaUsed === '' ? '' : String(data.ovQuotaUsed),
+                storedSerials: uniqueSerials(data.yesoneAllottedSerials),
+                voidedSerials: uniqueSerials(data.yesoneVoidedSerials),
+              } satisfies QuotaRow;
+            })
+            .sort(sortQuotaRows),
+        );
       },
-      () => {
-        setError('Could not load RC quota.');
-        setLoading(false);
-      },
+      () => setError('Could not load RC quota.'),
     );
-    return () => unsub();
+
+    const unsubAllot = onSnapshot(
+      collection(db, 'serialAllotments'),
+      snap => {
+        const byKey = new Map<string, string[]>();
+        for (const item of snap.docs) {
+          const row = yesoneSerialFromDoc(item.id, item.data());
+          if (row.status === 'cancelled' || row.status === 'replaced') continue;
+          const keys = [row.rcId, row.rcCode.toUpperCase()].filter(Boolean);
+          for (const key of keys) {
+            const list = byKey.get(key) || [];
+            list.push(row.serialNumber);
+            byKey.set(key, list);
+          }
+        }
+        setSerialsByRc(byKey);
+      },
+      () => setSerialsByRc(new Map()),
+    );
+
+    return () => {
+      unsubRcs();
+      unsubAllot();
+    };
   }, []);
 
-  const dirty = useMemo(() => {
-    if (quotas.length !== savedQuotas.length) return true;
-    const quotaById = new Map(savedQuotas.map(row => [row.uid, row]));
-    return quotas.some(row => {
-      const prev = quotaById.get(row.uid);
-      if (!prev) return true;
-      return row.ovQuota !== prev.ovQuota || row.ovQuotaUsed !== prev.ovQuotaUsed;
-    });
-  }, [quotas, savedQuotas]);
-
-  const patchQuota = (uid: string, patch: Partial<QuotaDraft>) => {
-    setSaved(false);
-    setQuotas(rows => rows.map(row => (row.uid === uid ? { ...row, ...patch } : row)));
-  };
-
-  const handleSave = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setError('');
-    setSaved(false);
-    setSaving(true);
-    try {
-      const batch = writeBatch(db);
-      const quotaById = new Map(savedQuotas.map(row => [row.uid, row]));
-      for (const row of quotas) {
-        const prev = quotaById.get(row.uid);
-        if (prev && row.ovQuota === prev.ovQuota && row.ovQuotaUsed === prev.ovQuotaUsed) continue;
-        const quota = parseQuotaInput(row.ovQuota);
-        const used = parseQuotaInput(row.ovQuotaUsed);
-        if (row.ovQuota.trim() && quota == null) {
-          throw new Error(`RC quota for ${row.companyName} must be a number.`);
-        }
-        if (row.ovQuotaUsed.trim() && used == null) {
-          throw new Error(`Used for ${row.companyName} must be a number.`);
-        }
-        batch.update(doc(db, 'users', row.uid), {
-          ovQuota: quota,
-          ovQuotaUsed: used,
-          ovQuotaUpdatedAt: new Date().toISOString(),
-          ovQuotaSource: 'admin',
-          updatedAt: new Date().toISOString(),
-        });
-      }
-      await batch.commit();
-      setSaved(true);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save RC quota.');
-    } finally {
-      setSaving(false);
+  useEffect(() => {
+    const uids = rcUidsKey ? rcUidsKey.split(',') : [];
+    if (!uids.length) {
+      setUsedByRc(new Map());
+      return;
     }
-  };
+    const unsubs = uids.map(uid =>
+      onSnapshot(
+        query(collection(db, 'siteCalibrations'), where('rcId', '==', uid)),
+        snap => {
+          setUsedByRc(prev => {
+            const next = new Map(prev);
+            next.set(
+              uid,
+              rcOvUsedFromRecords(
+                snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
+                uid === masterUid ? { fromDate: IWP_USED_FROM_DATE } : undefined,
+              ),
+            );
+            return next;
+          });
+        },
+        () => {
+          setUsedByRc(prev => {
+            const next = new Map(prev);
+            next.set(uid, { count: 0, serials: [] });
+            return next;
+          });
+        },
+      ),
+    );
+    return () => {
+      for (const unsub of unsubs) unsub();
+    };
+  }, [rcUidsKey, masterUid]);
+
+  const rows = useMemo(() => {
+    const masterPool = masterRcPoolSerials();
+    const takenByOthers: string[] = [];
+    for (const row of quotas) {
+      if (isMasterRcCode(row.rcCode)) continue;
+      const code = row.rcCode.toUpperCase();
+      takenByOthers.push(
+        ...row.storedSerials,
+        ...(serialsByRc.get(row.uid) || []),
+        ...(code ? serialsByRc.get(code) || [] : []),
+      );
+    }
+    return quotas.map(row => {
+      const code = row.rcCode.toUpperCase();
+      const fromStore = uniqueSerials([
+        ...row.storedSerials,
+        ...(serialsByRc.get(row.uid) || []),
+        ...(code ? serialsByRc.get(code) || [] : []),
+      ]);
+      const master = isMasterRcCode(row.rcCode);
+      const allotted = master
+        ? unusedSerials(masterPool, takenByOthers)
+        : fromStore;
+      const ovUsed = usedByRc.get(row.uid) || { count: 0, serials: [] };
+      const remaining = remainingQuotaSerials(allotted, ovUsed.serials, row.voidedSerials);
+      const sold = master
+        ? (allotted.length ? String(allotted.length) : row.ovQuota)
+        : row.ovQuota;
+      const used = String(ovUsed.count);
+      return {
+        ...row,
+        allotted,
+        remaining,
+        sold,
+        used,
+        serials: remaining,
+      };
+    });
+  }, [quotas, serialsByRc, usedByRc]);
+
+  const openRow = useMemo(
+    () => rows.find(row => row.uid === openUid) ?? null,
+    [rows, openUid],
+  );
 
   return (
-    <form className="panel glass" aria-label="RC quota" onSubmit={event => void handleSave(event)}>
+    <div className="panel glass panel--table admin-setting-quota-panel" aria-label="RC quota">
       {error ? <div className="login-error">{error}</div> : null}
-      {saved ? <p className="text-muted text-sm">Saved.</p> : null}
-      {quotas.length > 0 ? (
-        <section className="admin-setting-yesone-section">
-          <div className="admin-setting-yesone-table-wrap">
-            <table className="admin-setting-yesone-table">
-              <thead>
-                <tr>
-                  <th>RC</th>
-                  <th>Quota</th>
-                  <th>Used</th>
-                </tr>
-              </thead>
-              <tbody>
-                {quotas.map(row => (
+      {rows.length > 0 ? (
+        <div className="admin-setting-yesone-table-wrap">
+          <table className="admin-setting-yesone-table admin-setting-quota-table">
+            <thead>
+              <tr>
+                <th>RC</th>
+                <th>Allotted</th>
+                <th>Used</th>
+                <th>Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const balance = quotaBalance(row.sold, row.used);
+                const mismatch = qtyMismatch(row.sold, row.used, row.serials.length);
+                const canOpen = row.allotted.length > 0 || mismatch;
+                const bad = mismatch ? ' admin-setting-qty--bad' : '';
+                return (
                   <tr key={row.uid}>
                     <td>
                       {row.companyName}
                       {row.rcCode ? <span className="admin-setting-yesone-sub">{row.rcCode}</span> : null}
                     </td>
                     <td>
-                      <input
-                        className="input-field text-mono"
-                        inputMode="numeric"
-                        value={row.ovQuota}
-                        onChange={event => patchQuota(row.uid, { ovQuota: event.target.value })}
-                        aria-label={`RC quota for ${row.companyName}`}
-                        disabled={saving}
-                      />
+                      <span className="text-mono admin-setting-quota-balance">
+                        {displayNum(row.sold)}
+                      </span>
                     </td>
                     <td>
-                      <input
-                        className="input-field text-mono"
-                        inputMode="numeric"
-                        value={row.ovQuotaUsed}
-                        onChange={event => patchQuota(row.uid, { ovQuotaUsed: event.target.value })}
-                        aria-label={`Used for ${row.companyName}`}
-                        disabled={saving}
-                      />
+                      <span className="text-mono admin-setting-quota-balance">
+                        {displayNum(row.used)}
+                      </span>
+                    </td>
+                    <td>
+                      {canOpen ? (
+                        <button
+                          type="button"
+                          className={`admin-setting-quota-balance-btn${bad}`}
+                          onClick={() => setOpenUid(row.uid)}
+                          aria-label={`Serial numbers for ${row.companyName}`}
+                        >
+                          {balance}
+                        </button>
+                      ) : (
+                        <span className={`text-mono admin-setting-quota-balance${bad}`}>{balance}</span>
+                      )}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       ) : null}
-      <button
-        type="submit"
-        className="btn btn-primary flex items-center gap-2"
-        disabled={saving || loading || !dirty}
-      >
-        {saving ? <span className="spinner-inline" /> : <Save size={16} aria-hidden />}
-        Save
-      </button>
-    </form>
+
+      {openRow ? (
+        <SerialSeatOverlay
+          companyName={openRow.companyName}
+          rcCode={openRow.rcCode}
+          serials={uniqueSerials([...openRow.serials, ...openRow.voidedSerials])}
+          voidedSerials={openRow.voidedSerials}
+          expectedCount={quotaBalanceValue(openRow.sold, openRow.used)}
+          canVoid
+          onToggleVoid={(serial, voided) => toggleVoidedSerial(openRow.uid, serial, voided)}
+          onClose={() => setOpenUid('')}
+        />
+      ) : null}
+    </div>
   );
 }

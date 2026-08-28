@@ -608,6 +608,11 @@ body.embed-mode {
   max-width: 56rem;
 }
 
+.admin-setting-page--wide {
+  max-width: none;
+  gap: 0.75rem;
+}
+
 .admin-setting-header {
   margin: 0;
 }
@@ -795,44 +800,193 @@ label.admin-setting-webbook-yesone-label,
   color: #94a3b8;
 }
 
-.admin-setting-serial-list {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  line-height: 1.45;
-}
-
-.admin-setting-serial-cell {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.55rem;
-}
-
-.admin-setting-serial-unused-btn {
-  flex-shrink: 0;
-  padding: 0.28rem 0.6rem;
-  font-size: 0.72rem;
+.admin-setting-serial-count-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 2.75rem;
+  margin-left: auto;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.95rem;
   line-height: 1.2;
 }
 
-.admin-setting-serial-modal {
-  width: min(100%, 28rem);
+.admin-setting-serial-panel .admin-setting-yesone-table th:last-child,
+.admin-setting-serial-panel .admin-setting-yesone-table td:last-child {
+  text-align: right;
 }
 
-.admin-setting-serial-unused-list {
-  list-style: none;
-  margin: 0.65rem 0 0;
+.admin-setting-serial-count-num {
+  color: var(--accent-green);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.admin-setting-serial-count-btn:disabled .admin-setting-serial-count-num {
+  color: var(--accent-green);
+}
+
+.admin-setting-serial-panel.panel,
+.admin-setting-quota-panel.panel {
   padding: 0;
-  max-height: min(24rem, 60vh);
-  overflow: auto;
+}
+
+.admin-setting-quota-panel .login-error,
+.admin-setting-quota-panel .text-muted {
+  padding: 0.55rem 0.75rem 0;
+}
+
+.admin-setting-quota-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.admin-setting-quota-table th:first-child,
+.admin-setting-quota-table td:first-child {
+  width: auto;
+}
+
+.admin-setting-quota-table th:not(:first-child),
+.admin-setting-quota-table td:not(:first-child) {
+  width: 4.85rem;
+  text-align: right;
+  padding-left: 0.25rem;
+  padding-right: 0.45rem;
+  vertical-align: middle;
+}
+
+.admin-setting-quota-table th:not(:first-child) {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.admin-setting-quota-num {
+  width: 100%;
+  min-width: 0;
+  padding: 0.32rem 0.35rem;
+  text-align: right;
+  color: var(--accent-green);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-setting-quota-balance {
+  display: block;
+  color: var(--accent-green);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.admin-setting-quota-balance-btn {
+  display: inline-block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-green);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+  cursor: pointer;
+}
+
+.admin-setting-quota-balance-btn.admin-setting-qty--bad,
+.admin-setting-quota-balance.admin-setting-qty--bad,
+.admin-setting-serial-count-num.admin-setting-qty--bad {
+  color: var(--accent-red);
+}
+
+.admin-setting-serial-panel .admin-setting-yesone-table th,
+.admin-setting-serial-panel .admin-setting-yesone-table td {
+  padding: 0.55rem 0.85rem;
+}
+
+.admin-setting-serial-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12050;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  background: #030712;
 }
 
-.admin-setting-serial-unused-list li {
-  padding: 0.28rem 0.15rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+.admin-setting-serial-stage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  padding: 0.45rem 0.55rem 0.4rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.admin-setting-serial-stage-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.admin-setting-serial-stage-title span:not(.admin-setting-serial-count-num) {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.admin-setting-serial-seats {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.55rem, 1fr));
+  gap: 0.22rem 0.22rem;
+  align-content: start;
+}
+
+.admin-setting-serial-seat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2.05rem;
+  margin: 0;
+  padding: 0.18rem 0.12rem;
+  border-radius: 7px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: var(--accent-green);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+button.admin-setting-serial-seat {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+button.admin-setting-serial-seat:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.admin-setting-serial-seat--voided {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(148, 163, 184, 0.22);
+  color: #64748b;
+  text-decoration: line-through;
+}
+
+.admin-setting-serial-overlay .login-error {
+  padding: 0.45rem 0.65rem 0;
 }
 
 .admin-setting-yesone-table .input-field {
@@ -7721,6 +7875,17 @@ body.verification-mobile-wizard-active {
 
   .mobile-main .content-area {
     padding: 0.65rem 1rem 1rem;
+  }
+
+  .mobile-main .content-area:has(.admin-setting-page--wide) {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .admin-setting-page--wide .admin-setting-header,
+  .admin-setting-page--wide .admin-setting-tabs {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
   }
 
   .mobile-main .content-area:has(.admin-setting-page--fit) {

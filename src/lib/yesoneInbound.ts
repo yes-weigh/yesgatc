@@ -1,4 +1,4 @@
-export const YESONE_INBOUND_HTTP_URL = 'https://yesgatc.in/api/yesone';
+export const YESONE_INBOUND_HTTP_URL = 'https://us-central1-yesgatc.cloudfunctions.net/yesoneInbound';
 
 export function generateYesoneInboundToken(): string {
   const bytes = new Uint8Array(32);

@@ -15,6 +15,7 @@ export type YesoneInboundEventRow = {
   id: string;
   at: string;
   ok: boolean;
+  count: number;
   results: { event?: string; id?: string; ok?: boolean; error?: string }[];
 };
 
@@ -61,6 +62,7 @@ export function yesoneInboundEventFromDoc(id: string, data: unknown): YesoneInbo
     id,
     at: text(row.at),
     ok: row.ok === true,
+    count: Number(row.count) || results.length,
     results,
   };
 }
@@ -83,6 +85,26 @@ export function uniqueSerials(values: unknown): string[] {
   };
   push(values);
   return [...out].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function parseSerialParts(value: string): { prefix: string; width: number; n: bigint } | null {
+  const match = value.trim().match(/^(.*?)(\d+)$/);
+  if (!match) return null;
+  return { prefix: match[1], width: match[2].length, n: BigInt(match[2]) };
+}
+
+export function expandSerialRange(from: string, to: string, max = 8000): string[] {
+  const a = parseSerialParts(from);
+  const b = parseSerialParts(to);
+  if (!a || !b || a.prefix !== b.prefix || b.n < a.n) {
+    return [from.trim(), to.trim()].filter(Boolean);
+  }
+  const width = Math.max(a.width, b.width);
+  const out: string[] = [];
+  for (let n = a.n; n <= b.n && out.length < max; n += 1n) {
+    out.push(`${a.prefix}${n.toString().padStart(width, '0')}`);
+  }
+  return out;
 }
 
 export function parseQuotaInput(raw: string): number | null {
@@ -131,6 +153,7 @@ export function yesonePlainLogsFromList(raw: unknown): YesonePlainLogRow[] {
 
 export function yesonePlainLogsFromEventDoc(id: string, data: unknown): YesonePlainLogRow[] {
   const row = yesoneInboundEventFromDoc(id, data);
+  const count = row.count || row.results.length;
   if (row.results.length === 0) {
     return [{
       id,
@@ -138,6 +161,17 @@ export function yesonePlainLogsFromEventDoc(id: string, data: unknown): YesonePl
       ok: row.ok,
       event: 'inbound',
       detail: row.ok ? 'ok' : 'failed',
+    }];
+  }
+  if (row.results.length > 8) {
+    const failed = row.results.find(item => !item.ok);
+    return [{
+      id,
+      at: row.at,
+      ok: row.ok,
+      event: row.results[0]?.event || 'inbound',
+      detail: `×${count}${failed?.error ? ` · ${failed.error}` : ''}`,
+      error: failed?.error,
     }];
   }
   return row.results.map((item, index) => ({

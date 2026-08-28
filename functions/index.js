@@ -561,8 +561,21 @@ exports.yesoneInbound = onRequest(
     region: CALLABLE_REGION,
     cors: true,
     invoker: 'public',
-    timeoutSeconds: 60,
-    memory: '256MiB',
+    timeoutSeconds: 300,
+    memory: '512MiB',
   },
-  async (req, res) => yesoneInboundHttpHandler(req, res, adminDb()),
+  async (req, res) => {
+    try {
+      await yesoneInboundHttpHandler(req, res, adminDb());
+    } catch (err) {
+      console.error('yesoneInbound', err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          ok: false,
+          error: 'internal_error',
+          message: err instanceof Error ? err.message : 'inbound_failed',
+        });
+      }
+    }
+  },
 );

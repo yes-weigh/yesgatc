@@ -199,7 +199,8 @@ service cloud.firestore {
         && request.resource.data.get('pdfSignerSignScale', null) == resource.data.get('pdfSignerSignScale', null)
         && request.resource.data.get('pdfSignerSignX', null) == resource.data.get('pdfSignerSignX', null)
         && request.resource.data.get('pdfSignerSignY', null) == resource.data.get('pdfSignerSignY', null)
-        && request.resource.data.get('yesoneAllottedSerials', null) == resource.data.get('yesoneAllottedSerials', null);
+        && request.resource.data.get('yesoneAllottedSerials', null) == resource.data.get('yesoneAllottedSerials', null)
+        && request.resource.data.get('yesoneVoidedSerials', null) == resource.data.get('yesoneVoidedSerials', null);
 
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'

@@ -1,4 +1,4 @@
-import React, { useState, type RefObject } from 'react';
+import React, { useEffect, useState, type RefObject } from 'react';
 import {
   AlertCircle,
   Check,
@@ -52,6 +52,7 @@ import {
   resolveCertificatePdfStoragePath,
 } from '../lib/signedCertificatePdf';
 import { verificationListPartyName } from '../lib/verificationPartyDetails';
+import { prefetchPdfJs } from '../lib/pdfJs';
 import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
 import { SignedCertificateAvailabilityBadge } from './SignedCertificateAvailabilityBadge';
 import type { Product, SiteCalibration, VerificationRequestStatus } from '../types';
@@ -248,6 +249,10 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   const showRcCentre = mode === 'admin';
   const zohoRvListEnabled = isZohoRvInvoicingEnabled(appSettings);
   const [pdfRecord, setPdfRecord] = useState<VerificationListTableRecord | null>(null);
+
+  useEffect(() => {
+    prefetchPdfJs();
+  }, []);
 
   return (
     <div className="verification-list-cards-wrap">

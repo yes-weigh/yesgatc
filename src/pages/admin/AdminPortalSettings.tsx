@@ -27,9 +27,8 @@ import { ContractorFeePanel } from '../shared/ContractorFeeSettings';
 import { WebbookPanel } from './WebbookPanel';
 import { YesoneInboundPanel } from './YesoneInboundPanel';
 import { RcQuotaPanel } from './RcQuotaPanel';
-import { SerialNumberPanel } from './SerialNumberPanel';
 
-type SettingTab = 'account' | 'fees' | 'contractor' | 'webbook' | 'yesone' | 'rcQuota' | 'serialNumber';
+type SettingTab = 'account' | 'fees' | 'contractor' | 'webbook' | 'yesone' | 'rcQuota';
 
 function PasswordField({
   id,
@@ -335,7 +334,7 @@ export const AdminPortalSettings: React.FC = () => {
   };
 
   return (
-    <div className="fade-in page-content admin-setting-page">
+    <div className={`fade-in page-content admin-setting-page${tab === 'rcQuota' || tab === 'yesone' ? ' admin-setting-page--wide' : ''}`}>
       <header className="admin-setting-header">
         <h1 className="admin-setting-title">
           <Settings className="inline-icon" aria-hidden />
@@ -400,15 +399,6 @@ export const AdminPortalSettings: React.FC = () => {
           onClick={() => setTab('rcQuota')}
         >
           RC quata
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'serialNumber'}
-          className={`admin-setting-tab${tab === 'serialNumber' ? ' admin-setting-tab--active' : ''}`}
-          onClick={() => setTab('serialNumber')}
-        >
-          Serial number
         </button>
       </div>
 
@@ -574,10 +564,8 @@ export const AdminPortalSettings: React.FC = () => {
         <WebbookPanel />
       ) : tab === 'yesone' ? (
         <YesoneInboundPanel />
-      ) : tab === 'rcQuota' ? (
-        <RcQuotaPanel />
       ) : (
-        <SerialNumberPanel />
+        <RcQuotaPanel />
       )}
     </div>
   );

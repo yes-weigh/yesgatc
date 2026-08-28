@@ -232,7 +232,7 @@ export function WebbookPanel() {
           Destination URL
         </label>
         <p className="admin-setting-webbook-yesone-hint">
-          Yesone sends serial allotment, RC quota, serial updates here
+          Paste in Yesone. Direct Cloud Function URL — hosting times out on large serial dumps.
         </p>
         <div className="admin-setting-webbook-destination-row">
           <input

@@ -5,7 +5,12 @@ const APP_SETTINGS_GLOBAL_DOC = 'global';
 const SERIAL_COLLECTION = 'serialAllotments';
 const INBOUND_EVENTS_COLLECTION = 'yesoneInboundEvents';
 const INBOUND_LOG_LIMIT = 200;
-const MAX_EVENTS = 40;
+const MAX_EVENTS = 8000;
+const MASTER_RC_CODE = 'IWP';
+const MASTER_UNUSED_RANGES = [
+  { from: 'Y10315', to: 'Y11000' },
+  { from: 'YZ01420', to: 'YZ01500' },
+];
 const ISSUED_VERIFICATION_STATUSES = new Set(['certified', 'approved', 'submitted']);
 
 const EVENT_ALIASES = {
@@ -85,8 +90,13 @@ function readJsonBody(req) {
   return typeof body === 'object' ? body : {};
 }
 
+function firstQueryValue(value) {
+  if (Array.isArray(value)) return optionalTrimmed(value[0]);
+  return optionalTrimmed(value);
+}
+
 function readInboundToken(req, body) {
-  const fromQuery = optionalTrimmed(req.query?.token || req.query?.key);
+  const fromQuery = firstQueryValue(req.query?.token || req.query?.key);
   if (fromQuery) return fromQuery;
   const header = optionalTrimmed(
     req.get?.('x-yesone-token')
@@ -152,20 +162,262 @@ function firstFiniteAmount(candidates) {
 
 function readQuotaValue(item) {
   const quota = asRecord(item.quota);
+  const sold = firstFiniteAmount([item.sold, item.soldCount, quota.sold]);
+  const pending = firstFiniteAmount([item.pending, item.pendingCount, quota.pending]);
+  const ov = firstFiniteAmount([item.ov, item.ovCount, quota.ov]);
+  const linked = firstFiniteAmount([item.linked, quota.linked]);
+  if (
+    sold != null
+    && (ov != null || linked != null)
+    && item.ovQuota == null
+    && typeof item.quota !== 'number'
+  ) {
+    return sold;
+  }
+  const composed = sold != null && pending != null ? sold + pending + (ov || 0) : null;
   return firstFiniteAmount([
     item.ovQuota,
     typeof item.quota === 'number' ? item.quota : null,
     item.allotted,
     item.limit,
-    quota.ov,
+    quota.ovQuota,
     quota.allotted,
     quota.limit,
+    ov,
+    composed,
   ]);
 }
 
 function readQuotaUsed(item) {
   const quota = asRecord(item.quota);
-  return firstFiniteAmount([item.ovQuotaUsed, item.used, item.usedCount, quota.used]);
+  const sold = firstFiniteAmount([item.sold, item.soldCount, quota.sold]);
+  const ov = firstFiniteAmount([item.ov, item.ovCount, quota.ov]);
+  const linked = firstFiniteAmount([item.linked, quota.linked]);
+  if (
+    sold != null
+    && (ov != null || linked != null)
+    && item.ovQuotaUsed == null
+    && item.used == null
+  ) {
+    return firstFiniteAmount([linked, ov]);
+  }
+  return firstFiniteAmount([
+    item.ovQuotaUsed,
+    item.linked,
+    item.used,
+    item.usedCount,
+    quota.linked,
+    quota.used,
+    item.sold,
+    item.ovSold,
+    quota.sold,
+  ]);
+}
+
+function serialValues(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' || typeof value === 'number') return [value];
+  return [];
+}
+
+function looksLikeSerialRange(rec) {
+  const from = rec.from || rec.startNumber || rec.start;
+  const to = rec.to || rec.endNumber || rec.end;
+  return Boolean(from && to);
+}
+
+function parseSerialParts(value) {
+  const text = optionalTrimmed(value);
+  if (!text) return null;
+  const match = text.match(/^(.*?)(\d+)$/);
+  if (!match) return null;
+  return { prefix: match[1], width: match[2].length, n: BigInt(match[2]) };
+}
+
+function expandSerialRange(from, to, missing, max = MAX_EVENTS) {
+  const a = parseSerialParts(from);
+  const b = parseSerialParts(to);
+  if (!a || !b || a.prefix !== b.prefix || b.n < a.n) {
+    return [optionalTrimmed(from), optionalTrimmed(to)].filter(Boolean);
+  }
+  const miss = new Set(serialValues(missing).map(item => String(item).trim()).filter(Boolean));
+  const width = Math.max(a.width, b.width);
+  const out = [];
+  for (let n = a.n; n <= b.n && out.length < max; n += 1n) {
+    const serial = `${a.prefix}${n.toString().padStart(width, '0')}`;
+    if (!miss.has(serial)) out.push(serial);
+  }
+  return out;
+}
+
+function serialsFromGroup(rec) {
+  const listed = [];
+  for (const serial of serialValues(rec.serials || rec.serialNumbers || rec.allotted || rec.allottedSerials)) {
+    if (typeof serial === 'string' || typeof serial === 'number') {
+      const text = String(serial).trim();
+      if (text) listed.push(text);
+      continue;
+    }
+    const number = readSerialNumber(asRecord(serial)) || optionalTrimmed(asRecord(serial).serial);
+    if (number) listed.push(number);
+  }
+  const unique = [...new Set(listed)];
+  const qty = optionalFiniteNumber(rec.qty ?? rec.count);
+  if (qty != null && unique.length < qty) {
+    const expanded = expandSerialRange(
+      rec.startNumber || rec.from || rec.start,
+      rec.endNumber || rec.to || rec.end,
+      rec.missing,
+    );
+    if (expanded.length > unique.length) return expanded;
+  }
+  if (unique.length > 0) return unique;
+  return expandSerialRange(
+    rec.startNumber || rec.from || rec.start,
+    rec.endNumber || rec.to || rec.end,
+    rec.missing,
+  );
+}
+
+function isPrimitiveSerialList(value) {
+  return Array.isArray(value) && value.every(item => typeof item === 'string' || typeof item === 'number');
+}
+
+function rcCodeFrom(rec) {
+  const nested = asRecord(rec.rc);
+  return optionalTrimmed(rec.rcCode || rec.code || (typeof rec.rc === 'string' ? rec.rc : null) || nested.rcCode || nested.code);
+}
+
+function isMasterRcCode(value) {
+  return normalizeRcCode(value) === MASTER_RC_CODE;
+}
+
+function itemHasRcIdentity(item) {
+  const rc = asRecord(item.rc);
+  return Boolean(
+    optionalTrimmed(item.rcId || item.rcUid || rc.id || rc.uid)
+    || normalizeRcCode(item.rcCode || rc.rcCode || rc.code)
+    || optionalTrimmed(item.aadhar || item.rcAadhar || rc.aadhar),
+  );
+}
+
+function serialsInItems(items) {
+  const set = new Set();
+  for (const item of items) {
+    const serial = readSerialNumber(item);
+    if (serial) set.add(serial);
+  }
+  return set;
+}
+
+function serialInRange(serial, from, to) {
+  const s = parseSerialParts(serial);
+  const a = parseSerialParts(from);
+  const b = parseSerialParts(to);
+  if (!s || !a || !b || s.prefix !== a.prefix) return false;
+  return s.n >= a.n && s.n <= b.n;
+}
+
+function isMasterPoolSerial(serial) {
+  const text = optionalTrimmed(serial);
+  if (!text) return false;
+  return MASTER_UNUSED_RANGES.some(range => serialInRange(text, range.from, range.to));
+}
+
+function isYesoneSerialDump(root) {
+  return Array.isArray(root.generatedSerialDetails)
+    || Array.isArray(root.rcAllottedSerialDetails)
+    || Array.isArray(root.generatedSerialBackfill)
+    || Array.isArray(root.allotments)
+    || Array.isArray(root.serialsAllottedToRc);
+}
+
+function pushMasterUnusedSerials(out, base, root) {
+  if (!isYesoneSerialDump(root)) return;
+  const assigned = serialsInItems(out);
+  for (const range of MASTER_UNUSED_RANGES) {
+    if (out.length >= MAX_EVENTS) return;
+    const unused = [];
+    for (const serial of expandSerialRange(range.from, range.to)) {
+      if (assigned.has(serial)) continue;
+      assigned.add(serial);
+      unused.push(serial);
+    }
+    pushSerialItems(out, base, unused, {
+      rcCode: MASTER_RC_CODE,
+      rcId: null,
+    });
+  }
+}
+
+function pushSerialItems(out, base, serials, extra = {}) {
+  for (const serial of serialValues(serials)) {
+    if (out.length >= MAX_EVENTS) return;
+    if (typeof serial === 'string' || typeof serial === 'number') {
+      out.push({
+        ...base,
+        ...extra,
+        event: extra.event || 'serial.allotted',
+        serialNumber: String(serial),
+        serials: undefined,
+      });
+      continue;
+    }
+    const row = asRecord(serial);
+    const serialNumber = readSerialNumber(row) || optionalTrimmed(row.serial);
+    if (!serialNumber) continue;
+    out.push({
+      ...base,
+      ...row,
+      ...extra,
+      event: extra.event || inferEventName({ ...row, ...extra }) || 'serial.allotted',
+      serialNumber,
+      serials: undefined,
+    });
+  }
+}
+
+function pushDetailSerials(out, base, rows) {
+  for (const row of rows) {
+    if (out.length >= MAX_EVENTS) return;
+    const rec = asRecord(row);
+    const serialNumber = optionalTrimmed(rec.serial) || readSerialNumber(rec);
+    if (!serialNumber) continue;
+    out.push({
+      ...base,
+      ...rec,
+      event: 'serial.allotted',
+      serialNumber,
+      rcCode: rcCodeFrom(rec),
+      rcCompanyName: optionalTrimmed(rec.rcName || rec.rcCompanyName || rec.dealerName),
+      rcId: optionalTrimmed(rec.rcId || rec.rcUid),
+      serials: undefined,
+    });
+  }
+}
+
+function expandRcRows(out, base, rows) {
+  for (const row of rows) {
+    if (out.length >= MAX_EVENTS) return;
+    const rec = asRecord(row);
+    const rcCode = rcCodeFrom(rec);
+    const extra = {
+      ...rec,
+      rcCode,
+      rcCompanyName: optionalTrimmed(rec.rcName || rec.rcCompanyName || rec.name),
+      rcId: optionalTrimmed(rec.rcId || rec.uid) || (rcCode || looksLikeSerialRange(rec) ? null : optionalTrimmed(rec.id)),
+    };
+    const serials = serialsFromGroup(rec);
+    if (serials.length) pushSerialItems(out, base, serials, extra);
+    if (readQuotaValue({ ...base, ...extra }) != null) {
+      out.push({
+        ...base,
+        ...extra,
+        event: 'rc.ov_quota',
+        serials: undefined,
+      });
+    }
+  }
 }
 
 function expandInboundItems(body) {
@@ -181,14 +433,72 @@ function expandInboundItems(body) {
   if (Array.isArray(root.items)) {
     return root.items.slice(0, MAX_EVENTS).map(item => ({ ...mergedRoot, ...asRecord(item), items: undefined }));
   }
-  if (Array.isArray(root.serials)) {
-    return root.serials.slice(0, MAX_EVENTS).map(serial => (
-      typeof serial === 'string' || typeof serial === 'number'
-        ? { ...mergedRoot, serialNumber: String(serial), serials: undefined }
-        : { ...mergedRoot, ...asRecord(serial), serials: undefined }
-    ));
+
+  const out = [];
+  const details = root.generatedSerialDetails || root.rcAllottedSerialDetails;
+  if (Array.isArray(details)) pushDetailSerials(out, mergedRoot, details);
+
+  if (!Array.isArray(details) && Array.isArray(root.serialsAllottedToRc)) {
+    expandRcRows(out, mergedRoot, root.serialsAllottedToRc);
   }
+
+  const rcRows = root.rcs
+    || root.centres
+    || root.rcAllotments
+    || (Array.isArray(root.allotted) ? root.allotted : null);
+  if (Array.isArray(rcRows)) expandRcRows(out, mergedRoot, rcRows);
+
+  if (Array.isArray(root.allotments)) {
+    const asRc = root.allotments.filter(row => {
+      const rec = asRecord(row);
+      return Boolean(rcCodeFrom(rec) || (rec.serials && !looksLikeSerialRange(rec)));
+    });
+    if (asRc.length) expandRcRows(out, mergedRoot, asRc);
+  }
+
+  const allottedMap = !Array.isArray(root.allotted) && asRecord(root.allotted);
+  const serialsByRc = asRecord(root.serialsByRc || root.rcSerials);
+  const maps = [allottedMap, serialsByRc];
+  for (const map of maps) {
+    for (const [key, serials] of Object.entries(map)) {
+      if (!key || key === 'event' || key === 'type') continue;
+      pushSerialItems(out, mergedRoot, serials, { rcCode: key });
+    }
+  }
+
+  if (isPrimitiveSerialList(root.serials)) {
+    pushSerialItems(out, mergedRoot, root.serials);
+  }
+  const generated = root.generatedSerials || root.generated || root.newSerials;
+  if (isPrimitiveSerialList(generated)) {
+    pushSerialItems(out, mergedRoot, generated);
+  }
+
+  pushMasterUnusedSerials(out, mergedRoot, mergedRoot);
+
+  const quotaRows = root.rcOvQuota || root.quotas || root.ovQuotas;
+  if (Array.isArray(quotaRows)) {
+    for (const row of quotaRows) {
+      if (out.length >= MAX_EVENTS) break;
+      out.push({ ...mergedRoot, ...asRecord(row), event: 'rc.ov_quota' });
+    }
+  }
+
+  if (out.length > 0) return out.slice(0, MAX_EVENTS);
   return [mergedRoot];
+}
+
+function stripUndefined(value) {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (item === undefined) continue;
+      out[key] = stripUndefined(item);
+    }
+    return out;
+  }
+  return value;
 }
 
 function compactPayload(value, depth = 0) {
@@ -251,9 +561,9 @@ function allotmentFields(item, rc, serialNumber, extra = {}) {
   const product = asRecord(item.product);
   return {
     serialNumber,
-    rcId: rc?.id || optionalTrimmed(item.rcId) || null,
+    rcId: rc?.id || null,
     rcCode: normalizeRcCode(item.rcCode || rc?.rcCode) || null,
-    rcCompanyName: optionalTrimmed(rc?.companyName || item.rcCompanyName),
+    rcCompanyName: optionalTrimmed(rc?.companyName || item.rcCompanyName || item.rcName),
     productId: optionalTrimmed(item.productId || product.id),
     productName: optionalTrimmed(item.productName || product.name || product.productName),
     modelNo: optionalTrimmed(item.modelNo || product.modelNo),
@@ -290,10 +600,170 @@ async function patchRcAllottedSerials(db, rcId, mutate) {
   );
 }
 
+const WRITE_CHUNK = 400;
+
+function rcCacheKey(item) {
+  return optionalTrimmed(item.rcId || item.rcUid)
+    || normalizeRcCode(item.rcCode)
+    || optionalTrimmed(item.aadhar || item.rcAadhar)
+    || '';
+}
+
+async function resolveMasterRc(db, cache) {
+  if (cache.has(MASTER_RC_CODE)) return cache.get(MASTER_RC_CODE);
+  const snap = await db.collection('users').where('rcCode', '==', MASTER_RC_CODE).limit(4).get();
+  const hit = snap.docs.find(doc => doc.data()?.role === 'rc_admin');
+  const rc = hit ? { id: hit.id, ...hit.data() } : null;
+  cache.set(MASTER_RC_CODE, rc);
+  return rc;
+}
+
+async function resolveRcCached(db, item, cache) {
+  if (!itemHasRcIdentity(item)) {
+    const serial = readSerialNumber(item);
+    if (serial && isMasterPoolSerial(serial)) return resolveMasterRc(db, cache);
+    return null;
+  }
+  const key = rcCacheKey(item);
+  if (key && cache.has(key)) return cache.get(key);
+  const rc = await resolveRc(db, item);
+  if (key) cache.set(key, rc);
+  return rc;
+}
+
+async function syncMasterRcSold(db, cache, now) {
+  const master = await resolveMasterRc(db, cache);
+  if (!master?.id) return;
+  const snap = await db.doc(`users/${master.id}`).get();
+  const serials = serialList(snap.data()?.yesoneAllottedSerials).filter(isMasterPoolSerial);
+  await db.doc(`users/${master.id}`).set(
+    {
+      yesoneAllottedSerials: serials,
+      ovQuota: serials.length,
+      ovQuotaSource: 'yesone-unused',
+      ovQuotaUpdatedAt: now,
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+  await db.doc(`users/${master.id}`).set(
+    {
+      yesoneAllottedSerials: serials,
+      ovQuota: serials.length,
+      ovQuotaSource: 'yesone-unused',
+      ovQuotaUpdatedAt: now,
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+}
+
+async function stripTakenSerialsFromMaster(db, cache, serialsByRc) {
+  const master = await resolveMasterRc(db, cache);
+  if (!master?.id) return;
+  const taken = new Set();
+  for (const [rcId, serials] of serialsByRc) {
+    if (rcId === master.id) continue;
+    for (const serial of serials) taken.add(serial);
+  }
+  if (!taken.size) return;
+  await patchRcAllottedSerials(db, master.id, list => list.filter(serial => !taken.has(serial)));
+}
+
+async function commitDocSets(db, writes) {
+  if (!writes.length) return;
+  if (typeof db.batch === 'function') {
+    for (let i = 0; i < writes.length; i += WRITE_CHUNK) {
+      const batch = db.batch();
+      for (const row of writes.slice(i, i + WRITE_CHUNK)) {
+        batch.set(db.doc(row.path), row.data, { merge: true });
+      }
+      await batch.commit();
+    }
+    return;
+  }
+  for (const row of writes) {
+    await db.doc(row.path).set(row.data, { merge: true });
+  }
+}
+
+async function applySerialAllottedMany(db, items, rcCache) {
+  const results = [];
+  const writes = [];
+  const serialsByRc = new Map();
+  const now = new Date().toISOString();
+
+  for (const item of items) {
+    const serialNumber = readSerialNumber(item);
+    if (!serialNumber) {
+      results.push({ ok: false, event: 'serial.allotted', error: 'serial_required' });
+      continue;
+    }
+    const rc = await resolveRcCached(db, item, rcCache);
+    const id = serialDocId(serialNumber);
+    writes.push({
+      path: `${SERIAL_COLLECTION}/${id}`,
+      data: allotmentFields(item, rc, serialNumber, {
+        status: 'allotted',
+        allottedAt: optionalTrimmed(item.allottedAt) || now,
+      }),
+    });
+    if (rc?.id) {
+      const list = serialsByRc.get(rc.id) || [];
+      list.push(serialNumber);
+      serialsByRc.set(rc.id, list);
+    }
+    results.push({
+      ok: true,
+      event: 'serial.allotted',
+      id: serialNumber,
+      rcId: rc?.id || null,
+      warning: rc ? null : 'rc_not_found',
+    });
+  }
+
+  await commitDocSets(db, writes);
+  for (const [rcId, serials] of serialsByRc) {
+    await patchRcAllottedSerials(db, rcId, list => {
+      const next = new Set(list);
+      for (const serial of serials) next.add(serial);
+      return [...next];
+    });
+  }
+  await stripTakenSerialsFromMaster(db, rcCache, serialsByRc);
+  if (writes.length) await syncMasterRcSold(db, rcCache, now);
+  return results;
+}
+
+async function applyInboundItems(db, items) {
+  const rcCache = new Map();
+  const allotted = [];
+  const rest = [];
+  for (const item of items) {
+    if (inferEventName(item) === 'serial.allotted') allotted.push(item);
+    else rest.push(item);
+  }
+
+  const results = allotted.length ? await applySerialAllottedMany(db, allotted, rcCache) : [];
+  for (const item of rest) {
+    try {
+      results.push(await applyInboundItem(db, item));
+    } catch (err) {
+      results.push({
+        ok: false,
+        event: inferEventName(item) || 'unknown',
+        error: err instanceof Error ? err.message : 'inbound_failed',
+      });
+    }
+  }
+  return results;
+}
+
 async function applySerialAllotted(db, item) {
   const serialNumber = readSerialNumber(item);
   if (!serialNumber) return { ok: false, event: 'serial.allotted', error: 'serial_required' };
-  const rc = await resolveRc(db, item);
+  const cache = new Map();
+  const rc = await resolveRcCached(db, item, cache);
   const id = serialDocId(serialNumber);
   const now = new Date().toISOString();
   await db.doc(`${SERIAL_COLLECTION}/${id}`).set(
@@ -306,6 +776,10 @@ async function applySerialAllotted(db, item) {
   await patchRcAllottedSerials(db, rc?.id, list => (
     list.includes(serialNumber) ? list : [...list, serialNumber]
   ));
+  if (rc?.id && !isMasterRcCode(rc.rcCode)) {
+    await stripTakenSerialsFromMaster(db, cache, new Map([[rc.id, [serialNumber]]]));
+  }
+  await syncMasterRcSold(db, cache, now);
   return {
     ok: true,
     event: 'serial.allotted',
@@ -436,6 +910,9 @@ async function applyOvQuota(db, item) {
   if (quota == null) return { ok: false, event: 'rc.ov_quota', error: 'quota_required' };
   const rc = await resolveRc(db, item);
   if (!rc) return { ok: false, event: 'rc.ov_quota', error: 'rc_not_found' };
+  if (isMasterRcCode(rc.rcCode)) {
+    return { ok: true, event: 'rc.ov_quota', id: rc.id, skipped: 'master_rc' };
+  }
   const used = readQuotaUsed(item);
   const period = optionalTrimmed(item.ovQuotaPeriod || item.period || item.month || item.fy)
     || optionalTrimmed(asRecord(item.quota).period);
@@ -509,12 +986,12 @@ async function writeInboundLog(db, log, results) {
   const prev = Array.isArray(snap.data()?.yesoneInboundLogs) ? snap.data().yesoneInboundLogs : [];
   const next = [...prev, ...plainInboundLogRows(log.at, results, log)].slice(-INBOUND_LOG_LIMIT);
   await ref.set(
-    {
+    stripUndefined({
       yesoneLastInboundAt: log.at,
       yesoneLastInboundLog: log,
       yesoneInboundLogs: next,
       updatedAt: log.at,
-    },
+    }),
     { merge: true },
   );
 }
@@ -527,82 +1004,96 @@ async function storeInboundEvent(db, eventId, payload, results, ok) {
     ok,
     source: 'yesone',
     payload: compactPayload(payload),
-    results,
+    results: Array.isArray(results) ? results.slice(0, 80) : results,
+    count: Array.isArray(results) ? results.length : 0,
   });
   return id;
 }
 
 async function yesoneInboundHttpHandler(req, res, db) {
-  setInboundCors(res);
-  if (req.method === 'OPTIONS') {
-    res.status(204).send('');
-    return;
-  }
+  try {
+    setInboundCors(res);
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
 
-  const body = readJsonBody(req);
-  const expected = await loadInboundToken(db);
-  if (!expected) {
-    res.status(503).json({ ok: false, error: 'inbound_not_configured' });
-    return;
-  }
-  const provided = readInboundToken(req, body);
-  if (!secretsEqual(provided, expected)) {
-    res.status(401).json({ ok: false, error: 'unauthorized' });
-    return;
-  }
+    const body = readJsonBody(req);
+    const expected = await loadInboundToken(db);
+    if (!expected) {
+      res.status(503).json({ ok: false, error: 'inbound_not_configured' });
+      return;
+    }
+    const provided = readInboundToken(req, body);
+    if (!secretsEqual(provided, expected)) {
+      res.status(401).json({ ok: false, error: 'unauthorized' });
+      return;
+    }
 
-  if (req.method === 'GET') {
-    res.status(200).json({
-      ok: true,
-      service: 'yesgatc-yesone-inbound',
-      events: ['serial.allotted', 'serial.updated', 'serial.cancelled', 'rc.ov_quota'],
+    if (req.method === 'GET') {
+      res.status(200).json({
+        ok: true,
+        service: 'yesgatc-yesone-inbound',
+        events: ['serial.allotted', 'serial.updated', 'serial.cancelled', 'rc.ov_quota'],
+      });
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ ok: false, error: 'POST or GET only.' });
+      return;
+    }
+
+    const items = expandInboundItems(body);
+    if (items.length === 0 || (items.length === 1 && !inferEventName(items[0]) && Object.keys(items[0]).length === 0)) {
+      res.status(400).json({ ok: false, error: 'empty_payload' });
+      return;
+    }
+
+    console.log('yesone inbound', {
+      keys: Object.keys(asRecord(body)).slice(0, 24),
+      items: items.length,
     });
-    return;
-  }
 
-  if (req.method !== 'POST') {
-    res.status(405).json({ ok: false, error: 'POST or GET only.' });
-    return;
-  }
+    const results = await applyInboundItems(db, items);
 
-  const items = expandInboundItems(body);
-  if (items.length === 0 || (items.length === 1 && !inferEventName(items[0]) && Object.keys(items[0]).length === 0)) {
-    res.status(400).json({ ok: false, error: 'empty_payload' });
-    return;
-  }
+    const ok = results.every(item => item.ok);
+    const at = new Date().toISOString();
+    const primary = results[0];
+    const logRows = results.length > 24
+      ? [{
+        ok,
+        event: primary?.event || 'inbound',
+        id: `${results.length}`,
+        error: results.find(item => !item.ok)?.error,
+      }]
+      : results;
+    const log = stripUndefined({
+      at,
+      ok,
+      event: primary?.event || 'unknown',
+      count: results.length,
+      error: ok ? undefined : results.find(item => !item.ok)?.error,
+    });
 
-  const results = [];
-  for (const item of items) {
     try {
-      results.push(await applyInboundItem(db, item));
+      await storeInboundEvent(db, optionalTrimmed(body.id || body.eventId), body, results, ok);
+      await writeInboundLog(db, log, logRows);
     } catch (err) {
-      results.push({
+      console.error('yesone inbound log failed', err);
+    }
+
+    res.status(200).json({ ok, at, results: results.slice(0, 80), count: results.length });
+  } catch (err) {
+    console.error('yesone inbound failed', err);
+    if (!res.headersSent) {
+      res.status(500).json({
         ok: false,
-        event: inferEventName(item) || 'unknown',
-        error: err instanceof Error ? err.message : 'inbound_failed',
+        error: 'internal_error',
+        message: err instanceof Error ? err.message : 'inbound_failed',
       });
     }
   }
-
-  const ok = results.every(item => item.ok);
-  const at = new Date().toISOString();
-  const primary = results[0];
-  const log = {
-    at,
-    ok,
-    event: primary?.event || 'unknown',
-    count: results.length,
-    error: ok ? undefined : results.find(item => !item.ok)?.error,
-  };
-
-  try {
-    await storeInboundEvent(db, optionalTrimmed(body.id || body.eventId), body, results, ok);
-    await writeInboundLog(db, log, results);
-  } catch (err) {
-    console.error('yesone inbound log failed', err);
-  }
-
-  res.status(200).json({ ok, at, results });
 }
 
 module.exports = {
@@ -612,6 +1103,8 @@ module.exports = {
   readSerialNumber,
   readPreviousSerial,
   readQuotaValue,
+  readQuotaUsed,
   serialDocId,
+  expandSerialRange,
   yesoneInboundHttpHandler,
 };

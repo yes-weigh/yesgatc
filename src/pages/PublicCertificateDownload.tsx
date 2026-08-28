@@ -21,6 +21,7 @@ import {
   type PublicCertificateHit,
   type PublicCertificatePhoto,
 } from '../lib/publicCertificateLookup';
+import { prefetchPdfJs } from '../lib/pdfJs';
 import { PublicCertificatePdfPopup } from '../components/PublicCertificatePdfPopup';
 
 function CarouselSlide({ photo }: { photo: PublicCertificatePhoto }) {
@@ -154,6 +155,7 @@ export const PublicCertificateDownload: React.FC = () => {
 
   useEffect(() => {
     document.title = 'Download Certificate · YES LAB';
+    prefetchPdfJs();
     return () => {
       document.title = 'YES LAB';
     };
