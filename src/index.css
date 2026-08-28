@@ -23022,41 +23022,18 @@ select.input-field--table {
 .verification-status-dash {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0;
   margin: 0;
-  padding: 0.35rem 0 0.25rem;
+  padding: 0;
   width: 100%;
   border-radius: 0;
   background: transparent;
   border: none;
 }
 
-.verification-status-dash__head {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 0 0.5rem;
-}
-
-.verification-status-dash__period-select {
-  appearance: none;
-  margin: 0;
-  padding: 0.28rem 1.6rem 0.28rem 0.55rem;
-  border-radius: 8px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%94a3b8' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
-    no-repeat right 0.45rem center / 0.7rem,
-    rgba(15, 23, 42, 0.9);
-  color: #e2e8f0;
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-
 .verification-status-dash__grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 1px;
   width: 100%;
   background: rgba(148, 163, 184, 0.14);
@@ -23067,16 +23044,17 @@ select.input-field--table {
 .verification-status-dash__tile {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.1rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.05rem;
   min-width: 0;
   margin: 0;
-  padding: 0.45rem 0.35rem 0.5rem;
+  padding: 0.35rem 0.15rem 0.4rem;
   border-radius: 0;
   border: none;
   background: rgba(12, 17, 28, 0.98);
   color: inherit;
-  text-align: left;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -23096,33 +23074,38 @@ select.input-field--table {
 .verification-status-dash__tile--amber .verification-status-dash__icon { color: #fbbf24; }
 .verification-status-dash__tile--rose .verification-status-dash__icon { color: #fb7185; }
 .verification-status-dash__tile--slate .verification-status-dash__icon { color: #94a3b8; }
+.verification-status-dash__tile--orange .verification-status-dash__icon { color: #fb923c; }
 
 .verification-status-dash__label {
-  font-size: 0.58rem;
+  font-size: 0.52rem;
   font-weight: 650;
   color: rgba(148, 163, 184, 0.95);
-  line-height: 1.15;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .verification-status-dash__count {
-  font-size: 1rem;
+  font-size: 0.88rem;
   font-weight: 750;
-  line-height: 1.1;
+  line-height: 1.05;
   font-variant-numeric: tabular-nums;
   color: #f8fafc;
 }
 
 @media (max-width: 420px) {
   .verification-status-dash__tile {
-    padding: 0.4rem 0.25rem 0.45rem;
+    padding: 0.3rem 0.1rem 0.35rem;
   }
 
   .verification-status-dash__count {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
   }
 
   .verification-status-dash__label {
-    font-size: 0.52rem;
+    font-size: 0.48rem;
   }
 }
 
