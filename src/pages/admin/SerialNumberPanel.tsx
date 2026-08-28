@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { X } from 'lucide-react';
