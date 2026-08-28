@@ -50,12 +50,93 @@ const ProductThumb: React.FC<{ product: Product | null; className?: string }> = 
       path={product?.productImagePath}
       alt=""
       className={className}
+      persistentCache
     />
   ) : (
     <span className={`${className} product-picker-selected-thumb--placeholder`}>
-      <ImageIcon size={16} />
+      <ImageIcon size={className.includes('product-shop') ? 28 : 16} />
     </span>
   );
+
+export const ProductCatalogueList: React.FC<{
+  products: Product[];
+  value: ProductSelectValue;
+  onChange: (value: ProductSelectValue) => void;
+  disabled?: boolean;
+  showCapacitySpecs?: boolean;
+  variant?: 'list' | 'shop';
+}> = ({
+  products,
+  value,
+  onChange,
+  disabled = false,
+  showCapacitySpecs = true,
+  variant = 'list',
+}) => {
+  if (products.length === 0) {
+    return (
+      <p className="product-catalogue-empty text-muted text-sm mb-0">
+        No products in catalogue yet.
+      </p>
+    );
+  }
+
+  const shop = variant === 'shop';
+
+  return (
+    <ul
+      className={`product-catalogue-list${shop ? ' product-catalogue-list--shop' : ''}`}
+      role="listbox"
+    >
+      {products.map(product => {
+        const selected = product.id === value.productId;
+        const specs = showCapacitySpecs
+          ? formatProductCapacitySpecs(product)
+          : [product.modelid, product.modelNo].filter(Boolean).join(' · ');
+        return (
+          <li key={product.id}>
+            <button
+              type="button"
+              className={
+                shop
+                  ? `product-shop-card${selected ? ' product-shop-card--selected' : ''}`
+                  : `product-picker-option product-catalogue-option${selected ? ' product-picker-option--active product-catalogue-option--selected' : ''}`
+              }
+              role="option"
+              aria-selected={selected}
+              disabled={disabled}
+              onClick={() => onChange({ productId: product.id, productName: product.name })}
+            >
+              {shop ? (
+                <>
+                  <span className="product-shop-card-media">
+                    <ProductThumb product={product} className="product-shop-card-img" />
+                  </span>
+                  <span className="product-shop-card-body">
+                    <span className="product-shop-card-name">{product.name}</span>
+                    {specs ? <span className="product-shop-card-specs">{specs}</span> : null}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <ProductThumb product={product} className="product-picker-option-thumb" />
+                  <span className="product-picker-option-text">
+                    <span className="product-picker-option-name">{product.name}</span>
+                    {showCapacitySpecs ? (
+                      <span className="product-picker-option-specs text-muted text-sm">{specs}</span>
+                    ) : (
+                      <span className="product-picker-option-meta text-muted text-sm">{specs}</span>
+                    )}
+                  </span>
+                </>
+              )}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+};
 
 export const ProductSelect: React.FC<ProductSelectProps> = ({
   products,

@@ -16,6 +16,7 @@ import { db } from '../firebase';
 import type { Job, Product, Certificate } from '../types';
 import { useAuth } from './useAuth';
 import { filterAdminManagedProducts } from '../lib/productAccess';
+import { prefetchProductImages } from '../lib/productImageCache';
 
 interface AppContextType {
   jobs: Job[];
@@ -43,6 +44,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (user?.role === 'super_admin') return allProducts;
     return filterAdminManagedProducts(allProducts);
   }, [allProducts, user?.role]);
+
+  useEffect(() => {
+    if (!user || products.length === 0) return;
+    prefetchProductImages(products);
+  }, [user, products]);
 
   useEffect(() => {
     if (!user) {

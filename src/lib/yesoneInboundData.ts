@@ -29,6 +29,12 @@ function text(value: unknown): string {
   return String(value ?? '').trim();
 }
 
+/** Qty like 1130/306/119 is Allotted sold, not a serial. Real serials have a letter (G0001, Y10315). */
+export function looksLikeYesoneSerial(value: unknown): boolean {
+  const serial = text(value);
+  return Boolean(serial) && /[A-Za-z]/.test(serial);
+}
+
 export function yesoneSerialFromDoc(id: string, data: unknown): YesoneSerialAllotment {
   const row = asRecord(data);
   return {
@@ -76,12 +82,12 @@ export function uniqueSerials(values: unknown): string[] {
     }
     if (typeof value === 'string' || typeof value === 'number') {
       const serial = text(value);
-      if (serial) out.add(serial);
+      if (looksLikeYesoneSerial(serial)) out.add(serial);
       return;
     }
     const row = asRecord(value);
     const serial = text(row.serialNumber) || text(row.serial);
-    if (serial) out.add(serial);
+    if (looksLikeYesoneSerial(serial)) out.add(serial);
   };
   push(values);
   return [...out].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));

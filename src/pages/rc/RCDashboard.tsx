@@ -12,11 +12,11 @@ import {
   Plus,
   ChevronRight,
   UploadCloud,
-  Car,
   Trophy,
   UserCircle,
   UserCheck,
 } from 'lucide-react';
+import { RcQuotaOverview } from '../../components/RcQuotaOverview';
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
 import { DashboardPeriodFilter } from '../../components/DashboardPeriodFilter';
 import {
@@ -31,7 +31,7 @@ import { fetchRcVehicles, rcHasRegisteredVehicle } from '../../lib/rcVehicles';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import { rankOfRc, subscribeRcCertificationRanks } from '../../lib/rcCertificationRank';
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
-import { subscribeRcWalletBalance, subscribeWalletTopUps } from '../../lib/rcWallet';
+import { subscribeRcWalletBalance } from '../../lib/rcWallet';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
@@ -137,9 +137,7 @@ export const RCDashboard: React.FC = () => {
   const [loadingVerifications, setLoadingVerifications] = useState(true);
   const [rcHasVehicle, setRcHasVehicle] = useState<boolean | null>(null);
   const [walletBalance, setWalletBalance] = useState(0);
-  const [pendingTopUps, setPendingTopUps] = useState(0);
   const [walletLoading, setWalletLoading] = useState(true);
-  const [vehicleCount, setVehicleCount] = useState(0);
   const [vctCount, setVctCount] = useState(0);
   const [vctById, setVctById] = useState<Map<string, VctDashProfile>>(() => new Map());
   const [rcRank, setRcRank] = useState<number | null>(null);
@@ -166,7 +164,6 @@ export const RCDashboard: React.FC = () => {
 
   useEffect(() => {
     if (!rcUid || isVerifier) {
-      setVehicleCount(0);
       setVctCount(0);
       setVctById(new Map());
       setRcHasVehicle(null);
@@ -175,7 +172,6 @@ export const RCDashboard: React.FC = () => {
     let cancelled = false;
     void Promise.all([fetchRcVehicles(rcUid), fetchRcVctUsers(rcUid)]).then(([vehicles, vcts]) => {
       if (cancelled) return;
-      setVehicleCount(vehicles.length);
       setVctCount(vcts.length);
       setVctById(
         new Map(
@@ -221,7 +217,6 @@ export const RCDashboard: React.FC = () => {
   useEffect(() => {
     if (!rcUid || isVerifier) {
       setWalletBalance(0);
-      setPendingTopUps(0);
       setWalletLoading(false);
       return;
     }
@@ -234,21 +229,10 @@ export const RCDashboard: React.FC = () => {
       },
       () => setWalletLoading(false),
     );
-    const unsubTopUps = isVct
-      ? () => {}
-      : subscribeWalletTopUps(
-          { rcId: rcUid, status: 'pending' },
-          rows => {
-            setPendingTopUps(rows.length);
-            setWalletLoading(false);
-          },
-          () => setWalletLoading(false),
-        );
     return () => {
       unsubBalance();
-      unsubTopUps();
     };
-  }, [rcUid, isVct, isVerifier]);
+  }, [rcUid, isVerifier]);
 
   const scopedVerifications = useMemo(
     () =>
@@ -336,14 +320,6 @@ export const RCDashboard: React.FC = () => {
         href: verificationHref('certified', 'all'),
       },
       {
-        key: 'cars',
-        label: 'Car',
-        count: vehicleCount,
-        tone: 'cyan',
-        icon: <Car size={18} strokeWidth={1.9} />,
-        href: `${basePath}/vehicles`,
-      },
-      {
         key: 'vcts',
         label: 'VCT',
         count: vctCount,
@@ -362,10 +338,10 @@ export const RCDashboard: React.FC = () => {
       },
     ];
     if (isVerifier) {
-      return cards.filter(card => card.key !== 'cars' && card.key !== 'vcts' && card.key !== 'rc_rank');
+      return cards.filter(card => card.key !== 'vcts' && card.key !== 'rc_rank');
     }
     return cards;
-  }, [tally, lifetimeCertified, vehicleCount, vctCount, rcRank, rcCompanyName, isRcAdmin, isVerifier, basePath, listDuration]);
+  }, [tally, lifetimeCertified, vctCount, rcRank, rcCompanyName, isRcAdmin, isVerifier, basePath, listDuration]);
 
   const recent = useMemo(
     () =>
@@ -374,12 +350,6 @@ export const RCDashboard: React.FC = () => {
         .slice(0, 6),
     [scopedVerifications],
   );
-
-  const walletSub = isVct
-    ? 'Shared RC centre wallet for RV fees'
-    : pendingTopUps > 0
-      ? `${pendingTopUps} top-up${pendingTopUps === 1 ? '' : 's'} awaiting approval`
-      : 'Add payment screenshot to top up';
 
   const certifiedLastMonth = useMemo(() => certifiedInMonth(verifications, -1), [verifications]);
   const certifiedThisMonth = useMemo(() => certifiedInMonth(verifications, 0), [verifications]);
@@ -396,38 +366,54 @@ export const RCDashboard: React.FC = () => {
     <div className="fade-in wl-dash">
       {isRcAdmin && rcHasVehicle === false ? <RcVehicleRequiredNotice variant="rc" /> : null}
 
+      {rcUid && !isVerifier ? <RcQuotaOverview rcUid={rcUid} records={verifications} /> : null}
+
       {rcUid && !isVerifier ? (
-        isVct ? (
-          <section className="wl-wallet" aria-label="Wallet balance">
-            <div className="wl-wallet__icon" aria-hidden>
-              <Wallet size={22} strokeWidth={2} />
-            </div>
-            <div className="wl-wallet__copy">
-              <p className="wl-wallet__label">Wallet Balance</p>
-              <p className="wl-wallet__value">
-                {walletLoading ? '—' : formatRcFeeAmount(walletBalance).replace('₹', '₹ ')}
-              </p>
-              <p className="wl-wallet__hint">{walletSub}</p>
-            </div>
-          </section>
-        ) : (
-          <section className="wl-wallet" aria-label="Wallet balance">
-            <div className="wl-wallet__icon" aria-hidden>
-              <Wallet size={22} strokeWidth={2} />
-            </div>
-            <div className="wl-wallet__copy">
-              <p className="wl-wallet__label">Wallet Balance</p>
-              <p className="wl-wallet__value">
-                {walletLoading ? '—' : formatRcFeeAmount(walletBalance).replace('₹', '₹ ')}
-              </p>
-              <p className="wl-wallet__hint">{walletSub}</p>
-            </div>
-            <Link to={`${basePath}/wallet`} className="wl-wallet__cta">
-              <Wallet size={14} strokeWidth={2.25} aria-hidden />
-              Add Money
-            </Link>
-          </section>
-        )
+        <div className="wl-top-row">
+          <Link
+            to={`${basePath}/verification?new=1`}
+            className="wl-new-verification"
+            aria-label="New verification"
+          >
+            <span className="wl-new-verification__icon" aria-hidden>
+              <Plus size={22} strokeWidth={2.5} />
+            </span>
+            <span className="wl-new-verification__copy">
+              <span className="wl-new-verification__label">New</span>
+              <span className="wl-new-verification__title">Verification</span>
+            </span>
+          </Link>
+
+          {isVct ? (
+            <section className="wl-wallet" aria-label="Wallet balance">
+              <div className="wl-wallet__icon" aria-hidden>
+                <Wallet size={18} strokeWidth={2} />
+              </div>
+              <div className="wl-wallet__copy">
+                <p className="wl-wallet__label">Wallet</p>
+                <p className="wl-wallet__value">
+                  {walletLoading ? '—' : formatRcFeeAmount(walletBalance).replace('₹', '₹ ')}
+                </p>
+              </div>
+            </section>
+          ) : (
+            <section className="wl-wallet" aria-label="Wallet balance">
+              <div className="wl-wallet__icon" aria-hidden>
+                <Wallet size={18} strokeWidth={2} />
+              </div>
+              <div className="wl-wallet__copy">
+                <p className="wl-wallet__label">Wallet</p>
+                <p className="wl-wallet__value">
+                  {walletLoading ? '—' : formatRcFeeAmount(walletBalance).replace('₹', '₹ ')}
+                </p>
+              </div>
+              <Link to={`${basePath}/wallet`} className="wl-wallet__cta" aria-label="Add money">
+                <Wallet size={14} strokeWidth={2.25} aria-hidden />
+                <span className="wl-wallet__cta-label">Add</span>
+              </Link>
+            </section>
+          )}
+        </div>
       ) : null}
 
       <section className="wl-primary" aria-label="Verification types">

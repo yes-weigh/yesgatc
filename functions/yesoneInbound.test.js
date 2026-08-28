@@ -52,20 +52,26 @@ function createMemoryDb(seed = {}) {
           return doc(path);
         },
         where(field, op, value) {
+          const fetch = async (n) => {
+            const docs = Object.entries(store)
+              .filter(([path]) => path.startsWith(`${name}/`) && path.split('/').length === 2)
+              .filter(([, data]) => matches(data, field, op, value))
+              .slice(0, n == null ? undefined : n)
+              .map(([path, data]) => ({
+                id: path.slice(name.length + 1),
+                data: () => data,
+                ref: doc(path),
+              }));
+            return { empty: docs.length === 0, docs };
+          };
           return {
+            async get() {
+              return fetch();
+            },
             limit(n) {
               return {
                 async get() {
-                  const docs = Object.entries(store)
-                    .filter(([path]) => path.startsWith(`${name}/`) && path.split('/').length === 2)
-                    .filter(([, data]) => matches(data, field, op, value))
-                    .slice(0, n)
-                    .map(([path, data]) => ({
-                      id: path.slice(name.length + 1),
-                      data: () => data,
-                      ref: doc(path),
-                    }));
-                  return { empty: docs.length === 0, docs };
+                  return fetch(n);
                 },
               };
             },
@@ -153,13 +159,124 @@ test('serial event aliases and payload expand', () => {
   });
   const dumpAllotted = yesoneDump.filter(item => item.event === 'serial.allotted');
   assert.equal(dumpAllotted.filter(item => item.rcCode === 'ABC').length, 2);
-  assert.equal(dumpAllotted.filter(item => item.rcCode === 'IWP').length, 767);
-  assert.equal(yesoneDump.find(item => item.serialNumber === 'Y10315')?.rcCode, 'IWP');
-  assert.equal(yesoneDump.find(item => item.serialNumber === 'YZ01420')?.rcCode, 'IWP');
+  assert.equal(dumpAllotted.filter(item => item.rcCode === 'IWP').length, 0);
+  assert.equal(yesoneDump.find(item => item.serialNumber === 'Y10315'), undefined);
+  assert.equal(yesoneDump.find(item => item.serialNumber === 'YZ01420'), undefined);
   assert.equal(yesoneDump.find(item => item.serialNumber === 'X00001'), undefined);
   assert.equal(yesoneDump.find(item => item.serialNumber === 'G0003'), undefined);
   assert.equal(yesoneDump[0].rcId, null);
   assert.equal(yesoneDump.some(item => item.event === 'rc.ov_quota' && item.ov === 40), true);
+});
+
+test('cancel and allot expand serials list, aliases, from-to', () => {
+  const events = expandInboundItems({
+    events: [
+      { event: 'serial.cancelled', serials: ['G0540'] },
+      { event: 'serial.cancelled', serialNo: 'G0541' },
+    ],
+  });
+  assert.equal(events.length, 2);
+  assert.equal(events[0].event, 'serial.cancelled');
+  assert.equal(events[0].serialNumber, 'G0540');
+  assert.equal(events[1].event, 'serial.cancelled');
+  assert.equal(events[1].serialNumber, 'G0541');
+
+  const range = expandInboundItems({
+    event: 'serial.cancelled',
+    from: 'G0540',
+    to: 'G0541',
+  });
+  assert.deepEqual(range.map(item => item.serialNumber), ['G0540', 'G0541']);
+  assert.equal(range.every(item => item.event === 'serial.cancelled'), true);
+
+  const allot = expandInboundItems({
+    event: 'serial.allotted',
+    serials: ['G0540', 'G0541'],
+    rcCode: 'KNR',
+  });
+  assert.equal(allot.filter(item => item.event === 'serial.allotted').length, 2);
+  assert.equal(readSerialNumber({ serial: { id: 'G0540' } }), 'G0540');
+});
+
+test('nested series/rc and PascalCase cancel+allot', () => {
+  const cancelled = expandInboundItems({
+    event: 'serial.cancelled',
+    series: { from: 'G0540', to: 'G0541' },
+    rc: { rcCode: 'MZN' },
+    allotments: [{ from: 'G0540', to: 'G0541', qty: 2 }],
+    invoice: { id: 'inv-1' },
+  });
+  assert.deepEqual(cancelled.map(item => item.serialNumber), ['G0540', 'G0541']);
+  assert.equal(cancelled.every(item => item.event === 'serial.cancelled'), true);
+  assert.equal(cancelled[0].rcCode, 'MZN');
+
+  const pascal = expandInboundItems({
+    Event: 'Serial.Cancelled',
+    Series: { From: 'G0540', To: 'G0541' },
+    Rc: { RcCode: 'KNR' },
+  });
+  assert.deepEqual(pascal.map(item => item.serialNumber), ['G0540', 'G0541']);
+  assert.equal(pascal.every(item => item.event === 'serial.cancelled'), true);
+  assert.equal(pascal[0].rcCode, 'KNR');
+
+  const allotted = expandInboundItems({
+    event: 'serial.allotted',
+    series: { from: 'G0540', to: 'G0541' },
+    rc: { rcCode: 'KNR' },
+  });
+  assert.deepEqual(allotted.map(item => item.serialNumber), ['G0540', 'G0541']);
+  assert.equal(allotted[0].event, 'serial.allotted');
+  assert.equal(allotted[0].rcCode, 'KNR');
+
+  const dashed = expandInboundItems({
+    event: 'serial.cancelled',
+    series: 'G0540-G0541',
+    rc: { rcCode: 'MZN' },
+  });
+  assert.deepEqual(dashed.map(item => item.serialNumber), ['G0540', 'G0541']);
+
+  const withItems = expandInboundItems({
+    event: 'serial.cancelled',
+    series: { from: 'G0540', to: 'G0541' },
+    items: Array.from({ length: 8 }, (_, i) => ({ id: i, qty: 1 })),
+  });
+  assert.deepEqual(withItems.map(item => item.serialNumber), ['G0540', 'G0541']);
+});
+
+test('dump root unused qty does not become another RC allotted', () => {
+  const withSold = expandInboundItems({
+    generatedSerialDetails: [{ serial: 'Y02159', rcCode: 'MZN', rcName: 'Meezan' }],
+    sold: 767,
+    allotted: 767,
+    rcOvQuota: [{ rcCode: 'MZN', ov: 548, linked: 548, sold: 582 }],
+  });
+  const quota = withSold.find(item => item.event === 'rc.ov_quota' && item.rcCode === 'MZN');
+  assert.equal(readQuotaValue(quota), 582);
+
+  const inherited = expandInboundItems({
+    generatedSerialDetails: [{ serial: 'Y02159', rcCode: 'MZN' }],
+    sold: 767,
+    allotted: 767,
+    rcOvQuota: [{ rcCode: 'MZN', ov: 548, linked: 548 }],
+  });
+  const row = inherited.find(item => item.event === 'rc.ov_quota' && item.rcCode === 'MZN');
+  assert.notEqual(readQuotaValue(row), 767);
+});
+
+test('sold qty is not stored as a serial', () => {
+  const items = expandInboundItems({
+    rcs: [
+      { rcCode: 'ATL', sold: 1130, ov: 589, allotted: 1130 },
+      { rcCode: 'DYI', sold: 306, ov: 298, allotted: 306 },
+      { rcCode: 'KSR', sold: 119, ov: 100, allotted: 119 },
+    ],
+  });
+  assert.equal(items.some(item => String(item.serialNumber || '') === '1130'), false);
+  assert.equal(items.some(item => String(item.serialNumber || '') === '306'), false);
+  assert.equal(items.some(item => String(item.serialNumber || '') === '119'), false);
+  assert.equal(readQuotaValue(items.find(item => item.event === 'rc.ov_quota' && item.rcCode === 'ATL')), 1130);
+  assert.equal(readQuotaValue(items.find(item => item.event === 'rc.ov_quota' && item.rcCode === 'DYI')), 306);
+  assert.equal(readQuotaValue(items.find(item => item.event === 'rc.ov_quota' && item.rcCode === 'KSR')), 119);
 });
 
 test('inbound GET and POST serial + quota', async () => {
@@ -300,10 +417,10 @@ test('inbound GET and POST serial + quota', async () => {
   assert.ok(db._store['appSettings/global'].yesoneLastInboundLog.ok);
 });
 
-test('unused series go to master RC IWP; OV quota skipped for IWP', async () => {
+test('Allotted from Yesone sold; unused Y/YZ not injected', async () => {
   const db = createMemoryDb({
     'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
-    'users/rc1': { role: 'rc_admin', rcCode: 'ABC', companyName: 'Meezan' },
+    'users/rc1': { role: 'rc_admin', rcCode: 'MZN', companyName: 'Meezan' },
     'users/iwp': { role: 'rc_admin', rcCode: 'IWP', companyName: 'INTERWEIGHING PVT LTD' },
   });
 
@@ -316,19 +433,12 @@ test('unused series go to master RC IWP; OV quota skipped for IWP', async () => 
       get: () => '',
       body: {
         event: 'serial_allotment',
-        allotments: [{
-          from: 'X00001',
-          to: 'X00004',
-          qty: 4,
-          serialNumbers: ['X00001'],
-        }],
         generatedSerialDetails: [
-          { serial: 'X00001', rcCode: 'ABC', rcName: 'Meezan' },
+          { serial: 'Y02159', rcCode: 'MZN', rcName: 'Meezan' },
         ],
-        generatedSerialBackfill: [{ from: 'Y00001', to: 'Y00002', unused: 2, qty: 2 }],
         rcOvQuota: [
-          { rcCode: 'ABC', ov: 1, linked: 1, sold: 10 },
-          { rcCode: 'IWP', ov: 9, linked: 0, sold: 99 },
+          { rcCode: 'IWP', ov: 0, linked: 0, sold: 0 },
+          { rcCode: 'MZN', ov: 548, linked: 548, sold: 582 },
         ],
       },
     },
@@ -337,15 +447,116 @@ test('unused series go to master RC IWP; OV quota skipped for IWP', async () => 
   );
 
   assert.equal(res.body.ok, true);
-  assert.equal(db._store['serialAllotments/X00001'].rcId, 'rc1');
-  assert.equal(db._store['serialAllotments/X00002'], undefined);
-  assert.equal(db._store['serialAllotments/Y00001'], undefined);
-  assert.equal(db._store['serialAllotments/Y10315'].rcId, 'iwp');
-  assert.equal(db._store['serialAllotments/YZ01420'].rcId, 'iwp');
+  assert.equal(db._store['serialAllotments/Y10315'], undefined);
   assert.equal(db._store['users/iwp'].ovQuota, 767);
-  assert.equal(db._store['users/iwp'].ovQuotaUsed, undefined);
-  assert.ok(!db._store['users/iwp'].yesoneAllottedSerials.includes('X00001'));
-  assert.ok(db._store['users/iwp'].yesoneAllottedSerials.includes('Y10315'));
-  assert.equal(db._store['users/rc1'].ovQuota, 10);
-  assert.equal(db._store['users/rc1'].ovQuotaUsed, 1);
+  assert.equal(db._store['users/rc1'].ovQuota, 582);
+  assert.equal(db._store['users/rc1'].ovQuotaUsed, 548);
+  const iwpSerials = db._store['users/iwp'].yesoneAllottedSerials;
+  assert.equal(iwpSerials.length, 767);
+  assert.ok(iwpSerials.includes('Y10315'));
+  assert.ok(iwpSerials.includes('Y11000'));
+  assert.ok(iwpSerials.includes('YZ01420'));
+  assert.ok(iwpSerials.includes('YZ01500'));
+});
+
+test('unused Y/YZ pool leaves Meezan and allots to IWP', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/rc1': {
+      role: 'rc_admin',
+      rcCode: 'MZN',
+      companyName: 'Meezan',
+      yesoneAllottedSerials: ['Y10626', 'Y02159', 'G0001'],
+    },
+    'users/iwp': { role: 'rc_admin', rcCode: 'IWP', companyName: 'INTERWEIGHING PVT LTD' },
+    'serialAllotments/Y10626': { serialNumber: 'Y10626', rcId: 'rc1', rcCode: 'MZN', status: 'allotted' },
+  });
+
+  const tagged = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        serialNumber: 'Y10626',
+        rcCode: 'MZN',
+        rcName: 'Meezan',
+      },
+    },
+    tagged,
+    db,
+  );
+
+  assert.equal(tagged.body.ok, true);
+  assert.equal(db._store['serialAllotments/Y10626'].rcId, 'iwp');
+  assert.equal(db._store['serialAllotments/Y10626'].rcCode, 'IWP');
+  assert.ok(db._store['users/iwp'].yesoneAllottedSerials.includes('Y10626'));
+  assert.ok(db._store['users/iwp'].yesoneAllottedSerials.includes('YZ01420'));
+  assert.equal(db._store['users/iwp'].yesoneAllottedSerials.length, 767);
+  assert.equal(db._store['users/iwp'].ovQuota, 767);
+  assert.deepEqual(db._store['users/rc1'].yesoneAllottedSerials.sort(), ['G0001', 'Y02159']);
+});
+
+test('POST cancel then allot nested series to KNR', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/mzn': {
+      role: 'rc_admin',
+      rcCode: 'MZN',
+      companyName: 'Meezan',
+      yesoneAllottedSerials: ['G0540', 'G0541'],
+    },
+    'users/knr': { role: 'rc_admin', rcCode: 'KNR', companyName: 'ROYAL SCALES' },
+    'serialAllotments/G0540': { serialNumber: 'G0540', rcId: 'mzn', rcCode: 'MZN', status: 'allotted' },
+    'serialAllotments/G0541': { serialNumber: 'G0541', rcId: 'mzn', rcCode: 'MZN', status: 'allotted' },
+  });
+
+  const cancel = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.cancelled',
+        series: { from: 'G0540', to: 'G0541' },
+        rc: { rcCode: 'MZN' },
+      },
+    },
+    cancel,
+    db,
+  );
+  assert.equal(cancel.body.ok, true);
+  assert.equal(cancel.body.results.length, 2);
+  assert.equal(db._store['serialAllotments/G0540'].status, 'cancelled');
+  assert.equal(db._store['serialAllotments/G0541'].status, 'cancelled');
+  assert.equal(db._store['users/mzn'].yesoneAllottedSerials.includes('G0540'), false);
+  assert.equal(db._store['users/mzn'].yesoneAllottedSerials.includes('G0541'), false);
+
+  const allot = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        series: { from: 'G0540', to: 'G0541' },
+        rc: { rcCode: 'KNR' },
+      },
+    },
+    allot,
+    db,
+  );
+  assert.equal(allot.body.ok, true);
+  assert.equal(db._store['serialAllotments/G0540'].rcId, 'knr');
+  assert.equal(db._store['serialAllotments/G0540'].rcCode, 'KNR');
+  assert.equal(db._store['serialAllotments/G0541'].rcId, 'knr');
+  assert.ok(db._store['users/knr'].yesoneAllottedSerials.includes('G0540'));
+  assert.ok(db._store['users/knr'].yesoneAllottedSerials.includes('G0541'));
 });

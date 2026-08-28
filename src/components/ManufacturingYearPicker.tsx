@@ -71,7 +71,7 @@ export const ManufacturingYearPicker: React.FC<ManufacturingYearPickerProps> = (
       width: panelWidth,
       transform: openUp ? 'translateY(-100%)' : undefined,
       visibility: 'visible',
-      zIndex: 10050,
+      zIndex: 13000,
     });
   };
 
@@ -198,7 +198,7 @@ export const ManufacturingYearPicker: React.FC<ManufacturingYearPickerProps> = (
           <Calendar size={15} />
         </span>
         <span className="mfg-year-picker-trigger-text">
-          {hasSelection ? selectedYear : 'Select year'}
+          {hasSelection ? selectedYear : 'Select year of manufacturing'}
         </span>
         {hasSelection && !disabled && (
           <span

@@ -14,6 +14,7 @@ const LEGACY_SIGNED_CERTIFICATE_SEQUENCE_MAX = 2304;
 const LAST_CERTIFICATE_SEQUENCE_FLOOR = 3740;
 const MASTER_RC_CODE = 'IWP';
 const IWP_USED_FROM_DATE = '2026-08-28';
+const IWP_UNUSED_QTY = 767;
 const YESONE_META_KEYS = new Set([
   'yesonePushStatus',
   'yesonePushedAt',
@@ -107,11 +108,17 @@ function isVoidedCertificate(record) {
   return Boolean(String(record?.certificateVoidedAt || '').trim());
 }
 
+function isMasterRc(rc) {
+  const code = String(rc?.rcCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3);
+  if (code === MASTER_RC_CODE) return true;
+  return String(rc?.companyName || '').toUpperCase().includes('INTERWEIGHING');
+}
+
 function ovShouldCount(record, rc) {
   if (!record || !isOvRecord(record)) return false;
   if (isVoidedCertificate(record)) return false;
   if (String(record.status || '').trim() === 'rejected') return false;
-  if (String(rc?.rcCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) === MASTER_RC_CODE) {
+  if (isMasterRc(rc)) {
     const key = istDateKey(record.createdAt || '');
     if (!key || key < IWP_USED_FROM_DATE) return false;
   }
@@ -139,7 +146,7 @@ function countOvUsedFromRecords(records, rc) {
 }
 
 function buildRcOvUsedSnapshot(rc, usedCount) {
-  const allotted = optionalFiniteNumber(rc?.ovQuota);
+  const allotted = isMasterRc(rc) ? IWP_UNUSED_QTY : optionalFiniteNumber(rc?.ovQuota);
   const used = Math.max(0, Number.isFinite(usedCount) ? usedCount : 0);
   return {
     allotted,

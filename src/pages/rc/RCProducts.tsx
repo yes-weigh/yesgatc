@@ -133,6 +133,7 @@ export const RCProducts: React.FC = () => {
                           url={p.productImageUrl}
                           path={p.productImagePath}
                           placeholder={<ImageIcon size={28} strokeWidth={1.5} />}
+                          persistentCache
                         />
                         <span className="rc-list-card-info">
                           <span className="rc-list-card-name-row">

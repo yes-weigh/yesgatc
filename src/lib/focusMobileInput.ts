@@ -1,6 +1,14 @@
 /** Focus a text input and surface the software keyboard on mobile browsers / PWA. */
-export function focusMobileTextInput(el: HTMLInputElement | HTMLTextAreaElement): void {
-  if (el.disabled || el.readOnly) return;
+export function focusMobileTextInput(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): void {
+  if (el.disabled || ('readOnly' in el && el.readOnly)) return;
+
+  if (el instanceof HTMLSelectElement) {
+    el.focus({ preventScroll: false });
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return;
+  }
 
   const applyFocus = () => {
     el.focus({ preventScroll: false });
@@ -30,12 +38,17 @@ export function focusMobileTextInput(el: HTMLInputElement | HTMLTextAreaElement)
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
-export function getVerificationSerialInput(localId: string): HTMLInputElement | null {
+export function getVerificationSerialInput(
+  localId: string,
+): HTMLInputElement | HTMLSelectElement | null {
   const candidates = [
     document.getElementById(`verification-mobile-serial-${localId}`),
     document.getElementById(`verification-serial-${localId}`),
   ];
   for (const node of candidates) {
+    if (node instanceof HTMLSelectElement && !node.disabled && node.getClientRects().length > 0) {
+      return node;
+    }
     if (!(node instanceof HTMLInputElement) || node.disabled) continue;
     if (node.getClientRects().length > 0) return node;
   }

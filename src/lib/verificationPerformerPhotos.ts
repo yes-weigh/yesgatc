@@ -6,7 +6,6 @@ import {
   type DeviceImageSlotState,
 } from './verificationDeviceImages';
 import type { JobType, SiteCalibration } from '../types';
-import { isVerificationCaptureDevice } from './verificationDevicePolicy';
 
 export type PerformerPhotoKind = 'selfieWithId' | 'idAadhaar';
 
@@ -118,10 +117,11 @@ export function performerPhotoFieldsFromMeta(
   };
 }
 
+/** Selfie + ID photos retired — compact RV Customer no longer requires them. */
 export function requiresPerformerIdentityPhotos(
-  verificationType: JobType | '' | undefined,
+  _verificationType: JobType | '' | undefined,
 ): boolean {
-  return verificationType === 'RV' && isVerificationCaptureDevice();
+  return false;
 }
 
 export function validatePerformerPhotos(photos: PerformerPhotosState): string | null {

@@ -1,0 +1,247 @@
+import { Building2, Droplets, MapPin, Thermometer } from 'lucide-react';
+import { ProductCatalogueList } from '../../components/ProductSelect';
+import { SegmentToggle } from '../../components/SegmentToggle';
+import {
+  VERIFICATION_LOCATION_OPTIONS,
+  mpeStringFromProduct,
+  type VerificationDeviceRowValues,
+} from '../../lib/siteCalibrationProfileFields';
+import type { Product, VerificationLocation } from '../../types';
+
+export function OvSelfSerialMpeBar({
+  serial,
+  mpe,
+  compact = false,
+}: {
+  serial: string;
+  mpe: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`ov-self-serial-mpe-row ov-self-serial-mpe-bar${compact ? ' ov-self-serial-mpe-bar--compact' : ''}`}
+    >
+      <div className="ov-self-serial-card">
+        <span className="ov-self-kicker">Serial</span>
+        <strong className="ov-self-serial-value ov-self-serial-value--serial">
+          {serial.trim() || '—'}
+        </strong>
+      </div>
+      <div className="ov-self-serial-card ov-self-mpe-card">
+        <span className="ov-self-kicker">MPE</span>
+        <strong className="ov-self-serial-value ov-self-serial-value--mpe">
+          {mpe.trim() || '—'}
+        </strong>
+      </div>
+    </div>
+  );
+}
+
+export function OvSelfProductPanel({
+  row,
+  products,
+  sealId,
+  disabled,
+  onProductChange,
+}: {
+  row: VerificationDeviceRowValues;
+  products: Product[];
+  sealId: string;
+  disabled: boolean;
+  onProductChange: (patch: Partial<VerificationDeviceRowValues>) => void;
+}) {
+  const seal = sealId.trim() || row.sealIdentificationNumber.trim();
+  const selected = products.find(product => product.id === row.productId) ?? null;
+
+  const handlePick = (next: { productId: string; productName: string }) => {
+    const product = products.find(p => p.id === next.productId) ?? null;
+    onProductChange({
+      productId: next.productId,
+      productName: next.productName,
+      maximumPermissibleError: mpeStringFromProduct(product),
+      sealIdentificationNumber: seal,
+    });
+  };
+
+  return (
+    <div className="ov-self-panel ov-self-panel--product">
+      <div className="ov-self-product-block">
+        <span className="ov-self-kicker">Product</span>
+        <ProductCatalogueList
+          products={products}
+          value={{ productId: row.productId, productName: row.productName }}
+          onChange={handlePick}
+          disabled={disabled}
+          showCapacitySpecs
+          variant="shop"
+        />
+      </div>
+
+      {selected ? (
+        <p className="ov-self-selected-hint mb-0">
+          {selected.name} selected. MPE filled.
+        </p>
+      ) : (
+        <p className="ov-self-selected-hint ov-self-selected-hint--wait mb-0">
+          Select a product to fill MPE.
+        </p>
+      )}
+
+      {!seal ? (
+        <p className="ov-self-selected-hint ov-self-selected-hint--wait mb-0" role="status">
+          Laboratory seal ID missing — set seal in Laboratory before continuing.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export function OvSelfEnvFields({
+  temperature,
+  humidity,
+  onTemperatureChange,
+  onHumidityChange,
+  weatherLoading,
+  weatherError,
+  locked,
+  idPrefix = 'ov-self',
+}: {
+  temperature: string;
+  humidity: string;
+  onTemperatureChange: (value: string) => void;
+  onHumidityChange: (value: string) => void;
+  weatherLoading: boolean;
+  weatherError: string;
+  locked: boolean;
+  idPrefix?: string;
+}) {
+  return (
+    <section className="verification-env-panel" aria-labelledby={`${idPrefix}-env-title`}>
+      <header className="verification-env-panel-head">
+        <div className="verification-env-panel-head-text">
+          <h3 id={`${idPrefix}-env-title`} className="verification-env-panel-title">
+            RC conditions
+          </h3>
+          <p className="verification-env-panel-subtitle">
+            Temperature and humidity at the RC — edit if needed
+          </p>
+        </div>
+      </header>
+      <div className="verification-env-panel-body">
+        <div className="verification-env-metrics">
+          <div className="verification-env-metric verification-env-metric--temp">
+            <div className="verification-env-metric-icon" aria-hidden>
+              <Thermometer strokeWidth={2} />
+            </div>
+            <div className="verification-env-metric-field">
+              <label htmlFor={`${idPrefix}-temp`}>Temperature (°C)</label>
+              <input
+                id={`${idPrefix}-temp`}
+                type="text"
+                inputMode="decimal"
+                className="verification-env-metric-input"
+                placeholder={weatherLoading ? '…' : '28.5'}
+                value={temperature}
+                onChange={e => onTemperatureChange(e.target.value)}
+                disabled={locked || weatherLoading}
+              />
+            </div>
+            <span className="verification-env-metric-unit">°C</span>
+          </div>
+          <div className="verification-env-metric verification-env-metric--humidity">
+            <div className="verification-env-metric-icon" aria-hidden>
+              <Droplets strokeWidth={2} />
+            </div>
+            <div className="verification-env-metric-field">
+              <label htmlFor={`${idPrefix}-humidity`}>Humidity (%)</label>
+              <input
+                id={`${idPrefix}-humidity`}
+                type="text"
+                inputMode="decimal"
+                className="verification-env-metric-input"
+                placeholder={weatherLoading ? '…' : '65'}
+                value={humidity}
+                onChange={e => onHumidityChange(e.target.value)}
+                disabled={locked || weatherLoading}
+              />
+            </div>
+            <span className="verification-env-metric-unit">%</span>
+          </div>
+        </div>
+      </div>
+      {weatherError ? (
+        <p className="verification-env-panel-error text-orange text-xs mb-0" role="alert">
+          {weatherError}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+export function OvSelfSitePanel({
+  rcName,
+  location,
+  onLocationChange,
+  temperature,
+  humidity,
+  onTemperatureChange,
+  onHumidityChange,
+  weatherLoading,
+  weatherError,
+  locked,
+}: {
+  rcName: string;
+  location: VerificationLocation | '';
+  onLocationChange: (value: VerificationLocation) => void;
+  temperature: string;
+  humidity: string;
+  onTemperatureChange: (value: string) => void;
+  onHumidityChange: (value: string) => void;
+  weatherLoading: boolean;
+  weatherError: string;
+  locked: boolean;
+}) {
+  const locationValue: VerificationLocation =
+    location === 'in_premises' ? 'in_premises' : 'in_situ';
+
+  return (
+    <div className="ov-self-panel ov-self-panel--site">
+      <div className="ov-self-rc-card">
+        <span className="ov-self-rc-icon" aria-hidden>
+          <Building2 size={16} strokeWidth={2.2} />
+        </span>
+        <div className="ov-self-rc-copy">
+          <span className="ov-self-kicker">Customer</span>
+          <strong>{rcName || 'RC centre'}</strong>
+          <span className="ov-self-rc-sub">OV Self — this job belongs to the RC</span>
+        </div>
+      </div>
+
+      <div className="ov-self-location-field">
+        <span className="ov-self-kicker">
+          <MapPin size={12} strokeWidth={2.4} aria-hidden /> Location
+        </span>
+        <SegmentToggle
+          ariaLabel="Verification location"
+          value={locationValue}
+          options={VERIFICATION_LOCATION_OPTIONS.map(opt => ({
+            value: opt.value,
+            label: opt.label,
+          }))}
+          onChange={onLocationChange}
+          disabled={locked}
+        />
+      </div>
+
+      <OvSelfEnvFields
+        temperature={temperature}
+        humidity={humidity}
+        onTemperatureChange={onTemperatureChange}
+        onHumidityChange={onHumidityChange}
+        weatherLoading={weatherLoading}
+        weatherError={weatherError}
+        locked={locked}
+      />
+    </div>
+  );
+}

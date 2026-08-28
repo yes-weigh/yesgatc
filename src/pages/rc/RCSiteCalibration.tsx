@@ -15,17 +15,20 @@ import {
 } from '../../lib/rcActivation';
 import { fetchRcVehicles, rcHasRegisteredVehicle, VCT_RC_VEHICLE_REQUIRED_MESSAGE } from '../../lib/rcVehicles';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
+import { VerificationListStatusDash } from '../../components/VerificationListStatusDash';
 import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
+import { OvSelfSerialMpeBar } from './OvSelfWizardPanels';
 import { TablePagination } from '../../components/TablePagination';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
 import {
   buildNewSiteCalibrationRecord,
-  buildSelfVerificationSession,
+  buildVerificationSessionForKind,
   buildSiteCalibrationFromRow,
   createEmptyVerificationDeviceRow,
+  applyLockedSerialToDevices,
   EMPTY_VERIFICATION_SESSION,
   verificationSessionFromRecord,
   validateVerificationDraft,
@@ -35,6 +38,7 @@ import {
   verificationTypeLabel,
   inferVerificationSubject,
   type VerificationDeviceRowValues,
+  type VerificationJobKind,
   type VerificationSessionValues,
 } from '../../lib/siteCalibrationProfileFields';
 import {
@@ -54,6 +58,7 @@ import {
   resolveVerificationDraftActorForSession,
   shouldClearVerificationVctFields,
   tallyVerificationTypeFilters,
+  tallyVerificationStatusFilters,
   verificationFilterLabel,
   verificationCertificateNumber,
   verificationPerformerCreatedByUid,
@@ -131,6 +136,9 @@ import {
   VerificationSessionFields,
   type VerificationSessionFieldsHandle,
 } from './VerificationSessionFields';
+import { VerificationJobKindPicker } from './VerificationJobKindPicker';
+import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
+import { ovQuotaSeatCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import type { PersistVerificationPartyResult } from '../../lib/verificationPartyPersist';
 import { useAppContext } from '../../context/AppContext';
@@ -356,6 +364,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [gatesError, setGatesError] = useState('');
 
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showJobKindPicker, setShowJobKindPicker] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [lastViewedVerificationId, setLastViewedVerificationId] = useState<string | null>(null);
   const [rowHighlightFlashId, setRowHighlightFlashId] = useState<string | null>(null);
@@ -391,6 +400,18 @@ export const RCSiteCalibration: React.FC = () => {
     customerForm: EMPTY_CUSTOMER_FORM,
   });
   const [assignableVcts, setAssignableVcts] = useState<AssignableVctOption[]>([]);
+  const quotaSeats = useRcQuotaSeats(rcUid, records);
+  const ovQuotaGate = useMemo<OvQuotaGate>(() => {
+    const editingRecord = editingId ? records.find(r => r.id === editingId) : null;
+    const held = editingRecord?.serialNumber?.trim()
+      ? [editingRecord.serialNumber.trim()]
+      : [];
+    return {
+      remaining: quotaSeats.remaining,
+      balanceQty: quotaSeats.balanceQty,
+      heldSerials: held,
+    };
+  }, [quotaSeats.remaining, quotaSeats.balanceQty, editingId, records]);
 
   const validationOptions = useMemo(() => {
     const editingRecordForValidation = editingId
@@ -413,6 +434,8 @@ export const RCSiteCalibration: React.FC = () => {
         || Boolean(
           editingRecordForValidation && recordHasPerformerPhotos(editingRecordForValidation),
         ),
+      ovQuota: sessionValues.verificationType === 'OV' ? ovQuotaGate : undefined,
+      isNewJob: showAddForm,
     };
   }, [
     partyContext.customerForm,
@@ -427,6 +450,8 @@ export const RCSiteCalibration: React.FC = () => {
     sessionValues.verificationType,
     sessionValues.customerId,
     isVerifier,
+    ovQuotaGate,
+    showAddForm,
   ]);
 
   const recordSubmitOptions = useCallback(
@@ -442,9 +467,18 @@ export const RCSiteCalibration: React.FC = () => {
         rcPincode: rcProfile?.pincode ?? null,
         requireUploadedImages: true,
         skipPerformerPhotos: recordHasPerformerPhotos(record),
+        ovQuota:
+          record.verificationType === 'OV'
+            ? {
+                remaining: quotaSeats.remaining,
+                balanceQty: quotaSeats.balanceQty,
+                heldSerials: record.serialNumber?.trim() ? [record.serialNumber.trim()] : [],
+              }
+            : undefined,
+        isNewJob: false,
       };
     },
-    [validationOptions, customers, rcProfile?.pincode],
+    [validationOptions, customers, rcProfile?.pincode, quotaSeats.remaining, quotaSeats.balanceQty],
   );
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
@@ -801,7 +835,11 @@ export const RCSiteCalibration: React.FC = () => {
   }, [showForm, formBusy]);
 
   const patchSession = useCallback((patch: Partial<VerificationSessionValues>) => {
-    setSessionValues(prev => ({ ...prev, ...patch }));
+    setSessionValues(prev => {
+      const next = { ...prev, ...patch };
+      const devices = applyLockedSerialToDevices(next.devices, next.lockedSerial);
+      return devices === next.devices ? next : { ...next, devices };
+    });
   }, []);
 
   const handleCustomerChange = (
@@ -906,11 +944,26 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const handleDeviceAdd = () => {
+    if (sessionValues.verificationType === 'OV') {
+      const cap = ovQuotaSeatCap(ovQuotaGate);
+      const included = sessionValues.devices.filter(row => row.included).length;
+      if (included >= cap) {
+        setError(
+          cap <= 0
+            ? 'OV quota balance is 0. Cannot start more Original Verifications.'
+            : `OV quota: ${cap} left. You can start ${cap} more Original Verification(s).`,
+        );
+        return;
+      }
+    }
     const row = {
       ...createEmptyVerificationDeviceRow(),
       sealIdentificationNumber: laboratorySealId,
     };
-    setSessionValues(prev => ({ ...prev, devices: [...prev.devices, row] }));
+    setSessionValues(prev => ({
+      ...prev,
+      devices: applyLockedSerialToDevices([...prev.devices, row], prev.lockedSerial),
+    }));
     setDeviceImages(prev => ({ ...prev, [row.localId]: emptyDeviceVerificationImagesState() }));
     setDeviceRvImages(prev => ({ ...prev, [row.localId]: emptyDeviceRvDocumentsState() }));
   };
@@ -2113,7 +2166,10 @@ export const RCSiteCalibration: React.FC = () => {
       setListError('');
       setRvPaymentOpen(false);
       setRvSessionPayment(null);
-      setSessionValues(session);
+      setSessionValues({
+        ...session,
+        devices: applyLockedSerialToDevices(session.devices, session.lockedSerial),
+      });
       const firstDeviceId = session.devices[0]?.localId;
       setDeviceImages(
         firstDeviceId ? { [firstDeviceId]: emptyDeviceVerificationImagesState() } : {},
@@ -2124,6 +2180,7 @@ export const RCSiteCalibration: React.FC = () => {
       setPerformerPhotos(emptyPerformerPhotosState());
       setWizardOnLastStep(false);
       setVerificationDeclarationAccepted(false);
+      setShowJobKindPicker(false);
       setShowAddForm(true);
     },
     [user?.role, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError],
@@ -2148,17 +2205,34 @@ export const RCSiteCalibration: React.FC = () => {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
       return;
     }
-    if (rcUid && rcProfile) {
-      openNewVerificationSession(
-        buildSelfVerificationSession(rcProfile, rcUid, laboratorySealId),
-      );
-      return;
-    }
-    setEditingId(null);
-    setError('');
-    resetForm();
-    setShowAddForm(true);
+    setListError('');
+    setShowJobKindPicker(true);
   };
+
+  const handleJobKindSelect = useCallback(
+    (kind: VerificationJobKind, serial?: string, manufacturingYear?: string) => {
+      setShowJobKindPicker(false);
+      if (!rcUid) {
+        setListError('RC centre is still loading.');
+        return;
+      }
+      if (kind === 'ov_self' && !rcProfile) {
+        setListError('RC centre details are still loading.');
+        return;
+      }
+      openNewVerificationSession(
+        buildVerificationSessionForKind(
+          kind,
+          rcProfile ?? { companyName: '', username: '' },
+          rcUid,
+          laboratorySealId,
+          serial ?? '',
+          manufacturingYear ?? '',
+        ),
+      );
+    },
+    [rcUid, rcProfile, laboratorySealId, openNewVerificationSession],
+  );
 
   const pendingCustomerId = searchParams.get('customerId');
   const pendingStatusFilter = searchParams.get('status');
@@ -2169,14 +2243,23 @@ export const RCSiteCalibration: React.FC = () => {
   const pendingNewType = searchParams.get('new');
 
   useEffect(() => {
-    if (pendingNewType !== 'OV' && pendingNewType !== 'RV') return;
+    if (!pendingNewType) return;
     if (loading || !canCreateVerification(user?.role)) return;
-    if (!rcUid || !rcProfile) return;
 
-    openNewVerificationSession({
-      ...buildSelfVerificationSession(rcProfile, rcUid, laboratorySealId),
-      verificationType: pendingNewType,
-    });
+    const gateMsg = verificationCreateGateBlockMessage(
+      rcHasWeightsCert,
+      rcHasVehicle,
+      gatesLoading,
+      gatesError,
+    );
+    if (gateMsg) {
+      setListError(gateMsg);
+    } else if (verificationRequiresMobileCapture(user?.role) && !isVerificationCaptureDevice()) {
+      setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
+    } else {
+      setShowJobKindPicker(true);
+    }
+
     setSearchParams(
       prev => {
         const next = new URLSearchParams(prev);
@@ -2188,10 +2271,10 @@ export const RCSiteCalibration: React.FC = () => {
   }, [
     pendingNewType,
     loading,
-    rcUid,
-    rcProfile,
-    laboratorySealId,
-    openNewVerificationSession,
+    rcHasWeightsCert,
+    rcHasVehicle,
+    gatesLoading,
+    gatesError,
     setSearchParams,
     user?.role,
   ]);
@@ -2393,12 +2476,19 @@ export const RCSiteCalibration: React.FC = () => {
   const isCertifiedActionsView =
     isViewMode && editingRecord !== null && canShowVerificationCertifiedActions(editingRecord);
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
+  const compactJob =
+    showAddForm
+    && (sessionValues.verificationType === 'OV' || sessionValues.verificationType === 'RV');
   const canSaveDraftFromFooter =
-    !isViewMode && !isCertifiedActionsView && (!showAddForm || wizardOnLastStep);
+    !compactJob
+    && !isViewMode
+    && !isCertifiedActionsView
+    && (!showAddForm || wizardOnLastStep);
   const showVerificationBackBar = isCertifiedActionsView || isViewMode;
   const showFormFooter =
     !showVerificationBackBar && (!showAddForm || wizardOnLastStep);
   const mobileFloatingChrome = useVerificationMobileLayout(showAddForm);
+  const ovSelfDevice = sessionValues.devices.find(row => row.included) ?? sessionValues.devices[0];
   const verificationCaptureAllowed = canUseVerificationCapture(user?.role);
   const verificationCreateGateOk = verificationCreateGateSatisfied(
     user?.role,
@@ -2514,6 +2604,10 @@ export const RCSiteCalibration: React.FC = () => {
   const statusCounts = useMemo(
     () => tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters),
     [durationScoped, listFilters],
+  );
+  const dashCounts = useMemo(
+    () => tallyVerificationStatusFilters(durationScoped),
+    [durationScoped],
   );
   const typeCounts = useMemo(
     () =>
@@ -2708,7 +2802,19 @@ export const RCSiteCalibration: React.FC = () => {
               />
             ) : (
               <>
-                <ListViewBackBar onBack={handleCloseForm} disabled={formBusy} />
+                <ListViewBackBar
+                  onBack={handleCloseForm}
+                  disabled={formBusy}
+                  trailing={
+                    compactJob ? (
+                      <OvSelfSerialMpeBar
+                        serial={ovSelfDevice?.serialNumber ?? sessionValues.lockedSerial ?? ''}
+                        mpe={ovSelfDevice?.maximumPermissibleError ?? ''}
+                        compact
+                      />
+                    ) : null
+                  }
+                />
                 <div className={`product-form-topbar${showAddForm ? ' product-form-topbar--new-mobile' : ''}`}>
                   <div className="product-form-topbar-text">
                     <h2 id="site-calibration-form-title">
@@ -2844,7 +2950,7 @@ export const RCSiteCalibration: React.FC = () => {
                       submitting={formBusy}
                       lockCustomer={isEditMode}
                       readOnly={isViewMode}
-                      allowPerformerAssignment={!isFieldStaff && !isViewMode}
+                      allowPerformerAssignment={!isFieldStaff && !isViewMode && !compactJob}
                       assignableVcts={assignableVcts}
                       geoStampCoords={rcProfileGeoStampCoords}
                       laboratorySealIdentification={laboratorySealId}
@@ -2854,6 +2960,8 @@ export const RCSiteCalibration: React.FC = () => {
                       onCancel={handleCloseForm}
                       wizardNavIncludesCancel={showAddForm}
                       mobileFloatingChrome={mobileFloatingChrome}
+                      lockKind={showAddForm}
+                      ovQuota={sessionValues.verificationType === 'OV' ? ovQuotaGate : null}
                     />
                   </div>
                   {mobileFloatingChrome && verificationFormFooter
@@ -2903,6 +3011,14 @@ export const RCSiteCalibration: React.FC = () => {
               <p className="rc-vehicle-required-notice__text mb-0">{gatesError}</p>
             </div>
           ) : null}
+          <VerificationListStatusDash
+            counts={dashCounts}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            durationFilter={durationFilter}
+            onDurationFilterChange={setDurationFilter}
+            loading={loading}
+          />
           <VerificationListFilters
             searchTerm={searchTerm}
             onSearchTermChange={setSearchTerm}
@@ -3039,6 +3155,16 @@ export const RCSiteCalibration: React.FC = () => {
           onClose={() => setRvPaymentOpen(false)}
           walletOwnerLabel="your"
           paymentContext="submit"
+        />
+      )}
+
+      {showJobKindPicker && (
+        <VerificationJobKindPicker
+          ovBalanceQty={quotaSeats.ready ? quotaSeats.balanceQty : null}
+          ovRemainingCount={quotaSeats.ready ? quotaSeats.remaining.length : undefined}
+          pendingSerials={quotaSeats.remaining}
+          onSelect={handleJobKindSelect}
+          onClose={() => setShowJobKindPicker(false)}
         />
       )}
 

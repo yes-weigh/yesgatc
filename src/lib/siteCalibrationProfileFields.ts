@@ -47,6 +47,7 @@ import {
   verificationOnlineBlockReason,
   verificationUploadsInProgressBlockReason,
 } from './verificationSubmitGates';
+import { validateOvQuotaDevices, type OvQuotaGate } from './ovQuotaGate';
 
 export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind } from './verificationDeviceImages';
 export type { DeviceRvDocumentsState, RvDocumentKind } from './verificationRvDeviceImages';
@@ -101,6 +102,8 @@ export type VerificationSessionValues = {
   relativeHumidity: string;
   verificationLocation: VerificationLocation | '';
   devices: VerificationDeviceRowValues[];
+  /** OV serial chosen on the allotted seat map. Survives device-row rebuilds. */
+  lockedSerial?: string;
 };
 
 export type DeviceScaleImageState = import('./verificationDeviceImages').DeviceImageSlotState;
@@ -155,12 +158,76 @@ export function buildSelfVerificationSession(
   return {
     verificationType: 'OV',
     verificationSubject: 'self',
+    assignedVctId: '',
     customerId: rcUid,
     customerName: rc.companyName?.trim() || rc.username?.trim() || '',
     ambientTemperature: '',
     relativeHumidity: '',
     verificationLocation: 'in_situ',
     devices: buildInitialSelfDeviceRows(sealIdentification),
+  };
+}
+
+export type VerificationJobKind = 'ov_self' | 'ov_customer' | 'rv_customer';
+
+export function verificationJobKindLabel(kind: VerificationJobKind): string {
+  if (kind === 'ov_self') return 'OV Self';
+  if (kind === 'ov_customer') return 'OV Customer';
+  return 'RV Customer';
+}
+
+export function verificationSessionKindLabel(
+  verificationType: string,
+  verificationSubject: string,
+): string {
+  if (verificationType === 'RV') return 'RV Customer';
+  return verificationSubject === 'self' ? 'OV Self' : 'OV Customer';
+}
+
+export function applyLockedSerialToDevices(
+  devices: VerificationDeviceRowValues[],
+  lockedSerial: string | undefined,
+): VerificationDeviceRowValues[] {
+  const serial = lockedSerial?.trim() ?? '';
+  if (!serial || devices.length === 0) return devices;
+  if (devices.some(row => row.serialNumber.trim() === serial)) return devices;
+  return devices.map((row, index) =>
+    index === 0 ? { ...row, serialNumber: serial } : row,
+  );
+}
+
+export function buildVerificationSessionForKind(
+  kind: VerificationJobKind,
+  rc: Pick<import('../types').FirestoreUserDoc, 'companyName' | 'username'>,
+  rcUid: string,
+  sealIdentification = '',
+  serialNumber = '',
+  manufacturingYear = '',
+): VerificationSessionValues {
+  const session =
+    kind === 'ov_self'
+      ? buildSelfVerificationSession(rc, rcUid, sealIdentification)
+      : {
+          ...EMPTY_VERIFICATION_SESSION,
+          verificationType: kind === 'rv_customer' ? ('RV' as const) : ('OV' as const),
+          verificationSubject: 'customer' as const,
+          assignedVctId: '',
+          devices: buildInitialSelfDeviceRows(sealIdentification),
+        };
+  const serial = serialNumber.trim();
+  const year = manufacturingYear.trim();
+  let devices = session.devices;
+  if (serial) devices = applyLockedSerialToDevices(devices, serial);
+  if (year && devices.length > 0) {
+    devices = devices.map((row, index) =>
+      index === 0 ? { ...row, manufacturingYear: year } : row,
+    );
+  }
+  if (!serial && !year) return session;
+  return {
+    ...session,
+    ...(serial ? { lockedSerial: serial } : {}),
+    devices,
   };
 }
 
@@ -494,6 +561,8 @@ export type VerificationValidationOptions = {
    * Used for list submit and after inline upload completes.
    */
   requireUploadedImages?: boolean;
+  ovQuota?: OvQuotaGate | null;
+  isNewJob?: boolean;
 };
 
 function validatePendingCustomerParty(
@@ -609,7 +678,11 @@ export function validateVerificationDraft(
     }
   }
 
-  return null;
+  return validateOvQuotaDevices(
+    session.verificationType,
+    included.map(row => row.serialNumber),
+    options?.ovQuota,
+  );
 }
 
 export function validateVerificationDeviceDetails(
@@ -811,7 +884,11 @@ export function validateVerificationSession(
     if (rowError) return rowError;
   }
 
-  return null;
+  return validateOvQuotaDevices(
+    session.verificationType,
+    included.map(row => row.serialNumber),
+    options?.ovQuota,
+  );
 }
 
 export function validateSiteCalibrationForm(values: SiteCalibrationFormValues): string | null {

@@ -1,21 +1,28 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { RefreshCw } from 'lucide-react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { callableErrorMessage } from '../../lib/zohoRvInvoice';
 import { syncYesoneOvUsed } from '../../lib/yesoneWebhookClient';
+import { useAuth } from '../../context/AuthContext';
 import {
   IWP_USED_FROM_DATE,
-  isMasterRcCode,
+  isMasterPoolSerial,
+  isMasterRc,
   masterRcPoolSerials,
+  masterRcUnusedQty,
+  MZN_G_REALLOC_MOVES,
+  applySerialReallotment,
+  serialReallotmentPending,
+  rehomeMasterPoolSerials,
   remainingQuotaSerials,
   rcOvUsedFromRecords,
   toggleVoidedSerial,
 } from '../../lib/rcMasterQuota';
-import { parseQuotaInput, uniqueSerials, unusedSerials, yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
+import { parseQuotaInput, uniqueSerials, yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
 import type { SiteCalibration } from '../../types';
-import { SerialSeatOverlay } from './SerialSeatOverlay';
+import { SerialSeatOverlay } from '../../components/SerialSeatOverlay';
 
 type QuotaRow = {
   uid: string;
@@ -50,9 +57,10 @@ function displayNum(value: string): string {
 }
 
 function sortQuotaRows(a: QuotaRow, b: QuotaRow): number {
-  const aMaster = isMasterRcCode(a.rcCode);
-  const bMaster = isMasterRcCode(b.rcCode);
+  const aMaster = isMasterRc(a);
+  const bMaster = isMasterRc(b);
   if (aMaster !== bMaster) return aMaster ? -1 : 1;
+  if (aMaster) return 0;
   const soldA = parseQuotaInput(a.ovQuota) ?? -1;
   const soldB = parseQuotaInput(b.ovQuota) ?? -1;
   if (soldA !== soldB) return soldB - soldA;
@@ -111,6 +119,7 @@ export function RcQuotaSynButton() {
 }
 
 export function RcQuotaPanel() {
+  const { user } = useAuth();
   const [quotas, setQuotas] = useState<QuotaRow[]>([]);
   const [serialsByRc, setSerialsByRc] = useState<Map<string, string[]>>(new Map());
   const [usedByRc, setUsedByRc] = useState<Map<string, { count: number; serials: string[] }>>(
@@ -124,9 +133,64 @@ export function RcQuotaPanel() {
     [quotas],
   );
   const masterUid = useMemo(
-    () => quotas.find(row => isMasterRcCode(row.rcCode))?.uid || '',
+    () => quotas.find(row => isMasterRc(row))?.uid || '',
     [quotas],
   );
+  const reallocBusy = useRef(false);
+  const rehomeBusy = useRef(false);
+
+  useEffect(() => {
+    if (user?.role !== 'super_admin' || reallocBusy.current || quotas.length === 0) return;
+    const rows = quotas.map(row => {
+      const code = row.rcCode.toUpperCase();
+      return {
+        uid: row.uid,
+        rcCode: row.rcCode,
+        companyName: row.companyName,
+        storedSerials: uniqueSerials([
+          ...row.storedSerials,
+          ...(serialsByRc.get(row.uid) || []),
+          ...(code ? serialsByRc.get(code) || [] : []),
+        ]),
+      };
+    });
+    if (!serialReallotmentPending(rows, MZN_G_REALLOC_MOVES)) return;
+    reallocBusy.current = true;
+    void applySerialReallotment(rows, MZN_G_REALLOC_MOVES).finally(() => {
+      reallocBusy.current = false;
+    });
+  }, [quotas, serialsByRc, user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== 'super_admin' || rehomeBusy.current || !masterUid || quotas.length === 0) return;
+    const rows = quotas.map(row => {
+      const code = row.rcCode.toUpperCase();
+      return {
+        uid: row.uid,
+        rcCode: row.rcCode,
+        ovQuota: row.ovQuota,
+        storedSerials: uniqueSerials([
+          ...row.storedSerials,
+          ...(serialsByRc.get(row.uid) || []),
+          ...(code ? serialsByRc.get(code) || [] : []),
+        ]),
+      };
+    });
+    const master = rows.find(row => row.uid === masterUid);
+    const pool = masterRcPoolSerials();
+    const held = new Set(
+      (master?.storedSerials || []).filter(isMasterPoolSerial).map(serial => serial.toUpperCase()),
+    );
+    const iwpMissing = pool.some(serial => !held.has(serial.toUpperCase()));
+    const hasStolen = rows.some(
+      row => row.uid !== masterUid && row.storedSerials.some(isMasterPoolSerial),
+    );
+    if (!hasStolen && !iwpMissing) return;
+    rehomeBusy.current = true;
+    void rehomeMasterPoolSerials(masterUid, rows).finally(() => {
+      rehomeBusy.current = false;
+    });
+  }, [masterUid, quotas, serialsByRc, user?.role]);
 
   useEffect(() => {
     const unsubRcs = onSnapshot(
@@ -214,40 +278,25 @@ export function RcQuotaPanel() {
   }, [rcUidsKey, masterUid]);
 
   const rows = useMemo(() => {
-    const masterPool = masterRcPoolSerials();
-    const takenByOthers: string[] = [];
-    for (const row of quotas) {
-      if (isMasterRcCode(row.rcCode)) continue;
-      const code = row.rcCode.toUpperCase();
-      takenByOthers.push(
-        ...row.storedSerials,
-        ...(serialsByRc.get(row.uid) || []),
-        ...(code ? serialsByRc.get(code) || [] : []),
-      );
-    }
     return quotas.map(row => {
+      const master = isMasterRc(row);
       const code = row.rcCode.toUpperCase();
       const fromStore = uniqueSerials([
         ...row.storedSerials,
         ...(serialsByRc.get(row.uid) || []),
         ...(code ? serialsByRc.get(code) || [] : []),
       ]);
-      const master = isMasterRcCode(row.rcCode);
       const allotted = master
-        ? unusedSerials(masterPool, takenByOthers)
-        : fromStore;
+        ? uniqueSerials([...fromStore.filter(serial => !isMasterPoolSerial(serial)), ...masterRcPoolSerials()])
+        : fromStore.filter(serial => !isMasterPoolSerial(serial));
       const ovUsed = usedByRc.get(row.uid) || { count: 0, serials: [] };
       const remaining = remainingQuotaSerials(allotted, ovUsed.serials, row.voidedSerials);
-      const sold = master
-        ? (allotted.length ? String(allotted.length) : row.ovQuota)
-        : row.ovQuota;
-      const used = String(ovUsed.count);
       return {
         ...row,
         allotted,
         remaining,
-        sold,
-        used,
+        sold: master ? String(masterRcUnusedQty()) : row.ovQuota,
+        used: String(ovUsed.count),
         serials: remaining,
       };
     });

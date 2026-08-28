@@ -20,13 +20,20 @@ type RcListPhotoProps = {
   path?: string;
   placeholder: React.ReactNode;
   badge?: React.ReactNode;
+  persistentCache?: boolean;
 };
 
-export function RcListPhoto({ url, path, placeholder, badge }: RcListPhotoProps) {
+export function RcListPhoto({ url, path, placeholder, badge, persistentCache = false }: RcListPhotoProps) {
   return (
     <span className="rc-list-card-photo">
       {url || path ? (
-        <StorageImage url={url} path={path} alt="" className="rc-list-card-photo-img" />
+        <StorageImage
+          url={url}
+          path={path}
+          alt=""
+          className="rc-list-card-photo-img"
+          persistentCache={persistentCache}
+        />
       ) : (
         <span className="rc-list-card-photo-placeholder" aria-hidden>
           {placeholder}

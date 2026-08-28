@@ -1,6 +1,7 @@
 import { useAuth } from '../context/AuthContext';
 import type { Role } from '../types';
 
+/** RC admin, VCT, and Verifier may start OV Self / OV Customer / RV Customer jobs. */
 export function canCreateVerification(role: Role | undefined): boolean {
   return role === 'vct' || role === 'rc_admin' || role === 'verifier';
 }

@@ -547,6 +547,7 @@ export const Layout: React.FC = () => {
               {isSettingsPage ? <div id="settings-syn-slot-desktop" /> : null}
               {rcRegisterBtn}
               {isHomeDashboard ? <EmaapStatusShortcut /> : null}
+              {showAppFilterSlot ? <div id="verification-filter-slot-desktop" /> : null}
               {profilePath ? (
                 <button
                   type="button"
@@ -578,7 +579,6 @@ export const Layout: React.FC = () => {
                   </div>
                 </div>
               )}
-              {showAppFilterSlot ? <div id="verification-filter-slot-desktop" /> : null}
             </div>
           </header>
         )}

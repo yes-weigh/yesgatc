@@ -4,6 +4,7 @@ import {
   resolveStorageFileUrl,
   storagePathFromDownloadUrl,
 } from '../lib/storageImageUrl';
+import { resolveProductImageSrc } from '../lib/productImageCache';
 
 type StorageImageProps = Omit<
   React.ImgHTMLAttributes<HTMLImageElement>,
@@ -12,6 +13,8 @@ type StorageImageProps = Omit<
   url?: string | null;
   path?: string | null;
   onError?: () => void;
+  /** Persist image bytes on device (IndexedDB) for instant reloads — product thumbs. */
+  persistentCache?: boolean;
 };
 
 export const StorageImage: React.FC<StorageImageProps> = ({
@@ -20,6 +23,7 @@ export const StorageImage: React.FC<StorageImageProps> = ({
   onError,
   alt = '',
   className,
+  persistentCache = false,
   ...imgProps
 }) => {
   const directUrl = url?.trim() && /^(https?:|blob:|\/)/i.test(url.trim()) ? url.trim() : null;
@@ -31,19 +35,25 @@ export const StorageImage: React.FC<StorageImageProps> = ({
     let cancelled = false;
     setFailed(false);
     setRetryStep(0);
-    // Show stored URL immediately — do not block on getDownloadURL.
     setSrc(directUrl);
 
-    void resolveStorageFileUrl(url, path).then(resolved => {
+    const resolve = persistentCache
+      ? resolveProductImageSrc(url, path)
+      : resolveStorageFileUrl(url, path).then(resolved => {
+          if (!resolved) return null;
+          if (!directUrl) return resolved;
+          return directUrl;
+        });
+
+    void resolve.then(resolved => {
       if (cancelled || !resolved) return;
-      // Keep direct URL unless resolve produced something different after refresh path.
-      if (!directUrl) setSrc(resolved);
+      setSrc(resolved);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [url, path, directUrl]);
+  }, [url, path, directUrl, persistentCache]);
 
   if (failed) {
     return (
@@ -63,11 +73,13 @@ export const StorageImage: React.FC<StorageImageProps> = ({
       path?.trim()
       || (url?.includes('firebasestorage.googleapis.com') ? storagePathFromDownloadUrl(url) : null);
 
-    // 1) Fresh download URL from Storage path
     if (retryStep === 0 && storagePath) {
       setRetryStep(1);
       clearStorageImageUrlCache(storagePath);
-      void resolveStorageFileUrl(url, storagePath, { refresh: true }).then(resolved => {
+      const retry = persistentCache
+        ? resolveProductImageSrc(url, storagePath)
+        : resolveStorageFileUrl(url, storagePath, { refresh: true });
+      void retry.then(resolved => {
         if (resolved && resolved !== src) setSrc(resolved);
         else if (directUrl && directUrl !== src) setSrc(directUrl);
         else {
@@ -78,7 +90,6 @@ export const StorageImage: React.FC<StorageImageProps> = ({
       return;
     }
 
-    // 2) Original Firestore download URL
     if (retryStep <= 1 && directUrl && src !== directUrl) {
       setRetryStep(2);
       setSrc(directUrl);
