@@ -172,7 +172,7 @@ export function WebbookPanel() {
             Yesone URL
           </label>
           <p className="admin-setting-webbook-yesone-hint">
-            Send verification data real time
+            Send verification data real time. OV draft consumes 1 unused. Every status push. Reject releases 1 unused back.
           </p>
           <input
             id="yesone-webhook-url"

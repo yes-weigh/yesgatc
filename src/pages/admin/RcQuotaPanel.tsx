@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { RefreshCw } from 'lucide-react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { callableErrorMessage } from '../../lib/zohoRvInvoice';
+import { syncYesoneOvUsed } from '../../lib/yesoneWebhookClient';
 import {
   IWP_USED_FROM_DATE,
   isMasterRcCode,
@@ -53,6 +57,57 @@ function sortQuotaRows(a: QuotaRow, b: QuotaRow): number {
   const soldB = parseQuotaInput(b.ovQuota) ?? -1;
   if (soldA !== soldB) return soldB - soldA;
   return a.companyName.localeCompare(b.companyName);
+}
+
+export function RcQuotaSynButton() {
+  const [syncing, setSyncing] = useState(false);
+  const [title, setTitle] = useState('Push OV used to Yesone');
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    setSlot(
+      document.getElementById('settings-syn-slot-mobile')
+      || document.getElementById('settings-syn-slot-desktop'),
+    );
+  }, []);
+
+  const handleSyn = async () => {
+    setSyncing(true);
+    try {
+      const log = await syncYesoneOvUsed();
+      setTitle(
+        log.ok
+          ? `Pushed ${log.rcSent}/${log.rcTotal} RC`
+          : log.errors[0]?.error || `Failed for ${log.rcFailed} RC.`,
+      );
+    } catch (err: unknown) {
+      setTitle(callableErrorMessage(err) || 'Push failed.');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  if (!slot) return null;
+
+  return createPortal(
+    <button
+      type="button"
+      className="btn btn-primary admin-setting-quota-syn"
+      onClick={() => void handleSyn()}
+      disabled={syncing}
+      aria-label="Push OV used to Yesone"
+      title={title}
+    >
+      <RefreshCw
+        size={18}
+        strokeWidth={2.5}
+        color="#ffffff"
+        aria-hidden
+        className={syncing ? 'admin-setting-quota-syn-icon--spin' : undefined}
+      />
+    </button>,
+    slot,
+  );
 }
 
 export function RcQuotaPanel() {

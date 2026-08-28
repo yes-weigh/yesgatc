@@ -48,6 +48,7 @@ const {
   onSiteCalibrationYesoneWebhookHandler,
   onUserYesoneWebhookHandler,
   testYesoneWebhookHttpHandler,
+  syncYesoneOvUsedHttpHandler,
 } = require('./yesoneWebhook');
 const {
   reviewWalletTopUpHandler,
@@ -527,6 +528,21 @@ exports.testYesoneWebhook = onRequest(
     memory: '1GiB',
   },
   async (req, res) => testYesoneWebhookHttpHandler(req, res, adminDb(), adminAuth()),
+);
+
+/**
+ * Super Admin: push live OV used qty for every RC to yesone.
+ * Manual fallback when a live quota webhook missed.
+ */
+exports.syncYesoneOvUsed = onRequest(
+  {
+    region: CALLABLE_REGION,
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 120,
+    memory: '512MiB',
+  },
+  async (req, res) => syncYesoneOvUsedHttpHandler(req, res, adminDb(), adminAuth()),
 );
 
 /**

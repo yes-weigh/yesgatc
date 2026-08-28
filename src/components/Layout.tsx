@@ -510,6 +510,8 @@ export const Layout: React.FC = () => {
               <EmaapStatusShortcut />
             ) : showAppFilterSlot ? (
               <div id="verification-filter-slot-mobile" className="mobile-app-bar-actions" />
+            ) : isSettingsPage ? (
+              <div id="settings-syn-slot-mobile" className="mobile-app-bar-actions" />
             ) : null}
           </header>
         )}
@@ -542,6 +544,7 @@ export const Layout: React.FC = () => {
               )}
             </div>
             <div className="top-bar-end">
+              {isSettingsPage ? <div id="settings-syn-slot-desktop" /> : null}
               {rcRegisterBtn}
               {isHomeDashboard ? <EmaapStatusShortcut /> : null}
               {profilePath ? (

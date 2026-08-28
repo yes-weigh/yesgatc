@@ -12,6 +12,8 @@ const APP_SETTINGS_GLOBAL_DOC = 'global';
 const POST_TIMEOUT_MS = 15_000;
 const LEGACY_SIGNED_CERTIFICATE_SEQUENCE_MAX = 2304;
 const LAST_CERTIFICATE_SEQUENCE_FLOOR = 3740;
+const MASTER_RC_CODE = 'IWP';
+const IWP_USED_FROM_DATE = '2026-08-28';
 const YESONE_META_KEYS = new Set([
   'yesonePushStatus',
   'yesonePushedAt',
@@ -81,8 +83,96 @@ function onlyYesoneMetaChanged(before, after) {
   return true;
 }
 
+function istDateKey(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find(part => part.type === 'year')?.value;
+  const month = parts.find(part => part.type === 'month')?.value;
+  const day = parts.find(part => part.type === 'day')?.value;
+  if (!year || !month || !day) return null;
+  return `${year}-${month}-${day}`;
+}
+
+function isOvRecord(record) {
+  return String(record?.verificationType || 'OV').trim() !== 'RV';
+}
+
 function isVoidedCertificate(record) {
   return Boolean(String(record?.certificateVoidedAt || '').trim());
+}
+
+function ovShouldCount(record, rc) {
+  if (!record || !isOvRecord(record)) return false;
+  if (isVoidedCertificate(record)) return false;
+  if (String(record.status || '').trim() === 'rejected') return false;
+  if (String(rc?.rcCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) === MASTER_RC_CODE) {
+    const key = istDateKey(record.createdAt || '');
+    if (!key || key < IWP_USED_FROM_DATE) return false;
+  }
+  return true;
+}
+
+function ovQuotaAction(before, after, rc) {
+  const beforeOn = Boolean(before) && ovShouldCount(before, rc);
+  const afterOn = Boolean(after) && ovShouldCount(after, rc);
+  if (!beforeOn && afterOn) return { usedDelta: 1, unusedDelta: -1, action: 'consume' };
+  if (beforeOn && !afterOn) return { usedDelta: -1, unusedDelta: 1, action: 'release' };
+  return { usedDelta: 0, unusedDelta: 0, action: 'none' };
+}
+
+function countOvUsedFromRecords(records, rc) {
+  const serials = new Set();
+  let extra = 0;
+  for (const record of records) {
+    if (!ovShouldCount(record, rc)) continue;
+    const serial = optionalTrimmed(record.serialNumber);
+    if (serial) serials.add(serial);
+    else extra += 1;
+  }
+  return serials.size + extra;
+}
+
+function buildRcOvUsedSnapshot(rc, usedCount) {
+  const allotted = optionalFiniteNumber(rc?.ovQuota);
+  const used = Math.max(0, Number.isFinite(usedCount) ? usedCount : 0);
+  return {
+    allotted,
+    used,
+    ovDone: used,
+    ovQuotaUsed: used,
+    balance: allotted != null ? allotted - used : null,
+    usedDelta: 0,
+    unusedDelta: 0,
+    action: 'sync',
+    rcCode: optionalTrimmed(rc?.rcCode),
+    verificationType: 'OV',
+  };
+}
+
+function buildOvQuotaPayload(record, rc, quotaAction, liveUsed) {
+  const allotted = optionalFiniteNumber(rc?.ovQuota);
+  const stored = optionalFiniteNumber(rc?.ovQuotaUsed);
+  const used = liveUsed != null
+    ? Math.max(0, liveUsed)
+    : stored == null ? null : Math.max(0, stored + quotaAction.usedDelta);
+  return {
+    allotted,
+    used,
+    balance: allotted != null && used != null ? allotted - used : null,
+    usedDelta: quotaAction.usedDelta,
+    unusedDelta: quotaAction.unusedDelta,
+    action: quotaAction.action,
+    status: optionalTrimmed(record?.status) || 'draft',
+    verificationType: optionalTrimmed(record?.verificationType) || 'OV',
+    serialNumber: optionalTrimmed(record?.serialNumber),
+    rcCode: optionalTrimmed(rc?.rcCode),
+  };
 }
 
 function parseCertificateSequenceNumber(certificateNumber) {
@@ -309,16 +399,31 @@ function envelope(event, id, occurredAt, extra) {
   };
 }
 
-function buildYesoneCertificatePayload(recordId, record, customer, rc, event, occurredAt) {
+function buildYesoneCertificatePayload(recordId, record, customer, rc, event, occurredAt, quota) {
   return envelope(event, recordId, occurredAt, {
     rc: rc ? buildYesoneRc(rc.id || record.rcId, rc) : null,
     certificate: buildYesoneCertificate(recordId, record, customer, rc),
+    quota: quota || null,
   });
 }
 
 function buildYesoneRcPayload(uid, record, event, occurredAt) {
   return envelope(event, uid, occurredAt, {
     rc: buildYesoneRc(uid, record),
+  });
+}
+
+function buildYesoneRcUsedPayload(uid, record, usedCount, event, occurredAt) {
+  const quota = buildRcOvUsedSnapshot(record, usedCount);
+  return envelope(event, uid, occurredAt, {
+    rc: {
+      ...buildYesoneRc(uid, record),
+      ovUsed: quota.used,
+      ovQuotaUsed: quota.used,
+      ovQuota: quota.allotted,
+      ovBalance: quota.balance,
+    },
+    quota,
   });
 }
 
@@ -365,6 +470,7 @@ function payloadFingerprint(payload) {
       event: payload.event,
       rc: payload.rc ?? null,
       certificate: payload.certificate ?? null,
+      quota: payload.quota ?? null,
     }))
     .digest('hex');
 }
@@ -383,6 +489,39 @@ async function loadCustomer(db, customerId) {
   } catch {
     return null;
   }
+}
+
+async function countLiveOvUsed(db, rcId, rc) {
+  const id = optionalTrimmed(rcId);
+  if (!id) return null;
+  const snap = await db.collection('siteCalibrations').where('rcId', '==', id).get();
+  return countOvUsedFromRecords(snap.docs.map(item => item.data()), rc);
+}
+
+async function liveOvUsedByRcId(db, rcById) {
+  const buckets = new Map();
+  for (const id of rcById.keys()) buckets.set(id, { serials: new Set(), extra: 0 });
+  const docs = await listCollectionDocs(db, 'siteCalibrations');
+  for (const doc of docs) {
+    const record = doc.data();
+    const rcId = optionalTrimmed(record.rcId);
+    if (!rcId) continue;
+    const rc = rcById.get(rcId);
+    if (!rc || !ovShouldCount(record, rc)) continue;
+    let bucket = buckets.get(rcId);
+    if (!bucket) {
+      bucket = { serials: new Set(), extra: 0 };
+      buckets.set(rcId, bucket);
+    }
+    const serial = optionalTrimmed(record.serialNumber);
+    if (serial) bucket.serials.add(serial);
+    else bucket.extra += 1;
+  }
+  const counts = new Map();
+  for (const [id, bucket] of buckets) {
+    counts.set(id, bucket.serials.size + bucket.extra);
+  }
+  return counts;
 }
 
 async function loadRc(db, rcId) {
@@ -528,7 +667,15 @@ async function processYesoneCertificatePush(db, recordId, record, before, option
   const rc = options.rc === undefined ? await loadRc(db, record.rcId) : options.rc;
   const event = options.event || yesoneCertificateEvent(before, record);
   const occurredAt = new Date().toISOString();
-  const payload = buildYesoneCertificatePayload(recordId, record, customer, rc, event, occurredAt);
+  const quotaAction = options.liveQuota
+    ? ovQuotaAction(before, record, rc)
+    : { usedDelta: 0, unusedDelta: 0, action: 'none' };
+  let liveUsed = options.liveUsed;
+  if (liveUsed == null && options.liveQuota && rc) {
+    liveUsed = await countLiveOvUsed(db, rc.id || record.rcId, rc);
+  }
+  const quota = buildOvQuotaPayload(record, rc, quotaAction, liveUsed);
+  const payload = buildYesoneCertificatePayload(recordId, record, customer, rc, event, occurredAt, quota);
   return deliverYesone(db, `siteCalibrations/${recordId}`, record, payload, options);
 }
 
@@ -872,11 +1019,99 @@ async function pushAllYesone(db, options = {}) {
   }
 }
 
+async function pushYesoneOvUsed(db) {
+  const settings = await loadYesoneSettings(db);
+  if (!settings.yesoneWebhookEnabled || !settings.yesoneWebhookUrl) {
+    throw new HttpsError('failed-precondition', 'Save a yesone URL first.');
+  }
+
+  const at = new Date().toISOString();
+  const log = {
+    at,
+    ok: false,
+    rcTotal: 0,
+    rcSent: 0,
+    rcFailed: 0,
+    errors: [],
+  };
+
+  const rcSnap = await db.collection('users').where('role', '==', 'rc_admin').get();
+  const rcById = new Map();
+  for (const doc of rcSnap.docs) {
+    rcById.set(doc.id, { id: doc.id, ...doc.data() });
+  }
+  log.rcTotal = rcSnap.size;
+  const usedByRc = await liveOvUsedByRcId(db, rcById);
+  const deliverOpts = {
+    url: settings.yesoneWebhookUrl,
+    force: true,
+    continueOnError: true,
+    skipMetaWrite: true,
+  };
+
+  await runPool(rcSnap.docs, Math.min(PUSH_CONCURRENCY, 8), async doc => {
+    const rc = rcById.get(doc.id);
+    const used = usedByRc.get(doc.id) || 0;
+    const payload = buildYesoneRcUsedPayload(doc.id, rc, used, 'rc.ov_used', new Date().toISOString());
+    let result;
+    try {
+      result = await deliverYesone(db, `users/${doc.id}`, rc, payload, deliverOpts);
+    } catch (err) {
+      log.rcFailed += 1;
+      appendPushError(log, {
+        kind: 'rc',
+        id: doc.id,
+        event: 'rc.ov_used',
+        error: err instanceof Error ? err.message : 'Push failed.',
+      });
+      return;
+    }
+    if (result?.skipped) {
+      log.rcFailed += 1;
+      appendPushError(log, {
+        kind: 'rc',
+        id: doc.id,
+        event: 'rc.ov_used',
+        error: result.reason || 'skipped',
+      });
+      return;
+    }
+    if (result?.ok) log.rcSent += 1;
+    else {
+      log.rcFailed += 1;
+      appendPushError(log, {
+        kind: 'rc',
+        id: doc.id,
+        event: result?.event || 'rc.ov_used',
+        error: result?.error || 'Push failed.',
+      });
+    }
+  });
+
+  log.ok = log.rcFailed === 0 && log.rcSent === log.rcTotal;
+  await db.doc(`${APP_SETTINGS_COLLECTION}/${APP_SETTINGS_GLOBAL_DOC}`).set(
+    {
+      yesoneLastOvUsedSyncAt: log.at,
+      yesoneLastOvUsedSyncLog: {
+        at: log.at,
+        ok: log.ok,
+        rcTotal: log.rcTotal,
+        rcSent: log.rcSent,
+        rcFailed: log.rcFailed,
+        errors: log.errors.slice(0, PUSH_ALL_ERROR_CAP),
+      },
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true },
+  );
+  return log;
+}
+
 async function onSiteCalibrationYesoneWebhookHandler(event, db) {
   const before = event.data?.before?.exists ? event.data.before.data() : null;
   const after = event.data?.after?.exists ? event.data.after.data() : null;
   if (!shouldPushYesone(before, after)) return;
-  await processYesoneCertificatePush(db, event.params.recordId, after, before);
+  await processYesoneCertificatePush(db, event.params.recordId, after, before, { liveQuota: true });
 }
 
 async function onUserYesoneWebhookHandler(event, db) {
@@ -946,6 +1181,59 @@ async function testYesoneWebhookHttpHandler(req, res, db, auth) {
   }
 }
 
+async function syncYesoneOvUsedHandler(request, db) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in required.');
+  }
+  await assertSuperAdmin(db, request.auth.uid);
+  try {
+    return await pushYesoneOvUsed(db);
+  } catch (err) {
+    if (err instanceof HttpsError) throw err;
+    const message = err instanceof Error ? err.message : 'Yesone used sync failed.';
+    console.error('syncYesoneOvUsed failed', err);
+    throw new HttpsError('failed-precondition', message);
+  }
+}
+
+async function syncYesoneOvUsedHttpHandler(req, res, db, auth) {
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'POST only.' });
+    return;
+  }
+
+  const header = String(req.headers.authorization || '');
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) {
+    res.status(401).json({ error: 'Sign in required.' });
+    return;
+  }
+
+  try {
+    const decoded = await auth.verifyIdToken(token);
+    const log = await syncYesoneOvUsedHandler({ auth: { uid: decoded.uid } }, db);
+    res.status(200).json(log);
+  } catch (err) {
+    const authCode = String(err?.code || '');
+    if (authCode.startsWith('auth/')) {
+      res.status(401).json({ error: 'Sign in required.' });
+      return;
+    }
+    if (err instanceof HttpsError) {
+      const status = Number(err.httpErrorCode?.status) || 400;
+      res.status(status).json({ error: err.message });
+      return;
+    }
+    const message = err instanceof Error ? err.message : 'Yesone used sync failed.';
+    console.error('syncYesoneOvUsed failed', err);
+    res.status(400).json({ error: message });
+  }
+}
+
 module.exports = {
   isAllowedYesoneWebhookUrl,
   normalizeYesoneWebhookSettings,
@@ -956,17 +1244,25 @@ module.exports = {
   onlyYesoneMetaChanged,
   shouldPushYesone,
   shouldPushYesoneRc,
+  ovQuotaAction,
+  countOvUsedFromRecords,
+  buildOvQuotaPayload,
+  buildRcOvUsedSnapshot,
   yesoneCertificateEvent,
   yesoneRcEvent,
   buildYesoneRc,
   buildYesoneCertificatePayload,
+  buildYesoneRcUsedPayload,
   uniqueIssuedCertificates,
   payloadFingerprint,
   onSiteCalibrationYesoneWebhookHandler,
   onUserYesoneWebhookHandler,
   testYesoneWebhookHandler,
   testYesoneWebhookHttpHandler,
+  syncYesoneOvUsedHandler,
+  syncYesoneOvUsedHttpHandler,
   processYesoneCertificatePush,
   processYesoneRcPush,
   pushAllYesone,
+  pushYesoneOvUsed,
 };
