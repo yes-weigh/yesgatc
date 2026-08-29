@@ -68,32 +68,29 @@ const ProductThumb: React.FC<{ product: Product | null; className?: string }> = 
 
 function ProductSpecPickerModal({
   product,
-  selectedSpecificationId,
   onPick,
   onClose,
 }: {
   product: Product;
-  selectedSpecificationId?: string;
   onPick: (specificationId: string) => void;
   onClose: () => void;
 }) {
   const specs = getProductSpecifications(product);
   const unit = product.unitOfMeasurement || 'kg';
-  const [selectedId, setSelectedId] = useState(
-    () =>
-      (selectedSpecificationId && specs.some(s => s.id === selectedSpecificationId)
-        ? selectedSpecificationId
-        : specs[0]?.id) || '',
-  );
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const [selectedId, setSelectedId] = useState('');
+
+  useEffect(() => {
+    titleRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-      if (e.key === 'Enter' && selectedId) onPick(selectedId);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, onPick, selectedId]);
+  }, [onClose]);
 
   return createPortal(
     <div
@@ -111,7 +108,12 @@ function ProductSpecPickerModal({
       >
         <header className="product-spec-picker-head">
           <div className="product-spec-picker-head-text">
-            <h2 id="product-spec-picker-title" className="product-spec-picker-title">
+            <h2
+              id="product-spec-picker-title"
+              className="product-spec-picker-title"
+              ref={titleRef}
+              tabIndex={-1}
+            >
               Select specification
             </h2>
             <p className="product-spec-picker-sub mb-0">{product.name}</p>
@@ -136,7 +138,11 @@ function ProductSpecPickerModal({
                   className={`product-spec-picker-option${selected ? ' product-spec-picker-option--selected' : ''}`}
                   role="option"
                   aria-selected={selected}
-                  onClick={() => setSelectedId(spec.id)}
+                  onClick={e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelectedId(spec.id);
+                  }}
                 >
                   <span className="product-spec-picker-badge">
                     {Number.isFinite(spec.maximumCapacity) ? spec.maximumCapacity : '—'}
@@ -154,14 +160,23 @@ function ProductSpecPickerModal({
             );
           })}
         </ul>
-        <div className="product-spec-picker-foot">
+        <p className="product-spec-picker-hint mb-0">
+          Tap a capacity (turns green). Change anytime, then Confirm.
+        </p>
+        <div className="product-spec-picker-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
           <button
             type="button"
-            className="product-spec-picker-confirm"
+            className="btn btn-primary"
             disabled={!selectedId}
-            onClick={() => selectedId && onPick(selectedId)}
+            onClick={() => {
+              if (!selectedId) return;
+              onPick(selectedId);
+            }}
           >
-            Continue
+            Confirm
           </button>
         </div>
       </div>
@@ -173,13 +188,25 @@ function ProductSpecPickerModal({
 function useProductPick(
   products: Product[],
   onChange: (value: ProductSelectValue) => void,
-  currentValue?: ProductSelectValue,
+  options?: { deferMultiSpec?: boolean },
 ) {
   const [pendingProduct, setPendingProduct] = useState<Product | null>(null);
+  const pendingRef = useRef<Product | null>(null);
+  pendingRef.current = pendingProduct;
+  const deferMultiSpec = Boolean(options?.deferMultiSpec);
 
   const pickProduct = useCallback(
     (product: Product) => {
       if (productHasMultipleSpecifications(product)) {
+        if (deferMultiSpec) {
+          // Parent lists specs inline — do not auto-pick a capacity.
+          onChange({
+            productId: product.id,
+            productName: product.name,
+            productSpecificationId: '',
+          });
+          return;
+        }
         setPendingProduct(product);
         return;
       }
@@ -190,23 +217,27 @@ function useProductPick(
         productSpecificationId: specs[0]?.id || '',
       });
     },
-    [onChange],
+    [onChange, deferMultiSpec],
   );
 
   const confirmSpec = useCallback(
     (specificationId: string) => {
-      if (!pendingProduct) return;
+      const product = pendingRef.current;
+      if (!product) return;
       onChange({
-        productId: pendingProduct.id,
-        productName: pendingProduct.name,
+        productId: product.id,
+        productName: product.name,
         productSpecificationId: specificationId,
       });
       setPendingProduct(null);
     },
-    [onChange, pendingProduct],
+    [onChange],
   );
 
-  const cancelSpec = useCallback(() => setPendingProduct(null), []);
+  const cancelSpec = useCallback(() => {
+    pendingRef.current = null;
+    setPendingProduct(null);
+  }, []);
 
   const activeProducts = useMemo(
     () => products.filter(isProductActive),
@@ -216,11 +247,6 @@ function useProductPick(
   const specModal = pendingProduct ? (
     <ProductSpecPickerModal
       product={pendingProduct}
-      selectedSpecificationId={
-        currentValue?.productId === pendingProduct.id
-          ? currentValue.productSpecificationId
-          : undefined
-      }
       onPick={confirmSpec}
       onClose={cancelSpec}
     />
@@ -236,6 +262,8 @@ export const ProductCatalogueList: React.FC<{
   disabled?: boolean;
   showCapacitySpecs?: boolean;
   variant?: 'list' | 'shop';
+  /** Multi-spec: emit product only; parent shows capacity list (no modal / no auto-select). */
+  deferMultiSpec?: boolean;
 }> = ({
   products,
   value,
@@ -243,8 +271,11 @@ export const ProductCatalogueList: React.FC<{
   disabled = false,
   showCapacitySpecs = true,
   variant = 'list',
+  deferMultiSpec = false,
 }) => {
-  const { activeProducts, pickProduct, specModal } = useProductPick(products, onChange, value);
+  const { activeProducts, pickProduct, specModal } = useProductPick(products, onChange, {
+    deferMultiSpec,
+  });
 
   if (activeProducts.length === 0) {
     return (
@@ -332,7 +363,6 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
       onChange(next);
       setOpen(false);
     },
-    value,
   );
 
   const selected = useMemo(

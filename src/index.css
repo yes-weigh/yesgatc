@@ -11921,6 +11921,7 @@ body.verification-mobile-wizard-active {
   font-size: 1.05rem;
   font-weight: 700;
   color: #e2e8f0;
+  outline: none;
 }
 
 .product-spec-picker-sub {
@@ -11960,9 +11961,9 @@ body.verification-mobile-wizard-active {
   width: 100%;
   padding: 0.75rem 0.85rem;
   border-radius: 1rem;
-  border: 1.5px solid rgba(74, 222, 128, 0.32);
+  border: 1.5px solid rgba(148, 163, 184, 0.35);
   background: rgba(15, 23, 42, 0.92);
-  color: #4ade80;
+  color: #cbd5e1;
   cursor: pointer;
   text-align: left;
   transition:
@@ -11972,26 +11973,35 @@ body.verification-mobile-wizard-active {
     transform 0.12s ease;
 }
 
-.product-spec-picker-option:hover,
-.product-spec-picker-option:focus-visible {
-  background: rgba(6, 78, 59, 0.4);
-  border-color: rgba(74, 222, 128, 0.55);
+.product-spec-picker-option:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(148, 163, 184, 0.55);
+}
+
+.product-spec-picker-option:focus {
+  outline: none;
+}
+
+.product-spec-picker-option:focus-visible:not(.product-spec-picker-option--selected) {
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(148, 163, 184, 0.55);
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.35);
 }
 
 .product-spec-picker-option--selected {
-  background: linear-gradient(135deg, #059669 0%, #10b981 55%, #34d399 100%);
-  border-color: #6ee7b7;
-  color: #ecfdf5;
+  background: #10b981 !important;
+  border-color: #34d399 !important;
+  color: #ecfdf5 !important;
   box-shadow:
-    0 10px 28px rgba(16, 185, 129, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 10px 28px rgba(16, 185, 129, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transform: translateY(-1px);
 }
 
 .product-spec-picker-option--selected:hover,
 .product-spec-picker-option--selected:focus-visible {
-  background: linear-gradient(135deg, #047857 0%, #059669 50%, #10b981 100%);
-  border-color: #a7f3d0;
+  background: #059669 !important;
+  border-color: #6ee7b7 !important;
 }
 
 .product-spec-picker-badge {
@@ -12002,10 +12012,10 @@ body.verification-mobile-wizard-active {
   padding: 0.28rem 0.65rem;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(74, 222, 128, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.4);
   font-weight: 700;
   font-size: 0.95rem;
-  color: #4ade80;
+  color: #94a3b8;
   flex-shrink: 0;
 }
 
@@ -12038,7 +12048,14 @@ body.verification-mobile-wizard-active {
 }
 
 .product-spec-picker-option--selected .product-spec-picker-option-meta {
-  color: rgba(236, 253, 245, 0.88);
+  color: rgba(236, 253, 245, 0.9);
+}
+
+.product-spec-picker-hint {
+  margin: 0;
+  padding: 0 0.85rem 0.95rem;
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.9);
 }
 
 .product-spec-picker-foot {
@@ -12891,6 +12908,215 @@ body.verification-mobile-wizard-active {
 
 .ov-self-selected-hint--wait {
   color: rgba(148, 163, 184, 0.9);
+}
+
+.ov-self-check-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.55rem 0 0.75rem;
+  padding: 0.65rem 0.7rem;
+  border-radius: 14px;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  background: linear-gradient(160deg, rgba(6, 78, 59, 0.42), rgba(15, 23, 42, 0.92));
+  box-shadow: 0 8px 22px rgba(16, 185, 129, 0.12);
+}
+
+.ov-self-check-block--compact {
+  margin: 0 0 0.65rem;
+}
+
+.verification-form-footer .ov-self-check-block {
+  width: 100%;
+}
+
+.ov-self-check-spec {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
+  min-width: 0;
+}
+
+.ov-self-check-spec-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid #34d399;
+  background: #10b981;
+  color: #ecfdf5;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.35);
+}
+
+.ov-self-check-spec-wait {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px dashed rgba(148, 163, 184, 0.55);
+  color: rgba(148, 163, 184, 0.95);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.ov-self-spec-choice {
+  margin: 0.65rem 0 0.15rem;
+  padding: 0.7rem 0.75rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.ov-self-spec-choice-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  margin-bottom: 0.55rem;
+}
+
+.ov-self-spec-choice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ov-self-spec-choice-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.88);
+  color: #e2e8f0;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease;
+}
+
+.ov-self-spec-choice-option:hover:not(:disabled) {
+  background: rgba(51, 65, 85, 0.95);
+  border-color: rgba(148, 163, 184, 0.55);
+}
+
+.ov-self-spec-choice-option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ov-self-spec-choice-option--selected {
+  background: #10b981 !important;
+  border-color: #34d399 !important;
+  color: #ecfdf5 !important;
+  box-shadow:
+    0 10px 28px rgba(16, 185, 129, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.ov-self-spec-choice-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.2rem;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.ov-self-spec-choice-option--selected .ov-self-spec-choice-badge {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: transparent;
+  color: #047857;
+}
+
+.ov-self-spec-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.ov-self-spec-choice-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: inherit;
+}
+
+.ov-self-spec-choice-meta {
+  font-size: 0.75rem;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.ov-self-spec-choice-option--selected .ov-self-spec-choice-meta {
+  color: rgba(236, 253, 245, 0.9);
+}
+
+.ov-self-spec-choice-hint {
+  margin-top: 0.55rem;
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.product-spec-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.ov-self-check-spec-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  min-width: 0;
+}
+
+.ov-self-check-serial-mpe {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.ov-self-check-serial,
+.ov-self-check-mpe {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.ov-self-check-mpe {
+  justify-content: flex-end;
+}
+
+.ov-self-kicker--mpe,
+.ov-self-check-mpe .ov-self-serial-value--mpe {
+  color: #f87171;
 }
 
 .ov-self-mfg-year {

@@ -6,7 +6,13 @@ import {
   mpeStringFromProductSpec,
   type VerificationDeviceRowValues,
 } from '../../lib/siteCalibrationProfileFields';
-import type { Product, VerificationLocation } from '../../types';
+import {
+  formatShopCapacityLine,
+  getProductSpecifications,
+  productHasMultipleSpecifications,
+  resolveProductSpecification,
+} from '../../lib/productSpecifications';
+import type { Product, ProductSpecification, VerificationLocation } from '../../types';
 
 export function OvSelfSerialMpeBar({
   serial,
@@ -37,6 +43,119 @@ export function OvSelfSerialMpeBar({
   );
 }
 
+/** Selected capacity + serial/MPE — under product recap and above cancel/submit. */
+export function OvSelfSpecSerialBlock({
+  product,
+  specificationId,
+  serial,
+  mpe,
+  productName,
+  compact = false,
+}: {
+  product?: Product | null;
+  specificationId?: string;
+  serial: string;
+  mpe: string;
+  productName?: string;
+  compact?: boolean;
+}) {
+  const hasSpecChoice = Boolean(specificationId?.trim());
+  const multi = product ? productHasMultipleSpecifications(product) : false;
+  const unit = product?.unitOfMeasurement || 'kg';
+  let specLabel = '';
+  if (product && hasSpecChoice) {
+    const match = getProductSpecifications(product).find(s => s.id === specificationId);
+    if (match) specLabel = formatShopCapacityLine(match, unit);
+  } else if (product && !multi) {
+    specLabel = formatShopCapacityLine(resolveProductSpecification(product), unit);
+  }
+  const name = (productName || product?.name || '').trim();
+
+  return (
+    <div
+      className={`ov-self-check-block${compact ? ' ov-self-check-block--compact' : ''}`}
+      role="group"
+      aria-label="Selected specification and serial"
+    >
+      {(specLabel || name || multi) && (
+        <div className="ov-self-check-spec">
+          {specLabel ? (
+            <span className="ov-self-check-spec-pill">{specLabel}</span>
+          ) : multi ? (
+            <span className="ov-self-check-spec-wait">Select a capacity</span>
+          ) : null}
+          {name ? <span className="ov-self-check-spec-name">{name}</span> : null}
+        </div>
+      )}
+      <div className="ov-self-check-serial-mpe">
+        <div className="ov-self-check-serial">
+          <span className="ov-self-kicker">Serial</span>
+          <strong className="ov-self-serial-value ov-self-serial-value--serial">
+            {serial.trim() || '—'}
+          </strong>
+        </div>
+        <div className="ov-self-check-mpe">
+          <span className="ov-self-kicker ov-self-kicker--mpe">MPE</span>
+          <strong className="ov-self-serial-value ov-self-serial-value--mpe">
+            {mpe.trim() || '—'}
+          </strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OvSelfSpecChoiceList({
+  product,
+  selectedSpecificationId,
+  disabled,
+  onSelect,
+}: {
+  product: Product;
+  selectedSpecificationId?: string;
+  disabled?: boolean;
+  onSelect: (spec: ProductSpecification) => void;
+}) {
+  const specs = getProductSpecifications(product);
+  const unit = product.unitOfMeasurement || 'kg';
+  if (specs.length <= 1) return null;
+
+  return (
+    <div className="ov-self-spec-choice" role="listbox" aria-label="Select capacity">
+      <p className="ov-self-spec-choice-title mb-0">Select specification</p>
+      <ul className="ov-self-spec-choice-list">
+        {specs.map(spec => {
+          const selected = selectedSpecificationId === spec.id;
+          const label = formatShopCapacityLine(spec, unit);
+          return (
+            <li key={spec.id}>
+              <button
+                type="button"
+                className={`ov-self-spec-choice-option${selected ? ' ov-self-spec-choice-option--selected' : ''}`}
+                role="option"
+                aria-selected={selected}
+                disabled={disabled}
+                onClick={() => onSelect(spec)}
+              >
+                <span className="ov-self-spec-choice-badge">
+                  {Number.isFinite(spec.maximumCapacity) ? spec.maximumCapacity : '—'}
+                </span>
+                <span className="ov-self-spec-choice-text">
+                  <span className="ov-self-spec-choice-label">{label}</span>
+                  {Number.isFinite(spec.maximumPermissibleError) ? (
+                    <span className="ov-self-spec-choice-meta">MPE {spec.maximumPermissibleError}</span>
+                  ) : null}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="ov-self-spec-choice-hint mb-0">Tap a capacity — change anytime before Photos.</p>
+    </div>
+  );
+}
+
 export function OvSelfProductPanel({
   row,
   products,
@@ -52,6 +171,7 @@ export function OvSelfProductPanel({
 }) {
   const seal = sealId.trim() || row.sealIdentificationNumber.trim();
   const selected = products.find(product => product.id === row.productId) ?? null;
+  const multiSpec = selected ? productHasMultipleSpecifications(selected) : false;
 
   const handlePick = (next: {
     productId: string;
@@ -59,6 +179,18 @@ export function OvSelfProductPanel({
     productSpecificationId?: string;
   }) => {
     const product = products.find(p => p.id === next.productId) ?? null;
+    const multi = product ? productHasMultipleSpecifications(product) : false;
+    // Multi-spec: pick product only — user chooses capacity below (no auto-select).
+    if (multi) {
+      onProductChange({
+        productId: next.productId,
+        productName: next.productName,
+        productSpecificationId: '',
+        maximumPermissibleError: '',
+        sealIdentificationNumber: seal,
+      });
+      return;
+    }
     onProductChange({
       productId: next.productId,
       productName: next.productName,
@@ -71,23 +203,53 @@ export function OvSelfProductPanel({
     });
   };
 
+  const handleSpecSelect = (spec: ProductSpecification) => {
+    onProductChange({
+      productSpecificationId: spec.id,
+      maximumPermissibleError:
+        spec.maximumPermissibleError !== undefined &&
+        spec.maximumPermissibleError !== null &&
+        Number.isFinite(spec.maximumPermissibleError)
+          ? String(spec.maximumPermissibleError)
+          : '',
+    });
+  };
+
   return (
     <div className="ov-self-panel ov-self-panel--product">
       <div className="ov-self-product-block">
         <ProductCatalogueList
           products={products}
-          value={{ productId: row.productId, productName: row.productName }}
+          value={{
+            productId: row.productId,
+            productName: row.productName,
+            productSpecificationId: row.productSpecificationId,
+          }}
           onChange={handlePick}
           disabled={disabled}
           showCapacitySpecs
           variant="shop"
+          deferMultiSpec
         />
       </div>
 
+      {selected && multiSpec ? (
+        <OvSelfSpecChoiceList
+          product={selected}
+          selectedSpecificationId={row.productSpecificationId}
+          disabled={disabled}
+          onSelect={handleSpecSelect}
+        />
+      ) : null}
+
       {selected ? (
-        <p className="ov-self-selected-hint mb-0">
-          {selected.name} selected. MPE filled.
-        </p>
+        <OvSelfSpecSerialBlock
+          product={selected}
+          specificationId={row.productSpecificationId}
+          serial={row.serialNumber}
+          mpe={row.maximumPermissibleError}
+          productName={row.productName}
+        />
       ) : (
         <p className="ov-self-selected-hint ov-self-selected-hint--wait mb-0">
           Select a product to fill MPE.

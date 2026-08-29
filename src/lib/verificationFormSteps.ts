@@ -1,4 +1,4 @@
-import type { FirestoreUserDoc } from '../types';
+import type { FirestoreUserDoc, Product } from '../types';
 import { isPendingNewCustomerParty, type CustomerFormValues } from './customerProfileFields';
 import { isValidPincode, normalizePincode } from './contactFields';
 import { VERIFICATION_PINCODE_REQUIRED_MESSAGE } from './verificationSubmitGates';
@@ -161,6 +161,7 @@ export type VerificationFormStepContext = {
   performerPhotos?: PerformerPhotosState;
   ovQuota?: OvQuotaGate | null;
   isNewJob?: boolean;
+  products?: Product[];
 };
 
 function partyStepBlockReason(
@@ -239,8 +240,9 @@ export function verificationDeviceDetailsBlockReason(
   row: VerificationSessionValues['devices'][number],
   index: number,
   verificationType: VerificationSessionValues['verificationType'],
+  product?: Product | null,
 ): string | null {
-  return validateVerificationDeviceDetails(row, index, { verificationType });
+  return validateVerificationDeviceDetails(row, index, { verificationType, product });
 }
 
 function instrumentsDetailsBlockReason(
@@ -253,7 +255,14 @@ function instrumentsDetailsBlockReason(
   for (let i = 0; i < values.devices.length; i++) {
     const row = values.devices[i];
     if (!row.included) continue;
-    const detailsError = verificationDeviceDetailsBlockReason(row, i, values.verificationType);
+    const product =
+      context?.products?.find(p => p.id === row.productId) ?? null;
+    const detailsError = verificationDeviceDetailsBlockReason(
+      row,
+      i,
+      values.verificationType,
+      product,
+    );
     if (detailsError) return detailsError;
   }
 

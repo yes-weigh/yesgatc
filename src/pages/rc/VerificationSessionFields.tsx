@@ -13,7 +13,7 @@ import { SegmentToggle } from '../../components/SegmentToggle';
 import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
 import { VerificationInstrumentMultistage } from './VerificationInstrumentMultistage';
-import { OvSelfProductPanel, OvSelfSitePanel, OvSelfEnvFields } from './OvSelfWizardPanels';
+import { OvSelfProductPanel, OvSelfSitePanel, OvSelfEnvFields, OvSelfSpecSerialBlock } from './OvSelfWizardPanels';
 import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFields';
 import type { GeoStampCoordinates, StampWeather } from '../../components/VerificationPhotoUploadSlot';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
@@ -207,8 +207,9 @@ export const VerificationSessionFields = forwardRef<
       performerPhotos,
       ovQuota,
       isNewJob: lockKind,
+      products,
     }),
-    [customerPartyForm, rcPartyForm, deviceImages, deviceRvImages, performerPhotos, ovQuota, lockKind],
+    [customerPartyForm, rcPartyForm, deviceImages, deviceRvImages, performerPhotos, ovQuota, lockKind, products],
   );
 
   useEffect(() => {
@@ -1079,6 +1080,15 @@ export const VerificationSessionFields = forwardRef<
                   In situ · {isOvSelfFlow ? 'Self (RC centre)' : 'Customer'}
                 </span>
               </div>
+              <OvSelfSpecSerialBlock
+                product={
+                  products.find(p => p.id === ovSelfDevice.productId) ?? null
+                }
+                specificationId={ovSelfDevice.productSpecificationId}
+                serial={ovSelfDevice.serialNumber}
+                mpe={ovSelfDevice.maximumPermissibleError}
+                productName={ovSelfDevice.productName}
+              />
               <VerificationDeviceEvidenceFields
                 device={ovSelfDevice}
                 devices={values.devices}

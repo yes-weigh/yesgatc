@@ -15,7 +15,7 @@ import {
   productSnapshotFromProduct,
   type VerificationDraftActorMeta,
 } from './verificationRequest';
-import { resolveProductSpecification } from './productSpecifications';
+import { productHasMultipleSpecifications, resolveProductSpecification } from './productSpecifications';
 import type { ProductFileMeta } from './productApprovalUpload';
 import {
   deviceVerificationImagesFromRows,
@@ -718,10 +718,20 @@ export function validateVerificationDraft(
 export function validateVerificationDeviceDetails(
   row: VerificationDeviceRowValues,
   index: number,
-  options?: { verificationType?: JobType | '' },
+  options?: {
+    verificationType?: JobType | '';
+    product?: Product | null;
+  },
 ): string | null {
   const label = `Device ${index + 1}`;
   if (!row.productId.trim()) return `${label}: select a product.`;
+  if (
+    options?.product &&
+    productHasMultipleSpecifications(options.product) &&
+    !row.productSpecificationId?.trim()
+  ) {
+    return `${label}: select a capacity specification.`;
+  }
   if (!row.serialNumber.trim()) return `${label}: serial number is required.`;
 
   if (row.maximumPermissibleError.trim()) {

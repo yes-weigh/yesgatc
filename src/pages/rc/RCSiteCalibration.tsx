@@ -20,7 +20,7 @@ import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
-import { OvSelfSerialMpeBar } from './OvSelfWizardPanels';
+import { OvSelfSpecSerialBlock } from './OvSelfWizardPanels';
 import { TablePagination } from '../../components/TablePagination';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
 import {
@@ -2743,6 +2743,19 @@ export const RCSiteCalibration: React.FC = () => {
         </p>
       )}
 
+      {compactJob && ovSelfDevice && wizardOnLastStep ? (
+        <OvSelfSpecSerialBlock
+          product={
+            products.find(p => p.id === ovSelfDevice.productId) ?? null
+          }
+          specificationId={ovSelfDevice.productSpecificationId}
+          serial={ovSelfDevice.serialNumber}
+          mpe={ovSelfDevice.maximumPermissibleError}
+          productName={ovSelfDevice.productName}
+          compact
+        />
+      ) : null}
+
       <div className="verification-form-footer-row verification-form-footer-row--actions">
         <button
           type="button"
@@ -2841,15 +2854,6 @@ export const RCSiteCalibration: React.FC = () => {
                 <ListViewBackBar
                   onBack={handleCloseForm}
                   disabled={formBusy}
-                  trailing={
-                    compactJob ? (
-                      <OvSelfSerialMpeBar
-                        serial={ovSelfDevice?.serialNumber ?? sessionValues.lockedSerial ?? ''}
-                        mpe={ovSelfDevice?.maximumPermissibleError ?? ''}
-                        compact
-                      />
-                    ) : null
-                  }
                 />
                 <div className={`product-form-topbar${showAddForm ? ' product-form-topbar--new-mobile' : ''}`}>
                   <div className="product-form-topbar-text">
