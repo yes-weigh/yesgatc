@@ -1,6 +1,7 @@
 import { doc, updateDoc, type Firestore } from 'firebase/firestore';
 import { db } from '../firebase';
 import { buildVerificationSubmitPatch, buildVerifierRcReviewPatch } from './verificationRequest';
+import { verificationClientVersionFields } from './verificationAppVersion';
 import { queueRvZohoInvoicesAfterSubmit, submitRvWithZohoGate } from './zohoRvInvoice';
 import type { JobType } from '../types';
 import type { RcFilingPartyPatch } from './keralaRegion';
@@ -63,6 +64,7 @@ export async function submitVerificationRecords(
             ...(target.customerName ? { customerName: target.customerName } : {}),
             ...(target.sourceCustomerId ? { sourceCustomerId: target.sourceCustomerId } : {}),
             ...(target.sourceCustomerName ? { sourceCustomerName: target.sourceCustomerName } : {}),
+            ...verificationClientVersionFields(),
           }),
         ),
     ]);

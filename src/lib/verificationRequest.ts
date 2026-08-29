@@ -7,6 +7,7 @@ import type {
   VerificationRequestStatus,
   WorkflowMode,
 } from '../types';
+import { verificationClientVersionFields } from './verificationAppVersion';
 
 export const VERIFICATION_REQUEST_STATUSES: VerificationRequestStatus[] = [
   'draft',
@@ -179,11 +180,14 @@ export function buildVerifierRcReviewPatch(now = new Date().toISOString()): {
   status: VerificationRequestStatus;
   pendingRcAt: string;
   updatedAt: string;
+  clientAppVersion: string;
+  clientAppVersionCode: number;
 } {
   return {
     status: 'pending_rc',
     pendingRcAt: now,
     updatedAt: now,
+    ...verificationClientVersionFields(),
   };
 }
 
@@ -194,11 +198,14 @@ export function buildRcApproveVerifierPatch(
   rcApprovedAt: string;
   rcApprovedByUid: string;
   updatedAt: string;
+  clientAppVersion: string;
+  clientAppVersionCode: number;
 } {
   return {
     rcApprovedAt: now,
     rcApprovedByUid: rcUid,
     updatedAt: now,
+    ...verificationClientVersionFields(),
   };
 }
 
@@ -686,11 +693,14 @@ export function buildVerificationSubmitPatch(now = new Date().toISOString()): {
   status: VerificationRequestStatus;
   submittedAt: string;
   updatedAt: string;
+  clientAppVersion: string;
+  clientAppVersionCode: number;
 } {
   return {
     status: 'submitted',
     submittedAt: now,
     updatedAt: now,
+    ...verificationClientVersionFields(),
   };
 }
 

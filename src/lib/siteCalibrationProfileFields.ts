@@ -48,6 +48,7 @@ import {
   verificationUploadsInProgressBlockReason,
 } from './verificationSubmitGates';
 import { validateOvQuotaDevices, type OvQuotaGate } from './ovQuotaGate';
+import { verificationClientVersionFields } from './verificationAppVersion';
 
 export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind } from './verificationDeviceImages';
 export type { DeviceRvDocumentsState, RvDocumentKind } from './verificationRvDeviceImages';
@@ -481,6 +482,7 @@ export function buildSiteCalibrationFromRow(
   if (options?.docaCharges) {
     Object.assign(fields, options.docaCharges);
   }
+  Object.assign(fields, verificationClientVersionFields());
   return fields;
 }
 
@@ -504,6 +506,7 @@ export function buildNewSiteCalibrationRecord(
       rcCompanyName: rcParty?.name,
     }),
     ...buildVerificationDraftMeta(draftActor),
+    ...verificationClientVersionFields(),
   };
 }
 

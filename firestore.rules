@@ -372,6 +372,20 @@ service cloud.firestore {
           || data.get('vctId', '') == request.auth.uid;
       }
 
+      // Old app builds omit clientAppVersionCode → create/update rejected.
+      function meetsMinVerificationAppVersion() {
+        let settings = get(/databases/$(database)/documents/appSettings/global);
+        let minCode = settings.exists
+            && settings.data.keys().hasAny(['minVerificationAppVersionCode'])
+            && settings.data.minVerificationAppVersionCode is int
+            && settings.data.minVerificationAppVersionCode > 0
+          ? settings.data.minVerificationAppVersionCode
+          : 1;
+        return request.resource.data.keys().hasAll(['clientAppVersionCode'])
+          && request.resource.data.clientAppVersionCode is int
+          && request.resource.data.clientAppVersionCode >= minCode;
+      }
+
       allow read: if isSuperAdmin();
       allow create, update: if isSuperAdmin();
       allow delete: if isSuperAdmin()
@@ -394,7 +408,8 @@ service cloud.firestore {
         && request.resource.data.get('performedBy', '') == 'vct'
         && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
-        && validVerificationApplicationNumber(request.resource.data);
+        && validVerificationApplicationNumber(request.resource.data)
+        && meetsMinVerificationAppVersion();
 
       allow create: if isOperationalVerifier()
         && request.resource.data.rcId == vctRcId()
@@ -403,7 +418,8 @@ service cloud.firestore {
         && request.resource.data.get('performedBy', '') == 'verifier'
         && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
-        && validVerificationApplicationNumber(request.resource.data);
+        && validVerificationApplicationNumber(request.resource.data)
+        && meetsMinVerificationAppVersion();
 
       // RC self verification (performedBy rc).
       allow create: if isRCAdmin()
@@ -412,7 +428,8 @@ service cloud.firestore {
         && request.resource.data.get('performedBy', '') == 'rc'
         && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
-        && validVerificationApplicationNumber(request.resource.data);
+        && validVerificationApplicationNumber(request.resource.data)
+        && meetsMinVerificationAppVersion();
 
       // RC creates draft assigned to a VCT under this centre (createdByUid = vctId for VCT list query).
       allow create: if isRCAdmin()
@@ -425,7 +442,8 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.resource.data.vctId)).data.get('rcId', '') == request.auth.uid
         && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
-        && validVerificationApplicationNumber(request.resource.data);
+        && validVerificationApplicationNumber(request.resource.data)
+        && meetsMinVerificationAppVersion();
 
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
@@ -435,7 +453,8 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) in ['draft', 'submitted']
         && verificationApplicationNumberUnchanged()
         && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
-        && verificationZohoFieldsUnchanged();
+        && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion();
 
       allow update: if isOperationalVct()
         && resource.data.rcId == vctRcId()
@@ -446,7 +465,8 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) in ['draft', 'submitted']
         && verificationApplicationNumberUnchanged()
         && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
-        && verificationZohoFieldsUnchanged();
+        && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion();
 
       allow update: if isOperationalVerifier()
         && resource.data.rcId == vctRcId()
@@ -455,7 +475,8 @@ service cloud.firestore {
         && verificationRecordStatus(resource.data) == 'draft'
         && verificationRecordStatus(request.resource.data) in ['draft', 'pending_rc']
         && verificationApplicationNumberUnchanged()
-        && verificationZohoFieldsUnchanged();
+        && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion();
 
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
@@ -464,7 +485,8 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) in ['pending_rc', 'submitted']
         && verificationApplicationNumberUnchanged()
         && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
-        && verificationZohoFieldsUnchanged();
+        && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion();
 
       // RC emaapengine — certify / fail / void own submitted jobs (same pipeline as VPS worker).
       allow update: if isRCAdmin()

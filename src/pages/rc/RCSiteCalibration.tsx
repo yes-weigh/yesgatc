@@ -204,6 +204,10 @@ import {
   canUseVerificationCapture,
 } from '../../lib/verificationDevicePolicy';
 import {
+  isVerificationAppVersionAllowed,
+  VERIFICATION_APP_UPDATE_REQUIRED_MESSAGE,
+} from '../../lib/verificationAppVersion';
+import {
   emptyPerformerPhotosState,
   performerPhotoFieldsFromMeta,
   performerPhotosFromRecord,
@@ -271,7 +275,11 @@ function verificationCreateGateBlockMessage(
   rcHasVehicle: boolean | null,
   gatesLoading: boolean,
   gatesError: string,
+  minVerificationAppVersionCode = 0,
 ): string | null {
+  if (!isVerificationAppVersionAllowed(minVerificationAppVersionCode)) {
+    return VERIFICATION_APP_UPDATE_REQUIRED_MESSAGE;
+  }
   if (gatesLoading) return 'Checking centre requirements…';
   if (gatesError) return gatesError;
   if (rcHasWeightsCert === false) return VCT_RC_WEIGHTS_CERT_REQUIRED_MESSAGE;
@@ -342,8 +350,10 @@ function verificationCreateGateSatisfied(
   rcHasVehicle: boolean | null,
   gatesLoading: boolean,
   gatesError: string,
+  minVerificationAppVersionCode = 0,
 ): boolean {
   if (role !== 'vct' && role !== 'rc_admin' && role !== 'verifier') return false;
+  if (!isVerificationAppVersionAllowed(minVerificationAppVersionCode)) return false;
   if (gatesLoading || gatesError) return false;
   return rcHasWeightsCert === true && rcHasVehicle === true;
 }
@@ -1378,6 +1388,7 @@ export const RCSiteCalibration: React.FC = () => {
       rcHasVehicle,
       gatesLoading,
       gatesError,
+      appSettings.minVerificationAppVersionCode ?? 0,
     );
     if (gateMsg) {
       setError(gateMsg);
@@ -2152,6 +2163,7 @@ export const RCSiteCalibration: React.FC = () => {
         rcHasVehicle,
         gatesLoading,
         gatesError,
+        appSettings.minVerificationAppVersionCode ?? 0,
       );
       if (gateMsg) {
         setListError(gateMsg);
@@ -2183,7 +2195,7 @@ export const RCSiteCalibration: React.FC = () => {
       setShowJobKindPicker(false);
       setShowAddForm(true);
     },
-    [user?.role, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError],
+    [user?.role, rcHasWeightsCert, rcHasVehicle, gatesLoading, gatesError, appSettings.minVerificationAppVersionCode],
   );
 
   const handleStartAdd = () => {
@@ -2196,6 +2208,7 @@ export const RCSiteCalibration: React.FC = () => {
       rcHasVehicle,
       gatesLoading,
       gatesError,
+      appSettings.minVerificationAppVersionCode ?? 0,
     );
     if (gateMsg) {
       setListError(gateMsg);
@@ -2251,6 +2264,7 @@ export const RCSiteCalibration: React.FC = () => {
       rcHasVehicle,
       gatesLoading,
       gatesError,
+      appSettings.minVerificationAppVersionCode ?? 0,
     );
     if (gateMsg) {
       setListError(gateMsg);
@@ -2496,6 +2510,7 @@ export const RCSiteCalibration: React.FC = () => {
     rcHasVehicle,
     gatesLoading,
     gatesError,
+    appSettings.minVerificationAppVersionCode ?? 0,
   );
   const canStartNewVerification =
     canCreateVerification(user?.role)
@@ -3054,6 +3069,7 @@ export const RCSiteCalibration: React.FC = () => {
                         rcHasVehicle,
                         gatesLoading,
                         gatesError,
+                        appSettings.minVerificationAppVersionCode ?? 0,
                       );
                       if (gateMsg) setListError(gateMsg);
                       else if (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   signInWithCustomToken,
   signInWithEmailAndPassword,
@@ -125,6 +125,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** True while login() is accepting epoch — blocks force-logout race with onAuthStateChanged. */
+  const loginBootstrapRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,7 +167,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     let ending = false;
     const endSession = async () => {
-      if (ending) return;
+      if (ending || loginBootstrapRef.current) return;
       ending = true;
       setError(SESSION_ENDED_LOGIN_MESSAGE);
       setUser(null);
@@ -175,6 +177,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const settingsUnsub = onSnapshot(
       doc(db, APP_SETTINGS_COLLECTION, APP_SETTINGS_GLOBAL_DOC),
       async snap => {
+        if (loginBootstrapRef.current) return;
         const epoch = normalizeAppSettings(snap.exists() ? snap.data() : undefined).authSessionEpoch ?? 0;
         if (epoch > readAcceptedEpoch()) await endSession();
       },
@@ -186,6 +189,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const userUnsub = onSnapshot(
       doc(db, 'users', user.uid),
       async snap => {
+        if (loginBootstrapRef.current) return;
         if (!snap.exists()) return;
         const forcedAt = forceLogoutAtMs(snap.data() as Record<string, unknown>);
         const loginAt = readLoginAtMs();
@@ -219,8 +223,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(msg);
     }
 
+    loginBootstrapRef.current = true;
     try {
       const cred = await signInWithEmailAndPassword(auth, authEmailForAadhar(aadhar), password);
+
+      // Stamp before setUser (any path) so force-logout listeners do not race.
+      const settingsSnap = await getDoc(doc(db, APP_SETTINGS_COLLECTION, APP_SETTINGS_GLOBAL_DOC));
+      const epoch = normalizeAppSettings(
+        settingsSnap.exists() ? settingsSnap.data() : undefined,
+      ).authSessionEpoch ?? 0;
+      writeAcceptedEpoch(epoch);
+      writeLoginAtMs(Date.now());
+
       const snap = await getDoc(doc(db, 'users', cred.user.uid));
       if (!snap.exists()) {
         await signOut(auth);
@@ -254,19 +268,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('No profile found for this account. Contact your administrator.');
       }
 
-      const settingsSnap = await getDoc(doc(db, APP_SETTINGS_COLLECTION, APP_SETTINGS_GLOBAL_DOC));
-      const epoch = normalizeAppSettings(
-        settingsSnap.exists() ? settingsSnap.data() : undefined,
-      ).authSessionEpoch ?? 0;
-      writeAcceptedEpoch(epoch);
-      writeLoginAtMs(Date.now());
-
       setUser(resolved);
     } catch (err: unknown) {
       const friendly = authErrorMessage(err, 'Login failed');
       setError(friendly);
       throw new Error(friendly, { cause: err });
     } finally {
+      loginBootstrapRef.current = false;
       setLoading(false);
     }
   };

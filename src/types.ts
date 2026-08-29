@@ -424,6 +424,10 @@ export type StoredVerificationGstBill = {
 export interface SiteCalibration {
   id: string;
   rcId: string;
+  /** App display version that created/last updated this record (e.g. V6.40). */
+  clientAppVersion?: string;
+  /** Numeric app code for min-version gates (V6.40 → 640). */
+  clientAppVersionCode?: number;
   verificationType: JobType;
   customerId: string;
   customerName: string;
