@@ -372,7 +372,7 @@ service cloud.firestore {
           || data.get('vctId', '') == request.auth.uid;
       }
 
-      // Old app builds omit clientAppVersionCode → create/update rejected.
+      // Old app builds omit clientAppVersionCode → create/update rejected when min > 0.
       function meetsMinVerificationAppVersion() {
         let settings = get(/databases/$(database)/documents/appSettings/global);
         let minCode = settings.exists
@@ -380,10 +380,15 @@ service cloud.firestore {
             && settings.data.minVerificationAppVersionCode is int
             && settings.data.minVerificationAppVersionCode > 0
           ? settings.data.minVerificationAppVersionCode
-          : 1;
-        return request.resource.data.keys().hasAll(['clientAppVersionCode'])
-          && request.resource.data.clientAppVersionCode is int
-          && request.resource.data.clientAppVersionCode >= minCode;
+          : 0;
+        let code = request.resource.data.get('clientAppVersionCode', 0);
+        // Gate off when minCode is 0. Otherwise require stamped version >= min.
+        return minCode <= 0
+          || (
+            request.resource.data.keys().hasAll(['clientAppVersionCode'])
+            && (code is int || code is float)
+            && code >= minCode
+          );
       }
 
       allow read: if isSuperAdmin();

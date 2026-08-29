@@ -1354,7 +1354,13 @@ export const RCSiteCalibration: React.FC = () => {
         return 'This verification was already submitted but its status was damaged by a server bug. It cannot be resubmitted from the app — contact super admin to repair it from Automation Worker → Pipeline recovery.';
       }
       if (isFieldStaff) {
-        return 'Permission denied. Ensure your account is active and linked to your RC centre, then try again.';
+        if (!rcUid) {
+          return 'Your VCT account is not linked to an RC centre. Ask your RC admin to link you, then sign in again.';
+        }
+        if (!isVerificationAppVersionAllowed(appSettings.minVerificationAppVersionCode ?? 0)) {
+          return VERIFICATION_APP_UPDATE_REQUIRED_MESSAGE;
+        }
+        return 'Permission denied. Hard-refresh the app (or clear site data), ensure your account is active and linked to your RC centre, then try again.';
       }
       return 'Missing or insufficient permissions. Deploy Firestore rules: firebase deploy --only firestore:rules';
     }
@@ -1381,6 +1387,14 @@ export const RCSiteCalibration: React.FC = () => {
   ) => {
     if (!canCreateVerification(user?.role)) {
       setError('You do not have permission to start verifications.');
+      return;
+    }
+    if (!rcUid) {
+      setError(
+        isFieldStaff
+          ? 'Your account is not linked to an RC centre. Ask your RC admin to link you, then sign in again.'
+          : 'RC scope is missing.',
+      );
       return;
     }
     const gateMsg = verificationCreateGateBlockMessage(

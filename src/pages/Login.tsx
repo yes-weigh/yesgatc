@@ -20,6 +20,12 @@ const LOCAL_QUICK_LOGINS = import.meta.env.DEV
         aadhar: '718835126130',
         password: 'Pala!7890',
       },
+      {
+        id: 'vishnu-vct',
+        label: 'Vishnu VCT',
+        aadhar: '261870165022',
+        password: 'GATC@2026',
+      },
     ]
   : [];
 
