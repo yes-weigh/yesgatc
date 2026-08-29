@@ -264,6 +264,10 @@ export const ProductCatalogueList: React.FC<{
   variant?: 'list' | 'shop';
   /** Multi-spec: emit product only; parent shows capacity list (no modal / no auto-select). */
   deferMultiSpec?: boolean;
+  /** Shop cards: media strip. Off = name-only tiles. */
+  showShopMedia?: boolean;
+  /** capacity = Max/e; identity = model approval / model no (OV picker). */
+  shopMediaMeta?: 'capacity' | 'identity';
 }> = ({
   products,
   value,
@@ -272,6 +276,8 @@ export const ProductCatalogueList: React.FC<{
   showCapacitySpecs = true,
   variant = 'list',
   deferMultiSpec = false,
+  showShopMedia = true,
+  shopMediaMeta = 'capacity',
 }) => {
   const { activeProducts, pickProduct, specModal } = useProductPick(products, onChange, {
     deferMultiSpec,
@@ -290,7 +296,7 @@ export const ProductCatalogueList: React.FC<{
   return (
     <>
       <ul
-        className={`product-catalogue-list${shop ? ' product-catalogue-list--shop' : ''}`}
+        className={`product-catalogue-list${shop ? ' product-catalogue-list--shop' : ''}${shop && !showShopMedia ? ' product-catalogue-list--shop-names' : ''}`}
         role="listbox"
       >
         {activeProducts.map(product => {
@@ -304,7 +310,7 @@ export const ProductCatalogueList: React.FC<{
                 type="button"
                 className={
                   shop
-                    ? `product-shop-card${selected ? ' product-shop-card--selected' : ''}`
+                    ? `product-shop-card${selected ? ' product-shop-card--selected' : ''}${!showShopMedia ? ' product-shop-card--name-only' : ''}`
                     : `product-picker-option product-catalogue-option${selected ? ' product-picker-option--active product-catalogue-option--selected' : ''}`
                 }
                 role="option"
@@ -314,7 +320,9 @@ export const ProductCatalogueList: React.FC<{
               >
                 {shop ? (
                   <>
-                    <ProductShopMedia product={product} />
+                    {showShopMedia ? (
+                      <ProductShopMedia product={product} meta={shopMediaMeta} />
+                    ) : null}
                     <span className="product-shop-card-body">
                       <span className="product-shop-card-name">{product.name}</span>
                     </span>

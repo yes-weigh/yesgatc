@@ -11565,6 +11565,21 @@ body.verification-mobile-wizard-active {
   box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4);
 }
 
+.product-shop-card--name-only {
+  justify-content: center;
+  min-height: 3.25rem;
+}
+
+.product-shop-card--name-only .product-shop-card-body {
+  flex: 1 1 auto;
+  justify-content: center;
+  padding: 0.55rem 0.65rem;
+}
+
+.product-catalogue-list--shop-names {
+  grid-auto-rows: minmax(3.25rem, auto);
+}
+
 .product-shop-card:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -11603,6 +11618,12 @@ body.verification-mobile-wizard-active {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.product-shop-card-media--identity .product-shop-card-cap-line {
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: #1e293b;
 }
 
 .product-shop-card-img-wrap {
@@ -12972,13 +12993,85 @@ body.verification-mobile-wizard-active {
   background: rgba(15, 23, 42, 0.72);
 }
 
+.ov-self-spec-choice-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.ov-self-spec-choice-preview {
+  flex-shrink: 0;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.35);
+}
+
+.ov-self-spec-choice-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  background: #fff;
+}
+
+.ov-self-spec-choice-img--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  background: rgba(30, 41, 59, 0.95);
+}
+
+.ov-self-spec-choice-head-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .ov-self-spec-choice-title {
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #94a3b8;
-  margin-bottom: 0.55rem;
+}
+
+.ov-self-spec-choice-product {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #93c5fd;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-self-spec-choice-approval {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #f8fafc;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-self-spec-choice-model {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ov-self-spec-choice-list {
@@ -13246,6 +13339,14 @@ body.verification-mobile-wizard-active {
 
   .verification-wizard--ov-self .product-shop-card {
     border-radius: 10px;
+  }
+
+  .verification-wizard--ov-self .product-shop-card--name-only {
+    min-height: 0;
+  }
+
+  .verification-wizard--ov-self .product-shop-card--name-only .product-shop-card-body {
+    padding: 0.35rem 0.4rem;
   }
 
   .verification-wizard--ov-self .product-shop-card-media {

@@ -4,20 +4,43 @@ import { StorageImage } from './StorageImage';
 import type { Product } from '../types';
 import { formatShopCapacityLines } from '../lib/productSpecifications';
 
+export type ProductShopMediaMeta = 'capacity' | 'identity';
+
 type ProductShopMediaProps = {
   product: Product;
   inactive?: boolean;
+  /** capacity = Max/e lines; identity = model approval / model no / brand (no specs). */
+  meta?: ProductShopMediaMeta;
 };
+
+function identityLines(product: Product): string[] {
+  const lines: string[] = [];
+  const approval = product.modelApprovalNo?.trim();
+  const modelNo = product.modelNo?.trim();
+  const modelId = product.modelid?.trim();
+  const brand = product.manufacturerBrandSeries?.trim();
+  const accuracy = product.accuracyClass?.trim();
+  if (approval) lines.push(approval);
+  if (modelNo) lines.push(modelNo);
+  else if (modelId) lines.push(modelId);
+  if (brand) lines.push(brand);
+  if (accuracy) lines.push(accuracy);
+  return lines;
+}
 
 export const ProductShopMedia: React.FC<ProductShopMediaProps> = ({
   product,
   inactive = false,
+  meta = 'capacity',
 }) => {
-  const lines = formatShopCapacityLines(product);
+  const lines =
+    meta === 'identity' ? identityLines(product) : formatShopCapacityLines(product);
   const hasImage = Boolean(product.productImageUrl || product.productImagePath);
 
   return (
-    <span className="product-shop-card-media">
+    <span
+      className={`product-shop-card-media${meta === 'identity' ? ' product-shop-card-media--identity' : ''}`}
+    >
       {lines.length > 0 ? (
         <span className="product-shop-card-cap-lines">
           {lines.map((line, index) => (

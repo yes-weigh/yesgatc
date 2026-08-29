@@ -1,6 +1,7 @@
-import { Building2, Droplets, MapPin, Thermometer } from 'lucide-react';
+import { Building2, Droplets, Image as ImageIcon, MapPin, Thermometer } from 'lucide-react';
 import { ProductCatalogueList } from '../../components/ProductSelect';
 import { SegmentToggle } from '../../components/SegmentToggle';
+import { StorageImage } from '../../components/StorageImage';
 import {
   VERIFICATION_LOCATION_OPTIONS,
   mpeStringFromProductSpec,
@@ -119,10 +120,39 @@ function OvSelfSpecChoiceList({
   const specs = getProductSpecifications(product);
   const unit = product.unitOfMeasurement || 'kg';
   if (specs.length <= 1) return null;
+  const hasImage = Boolean(product.productImageUrl || product.productImagePath);
+  const approvalNo = product.modelApprovalNo?.trim() || '';
+  const modelNo = product.modelNo?.trim() || product.modelid?.trim() || '';
 
   return (
     <div className="ov-self-spec-choice" role="listbox" aria-label="Select capacity">
-      <p className="ov-self-spec-choice-title mb-0">Select specification</p>
+      <div className="ov-self-spec-choice-head">
+        <span className="ov-self-spec-choice-preview" aria-hidden={!hasImage}>
+          {hasImage ? (
+            <StorageImage
+              url={product.productImageUrl}
+              path={product.productImagePath}
+              alt=""
+              className="ov-self-spec-choice-img"
+              persistentCache
+            />
+          ) : (
+            <span className="ov-self-spec-choice-img ov-self-spec-choice-img--placeholder">
+              <ImageIcon size={28} />
+            </span>
+          )}
+        </span>
+        <div className="ov-self-spec-choice-head-text">
+          <p className="ov-self-spec-choice-title mb-0">Select specification</p>
+          <p className="ov-self-spec-choice-product mb-0">{product.name}</p>
+          {approvalNo ? (
+            <p className="ov-self-spec-choice-approval mb-0">{approvalNo}</p>
+          ) : null}
+          {modelNo ? (
+            <p className="ov-self-spec-choice-model mb-0">Model number : {modelNo}</p>
+          ) : null}
+        </div>
+      </div>
       <ul className="ov-self-spec-choice-list">
         {specs.map(spec => {
           const selected = selectedSpecificationId === spec.id;
@@ -230,6 +260,7 @@ export function OvSelfProductPanel({
           showCapacitySpecs
           variant="shop"
           deferMultiSpec
+          shopMediaMeta="identity"
         />
       </div>
 
