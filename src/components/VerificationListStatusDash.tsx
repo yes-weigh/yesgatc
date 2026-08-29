@@ -1,11 +1,11 @@
-import { FileText, Send, Award, AlertTriangle, XCircle, RefreshCw } from 'lucide-react';
+import { FileText, Send, Award, AlertTriangle, XCircle, RefreshCw, Shield } from 'lucide-react';
 import type {
   VerificationStatusFilter,
   VerificationStatusFilterCounts,
   VerificationTypeFilter,
 } from '../lib/verificationRequest';
 
-type DashTone = 'emerald' | 'sky' | 'amber' | 'rose' | 'slate' | 'orange';
+type DashTone = 'emerald' | 'sky' | 'amber' | 'rose' | 'slate' | 'orange' | 'blue';
 
 const STATUS_TILES: {
   key: VerificationStatusFilter;
@@ -23,6 +23,7 @@ const STATUS_TILES: {
 
 type VerificationListStatusDashProps = {
   counts: VerificationStatusFilterCounts;
+  ovCount: number;
   rvCount: number;
   statusFilter: VerificationStatusFilter;
   onStatusFilterChange: (value: VerificationStatusFilter) => void;
@@ -33,6 +34,7 @@ type VerificationListStatusDashProps = {
 
 export function VerificationListStatusDash({
   counts,
+  ovCount,
   rvCount,
   statusFilter,
   onStatusFilterChange,
@@ -40,6 +42,7 @@ export function VerificationListStatusDash({
   onTypeFilterChange,
   loading = false,
 }: VerificationListStatusDashProps) {
+  const ovActive = typeFilter === 'OV';
   const rvActive = typeFilter === 'RV';
 
   return (
@@ -69,6 +72,23 @@ export function VerificationListStatusDash({
             </button>
           );
         })}
+        <button
+          type="button"
+          className={`verification-status-dash__tile verification-status-dash__tile--blue${
+            ovActive ? ' is-active' : ''
+          }`}
+          onClick={() => onTypeFilterChange(ovActive ? 'all' : 'OV')}
+          aria-pressed={ovActive}
+          aria-label={`OV: ${ovCount}`}
+        >
+          <span className="verification-status-dash__icon" aria-hidden>
+            <Shield size={14} strokeWidth={2.25} />
+          </span>
+          <span className="verification-status-dash__label">OV</span>
+          <span className="verification-status-dash__count">
+            {loading ? '—' : ovCount}
+          </span>
+        </button>
         <button
           type="button"
           className={`verification-status-dash__tile verification-status-dash__tile--orange${

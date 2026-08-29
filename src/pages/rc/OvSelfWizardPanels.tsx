@@ -3,7 +3,7 @@ import { ProductCatalogueList } from '../../components/ProductSelect';
 import { SegmentToggle } from '../../components/SegmentToggle';
 import {
   VERIFICATION_LOCATION_OPTIONS,
-  mpeStringFromProduct,
+  mpeStringFromProductSpec,
   type VerificationDeviceRowValues,
 } from '../../lib/siteCalibrationProfileFields';
 import type { Product, VerificationLocation } from '../../types';
@@ -53,12 +53,20 @@ export function OvSelfProductPanel({
   const seal = sealId.trim() || row.sealIdentificationNumber.trim();
   const selected = products.find(product => product.id === row.productId) ?? null;
 
-  const handlePick = (next: { productId: string; productName: string }) => {
+  const handlePick = (next: {
+    productId: string;
+    productName: string;
+    productSpecificationId?: string;
+  }) => {
     const product = products.find(p => p.id === next.productId) ?? null;
     onProductChange({
       productId: next.productId,
       productName: next.productName,
-      maximumPermissibleError: mpeStringFromProduct(product),
+      productSpecificationId: next.productSpecificationId || '',
+      maximumPermissibleError: mpeStringFromProductSpec(
+        product,
+        next.productSpecificationId,
+      ),
       sealIdentificationNumber: seal,
     });
   };
@@ -66,7 +74,6 @@ export function OvSelfProductPanel({
   return (
     <div className="ov-self-panel ov-self-panel--product">
       <div className="ov-self-product-block">
-        <span className="ov-self-kicker">Product</span>
         <ProductCatalogueList
           products={products}
           value={{ productId: row.productId, productName: row.productName }}

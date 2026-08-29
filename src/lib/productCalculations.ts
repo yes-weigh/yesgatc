@@ -119,6 +119,13 @@ export function formatProductText(value: string | undefined | null): string {
 
 /** Max, e, and min — for product pickers on verification flows. */
 export function formatProductCapacitySpecs(product: Product): string {
+  const specs = product.specifications;
+  if (specs && specs.length > 1) {
+    const caps = specs
+      .map(s => (Number.isFinite(s.maximumCapacity) ? String(s.maximumCapacity) : ''))
+      .filter(Boolean);
+    if (caps.length > 0) return caps.join(' · ');
+  }
   const parts: string[] = [];
   const max = formatProductMaximumCapacity(product);
   if (max !== '—') parts.push(`Max ${max}`);

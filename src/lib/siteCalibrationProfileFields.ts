@@ -15,6 +15,7 @@ import {
   productSnapshotFromProduct,
   type VerificationDraftActorMeta,
 } from './verificationRequest';
+import { resolveProductSpecification } from './productSpecifications';
 import type { ProductFileMeta } from './productApprovalUpload';
 import {
   deviceVerificationImagesFromRows,
@@ -75,6 +76,8 @@ export type VerificationDeviceRowValues = {
   included: boolean;
   productId: string;
   productName: string;
+  /** Selected capacity row when the product has multiple specifications. */
+  productSpecificationId?: string;
   serialNumber: string;
   maximumPermissibleError: string;
   sealIdentificationNumber: string;
@@ -267,6 +270,7 @@ export function createEmptyVerificationDeviceRow(): VerificationDeviceRowValues 
     included: true,
     productId: '',
     productName: '',
+    productSpecificationId: '',
     serialNumber: '',
     maximumPermissibleError: '',
     sealIdentificationNumber: '',
@@ -291,6 +295,14 @@ export function mpeStringFromProduct(product: { maximumPermissibleError?: number
   return String(value);
 }
 
+export function mpeStringFromProductSpec(
+  product: Product | null | undefined,
+  specificationId?: string | null,
+): string {
+  if (!product) return '';
+  return mpeStringFromProduct(resolveProductSpecification(product, specificationId));
+}
+
 export function deviceRowFromCustomerDevice(
   device: CustomerDevice,
   products: Product[],
@@ -303,6 +315,7 @@ export function deviceRowFromCustomerDevice(
     included: true,
     productId: device.productId || '',
     productName: device.productName,
+    productSpecificationId: '',
     serialNumber: device.serialNumber,
     maximumPermissibleError: mpeStringFromProduct(product),
     sealIdentificationNumber: '',
@@ -372,6 +385,7 @@ export function verificationSessionFromRecord(
         included: true,
         productId: record.productId || '',
         productName: record.productName || '',
+        productSpecificationId: record.productSpecificationId || '',
         serialNumber: record.serialNumber || '',
         maximumPermissibleError:
           record.maximumPermissibleError !== undefined && record.maximumPermissibleError !== null
@@ -463,14 +477,26 @@ export function buildSiteCalibrationFromRow(
     fileCertificateAsRc: filing.fileCertificateAsRc,
     ...(filing.sourceCustomerId ? { sourceCustomerId: filing.sourceCustomerId } : {}),
     ...(filing.sourceCustomerName ? { sourceCustomerName: filing.sourceCustomerName } : {}),
-    ...productSnapshotFromProduct(options?.product),
+    ...productSnapshotFromProduct(options?.product, row.productSpecificationId),
   };
+  if (row.productSpecificationId?.trim()) {
+    fields.productSpecificationId = row.productSpecificationId.trim();
+  }
   if (row.deviceId.trim()) fields.deviceId = row.deviceId.trim();
   if (session.verificationType === 'RV') {
     const year = row.manufacturingYear.trim();
     if (year) fields.manufacturingYear = Number(year);
+    const feeProduct = options?.product
+      ? {
+          maximumCapacity: resolveProductSpecification(
+            options.product,
+            row.productSpecificationId,
+          ).maximumCapacity,
+          unitOfMeasurement: options.product.unitOfMeasurement || 'kg',
+        }
+      : null;
     const feeLine = computeRvCustomerFeeLine({
-      product: options?.product,
+      product: feeProduct,
       fees: options?.feesStructure ?? DEFAULT_RC_FEES_STRUCTURE,
       additionalFee: row.additionalFee,
       discountFee: row.discountFee,
@@ -534,6 +560,7 @@ export function buildSiteCalibrationFields(
       included: true,
       productId: values.productId,
       productName: values.productName,
+      productSpecificationId: '',
       serialNumber: values.serialNumber,
       maximumPermissibleError: values.maximumPermissibleError,
       sealIdentificationNumber: values.sealIdentificationNumber,

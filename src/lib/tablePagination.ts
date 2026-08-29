@@ -2,6 +2,7 @@ export const VERIFICATION_TABLE_PAGE_SIZE = 30;
 export const CUSTOMER_LIST_PAGE_SIZE = 15;
 export const REPORTS_TABLE_PAGE_SIZE = 25;
 export const DOCA_SCRAPING_TABLE_PAGE_SIZE = 100;
+export const PRODUCT_SHOP_PAGE_SIZE = 6;
 
 export function getTotalPages(totalItems: number, pageSize: number): number {
   if (totalItems <= 0) return 1;

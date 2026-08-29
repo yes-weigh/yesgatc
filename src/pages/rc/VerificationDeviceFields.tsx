@@ -9,8 +9,9 @@ import { useAppContext } from '../../context/AppContext';
 import { DEFAULT_RC_FEES_STRUCTURE } from '../../lib/rcProfileFields';
 import { computeRvCustomerFeeLine } from '../../lib/rvFeeBreakdown';
 import { VerificationFeeBreakdown } from '../../components/VerificationFeeBreakdown';
+import { capacityFieldsFromProductSpec } from '../../lib/productSpecifications';
 import {
-  mpeStringFromProduct,
+  mpeStringFromProductSpec,
   type DeviceRvDocumentsState,
   type DeviceVerificationImagesState,
   type VerificationDeviceRowValues,
@@ -264,6 +265,19 @@ function selectedProduct(products: Product[], row: VerificationDeviceRowValues):
   return products.find(p => p.id === row.productId) ?? null;
 }
 
+function feeProductFromRow(
+  products: Product[],
+  row: VerificationDeviceRowValues,
+): Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null {
+  const product = selectedProduct(products, row);
+  if (!product) return null;
+  const capacity = capacityFieldsFromProductSpec(product, row.productSpecificationId);
+  return {
+    maximumCapacity: capacity.maximumCapacity,
+    unitOfMeasurement: capacity.unitOfMeasurement,
+  };
+}
+
 export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> = ({
   devices,
   deviceImages,
@@ -397,12 +411,19 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
     if (file) onDeviceRvDocumentSelect?.(localId, kind, file);
   };
 
-  const handleProductChange = (localId: string, next: { productId: string; productName: string }) => {
+  const handleProductChange = (
+    localId: string,
+    next: { productId: string; productName: string; productSpecificationId?: string },
+  ) => {
     const product = products.find(p => p.id === next.productId) ?? null;
     onDeviceChange(localId, {
       productId: next.productId,
       productName: next.productName,
-      maximumPermissibleError: mpeStringFromProduct(product),
+      productSpecificationId: next.productSpecificationId || '',
+      maximumPermissibleError: mpeStringFromProductSpec(
+        product,
+        next.productSpecificationId,
+      ),
     });
   };
 
@@ -583,7 +604,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               const product = selectedProduct(products, row);
               const feeLine = isRv
                 ? computeRvCustomerFeeLine({
-                    product,
+                    product: feeProductFromRow(products, row),
                     fees,
                     additionalFee: row.additionalFee,
                     discountFee: row.discountFee,
@@ -738,7 +759,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           const product = selectedProduct(products, row);
           const feeLine = isRv
             ? computeRvCustomerFeeLine({
-                product,
+                product: feeProductFromRow(products, row),
                 fees,
                 additionalFee: row.additionalFee,
                 discountFee: row.discountFee,

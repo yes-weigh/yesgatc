@@ -7,6 +7,7 @@ import type {
   VerificationRequestStatus,
   WorkflowMode,
 } from '../types';
+import { capacityFieldsFromProductSpec } from './productSpecifications';
 import { verificationClientVersionFields } from './verificationAppVersion';
 
 export const VERIFICATION_REQUEST_STATUSES: VerificationRequestStatus[] = [
@@ -512,6 +513,7 @@ export function verificationVctLabel(
 
 export function productSnapshotFromProduct(
   product: Product | null | undefined,
+  specificationId?: string | null,
 ): Pick<
   SiteCalibration,
   | 'maximumCapacity'
@@ -522,10 +524,11 @@ export function productSnapshotFromProduct(
   | 'accuracyClass'
 > {
   if (!product) return {};
+  const capacity = capacityFieldsFromProductSpec(product, specificationId);
   return {
-    maximumCapacity: product.maximumCapacity,
-    verificationScaleInterval: product.verificationScaleInterval,
-    unitOfMeasurement: product.unitOfMeasurement,
+    maximumCapacity: capacity.maximumCapacity,
+    verificationScaleInterval: capacity.verificationScaleInterval,
+    unitOfMeasurement: capacity.unitOfMeasurement,
     ...(product.manufacturerBrandSeries?.trim()
       ? { manufacturerBrandSeries: product.manufacturerBrandSeries.trim() }
       : {}),

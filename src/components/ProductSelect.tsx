@@ -1,13 +1,21 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Image as ImageIcon } from 'lucide-react';
+import { ChevronDown, Image as ImageIcon, X } from 'lucide-react';
 import { StorageImage } from './StorageImage';
+import { ProductShopMedia } from './ProductShopMedia';
 import type { Product } from '../types';
 import { formatProductCapacitySpecs } from '../lib/productCalculations';
+import {
+  formatSpecificationCapacitySpecs,
+  getProductSpecifications,
+  isProductActive,
+  productHasMultipleSpecifications,
+} from '../lib/productSpecifications';
 
 export type ProductSelectValue = {
   productId: string;
   productName: string;
+  productSpecificationId?: string;
 };
 
 type ProductSelectProps = {
@@ -58,6 +66,169 @@ const ProductThumb: React.FC<{ product: Product | null; className?: string }> = 
     </span>
   );
 
+function ProductSpecPickerModal({
+  product,
+  selectedSpecificationId,
+  onPick,
+  onClose,
+}: {
+  product: Product;
+  selectedSpecificationId?: string;
+  onPick: (specificationId: string) => void;
+  onClose: () => void;
+}) {
+  const specs = getProductSpecifications(product);
+  const unit = product.unitOfMeasurement || 'kg';
+  const [selectedId, setSelectedId] = useState(
+    () =>
+      (selectedSpecificationId && specs.some(s => s.id === selectedSpecificationId)
+        ? selectedSpecificationId
+        : specs[0]?.id) || '',
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'Enter' && selectedId) onPick(selectedId);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, onPick, selectedId]);
+
+  return createPortal(
+    <div
+      className="product-spec-picker-backdrop"
+      role="presentation"
+      onMouseDown={e => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="product-spec-picker-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="product-spec-picker-title"
+      >
+        <header className="product-spec-picker-head">
+          <div className="product-spec-picker-head-text">
+            <h2 id="product-spec-picker-title" className="product-spec-picker-title">
+              Select specification
+            </h2>
+            <p className="product-spec-picker-sub mb-0">{product.name}</p>
+          </div>
+          <button
+            type="button"
+            className="product-spec-picker-close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </header>
+        <ul className="product-spec-picker-list" role="listbox" aria-label="Specifications">
+          {specs.map(spec => {
+            const label = formatSpecificationCapacitySpecs(spec, unit);
+            const selected = selectedId === spec.id;
+            return (
+              <li key={spec.id}>
+                <button
+                  type="button"
+                  className={`product-spec-picker-option${selected ? ' product-spec-picker-option--selected' : ''}`}
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => setSelectedId(spec.id)}
+                >
+                  <span className="product-spec-picker-badge">
+                    {Number.isFinite(spec.maximumCapacity) ? spec.maximumCapacity : '—'}
+                  </span>
+                  <span className="product-spec-picker-option-text">
+                    <span className="product-spec-picker-option-name">{label || 'Specification'}</span>
+                    {Number.isFinite(spec.maximumPermissibleError) ? (
+                      <span className="product-spec-picker-option-meta">
+                        MPE {spec.maximumPermissibleError}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="product-spec-picker-foot">
+          <button
+            type="button"
+            className="product-spec-picker-confirm"
+            disabled={!selectedId}
+            onClick={() => selectedId && onPick(selectedId)}
+          >
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function useProductPick(
+  products: Product[],
+  onChange: (value: ProductSelectValue) => void,
+  currentValue?: ProductSelectValue,
+) {
+  const [pendingProduct, setPendingProduct] = useState<Product | null>(null);
+
+  const pickProduct = useCallback(
+    (product: Product) => {
+      if (productHasMultipleSpecifications(product)) {
+        setPendingProduct(product);
+        return;
+      }
+      const specs = getProductSpecifications(product);
+      onChange({
+        productId: product.id,
+        productName: product.name,
+        productSpecificationId: specs[0]?.id || '',
+      });
+    },
+    [onChange],
+  );
+
+  const confirmSpec = useCallback(
+    (specificationId: string) => {
+      if (!pendingProduct) return;
+      onChange({
+        productId: pendingProduct.id,
+        productName: pendingProduct.name,
+        productSpecificationId: specificationId,
+      });
+      setPendingProduct(null);
+    },
+    [onChange, pendingProduct],
+  );
+
+  const cancelSpec = useCallback(() => setPendingProduct(null), []);
+
+  const activeProducts = useMemo(
+    () => products.filter(isProductActive),
+    [products],
+  );
+
+  const specModal = pendingProduct ? (
+    <ProductSpecPickerModal
+      product={pendingProduct}
+      selectedSpecificationId={
+        currentValue?.productId === pendingProduct.id
+          ? currentValue.productSpecificationId
+          : undefined
+      }
+      onPick={confirmSpec}
+      onClose={cancelSpec}
+    />
+  ) : null;
+
+  return { activeProducts, pickProduct, specModal };
+}
+
 export const ProductCatalogueList: React.FC<{
   products: Product[];
   value: ProductSelectValue;
@@ -73,7 +244,9 @@ export const ProductCatalogueList: React.FC<{
   showCapacitySpecs = true,
   variant = 'list',
 }) => {
-  if (products.length === 0) {
+  const { activeProducts, pickProduct, specModal } = useProductPick(products, onChange, value);
+
+  if (activeProducts.length === 0) {
     return (
       <p className="product-catalogue-empty text-muted text-sm mb-0">
         No products in catalogue yet.
@@ -84,57 +257,57 @@ export const ProductCatalogueList: React.FC<{
   const shop = variant === 'shop';
 
   return (
-    <ul
-      className={`product-catalogue-list${shop ? ' product-catalogue-list--shop' : ''}`}
-      role="listbox"
-    >
-      {products.map(product => {
-        const selected = product.id === value.productId;
-        const specs = showCapacitySpecs
-          ? formatProductCapacitySpecs(product)
-          : [product.modelid, product.modelNo].filter(Boolean).join(' · ');
-        return (
-          <li key={product.id}>
-            <button
-              type="button"
-              className={
-                shop
-                  ? `product-shop-card${selected ? ' product-shop-card--selected' : ''}`
-                  : `product-picker-option product-catalogue-option${selected ? ' product-picker-option--active product-catalogue-option--selected' : ''}`
-              }
-              role="option"
-              aria-selected={selected}
-              disabled={disabled}
-              onClick={() => onChange({ productId: product.id, productName: product.name })}
-            >
-              {shop ? (
-                <>
-                  <span className="product-shop-card-media">
-                    <ProductThumb product={product} className="product-shop-card-img" />
-                  </span>
-                  <span className="product-shop-card-body">
-                    <span className="product-shop-card-name">{product.name}</span>
-                    {specs ? <span className="product-shop-card-specs">{specs}</span> : null}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <ProductThumb product={product} className="product-picker-option-thumb" />
-                  <span className="product-picker-option-text">
-                    <span className="product-picker-option-name">{product.name}</span>
-                    {showCapacitySpecs ? (
-                      <span className="product-picker-option-specs text-muted text-sm">{specs}</span>
-                    ) : (
-                      <span className="product-picker-option-meta text-muted text-sm">{specs}</span>
-                    )}
-                  </span>
-                </>
-              )}
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+    <>
+      <ul
+        className={`product-catalogue-list${shop ? ' product-catalogue-list--shop' : ''}`}
+        role="listbox"
+      >
+        {activeProducts.map(product => {
+          const selected = product.id === value.productId;
+          const specs = showCapacitySpecs
+            ? formatProductCapacitySpecs(product)
+            : [product.modelid, product.modelNo].filter(Boolean).join(' · ');
+          return (
+            <li key={product.id}>
+              <button
+                type="button"
+                className={
+                  shop
+                    ? `product-shop-card${selected ? ' product-shop-card--selected' : ''}`
+                    : `product-picker-option product-catalogue-option${selected ? ' product-picker-option--active product-catalogue-option--selected' : ''}`
+                }
+                role="option"
+                aria-selected={selected}
+                disabled={disabled}
+                onClick={() => pickProduct(product)}
+              >
+                {shop ? (
+                  <>
+                    <ProductShopMedia product={product} />
+                    <span className="product-shop-card-body">
+                      <span className="product-shop-card-name">{product.name}</span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <ProductThumb product={product} className="product-picker-option-thumb" />
+                    <span className="product-picker-option-text">
+                      <span className="product-picker-option-name">{product.name}</span>
+                      {showCapacitySpecs ? (
+                        <span className="product-picker-option-specs text-muted text-sm">{specs}</span>
+                      ) : (
+                        <span className="product-picker-option-meta text-muted text-sm">{specs}</span>
+                      )}
+                    </span>
+                  </>
+                )}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {specModal}
+    </>
   );
 };
 
@@ -153,10 +326,18 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [menuStyle, setMenuStyle] = useState<MenuPosition | null>(null);
+  const { activeProducts, pickProduct, specModal } = useProductPick(
+    products,
+    next => {
+      onChange(next);
+      setOpen(false);
+    },
+    value,
+  );
 
   const selected = useMemo(
-    () => products.find(p => p.id === value.productId) ?? null,
-    [products, value.productId],
+    () => activeProducts.find(p => p.id === value.productId) ?? null,
+    [activeProducts, value.productId],
   );
 
   const updateMenuPosition = useCallback(() => {
@@ -176,6 +357,7 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
       const target = e.target as Node;
       if (rootRef.current?.contains(target)) return;
       if ((target as Element).closest?.('.product-picker-list--portal')) return;
+      if ((target as Element).closest?.('.product-spec-picker-backdrop')) return;
       setOpen(false);
     };
     document.addEventListener('mousedown', onDocMouseDown);
@@ -194,18 +376,13 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
       window.removeEventListener('scroll', updateMenuPosition, true);
       window.removeEventListener('resize', updateMenuPosition);
     };
-  }, [open, updateMenuPosition, products.length]);
+  }, [open, updateMenuPosition, activeProducts.length]);
 
   useEffect(() => {
     if (!open) return;
-    const selectedIndex = products.findIndex(p => p.id === value.productId);
+    const selectedIndex = activeProducts.findIndex(p => p.id === value.productId);
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
-  }, [open, products, value.productId]);
-
-  const pickProduct = (product: Product) => {
-    onChange({ productId: product.id, productName: product.name });
-    setOpen(false);
-  };
+  }, [open, activeProducts, value.productId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (!open && (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ')) {
@@ -217,13 +394,13 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActiveIndex(i => Math.min(i + 1, Math.max(products.length - 1, 0)));
+      setActiveIndex(i => Math.min(i + 1, Math.max(activeProducts.length - 1, 0)));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIndex(i => Math.max(i - 1, 0));
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      const pick = products[activeIndex];
+      const pick = activeProducts[activeIndex];
       if (pick) pickProduct(pick);
     } else if (e.key === 'Escape') {
       setOpen(false);
@@ -233,7 +410,7 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
   const menuPortal =
     open && menuStyle
       ? createPortal(
-          products.length > 0 ? (
+          activeProducts.length > 0 ? (
             <ul
               id={listId}
               className="product-picker-list product-picker-list--portal"
@@ -244,7 +421,7 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
               }}
               role="listbox"
             >
-              {products.map((product, index) => (
+              {activeProducts.map((product, index) => (
                 <li key={product.id} role="presentation">
                   <button
                     type="button"
@@ -295,9 +472,9 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
         id={inputId}
         type="button"
         className={`product-picker-control product-select-trigger${open ? ' product-picker-control--open' : ''}`}
-        onClick={() => !disabled && products.length > 0 && setOpen(prev => !prev)}
+        onClick={() => !disabled && activeProducts.length > 0 && setOpen(prev => !prev)}
         onKeyDown={handleKeyDown}
-        disabled={disabled || products.length === 0}
+        disabled={disabled || activeProducts.length === 0}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
@@ -314,8 +491,9 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
       </button>
 
       {menuPortal}
+      {specModal}
 
-      {products.length === 0 && (
+      {activeProducts.length === 0 && (
         <p className="product-picker-hint text-muted text-sm m-0 mt-1">
           No products in catalogue yet.
         </p>

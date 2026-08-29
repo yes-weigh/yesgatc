@@ -4,20 +4,15 @@ import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
+import { useSetAppBarTitle } from '../../context/AppBarTitleContext';
+import { useSetProductListAppBar } from '../../context/ProductListAppBarContext';
+import { ProductListFilters } from '../../components/ProductListFilters';
+import { ProductShopMedia } from '../../components/ProductShopMedia';
+import { adminProductMeta, nextProductSortOrder } from '../../lib/productAccess';
 import {
-  RcListCardActions,
-  RcListCardToggle,
-  RcListEditHint,
-  RcListMetaChip,
-  RcListPhoto,
-  RcListStatusBadge,
-} from '../../components/RcListCard';
-import { adminProductMeta } from '../../lib/productAccess';
-import {
-  PackagePlus, Trash2, Image as ImageIcon, Plus, Save, ExternalLink, Info,
-  Package, Scale, Ruler, ShieldCheck, Pencil,
+  Ban, GripVertical, Info, Package, Pencil, Plus, Save, Trash2,
 } from 'lucide-react';
-import { CalcLabel, DefaultsStrip, UploadField } from './productFormUi';
+import { CalcLabel, UploadField } from './productFormUi';
 import type { Product } from '../../types';
 import {
   PRODUCT_CALC_TOOLTIPS,
@@ -26,27 +21,28 @@ import {
   parseProductNumber,
 } from '../../lib/productCalculations';
 import {
+  buildSpecificationsFromFormRows,
+  emptySpecFormRow,
+  isProductActive,
+  specFormRowsFromProduct,
+  type SpecFormRow,
+} from '../../lib/productSpecifications';
+import {
+  DEFAULT_PRODUCT_LIST_FILTERS,
+  filterProductsForList,
+  groupProductsByModelApproval,
+  productModelApprovalOptions,
+  productModelNoOptions,
+  productSpecOptions,
+  reorderIdsWithinVisible,
+  type ProductListFilterState,
+} from '../../lib/productListFilters';
+import {
   deleteProductStorageFile,
   uploadModelApprovalDoc,
   uploadProductImage,
   type ProductFileMeta,
 } from '../../lib/productApprovalUpload';
-
-function formatProductCapacity(product: Product): string {
-  return product.maximumCapacity
-    ? `${product.maximumCapacity} ${product.unitOfMeasurement || 'kg'}`
-    : '—';
-}
-
-function formatProductInterval(product: Product): string {
-  if (product.actualScaleInterval != null && Number.isFinite(product.actualScaleInterval)) {
-    return `${product.actualScaleInterval} g`;
-  }
-  if (product.verificationScaleInterval) {
-    return `${product.verificationScaleInterval} g`;
-  }
-  return '—';
-}
 
 const INITIAL_STATE = {
   modelid: '',
@@ -55,19 +51,35 @@ const INITIAL_STATE = {
   typeOfInstrument: 'Electronic',
   manufacturerBrandSeries: 'YESWEIGH',
   accuracyClass: 'III',
-  maximumCapacity: '',
-  verificationScaleInterval: '',
   unitOfMeasurement: 'kg' as 'kg' | 'g',
-  maximumPermissibleError: '',
   supplyVoltage: '230 V AC',
   modelApprovalNo: '',
 };
 
+function derivedForRow(row: SpecFormRow) {
+  const maxNum = parseProductNumber(row.maximumCapacity);
+  const eNum = parseProductNumber(row.verificationScaleInterval);
+  const hasInputs = row.maximumCapacity !== '' && row.verificationScaleInterval !== '';
+  const derived = computeProductDerived(maxNum, eNum);
+  return {
+    minimumCapacity: formatDerivedDisplay(derived.minimumCapacity, hasInputs),
+    actualScaleInterval: formatDerivedDisplay(derived.actualScaleInterval, hasInputs),
+    noOfVerificationIntervals: formatDerivedDisplay(
+      derived.noOfVerificationIntervals,
+      hasInputs,
+    ),
+  };
+}
+
 export const Products: React.FC = () => {
-  const { products, addProduct, updateProduct, deleteProduct } = useAppContext();
+  const { products, addProduct, updateProduct, reorderProducts } = useAppContext();
   const { user } = useAuth();
   const confirm = useConfirm();
+  const setAppBarTitle = useSetAppBarTitle();
+  const setProductListAppBar = useSetProductListAppBar();
   const [formData, setFormData] = useState(INITIAL_STATE);
+  const [specRows, setSpecRows] = useState<SpecFormRow[]>([emptySpecFormRow()]);
+  const [productActive, setProductActive] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -81,112 +93,243 @@ export const Products: React.FC = () => {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageUploadProgress, setImageUploadProgress] = useState(0);
   const imageInputRef = useRef<HTMLInputElement>(null);
-
-  const formBusy = submitting || uploadingDoc || uploadingImage;
-
-  const canUploadFiles = formData.modelid.trim().length > 0;
-  const canUploadApprovalDoc =
-    canUploadFiles && formData.modelApprovalNo.trim().length > 0;
-
-  const maxNum = parseProductNumber(formData.maximumCapacity);
-  const eNum = parseProductNumber(formData.verificationScaleInterval);
-  const hasScaleInputs =
-    formData.maximumCapacity !== '' && formData.verificationScaleInterval !== '';
-
-  const derived = useMemo(
-    () => computeProductDerived(maxNum, eNum),
-    [maxNum, eNum],
+  const [formEditable, setFormEditable] = useState(false);
+  const [baselineJson, setBaselineJson] = useState('');
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const [reordering, setReordering] = useState(false);
+  const [listFilters, setListFilters] = useState<ProductListFilterState>(
+    DEFAULT_PRODUCT_LIST_FILTERS,
   );
 
-  const derivedDisplay = {
-    minimumCapacity: formatDerivedDisplay(derived.minimumCapacity, hasScaleInputs),
-    actualScaleInterval: formatDerivedDisplay(derived.actualScaleInterval, hasScaleInputs),
-    noOfVerificationIntervals: formatDerivedDisplay(
-      derived.noOfVerificationIntervals,
-      hasScaleInputs,
-    ),
+  const formBusy = submitting || uploadingDoc || uploadingImage || reordering;
+
+  const filteredProducts = useMemo(
+    () => filterProductsForList(products, listFilters),
+    [products, listFilters],
+  );
+
+  const productGroups = useMemo(
+    () =>
+      listFilters.approvalLayout === 'group'
+        ? groupProductsByModelApproval(filteredProducts)
+        : null,
+    [filteredProducts, listFilters.approvalLayout],
+  );
+
+  const approvalOptions = useMemo(() => productModelApprovalOptions(products), [products]);
+  const modelNoOptions = useMemo(() => productModelNoOptions(products), [products]);
+  const specOptions = useMemo(() => productSpecOptions(products), [products]);
+
+  const hasModelId = formData.modelid.trim().length > 0;
+  const canUploadFiles = hasModelId;
+  const canUploadApprovalDoc =
+    hasModelId && formData.modelApprovalNo.trim().length > 0;
+
+  const fileKey = (file: ProductFileMeta | null) =>
+    file ? `${file.path || ''}|${file.url || ''}|${file.name || ''}` : '';
+
+  const captureBaseline = (
+    data: typeof INITIAL_STATE,
+    specs: SpecFormRow[],
+    active: boolean,
+    approval: ProductFileMeta | null,
+    image: ProductFileMeta | null,
+  ) => {
+    setBaselineJson(
+      JSON.stringify({
+        formData: data,
+        specRows: specs,
+        productActive: active,
+        approval: fileKey(approval),
+        image: fileKey(image),
+      }),
+    );
   };
 
+  const isDirty = useMemo(() => {
+    if (!baselineJson) return false;
+    return (
+      JSON.stringify({
+        formData,
+        specRows,
+        productActive,
+        approval: fileKey(approvalDoc),
+        image: fileKey(productImage),
+      }) !== baselineJson
+    );
+  }, [baselineJson, formData, specRows, productActive, approvalDoc, productImage]);
+
+  const showSave = formEditable && isDirty;
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    if (!formEditable) return;
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
+  const handleSpecChange = (
+    localId: string,
+    field: keyof Omit<SpecFormRow, 'localId'>,
+    value: string,
+  ) => {
+    if (!formEditable) return;
+    setSpecRows(prev =>
+      prev.map(row => (row.localId === localId ? { ...row, [field]: value } : row)),
+    );
+  };
+
+  const handleAddSpec = () => {
+    if (!formEditable) return;
+    setSpecRows(prev => [...prev, emptySpecFormRow()]);
+  };
+
+  const handleRemoveSpec = (localId: string) => {
+    if (!formEditable || specRows.length <= 1) return;
+    setSpecRows(prev => prev.filter(row => row.localId !== localId));
+  };
+
   const handleStartAdd = () => {
+    const initialSpecs = [emptySpecFormRow()];
     setEditingId(null);
     setFormData(INITIAL_STATE);
+    setSpecRows(initialSpecs);
+    setProductActive(true);
     setApprovalDoc(null);
     setProductImage(null);
     setUploadProgress(0);
     setImageUploadProgress(0);
     setError(null);
+    setFormEditable(true);
+    captureBaseline(INITIAL_STATE, initialSpecs, true, null, null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (imageInputRef.current) imageInputRef.current.value = '';
     setShowForm(true);
   };
 
   const handleEditClick = (product: Product) => {
-    setShowForm(true);
-    setEditingId(product.id);
-    setFormData({
+    const nextForm = {
       modelid: product.modelid || '',
       modelNo: product.modelNo || '',
       name: product.name || '',
       typeOfInstrument: product.typeOfInstrument || 'Electronic',
       manufacturerBrandSeries: product.manufacturerBrandSeries || 'YESWEIGH',
       accuracyClass: product.accuracyClass || 'III',
-      maximumCapacity:
-        product.maximumCapacity !== undefined && product.maximumCapacity !== null
-          ? String(product.maximumCapacity)
-          : '',
-      verificationScaleInterval:
-        product.verificationScaleInterval !== undefined &&
-        product.verificationScaleInterval !== null
-          ? String(product.verificationScaleInterval)
-          : '',
-      unitOfMeasurement: product.unitOfMeasurement || 'kg',
-      maximumPermissibleError:
-        product.maximumPermissibleError !== undefined && product.maximumPermissibleError !== null
-          ? String(product.maximumPermissibleError)
-          : '',
+      unitOfMeasurement: (product.unitOfMeasurement || 'kg') as 'kg' | 'g',
       supplyVoltage: product.supplyVoltage || '230 V AC',
       modelApprovalNo: product.modelApprovalNo || '',
-    });
-    if (product.modelApprovalDocUrl && product.modelApprovalDocPath) {
-      setApprovalDoc({
-        url: product.modelApprovalDocUrl,
-        path: product.modelApprovalDocPath,
-        name: product.modelApprovalDocName || 'Model approval document',
-        contentType: product.modelApprovalDocContentType || 'application/pdf',
-      });
-    } else {
-      setApprovalDoc(null);
-    }
-    if (product.productImageUrl && product.productImagePath) {
-      setProductImage({
-        url: product.productImageUrl,
-        path: product.productImagePath,
-        name: product.productImageName || 'Product image',
-        contentType: product.productImageContentType || 'image/jpeg',
-      });
-    } else {
-      setProductImage(null);
-    }
+    };
+    const nextSpecs = specFormRowsFromProduct(product);
+    const nextActive = isProductActive(product);
+    const nextApproval =
+      product.modelApprovalDocUrl && product.modelApprovalDocPath
+        ? {
+            url: product.modelApprovalDocUrl,
+            path: product.modelApprovalDocPath,
+            name: product.modelApprovalDocName || 'Model approval document',
+            contentType: product.modelApprovalDocContentType || 'application/pdf',
+          }
+        : null;
+    const nextImage =
+      product.productImageUrl && product.productImagePath
+        ? {
+            url: product.productImageUrl,
+            path: product.productImagePath,
+            name: product.productImageName || 'Product image',
+            contentType: product.productImageContentType || 'image/jpeg',
+          }
+        : null;
+    setShowForm(true);
+    setEditingId(product.id);
+    setFormData(nextForm);
+    setSpecRows(nextSpecs);
+    setProductActive(nextActive);
+    setApprovalDoc(nextApproval);
+    setProductImage(nextImage);
     setUploadProgress(0);
     setImageUploadProgress(0);
     setError(null);
+    setFormEditable(false);
+    captureBaseline(nextForm, nextSpecs, nextActive, nextApproval, nextImage);
   };
 
   const handleCancelEdit = () => {
     setEditingId(null);
     setShowForm(false);
     setFormData(INITIAL_STATE);
+    setSpecRows([emptySpecFormRow()]);
+    setProductActive(true);
     setApprovalDoc(null);
     setProductImage(null);
     setUploadProgress(0);
     setImageUploadProgress(0);
     setError(null);
+    setFormEditable(false);
+    setBaselineJson('');
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  const handleEnableEdit = () => {
+    setFormEditable(true);
+  };
+
+  const handleToggleActive = async (product: Product) => {
+    const currentlyActive = isProductActive(product);
+    const ok = await confirm({
+      title: currentlyActive ? 'Deactivate product?' : 'Reactivate product?',
+      message: currentlyActive
+        ? 'Hide this product from OV/RV pickers (duplicate or obsolete).'
+        : 'Show this product again in OV/RV pickers.',
+      confirmLabel: currentlyActive ? 'Deactivate' : 'Reactivate',
+      destructive: currentlyActive,
+    });
+    if (!ok) return;
+    try {
+      await updateProduct(product.id, { active: !currentlyActive });
+      if (editingId === product.id) {
+        setProductActive(!currentlyActive);
+        setBaselineJson(prev => {
+          if (!prev) return prev;
+          try {
+            const parsed = JSON.parse(prev) as { productActive?: boolean };
+            return JSON.stringify({ ...parsed, productActive: !currentlyActive });
+          } catch {
+            return prev;
+          }
+        });
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to update product status');
+    }
+  };
+
+  const handleDeactivateFromForm = async () => {
+    if (!editingId) return;
+    const product = products.find(p => p.id === editingId);
+    if (!product) return;
+    await handleToggleActive(product);
+  };
+
+  const handleReorderDrop = async (targetId: string) => {
+    if (!dragId || dragId === targetId || reordering) {
+      setDragId(null);
+      setDropTargetId(null);
+      return;
+    }
+    const allIds = products.map(p => p.id);
+    const visibleIds = filteredProducts.map(p => p.id);
+    const next = reorderIdsWithinVisible(allIds, visibleIds, dragId, targetId);
+    setDragId(null);
+    setDropTargetId(null);
+    if (!next) return;
+    setReordering(true);
+    try {
+      await reorderProducts(next);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to reorder products');
+    } finally {
+      setReordering(false);
+    }
   };
 
   useEffect(() => {
@@ -198,7 +341,32 @@ export const Products: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [showForm, formBusy]);
 
+  useEffect(() => {
+    if (!setAppBarTitle) return;
+    if (showForm && !editingId) {
+      setAppBarTitle('+ Product');
+      return () => setAppBarTitle(null);
+    }
+    if (showForm && editingId) {
+      setAppBarTitle(formEditable ? 'Edit Product' : formData.name.trim() || 'Product');
+      return () => setAppBarTitle(null);
+    }
+    setAppBarTitle(null);
+    return () => setAppBarTitle(null);
+  }, [setAppBarTitle, showForm, editingId, formEditable, formData.name]);
+
+  useEffect(() => {
+    if (!setProductListAppBar) return;
+    if (showForm) {
+      setProductListAppBar(null);
+      return () => setProductListAppBar(null);
+    }
+    setProductListAppBar({ onAdd: handleStartAdd });
+    return () => setProductListAppBar(null);
+  }, [setProductListAppBar, showForm]);
+
   const handleApprovalFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!formEditable) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -236,6 +404,7 @@ export const Products: React.FC = () => {
   };
 
   const handleProductImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!formEditable) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -273,7 +442,7 @@ export const Products: React.FC = () => {
   };
 
   const handleRemoveProductImage = async () => {
-    if (!productImage) return;
+    if (!formEditable || !productImage) return;
     const ok = await confirm({
       title: 'Remove image?',
       message: 'Remove the product image?',
@@ -295,42 +464,8 @@ export const Products: React.FC = () => {
     }
   };
 
-  const handleDeleteProduct = async (product: Product) => {
-    const label = product.name || product.modelid;
-    const ok = await confirm({
-      title: 'Delete product?',
-      message: `Delete product "${label}" (Model ID: ${product.modelid})?\nThis cannot be undone.`,
-      confirmLabel: 'Delete',
-      destructive: true,
-    });
-    if (!ok) return;
-
-    try {
-      if (product.modelApprovalDocPath) {
-        try {
-          await deleteProductStorageFile(product.modelApprovalDocPath);
-        } catch {
-          /* storage cleanup is best-effort */
-        }
-      }
-      if (product.productImagePath) {
-        try {
-          await deleteProductStorageFile(product.productImagePath);
-        } catch {
-          /* storage cleanup is best-effort */
-        }
-      }
-      await deleteProduct(product.id);
-      if (editingId === product.id) {
-        handleCancelEdit();
-      }
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to delete product');
-    }
-  };
-
   const handleRemoveApprovalDoc = async () => {
-    if (!approvalDoc) return;
+    if (!formEditable || !approvalDoc) return;
     const ok = await confirm({
       title: 'Remove document?',
       message: 'Remove the uploaded model approval document?',
@@ -354,6 +489,7 @@ export const Products: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formEditable || !isDirty) return;
     if (!formData.name || !formData.modelid) {
       setError('Product Name and Model ID are required.');
       return;
@@ -364,35 +500,33 @@ export const Products: React.FC = () => {
       return;
     }
 
-    if (!hasScaleInputs) {
-      setError('Maximum Capacity and Verification Scale Interval (e) are required.');
-      return;
-    }
-
-    if (eNum <= 0) {
-      setError('Verification Scale Interval (e) must be greater than zero.');
+    const built = buildSpecificationsFromFormRows(specRows);
+    if (!built) {
+      setError('Each specification needs Max and e greater than zero.');
       return;
     }
 
     setError(null);
     setSubmitting(true);
     try {
-      const computed = computeProductDerived(maxNum, eNum);
+      const { specifications, primary } = built;
       const productData = {
         modelid: formData.modelid,
         modelNo: formData.modelNo,
         name: formData.name,
-        typeOfInstrument: formData.typeOfInstrument,
-        manufacturerBrandSeries: formData.manufacturerBrandSeries,
-        accuracyClass: formData.accuracyClass,
-        maximumCapacity: maxNum,
-        verificationScaleInterval: eNum,
-        minimumCapacity: computed.minimumCapacity,
-        actualScaleInterval: computed.actualScaleInterval,
-        noOfVerificationIntervals: computed.noOfVerificationIntervals,
+        typeOfInstrument: formData.typeOfInstrument || 'Electronic',
+        manufacturerBrandSeries: formData.manufacturerBrandSeries || 'YESWEIGH',
+        accuracyClass: formData.accuracyClass || 'III',
+        maximumCapacity: primary.maximumCapacity,
+        verificationScaleInterval: primary.verificationScaleInterval,
+        minimumCapacity: primary.minimumCapacity,
+        actualScaleInterval: primary.actualScaleInterval,
+        noOfVerificationIntervals: primary.noOfVerificationIntervals,
         unitOfMeasurement: formData.unitOfMeasurement,
-        maximumPermissibleError: Number(formData.maximumPermissibleError) || 0,
-        supplyVoltage: formData.supplyVoltage,
+        maximumPermissibleError: primary.maximumPermissibleError,
+        specifications,
+        active: productActive,
+        supplyVoltage: formData.supplyVoltage || '230 V AC',
         modelApprovalNo: formData.modelApprovalNo,
         ...(approvalDoc
           ? {
@@ -431,10 +565,13 @@ export const Products: React.FC = () => {
       } else {
         await addProduct({
           ...productData,
+          sortOrder: nextProductSortOrder(products),
           ...(user?.uid ? adminProductMeta(user.uid) : {}),
         });
       }
       setFormData(INITIAL_STATE);
+      setSpecRows([emptySpecFormRow()]);
+      setProductActive(true);
       setEditingId(null);
       setShowForm(false);
       setApprovalDoc(null);
@@ -451,71 +588,101 @@ export const Products: React.FC = () => {
   };
 
   return (
-    <div className="fade-in max-w-6xl mx-auto">
+    <div className={`fade-in${showForm ? ' product-edit-page' : ' max-w-6xl mx-auto'}`}>
       {showForm && (
-        <InlineFormPanel id="product-form" className="mb-6 inline-form-panel--wide">
+        <InlineFormPanel
+          id="product-form"
+          plain
+          className="inline-form-panel--wide inline-form-panel--product-edit"
+        >
           <div className="product-form-panel">
-            <ListViewBackBar onBack={handleCancelEdit} disabled={formBusy} />
-            <div className="product-form-topbar">
-              <div className="product-form-topbar-text">
-                <h2 id="product-form-title">
-                  <PackagePlus className="inline-icon" />
-                  {editingId ? 'Edit Product' : 'Add New Product'}
-                </h2>
-                <p className="text-muted text-sm product-form-topbar-hint">
-                  {editingId
-                    ? 'Update model details, scale values, and attachments.'
-                    : 'Fields marked * are required.'}
-                </p>
-                {error && <p className="rc-form-topbar-error" role="alert">{error}</p>}
+            <ListViewBackBar
+              onBack={handleCancelEdit}
+              disabled={formBusy}
+              trailing={
+                editingId && !formEditable ? (
+                  <div className="product-form-view-actions">
+                    <button
+                      type="button"
+                      className={`product-form-edit-toggle${productActive ? '' : ' product-form-edit-toggle--inactive'}`}
+                      onClick={handleDeactivateFromForm}
+                      aria-label={productActive ? 'Deactivate product' : 'Reactivate product'}
+                      title={productActive ? 'Deactivate' : 'Reactivate'}
+                    >
+                      <Ban size={18} strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      className="product-form-edit-toggle"
+                      onClick={handleEnableEdit}
+                      aria-label="Edit product"
+                      title="Edit"
+                    >
+                      <Pencil size={18} strokeWidth={2} />
+                    </button>
+                  </div>
+                ) : null
+              }
+            />
+            {error ? (
+              <div className="product-form-topbar">
+                <p className="rc-form-topbar-error" role="alert">{error}</p>
               </div>
-            </div>
+            ) : null}
 
-            <form onSubmit={handleSubmit} className="product-form">
+            <form
+              onSubmit={handleSubmit}
+              className="product-form product-form--admin-edit"
+              aria-label={editingId ? 'Edit product' : 'Add product'}
+            >
               <div className="product-form-body">
-                <div className="product-form-flat">
-                    <div className="product-form-flat-row">
-                      <div className="product-form-grid product-form-grid--basic">
-                        <div className="form-group mb-0">
-                          <label htmlFor="pf-modelid">Model ID *</label>
-                          <input
-                            id="pf-modelid"
-                            type="text"
-                            name="modelid"
-                            className="input-field"
-                            placeholder="e.g. SXX-001"
-                            value={formData.modelid}
-                            onChange={handleChange}
-                            required
-                            autoFocus={!editingId}
-                          />
-                        </div>
-                        <div className="form-group mb-0">
-                          <label htmlFor="pf-modelno">Model No</label>
-                          <input
-                            id="pf-modelno"
-                            type="text"
-                            name="modelNo"
-                            className="input-field"
-                            placeholder="Variant no."
-                            value={formData.modelNo}
-                            onChange={handleChange}
-                          />
-                        </div>
-                        <div className="form-group mb-0 product-form-span-name">
-                          <label htmlFor="pf-name">Product Name *</label>
-                          <input
-                            id="pf-name"
-                            type="text"
-                            name="name"
-                            className="input-field"
-                            placeholder="e.g. 30 kg Platform Scale"
-                            value={formData.name}
-                            onChange={handleChange}
-                            required
-                          />
-                        </div>
-                        <div className="form-group mb-0">
+                <div className="product-form-flat product-form-flat--admin">
+                  <section className="product-edit-section" aria-label="Identity">
+                    <div className="product-form-grid product-form-grid--basic">
+                      <div className="form-group mb-0">
+                        <label htmlFor="pf-modelid">Model ID *</label>
+                        <input
+                          id="pf-modelid"
+                          type="text"
+                          name="modelid"
+                          className="input-field"
+                          placeholder="e.g. SXX-001"
+                          value={formData.modelid}
+                          onChange={handleChange}
+                          required
+                          autoFocus={!editingId && formEditable}
+                          readOnly={!formEditable}
+                        />
+                      </div>
+                      <div className="form-group mb-0">
+                        <label htmlFor="pf-modelno">Model No</label>
+                        <input
+                          id="pf-modelno"
+                          type="text"
+                          name="modelNo"
+                          className="input-field"
+                          placeholder="Variant no."
+                          value={formData.modelNo}
+                          onChange={handleChange}
+                          readOnly={!formEditable}
+                        />
+                      </div>
+                      <div className="form-group mb-0 product-form-span-name">
+                        <label htmlFor="pf-name">Product Name *</label>
+                        <input
+                          id="pf-name"
+                          type="text"
+                          name="name"
+                          className="input-field"
+                          placeholder="e.g. 30 kg Platform Scale"
+                          value={formData.name}
+                          onChange={handleChange}
+                          required
+                          readOnly={!formEditable}
+                        />
+                      </div>
+                      <div className="product-form-unit-approval">
+                        <div className="form-group mb-0 product-form-span-unit">
                           <label htmlFor="pf-unit">Unit</label>
                           <select
                             id="pf-unit"
@@ -523,124 +690,179 @@ export const Products: React.FC = () => {
                             className="input-field"
                             value={formData.unitOfMeasurement}
                             onChange={handleChange}
+                            disabled={!formEditable}
                           >
                             <option value="kg">kg</option>
                             <option value="g">g</option>
                           </select>
                         </div>
+                        <div className="form-group mb-0 product-form-span-approval">
+                          <label htmlFor="pf-approval-no">Approval No</label>
+                          <input
+                            id="pf-approval-no"
+                            type="text"
+                            name="modelApprovalNo"
+                            className="input-field"
+                            placeholder="For doc upload"
+                            value={formData.modelApprovalNo}
+                            onChange={handleChange}
+                            readOnly={!formEditable}
+                          />
+                        </div>
                       </div>
-                      <DefaultsStrip
-                        items={[
-                          { label: 'Type', value: formData.typeOfInstrument },
-                          { label: 'Mfr', value: formData.manufacturerBrandSeries },
-                          { label: 'Class', value: formData.accuracyClass },
-                          { label: 'Supply', value: formData.supplyVoltage },
-                        ]}
-                      />
                     </div>
+                  </section>
 
-                    <div className="product-form-flat-row product-form-flat-row--scale">
-                      <span
-                        className="product-form-flat-row-title"
-                        title="Hover field icons for formulas"
-                      >
-                        Scale <Info size={12} className="inline-icon-sm" />
+                  <section className="product-edit-section" aria-label="Specifications">
+                    <div className="product-form-flat-row-title product-spec-section-head">
+                      <span>
+                        Specifications <Info size={12} className="inline-icon-sm" aria-hidden />
                       </span>
-                      <div className="product-form-grid product-form-grid--scale">
-                        <div className="form-group mb-0">
-                          <label htmlFor="pf-max">Max (kg) *</label>
-                          <input
-                            id="pf-max"
-                            type="number"
-                            step="any"
-                            name="maximumCapacity"
-                            className="input-field"
-                            placeholder="30"
-                            value={formData.maximumCapacity}
-                            onChange={handleChange}
-                            required
-                          />
-                        </div>
-                        <div className="form-group mb-0">
-                          <label htmlFor="pf-e">Interval e (g) *</label>
-                          <input
-                            id="pf-e"
-                            type="number"
-                            step="any"
-                            name="verificationScaleInterval"
-                            className="input-field"
-                            placeholder="5"
-                            value={formData.verificationScaleInterval}
-                            onChange={handleChange}
-                            required
-                          />
-                        </div>
-                        <div className="form-group mb-0 calc-field">
-                          <CalcLabel label="Min (g)" tooltip={PRODUCT_CALC_TOOLTIPS.minimumCapacity} />
-                          <input
-                            type="text"
-                            className="input-field input-readonly"
-                            value={derivedDisplay.minimumCapacity}
-                            readOnly
-                            tabIndex={-1}
-                          />
-                        </div>
-                        <div className="form-group mb-0 calc-field">
-                          <CalcLabel label="d" tooltip={PRODUCT_CALC_TOOLTIPS.actualScaleInterval} />
-                          <input
-                            type="text"
-                            className="input-field input-readonly"
-                            value={derivedDisplay.actualScaleInterval}
-                            readOnly
-                            tabIndex={-1}
-                          />
-                        </div>
-                        <div className="form-group mb-0 calc-field">
-                          <CalcLabel label="n" tooltip={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals} />
-                          <input
-                            type="text"
-                            className="input-field input-readonly"
-                            value={derivedDisplay.noOfVerificationIntervals}
-                            readOnly
-                            tabIndex={-1}
-                          />
-                        </div>
-                      </div>
+                      {formEditable ? (
+                        <button
+                          type="button"
+                          className="product-spec-add-btn"
+                          onClick={handleAddSpec}
+                          aria-label="Add specification"
+                          title="Add specification"
+                        >
+                          <Plus size={18} strokeWidth={2.25} />
+                        </button>
+                      ) : null}
                     </div>
+                    <div className="product-spec-rows">
+                      {specRows.map((row, index) => {
+                        const derived = derivedForRow(row);
+                        return (
+                          <div key={row.localId} className="product-spec-row">
+                            {specRows.length > 1 ? (
+                              <div className="product-spec-row-head">
+                                <span className="product-spec-row-label">Spec {index + 1}</span>
+                                {formEditable ? (
+                                  <button
+                                    type="button"
+                                    className="product-spec-remove-btn"
+                                    onClick={() => handleRemoveSpec(row.localId)}
+                                    aria-label={`Remove specification ${index + 1}`}
+                                    title="Remove"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            <div className="product-form-grid product-form-grid--scale">
+                              <div className="form-group mb-0 product-form-scale-field--blue">
+                                <label htmlFor={`pf-max-${row.localId}`}>Max</label>
+                                <input
+                                  id={`pf-max-${row.localId}`}
+                                  type="number"
+                                  step="any"
+                                  className="input-field"
+                                  placeholder="30"
+                                  value={row.maximumCapacity}
+                                  onChange={e =>
+                                    handleSpecChange(row.localId, 'maximumCapacity', e.target.value)
+                                  }
+                                  required
+                                  inputMode="decimal"
+                                  readOnly={!formEditable}
+                                />
+                              </div>
+                              <div className="form-group mb-0 product-form-scale-field--blue">
+                                <label htmlFor={`pf-e-${row.localId}`}>e</label>
+                                <input
+                                  id={`pf-e-${row.localId}`}
+                                  type="number"
+                                  step="any"
+                                  className="input-field"
+                                  placeholder="5"
+                                  value={row.verificationScaleInterval}
+                                  onChange={e =>
+                                    handleSpecChange(
+                                      row.localId,
+                                      'verificationScaleInterval',
+                                      e.target.value,
+                                    )
+                                  }
+                                  required
+                                  inputMode="decimal"
+                                  readOnly={!formEditable}
+                                />
+                              </div>
+                              <div className="form-group mb-0 product-form-scale-field--blue">
+                                <label htmlFor={`pf-mpe-${row.localId}`}>MPE</label>
+                                <input
+                                  id={`pf-mpe-${row.localId}`}
+                                  type="number"
+                                  step="any"
+                                  className="input-field"
+                                  placeholder="—"
+                                  value={row.maximumPermissibleError}
+                                  onChange={e =>
+                                    handleSpecChange(
+                                      row.localId,
+                                      'maximumPermissibleError',
+                                      e.target.value,
+                                    )
+                                  }
+                                  inputMode="decimal"
+                                  readOnly={!formEditable}
+                                />
+                              </div>
+                              <div className="form-group mb-0 calc-field product-form-scale-field--green">
+                                <CalcLabel label="Min" tooltip={PRODUCT_CALC_TOOLTIPS.minimumCapacity} />
+                                <input
+                                  type="text"
+                                  className="input-field input-readonly"
+                                  value={derived.minimumCapacity}
+                                  readOnly
+                                  tabIndex={-1}
+                                />
+                              </div>
+                              <div className="form-group mb-0 calc-field product-form-scale-field--green">
+                                <CalcLabel label="d" tooltip={PRODUCT_CALC_TOOLTIPS.actualScaleInterval} />
+                                <input
+                                  type="text"
+                                  className="input-field input-readonly"
+                                  value={derived.actualScaleInterval}
+                                  readOnly
+                                  tabIndex={-1}
+                                />
+                              </div>
+                              <div className="form-group mb-0 calc-field product-form-scale-field--green">
+                                <CalcLabel
+                                  label="n"
+                                  tooltip={PRODUCT_CALC_TOOLTIPS.noOfVerificationIntervals}
+                                />
+                                <input
+                                  type="text"
+                                  className="input-field input-readonly"
+                                  value={derived.noOfVerificationIntervals}
+                                  readOnly
+                                  tabIndex={-1}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
 
-                    <div className="product-form-flat-row product-form-flat-row--bottom">
-                      <div className="form-group mb-0">
-                        <label htmlFor="pf-mpe">MPE</label>
-                        <input
-                          id="pf-mpe"
-                          type="number"
-                          step="any"
-                          name="maximumPermissibleError"
-                          className="input-field"
-                          placeholder="Optional"
-                          value={formData.maximumPermissibleError}
-                          onChange={handleChange}
-                        />
-                      </div>
-                      <div className="form-group mb-0">
-                        <label htmlFor="pf-approval-no">Approval No</label>
-                        <input
-                          id="pf-approval-no"
-                          type="text"
-                          name="modelApprovalNo"
-                          className="input-field"
-                          placeholder="For doc upload"
-                          value={formData.modelApprovalNo}
-                          onChange={handleChange}
-                        />
-                      </div>
+                  <section className="product-edit-section" aria-label="Files">
+                    <div className="product-form-grid product-form-grid--files">
                       <UploadField
                         label="Image"
                         hint="Optional"
                         compact
+                        iconActions
                         variant="image"
+                        readOnly={!formEditable}
                         disabledReason={
-                          !canUploadFiles ? 'Set Model ID first.' : undefined
+                          formEditable && !canUploadFiles
+                            ? 'Set Model ID first.'
+                            : undefined
                         }
                         file={productImage}
                         uploading={uploadingImage}
@@ -651,15 +873,17 @@ export const Products: React.FC = () => {
                         inputRef={imageInputRef}
                         onSelect={handleProductImageSelect}
                         onRemove={handleRemoveProductImage}
-                        submitting={submitting}
+                        submitting={submitting || !formEditable}
                       />
                       <UploadField
                         label="Approval doc"
                         hint="PDF / image"
                         compact
+                        iconActions
                         variant="document"
+                        readOnly={!formEditable}
                         disabledReason={
-                          !canUploadApprovalDoc
+                          formEditable && !canUploadApprovalDoc
                             ? 'Set Model ID & Approval No.'
                             : undefined
                         }
@@ -672,35 +896,49 @@ export const Products: React.FC = () => {
                         inputRef={fileInputRef}
                         onSelect={handleApprovalFileSelect}
                         onRemove={handleRemoveApprovalDoc}
-                        submitting={submitting}
+                        submitting={submitting || !formEditable}
                       />
                     </div>
-                  </div>
+                  </section>
+                </div>
               </div>
 
-              <div className="product-form-footer">
+              <div className="product-form-footer product-form-footer--admin-edit">
                 <button
                   type="button"
                   className="btn btn-secondary"
                   onClick={handleCancelEdit}
                   disabled={formBusy}
                 >
-                  Cancel
+                  {formEditable && isDirty ? 'Cancel' : 'Close'}
                 </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary flex items-center gap-2"
-                  disabled={formBusy}
-                >
-                  {submitting ? (
-                    <span className="spinner-inline"></span>
-                  ) : (
-                    <>
-                      <Save size={18} />
-                      {editingId ? 'Update Product' : 'Save Product'}
-                    </>
-                  )}
-                </button>
+                {editingId ? (
+                  <button
+                    type="button"
+                    className={`btn ${productActive ? 'btn-danger' : 'btn-secondary'}`}
+                    onClick={handleDeactivateFromForm}
+                    disabled={formBusy}
+                  >
+                    <Ban size={16} aria-hidden />
+                    {productActive ? 'Deactivate' : 'Reactivate'}
+                  </button>
+                ) : null}
+                {showSave ? (
+                  <button
+                    type="submit"
+                    className="btn btn-primary flex items-center gap-2"
+                    disabled={formBusy}
+                  >
+                    {submitting ? (
+                      <span className="spinner-inline"></span>
+                    ) : (
+                      <>
+                        <Save size={18} />
+                        {editingId ? 'Update' : 'Save'}
+                      </>
+                    )}
+                  </button>
+                ) : null}
               </div>
             </form>
           </div>
@@ -708,135 +946,116 @@ export const Products: React.FC = () => {
       )}
 
       {!showForm && (
-        <div className="rc-list-page">
-          <section className="rc-vehicles-summary-card">
-            <div className="rc-vehicles-summary-leading">
-              <span className="rc-list-summary-icon" aria-hidden>
-                <Package size={20} strokeWidth={1.85} />
-              </span>
-              <h2 className="rc-vehicles-summary-title">Products</h2>
-              <p className="rc-vehicles-summary-sub">
-                {products.length} product{products.length !== 1 ? 's' : ''} configured
-              </p>
-            </div>
-            <div className="rc-vehicles-summary-actions">
-              <button
-                type="button"
-                className="rc-vehicles-add-btn"
-                onClick={handleStartAdd}
-                aria-label="Add product"
-              >
-                <Plus size={16} strokeWidth={2.5} aria-hidden />
-                <span className="rc-vehicles-add-btn-label">Add Product</span>
-              </button>
-            </div>
-          </section>
-
+        <div className="rc-list-page rc-list-page--product-shop">
+          <ProductListFilters
+            value={listFilters}
+            onChange={setListFilters}
+            modelApprovalOptions={approvalOptions}
+            modelNoOptions={modelNoOptions}
+            specOptions={specOptions}
+          />
           {products.length === 0 ? (
             <div className="rc-vehicles-empty">
               <span className="rc-list-summary-icon rc-list-summary-icon--lg" aria-hidden>
                 <Package size={24} strokeWidth={1.85} />
               </span>
               <p>No products configured yet.</p>
-              <button
-                type="button"
-                className="rc-vehicles-add-btn"
-                onClick={handleStartAdd}
-                aria-label="Add product"
-              >
-                <Plus size={16} strokeWidth={2.5} aria-hidden />
-                <span className="rc-vehicles-add-btn-label">Add Product</span>
-              </button>
+              <p className="text-muted text-sm mb-0">Tap + to add a product.</p>
+            </div>
+          ) : filteredProducts.length === 0 ? (
+            <div className="rc-vehicles-empty">
+              <span className="rc-list-summary-icon rc-list-summary-icon--lg" aria-hidden>
+                <Package size={24} strokeWidth={1.85} />
+              </span>
+              <p>No products match these filters.</p>
+              <p className="text-muted text-sm mb-0">Reset filters to see more.</p>
+            </div>
+          ) : productGroups ? (
+            <div className="product-approval-groups">
+              {productGroups.map(group => (
+                <section key={group.key} className="product-approval-group">
+                  <h2 className="product-approval-group-title">{group.label}</h2>
+                  <ul className="product-catalogue-list product-catalogue-list--shop rc-product-shop-grid">
+                    {group.products.map(p => renderProductCard(p))}
+                  </ul>
+                </section>
+              ))}
             </div>
           ) : (
-            <div className="rc-list-cards">
-              {products.map(p => {
-                const capacity = formatProductCapacity(p);
-                const interval = formatProductInterval(p);
-                const modelLine = [p.modelid, p.modelNo].filter(Boolean).join(' · ') || '—';
-                const displayName = (p.name || '—').trim().toUpperCase();
-                const hasApproval = Boolean(p.modelApprovalNo || p.modelApprovalDocUrl);
-
-                return (
-                  <article key={p.id} className="rc-list-card rc-list-card--product">
-                    <div className="rc-list-card-top">
-                      <button
-                        type="button"
-                        className="rc-list-card-main"
-                        onClick={() => handleEditClick(p)}
-                        aria-label={`Edit ${displayName}`}
-                      >
-                        <RcListPhoto
-                          url={p.productImageUrl}
-                          path={p.productImagePath}
-                          placeholder={<ImageIcon size={28} strokeWidth={1.5} />}
-                        />
-                        <span className="rc-list-card-info">
-                          <span className="rc-list-card-name-row">
-                            <span className="rc-list-card-name">{displayName}</span>
-                            <RcListEditHint />
-                          </span>
-                          <span className="rc-list-meta-chips">
-                            <RcListMetaChip icon={<Package size={13} strokeWidth={2} />}>
-                              {modelLine}
-                            </RcListMetaChip>
-                            <RcListMetaChip icon={<Scale size={13} strokeWidth={2} />}>
-                              {capacity}
-                            </RcListMetaChip>
-                            <RcListMetaChip icon={<Ruler size={13} strokeWidth={2} />}>
-                              d {interval}
-                            </RcListMetaChip>
-                          </span>
-                          <span className="rc-list-card-badges">
-                            {hasApproval ? (
-                              <RcListStatusBadge
-                                tone="approved"
-                                label={p.modelApprovalNo || 'Model approval'}
-                                icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
-                              />
-                            ) : (
-                              <RcListStatusBadge
-                                tone="pending"
-                                label="Approval pending"
-                                icon={<ShieldCheck size={12} strokeWidth={2.5} aria-hidden />}
-                              />
-                            )}
-                            {p.modelApprovalDocUrl && (
-                              <RcListStatusBadge
-                                tone="info"
-                                label="Approval doc"
-                                icon={<ExternalLink size={12} strokeWidth={2.5} aria-hidden />}
-                              />
-                            )}
-                          </span>
-                        </span>
-                      </button>
-                      <RcListCardActions>
-                        <RcListCardToggle
-                          className="rc-list-card-toggle--view"
-                          onClick={() => handleEditClick(p)}
-                          title="Edit product"
-                          ariaLabel={`Edit ${displayName}`}
-                        >
-                          <Pencil size={18} strokeWidth={1.75} />
-                        </RcListCardToggle>
-                        <RcListCardToggle
-                          className="rc-list-card-toggle--delete"
-                          onClick={() => void handleDeleteProduct(p)}
-                          title="Delete product"
-                          ariaLabel={`Delete ${displayName}`}
-                        >
-                          <Trash2 size={18} strokeWidth={1.85} />
-                        </RcListCardToggle>
-                      </RcListCardActions>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
+            <ul className="product-catalogue-list product-catalogue-list--shop rc-product-shop-grid">
+              {filteredProducts.map(p => renderProductCard(p))}
+            </ul>
           )}
         </div>
       )}
     </div>
   );
+
+  function renderProductCard(p: Product) {
+    const displayName = (p.name || '—').trim();
+    const active = isProductActive(p);
+    const isDragging = dragId === p.id;
+    const isDropTarget = dropTargetId === p.id && dragId !== p.id;
+    return (
+      <li
+        key={p.id}
+        className={`rc-product-shop-item${active ? '' : ' rc-product-shop-item--inactive'}${isDragging ? ' rc-product-shop-item--dragging' : ''}${isDropTarget ? ' rc-product-shop-item--drop-target' : ''}`}
+        draggable={!formBusy}
+        onDragStart={e => {
+          setDragId(p.id);
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', p.id);
+        }}
+        onDragEnd={() => {
+          setDragId(null);
+          setDropTargetId(null);
+        }}
+        onDragOver={e => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          if (dropTargetId !== p.id) setDropTargetId(p.id);
+        }}
+        onDragLeave={() => {
+          if (dropTargetId === p.id) setDropTargetId(null);
+        }}
+        onDrop={e => {
+          e.preventDefault();
+          void handleReorderDrop(p.id);
+        }}
+      >
+        <button
+          type="button"
+          className="rc-product-shop-drag"
+          aria-label={`Drag to reorder ${displayName}`}
+          title="Drag to reorder"
+          tabIndex={-1}
+          onClick={e => e.preventDefault()}
+        >
+          <GripVertical size={16} strokeWidth={2} />
+        </button>
+        <button
+          type="button"
+          className="product-shop-card"
+          onClick={() => handleEditClick(p)}
+          aria-label={`Edit ${displayName}`}
+        >
+          <ProductShopMedia product={p} inactive={!active} />
+          <span className="product-shop-card-body">
+            <span className="product-shop-card-name">{displayName}</span>
+          </span>
+        </button>
+        <div className="rc-product-shop-actions">
+          <button
+            type="button"
+            className="rc-product-shop-edit"
+            onClick={() => handleEditClick(p)}
+            title="Edit product"
+            aria-label={`Edit ${displayName}`}
+          >
+            <Pencil size={15} strokeWidth={2} />
+          </button>
+        </div>
+      </li>
+    );
+  }
 };

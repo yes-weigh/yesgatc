@@ -2641,6 +2641,10 @@ export const RCSiteCalibration: React.FC = () => {
     () => tallyVerificationTypeFilters(durationScoped).RV,
     [durationScoped],
   );
+  const dashOvCount = useMemo(
+    () => tallyVerificationTypeFilters(durationScoped).OV,
+    [durationScoped],
+  );
   const typeCounts = useMemo(
     () =>
       tallyVerificationTypeFilters(
@@ -3045,6 +3049,7 @@ export const RCSiteCalibration: React.FC = () => {
           ) : null}
           <VerificationListStatusDash
             counts={dashCounts}
+            ovCount={dashOvCount}
             rvCount={dashRvCount}
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}

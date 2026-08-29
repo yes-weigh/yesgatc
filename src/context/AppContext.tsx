@@ -11,11 +11,12 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Job, Product, Certificate } from '../types';
 import { useAuth } from './useAuth';
-import { filterAdminManagedProducts } from '../lib/productAccess';
+import { filterAdminManagedProducts, sortProductsByDisplayOrder } from '../lib/productAccess';
 import { prefetchProductImages } from '../lib/productImageCache';
 
 interface AppContextType {
@@ -27,6 +28,7 @@ interface AppContextType {
   updateJob: (jobId: string, updates: Partial<Job>) => Promise<void>;
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   updateProduct: (productId: string, updates: Partial<Product>) => Promise<void>;
+  reorderProducts: (orderedIds: string[]) => Promise<void>;
   deleteProduct: (productId: string) => Promise<void>;
   addCertificate: (cert: Omit<Certificate, 'id'>) => Promise<void>;
 }
@@ -41,8 +43,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [loadingData,  setLoadingData]  = useState(true);
 
   const products = useMemo(() => {
-    if (user?.role === 'super_admin') return allProducts;
-    return filterAdminManagedProducts(allProducts);
+    const list =
+      user?.role === 'super_admin' ? allProducts : filterAdminManagedProducts(allProducts);
+    return sortProductsByDisplayOrder(list);
   }, [allProducts, user?.role]);
 
   useEffect(() => {
@@ -106,6 +109,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await updateDoc(doc(db, 'products', productId), updates);
   };
 
+  const reorderProducts = async (orderedIds: string[]) => {
+    const batch = writeBatch(db);
+    orderedIds.forEach((id, index) => {
+      batch.update(doc(db, 'products', id), { sortOrder: index });
+    });
+    await batch.commit();
+  };
+
   const deleteProduct = async (productId: string) => {
     await deleteDoc(doc(db, 'products', productId));
   };
@@ -118,7 +129,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return (
     <AppContext.Provider value={{
       jobs, products, certificates, loadingData,
-      createJob, updateJob, addProduct, updateProduct, deleteProduct, addCertificate,
+      createJob, updateJob, addProduct, updateProduct, reorderProducts, deleteProduct, addCertificate,
     }}>
       {children}
     </AppContext.Provider>

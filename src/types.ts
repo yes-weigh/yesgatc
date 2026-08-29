@@ -18,6 +18,16 @@ export interface User {
   phone?: string;       // contact / business (not auth)
 }
 
+export interface ProductSpecification {
+  id: string;
+  maximumCapacity: number;
+  minimumCapacity: number;
+  verificationScaleInterval: number;
+  actualScaleInterval: number;
+  noOfVerificationIntervals: number;
+  maximumPermissibleError: number;
+}
+
 export interface Product {
   id: string; // The firestore ID
   modelid: string; // Unique Model ID
@@ -33,6 +43,12 @@ export interface Product {
   actualScaleInterval: number;
   noOfVerificationIntervals: number;
   maximumPermissibleError: number;
+  /** Extra capacity specs beyond the primary (top-level) row. Primary is always index 0 / top-level fields. */
+  specifications?: ProductSpecification[];
+  /** false = duplicate/obsolete — hidden from OV/RV product pickers. Default true when omitted. */
+  active?: boolean;
+  /** Catalogue display order — lower first. Super admin drag-reorder. */
+  sortOrder?: number;
   supplyVoltage: string;
   modelApprovalNo: string;
   modelApprovalDocUrl?: string;
@@ -435,6 +451,8 @@ export interface SiteCalibration {
   deviceId?: string;
   productId: string;
   productName: string;
+  /** Selected product specification when the product has multiple capacity rows. */
+  productSpecificationId?: string;
   serialNumber: string;
   /** Product snapshot for table display and certificate server. */
   maximumCapacity?: number;

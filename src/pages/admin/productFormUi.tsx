@@ -107,6 +107,12 @@ export const UploadField: React.FC<{
         }${hideLabel ? ' product-upload-field--no-label' : ''} product-upload-field--readonly`}
         aria-label={label}
       >
+        {!hideLabel && (
+          <div className="product-upload-field-head">
+            <span className="product-upload-field-label">{label}</span>
+            {hint ? <span className="product-upload-field-hint">{hint}</span> : null}
+          </div>
+        )}
         <div className="product-upload-field-body">
           {file && showImagePreview ? (
             <StorageImage
@@ -115,6 +121,10 @@ export const UploadField: React.FC<{
               alt=""
               className="product-upload-preview-img product-upload-preview-img--readonly"
             />
+          ) : file ? (
+            <div className="product-upload-preview-icon product-upload-preview-icon--readonly">
+              <FileText size={compact ? 28 : 36} className="text-red" />
+            </div>
           ) : (
             <div
               className={`product-upload-readonly-empty${
@@ -122,7 +132,7 @@ export const UploadField: React.FC<{
               }`}
               aria-hidden
             >
-              <ImageIcon size={compact ? 16 : 22} className="text-muted" />
+              <ImageIcon size={compact ? 28 : 36} className="text-muted" />
             </div>
           )}
         </div>
