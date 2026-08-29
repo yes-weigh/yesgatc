@@ -2494,8 +2494,7 @@ export const RCSiteCalibration: React.FC = () => {
     showAddForm
     && (sessionValues.verificationType === 'OV' || sessionValues.verificationType === 'RV');
   const canSaveDraftFromFooter =
-    !compactJob
-    && !isViewMode
+    !isViewMode
     && !isCertifiedActionsView
     && (!showAddForm || wizardOnLastStep);
   const showVerificationBackBar = isCertifiedActionsView || isViewMode;
