@@ -6,7 +6,7 @@ import {
   onAuthStateChanged,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import {
   authEmailForAadhar,
@@ -14,6 +14,11 @@ import {
   isValidAadhar,
   normalizeAadhar,
 } from '../lib/aadharAuth';
+import {
+  APP_SETTINGS_COLLECTION,
+  APP_SETTINGS_GLOBAL_DOC,
+  normalizeAppSettings,
+} from '../lib/appSettings';
 import { clearEmbedToken, takeEmbedTokenFromLocation } from '../lib/embedMode';
 import { isVctApproved, isVctActive, VCT_INACTIVE_LOGIN_MESSAGE, VCT_PENDING_LOGIN_MESSAGE } from '../lib/vctApproval';
 import { isVerifierActive, VERIFIER_INACTIVE_LOGIN_MESSAGE } from '../lib/verifierAccount';
@@ -22,6 +27,70 @@ import type { User, Role, FirestoreUserDoc } from '../types';
 import { AuthContext } from './auth-context';
 
 const VALID_ROLES: Role[] = ['super_admin', 'rc_admin', 'vct', 'verifier'];
+const FORCE_RELOGIN_ROLES: Role[] = ['rc_admin', 'vct', 'verifier'];
+const AUTH_SESSION_EPOCH_KEY = 'yesgatc.authSessionEpoch';
+const AUTH_LOGIN_AT_KEY = 'yesgatc.authLoginAt';
+export const SESSION_ENDED_LOGIN_MESSAGE = 'Session ended. Please sign in again.';
+
+function readAcceptedEpoch(): number {
+  try {
+    const raw = sessionStorage.getItem(AUTH_SESSION_EPOCH_KEY);
+    const value = raw == null ? 0 : Number(raw);
+    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeAcceptedEpoch(epoch: number) {
+  try {
+    sessionStorage.setItem(AUTH_SESSION_EPOCH_KEY, String(Math.max(0, Math.floor(epoch))));
+  } catch {
+    /* ignore */
+  }
+}
+
+function readLoginAtMs(): number {
+  try {
+    const raw = sessionStorage.getItem(AUTH_LOGIN_AT_KEY);
+    const value = raw == null ? 0 : Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeLoginAtMs(ms: number) {
+  try {
+    sessionStorage.setItem(AUTH_LOGIN_AT_KEY, String(ms));
+  } catch {
+    /* ignore */
+  }
+}
+
+function forceLogoutAtMs(data: Record<string, unknown> | undefined): number {
+  const raw = data?.forceLogoutAt;
+  if (!raw) return 0;
+  if (typeof raw === 'string') {
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (typeof raw === 'object' && raw !== null && 'toMillis' in raw) {
+    const toMillis = (raw as { toMillis?: () => number }).toMillis;
+    if (typeof toMillis === 'function') {
+      try {
+        return toMillis.call(raw);
+      } catch {
+        return 0;
+      }
+    }
+  }
+  if (typeof raw === 'object' && raw !== null && 'seconds' in raw) {
+    const seconds = Number((raw as { seconds?: unknown }).seconds);
+    return Number.isFinite(seconds) ? seconds * 1000 : 0;
+  }
+  return 0;
+}
 
 const resolveUser = async (fbUser: FirebaseUser): Promise<User | null> => {
   try {
@@ -91,6 +160,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  useEffect(() => {
+    if (!user || !FORCE_RELOGIN_ROLES.includes(user.role)) return;
+
+    let ending = false;
+    const endSession = async () => {
+      if (ending) return;
+      ending = true;
+      setError(SESSION_ENDED_LOGIN_MESSAGE);
+      setUser(null);
+      await signOut(auth).catch(() => undefined);
+    };
+
+    const settingsUnsub = onSnapshot(
+      doc(db, APP_SETTINGS_COLLECTION, APP_SETTINGS_GLOBAL_DOC),
+      async snap => {
+        const epoch = normalizeAppSettings(snap.exists() ? snap.data() : undefined).authSessionEpoch ?? 0;
+        if (epoch > readAcceptedEpoch()) await endSession();
+      },
+      () => {
+        /* ignore */
+      },
+    );
+
+    const userUnsub = onSnapshot(
+      doc(db, 'users', user.uid),
+      async snap => {
+        if (!snap.exists()) return;
+        const forcedAt = forceLogoutAtMs(snap.data() as Record<string, unknown>);
+        const loginAt = readLoginAtMs();
+        if (forcedAt > 0 && forcedAt > loginAt) await endSession();
+      },
+      () => {
+        /* ignore */
+      },
+    );
+
+    return () => {
+      settingsUnsub();
+      userUnsub();
+    };
+  }, [user]);
+
   const login = async (aadharInput: string, password: string) => {
     setError(null);
     setLoading(true);
@@ -142,6 +253,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         throw new Error('No profile found for this account. Contact your administrator.');
       }
+
+      const settingsSnap = await getDoc(doc(db, APP_SETTINGS_COLLECTION, APP_SETTINGS_GLOBAL_DOC));
+      const epoch = normalizeAppSettings(
+        settingsSnap.exists() ? settingsSnap.data() : undefined,
+      ).authSessionEpoch ?? 0;
+      writeAcceptedEpoch(epoch);
+      writeLoginAtMs(Date.now());
+
       setUser(resolved);
     } catch (err: unknown) {
       const friendly = authErrorMessage(err, 'Login failed');

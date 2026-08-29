@@ -24,7 +24,7 @@ const LOCAL_QUICK_LOGINS = import.meta.env.DEV
   : [];
 
 export const Login: React.FC = () => {
-  const { login, user, loading } = useAuth();
+  const { login, user, loading, error: authError } = useAuth();
   const navigate = useNavigate();
 
   const [aadhar, setAadhar] = useState('');
@@ -37,6 +37,10 @@ export const Login: React.FC = () => {
   useEffect(() => {
     rememberEmbedMode();
   }, []);
+
+  useEffect(() => {
+    if (authError) setError(authError);
+  }, [authError]);
 
   useEffect(() => {
     if (!loading && user) {
