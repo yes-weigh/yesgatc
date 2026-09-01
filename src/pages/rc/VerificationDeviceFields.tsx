@@ -211,7 +211,7 @@ function DeviceSerialField({
         value={rowSerial || held}
         readOnly
         tabIndex={-1}
-        title="Serial selected from allotted seats"
+        title="Serial is locked"
       />
     );
   }

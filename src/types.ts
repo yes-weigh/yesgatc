@@ -542,7 +542,7 @@ export interface SiteCalibration {
   /** Stored for future DOCA automation; worker currently submits 0. */
   carriageConveyanceFee?: number;
   totalDeposited?: number;
-  /** Super Admin or RC Admin resubmit — links to the source document when this is an eMAAP re-run. */
+  /** Super Admin or RC Admin resubmit — links to the source document. */
   resubmittedFromId?: string;
   /** Shared id for all versions of the same serial resubmission chain. */
   resubmissionRootId?: string;

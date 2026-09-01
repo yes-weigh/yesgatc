@@ -65,7 +65,12 @@ export async function voidVerificationCertificate(
 
   if (reason === 'resubmit_superseded') {
     const status = normalizeVerificationStatus(record);
-    if (!record.certificateNumber?.trim() && status !== 'approved') {
+    if (
+      !record.certificateNumber?.trim() &&
+      status !== 'approved' &&
+      status !== 'certified' &&
+      !canDownloadVerificationCertificate(record)
+    ) {
       return;
     }
   }

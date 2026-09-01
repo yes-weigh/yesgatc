@@ -267,6 +267,7 @@ export function isVerificationFullyCertified(record: SiteCalibration): boolean {
 
 /** Completed verification with a certificate number — show document action tiles. */
 export function canShowVerificationCertifiedActions(record: SiteCalibration): boolean {
+  if (record.certificateVoidedAt?.trim()) return false;
   if (!record.certificateNumber?.trim()) return false;
   return isVerificationFullyCertified(record) || canDownloadVerificationCertificate(record);
 }

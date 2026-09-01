@@ -313,6 +313,61 @@ async function run() {
       fail('RC admin can create eMAAP resubmit clone of own certificate', err);
     }
 
+    const ovDraftClone = {
+      ...resubmitClone,
+      status: 'draft',
+      applicationNumber: 'VC/26/901',
+    };
+    delete ovDraftClone.submittedAt;
+
+    try {
+      await assertSucceeds(
+        setDoc(doc(rcDb, 'siteCalibrations', 'rc-ov-draft-clone-001'), ovDraftClone),
+      );
+      ok('RC admin can create OV edit-resubmit draft clone of own certificate');
+    } catch (err) {
+      fail('RC admin can create OV edit-resubmit draft clone of own certificate', err);
+    }
+
+    const VCT_SOURCE_ID = 'vct-origin-cert-001';
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'siteCalibrations', VCT_SOURCE_ID), {
+        rcId: RC_UID,
+        createdByUid: VCT_UID,
+        vctId: VCT_UID,
+        performedBy: 'vct',
+        status: 'certified',
+        verificationType: 'OV',
+        serialNumber: 'SN-VCT-OV-1',
+        applicationNumber: 'VC/26/12',
+        certificateNumber: 'IND/GATC/KL/26/04/3',
+        certifiedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    try {
+      await assertSucceeds(
+        setDoc(doc(rcDb, 'siteCalibrations', 'rc-ov-vct-origin-draft-001'), {
+          rcId: RC_UID,
+          createdByUid: RC_UID,
+          performedBy: 'vct',
+          vctId: VCT_UID,
+          status: 'draft',
+          verificationType: 'OV',
+          serialNumber: 'SN-VCT-OV-1',
+          applicationNumber: 'VC/26/902',
+          resubmittedFromId: VCT_SOURCE_ID,
+          resubmittedByUid: RC_UID,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      ok('RC admin can draft-clone a VCT-origin OV certificate');
+    } catch (err) {
+      fail('RC admin can draft-clone a VCT-origin OV certificate', err);
+    }
+
     try {
       await assertFails(
         setDoc(doc(rcDb, 'siteCalibrations', 'rc-resubmit-other-001'), {

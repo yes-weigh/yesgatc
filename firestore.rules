@@ -454,10 +454,10 @@ service cloud.firestore {
         && validVerificationApplicationNumber(request.resource.data)
         && meetsMinVerificationAppVersion();
 
-      // RC resubmit — clone own certificate as submitted for a new eMAAP run.
+      // RC resubmit — clone own certificate as submitted (RV eMAAP) or draft (OV edit).
       allow create: if isRCAdmin()
         && request.resource.data.rcId == request.auth.uid
-        && verificationRecordStatus(request.resource.data) == 'submitted'
+        && verificationRecordStatus(request.resource.data) in ['draft', 'submitted']
         && request.resource.data.get('resubmittedFromId', '') is string
         && request.resource.data.resubmittedFromId.size() > 0
         && request.resource.data.get('resubmittedByUid', '') == request.auth.uid

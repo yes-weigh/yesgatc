@@ -70,7 +70,7 @@ import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
-import { canResubmitSerialGroup, getVerificationSerialGroup } from '../../lib/verificationResubmit';
+import { canEditResubmitOvSerialGroup, canResubmitSerialGroup, getVerificationSerialGroup } from '../../lib/verificationResubmit';
 import type { VerificationFormStepContext, VerificationFormStepId } from '../../lib/verificationFormSteps';
 import { uploadSiteCalibrationDeviceImage } from '../../lib/siteCalibrationPhotoUpload';
 import {
@@ -494,8 +494,11 @@ export const RCSiteCalibration: React.FC = () => {
   );
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
-    () => ({ zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings) }),
-    [appSettings],
+    () => ({
+      zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
+      lookupRecords: records,
+    }),
+    [appSettings, records],
   );
 
   const rvZohoSubmitBlocked =
@@ -597,8 +600,8 @@ export const RCSiteCalibration: React.FC = () => {
     }
   }, [rcUid]);
 
-  const fetchRecords = useCallback(async () => {
-    if (!rcUid) return;
+  const fetchRecords = useCallback(async (): Promise<SiteCalibration[]> => {
+    if (!rcUid) return [];
     setLoading(true);
     setListError('');
     try {
@@ -608,6 +611,7 @@ export const RCSiteCalibration: React.FC = () => {
         .map(d => ({ id: d.id, ...(d.data() as Omit<SiteCalibration, 'id'>) }))
         .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
       setRecords(rows);
+      return rows;
     } catch (err: unknown) {
       const code =
         typeof err === 'object' && err !== null && 'code' in err
@@ -621,6 +625,7 @@ export const RCSiteCalibration: React.FC = () => {
         setListError(err instanceof Error ? err.message : 'Failed to load verification records.');
       }
       setRecords([]);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -946,13 +951,27 @@ export const RCSiteCalibration: React.FC = () => {
   );
 
   const handleDeviceChange = (localId: string, patch: Partial<VerificationDeviceRowValues>) => {
-    const { sealIdentificationNumber: _seal, ...rest } = patch;
-    setSessionValues(prev => ({
-      ...prev,
-      devices: prev.devices.map(row =>
-        row.localId === localId ? { ...row, ...rest, sealIdentificationNumber: laboratorySealId || row.sealIdentificationNumber } : row,
-      ),
-    }));
+    const { sealIdentificationNumber: _seal, serialNumber: nextSerial, ...rest } = patch;
+    setSessionValues(prev => {
+      const locked = prev.lockedSerial?.trim();
+      return {
+        ...prev,
+        devices: prev.devices.map(row =>
+          row.localId === localId
+            ? {
+                ...row,
+                ...rest,
+                serialNumber: locked
+                  ? locked
+                  : nextSerial !== undefined
+                    ? nextSerial
+                    : row.serialNumber,
+                sealIdentificationNumber: laboratorySealId || row.sealIdentificationNumber,
+              }
+            : row,
+        ),
+      };
+    });
   };
 
   const handleDeviceAdd = () => {
@@ -2409,9 +2428,12 @@ export const RCSiteCalibration: React.FC = () => {
     setRvPaymentOpen(false);
     setEditingId(record.id);
     const session = verificationSessionFromRecord(record);
-    const devices = isVerificationEditable(record)
-      ? applyLaboratorySealToDeviceRows(session.devices, laboratorySealId)
-      : session.devices;
+    const devices = applyLockedSerialToDevices(
+      isVerificationEditable(record)
+        ? applyLaboratorySealToDeviceRows(session.devices, laboratorySealId)
+        : session.devices,
+      session.lockedSerial,
+    );
     setSessionValues({ ...session, devices });
     setDeviceImages({
       [session.devices[0]?.localId || record.id]: verificationImagesFromRecord(record),
@@ -2510,6 +2532,7 @@ export const RCSiteCalibration: React.FC = () => {
     && (
       canShowVerificationCertifiedActions(editingRecord)
       || canResubmitSerialGroup(getVerificationSerialGroup(records, editingRecord), editingRecord)
+      || canEditResubmitOvSerialGroup(getVerificationSerialGroup(records, editingRecord), editingRecord)
     );
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
   const compactJob =
@@ -2853,8 +2876,12 @@ export const RCSiteCalibration: React.FC = () => {
                 rcProfile={rcProfile}
                 onClose={handleCloseForm}
                 closeDisabled={formBusy}
-                onResubmitted={async () => {
-                  await fetchRecords();
+                onResubmitted={async newRecordId => {
+                  const rows = await fetchRecords();
+                  const next = rows.find(r => r.id === newRecordId);
+                  if (next && isVerificationEditable(next)) {
+                    openRecord(next);
+                  }
                 }}
               />
             ) : (

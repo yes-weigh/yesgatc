@@ -9,10 +9,14 @@ import {
 } from '../lib/verificationCertificateVoid';
 import {
   canQueueEmaapResubmit,
+  canEditResubmitOvSerialGroup,
   canResubmitSerialGroup,
   countVoidableCertificatesInGroup,
+  findOpenOvResubmitDraft,
   getVerificationSerialGroup,
+  pickOvEditResubmitSource,
   pickResubmitSourceForSerialGroup,
+  resubmitOvSerialGroupForEdit,
   resubmitSerialGroupForDoca,
   sortVerificationSerialGroupForDisplay,
   verificationVersionSubtitle,
@@ -55,6 +59,7 @@ function versionTone(record: SiteCalibration, group: SiteCalibration[]): string 
   if (title === 'Certification failed') return 'corrupted';
   if (title === 'Correct certificate') return 'correct';
   if (title === 'Resubmission in progress') return 'pending';
+  if (title === 'Resubmit draft') return 'pending';
   return 'default';
 }
 
@@ -87,13 +92,27 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
 
   const isSuperAdmin = user?.role === 'super_admin';
   const canQueueResubmit = canQueueEmaapResubmit(user?.role);
+  const ovDraft = useMemo(() => findOpenOvResubmitDraft(group), [group]);
+  const ovResubmitSource = useMemo(
+    () => pickOvEditResubmitSource(group, record),
+    [group, record],
+  );
   const resubmitSource = useMemo(
     () => pickResubmitSourceForSerialGroup(group, record),
     [group, record],
   );
-  const showSerialResubmit = canQueueResubmit && canResubmitSerialGroup(group, record);
+  const showOvEditResubmit =
+    canQueueResubmit
+    && record.verificationType === 'OV'
+    && canEditResubmitOvSerialGroup(group, record);
+  const showRvEmaapResubmit =
+    canQueueResubmit
+    && record.verificationType === 'RV'
+    && canResubmitSerialGroup(group, record);
   const certificationFailureSource =
-    resubmitSource && isCertificationFailureResubmitSource(resubmitSource);
+    record.verificationType === 'RV'
+    && resubmitSource
+    && isCertificationFailureResubmitSource(resubmitSource);
   const showDevRvWipe = canRevertRvSubmitTest(record, isSuperAdmin);
   const voidOthersCount = resubmitSource
     ? countVoidableCertificatesInGroup(group, resubmitSource.id)
@@ -121,6 +140,33 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
   }, [groupSyncKey, canQueueResubmit, user?.uid]);
 
   const showGroupHeading = group.length > 1;
+
+  const handleOvEditResubmit = async () => {
+    if (!user?.uid || !canQueueResubmit) return;
+
+    const resume = ovDraft != null;
+    const sourceApp = (ovDraft ?? ovResubmitSource)?.applicationNumber?.trim() || '—';
+    const ok = await confirm({
+      title: resume ? 'Continue resubmit?' : 'Resubmit verification?',
+      message: resume
+        ? `An unpublished resubmit draft already exists for serial ${record.serialNumber?.trim() || '—'} (app ${sourceApp}). Open it to edit and submit. Serial stays locked. The old certificate is hidden when you submit.`
+        : `Create a new draft for serial ${record.serialNumber?.trim() || '—'}?\n\nNew application number. Same serial (locked). Photos and details are copied — edit anything except serial, then submit.\n\nThe old certificate stays visible until you submit the draft. On submit it is hidden (not deleted).`,
+      confirmLabel: resume ? 'Continue' : 'Resubmit',
+      destructive: !resume,
+    });
+    if (!ok) return;
+
+    setError('');
+    setResubmitting(true);
+    try {
+      const result = await resubmitOvSerialGroupForEdit(db, group, user.uid, record);
+      await onResubmitted?.(result.newRecordId);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to resubmit verification.');
+    } finally {
+      setResubmitting(false);
+    }
+  };
 
   const handleSerialResubmit = async () => {
     if (!user?.uid || !canQueueResubmit || !resubmitSource) return;
@@ -251,12 +297,19 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
         })}
       </div>
 
-      {(showSerialResubmit || showDevRvWipe) && (
+      {(showOvEditResubmit || showRvEmaapResubmit || showDevRvWipe) && (
         <div className="verification-serial-group-resubmit verification-serial-group-resubmit--footer">
-          {showSerialResubmit && voidOthersCount > 0 && (
+          {showRvEmaapResubmit && voidOthersCount > 0 && (
             <p className="verification-serial-group-resubmit-hint mb-0">
               Marks {voidOthersCount} other certificate{voidOthersCount === 1 ? '' : 's'} as void,
               then queues one new run.
+            </p>
+          )}
+          {showOvEditResubmit && (
+            <p className="verification-serial-group-resubmit-hint mb-0">
+              {ovDraft
+                ? 'Open the unpublished draft. Serial stays locked. Old certificate hides on submit.'
+                : 'Opens a new draft with the same serial. Old certificate hides when you submit — PDFs are kept.'}
             </p>
           )}
           <div className="verification-serial-group-footer-actions">
@@ -272,7 +325,22 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
                 className="rv-submit-test-revert--footer"
               />
             )}
-            {showSerialResubmit && (
+            {showOvEditResubmit && (
+              <button
+                type="button"
+                className="verification-form-btn verification-form-btn--resubmit"
+                disabled={resubmitting || closeDisabled}
+                onClick={() => void handleOvEditResubmit()}
+              >
+                {resubmitting ? (
+                  <span className="spinner-inline" aria-hidden />
+                ) : (
+                  <RefreshCw size={16} aria-hidden />
+                )}
+                <span>{ovDraft ? 'Continue resubmit' : 'Resubmit'}</span>
+              </button>
+            )}
+            {showRvEmaapResubmit && (
               <button
                 type="button"
                 className="verification-form-btn verification-form-btn--resubmit"

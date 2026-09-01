@@ -368,6 +368,10 @@ export function verificationSessionFromRecord(
   record: SiteCalibration,
 ): VerificationSessionValues {
   const subject = inferVerificationSubject(record);
+  const lockedSerial =
+    record.verificationType === 'OV' && record.resubmittedFromId?.trim()
+      ? record.serialNumber?.trim() || ''
+      : '';
   return {
     verificationType: record.verificationType,
     verificationSubject: subject,
@@ -377,6 +381,7 @@ export function verificationSessionFromRecord(
     ambientTemperature: record.ambientTemperature || '',
     relativeHumidity: record.relativeHumidity || '',
     verificationLocation: record.verificationLocation || 'in_situ',
+    ...(lockedSerial ? { lockedSerial } : {}),
     devices: [
       {
         localId: record.deviceId || record.id,

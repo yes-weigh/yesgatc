@@ -2,8 +2,9 @@ import { doc, updateDoc, type Firestore } from 'firebase/firestore';
 import { db } from '../firebase';
 import { buildVerificationSubmitPatch, buildVerifierRcReviewPatch } from './verificationRequest';
 import { verificationClientVersionFields } from './verificationAppVersion';
+import { hideOvEditResubmitCertificatesAfterSubmit } from './verificationResubmit';
 import { queueRvZohoInvoicesAfterSubmit, submitRvWithZohoGate } from './zohoRvInvoice';
-import type { JobType } from '../types';
+import type { JobType, SiteCalibration } from '../types';
 import type { RcFilingPartyPatch } from './keralaRegion';
 
 export type VerificationSubmitTarget = {
@@ -14,6 +15,8 @@ export type VerificationSubmitTarget = {
 export type VerificationSubmitOptions = {
   /** When true, RV records use submitRvWithZohoGate instead of direct Firestore submit. */
   zohoRvInvoicingEnabled?: boolean;
+  /** Used to hide old OV certificates when an edit-resubmit clone is submitted. */
+  lookupRecords?: SiteCalibration[];
 };
 
 function submitPatch(target: VerificationSubmitTarget) {
@@ -30,6 +33,18 @@ function submitPatch(target: VerificationSubmitTarget) {
   };
 }
 
+async function hideOvCertsIfEditResubmit(
+  firestore: Firestore,
+  targets: VerificationSubmitTarget[],
+  options?: VerificationSubmitOptions,
+): Promise<void> {
+  await hideOvEditResubmitCertificatesAfterSubmit(
+    firestore,
+    targets.map(target => target.id),
+    options?.lookupRecords ?? [],
+  );
+}
+
 /**
  * Submit one or more draft verifications (RC Admin, VCT, or Super Admin flows).
  * When Zoho RV invoicing is enabled, RV records are invoiced in Zoho while still draft,
@@ -44,6 +59,8 @@ export async function submitVerificationRecords(
 
   const rvTargets = targets.filter(target => target.verificationType === 'RV');
   const nonRvTargets = targets.filter(target => target.verificationType !== 'RV');
+
+  await hideOvCertsIfEditResubmit(firestore, targets, options);
 
   const submitNonRv = nonRvTargets.map(target =>
     updateDoc(doc(firestore, 'siteCalibrations', target.id), submitPatch(target)),

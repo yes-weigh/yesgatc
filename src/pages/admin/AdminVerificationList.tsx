@@ -130,11 +130,14 @@ export const AdminVerificationList: React.FC = () => {
   const selectAllDraftsRef = useRef<HTMLInputElement | null>(null);
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
-    () => ({ zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings) }),
-    [appSettings],
+    () => ({
+      zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
+      lookupRecords: records,
+    }),
+    [appSettings, records],
   );
 
-  const fetchRecords = useCallback(async () => {
+  const fetchRecords = useCallback(async (): Promise<VerificationRow[]> => {
     setLoading(true);
     setListError('');
     try {
@@ -199,9 +202,11 @@ export const AdminVerificationList: React.FC = () => {
           })
           .catch(() => undefined);
       }
+      return rows;
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to load verifications.');
       setRecords([]);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -765,8 +770,11 @@ export const AdminVerificationList: React.FC = () => {
             viewingRecord.rcId ? rcUsersById.get(viewingRecord.rcId) ?? null : null
           }
           onClose={closeVerificationDetails}
-          onRecordsChanged={async () => {
-            await fetchRecords();
+          onRecordsChanged={async newRecordId => {
+            const rows = await fetchRecords();
+            if (!newRecordId) return;
+            const next = rows.find(r => r.id === newRecordId);
+            if (next) setViewingRecord(next);
           }}
         />
       ) : (

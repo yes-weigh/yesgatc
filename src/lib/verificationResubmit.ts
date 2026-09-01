@@ -1,4 +1,4 @@
-import { collection, doc, setDoc, updateDoc, type Firestore } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, updateDoc, type Firestore } from 'firebase/firestore';
 import { isRvWalletPaymentRequired } from './appSettings';
 import { allocateVerificationApplicationNumber } from './verificationApplicationNumber';
 import { verificationClientVersionFields } from './verificationAppVersion';
@@ -6,6 +6,7 @@ import { isActiveRvWalletPayment } from './rcWallet';
 import { buildRvPaymentFirestorePatch } from './rvPaymentAmount';
 import {
   canDownloadVerificationCertificate,
+  hasStoredCertificatePdf,
   isVerificationCertifiedOnDoca,
   isVerificationFullyCertified,
   isCertificationFailureResubmitSource,
@@ -25,12 +26,20 @@ export type CertificateQuality = 'corrupted_qr' | 'certification_failed';
 const CERTIFICATE_OUTCOME_FIELDS = [
   'approvedAt',
   'certifiedAt',
+  'submittedAt',
   'certificateNumber',
   'certificatePdfUrl',
   'certificatePdfPath',
   'certificatePdfName',
   'certificatePdfContentType',
   'emaapCertificatePdfUrl',
+  'signedCertificatePdfUrl',
+  'signedCertificatePdfPath',
+  'signedCertificatePdfName',
+  'signedCertificatePdfContentType',
+  'signedCertificateUploadedAt',
+  'signedCertificateUploadedByUid',
+  'emaapSignedPdfUploadedAt',
   'pipelineFailedPhase',
   'pipelineFailureMessage',
   'pipelineFailedAt',
@@ -115,6 +124,48 @@ export function canResubmitSerialGroup(
   return pickResubmitSourceForSerialGroup(group, preferred) !== null;
 }
 
+export function isOvEditResubmitDraft(
+  record: Pick<SiteCalibration, 'verificationType' | 'resubmittedFromId' | 'status'>,
+): boolean {
+  return (
+    record.verificationType === 'OV' &&
+    Boolean(record.resubmittedFromId?.trim()) &&
+    normalizeVerificationStatus(record) === 'draft'
+  );
+}
+
+/** Unpublished OV edit-resubmit clone for this serial, if any. */
+export function findOpenOvResubmitDraft(group: SiteCalibration[]): SiteCalibration | null {
+  const drafts = group.filter(isOvEditResubmitDraft);
+  if (drafts.length === 0) return null;
+  return [...drafts].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0];
+}
+
+export function pickOvEditResubmitSource(
+  group: SiteCalibration[],
+  preferred?: SiteCalibration,
+): SiteCalibration | null {
+  const eligible = group.filter(
+    r => r.verificationType === 'OV' && canResubmitVerification(r, group),
+  );
+  if (eligible.length === 0) return null;
+
+  if (preferred && eligible.some(r => r.id === preferred.id)) {
+    return preferred;
+  }
+
+  return [...eligible].sort((a, b) => certificateSortKey(b).localeCompare(certificateSortKey(a)))[0];
+}
+
+export function canEditResubmitOvSerialGroup(
+  group: SiteCalibration[],
+  preferred?: SiteCalibration,
+): boolean {
+  if (findOpenOvResubmitDraft(group)) return true;
+  if (hasPendingResubmissionInGroup(group)) return false;
+  return pickOvEditResubmitSource(group, preferred) !== null;
+}
+
 export function countVoidableCertificatesInGroup(
   group: SiteCalibration[],
   exceptId: string,
@@ -162,6 +213,9 @@ export function verificationVersionTitle(
 
   if (record.resubmittedFromId) {
     const status = normalizeVerificationStatus(record);
+    if (status === 'draft' && record.verificationType === 'OV') {
+      return 'Resubmit draft';
+    }
     if (status === 'submitted' || status === 'approved') {
       return 'Resubmission in progress';
     }
@@ -198,6 +252,8 @@ export function verificationVersionDisplayRank(
   switch (verificationVersionTitle(record, group)) {
     case 'Correct certificate':
       return 0;
+    case 'Resubmit draft':
+      return 1;
     case 'Resubmission in progress':
       return 1;
     case 'Verification':
@@ -502,6 +558,171 @@ export async function resubmitRejectedVerification(
   });
 
   return { newRecordId: newRef.id, applicationNumber };
+}
+
+function cloneResult(record: SiteCalibration): ResubmitVerificationResult {
+  return {
+    newRecordId: record.id,
+    applicationNumber: record.applicationNumber?.trim() || '',
+  };
+}
+
+/**
+ * Clones an OV certificate as a draft for edit. Serial is copied; caller locks it in the form.
+ * Does not hide the source certificate until the clone is submitted.
+ */
+export async function cloneOvVerificationForEdit(
+  firestore: Firestore,
+  source: SiteCalibration,
+  resubmittedByUid: string,
+): Promise<ResubmitVerificationResult> {
+  if (source.verificationType !== 'OV') {
+    throw new Error('Only Original Verification records can be cloned for edit.');
+  }
+
+  const now = new Date().toISOString();
+  const newRef = doc(collection(firestore, 'siteCalibrations'));
+  const applicationNumber = await allocateVerificationApplicationNumber(firestore);
+
+  const rootId = source.resubmissionRootId?.trim() || source.id;
+  const ordinal = (source.resubmissionOrdinal ?? 1) + 1;
+  const base = stripCertificateOutcomeFields(
+    source as unknown as Record<string, unknown>,
+  );
+
+  await setDoc(newRef, {
+    ...base,
+    status: 'draft',
+    createdAt: now,
+    updatedAt: now,
+    applicationNumber,
+    resubmittedFromId: source.id,
+    resubmissionRootId: rootId,
+    resubmissionOrdinal: ordinal,
+    resubmittedByUid,
+    resubmittedAt: now,
+    createdByUid: resubmittedByUid,
+    ...verificationClientVersionFields(),
+  });
+
+  return { newRecordId: newRef.id, applicationNumber };
+}
+
+/**
+ * Resume an existing OV resubmit draft, or clone the eligible source as a new draft.
+ */
+export async function resubmitOvSerialGroupForEdit(
+  firestore: Firestore,
+  group: SiteCalibration[],
+  resubmittedByUid: string,
+  preferred?: SiteCalibration,
+): Promise<ResubmitVerificationResult> {
+  const existing = findOpenOvResubmitDraft(group);
+  if (existing) return cloneResult(existing);
+
+  if (hasPendingResubmissionInGroup(group)) {
+    throw new Error('A resubmission for this serial is already in progress.');
+  }
+
+  const source = pickOvEditResubmitSource(group, preferred);
+  if (!source) {
+    throw new Error('No eligible Original Verification to resubmit.');
+  }
+
+  return cloneOvVerificationForEdit(firestore, source, resubmittedByUid);
+}
+
+function shouldHideCertificateOnOvResubmitSubmit(
+  record: SiteCalibration,
+  cloneId: string,
+): boolean {
+  if (record.id === cloneId) return false;
+  if (isVerificationCertificateVoided(record)) return false;
+
+  const status = normalizeVerificationStatus(record);
+  if (
+    status === 'draft' ||
+    status === 'submitted' ||
+    status === 'pending_rc' ||
+    status === 'rejected'
+  ) {
+    return false;
+  }
+
+  return (
+    canVoidVerificationCertificate(record) ||
+    status === 'certified' ||
+    status === 'approved' ||
+    Boolean(record.certificateNumber?.trim()) ||
+    hasStoredCertificatePdf(record)
+  );
+}
+
+/**
+ * Hide (void) other certificates for this serial when an OV edit-resubmit clone is submitted.
+ * Storage PDFs stay; public lookup / app / Yesone skip voided records.
+ */
+export async function hideOvSerialCertificatesOnCloneSubmit(
+  firestore: Firestore,
+  clone: SiteCalibration,
+  group: SiteCalibration[],
+): Promise<void> {
+  const sourceId = clone.resubmittedFromId?.trim();
+  if (clone.verificationType !== 'OV' || !sourceId) return;
+
+  let resolved = group;
+  if (!resolved.some(r => r.id === sourceId)) {
+    const sourceSnap = await getDoc(doc(firestore, 'siteCalibrations', sourceId));
+    if (sourceSnap.exists()) {
+      resolved = [
+        ...resolved,
+        { id: sourceSnap.id, ...(sourceSnap.data() as Omit<SiteCalibration, 'id'>) },
+      ];
+    }
+  }
+
+  const uid = clone.resubmittedByUid?.trim() || clone.createdByUid?.trim() || '';
+  const now = new Date().toISOString();
+
+  for (const record of resolved) {
+    if (record.id === clone.id) continue;
+
+    if (shouldHideCertificateOnOvResubmitSubmit(record, clone.id)) {
+      await voidVerificationCertificate(firestore, record, uid, 'resubmit_superseded');
+    }
+
+    if (record.id === sourceId && !record.supersededByResubmissionId?.trim()) {
+      await updateDoc(doc(firestore, 'siteCalibrations', record.id), {
+        supersededByResubmissionId: clone.id,
+        updatedAt: now,
+      });
+    }
+  }
+}
+
+export async function hideOvEditResubmitCertificatesAfterSubmit(
+  firestore: Firestore,
+  submittedIds: string[],
+  lookupRecords: SiteCalibration[] = [],
+): Promise<void> {
+  const byId = new Map(lookupRecords.map(r => [r.id, r]));
+
+  for (const id of submittedIds) {
+    let clone = byId.get(id);
+    if (!clone) {
+      const snap = await getDoc(doc(firestore, 'siteCalibrations', id));
+      if (!snap.exists()) continue;
+      clone = { id: snap.id, ...(snap.data() as Omit<SiteCalibration, 'id'>) };
+    }
+
+    if (clone.verificationType !== 'OV' || !clone.resubmittedFromId?.trim()) continue;
+
+    await hideOvSerialCertificatesOnCloneSubmit(
+      firestore,
+      clone,
+      lookupRecords.length > 0 ? getVerificationSerialGroup(lookupRecords, clone) : [clone],
+    );
+  }
 }
 
 /**
