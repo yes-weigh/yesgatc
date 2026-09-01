@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Yesgatc.CertificateWorker.Models;
 using Yesgatc.CertificateWorker.Services;
 using Yesgatc.DscEngine.Models;
@@ -21,10 +22,12 @@ public partial class MainWindow : Window
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private readonly DscTokenSession _dscToken = new();
     private readonly DscLocalPrefsStore _prefsStore = new();
+    private readonly DispatcherTimer _pollTimer = new();
     private DscLocalPrefs _prefs = new();
 
     private FirebaseSignInResult? _session;
     private bool _busy;
+    private bool _suppressPrefClicks;
 
     public MainWindow()
     {
@@ -36,9 +39,13 @@ public partial class MainWindow : Window
         _signedPdfs = new DscSignedPdfService(settings.Firebase, App.Dsc);
         LoadSaved();
         LoadStampPrefs();
+        ApplyPrefCheckboxes();
         RefreshTokenHint();
+        _pollTimer.Tick += async (_, _) => await RunAutoCycleAsync();
+        Opened += async (_, _) => await OnOpenedAsync();
         Closed += (_, _) =>
         {
+            _pollTimer.Stop();
             _dscToken.Dispose();
             _tokenLock.Dispose();
         };
@@ -94,6 +101,7 @@ public partial class MainWindow : Window
         _session = null;
         _all.Clear();
         ApplyFilter();
+        _pollTimer.Stop();
         RefreshButton.IsEnabled = false;
         SignOutButton.IsEnabled = false;
         SignButton.IsEnabled = false;
@@ -134,6 +142,10 @@ public partial class MainWindow : Window
             SignOutButton.IsEnabled = true;
             SetStatus($"Signed in as {_session.DisplayName}. Loading certificates…");
             await LoadCertificatesAsync();
+            if (_prefs.AutoRun)
+            {
+                ArmPollTimer();
+            }
         }
         catch (Exception ex)
         {
@@ -391,6 +403,22 @@ public partial class MainWindow : Window
             return true;
         }
 
+        var remembered = _prefs.RememberPin ? DscPinProtect.Unprotect(_prefs.PinProtected) : null;
+        if (!string.IsNullOrWhiteSpace(remembered))
+        {
+            try
+            {
+                await Task.Run(() => _dscToken.Unlock(remembered, App.Dsc.Pkcs11Library));
+                RefreshTokenHint();
+                return true;
+            }
+            catch
+            {
+                _prefs.PinProtected = null;
+                PersistStampPrefs();
+            }
+        }
+
         var pinWindow = new PinWindow();
         var pin = await pinWindow.ShowDialog<string?>(this);
         if (string.IsNullOrWhiteSpace(pin))
@@ -402,6 +430,12 @@ public partial class MainWindow : Window
         try
         {
             await Task.Run(() => _dscToken.Unlock(pin, App.Dsc.Pkcs11Library));
+            if (_prefs.RememberPin)
+            {
+                _prefs.PinProtected = DscPinProtect.Protect(pin);
+                PersistStampPrefs();
+            }
+
             RefreshTokenHint();
             return true;
         }
@@ -590,7 +624,176 @@ public partial class MainWindow : Window
             _prefs.CustomY = y;
         }
 
+        _prefs.AutoRun = AutoRunBox.IsChecked == true;
+        _prefs.StartWithWindows = StartWithWindowsBox.IsChecked == true;
+        _prefs.RememberPin = RememberPinBox.IsChecked == true;
+        if (!_prefs.RememberPin)
+        {
+            _prefs.PinProtected = null;
+        }
+
+        _prefs.PollSeconds = Math.Clamp(_prefs.PollSeconds, 10, 120);
         _prefsStore.Save(_prefs);
+    }
+
+    private void ApplyPrefCheckboxes()
+    {
+        _suppressPrefClicks = true;
+        try
+        {
+            AutoRunBox.IsChecked = _prefs.AutoRun;
+            StartWithWindowsBox.IsChecked = _prefs.StartWithWindows;
+            RememberPinBox.IsChecked = _prefs.RememberPin;
+        }
+        finally
+        {
+            _suppressPrefClicks = false;
+        }
+    }
+
+    private async void AutoRunBox_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_suppressPrefClicks)
+        {
+            return;
+        }
+
+        PersistStampPrefs();
+        if (_prefs.AutoRun)
+        {
+            await StartAutoRunAsync();
+            return;
+        }
+
+        _pollTimer.Stop();
+        SetStatus("Auto-run off.");
+    }
+
+    private void StartWithWindowsBox_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_suppressPrefClicks)
+        {
+            return;
+        }
+
+        PersistStampPrefs();
+        try
+        {
+            if (_prefs.StartWithWindows)
+            {
+                DscWindowsAutostart.EnsureRegistered();
+                SetStatus("Start with Windows on. After logon this EXE starts. Use Windows auto-logon on a dedicated PC.");
+                return;
+            }
+
+            DscWindowsAutostart.Unregister();
+            SetStatus("Start with Windows off.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not update Start with Windows: {ex.Message}");
+        }
+    }
+
+    private void RememberPinBox_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_suppressPrefClicks)
+        {
+            return;
+        }
+
+        PersistStampPrefs();
+        SetStatus(_prefs.RememberPin
+            ? "PIN will be stored for this Windows user only (DPAPI). Needed for unattended reboot."
+            : "Remember PIN off. PIN is asked each session.");
+    }
+
+    private async Task OnOpenedAsync()
+    {
+        if (_prefs.StartWithWindows)
+        {
+            try
+            {
+                DscWindowsAutostart.EnsureRegistered();
+            }
+            catch
+            {
+            }
+        }
+
+        if (_prefs.AutoRun)
+        {
+            await StartAutoRunAsync();
+        }
+    }
+
+    private void ArmPollTimer()
+    {
+        _pollTimer.Interval = TimeSpan.FromSeconds(Math.Clamp(_prefs.PollSeconds, 10, 120));
+        if (!_pollTimer.IsEnabled)
+        {
+            _pollTimer.Start();
+        }
+    }
+
+    private async Task StartAutoRunAsync()
+    {
+        ArmPollTimer();
+        Persist();
+        if (_session is null)
+        {
+            await SignInAsync();
+        }
+
+        if (_session is null)
+        {
+            SetStatus("Auto-run waiting: sign in with RC Aadhar + password.");
+            return;
+        }
+
+        if (!await EnsureTokenUnlockedAsync())
+        {
+            SetStatus("Auto-run waiting: unlock DSC PIN (token must stay plugged in).");
+            return;
+        }
+
+        await RunAutoCycleAsync();
+    }
+
+    private async Task RunAutoCycleAsync()
+    {
+        if (!_prefs.AutoRun || _busy || _session is null)
+        {
+            return;
+        }
+
+        if (!_dscToken.IsUnlocked && !await EnsureTokenUnlockedAsync())
+        {
+            return;
+        }
+
+        try
+        {
+            await LoadCertificatesAsync();
+            if (!_prefs.AutoRun || _session is null)
+            {
+                return;
+            }
+
+            var unsigned = _all.Where(item => item.SignStatus == DscSignStatus.NotSigned).ToList();
+            if (unsigned.Count == 0)
+            {
+                SetStatus($"Auto-run idle · token unlocked · {CountSummary()}");
+                return;
+            }
+
+            SetStatus($"Auto-run · {unsigned.Count} unsigned…");
+            await SignRecordsAsync(unsigned, upload: true);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Auto-run: {ex.Message}");
+        }
     }
 
     private string SelectedPlacement() =>

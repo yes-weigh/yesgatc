@@ -28,6 +28,12 @@ internal static class Program
             return;
         }
 
+        using var mutex = new Mutex(true, @"Local\YesGATC-DscEngine", out var created);
+        if (!created)
+        {
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

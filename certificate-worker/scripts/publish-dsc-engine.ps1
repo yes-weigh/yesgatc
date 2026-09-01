@@ -1,9 +1,12 @@
 # Zip DSC Engine for RC Windows PCs (copy, do not install on the VPS).
+# Default: one self-contained exe (no .NET runtime install on the RC PC).
+#   npm run dsc:publish
 #   powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-dsc-engine.ps1
-#   powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-dsc-engine.ps1 -SelfContained
+# Framework-dependent (needs .NET 8 Desktop Runtime x64):
+#   powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-dsc-engine.ps1 -FrameworkDependent
 
 param(
-    [switch]$SelfContained,
+    [switch]$FrameworkDependent,
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release"
 )
@@ -33,22 +36,28 @@ if (Test-Path $stagingDir) {
     Remove-Item $stagingDir -Recurse -Force
 }
 
+$selfContained = -not $FrameworkDependent
 $publishArgs = @(
     "publish", $projectDir,
     "-c", $Configuration,
     "-r", $Runtime,
     "-o", $stagingDir,
-    "/p:PublishSingleFile=false",
     "/p:DebugType=none",
     "/p:DebugSymbols=false"
 )
 
-if ($SelfContained) {
-    $publishArgs += @("--self-contained", "true")
-    Write-Host "Mode: self-contained" -ForegroundColor Yellow
+if ($selfContained) {
+    $publishArgs += @(
+        "--self-contained", "true",
+        "/p:PublishSingleFile=true",
+        "/p:IncludeNativeLibrariesForSelfExtract=true",
+        "/p:IncludeAllContentForSelfExtract=true",
+        "/p:EnableCompressionInSingleFile=true"
+    )
+    Write-Host "Mode: one self-contained exe (no .NET install on RC PC)" -ForegroundColor Yellow
 }
 else {
-    $publishArgs += @("--self-contained", "false")
+    $publishArgs += @("--self-contained", "false", "/p:PublishSingleFile=false")
     Write-Host "Mode: framework-dependent (.NET 8 Desktop Runtime x64)" -ForegroundColor Yellow
 }
 
@@ -72,16 +81,16 @@ catch {
     "Published: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss K')"
     "Git: $gitSha"
     "Runtime: $Runtime"
-    "SelfContained: $($SelfContained.IsPresent)"
+    "SelfContained: $selfContained"
+    "SingleFile: $selfContained"
     ""
     "Local RC machine only. Do not install on the VPS."
-    "1. Unzip on the RC Windows PC."
-    "2. Install WD PROXKey middleware from the token CD if missing."
-    "3. Install .NET 8 Desktop Runtime x64 if prompted."
-    "4. Plug in WD PROXKey."
-    "5. Run DscEngine.exe"
-    "6. Sign in with RC Admin Aadhar + password."
-    "7. Select unsigned certified certificates, Sign & upload, enter PIN once."
+    "1. Copy DscEngine.exe onto the RC Windows PC (or unzip this folder)."
+    "2. Install WD PROXKey middleware from the token CD if missing. That is not .NET."
+    "3. Plug in WD PROXKey."
+    "4. Run DscEngine.exe. No .NET Desktop Runtime install."
+    "5. Sign in with that RC Admin Aadhar + password."
+    "6. Select unsigned certified certificates, Sign and upload, enter PIN once."
     "Data: %LOCALAPPDATA%\YesGATC\DscEngine\"
 ) | Set-Content -Path (Join-Path $stagingDir "README-DSCENGINE.txt") -Encoding UTF8
 

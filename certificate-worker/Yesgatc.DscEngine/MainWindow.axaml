@@ -65,6 +65,17 @@
                                Text="Default sits just above “Signature of the verifying officer”."
                                TextWrapping="Wrap"/>
                 </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <CheckBox x:Name="AutoRunBox"
+                              Content="Auto-run (sign and upload unsigned as they appear)"
+                              Click="AutoRunBox_Click"/>
+                    <CheckBox x:Name="StartWithWindowsBox"
+                              Content="Start with Windows"
+                              Click="StartWithWindowsBox_Click"/>
+                    <CheckBox x:Name="RememberPinBox"
+                              Content="Remember PIN on this PC"
+                              Click="RememberPinBox_Click"/>
+                </StackPanel>
                 <TextBlock x:Name="StatusText"
                            Text="Sign in with this RC Admin account."
                            TextWrapping="Wrap"/>
@@ -145,6 +156,6 @@
                    Grid.Row="3"
                    Margin="0,10,0,0"
                    Foreground="#666666"
-                   Text="DSC token (InnalT / WD PROXKey) · PIN once · Sign all unsigned uploads signed PDFs and keeps the original."/>
+                   Text="Dedicated RC PC: Auto-run + Start with Windows + Remember PIN. Token stays plugged in. PIN never leaves this Windows user."/>
     </Grid>
 </Window>

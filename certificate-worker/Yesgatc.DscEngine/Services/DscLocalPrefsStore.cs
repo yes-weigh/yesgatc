@@ -7,6 +7,11 @@ public sealed class DscLocalPrefs
     public string StampPlacement { get; set; } = "Officer";
     public float CustomX { get; set; } = 360;
     public float CustomY { get; set; } = 36;
+    public bool AutoRun { get; set; }
+    public bool StartWithWindows { get; set; }
+    public bool RememberPin { get; set; }
+    public string? PinProtected { get; set; }
+    public int PollSeconds { get; set; } = 20;
 }
 
 public sealed class DscLocalPrefsStore

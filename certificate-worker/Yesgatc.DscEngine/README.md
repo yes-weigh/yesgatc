@@ -14,6 +14,16 @@ Sign in with RC Aadhar + password, list certified certificates, select rows, **S
 
 Certs are **not** registered in the Windows store. Signing talks to the token over PKCS#11.
 
+## Dedicated PC (always-on)
+
+1. Copy the self-contained `DscEngine.exe` onto the RC Windows PC.
+2. Plug in that RC’s USB DSC. Install Watchdata / InnaIT middleware if needed.
+3. Sign in with **that RC** Aadhar + password. **Save login**.
+4. Turn on **Auto-run**, **Start with Windows**, and **Remember PIN on this PC**. Unlock PIN once.
+5. Use Windows auto-logon so reboot comes back to the desktop. Token stays plugged in.
+
+Polls unsigned certified seq >2304 and Sign & upload. PIN is DPAPI-protected for this Windows user only — not uploaded.
+
 ## Run
 
 ```powershell
@@ -33,6 +43,10 @@ dotnet run -- --probe
 npm run dsc:publish
 ```
 
-Zip: `certificate-worker/publish/DscEngine-win-x64.zip`
+Zip: `certificate-worker/publish/DscEngine-win-x64.zip` — one self-contained `DscEngine.exe` (no .NET install on the RC PC). WD PROXKey middleware from the token CD is still required.
 
-RC needs WD PROXKey middleware + .NET 8 Desktop Runtime x64 (unless `-SelfContained`).
+Framework-dependent zip (needs .NET 8 Desktop Runtime x64):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File certificate-worker\scripts\publish-dsc-engine.ps1 -FrameworkDependent
+```

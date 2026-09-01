@@ -28,6 +28,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.8" />
     <PackageReference Include="Pkcs11Interop" Version="5.3.0" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.8" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="9.0.8" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,6 +48,7 @@
     </None>
     <None Update="appsettings.local.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </None>
     <None Include="..\Yesgatc.CertificateWorker\adobelogo.png" Link="adobelogo.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
