@@ -391,6 +391,10 @@ service cloud.firestore {
           );
       }
 
+      function rcEmaapResubmitSource() {
+        return get(/databases/$(database)/documents/siteCalibrations/$(request.resource.data.resubmittedFromId));
+      }
+
       allow read: if isSuperAdmin();
       allow create, update: if isSuperAdmin();
       allow delete: if isSuperAdmin()
@@ -447,6 +451,20 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.resource.data.vctId)).data.get('rcId', '') == request.auth.uid
         && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
+        && validVerificationApplicationNumber(request.resource.data)
+        && meetsMinVerificationAppVersion();
+
+      // RC resubmit — clone own certificate as submitted for a new eMAAP run.
+      allow create: if isRCAdmin()
+        && request.resource.data.rcId == request.auth.uid
+        && verificationRecordStatus(request.resource.data) == 'submitted'
+        && request.resource.data.get('resubmittedFromId', '') is string
+        && request.resource.data.resubmittedFromId.size() > 0
+        && request.resource.data.get('resubmittedByUid', '') == request.auth.uid
+        && exists(/databases/$(database)/documents/siteCalibrations/$(request.resource.data.resubmittedFromId))
+        && rcEmaapResubmitSource().data.rcId == request.auth.uid
+        && request.resource.data.get('serialNumber', '')
+             == rcEmaapResubmitSource().data.get('serialNumber', '')
         && validVerificationApplicationNumber(request.resource.data)
         && meetsMinVerificationAppVersion();
 

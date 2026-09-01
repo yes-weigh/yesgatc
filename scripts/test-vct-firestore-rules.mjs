@@ -252,6 +252,91 @@ async function run() {
     } catch (err) {
       fail('VCT cannot create verification under another RC', err);
     }
+
+    const OTHER_RC = 'rc-admin-other-001';
+    const SOURCE_ID = 'rc-cert-source-001';
+    const OTHER_SOURCE_ID = 'other-rc-cert-001';
+
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', OTHER_RC), {
+        aadhar: '333333333333',
+        role: 'rc_admin',
+        username: 'Other RC',
+      });
+      await setDoc(doc(db, 'siteCalibrations', SOURCE_ID), {
+        rcId: RC_UID,
+        createdByUid: RC_UID,
+        performedBy: 'rc',
+        status: 'certified',
+        verificationType: 'OV',
+        serialNumber: 'SN-RESUB-1',
+        applicationNumber: 'VC/26/10',
+        certificateNumber: 'IND/GATC/KL/26/04/1',
+        certifiedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      });
+      await setDoc(doc(db, 'siteCalibrations', OTHER_SOURCE_ID), {
+        rcId: OTHER_RC,
+        createdByUid: OTHER_RC,
+        performedBy: 'rc',
+        status: 'certified',
+        verificationType: 'OV',
+        serialNumber: 'SN-OTHER-1',
+        applicationNumber: 'VC/26/11',
+        certificateNumber: 'IND/GATC/KL/26/04/2',
+        certifiedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    const resubmitClone = {
+      rcId: RC_UID,
+      createdByUid: RC_UID,
+      performedBy: 'rc',
+      status: 'submitted',
+      verificationType: 'OV',
+      serialNumber: 'SN-RESUB-1',
+      applicationNumber: 'VC/26/900',
+      resubmittedFromId: SOURCE_ID,
+      resubmittedByUid: RC_UID,
+      submittedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      await assertSucceeds(
+        setDoc(doc(rcDb, 'siteCalibrations', 'rc-resubmit-clone-001'), resubmitClone),
+      );
+      ok('RC admin can create eMAAP resubmit clone of own certificate');
+    } catch (err) {
+      fail('RC admin can create eMAAP resubmit clone of own certificate', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(doc(rcDb, 'siteCalibrations', 'rc-resubmit-other-001'), {
+          ...resubmitClone,
+          serialNumber: 'SN-OTHER-1',
+          resubmittedFromId: OTHER_SOURCE_ID,
+        }),
+      );
+      ok('RC admin cannot resubmit another centre certificate');
+    } catch (err) {
+      fail('RC admin cannot resubmit another centre certificate', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(doc(rcDb, 'siteCalibrations', 'rc-resubmit-serial-mismatch'), {
+          ...resubmitClone,
+          serialNumber: 'SN-WRONG',
+        }),
+      );
+      ok('RC admin cannot resubmit with serial mismatch');
+    } catch (err) {
+      fail('RC admin cannot resubmit with serial mismatch', err);
+    }
   } finally {
     await testEnv.cleanup();
   }

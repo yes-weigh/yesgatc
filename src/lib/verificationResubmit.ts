@@ -122,7 +122,12 @@ export function countVoidableCertificatesInGroup(
   return group.filter(r => r.id !== exceptId && canVoidVerificationCertificate(r)).length;
 }
 
-/** Super Admin may queue a fresh DOCA run from a completed verification. */
+/** Super Admin or RC Admin may queue a fresh eMAAP run from a completed verification. */
+export function canQueueEmaapResubmit(role: string | null | undefined): boolean {
+  return role === 'super_admin' || role === 'rc_admin';
+}
+
+/** Eligible source for an eMAAP resubmit clone (own centre enforced by Firestore). */
 export function canResubmitVerification(
   record: SiteCalibration,
   group: SiteCalibration[],

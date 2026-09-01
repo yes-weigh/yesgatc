@@ -52,6 +52,7 @@ import {
   buildRcApproveVerifierPatch,
   isCorruptedVerificationRecord,
   isVerificationEditable,
+  isVerificationFailedAtSubmit,
   isVerificationViewable,
   matchesVerificationTypeFilter,
   normalizeVerificationStatus,
@@ -69,6 +70,7 @@ import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
+import { canResubmitSerialGroup, getVerificationSerialGroup } from '../../lib/verificationResubmit';
 import type { VerificationFormStepContext, VerificationFormStepId } from '../../lib/verificationFormSteps';
 import { uploadSiteCalibrationDeviceImage } from '../../lib/siteCalibrationPhotoUpload';
 import {
@@ -2502,7 +2504,13 @@ export const RCSiteCalibration: React.FC = () => {
     [records],
   );
   const isCertifiedActionsView =
-    isViewMode && editingRecord !== null && canShowVerificationCertifiedActions(editingRecord);
+    isViewMode
+    && editingRecord !== null
+    && !isVerificationFailedAtSubmit(editingRecord)
+    && (
+      canShowVerificationCertifiedActions(editingRecord)
+      || canResubmitSerialGroup(getVerificationSerialGroup(records, editingRecord), editingRecord)
+    );
   const viewingStatus = editingRecord ? normalizeVerificationStatus(editingRecord) : null;
   const compactJob =
     showAddForm

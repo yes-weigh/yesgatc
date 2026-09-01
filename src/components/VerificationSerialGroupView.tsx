@@ -8,6 +8,7 @@ import {
   syncVoidSupersededResubmitSources,
 } from '../lib/verificationCertificateVoid';
 import {
+  canQueueEmaapResubmit,
   canResubmitSerialGroup,
   countVoidableCertificatesInGroup,
   getVerificationSerialGroup,
@@ -85,11 +86,12 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
   );
 
   const isSuperAdmin = user?.role === 'super_admin';
+  const canQueueResubmit = canQueueEmaapResubmit(user?.role);
   const resubmitSource = useMemo(
     () => pickResubmitSourceForSerialGroup(group, record),
     [group, record],
   );
-  const showSerialResubmit = isSuperAdmin && canResubmitSerialGroup(group, record);
+  const showSerialResubmit = canQueueResubmit && canResubmitSerialGroup(group, record);
   const certificationFailureSource =
     resubmitSource && isCertificationFailureResubmitSource(resubmitSource);
   const showDevRvWipe = canRevertRvSubmitTest(record, isSuperAdmin);
@@ -109,19 +111,19 @@ export const VerificationSerialGroupView: React.FC<VerificationSerialGroupViewPr
   );
 
   useEffect(() => {
-    if (!isSuperAdmin || !user?.uid) return;
+    if (!canQueueResubmit || !user?.uid) return;
     void syncVoidSupersededResubmitSources(db, group, user.uid)
       .then(() => onResubmitted?.(record.id))
       .catch(() => {
         /* worker may have already voided the source */
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when void/cert state changes
-  }, [groupSyncKey, isSuperAdmin, user?.uid]);
+  }, [groupSyncKey, canQueueResubmit, user?.uid]);
 
   const showGroupHeading = group.length > 1;
 
   const handleSerialResubmit = async () => {
-    if (!user?.uid || !isSuperAdmin || !resubmitSource) return;
+    if (!user?.uid || !canQueueResubmit || !resubmitSource) return;
 
     const voidLine =
       voidOthersCount > 0
