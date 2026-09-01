@@ -7,7 +7,7 @@ import { UploadField } from '../admin/productFormUi';
 import { useAppContext } from '../../context/AppContext';
 import type { Customer, JobType } from '../../types';
 import {
-  mpeStringFromProduct,
+  mpeStringFromProductSpec,
   type SiteCalibrationFormValues,
 } from '../../lib/siteCalibrationProfileFields';
 import { type ImageUploadState } from './CustomerFormFields';
@@ -110,7 +110,10 @@ export const SiteCalibrationFormFields: React.FC<SiteCalibrationFormFieldsProps>
                 onChange({
                   productId: next.productId,
                   productName: next.productName,
-                  maximumPermissibleError: mpeStringFromProduct(product),
+                  maximumPermissibleError: mpeStringFromProductSpec(
+                    product,
+                    next.productSpecificationId,
+                  ),
                 });
               }}
               disabled={submitting}

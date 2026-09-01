@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Award, BarChart3, Receipt, ScrollText, Tag } from 'lucide-react';
 import { useMobileViewport } from '../hooks/useMobileViewport';
 import {
@@ -15,6 +15,7 @@ import {
   resolveUnsignedCertificatePdfStoragePath,
   resolveUnsignedCertificatePdfUrl,
 } from '../lib/signedCertificatePdf';
+import { prefetchPdfJs } from '../lib/pdfJs';
 import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
 import { VerificationGstBillModal } from './VerificationGstBillModal';
 import { VerificationLabelModal } from './VerificationLabelModal';
@@ -197,6 +198,10 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
   const [gstBillOpen, setGstBillOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [certificateOpen, setCertificateOpen] = useState(false);
+
+  useEffect(() => {
+    prefetchPdfJs();
+  }, []);
 
   if (!canShowVerificationCertifiedActions(record)) return null;
 

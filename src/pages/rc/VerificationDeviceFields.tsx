@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { focusMobileTextInput, getVerificationSerialInput } from '../../lib/focusMobileInput';
 import { FileText, IndianRupee, Plus, Receipt, Scale, Trash2 } from 'lucide-react';
-import { ProductSelect } from '../../components/ProductSelect';
+import { ProductCatalogueList, ProductSelect } from '../../components/ProductSelect';
 import { ProductDetailsSpecs } from '../../components/ProductDetailsSpecs';
 import { ManufacturingYearPicker } from '../../components/ManufacturingYearPicker';
 import { UploadField } from '../admin/productFormUi';
@@ -9,8 +9,9 @@ import { useAppContext } from '../../context/AppContext';
 import { DEFAULT_RC_FEES_STRUCTURE } from '../../lib/rcProfileFields';
 import { computeRvCustomerFeeLine } from '../../lib/rvFeeBreakdown';
 import { VerificationFeeBreakdown } from '../../components/VerificationFeeBreakdown';
+import { capacityFieldsFromProductSpec } from '../../lib/productSpecifications';
 import {
-  mpeStringFromProduct,
+  mpeStringFromProductSpec,
   type DeviceRvDocumentsState,
   type DeviceVerificationImagesState,
   type VerificationDeviceRowValues,
@@ -32,6 +33,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import type { JobType, Product, RcFeesStructure, VerificationLocation } from '../../types';
+import { ovSerialChoicesForRow, type OvQuotaGate } from '../../lib/ovQuotaGate';
 
 const VerificationImageColumnHead: React.FC<{
   kind: VerificationImageKind;
@@ -166,10 +168,114 @@ type VerificationDeviceFieldsProps = {
   verificationLocation?: VerificationLocation | '';
   verificationSubject?: 'self' | 'customer';
   feesStructure?: RcFeesStructure;
+  ovQuota?: OvQuotaGate | null;
+  lockedSerial?: string;
 };
+
+function DeviceSerialField({
+  id,
+  className,
+  placeholder,
+  row,
+  devices,
+  ovQuota,
+  isRv,
+  locked,
+  lockedSerial = '',
+  onDeviceChange,
+}: {
+  id: string;
+  className: string;
+  placeholder: string;
+  row: VerificationDeviceRowValues;
+  devices: VerificationDeviceRowValues[];
+  ovQuota?: OvQuotaGate | null;
+  isRv: boolean;
+  locked: boolean;
+  lockedSerial?: string;
+  onDeviceChange: (localId: string, patch: Partial<VerificationDeviceRowValues>) => void;
+}) {
+  const held = lockedSerial.trim();
+  const rowSerial = row.serialNumber.trim();
+  const lockThisRow =
+    Boolean(held) &&
+    (rowSerial === held || (!rowSerial && devices[0]?.localId === row.localId));
+  const disabled = locked || !row.included;
+
+  if (lockThisRow) {
+    return (
+      <input
+        id={id}
+        type="text"
+        className={`${className} input-readonly`}
+        value={rowSerial || held}
+        readOnly
+        tabIndex={-1}
+        title="Serial selected from allotted seats"
+      />
+    );
+  }
+
+  if (isRv || !ovQuota) {
+    return (
+      <input
+        id={id}
+        type="text"
+        inputMode="text"
+        className={className}
+        placeholder={placeholder}
+        value={row.serialNumber}
+        onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
+        disabled={disabled}
+        autoComplete="off"
+        enterKeyHint="next"
+      />
+    );
+  }
+
+  const otherTaken = devices
+    .filter(device => device.localId !== row.localId && device.included)
+    .map(device => device.serialNumber);
+  const choices = ovSerialChoicesForRow(
+    row.serialNumber,
+    ovQuota.remaining,
+    ovQuota.heldSerials,
+    otherTaken,
+  );
+
+  return (
+    <select
+      id={id}
+      className={className}
+      value={row.serialNumber}
+      onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
+      disabled={disabled}
+    >
+      <option value="">{choices.length ? 'Select allotted serial' : 'No allotted serials left'}</option>
+      {choices.map(serial => (
+        <option key={serial} value={serial}>
+          {serial}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function selectedProduct(products: Product[], row: VerificationDeviceRowValues): Product | null {
   return products.find(p => p.id === row.productId) ?? null;
+}
+
+function feeProductFromRow(
+  products: Product[],
+  row: VerificationDeviceRowValues,
+): Pick<Product, 'maximumCapacity' | 'unitOfMeasurement'> | null {
+  const product = selectedProduct(products, row);
+  if (!product) return null;
+  const capacity = capacityFieldsFromProductSpec(product, row.productSpecificationId);
+  return {
+    maximumCapacity: capacity.maximumCapacity,
+    unitOfMeasurement: capacity.unitOfMeasurement,
+  };
 }
 
 export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> = ({
@@ -198,6 +304,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   verificationLocation: _verificationLocation = '',
   verificationSubject: _verificationSubject = 'customer',
   feesStructure,
+  ovQuota = null,
+  lockedSerial = '',
 }) => {
   const { products } = useAppContext();
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -303,12 +411,19 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
     if (file) onDeviceRvDocumentSelect?.(localId, kind, file);
   };
 
-  const handleProductChange = (localId: string, next: { productId: string; productName: string }) => {
+  const handleProductChange = (
+    localId: string,
+    next: { productId: string; productName: string; productSpecificationId?: string },
+  ) => {
     const product = products.find(p => p.id === next.productId) ?? null;
     onDeviceChange(localId, {
       productId: next.productId,
       productName: next.productName,
-      maximumPermissibleError: mpeStringFromProduct(product),
+      productSpecificationId: next.productSpecificationId || '',
+      maximumPermissibleError: mpeStringFromProductSpec(
+        product,
+        next.productSpecificationId,
+      ),
     });
   };
 
@@ -434,6 +549,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
         </div>
       )}
 
+      {!compact && (
       <div className="verification-devices-desktop table-scroll-wrap">
         <table className={`data-table data-table--verification-devices${isRv ? ' data-table--verification-devices-rv' : ''}`}>
           <thead>
@@ -488,7 +604,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
               const product = selectedProduct(products, row);
               const feeLine = isRv
                 ? computeRvCustomerFeeLine({
-                    product,
+                    product: feeProductFromRow(products, row),
                     fees,
                     additionalFee: row.additionalFee,
                     discountFee: row.discountFee,
@@ -528,16 +644,17 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     </div>
                   </td>
                   <td>
-                    <input
+                    <DeviceSerialField
                       id={`verification-serial-${row.localId}`}
-                      type="text"
                       className="input-field input-field--table"
                       placeholder="Serial number"
-                      value={row.serialNumber}
-                      onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-                      disabled={locked || !row.included}
-                      autoComplete="off"
-                      enterKeyHint="next"
+                      row={row}
+                      devices={devices}
+                      ovQuota={ovQuota}
+                      isRv={isRv}
+                      locked={locked}
+                      lockedSerial={lockedSerial}
+                      onDeviceChange={onDeviceChange}
                     />
                   </td>
                   {isRv && (
@@ -633,6 +750,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           </tbody>
         </table>
       </div>
+      )}
 
       <div className={`verification-devices-mobile${compact ? ' verification-devices-mobile--compact' : ''}`}>
         {visibleDevices.map((row, index) => {
@@ -641,18 +759,22 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
           const product = selectedProduct(products, row);
           const feeLine = isRv
             ? computeRvCustomerFeeLine({
-                product,
+                product: feeProductFromRow(products, row),
                 fees,
                 additionalFee: row.additionalFee,
                 discountFee: row.discountFee,
               })
             : null;
 
+          const serialReady = row.serialNumber.trim().length > 0;
+          const ovCompactDetails = compact && !isRv;
+
           return (
             <div
               key={row.localId}
               className={`verification-device-card${compact ? ' verification-device-card--compact' : ''}${row.included ? '' : ' verification-device-card--skipped'}`}
             >
+              {!(compact && singleDeviceMode) && (
               <div className="verification-device-card-head">
                 {singleDeviceMode ? (
                   <span className="verification-device-card-index">
@@ -682,8 +804,83 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   </button>
                 )}
               </div>
+              )}
 
               <div className="verification-device-card-body">
+                {ovCompactDetails ? (
+                  <>
+                    <div className="verification-device-field verification-device-field--full verification-device-field--serial-hero">
+                      <label
+                        className="verification-device-label verification-device-label--serial-hero"
+                        htmlFor={`verification-mobile-serial-${row.localId}`}
+                      >
+                        Serial number <span className="verification-device-required">*</span>
+                      </label>
+                      <DeviceSerialField
+                        id={`verification-mobile-serial-${row.localId}`}
+                        className="input-field verification-device-input verification-device-input--serial-hero"
+                        placeholder="Enter serial number"
+                        row={row}
+                        devices={devices}
+                        ovQuota={ovQuota}
+                        isRv={isRv}
+                        locked={locked}
+                        lockedSerial={lockedSerial}
+                        onDeviceChange={onDeviceChange}
+                      />
+                    </div>
+
+                    <div className="verification-device-field verification-device-field--full">
+                      <span className="verification-device-label">
+                        Product <span className="verification-device-required">*</span>
+                      </span>
+                      {serialReady ? (
+                        <ProductCatalogueList
+                          products={products}
+                          value={{ productId: row.productId, productName: row.productName }}
+                          onChange={next => handleProductChange(row.localId, next)}
+                          disabled={locked || !row.included}
+                          showCapacitySpecs
+                        />
+                      ) : (
+                        <p className="product-catalogue-wait text-muted text-sm mb-0">
+                          Serial fills from the seat you picked. Products list after that.
+                        </p>
+                      )}
+                    </div>
+
+                    <div
+                      className={[
+                        'verification-device-fields-grid',
+                        'verification-device-fields-grid--under-serial',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      <div className="verification-device-field verification-device-field--mpe">
+                        <label
+                          className="verification-device-label"
+                          htmlFor={`verification-mobile-mpe-${row.localId}`}
+                        >
+                          MPE
+                        </label>
+                        <input
+                          id={`verification-mobile-mpe-${row.localId}`}
+                          type="number"
+                          step="any"
+                          className="input-field verification-device-input"
+                          placeholder="MPE"
+                          value={row.maximumPermissibleError}
+                          onChange={e =>
+                            onDeviceChange(row.localId, { maximumPermissibleError: e.target.value })
+                          }
+                          disabled={locked || !row.included}
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
                 <div className="verification-device-field verification-device-field--full">
                   <label
                     className="verification-device-label"
@@ -710,17 +907,17 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       >
                         Serial number <span className="verification-device-required">*</span>
                       </label>
-                      <input
+                      <DeviceSerialField
                         id={`verification-mobile-serial-${row.localId}`}
-                        type="text"
-                        inputMode="text"
                         className="input-field verification-device-input verification-device-input--serial-hero"
                         placeholder="Enter serial number"
-                        value={row.serialNumber}
-                        onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-                        disabled={locked || !row.included}
-                        autoComplete="off"
-                        enterKeyHint="next"
+                        row={row}
+                        devices={devices}
+                        ovQuota={ovQuota}
+                        isRv={isRv}
+                        locked={locked}
+                        lockedSerial={lockedSerial}
+                        onDeviceChange={onDeviceChange}
                       />
                     </div>
 
@@ -780,17 +977,17 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       >
                         Serial <span className="verification-device-required">*</span>
                       </label>
-                      <input
+                      <DeviceSerialField
                         id={`verification-mobile-serial-${row.localId}`}
-                        type="text"
-                        inputMode="text"
                         className="input-field verification-device-input"
                         placeholder="Serial no."
-                        value={row.serialNumber}
-                        onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-                        disabled={locked || !row.included}
-                        autoComplete="off"
-                        enterKeyHint="next"
+                        row={row}
+                        devices={devices}
+                        ovQuota={ovQuota}
+                        isRv={isRv}
+                        locked={locked}
+                        lockedSerial={lockedSerial}
+                        onDeviceChange={onDeviceChange}
                       />
                     </div>
 
@@ -830,6 +1027,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                     </div>
                   </div>
                 )}
+                  </>
+                )}
 
                 <div className="verification-device-field verification-device-field--full">
                   <label
@@ -849,7 +1048,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                   />
                 </div>
 
-                {product && (
+                {product && !ovCompactDetails && (
                   <ProductDetailsSpecs
                     product={product}
                     dense={compact}

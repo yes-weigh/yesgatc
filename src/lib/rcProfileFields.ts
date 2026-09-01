@@ -10,6 +10,7 @@ import type { Product } from '../types';
 import type { ProductFileMeta } from './productApprovalUpload';
 import type { RcCertificationMethod } from './rcCertificationMethod';
 import { DEFAULT_RC_CERTIFICATION_METHOD, rcCertificationMethodFromUser } from './rcCertificationMethod';
+import { pdfSignerSignLayoutFromUser } from './pdfSignerSign';
 import { isValidPincode, normalizePincode } from './contactFields';
 import { resolveLaboratorySealIdentification } from './rcLaboratoryFields';
 import {
@@ -423,6 +424,9 @@ export type RcFormValues = {
   standardWeightsCertNumber: string;
   standardWeightsCertDate: string;
   certificationMethod: RcCertificationMethod;
+  pdfSignerSignScale: number;
+  pdfSignerSignX: number;
+  pdfSignerSignY: number;
 };
 
 export const EMPTY_RC_FORM: RcFormValues = {
@@ -444,6 +448,9 @@ export const EMPTY_RC_FORM: RcFormValues = {
   standardWeightsCertNumber: '',
   standardWeightsCertDate: '',
   certificationMethod: DEFAULT_RC_CERTIFICATION_METHOD,
+  pdfSignerSignScale: 1,
+  pdfSignerSignX: 50,
+  pdfSignerSignY: 50,
 };
 
 export function validateRcPincodeInput(pincode: string): string | null {
@@ -474,6 +481,7 @@ export function rcFormFromUser(doc: FirestoreUserDoc): RcFormValues {
     standardWeightsCertNumber: doc.standardWeightsCertNumber || '',
     standardWeightsCertDate: doc.standardWeightsCertDate || '',
     certificationMethod: rcCertificationMethodFromUser(doc),
+    ...pdfSignerSignLayoutFromUser(doc),
   };
 }
 
@@ -535,6 +543,9 @@ export function buildRcFirestoreFields(
     standardWeightsCertDate: values.standardWeightsCertDate,
     standardWeightsCertExpiry: expiry,
     certificationMethod: values.certificationMethod,
+    pdfSignerSignScale: values.pdfSignerSignScale,
+    pdfSignerSignX: values.pdfSignerSignX,
+    pdfSignerSignY: values.pdfSignerSignY,
   };
 
   if (options.isCreate) {

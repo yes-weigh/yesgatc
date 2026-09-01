@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Save, Send, Webhook } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Copy, Save, Send, Webhook } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAppSettings } from '../../hooks/useAppSettings';
@@ -9,6 +9,10 @@ import {
 } from '../../lib/appSettings';
 import { callableErrorMessage } from '../../lib/zohoRvInvoice';
 import { testYesoneWebhook } from '../../lib/yesoneWebhookClient';
+import {
+  generateYesoneInboundToken,
+  yesoneInboundDestinationUrl,
+} from '../../lib/yesoneInbound';
 import {
   normalizeYesoneWebhookUrl,
   validateYesoneWebhookUrlInput,
@@ -39,6 +43,8 @@ export function WebbookPanel() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [pushLog, setPushLog] = useState<YesonePushLog | null>(null);
+  const [copied, setCopied] = useState(false);
+  const ensuringToken = useRef(false);
 
   useEffect(() => {
     if (appSettingsLoading) return;
@@ -48,6 +54,25 @@ export function WebbookPanel() {
   useEffect(() => {
     if (appSettings.yesoneLastPushLog) setPushLog(appSettings.yesoneLastPushLog);
   }, [appSettings.yesoneLastPushLog]);
+
+  useEffect(() => {
+    if (appSettingsLoading || ensuringToken.current) return;
+    if (appSettings.yesoneInboundToken) return;
+    ensuringToken.current = true;
+    const token = generateYesoneInboundToken();
+    void setDoc(
+      doc(db, APP_SETTINGS_COLLECTION, APP_SETTINGS_GLOBAL_DOC),
+      {
+        yesoneInboundToken: token,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    ).catch(() => {
+      ensuringToken.current = false;
+    });
+  }, [appSettingsLoading, appSettings.yesoneInboundToken]);
+
+  const destinationUrl = yesoneInboundDestinationUrl(appSettings.yesoneInboundToken);
 
   const displayLog = useMemo(() => {
     if (testing && appSettings.yesonePushProgress) return appSettings.yesonePushProgress;
@@ -120,6 +145,17 @@ export function WebbookPanel() {
     }
   };
 
+  const handleCopyDestination = async () => {
+    if (!appSettings.yesoneInboundToken) return;
+    try {
+      await navigator.clipboard.writeText(destinationUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError('Copy failed.');
+    }
+  };
+
   return (
     <div className="panel glass">
       <div className="panel-header">
@@ -132,7 +168,12 @@ export function WebbookPanel() {
         {error ? <div className="login-error">{error}</div> : null}
         {saved ? <p className="text-muted text-sm">Yesone URL saved.</p> : null}
         <div className="form-group">
-          <label htmlFor="yesone-webhook-url">Yesone URL</label>
+          <label htmlFor="yesone-webhook-url" className="admin-setting-webbook-yesone-label">
+            Yesone URL
+          </label>
+          <p className="admin-setting-webbook-yesone-hint">
+            Send verification data real time. OV draft consumes 1 unused. Every status push. Reject releases 1 unused back.
+          </p>
           <input
             id="yesone-webhook-url"
             type="url"
@@ -186,6 +227,50 @@ export function WebbookPanel() {
           </div>
         ) : null}
       </form>
+      <div className="admin-setting-webbook-destination">
+        <label htmlFor="yesone-destination-url" className="admin-setting-webbook-yesone-label">
+          Destination URL
+        </label>
+        <p className="admin-setting-webbook-yesone-hint">
+          Paste in Yesone. Direct Cloud Function URL — hosting times out on large serial dumps.
+        </p>
+        <div className="admin-setting-webbook-destination-row">
+          <input
+            id="yesone-destination-url"
+            className="input-field text-mono"
+            value={appSettings.yesoneInboundToken ? destinationUrl : 'Generating destination URL…'}
+            readOnly
+            spellCheck={false}
+          />
+          <button
+            type="button"
+            className="admin-setting-webbook-copy"
+            onClick={() => void handleCopyDestination()}
+            disabled={!appSettings.yesoneInboundToken}
+            aria-label="Copy destination URL"
+          >
+            <Copy size={16} aria-hidden />
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        {appSettings.yesoneLastInboundLog ? (
+          <p
+            className={
+              appSettings.yesoneLastInboundLog.ok
+                ? 'admin-setting-webbook-inbound-log'
+                : 'admin-setting-webbook-inbound-log admin-setting-webbook-inbound-log--error'
+            }
+          >
+            Last inbound: {appSettings.yesoneLastInboundLog.event}
+            {appSettings.yesoneLastInboundLog.count > 1
+              ? ` ×${appSettings.yesoneLastInboundLog.count}`
+              : ''}
+            {appSettings.yesoneLastInboundLog.error
+              ? ` — ${appSettings.yesoneLastInboundLog.error}`
+              : ''}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -347,57 +347,51 @@ export const VerificationListFilters: React.FC<VerificationListFiltersProps> = (
 
   const slot = slots.mobile ?? slots.desktop;
 
-  return (
-    <div className="verification-list-toolbar-ref">
-      {slot ? createPortal(filterControl, slot) : null}
+  const chrome = (
+    <div className="verification-list-app-chrome">
+      {onNewClick ? (
+        <button
+          type="button"
+          className="verification-list-new-btn"
+          onClick={onNewClick}
+          aria-label="New verification job"
+        >
+          <Plus size={20} strokeWidth={2.5} aria-hidden />
+        </button>
+      ) : null}
 
-      <div className="verification-list-actions-row">
-        {onNewClick && (
-          <button
-            type="button"
-            className="verification-list-new-btn"
-            onClick={onNewClick}
-            aria-label="New verification job"
-          >
-            <span className="verification-list-new-btn-icon" aria-hidden>
-              <Plus size={20} strokeWidth={2.5} />
-            </span>
-            <span className="verification-list-new-btn-text">
-              <span className="verification-list-new-btn-title">New</span>
-              <span className="verification-list-new-btn-sub">New verification job</span>
-            </span>
-          </button>
-        )}
+      {showSearch ? (
+        <div className="verification-list-search-ref">
+          <Search size={16} className="search-icon" aria-hidden />
+          <input
+            type="search"
+            className="search-input"
+            placeholder={searchPlaceholder}
+            value={searchTerm}
+            onChange={e => onSearchTermChange?.(e.target.value)}
+            aria-label="Search verification jobs"
+          />
+        </div>
+      ) : null}
 
-        {showSearch && (
-          <div className="verification-list-search-ref search-wrap">
-            <Search size={16} className="search-icon" aria-hidden />
-            <input
-              type="search"
-              className="search-input"
-              placeholder={searchPlaceholder}
-              value={searchTerm}
-              onChange={e => onSearchTermChange?.(e.target.value)}
-              aria-label="Search verification jobs"
-            />
-          </div>
-        )}
+      {filterControl}
 
-        {!slot ? filterControl : null}
-
-        {onRefresh && (
-          <button
-            type="button"
-            className="verification-list-refresh-btn btn-icon"
-            onClick={onRefresh}
-            title="Refresh list"
-            aria-label="Refresh list"
-            disabled={refreshing}
-          >
-            <RefreshCw size={18} className={refreshing ? 'spinner-inline' : undefined} />
-          </button>
-        )}
-      </div>
+      {onRefresh ? (
+        <button
+          type="button"
+          className="verification-list-refresh-btn btn-icon"
+          onClick={onRefresh}
+          title="Refresh list"
+          aria-label="Refresh list"
+          disabled={refreshing}
+        >
+          <RefreshCw size={18} className={refreshing ? 'spinner-inline' : undefined} />
+        </button>
+      ) : null}
     </div>
   );
+
+  if (slot) return createPortal(chrome, slot);
+
+  return <div className="verification-list-toolbar-ref">{chrome}</div>;
 };

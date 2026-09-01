@@ -13,6 +13,7 @@ import {
 import type { DeviceRvDocumentsState, RvDocumentKind } from '../../lib/verificationRvDeviceImages';
 import type { JobType, RcFeesStructure, VerificationLocation } from '../../types';
 import type { VerificationDeviceRowValues } from '../../lib/siteCalibrationProfileFields';
+import type { OvQuotaGate } from '../../lib/ovQuotaGate';
 import type { GeoStampCoordinates, StampWeather } from '../../components/VerificationPhotoUploadSlot';
 import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFields';
 import { VerificationDeviceFields } from './VerificationDeviceFields';
@@ -44,6 +45,8 @@ type VerificationInstrumentTileProps = {
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
   tileRef?: (node: HTMLElement | null) => void;
+  ovQuota?: OvQuotaGate | null;
+  lockedSerial?: string;
 };
 
 export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProps> = ({
@@ -73,6 +76,8 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
   geoStampCoords = null,
   geoStampWeather = null,
   tileRef,
+  ovQuota = null,
+  lockedSerial = '',
 }) => {
   const localId = row.localId;
   const images = deviceImages[localId] ?? emptyDeviceVerificationImagesState();
@@ -304,6 +309,8 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
               visibleDeviceLocalId={localId}
               embedded
               focusSerialRequest={focusSerialRequest}
+              ovQuota={ovQuota}
+              lockedSerial={lockedSerial}
             />
           ) : (
             <p className="verification-instrument-tile-lock-hint mb-0">

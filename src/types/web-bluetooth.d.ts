@@ -4,6 +4,7 @@ interface BluetoothDevice extends EventTarget {
   readonly id: string;
   readonly name?: string;
   readonly gatt?: BluetoothRemoteGATTServer;
+  watchAdvertisements(): Promise<void>;
 }
 
 interface BluetoothRemoteGATTServer {

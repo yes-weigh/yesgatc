@@ -1,4 +1,4 @@
-import type { FirestoreUserDoc } from '../types';
+import type { FirestoreUserDoc, Product } from '../types';
 import { isPendingNewCustomerParty, type CustomerFormValues } from './customerProfileFields';
 import { isValidPincode, normalizePincode } from './contactFields';
 import { VERIFICATION_PINCODE_REQUIRED_MESSAGE } from './verificationSubmitGates';
@@ -22,8 +22,9 @@ import {
   validatePerformerPhotos,
   type PerformerPhotosState,
 } from './verificationPerformerPhotos';
+import { validateOvQuotaDevices, validateOvQuotaSetup, type OvQuotaGate } from './ovQuotaGate';
 
-export type VerificationFormStepId = 'setup' | 'instruments' | 'review';
+export type VerificationFormStepId = 'setup' | 'instruments' | 'review' | 'product' | 'site' | 'photos';
 
 export type VerificationInstrumentSubStage = 'photos' | 'details';
 
@@ -55,12 +56,112 @@ export const VERIFICATION_FORM_STEPS: VerificationFormStepDef[] = [
   },
 ];
 
+/** New OV Self job — serial already picked. Customer is the RC centre. Site skipped (In situ + Self). */
+export const OV_SELF_FORM_STEPS: VerificationFormStepDef[] = [
+  {
+    id: 'product',
+    label: 'Product',
+    shortLabel: 'Product',
+    description: 'Choose the instrument. MPE and seal ID fill automatically.',
+  },
+  {
+    id: 'photos',
+    label: 'Photos',
+    shortLabel: 'Photos',
+    description: 'Upload required verification photos.',
+  },
+  {
+    id: 'review',
+    label: 'Submit',
+    shortLabel: 'Submit',
+    description: 'Confirm conditions and submit for certification.',
+  },
+];
+
+/** New OV Customer — serial picked, then customer → product → photos → submit. */
+export const OV_CUSTOMER_FORM_STEPS: VerificationFormStepDef[] = [
+  {
+    id: 'setup',
+    label: 'Customer',
+    shortLabel: 'Customer',
+    description: 'Select the customer this verification belongs to.',
+  },
+  {
+    id: 'product',
+    label: 'Product',
+    shortLabel: 'Product',
+    description: 'Choose the instrument. MPE and seal ID fill automatically.',
+  },
+  {
+    id: 'photos',
+    label: 'Photos',
+    shortLabel: 'Photos',
+    description: 'Upload required verification photos.',
+  },
+  {
+    id: 'review',
+    label: 'Submit',
+    shortLabel: 'Submit',
+    description: 'Confirm conditions and submit for certification.',
+  },
+];
+
+/** New RV Customer — serial entered manually, then same compact path as OV Customer (+ RV docs). */
+export const RV_CUSTOMER_FORM_STEPS: VerificationFormStepDef[] = OV_CUSTOMER_FORM_STEPS;
+
+export function isOvSelfWizard(
+  lockKind: boolean,
+  values: { verificationType: string; verificationSubject: string },
+): boolean {
+  return lockKind && values.verificationType === 'OV' && values.verificationSubject === 'self';
+}
+
+export function isOvCustomerWizard(
+  lockKind: boolean,
+  values: { verificationType: string; verificationSubject: string },
+): boolean {
+  return lockKind && values.verificationType === 'OV' && values.verificationSubject === 'customer';
+}
+
+export function isRvCustomerWizard(
+  lockKind: boolean,
+  values: { verificationType: string; verificationSubject: string },
+): boolean {
+  return lockKind && values.verificationType === 'RV' && values.verificationSubject === 'customer';
+}
+
+/** Compact mobile flow (product shop → photos → submit) for OV Self / OV Customer / RV Customer. */
+export function isOvCompactWizard(
+  lockKind: boolean,
+  values: { verificationType: string; verificationSubject: string },
+): boolean {
+  return (
+    isOvSelfWizard(lockKind, values)
+    || isOvCustomerWizard(lockKind, values)
+    || isRvCustomerWizard(lockKind, values)
+  );
+}
+
+export function verificationWizardSteps(options: {
+  lockKind: boolean;
+  verificationType: string;
+  verificationSubject: string;
+}): VerificationFormStepDef[] {
+  if (isOvSelfWizard(options.lockKind, options)) return OV_SELF_FORM_STEPS;
+  if (isOvCustomerWizard(options.lockKind, options)) return OV_CUSTOMER_FORM_STEPS;
+  if (isRvCustomerWizard(options.lockKind, options)) return RV_CUSTOMER_FORM_STEPS;
+  return VERIFICATION_FORM_STEPS;
+}
+
 export type VerificationFormStepContext = {
   customerForm?: CustomerFormValues;
   rcForm?: CustomerFormValues;
   deviceImages?: Record<string, DeviceVerificationImagesState>;
   deviceRvImages?: Record<string, DeviceRvDocumentsState>;
   performerPhotos?: PerformerPhotosState;
+  ovQuota?: OvQuotaGate | null;
+  isNewJob?: boolean;
+  products?: Product[];
 };
 
 function partyStepBlockReason(
@@ -139,11 +240,40 @@ export function verificationDeviceDetailsBlockReason(
   row: VerificationSessionValues['devices'][number],
   index: number,
   verificationType: VerificationSessionValues['verificationType'],
+  product?: Product | null,
 ): string | null {
-  return validateVerificationDeviceDetails(row, index, { verificationType });
+  return validateVerificationDeviceDetails(row, index, { verificationType, product });
 }
 
-function instrumentsStepBlockReason(
+function instrumentsDetailsBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
+  const included = values.devices.filter(row => row.included);
+  if (included.length === 0) return 'Add at least one instrument.';
+
+  for (let i = 0; i < values.devices.length; i++) {
+    const row = values.devices[i];
+    if (!row.included) continue;
+    const product =
+      context?.products?.find(p => p.id === row.productId) ?? null;
+    const detailsError = verificationDeviceDetailsBlockReason(
+      row,
+      i,
+      values.verificationType,
+      product,
+    );
+    if (detailsError) return detailsError;
+  }
+
+  return validateOvQuotaDevices(
+    values.verificationType,
+    included.map(row => row.serialNumber),
+    context?.ovQuota,
+  );
+}
+
+function instrumentsPhotosOnlyBlockReason(
   values: VerificationSessionValues,
   context?: VerificationFormStepContext,
 ): string | null {
@@ -156,7 +286,6 @@ function instrumentsStepBlockReason(
   for (let i = 0; i < values.devices.length; i++) {
     const row = values.devices[i];
     if (!row.included) continue;
-
     const photoError = verificationDevicePhotosBlockReason(
       row,
       i,
@@ -165,12 +294,18 @@ function instrumentsStepBlockReason(
       values.verificationType,
     );
     if (photoError) return photoError;
-
-    const detailsError = verificationDeviceDetailsBlockReason(row, i, values.verificationType);
-    if (detailsError) return detailsError;
   }
 
   return null;
+}
+
+function instrumentsStepBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
+  const detailsError = instrumentsDetailsBlockReason(values, context);
+  if (detailsError) return detailsError;
+  return instrumentsPhotosOnlyBlockReason(values, context);
 }
 
 export function isVerificationFormStepComplete(
@@ -205,9 +340,31 @@ export function verificationFormStepBlockReason(
     }
     const partyReason = partyStepBlockReason(values, rcProfile, context);
     if (partyReason) return partyReason;
+    // Compact OV/RV Customer: temp/humidity checked on Submit, not here.
+    if (
+      values.verificationSubject === 'customer'
+      && context?.isNewJob
+      && (values.verificationType === 'OV' || values.verificationType === 'RV')
+    ) {
+      return validateOvQuotaSetup(values.verificationType, context?.ovQuota, true);
+    }
     const siteReason = siteStepBlockReason(values);
     if (siteReason) return siteReason;
-    return null;
+    return validateOvQuotaSetup(values.verificationType, context?.ovQuota, Boolean(context?.isNewJob));
+  }
+
+  if (stepId === 'product') {
+    return instrumentsDetailsBlockReason(values, context);
+  }
+
+  if (stepId === 'site') {
+    const partyReason = partyStepBlockReason(values, rcProfile, context);
+    if (partyReason) return partyReason;
+    return siteStepBlockReason(values);
+  }
+
+  if (stepId === 'photos') {
+    return instrumentsPhotosOnlyBlockReason(values, context);
   }
 
   if (stepId === 'instruments') {
@@ -217,6 +374,8 @@ export function verificationFormStepBlockReason(
   if (stepId === 'review') {
     const instrumentsReason = instrumentsStepBlockReason(values, context);
     if (instrumentsReason) return instrumentsReason;
+    const siteReason = siteStepBlockReason(values);
+    if (siteReason) return siteReason;
     return performerPhotosBlockReason(values, context);
   }
 

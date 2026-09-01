@@ -43,10 +43,12 @@ const { downloadStorageFileBytesHandler } = require('./docaStorageDownload');
 const { emaapOtpWebhookHandler } = require('./emaapOtpInbox');
 const { mintYesweighEmbedTokenHandler } = require('./yesweighEmbed');
 const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertificates');
+const { yesoneInboundHttpHandler } = require('./yesoneInbound');
 const {
   onSiteCalibrationYesoneWebhookHandler,
   onUserYesoneWebhookHandler,
   testYesoneWebhookHttpHandler,
+  syncYesoneOvUsedHttpHandler,
 } = require('./yesoneWebhook');
 const {
   reviewWalletTopUpHandler,
@@ -491,7 +493,7 @@ exports.lookupPublicCertificates = onRequest(
   async (req, res) => lookupPublicCertificatesHttpHandler(req, res, adminDb()),
 );
 
-/** Outbound yesone webhook — POST certificate details + PDF URL when a cert is issued/updated. */
+/** Outbound yesone webhook — POST verification + certificate payloads on every siteCalibration write. */
 exports.onSiteCalibrationYesoneWebhook = onDocumentWritten(
   {
     document: 'siteCalibrations/{recordId}',
@@ -529,6 +531,21 @@ exports.testYesoneWebhook = onRequest(
 );
 
 /**
+ * Super Admin: push live OV used qty for every RC to yesone.
+ * Manual fallback when a live quota webhook missed.
+ */
+exports.syncYesoneOvUsed = onRequest(
+  {
+    region: CALLABLE_REGION,
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 120,
+    memory: '512MiB',
+  },
+  async (req, res) => syncYesoneOvUsedHttpHandler(req, res, adminDb(), adminAuth()),
+);
+
+/**
  * YesWeigh Service iframe — mint a custom token for the configured RC account.
  * Shared secret must match yesweigh-service YESWEIGH_EMBED_SECRET.
  * Set before deploy: firebase functions:secrets:set YESWEIGH_EMBED_SECRET --project yesgatc
@@ -549,4 +566,32 @@ exports.mintYesweighEmbedToken = onRequest(
       yesweighEmbedSecret.value(),
       yesweighEmbedRcAadhar.value(),
     ),
+);
+
+/**
+ * Inbound yesone webhook — POST serial allotment, RC OV quota, serial updates.
+ * Public invoker so yesone can POST without Firebase Auth. Token query/header required.
+ */
+exports.yesoneInbound = onRequest(
+  {
+    region: CALLABLE_REGION,
+    cors: true,
+    invoker: 'public',
+    timeoutSeconds: 300,
+    memory: '512MiB',
+  },
+  async (req, res) => {
+    try {
+      await yesoneInboundHttpHandler(req, res, adminDb());
+    } catch (err) {
+      console.error('yesoneInbound', err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          ok: false,
+          error: 'internal_error',
+          message: err instanceof Error ? err.message : 'inbound_failed',
+        });
+      }
+    }
+  },
 );

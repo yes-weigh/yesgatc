@@ -7,6 +7,7 @@ type ListViewBackBarProps = {
   disabled?: boolean;
   label?: string;
   className?: string;
+  trailing?: React.ReactNode;
 };
 
 export const ListViewBackBar: React.FC<ListViewBackBarProps> = ({
@@ -14,12 +15,13 @@ export const ListViewBackBar: React.FC<ListViewBackBarProps> = ({
   disabled = false,
   label = 'Back to list',
   className = '',
+  trailing,
 }) => {
   const floatingBar = (
     <div
       className={`list-view-back-bar list-view-back-bar--floating${
-        className ? ` ${className}` : ''
-      }`}
+        trailing ? ' list-view-back-bar--with-trailing' : ''
+      }${className ? ` ${className}` : ''}`}
     >
       <button
         type="button"
@@ -33,6 +35,9 @@ export const ListViewBackBar: React.FC<ListViewBackBarProps> = ({
         </span>
         <span className="list-view-back-btn-label">{label}</span>
       </button>
+      {trailing ? (
+        <div className="list-view-back-bar-trailing">{trailing}</div>
+      ) : null}
     </div>
   );
 

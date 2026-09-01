@@ -1,3 +1,5 @@
+import { yesonePlainLogsFromList, type YesonePlainLogRow } from './yesoneInboundData';
+
 export type YesonePushError = {
   kind: string;
   id: string;
@@ -22,12 +24,24 @@ export type YesonePushLog = {
   errors: YesonePushError[];
 };
 
+export type YesoneInboundLog = {
+  at: string;
+  ok: boolean;
+  event: string;
+  count: number;
+  error?: string;
+};
+
 export type YesoneWebhookSettings = {
   yesoneWebhookUrl: string;
   yesoneWebhookEnabled: boolean;
   yesoneLastPushAt: string;
   yesoneLastPushLog: YesonePushLog | null;
   yesonePushProgress: YesonePushLog | null;
+  yesoneInboundToken: string;
+  yesoneLastInboundAt: string;
+  yesoneLastInboundLog: YesoneInboundLog | null;
+  yesoneInboundLogs: YesonePlainLogRow[];
 };
 
 export const DEFAULT_YESONE_WEBHOOK_SETTINGS: YesoneWebhookSettings = {
@@ -36,6 +50,10 @@ export const DEFAULT_YESONE_WEBHOOK_SETTINGS: YesoneWebhookSettings = {
   yesoneLastPushAt: '',
   yesoneLastPushLog: null,
   yesonePushProgress: null,
+  yesoneInboundToken: '',
+  yesoneLastInboundAt: '',
+  yesoneLastInboundLog: null,
+  yesoneInboundLogs: [],
 };
 
 function asCount(value: unknown): number {
@@ -104,6 +122,20 @@ export function isAllowedYesoneWebhookUrl(url: string): boolean {
   return parsed.protocol === 'https:';
 }
 
+export function normalizeYesoneInboundLog(raw: unknown): YesoneInboundLog | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const data = raw as Record<string, unknown>;
+  const event = String(data.event ?? '').trim();
+  if (!event) return null;
+  return {
+    at: String(data.at ?? ''),
+    ok: data.ok === true,
+    event,
+    count: asCount(data.count) || 1,
+    error: String(data.error ?? '').trim() || undefined,
+  };
+}
+
 export function normalizeYesoneWebhookSettings(
   data: Partial<YesoneWebhookSettings> | undefined,
 ): YesoneWebhookSettings {
@@ -120,6 +152,10 @@ export function normalizeYesoneWebhookSettings(
     yesoneLastPushAt: String(data?.yesoneLastPushAt ?? '').trim(),
     yesoneLastPushLog: normalizeYesonePushLog(data?.yesoneLastPushLog),
     yesonePushProgress: normalizeYesonePushLog(data?.yesonePushProgress),
+    yesoneInboundToken: String(data?.yesoneInboundToken ?? '').trim(),
+    yesoneLastInboundAt: String(data?.yesoneLastInboundAt ?? '').trim(),
+    yesoneLastInboundLog: normalizeYesoneInboundLog(data?.yesoneLastInboundLog),
+    yesoneInboundLogs: yesonePlainLogsFromList(data?.yesoneInboundLogs),
   };
 }
 

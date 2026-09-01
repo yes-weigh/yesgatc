@@ -291,19 +291,19 @@ export const VerificationDetailPanel: React.FC<VerificationDetailPanelProps> = (
                 name={record.stampingImageName}
               />
               <DetailImage
-                label="Instrument front"
+                label="Instrument with F2 test weight"
                 url={record.scaleImageUrl}
                 path={record.scaleImagePath}
                 name={record.scaleImageName}
               />
               <DetailImage
-                label="Instrument rear"
+                label="Instrument with F2 Corner"
                 url={record.instrumentRearImageUrl}
                 path={record.instrumentRearImagePath}
                 name={record.instrumentRearImageName}
               />
               <DetailImage
-                label="F2 test weight"
+                label="Instrument with small Weights"
                 url={record.standardWeightImageUrl}
                 path={record.standardWeightImagePath}
                 name={record.standardWeightImageName}

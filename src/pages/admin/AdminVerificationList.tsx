@@ -13,6 +13,7 @@ import {
   canSubmitVerification,
   matchesVerificationTypeFilter,
   normalizeVerificationStatus,
+  tallyVerificationStatusFilters,
   tallyVerificationTypeFilters,
 } from '../../lib/verificationRequest';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
@@ -32,12 +33,12 @@ import {
   verificationListCollapsedForCounts,
 } from '../../lib/verificationListGrouping';
 import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagination';
-import {
-  VerificationListFilters,
+import { VerificationListFilters,
   type VerificationStatusFilter,
   type VerificationTypeFilter,
   type VerificationPaymentDueFilter,
 } from '../../components/VerificationListFilters';
+import { VerificationListStatusDash } from '../../components/VerificationListStatusDash';
 import { TablePagination } from '../../components/TablePagination';
 import { VerificationDetailPanel } from '../../components/VerificationDetailPanel';
 import { VerificationListTable } from '../../components/VerificationListTable';
@@ -428,6 +429,18 @@ export const AdminVerificationList: React.FC = () => {
     () => tallyVerificationStatusFiltersCollapsed(durationScoped, listFilters),
     [durationScoped, listFilters],
   );
+  const dashCounts = useMemo(
+    () => tallyVerificationStatusFilters(durationScoped),
+    [durationScoped],
+  );
+  const dashOvCount = useMemo(
+    () => tallyVerificationTypeFilters(durationScoped).OV,
+    [durationScoped],
+  );
+  const dashRvCount = useMemo(
+    () => tallyVerificationTypeFilters(durationScoped).RV,
+    [durationScoped],
+  );
   const typeCounts = useMemo(
     () =>
       tallyVerificationTypeFilters(
@@ -764,6 +777,19 @@ export const AdminVerificationList: React.FC = () => {
             </p>
           )}
 
+          <VerificationListStatusDash
+            counts={dashCounts}
+            ovCount={dashOvCount}
+            rvCount={dashRvCount}
+            statusFilter={statusFilter}
+            onStatusFilterChange={value => {
+              setVoidOnly(false);
+              setStatusFilter(value);
+            }}
+            typeFilter={typeFilter}
+            onTypeFilterChange={setTypeFilter}
+            loading={loading}
+          />
           <VerificationListFilters
             searchTerm={searchTerm}
             onSearchTermChange={setSearchTerm}

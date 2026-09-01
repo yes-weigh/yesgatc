@@ -190,6 +190,7 @@ export const ProductPicker: React.FC<ProductPickerProps> = ({
                         path={product.productImagePath}
                         alt=""
                         className="product-picker-option-thumb"
+                        persistentCache
                       />
                     ) : (
                       <span className="product-picker-option-thumb product-picker-option-thumb--placeholder">
@@ -232,6 +233,7 @@ export const ProductPicker: React.FC<ProductPickerProps> = ({
             path={selected?.productImagePath}
             alt=""
             className="product-picker-selected-thumb"
+            persistentCache
           />
         ) : (
           <span className="product-picker-selected-thumb product-picker-selected-thumb--placeholder">

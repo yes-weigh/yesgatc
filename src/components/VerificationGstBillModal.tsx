@@ -6,8 +6,10 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import {
+  beginBluetoothPrinterSelection,
   getRememberedBluetoothPrinter,
   isBluetoothEscposSupported,
+  warmupRememberedBluetoothPrinter,
 } from '../lib/bluetoothEscposPrinter';
 import type { RememberedBluetoothPrinter } from '../lib/bluetoothPrinterStorage';
 import {
@@ -108,6 +110,9 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
   useEffect(() => {
     if (!open) return;
     setSavedPrinter(getRememberedBluetoothPrinter());
+    void warmupRememberedBluetoothPrinter().then(device => {
+      if (device) setSavedPrinter(getRememberedBluetoothPrinter());
+    });
   }, [open]);
 
   useEffect(() => {
@@ -228,15 +233,25 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
   };
 
   const handleBluetoothPrint = async (forcePicker = false) => {
-    if (printing || loading) return;
+    const node = receiptRef.current;
+    if (!node || printing || loading) return;
+
+    let devicePromise: Promise<BluetoothDevice>;
+    try {
+      devicePromise = beginBluetoothPrinterSelection({ forcePicker });
+    } catch (error) {
+      setPrintError(formatBluetoothPrintError(error));
+      return;
+    }
 
     setPrinting(true);
     setPrintMessage(null);
     setPrintError(null);
 
     try {
-      const { deviceName } = await printVerificationGstBillToBluetooth(billData, {
+      const { deviceName } = await printVerificationGstBillToBluetooth(node, {
         forcePicker,
+        device: devicePromise,
       });
       setSavedPrinter(getRememberedBluetoothPrinter());
       setPrintMessage(`Bill sent to ${deviceName}.`);
@@ -281,6 +296,28 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
           </button>
           <button
             type="button"
+            className="verification-gst-bill-icon-btn verification-gst-bill-icon-btn--print"
+            onClick={() => void handleBluetoothPrint()}
+            disabled={printing || loading || !bluetoothPrintSupported}
+            aria-label={
+              printing
+                ? 'Printing GST bill'
+                : savedPrinter
+                  ? `Print GST bill to ${savedPrinter.name}`
+                  : 'Print GST bill'
+            }
+            title={
+              bluetoothPrintSupported
+                ? savedPrinter
+                  ? `Print GST bill (${savedPrinter.name})`
+                  : 'Print GST bill'
+                : 'Printing requires Chrome on Android over HTTPS'
+            }
+          >
+            <Printer size={18} aria-hidden />
+          </button>
+          <button
+            type="button"
             className="verification-gst-bill-icon-btn verification-gst-bill-icon-btn--share"
             onClick={() => void handleShare()}
             disabled={sharing || loading}
@@ -290,6 +327,27 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
             <Share2 size={18} aria-hidden />
           </button>
         </div>
+        {bluetoothPrintSupported ? (
+          savedPrinter ? (
+            <button
+              type="button"
+              className="verification-gst-bill-change-printer-link"
+              onClick={() => void handleBluetoothPrint(true)}
+              disabled={printing || loading}
+            >
+              {savedPrinter.name} · change
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="verification-gst-bill-change-printer-link"
+              onClick={() => void handleBluetoothPrint(true)}
+              disabled={printing || loading}
+            >
+              Select Bluetooth printer
+            </button>
+          )
+        ) : null}
 
         <div className="verification-gst-bill-scroll">
           <article
@@ -439,42 +497,8 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
           </article>
         </div>
 
-        <div className="verification-gst-bill-toolbar">
-          <div className="verification-gst-bill-actions">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm verification-gst-bill-print-btn"
-              onClick={() => void handleBluetoothPrint()}
-              disabled={printing || loading || !bluetoothPrintSupported}
-              aria-label={
-                printing
-                  ? 'Printing GST bill'
-                  : savedPrinter
-                    ? `Print GST bill to ${savedPrinter.name}`
-                    : 'Print GST bill'
-              }
-              title={
-                bluetoothPrintSupported
-                  ? savedPrinter
-                    ? `Print GST bill (${savedPrinter.name})`
-                    : 'Print GST bill'
-                  : 'Printing requires Chrome on Android over HTTPS'
-              }
-            >
-              <Printer size={18} aria-hidden />
-            </button>
-            {bluetoothPrintSupported && savedPrinter && (
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm verification-gst-bill-change-printer-btn"
-                onClick={() => void handleBluetoothPrint(true)}
-                disabled={printing || loading}
-              >
-                Change printer
-              </button>
-            )}
-          </div>
-
+        {(printMessage || printError || (billData.missingFields.length > 0 && !loading)) && (
+        <div className="verification-gst-bill-toolbar verification-gst-bill-toolbar--status">
           {printMessage && (
             <p className="verification-gst-bill-print-status text-sm mb-0" role="status">
               {printMessage}
@@ -493,6 +517,7 @@ export const VerificationGstBillModal: React.FC<VerificationGstBillModalProps> =
             </p>
           )}
         </div>
+        )}
 
         <h2 id="verification-gst-bill-title" className="sr-only">
           GST bill for {record.serialNumber || 'device'}

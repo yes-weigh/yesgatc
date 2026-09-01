@@ -7,8 +7,10 @@ import { db } from '../firebase';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { buildVerificationLabelData, VERIFICATION_LABEL_STICKER } from '../lib/verificationLabel';
 import {
+  beginBluetoothPrinterSelection,
   getRememberedBluetoothPrinter,
   isBluetoothEscposSupported,
+  warmupRememberedBluetoothPrinter,
 } from '../lib/bluetoothEscposPrinter';
 import type { RememberedBluetoothPrinter } from '../lib/bluetoothPrinterStorage';
 import {
@@ -42,6 +44,9 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
   useEffect(() => {
     if (!open) return;
     setSavedPrinter(getRememberedBluetoothPrinter());
+    void warmupRememberedBluetoothPrinter().then(device => {
+      if (device) setSavedPrinter(getRememberedBluetoothPrinter());
+    });
   }, [open]);
 
   useEffect(() => {
@@ -81,6 +86,14 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
   const handleBluetoothPrint = async (forcePicker = false) => {
     if (!cardRef.current || printing || loading) return;
 
+    let devicePromise: Promise<BluetoothDevice>;
+    try {
+      devicePromise = beginBluetoothPrinterSelection({ forcePicker });
+    } catch (error) {
+      setPrintError(formatBluetoothPrintError(error));
+      return;
+    }
+
     setPrinting(true);
     setPrintMessage(null);
     setPrintError(null);
@@ -88,6 +101,7 @@ export const VerificationLabelModal: React.FC<VerificationLabelModalProps> = ({
     try {
       const { deviceName } = await printVerificationLabelToBluetooth(cardRef.current, {
         forcePicker,
+        device: devicePromise,
       });
       setSavedPrinter(getRememberedBluetoothPrinter());
       setPrintMessage(`Label sent to ${deviceName}.`);

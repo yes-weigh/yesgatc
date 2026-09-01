@@ -59,9 +59,25 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           runtimeCaching: [
             {
+              // Product / storage images — keep on device for instant shop grid.
+              urlPattern: ({ url }) =>
+                url.hostname === 'firebasestorage.googleapis.com'
+                || url.hostname.endsWith('.firebasestorage.app'),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'firebase-storage-images',
+                expiration: {
+                  maxEntries: 250,
+                  maxAgeSeconds: 60 * 60 * 24 * 45,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
               urlPattern: ({ url }) =>
                 url.origin.includes('googleapis.com')
-                || url.origin.includes('firebasestorage.googleapis.com')
                 || url.origin.includes('google.com')
                 || url.origin.includes('cloudfunctions.net')
                 || url.origin.includes('.run.app')

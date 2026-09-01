@@ -16,23 +16,45 @@ export const APP_SETTINGS_GLOBAL_DOC = 'global';
 export type AppGlobalSettings = ZohoRvSettings &
   RazorpaySettings &
   ContractorFeeSettings &
-  YesoneWebhookSettings;
+  YesoneWebhookSettings & {
+    /** Bump to force RC/VCT/verifier clients to sign out and log in again. */
+    authSessionEpoch?: number;
+    /**
+     * Minimum clientAppVersionCode required to create/update OV/RV verifications.
+     * Old app builds omit the field and are rejected by Firestore rules.
+     */
+    minVerificationAppVersionCode?: number;
+  };
 
 export const DEFAULT_APP_SETTINGS: AppGlobalSettings = {
   ...normalizeZohoRvSettings(undefined),
   ...normalizeRazorpaySettings(undefined),
   ...normalizeContractorFeeSettings(undefined),
   ...DEFAULT_YESONE_WEBHOOK_SETTINGS,
+  authSessionEpoch: 0,
+  minVerificationAppVersionCode: 0,
 };
 
 export function normalizeAppSettings(
   data: Partial<AppGlobalSettings> | undefined,
 ): AppGlobalSettings {
+  const epochRaw = data?.authSessionEpoch;
+  const authSessionEpoch =
+    typeof epochRaw === 'number' && Number.isFinite(epochRaw) && epochRaw >= 0
+      ? Math.floor(epochRaw)
+      : 0;
+  const minRaw = data?.minVerificationAppVersionCode;
+  const minVerificationAppVersionCode =
+    typeof minRaw === 'number' && Number.isFinite(minRaw) && minRaw >= 0
+      ? Math.floor(minRaw)
+      : 0;
   return {
     ...normalizeZohoRvSettings(data),
     ...normalizeRazorpaySettings(data),
     ...normalizeContractorFeeSettings(data),
     ...normalizeYesoneWebhookSettings(data),
+    authSessionEpoch,
+    minVerificationAppVersionCode,
   };
 }
 

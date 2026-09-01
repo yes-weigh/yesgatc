@@ -344,7 +344,7 @@ export const VCTManagement: React.FC = () => {
       await assertAadharAvailable(cleanAadhar);
       const cred = await createAuthUserForAadhar(cleanAadhar, formValues.password);
       const uid = cred.user.uid;
-      createdAuthUid = uid;
+      createdAuthUid = cred.created ? uid : undefined;
       const docFields = await uploadAllDocs(uid);
       const photoFields = await uploadProfilePhoto(uid);
 

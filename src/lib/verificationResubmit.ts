@@ -1,6 +1,7 @@
 import { collection, doc, setDoc, updateDoc, type Firestore } from 'firebase/firestore';
 import { isRvWalletPaymentRequired } from './appSettings';
 import { allocateVerificationApplicationNumber } from './verificationApplicationNumber';
+import { verificationClientVersionFields } from './verificationAppVersion';
 import { isActiveRvWalletPayment } from './rcWallet';
 import { buildRvPaymentFirestorePatch } from './rvPaymentAmount';
 import {
@@ -393,6 +394,7 @@ export async function resubmitVerificationForDoca(
     resubmittedByUid,
     resubmittedAt: now,
     createdByUid: resubmittedByUid,
+    ...verificationClientVersionFields(),
   });
 
   const certificationFailed = isCertificationFailureResubmitSource(source);
@@ -486,6 +488,7 @@ export async function resubmitRejectedVerification(
     resubmittedAt: now,
     createdByUid: resubmittedByUid,
     zohoPushStatus: 'skipped',
+    ...verificationClientVersionFields(),
   });
 
   await updateDoc(doc(firestore, 'siteCalibrations', source.id), {

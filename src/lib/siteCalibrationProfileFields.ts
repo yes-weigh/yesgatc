@@ -15,6 +15,7 @@ import {
   productSnapshotFromProduct,
   type VerificationDraftActorMeta,
 } from './verificationRequest';
+import { productHasMultipleSpecifications, resolveProductSpecification } from './productSpecifications';
 import type { ProductFileMeta } from './productApprovalUpload';
 import {
   deviceVerificationImagesFromRows,
@@ -47,6 +48,8 @@ import {
   verificationOnlineBlockReason,
   verificationUploadsInProgressBlockReason,
 } from './verificationSubmitGates';
+import { validateOvQuotaDevices, type OvQuotaGate } from './ovQuotaGate';
+import { verificationClientVersionFields } from './verificationAppVersion';
 
 export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind } from './verificationDeviceImages';
 export type { DeviceRvDocumentsState, RvDocumentKind } from './verificationRvDeviceImages';
@@ -73,6 +76,8 @@ export type VerificationDeviceRowValues = {
   included: boolean;
   productId: string;
   productName: string;
+  /** Selected capacity row when the product has multiple specifications. */
+  productSpecificationId?: string;
   serialNumber: string;
   maximumPermissibleError: string;
   sealIdentificationNumber: string;
@@ -101,6 +106,8 @@ export type VerificationSessionValues = {
   relativeHumidity: string;
   verificationLocation: VerificationLocation | '';
   devices: VerificationDeviceRowValues[];
+  /** OV serial chosen on the allotted seat map. Survives device-row rebuilds. */
+  lockedSerial?: string;
 };
 
 export type DeviceScaleImageState = import('./verificationDeviceImages').DeviceImageSlotState;
@@ -155,12 +162,76 @@ export function buildSelfVerificationSession(
   return {
     verificationType: 'OV',
     verificationSubject: 'self',
+    assignedVctId: '',
     customerId: rcUid,
     customerName: rc.companyName?.trim() || rc.username?.trim() || '',
     ambientTemperature: '',
     relativeHumidity: '',
     verificationLocation: 'in_situ',
     devices: buildInitialSelfDeviceRows(sealIdentification),
+  };
+}
+
+export type VerificationJobKind = 'ov_self' | 'ov_customer' | 'rv_customer';
+
+export function verificationJobKindLabel(kind: VerificationJobKind): string {
+  if (kind === 'ov_self') return 'OV Self';
+  if (kind === 'ov_customer') return 'OV Customer';
+  return 'RV Customer';
+}
+
+export function verificationSessionKindLabel(
+  verificationType: string,
+  verificationSubject: string,
+): string {
+  if (verificationType === 'RV') return 'RV Customer';
+  return verificationSubject === 'self' ? 'OV Self' : 'OV Customer';
+}
+
+export function applyLockedSerialToDevices(
+  devices: VerificationDeviceRowValues[],
+  lockedSerial: string | undefined,
+): VerificationDeviceRowValues[] {
+  const serial = lockedSerial?.trim() ?? '';
+  if (!serial || devices.length === 0) return devices;
+  if (devices.some(row => row.serialNumber.trim() === serial)) return devices;
+  return devices.map((row, index) =>
+    index === 0 ? { ...row, serialNumber: serial } : row,
+  );
+}
+
+export function buildVerificationSessionForKind(
+  kind: VerificationJobKind,
+  rc: Pick<import('../types').FirestoreUserDoc, 'companyName' | 'username'>,
+  rcUid: string,
+  sealIdentification = '',
+  serialNumber = '',
+  manufacturingYear = '',
+): VerificationSessionValues {
+  const session =
+    kind === 'ov_self'
+      ? buildSelfVerificationSession(rc, rcUid, sealIdentification)
+      : {
+          ...EMPTY_VERIFICATION_SESSION,
+          verificationType: kind === 'rv_customer' ? ('RV' as const) : ('OV' as const),
+          verificationSubject: 'customer' as const,
+          assignedVctId: '',
+          devices: buildInitialSelfDeviceRows(sealIdentification),
+        };
+  const serial = serialNumber.trim();
+  const year = manufacturingYear.trim();
+  let devices = session.devices;
+  if (serial) devices = applyLockedSerialToDevices(devices, serial);
+  if (year && devices.length > 0) {
+    devices = devices.map((row, index) =>
+      index === 0 ? { ...row, manufacturingYear: year } : row,
+    );
+  }
+  if (!serial && !year) return session;
+  return {
+    ...session,
+    ...(serial ? { lockedSerial: serial } : {}),
+    devices,
   };
 }
 
@@ -199,6 +270,7 @@ export function createEmptyVerificationDeviceRow(): VerificationDeviceRowValues 
     included: true,
     productId: '',
     productName: '',
+    productSpecificationId: '',
     serialNumber: '',
     maximumPermissibleError: '',
     sealIdentificationNumber: '',
@@ -223,6 +295,14 @@ export function mpeStringFromProduct(product: { maximumPermissibleError?: number
   return String(value);
 }
 
+export function mpeStringFromProductSpec(
+  product: Product | null | undefined,
+  specificationId?: string | null,
+): string {
+  if (!product) return '';
+  return mpeStringFromProduct(resolveProductSpecification(product, specificationId));
+}
+
 export function deviceRowFromCustomerDevice(
   device: CustomerDevice,
   products: Product[],
@@ -235,6 +315,7 @@ export function deviceRowFromCustomerDevice(
     included: true,
     productId: device.productId || '',
     productName: device.productName,
+    productSpecificationId: '',
     serialNumber: device.serialNumber,
     maximumPermissibleError: mpeStringFromProduct(product),
     sealIdentificationNumber: '',
@@ -304,6 +385,7 @@ export function verificationSessionFromRecord(
         included: true,
         productId: record.productId || '',
         productName: record.productName || '',
+        productSpecificationId: record.productSpecificationId || '',
         serialNumber: record.serialNumber || '',
         maximumPermissibleError:
           record.maximumPermissibleError !== undefined && record.maximumPermissibleError !== null
@@ -395,14 +477,26 @@ export function buildSiteCalibrationFromRow(
     fileCertificateAsRc: filing.fileCertificateAsRc,
     ...(filing.sourceCustomerId ? { sourceCustomerId: filing.sourceCustomerId } : {}),
     ...(filing.sourceCustomerName ? { sourceCustomerName: filing.sourceCustomerName } : {}),
-    ...productSnapshotFromProduct(options?.product),
+    ...productSnapshotFromProduct(options?.product, row.productSpecificationId),
   };
+  if (row.productSpecificationId?.trim()) {
+    fields.productSpecificationId = row.productSpecificationId.trim();
+  }
   if (row.deviceId.trim()) fields.deviceId = row.deviceId.trim();
   if (session.verificationType === 'RV') {
     const year = row.manufacturingYear.trim();
     if (year) fields.manufacturingYear = Number(year);
+    const feeProduct = options?.product
+      ? {
+          maximumCapacity: resolveProductSpecification(
+            options.product,
+            row.productSpecificationId,
+          ).maximumCapacity,
+          unitOfMeasurement: options.product.unitOfMeasurement || 'kg',
+        }
+      : null;
     const feeLine = computeRvCustomerFeeLine({
-      product: options?.product,
+      product: feeProduct,
       fees: options?.feesStructure ?? DEFAULT_RC_FEES_STRUCTURE,
       additionalFee: row.additionalFee,
       discountFee: row.discountFee,
@@ -414,6 +508,7 @@ export function buildSiteCalibrationFromRow(
   if (options?.docaCharges) {
     Object.assign(fields, options.docaCharges);
   }
+  Object.assign(fields, verificationClientVersionFields());
   return fields;
 }
 
@@ -437,6 +532,7 @@ export function buildNewSiteCalibrationRecord(
       rcCompanyName: rcParty?.name,
     }),
     ...buildVerificationDraftMeta(draftActor),
+    ...verificationClientVersionFields(),
   };
 }
 
@@ -464,6 +560,7 @@ export function buildSiteCalibrationFields(
       included: true,
       productId: values.productId,
       productName: values.productName,
+      productSpecificationId: '',
       serialNumber: values.serialNumber,
       maximumPermissibleError: values.maximumPermissibleError,
       sealIdentificationNumber: values.sealIdentificationNumber,
@@ -494,6 +591,8 @@ export type VerificationValidationOptions = {
    * Used for list submit and after inline upload completes.
    */
   requireUploadedImages?: boolean;
+  ovQuota?: OvQuotaGate | null;
+  isNewJob?: boolean;
 };
 
 function validatePendingCustomerParty(
@@ -609,16 +708,30 @@ export function validateVerificationDraft(
     }
   }
 
-  return null;
+  return validateOvQuotaDevices(
+    session.verificationType,
+    included.map(row => row.serialNumber),
+    options?.ovQuota,
+  );
 }
 
 export function validateVerificationDeviceDetails(
   row: VerificationDeviceRowValues,
   index: number,
-  options?: { verificationType?: JobType | '' },
+  options?: {
+    verificationType?: JobType | '';
+    product?: Product | null;
+  },
 ): string | null {
   const label = `Device ${index + 1}`;
   if (!row.productId.trim()) return `${label}: select a product.`;
+  if (
+    options?.product &&
+    productHasMultipleSpecifications(options.product) &&
+    !row.productSpecificationId?.trim()
+  ) {
+    return `${label}: select a capacity specification.`;
+  }
   if (!row.serialNumber.trim()) return `${label}: serial number is required.`;
 
   if (row.maximumPermissibleError.trim()) {
@@ -811,7 +924,11 @@ export function validateVerificationSession(
     if (rowError) return rowError;
   }
 
-  return null;
+  return validateOvQuotaDevices(
+    session.verificationType,
+    included.map(row => row.serialNumber),
+    options?.ovQuota,
+  );
 }
 
 export function validateSiteCalibrationForm(values: SiteCalibrationFormValues): string | null {

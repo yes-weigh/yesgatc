@@ -13,12 +13,16 @@ import { SegmentToggle } from '../../components/SegmentToggle';
 import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
 import { VerificationInstrumentMultistage } from './VerificationInstrumentMultistage';
+import { OvSelfProductPanel, OvSelfSitePanel, OvSelfEnvFields, OvSelfSpecSerialBlock } from './OvSelfWizardPanels';
+import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFields';
 import type { GeoStampCoordinates, StampWeather } from '../../components/VerificationPhotoUploadSlot';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
 import type { AssignableVctOption } from '../../lib/verificationRequest';
 import { customerFormFromRecord, isPendingNewCustomerParty } from '../../lib/customerProfileFields';
 import {
+  applyLockedSerialToDevices,
   buildInitialSelfDeviceRows,
+  createEmptyVerificationDeviceRow,
   deviceRowsFromCustomer,
   verificationLocationLabel,
   type DeviceVerificationImagesState,
@@ -27,6 +31,7 @@ import {
   type VerificationSessionValues,
   type VerificationSubject,
   validateVerificationForSubmit,
+  verificationSessionKindLabel,
 } from '../../lib/siteCalibrationProfileFields';
 import { rcProfileToFormValues } from '../../lib/rcProfileFormFields';
 import { applyLaboratorySealToDeviceRows } from '../../lib/rcLaboratoryFields';
@@ -41,6 +46,7 @@ import {
   isWeatherApiConfigured,
   lookupWeatherByPincode,
 } from '../../lib/pincodeWeatherLookup';
+import { lookupPincode } from '../../lib/pincodeLookup';
 import { isValidPincode, normalizePincode } from '../../lib/contactFields';
 import { shouldFileCertificateAsRc } from '../../lib/keralaRegion';
 import {
@@ -60,13 +66,16 @@ import {
 } from '../../lib/verificationTestSummary';
 import {
   isVerificationFormStepComplete,
-  VERIFICATION_FORM_STEPS,
+  isOvCompactWizard,
+  isOvSelfWizard,
   verificationFormStepBlockReason,
+  verificationWizardSteps,
   type VerificationFormStepContext,
   type VerificationFormStepId,
 } from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
+import { ovQuotaSeatCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import { VerificationPerformerPhotoFields } from './VerificationPerformerPhotoFields';
 import { requiresPerformerIdentityPhotos } from '../../lib/verificationPerformerPhotos';
@@ -113,6 +122,8 @@ type VerificationSessionFieldsProps = {
   onCancel?: () => void;
   wizardNavIncludesCancel?: boolean;
   mobileFloatingChrome?: boolean;
+  lockKind?: boolean;
+  ovQuota?: OvQuotaGate | null;
 };
 
 export type VerificationSessionFieldsHandle = {
@@ -170,6 +181,8 @@ export const VerificationSessionFields = forwardRef<
   onCancel,
   wizardNavIncludesCancel = false,
   mobileFloatingChrome = false,
+  lockKind = false,
+  ovQuota = null,
   },
   ref,
 ) {
@@ -192,8 +205,11 @@ export const VerificationSessionFields = forwardRef<
       deviceImages,
       deviceRvImages,
       performerPhotos,
+      ovQuota,
+      isNewJob: lockKind,
+      products,
     }),
-    [customerPartyForm, rcPartyForm, deviceImages, deviceRvImages, performerPhotos],
+    [customerPartyForm, rcPartyForm, deviceImages, deviceRvImages, performerPhotos, ovQuota, lockKind, products],
   );
 
   useEffect(() => {
@@ -201,9 +217,22 @@ export const VerificationSessionFields = forwardRef<
   }, [onPartyContextChange, stepContext]);
   const lastWeatherKeyRef = useRef('');
   const lastRcPartySeedRef = useRef('');
+  const lastRcPincodeLookupRef = useRef('');
   const reviewBottomRef = useRef<HTMLDivElement>(null);
 
-  const currentStep = VERIFICATION_FORM_STEPS[activeStep];
+  const isOvSelfFlow = isOvSelfWizard(lockKind, values);
+  const isOvCompactFlow = isOvCompactWizard(lockKind, values);
+  const formSteps = useMemo(
+    () =>
+      verificationWizardSteps({
+        lockKind,
+        verificationType: values.verificationType,
+        verificationSubject: values.verificationSubject,
+      }),
+    [lockKind, values.verificationType, values.verificationSubject],
+  );
+
+  const currentStep = formSteps[Math.min(activeStep, formSteps.length - 1)] ?? formSteps[0];
 
   const includedDeviceEntries = useMemo(
     () =>
@@ -212,18 +241,31 @@ export const VerificationSessionFields = forwardRef<
         .filter(entry => entry.row.included),
     [values.devices],
   );
+  const ovSelfDevice = includedDeviceEntries[0]?.row ?? values.devices[0];
 
-  const isOnInstrumentsStep = currentStep.id === 'instruments';
+  const isOnInstrumentsStep = currentStep.id === 'instruments' || currentStep.id === 'photos';
   const isOnReviewStep = currentStep.id === 'review';
   const isLastStep = isOnReviewStep;
 
   const stepDescription =
-    isOnInstrumentsStep && includedDeviceEntries.length > 0
-      ? 'Each instrument is a tile — complete photos, then swipe right within the tile to enter details.'
-      : currentStep.description;
+    currentStep.id === 'setup' && isOvCompactFlow
+      ? 'Select the customer for this OV job.'
+      : currentStep.id === 'setup' && lockKind
+        ? 'Confirm performer and site conditions.'
+        : isOnInstrumentsStep && includedDeviceEntries.length > 0 && !isOvCompactFlow
+          ? 'Each instrument is a tile — complete photos, then swipe right within the tile to enter details.'
+          : currentStep.description;
 
   const continueLabel =
-    isOnInstrumentsStep && includedDeviceEntries.length > 0 ? 'Review' : 'Proceed';
+    currentStep.id === 'setup' && isOvCompactFlow
+      ? 'Product'
+      : currentStep.id === 'product'
+        ? 'Photos'
+        : currentStep.id === 'site'
+          ? 'Photos'
+          : currentStep.id === 'photos' || (isOnInstrumentsStep && includedDeviceEntries.length > 0)
+            ? 'Review'
+            : 'Proceed';
 
   const canContinueCurrentStep = useMemo(() => {
     if (readOnly) return true;
@@ -234,33 +276,49 @@ export const VerificationSessionFields = forwardRef<
 
   const showWizardCancel =
     Boolean(wizardNavIncludesCancel && onCancel && currentStep.id !== 'review');
-  const canAddInstrument = !readOnly && !lockCustomer && isOnInstrumentsStep;
+  const ovSeatCap =
+    values.verificationType === 'OV' && ovQuota
+      ? ovQuotaSeatCap(ovQuota)
+      : Number.POSITIVE_INFINITY;
+  const canAddInstrument =
+    !readOnly &&
+    !lockCustomer &&
+    currentStep.id === 'instruments' &&
+    includedDeviceEntries.length < ovSeatCap;
 
   const showBackNav = activeStep > 0;
   const showWizardBottomBar = !readOnly && !isLastStep;
 
   const completedStepIds = useMemo(() => {
     const completed = new Set<VerificationFormStepId>();
-    for (const step of VERIFICATION_FORM_STEPS) {
+    for (const step of formSteps) {
       if (isVerificationFormStepComplete(step.id, values, rcProfile, stepContext)) {
         completed.add(step.id);
       }
     }
     return completed;
-  }, [values, rcProfile, stepContext]);
+  }, [formSteps, values, rcProfile, stepContext]);
 
   useEffect(() => {
     if (values.verificationLocation !== 'in_situ') {
       onChange({ verificationLocation: 'in_situ' });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- lock location to in situ for all verifications
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lock location to in situ for all new-job flows
   }, []);
 
   useEffect(() => {
-    if (readOnly) {
-      setFurthestStep(VERIFICATION_FORM_STEPS.length - 1);
+    if (!isOvCompactFlow || readOnly) return;
+    if (values.assignedVctId?.trim()) {
+      onChange({ assignedVctId: '' });
     }
-  }, [readOnly]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- OV compact always Self (RC centre)
+  }, [isOvCompactFlow, readOnly, values.assignedVctId]);
+
+  useEffect(() => {
+    if (readOnly) {
+      setFurthestStep(formSteps.length - 1);
+    }
+  }, [readOnly, formSteps.length]);
 
   useEffect(() => {
     onWizardStepChange?.(currentStep.id, isLastStep);
@@ -300,24 +358,6 @@ export const VerificationSessionFields = forwardRef<
     if (readOnly) return;
     setStepError('');
 
-    if (isOnInstrumentsStep && showDevices) {
-      const instrumentsReason = verificationFormStepBlockReason(
-        'instruments',
-        values,
-        rcProfile,
-        stepContext,
-      );
-      if (instrumentsReason) {
-        setStepError(instrumentsReason);
-        return;
-      }
-
-      const nextStep = activeStep + 1;
-      setFurthestStep(prev => Math.max(prev, nextStep));
-      setActiveStep(nextStep);
-      return;
-    }
-
     const reason = verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext);
     if (reason) {
       setStepError(reason);
@@ -328,10 +368,9 @@ export const VerificationSessionFields = forwardRef<
       onDeviceAdd();
     }
 
-    const nextStep = Math.min(activeStep + 1, VERIFICATION_FORM_STEPS.length - 1);
+    const nextStep = Math.min(activeStep + 1, formSteps.length - 1);
     setFurthestStep(prev => Math.max(prev, nextStep));
     setActiveStep(nextStep);
-
   };
 
   const handleAddInstrument = () => {
@@ -346,7 +385,7 @@ export const VerificationSessionFields = forwardRef<
   };
 
   const handleReadOnlyNext = () => {
-    setActiveStep(prev => Math.min(prev + 1, VERIFICATION_FORM_STEPS.length - 1));
+    setActiveStep(prev => Math.min(prev + 1, formSteps.length - 1));
   };
 
   const handleReadOnlyBack = () => {
@@ -609,14 +648,54 @@ export const VerificationSessionFields = forwardRef<
   useEffect(() => {
     if (!isSelf) {
       lastRcPartySeedRef.current = '';
+      lastRcPincodeLookupRef.current = '';
       return;
     }
     if (!rcProfile || !rcUid) return;
     const seedKey = `${rcUid}:${rcProfile.companyName ?? ''}:${rcProfile.pincode ?? ''}`;
     if (lastRcPartySeedRef.current === seedKey) return;
     lastRcPartySeedRef.current = seedKey;
+    lastRcPincodeLookupRef.current = '';
     setRcPartyForm(rcProfileToFormValues(rcProfile));
   }, [isSelf, rcUid, rcProfile]);
+
+  useEffect(() => {
+    if (readOnly || !isSelf) return;
+    const pin = normalizePincode(rcPartyForm.pincode || rcProfile?.pincode || '');
+    if (!isValidPincode(pin)) return;
+    if (rcPartyForm.state.trim() && rcPartyForm.district.trim()) {
+      lastRcPincodeLookupRef.current = pin;
+      return;
+    }
+    if (lastRcPincodeLookupRef.current === pin) return;
+
+    let cancelled = false;
+    void lookupPincode(pin)
+      .then(result => {
+        if (cancelled || !result) return;
+        lastRcPincodeLookupRef.current = pin;
+        setRcPartyForm(prev => ({
+          ...prev,
+          pincode: pin || prev.pincode,
+          state: result.state,
+          district: prev.district.trim() || result.district,
+        }));
+      })
+      .catch(() => {
+        if (!cancelled) lastRcPincodeLookupRef.current = '';
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    readOnly,
+    isSelf,
+    rcPartyForm.pincode,
+    rcPartyForm.state,
+    rcPartyForm.district,
+    rcProfile?.pincode,
+  ]);
 
   const handleCustomerPartyChange = useCallback(
     (patch: Partial<CustomerFormValues>) => {
@@ -655,15 +734,35 @@ export const VerificationSessionFields = forwardRef<
 
   const applySelfSubject = () => {
     if (!rcProfile || !rcUid || lockCustomer) return;
-    const devices = withLaboratorySeal(buildInitialSelfDeviceRows(laboratorySealIdentification));
+    const nextDevices = applyLockedSerialToDevices(
+      withLaboratorySeal(buildInitialSelfDeviceRows(laboratorySealIdentification)),
+      values.lockedSerial,
+    );
+    const prev = values.devices[0];
+    const devices =
+      prev && nextDevices[0]
+        ? nextDevices.map((row, i) =>
+            i === 0
+              ? {
+                  ...row,
+                  productId: prev.productId,
+                  productName: prev.productName,
+                  maximumPermissibleError: prev.maximumPermissibleError,
+                  serialNumber: prev.serialNumber.trim() || row.serialNumber,
+                  sealIdentificationNumber:
+                    prev.sealIdentificationNumber || row.sealIdentificationNumber,
+                }
+              : row,
+          )
+        : nextDevices;
     onCustomerChange(rcUid, rcProfile.companyName?.trim() || rcProfile.username?.trim() || '', devices);
     onChange({
       verificationSubject: 'self',
       customerId: rcUid,
       customerName: rcProfile.companyName?.trim() || rcProfile.username?.trim() || '',
       devices,
-      ambientTemperature: '',
-      relativeHumidity: '',
+      ambientTemperature: values.ambientTemperature,
+      relativeHumidity: values.relativeHumidity,
     });
     setWeatherError('');
   };
@@ -787,10 +886,22 @@ export const VerificationSessionFields = forwardRef<
 
   const handleCustomerSelect = (next: { customerId: string; customerName: string }) => {
     if (lockCustomer) return;
+    const lockedSerial = values.lockedSerial?.trim() ?? '';
     const customer = customers.find(c => c.id === next.customerId) ?? null;
-    const existingNewDevices = values.devices.filter(d => d.isNewDevice);
-    const registeredRows = withLaboratorySeal(deviceRowsFromCustomer(customer, products));
-    const devices = withLaboratorySeal([...registeredRows, ...existingNewDevices]);
+    const seed = values.devices.find(d => d.isNewDevice) ?? values.devices[0];
+    const devices = lockedSerial
+      ? applyLockedSerialToDevices(
+          withLaboratorySeal([
+            seed
+              ? { ...seed, serialNumber: lockedSerial }
+              : { ...createEmptyVerificationDeviceRow(), serialNumber: lockedSerial },
+          ]),
+          lockedSerial,
+        )
+      : withLaboratorySeal([
+          ...withLaboratorySeal(deviceRowsFromCustomer(customer, products)),
+          ...values.devices.filter(d => d.isNewDevice),
+        ]);
     onCustomerChange(next.customerId, next.customerName, devices);
     onChange({
       verificationSubject: 'customer',
@@ -813,7 +924,7 @@ export const VerificationSessionFields = forwardRef<
 
   const stepper = (
     <VerificationFormStepper
-      steps={VERIFICATION_FORM_STEPS}
+      steps={formSteps}
       activeStep={activeStep}
       furthestStep={furthestStep}
       completedStepIds={readOnly ? completedStepIds : undefined}
@@ -825,9 +936,11 @@ export const VerificationSessionFields = forwardRef<
   const wizardBottomBar =
     showWizardBottomBar ? (
       <div className="verification-wizard-bottom-bar">
-        {stepError && (
+        {(stepError || (!canContinueCurrentStep && currentStep.id === 'product')) && (
           <p className="verification-wizard-bottom-bar-error rc-form-topbar-error mb-0" role="alert">
-            {stepError}
+            {stepError
+              || verificationFormStepBlockReason('product', values, rcProfile, stepContext)
+              || 'Complete this step to continue.'}
           </p>
         )}
         <div className="verification-wizard-bottom-bar-actions">
@@ -871,66 +984,187 @@ export const VerificationSessionFields = forwardRef<
         'product-form-flat',
         'site-calibration-form-flat',
         mobileFloatingChrome ? 'verification-wizard--floating-chrome' : '',
+        isOvCompactFlow ? 'verification-wizard--ov-self' : '',
       ]
         .filter(Boolean)
         .join(' ')}
     >
-      {mobileFloatingChrome
-        ? createPortal(
-            <div className="verification-mobile-chrome verification-mobile-chrome--stepper">
-              {stepper}
-            </div>,
-            document.body,
-          )
-        : stepper}
-      <div className="verification-wizard-stepper-spacer" aria-hidden />
+      {!isOvCompactFlow &&
+        (mobileFloatingChrome
+          ? createPortal(
+              <div className="verification-mobile-chrome verification-mobile-chrome--stepper">
+                {stepper}
+              </div>,
+              document.body,
+            )
+          : stepper)}
+      {!isOvCompactFlow && <div className="verification-wizard-stepper-spacer" aria-hidden />}
 
       <div className="verification-wizard-content">
         <div className="verification-wizard-stage">
+        {!(isOvCompactFlow && mobileFloatingChrome) && (
         <div className="verification-wizard-stage-head">
           <h3 className="verification-wizard-stage-title">{currentStep.label}</h3>
           <p className="verification-wizard-stage-desc text-muted text-sm mb-0">
             {stepDescription}
           </p>
         </div>
+        )}
 
         <div
           key={currentStep.id}
           className="verification-wizard-panel fade-in"
         >
+          {currentStep.id === 'product' && ovSelfDevice && (
+            <OvSelfProductPanel
+              row={ovSelfDevice}
+              products={products}
+              sealId={laboratorySealIdentification}
+              disabled={locked}
+              onProductChange={patch => onDeviceChange(ovSelfDevice.localId, patch)}
+            />
+          )}
+
+          {currentStep.id === 'site' && (
+            <div className="verification-setup-step">
+              <div className="verification-setup-kind">
+                <span className="verification-setup-kind-chip">OV Self</span>
+              </div>
+              {allowPerformerAssignment && (
+                <div className="verification-performer-field form-group">
+                  <label htmlFor="verification-performer-select">Performed by</label>
+                  <select
+                    id="verification-performer-select"
+                    className="input-field"
+                    value={values.assignedVctId?.trim() || ''}
+                    disabled={locked}
+                    onChange={event => onChange({ assignedVctId: event.target.value })}
+                  >
+                    <option value="">Self (RC centre)</option>
+                    {assignableVcts.map(vct => (
+                      <option key={vct.uid} value={vct.uid}>
+                        {vct.username}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <OvSelfSitePanel
+                rcName={
+                  values.customerName.trim() ||
+                  rcProfile?.companyName?.trim() ||
+                  rcProfile?.username?.trim() ||
+                  ''
+                }
+                location={values.verificationLocation}
+                onLocationChange={value => onChange({ verificationLocation: value })}
+                temperature={values.ambientTemperature}
+                humidity={values.relativeHumidity}
+                onTemperatureChange={value => onChange({ ambientTemperature: value })}
+                onHumidityChange={value => onChange({ relativeHumidity: value })}
+                weatherLoading={weatherLoading}
+                weatherError={weatherError}
+                locked={locked}
+              />
+            </div>
+          )}
+
+          {currentStep.id === 'photos' && ovSelfDevice && (
+            <div className="ov-self-photos">
+              <div className="ov-self-photos-recap">
+                <span>
+                  <strong>{ovSelfDevice.serialNumber.trim() || '—'}</strong>
+                  {ovSelfDevice.productName.trim() ? ` · ${ovSelfDevice.productName.trim()}` : ''}
+                </span>
+                <span className="text-muted text-sm">
+                  In situ · {isOvSelfFlow ? 'Self (RC centre)' : 'Customer'}
+                </span>
+              </div>
+              <OvSelfSpecSerialBlock
+                product={
+                  products.find(p => p.id === ovSelfDevice.productId) ?? null
+                }
+                specificationId={ovSelfDevice.productSpecificationId}
+                serial={ovSelfDevice.serialNumber}
+                mpe={ovSelfDevice.maximumPermissibleError}
+                productName={ovSelfDevice.productName}
+              />
+              <VerificationDeviceEvidenceFields
+                device={ovSelfDevice}
+                devices={values.devices}
+                deviceIndex={0}
+                totalDevices={1}
+                verificationType={values.verificationType}
+                verificationLocation={values.verificationLocation || 'in_situ'}
+                verificationSubject={values.verificationSubject}
+                feesStructure={resolveRcFeesStructure(rcProfile)}
+                images={deviceImages[ovSelfDevice.localId] ?? emptyDeviceVerificationImagesState()}
+                rvDocuments={deviceRvImages[ovSelfDevice.localId]}
+                onImageSelect={(kind, file) => onDeviceImageSelect(ovSelfDevice.localId, kind, file)}
+                onImageRemove={kind => onDeviceImageRemove(ovSelfDevice.localId, kind)}
+                onRvDocumentSelect={
+                  onDeviceRvDocumentSelect
+                    ? (kind, file) => onDeviceRvDocumentSelect(ovSelfDevice.localId, kind, file)
+                    : undefined
+                }
+                onRvDocumentRemove={
+                  onDeviceRvDocumentRemove
+                    ? kind => onDeviceRvDocumentRemove(ovSelfDevice.localId, kind)
+                    : undefined
+                }
+                submitting={submitting}
+                readOnly={readOnly}
+                embedded
+                hideDeviceMeta
+                geoStampCoords={geoStampCoords}
+                geoStampWeather={geoStampWeather}
+              />
+            </div>
+          )}
+
           {currentStep.id === 'setup' && (
             <div className="verification-setup-step">
-              <div className="verification-setup-toggles">
-                <div className="verification-setup-toggle-field">
-                  <span className="verification-setup-toggle-label">Type</span>
-                  <SegmentToggle
-                    ariaLabel="Verification type"
-                    value={values.verificationType === 'RV' ? 'RV' : 'OV'}
-                    options={VERIFICATION_TYPE_OPTIONS.map(opt => ({
-                      value: opt.value,
-                      label: opt.label,
-                    }))}
-                    onChange={handleVerificationTypeChange}
-                    disabled={locked}
-                  />
+              {lockKind ? (
+                <div className="verification-setup-kind">
+                  <span
+                    className={`verification-setup-kind-chip${values.verificationType === 'RV' ? ' verification-setup-kind-chip--rv' : ''}`}
+                  >
+                    {verificationSessionKindLabel(values.verificationType, values.verificationSubject)}
+                  </span>
                 </div>
-                <div className="verification-setup-toggle-field">
-                  <span className="verification-setup-toggle-label">Party</span>
-                  <SegmentToggle
-                    ariaLabel="Verification party"
-                    value={values.verificationSubject === 'customer' ? 'customer' : 'self'}
-                    options={SUBJECT_OPTIONS.map(opt => ({
-                      value: opt.value,
-                      label: opt.label,
-                      disabled: lockCustomer,
-                    }))}
-                    onChange={handleSubjectChange}
-                    disabled={locked || lockCustomer}
-                  />
+              ) : (
+                <div className="verification-setup-toggles">
+                  <div className="verification-setup-toggle-field">
+                    <span className="verification-setup-toggle-label">Type</span>
+                    <SegmentToggle
+                      ariaLabel="Verification type"
+                      value={values.verificationType === 'RV' ? 'RV' : 'OV'}
+                      options={VERIFICATION_TYPE_OPTIONS.map(opt => ({
+                        value: opt.value,
+                        label: opt.label,
+                      }))}
+                      onChange={handleVerificationTypeChange}
+                      disabled={locked}
+                    />
+                  </div>
+                  <div className="verification-setup-toggle-field">
+                    <span className="verification-setup-toggle-label">Party</span>
+                    <SegmentToggle
+                      ariaLabel="Verification party"
+                      value={values.verificationSubject === 'customer' ? 'customer' : 'self'}
+                      options={SUBJECT_OPTIONS.map(opt => ({
+                        value: opt.value,
+                        label: opt.label,
+                        disabled: lockCustomer,
+                      }))}
+                      onChange={handleSubjectChange}
+                      disabled={locked || lockCustomer}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {allowPerformerAssignment && (
+              {allowPerformerAssignment && !isOvCompactFlow && (
                 <div className="verification-performer-field form-group">
                   <label htmlFor="verification-performer-select">Performed by</label>
                   <select
@@ -1001,6 +1235,7 @@ export const VerificationSessionFields = forwardRef<
                   />
                 )}
 
+                {!isOvCompactFlow && (
                 <section className="verification-env-panel" aria-labelledby="verification-env-title">
                   <header className="verification-env-panel-head">
                     <div className="verification-env-weather-icon" aria-hidden>
@@ -1068,6 +1303,7 @@ export const VerificationSessionFields = forwardRef<
                     </p>
                   )}
                 </section>
+                )}
               </div>
             </div>
           )}
@@ -1099,11 +1335,25 @@ export const VerificationSessionFields = forwardRef<
               canAddInstrument={canAddInstrument}
               onAddInstrument={handleAddInstrument}
               showDevices={showDevices}
+              ovQuota={values.verificationType === 'OV' ? ovQuota : null}
+              lockedSerial={values.lockedSerial}
             />
           )}
 
           {currentStep.id === 'review' && showDevices && (
             <>
+              {isOvCompactFlow && (
+                <OvSelfEnvFields
+                  temperature={values.ambientTemperature}
+                  humidity={values.relativeHumidity}
+                  onTemperatureChange={value => onChange({ ambientTemperature: value })}
+                  onHumidityChange={value => onChange({ relativeHumidity: value })}
+                  weatherLoading={weatherLoading}
+                  weatherError={weatherError}
+                  locked={locked}
+                  idPrefix="ov-compact-review"
+                />
+              )}
               <VerificationAiStatusPanel items={submitAiStatusItems} />
               <VerificationResultSummary
                 instrumentLabel={submitInstrumentLabel}

@@ -66,6 +66,7 @@ async function run() {
     { file: 'icon-192.png', size: 192, padding: 0.04, fit: 'cover' },
     { file: 'icon-512.png', size: 512, padding: 0.04, fit: 'cover' },
     { file: 'icon-512-maskable.png', size: 512, padding: 0.1, fit: 'contain' },
+    { file: 'icon-1024.png', size: 1024, padding: 0.04, fit: 'cover' },
   ];
 
   for (const { file, size, padding, fit } of outputs) {
@@ -81,6 +82,30 @@ async function run() {
   }
 
   console.log('  wrote public/brand/logo-dark.png');
+
+  const resourcesDir = join(root, 'resources');
+  await mkdir(resourcesDir, { recursive: true });
+  const icon1024 = join(iconsDir, 'icon-1024.png');
+  await copyFile(icon1024, join(resourcesDir, 'icon.png'));
+
+  const splashSize = 2732;
+  const splashLogo = await sharp(iconSource)
+    .resize(920, 920, { fit: 'contain', background: TRANSPARENT })
+    .png()
+    .toBuffer();
+  await sharp({
+    create: {
+      width: splashSize,
+      height: splashSize,
+      channels: 4,
+      background: { r: 26, g: 127, b: 55, alpha: 1 },
+    },
+  })
+    .composite([{ input: splashLogo, gravity: 'centre' }])
+    .png()
+    .toFile(join(resourcesDir, 'splash.png'));
+  console.log('  wrote resources/icon.png');
+  console.log('  wrote resources/splash.png');
 }
 
 run().catch(err => {

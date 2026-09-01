@@ -14,3 +14,10 @@ export async function loadPdfJs(): Promise<PdfJsModule> {
   }
   return pdfJsModulePromise;
 }
+
+export function prefetchPdfJs(): void {
+  if (typeof window === 'undefined') return;
+  window.setTimeout(() => {
+    void loadPdfJs();
+  }, 600);
+}

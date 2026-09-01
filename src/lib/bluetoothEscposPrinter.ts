@@ -1,5 +1,5 @@
 import {
-  clearRememberedBluetoothPrinter,
+  clearRememberedBluetoothPrinter as clearStoredBluetoothPrinter,
   getRememberedBluetoothPrinter,
   rememberBluetoothPrinter,
 } from './bluetoothPrinterStorage';
@@ -80,36 +80,113 @@ async function findGrantedBluetoothPrinter(deviceId: string): Promise<BluetoothD
   return device?.gatt ? device : null;
 }
 
+let sessionPrinter: BluetoothDevice | null = null;
+
+function cacheSessionPrinter(device: BluetoothDevice): void {
+  sessionPrinter = device;
+  rememberBluetoothPrinter(device);
+}
+
 export type ResolveBluetoothEscposPrinterOptions = {
   /** Show the system device picker even when a remembered printer exists. */
   forcePicker?: boolean;
 };
 
+async function ensureGattConnected(device: BluetoothDevice): Promise<void> {
+  if (!device.gatt) {
+    throw new Error('Selected Bluetooth device does not expose GATT services.');
+  }
+  if (device.gatt.connected) return;
+
+  try {
+    await device.gatt.connect();
+    return;
+  } catch {
+    /* watch advertisements, then connect */
+  }
+
+  if (typeof device.watchAdvertisements !== 'function') {
+    await device.gatt.connect();
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      device.removeEventListener('advertisementreceived', onAdvertisement);
+      reject(new Error('Printer not in range. Turn it on, then tap Print.'));
+    }, 8000);
+
+    const onAdvertisement = () => {
+      window.clearTimeout(timeoutId);
+      device.removeEventListener('advertisementreceived', onAdvertisement);
+      void device.gatt
+        ?.connect()
+        .then(() => resolve())
+        .catch(reject);
+    };
+
+    device.addEventListener('advertisementreceived', onAdvertisement);
+    void device.watchAdvertisements().catch(err => {
+      window.clearTimeout(timeoutId);
+      device.removeEventListener('advertisementreceived', onAdvertisement);
+      reject(err);
+    });
+  });
+}
+
+function requestPrinterFromChooser(): Promise<BluetoothDevice> {
+  return getBluetoothApi()
+    .requestDevice({
+      acceptAllDevices: true,
+      optionalServices: getOptionalBluetoothServices(),
+    })
+    .then(device => {
+      cacheSessionPrinter(device);
+      return device;
+    });
+}
+
+/** Reconnect a previously granted printer. Safe to call without a click. */
+export async function warmupRememberedBluetoothPrinter(): Promise<BluetoothDevice | null> {
+  if (sessionPrinter?.gatt) return sessionPrinter;
+  const remembered = getRememberedBluetoothPrinter();
+  if (!remembered) return null;
+  const granted = await findGrantedBluetoothPrinter(remembered.id);
+  if (!granted) return null;
+  cacheSessionPrinter(granted);
+  return granted;
+}
+
+/**
+ * Start printer resolve in the same turn as a click.
+ * Must run before any await — Chrome drops the Bluetooth chooser otherwise.
+ */
+export function beginBluetoothPrinterSelection(
+  options: ResolveBluetoothEscposPrinterOptions = {},
+): Promise<BluetoothDevice> {
+  if (!options.forcePicker && sessionPrinter?.gatt) {
+    return Promise.resolve(sessionPrinter);
+  }
+
+  if (options.forcePicker) {
+    sessionPrinter = null;
+  }
+
+  return requestPrinterFromChooser();
+}
+
 /** Reuse the last granted printer, or prompt once and remember the choice. */
 export async function resolveBluetoothEscposPrinter(
   options: ResolveBluetoothEscposPrinterOptions = {},
 ): Promise<BluetoothDevice> {
-  const bluetooth = getBluetoothApi();
-
-  if (!options.forcePicker) {
-    const remembered = getRememberedBluetoothPrinter();
-    if (remembered) {
-      const grantedDevice = await findGrantedBluetoothPrinter(remembered.id);
-      if (grantedDevice) {
-        if (grantedDevice.name?.trim()) {
-          rememberBluetoothPrinter(grantedDevice);
-        }
-        return grantedDevice;
-      }
-    }
+  if (!options.forcePicker && sessionPrinter?.gatt) {
+    return sessionPrinter;
   }
-
-  const device = await bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: getOptionalBluetoothServices(),
-  });
-  rememberBluetoothPrinter(device);
-  return device;
+  if (!options.forcePicker) {
+    const warmed = await warmupRememberedBluetoothPrinter();
+    if (warmed) return warmed;
+  }
+  return beginBluetoothPrinterSelection(options);
 }
 
 /** @deprecated Use resolveBluetoothEscposPrinter instead. */
@@ -118,16 +195,18 @@ export async function requestBluetoothEscposPrinter(): Promise<BluetoothDevice> 
 }
 
 export function shouldRetryBluetoothPrinterWithPicker(error: unknown): boolean {
-  if (error instanceof DOMException) {
-    return error.name === 'NetworkError' || error.name === 'NotFoundError';
-  }
   if (error instanceof Error) {
     return /writable bluetooth characteristic|does not expose gatt/i.test(error.message);
   }
   return false;
 }
 
-export { clearRememberedBluetoothPrinter, getRememberedBluetoothPrinter };
+export { getRememberedBluetoothPrinter };
+
+export function clearRememberedBluetoothPrinter(): void {
+  sessionPrinter = null;
+  clearStoredBluetoothPrinter();
+}
 
 export async function sendEscposOverBluetooth(
   device: BluetoothDevice,
@@ -137,7 +216,13 @@ export async function sendEscposOverBluetooth(
     throw new Error('Selected Bluetooth device does not expose GATT services.');
   }
 
-  const server = await device.gatt.connect();
+  cacheSessionPrinter(device);
+  await ensureGattConnected(device);
+  const server = device.gatt;
+  if (!server.connected) {
+    throw new Error('Could not connect to the printer. Turn it on and try again.');
+  }
+
   try {
     const characteristic = await findWritableCharacteristic(server);
     for (let offset = 0; offset < payload.length; offset += CHUNK_SIZE) {
@@ -152,6 +237,7 @@ export async function sendEscposOverBluetooth(
         await sleep(CHUNK_DELAY_MS);
       }
     }
+    await sleep(80);
   } finally {
     if (device.gatt.connected) {
       device.gatt.disconnect();

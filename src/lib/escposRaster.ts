@@ -47,13 +47,46 @@ function escPosPrintDirectionCommand(degrees: EscPosPrintRotation): Uint8Array |
   return new Uint8Array([ESC, 0x56, direction]);
 }
 
+export type CanvasToEscPosRasterOptions = {
+  /** Smooth when shrinking a hi-dpi capture to printer dots. */
+  smooth?: boolean;
+  /** Luminance below this becomes black (0–255). */
+  threshold?: number;
+};
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function rasterBandHeader(widthBytes: number, height: number): Uint8Array {
+  return new Uint8Array([
+    GS,
+    0x76,
+    0x30,
+    0x00,
+    widthBytes & 0xff,
+    (widthBytes >> 8) & 0xff,
+    height & 0xff,
+    (height >> 8) & 0xff,
+  ]);
+}
+
 /** Pack RGBA canvas pixels into ESC/POS raster bits (black = 1). */
 export function canvasToEscPosRaster(
   source: HTMLCanvasElement,
   targetWidthDots: number,
+  options: CanvasToEscPosRasterOptions = {},
 ): EscPosRaster {
   const aspect = source.height / source.width;
   const targetHeightDots = Math.max(1, Math.round(targetWidthDots * aspect));
+  const threshold = options.threshold ?? 168;
 
   const scaled = document.createElement('canvas');
   scaled.width = targetWidthDots;
@@ -63,7 +96,8 @@ export function canvasToEscPosRaster(
 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, targetWidthDots, targetHeightDots);
-  ctx.imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = options.smooth === true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(source, 0, 0, targetWidthDots, targetHeightDots);
 
   const { data: rgba } = ctx.getImageData(0, 0, targetWidthDots, targetHeightDots);
@@ -74,7 +108,7 @@ export function canvasToEscPosRaster(
     for (let x = 0; x < targetWidthDots; x += 1) {
       const i = (y * targetWidthDots + x) * 4;
       const lum = rgba[i] * 0.299 + rgba[i + 1] * 0.587 + rgba[i + 2] * 0.114;
-      if (lum < 168) {
+      if (lum < threshold) {
         const byteIndex = y * widthBytes + (x >> 3);
         raster[byteIndex] |= 0x80 >> (x & 7);
       }
@@ -101,29 +135,27 @@ export function buildEscPosLabelPayload(
   const useEscPosOrientation = options.escPosOrientation ?? false;
   const orientation = useEscPosOrientation ? escPosPrintDirectionCommand(rotationDeg) : null;
 
-  const rasterHeader = new Uint8Array([
-    GS,
-    0x76,
-    0x30,
-    0x00,
-    widthBytes & 0xff,
-    (widthBytes >> 8) & 0xff,
-    height & 0xff,
-    (height >> 8) & 0xff,
-  ]);
   const init = new Uint8Array([ESC, 0x40]);
   const tail = new Uint8Array([ESC, 0x56, 0x00, 0x0a, 0x0a, 0x0a]);
 
   const parts: Uint8Array[] = [init];
   if (orientation) parts.push(orientation);
-  parts.push(rasterHeader, Uint8Array.from(data), tail);
+  parts.push(rasterBandHeader(widthBytes, height), data, tail);
+  return concatBytes(parts);
+}
 
-  const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
-  const out = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const part of parts) {
-    out.set(part, offset);
-    offset += part.length;
+/** Tall receipts: split GS v 0 bands so cheap 58mm printers do not drop the job. */
+export function buildEscPosBitmapPayload(raster: EscPosRaster, feedLines = 3): Uint8Array {
+  const maxBand = 1200;
+  const parts: Uint8Array[] = [new Uint8Array([ESC, 0x40])];
+  let y = 0;
+  while (y < raster.height) {
+    const bandH = Math.min(maxBand, raster.height - y);
+    const start = y * raster.widthBytes;
+    const end = (y + bandH) * raster.widthBytes;
+    parts.push(rasterBandHeader(raster.widthBytes, bandH), raster.data.subarray(start, end));
+    y += bandH;
   }
-  return out;
+  parts.push(new Uint8Array([ESC, 0x56, 0x00, ...Array.from({ length: feedLines }, () => 0x0a)]));
+  return concatBytes(parts);
 }

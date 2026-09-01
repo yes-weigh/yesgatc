@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { doc, setDoc, updateDoc } from 'firebase/firestore';
-import { CreditCard, Eye, EyeOff, IndianRupee, Lock, Save, Scale, Settings, UserCircle } from 'lucide-react';
+import { CreditCard, Eye, EyeOff, IndianRupee, Lock, Save, Scale, UserCircle } from 'lucide-react';
 import { auth, db } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useAppSettings } from '../../hooks/useAppSettings';
@@ -25,8 +25,10 @@ import {
 import { ROLE_LABELS } from '../../types';
 import { ContractorFeePanel } from '../shared/ContractorFeeSettings';
 import { WebbookPanel } from './WebbookPanel';
+import { YesoneInboundPanel } from './YesoneInboundPanel';
+import { RcQuotaPanel, RcQuotaSynButton } from './RcQuotaPanel';
 
-type SettingTab = 'account' | 'fees' | 'contractor' | 'webbook';
+type SettingTab = 'account' | 'fees' | 'contractor' | 'webbook' | 'yesone' | 'rcQuota';
 
 function PasswordField({
   id,
@@ -332,55 +334,66 @@ export const AdminPortalSettings: React.FC = () => {
   };
 
   return (
-    <div className="fade-in page-content admin-setting-page">
-      <header className="admin-setting-header">
-        <h1 className="admin-setting-title">
-          <Settings className="inline-icon" aria-hidden />
-          Setting
-        </h1>
-        <p className="admin-setting-subtitle text-muted text-sm mb-0">
-          Account, invoice fees, contractor fees, and yesone webbook.
-        </p>
-      </header>
-
-      <div className="admin-setting-tabs" role="tablist" aria-label="Setting">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'account'}
-          className={`admin-setting-tab${tab === 'account' ? ' admin-setting-tab--active' : ''}`}
-          onClick={() => setTab('account')}
-        >
-          Account
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'fees'}
-          className={`admin-setting-tab${tab === 'fees' ? ' admin-setting-tab--active' : ''}`}
-          onClick={() => setTab('fees')}
-        >
-          Fees
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'contractor'}
-          className={`admin-setting-tab${tab === 'contractor' ? ' admin-setting-tab--active' : ''}`}
-          onClick={() => setTab('contractor')}
-        >
-          Contractor fees
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'webbook'}
-          className={`admin-setting-tab${tab === 'webbook' ? ' admin-setting-tab--active' : ''}`}
-          onClick={() => setTab('webbook')}
-        >
-          Webbook
-        </button>
+    <div className={`fade-in page-content admin-setting-page admin-setting-page--six-tabs${tab === 'rcQuota' || tab === 'yesone' ? ' admin-setting-page--wide' : ''}`}>
+      <div className="admin-setting-bar">
+        <div className="admin-setting-tabs" role="tablist" aria-label="Setting">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'account'}
+            className={`admin-setting-tab${tab === 'account' ? ' admin-setting-tab--active' : ''}`}
+            onClick={() => setTab('account')}
+          >
+            Account
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'fees'}
+            className={`admin-setting-tab${tab === 'fees' ? ' admin-setting-tab--active' : ''}`}
+            onClick={() => setTab('fees')}
+          >
+            Fees
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'contractor'}
+            className={`admin-setting-tab${tab === 'contractor' ? ' admin-setting-tab--active' : ''}`}
+            onClick={() => setTab('contractor')}
+          >
+            Contractor fees
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'webbook'}
+            className={`admin-setting-tab${tab === 'webbook' ? ' admin-setting-tab--active' : ''}`}
+            onClick={() => setTab('webbook')}
+          >
+            Webbook
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'yesone'}
+            className={`admin-setting-tab${tab === 'yesone' ? ' admin-setting-tab--active' : ''}`}
+            onClick={() => setTab('yesone')}
+          >
+            Yesone
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'rcQuota'}
+            className={`admin-setting-tab${tab === 'rcQuota' ? ' admin-setting-tab--active' : ''}`}
+            onClick={() => setTab('rcQuota')}
+          >
+            RC quata
+          </button>
+        </div>
       </div>
+      <RcQuotaSynButton />
 
       {tab === 'account' ? (
         <>
@@ -540,8 +553,12 @@ export const AdminPortalSettings: React.FC = () => {
         </div>
       ) : tab === 'contractor' ? (
         <ContractorFeePanel />
-      ) : (
+      ) : tab === 'webbook' ? (
         <WebbookPanel />
+      ) : tab === 'yesone' ? (
+        <YesoneInboundPanel />
+      ) : (
+        <RcQuotaPanel />
       )}
     </div>
   );

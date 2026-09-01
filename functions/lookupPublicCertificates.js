@@ -84,9 +84,9 @@ function publicPhotoUrl(data, urlKey, pathKey) {
 
 const PUBLIC_PHOTO_SLOTS = [
   { kind: 'stamping', label: 'Serial plate', urlKey: 'stampingImageUrl', pathKey: 'stampingImagePath' },
-  { kind: 'scale', label: 'Front', urlKey: 'scaleImageUrl', pathKey: 'scaleImagePath' },
-  { kind: 'instrumentRear', label: 'Rear', urlKey: 'instrumentRearImageUrl', pathKey: 'instrumentRearImagePath' },
-  { kind: 'standardWeight', label: 'F2 test weight', urlKey: 'standardWeightImageUrl', pathKey: 'standardWeightImagePath' },
+  { kind: 'scale', label: 'Instrument with F2 test weight', urlKey: 'scaleImageUrl', pathKey: 'scaleImagePath' },
+  { kind: 'instrumentRear', label: 'Instrument with F2 Corner', urlKey: 'instrumentRearImageUrl', pathKey: 'instrumentRearImagePath' },
+  { kind: 'standardWeight', label: 'Instrument with small Weights', urlKey: 'standardWeightImageUrl', pathKey: 'standardWeightImagePath' },
   { kind: 'verificationSeal', label: 'Seal', urlKey: 'verificationSealImageUrl', pathKey: 'verificationSealImagePath' },
 ];
 

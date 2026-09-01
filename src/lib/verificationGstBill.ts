@@ -10,11 +10,12 @@ import {
 } from './rvGstBillRates';
 import type { Customer, Product, SiteCalibration } from '../types';
 
-/** Thermal receipt width for GST bill preview / print. */
+/** Thermal receipt width for GST bill preview / print. 58mm heads are 384 dots. */
 export const VERIFICATION_GST_BILL_RECEIPT = {
-  widthMm: 80,
+  widthMm: 58,
   previewWidthPx: 300,
   printDotsPerMm: 8,
+  printWidthDots: 384,
   printRotationDeg: 0 as const,
 } as const;
 
@@ -177,10 +178,10 @@ function gstBillQty(value?: number | null): string | null {
   return String(Math.round(value * 1e6) / 1e6);
 }
 
-function formatGstBillInstrumentSpec(
+function gstBillInstrumentSpecLines(
   record: SiteCalibration,
   product?: Product | null,
-): string {
+): GstBillInstrumentLine[] {
   const productInfo = resolveVerificationProduct(record, product);
   const max = gstBillQty(record.maximumCapacity ?? product?.maximumCapacity);
   const e = gstBillQty(record.verificationScaleInterval ?? product?.verificationScaleInterval);
@@ -189,11 +190,11 @@ function formatGstBillInstrumentSpec(
   const accuracyClass = productInfo.accuracyClass || 'III';
 
   return [
-    `Max : ${max != null ? `${max}${unit}` : '—'}`,
-    `e:${e != null ? `${e}g` : '—'}`,
-    `Class :${accuracyClass}`,
-    `MPE : ${mpeRaw === '—' ? '—' : `${mpeRaw}g`}`,
-  ].join(' ');
+    { label: 'Max', value: max != null ? `${max}${unit}` : '—', span: 'half' },
+    { label: 'e', value: e != null ? `${e}g` : '—', span: 'half' },
+    { label: 'Class', value: accuracyClass, span: 'half' },
+    { label: 'MPE', value: mpeRaw === '—' ? '—' : `${mpeRaw}g`, span: 'half' },
+  ];
 }
 
 export function buildGstBillInstrumentLines(
@@ -208,7 +209,7 @@ export function buildGstBillInstrumentLines(
     { label: 'Instrument', value: gstBillDash(productInfo.name), span: 'full' },
     { label: 'Manufacturer', value: gstBillDash(productInfo.manufacturer), span: 'full' },
     { label: 'Model Approval No', value: gstBillDash(productInfo.modelApprovalNo), span: 'full' },
-    { label: '', value: formatGstBillInstrumentSpec(record, product), span: 'full', plain: true },
+    ...gstBillInstrumentSpecLines(record, product),
     { label: 'VCT', value: gstBillDash(verificationVctLabel(record)), span: 'full' },
     { label: 'Seal ID', value: gstBillDash(record.sealIdentificationNumber), span: 'full' },
   ];

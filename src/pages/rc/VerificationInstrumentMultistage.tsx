@@ -5,6 +5,7 @@ import type { DeviceVerificationImagesState, VerificationImageKind } from '../..
 import type { DeviceRvDocumentsState, RvDocumentKind } from '../../lib/verificationRvDeviceImages';
 import type { FirestoreUserDoc, JobType, VerificationLocation } from '../../types';
 import type { VerificationDeviceRowValues } from '../../lib/siteCalibrationProfileFields';
+import type { OvQuotaGate } from '../../lib/ovQuotaGate';
 import type { GeoStampCoordinates, StampWeather } from '../../components/VerificationPhotoUploadSlot';
 import { VerificationInstrumentTile } from './VerificationInstrumentTile';
 
@@ -39,6 +40,8 @@ type VerificationInstrumentMultistageProps = {
   showDevices?: boolean;
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
+  ovQuota?: OvQuotaGate | null;
+  lockedSerial?: string;
 };
 
 export const VerificationInstrumentMultistage: React.FC<VerificationInstrumentMultistageProps> = ({
@@ -67,6 +70,8 @@ export const VerificationInstrumentMultistage: React.FC<VerificationInstrumentMu
   showDevices = true,
   geoStampCoords = null,
   geoStampWeather = null,
+  ovQuota = null,
+  lockedSerial = '',
 }) => {
   const locked = submitting || readOnly;
   const feesStructure = resolveRcFeesStructure(rcProfile);
@@ -143,6 +148,8 @@ export const VerificationInstrumentMultistage: React.FC<VerificationInstrumentMu
           laboratorySealIdentification={laboratorySealIdentification}
           geoStampCoords={geoStampCoords}
           geoStampWeather={geoStampWeather}
+          ovQuota={ovQuota}
+          lockedSerial={lockedSerial}
           tileRef={node => {
             tileRefs.current[entry.row.localId] = node;
           }}

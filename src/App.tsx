@@ -25,7 +25,6 @@ import { VCTManagement } from './pages/rc/VCTManagement';
 import { VerifierManagement } from './pages/rc/VerifierManagement';
 import { RCProfile } from './pages/rc/RCProfile';
 import { RCWallet } from './pages/rc/RCWallet';
-import { NewJobComingSoon } from './pages/rc/RCMenuPages';
 import { RCVehicles } from './pages/rc/RCVehicles';
 import { RCCustomers } from './pages/rc/RCCustomers';
 import { RCProducts } from './pages/rc/RCProducts';
@@ -87,10 +86,10 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute allowedRoles={['rc_admin']} />}>
               <Route path="/rc" element={<Layout />}>
                 <Route index element={<RCDashboard />} />
-                <Route path="new-job" element={<NewJobComingSoon />} />
+                <Route path="new-job" element={<Navigate to="/rc/verification?new=1" replace />} />
                 <Route path="verification" element={<RCSiteCalibration />} />
                 <Route path="site-calibration" element={<Navigate to="/rc/verification" replace />} />
-                <Route path="queue" element={<Navigate to="/rc/new-job" replace />} />
+                <Route path="queue" element={<Navigate to="/rc/verification?new=1" replace />} />
                 <Route path="customers" element={<RCCustomers />} />
                 <Route path="leads" element={<RCLeads />} />
                 <Route path="products" element={<RCProducts />} />
@@ -115,7 +114,7 @@ const App: React.FC = () => {
               <Route path="/vct" element={<Layout />}>
                 <Route index element={<RCDashboard />} />
                 <Route path="leads" element={<RCLeads />} />
-                <Route path="new-job" element={<NewJobComingSoon />} />
+                <Route path="new-job" element={<Navigate to="/vct/verification?new=1" replace />} />
                 <Route path="verification" element={<RCSiteCalibration />} />
                 <Route path="customers" element={<RCCustomers />} />
                 <Route path="products" element={<RCProducts />} />
@@ -129,7 +128,7 @@ const App: React.FC = () => {
                 <Route path="notifications" element={<RCNotifications />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="profile" element={<VCTProfile />} />
-                <Route path="queue" element={<Navigate to="/vct/new-job" replace />} />
+                <Route path="queue" element={<Navigate to="/vct/verification?new=1" replace />} />
               </Route>
             </Route>
 

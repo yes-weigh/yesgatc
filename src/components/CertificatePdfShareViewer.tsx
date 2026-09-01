@@ -1,13 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, type FC } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Share2, X } from 'lucide-react';
+import { useCertificatePdfPreview } from '../hooks/useCertificatePdfPreview';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { useMobileViewport } from '../hooks/useMobileViewport';
 import {
   certificatePdfFileName,
   downloadCertificatePdfFile,
   fetchCertificatePdfFile,
-  renderCertificatePdfPages,
 } from '../lib/certificatePdfFile';
 import { shareCertificatePdfFile, shareVerificationCertificate } from '../lib/verificationWhatsAppShare';
 import type { SiteCalibration } from '../types';
@@ -21,7 +21,7 @@ type CertificatePdfShareViewerProps = {
   onClose: () => void;
 };
 
-export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps> = ({
+export const CertificatePdfShareViewer: FC<CertificatePdfShareViewerProps> = ({
   open,
   record,
   url,
@@ -29,60 +29,18 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
   heading,
   onClose,
 }) => {
-  const [pages, setPages] = useState<string[]>([]);
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const [error, setError] = useState('');
-  const [useFrame, setUseFrame] = useState(false);
   const isPhone = useMobileViewport();
+  const fileName = record ? certificatePdfFileName(record) : 'certificate.pdf';
+  const preview = useCertificatePdfPreview({
+    enabled: open && Boolean(record),
+    url,
+    storagePath,
+    fileName,
+  });
+  const [sharing, setSharing] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   useHistoryOverlay(open, onClose);
-
-  useEffect(() => {
-    if (!open || !record || (!url && !storagePath)) {
-      setPages([]);
-      setFile(null);
-      setError('');
-      setUseFrame(false);
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    setPages([]);
-    setFile(null);
-    setUseFrame(false);
-
-    void (async () => {
-      try {
-        const pdfFile = await fetchCertificatePdfFile(
-          url || '',
-          certificatePdfFileName(record),
-          storagePath,
-        );
-        const images = await renderCertificatePdfPages(pdfFile);
-        if (cancelled) return;
-        setFile(pdfFile);
-        setPages(images);
-      } catch (err) {
-        if (cancelled) return;
-        if (url) {
-          setUseFrame(true);
-          setError('');
-          return;
-        }
-        setError(err instanceof Error ? err.message : 'Could not open certificate.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, url, storagePath, record]);
 
   useEffect(() => {
     if (!open) return;
@@ -94,20 +52,21 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
 
   const title = heading?.trim()
     || (record.certificateNumber?.trim() ? record.certificateNumber.trim() : 'Certificate');
+  const error = actionError || preview.error;
 
   const handleShare = async () => {
     if (sharing) return;
     setSharing(true);
-    setError('');
+    setActionError('');
     try {
-      if (file) {
-        await shareCertificatePdfFile(file, title);
+      if (preview.file) {
+        await shareCertificatePdfFile(preview.file, title);
         return;
       }
       await shareVerificationCertificate(record, url);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
-      setError(err instanceof Error ? err.message : 'Share failed.');
+      setActionError(err instanceof Error ? err.message : 'Share failed.');
     } finally {
       setSharing(false);
     }
@@ -116,25 +75,20 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
   const handleDownload = async () => {
     if (sharing) return;
     setSharing(true);
-    setError('');
+    setActionError('');
     try {
-      if (file) {
-        downloadCertificatePdfFile(file);
+      if (preview.file) {
+        downloadCertificatePdfFile(preview.file);
         return;
       }
-      const pdfFile = await fetchCertificatePdfFile(
-        url || '',
-        certificatePdfFileName(record),
-        storagePath,
-      );
-      setFile(pdfFile);
+      const pdfFile = await fetchCertificatePdfFile(url || '', fileName, storagePath);
       downloadCertificatePdfFile(pdfFile);
     } catch (err) {
       if (url) {
         window.open(url, '_blank', 'noopener,noreferrer');
         return;
       }
-      setError(err instanceof Error ? err.message : 'Download failed.');
+      setActionError(err instanceof Error ? err.message : 'Download failed.');
     } finally {
       setSharing(false);
     }
@@ -157,7 +111,7 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
             type="button"
             className="wl-cert-pdf-viewer__share"
             onClick={() => void (isPhone ? handleShare() : handleDownload())}
-            disabled={sharing || (!file && !url && !storagePath)}
+            disabled={sharing || (!preview.file && !url && !storagePath)}
             aria-label={isPhone ? 'Share certificate' : 'Download certificate'}
             title={isPhone ? 'Share' : 'Download'}
           >
@@ -171,21 +125,23 @@ export const CertificatePdfShareViewer: React.FC<CertificatePdfShareViewerProps>
         </div>
       </header>
       <div className="wl-cert-pdf-viewer__body">
-        {loading ? <p className="wl-cert-pdf-viewer__status">Loading certificate…</p> : null}
+        {preview.loading ? <p className="wl-cert-pdf-viewer__status">Loading certificate…</p> : null}
         {error ? <p className="wl-cert-pdf-viewer__status wl-cert-pdf-viewer__status--err">{error}</p> : null}
-        {useFrame && url ? (
+        {preview.useFrame && preview.frameSrc ? (
           <iframe
             className="wl-cert-pdf-viewer__frame"
-            src={url}
+            src={preview.frameSrc}
             title={title}
           />
         ) : null}
-        {pages.map((src, index) => (
+        {preview.pages.map((src, index) => (
           <img
             key={`${title}-${index}`}
             src={src}
             alt={`Certificate page ${index + 1}`}
             className="wl-cert-pdf-viewer__page"
+            decoding="async"
+            fetchPriority={index === 0 ? 'high' : 'low'}
           />
         ))}
       </div>

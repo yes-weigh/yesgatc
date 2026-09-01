@@ -11,6 +11,11 @@ import {
   RcListAppBarContext,
   type RcListAppBarChrome,
 } from '../context/RcListAppBarContext';
+import { AppBarTitleContext } from '../context/AppBarTitleContext';
+import {
+  ProductListAppBarContext,
+  type ProductListAppBarChrome,
+} from '../context/ProductListAppBarContext';
 import { formatContactSubtitle } from '../lib/contactFields';
 import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
 import { vctProfilePhotoFromUser } from '../lib/vctProfileFields';
@@ -73,6 +78,8 @@ export const Layout: React.FC = () => {
   const [suppressAccountOverlayHistory, setSuppressAccountOverlayHistory] = useState(true);
   const [reportsChrome, setReportsChrome] = useState<ReportsAppBarChrome | null>(null);
   const [rcListChrome, setRcListChrome] = useState<RcListAppBarChrome | null>(null);
+  const [productListChrome, setProductListChrome] = useState<ProductListAppBarChrome | null>(null);
+  const [appBarTitleOverride, setAppBarTitleOverride] = useState<string | null>(null);
 
   const profilePath =
     user?.role === 'rc_admin'
@@ -107,6 +114,10 @@ export const Layout: React.FC = () => {
     if (!/\/(admin|rc|vct)\/reports\/?$/.test(location.pathname)) {
       setReportsChrome(null);
     }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    setAppBarTitleOverride(null);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -260,9 +271,10 @@ export const Layout: React.FC = () => {
   };
   const currentNavItem = navItems.find(item => isNavActive(item.path));
   const isEmaapSessions = location.pathname.includes('/integrations/worker/sessions');
-  const pageTitle = isEmaapSessions
-    ? 'Session Logs'
-    : currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard';
+  const pageTitle = appBarTitleOverride
+    ?? (isEmaapSessions
+      ? 'Session Logs'
+      : currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard');
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
   const isCertificatesList = /\/(rc|vct|verifier)\/certificates\/?$/.test(location.pathname);
@@ -270,6 +282,7 @@ export const Layout: React.FC = () => {
   const isReportsList = /\/(admin|rc|vct)\/reports\/?$/.test(location.pathname);
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
   const isRcCentersPage = /^\/admin\/rc\/?$/.test(location.pathname);
+  const isProductsPage = /^\/admin\/products\/?$/.test(location.pathname);
   const isHomeDashboard =
     location.pathname === '/rc' ||
     location.pathname === '/vct' ||
@@ -284,6 +297,7 @@ export const Layout: React.FC = () => {
     isHomeDashboard ||
     isEmaapSessions ||
     isRcCentersPage ||
+    isProductsPage ||
     isSettingsPage;
 
   const roleLabel = ROLE_LABELS[user.role];
@@ -386,9 +400,24 @@ export const Layout: React.FC = () => {
       </button>
     ) : null;
 
+  const productAddBtn =
+    isProductsPage && productListChrome ? (
+      <button
+        type="button"
+        className="rc-register-add-btn"
+        onClick={productListChrome.onAdd}
+        title="Add product"
+        aria-label="Add product"
+      >
+        <Plus size={22} strokeWidth={2.5} />
+      </button>
+    ) : null;
+
   return (
+    <AppBarTitleContext.Provider value={setAppBarTitleOverride}>
     <ReportsAppBarContext.Provider value={setReportsChrome}>
     <RcListAppBarContext.Provider value={setRcListChrome}>
+    <ProductListAppBarContext.Provider value={setProductListChrome}>
     <div className={`app-wrapper${embed ? ' embed-mode' : ''}`}>
       {!isMobile && (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -454,6 +483,8 @@ export const Layout: React.FC = () => {
               <div className="mobile-app-bar-brand">
                 {isRcCentersPage ? (
                   rcRegisterBtn
+                ) : isProductsPage ? (
+                  productAddBtn
                 ) : (
                   <MobileAppBarBrandIcon variant={useShieldBrand ? 'shield' : 'page'}>
                     {!useShieldBrand ? pageIcon : null}
@@ -508,15 +539,24 @@ export const Layout: React.FC = () => {
               </div>
             ) : isHomeDashboard ? (
               <EmaapStatusShortcut />
+            ) : isProductsPage ? (
+              <div id="product-filter-slot-mobile" className="mobile-app-bar-actions" />
             ) : showAppFilterSlot ? (
               <div id="verification-filter-slot-mobile" className="mobile-app-bar-actions" />
+            ) : isSettingsPage ? (
+              <div id="settings-syn-slot-mobile" className="mobile-app-bar-actions" />
             ) : null}
           </header>
         )}
         {!isMobile && (
           <header className="top-bar glass">
             <div className="top-bar-title-wrap">
-              {isReportsList ? (
+              {isProductsPage && productAddBtn ? (
+                <div className="top-bar-title-with-add">
+                  {productAddBtn}
+                  <h1 className="page-title">{pageTitle}</h1>
+                </div>
+              ) : isReportsList ? (
                 <>
                   <div className="reports-app-title-row">
                     <h1 className="page-title page-title--reports">
@@ -542,8 +582,11 @@ export const Layout: React.FC = () => {
               )}
             </div>
             <div className="top-bar-end">
+              {isSettingsPage ? <div id="settings-syn-slot-desktop" /> : null}
               {rcRegisterBtn}
+              {isProductsPage ? <div id="product-filter-slot-desktop" /> : null}
               {isHomeDashboard ? <EmaapStatusShortcut /> : null}
+              {showAppFilterSlot ? <div id="verification-filter-slot-desktop" /> : null}
               {profilePath ? (
                 <button
                   type="button"
@@ -575,7 +618,6 @@ export const Layout: React.FC = () => {
                   </div>
                 </div>
               )}
-              {showAppFilterSlot ? <div id="verification-filter-slot-desktop" /> : null}
             </div>
           </header>
         )}
@@ -620,7 +662,9 @@ export const Layout: React.FC = () => {
         </div>
       )}
     </div>
+    </ProductListAppBarContext.Provider>
     </RcListAppBarContext.Provider>
     </ReportsAppBarContext.Provider>
+    </AppBarTitleContext.Provider>
   );
 };

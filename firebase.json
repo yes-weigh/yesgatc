@@ -15,6 +15,13 @@
         }
       },
       {
+        "source": "/api/yesone",
+        "function": {
+          "functionId": "yesoneInbound",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

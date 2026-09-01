@@ -195,7 +195,12 @@ service cloud.firestore {
         && request.resource.data.get('pdfSignerSignUrl', null) == resource.data.get('pdfSignerSignUrl', null)
         && request.resource.data.get('pdfSignerSignPath', null) == resource.data.get('pdfSignerSignPath', null)
         && request.resource.data.get('pdfSignerSignName', null) == resource.data.get('pdfSignerSignName', null)
-        && request.resource.data.get('pdfSignerSignContentType', null) == resource.data.get('pdfSignerSignContentType', null);
+        && request.resource.data.get('pdfSignerSignContentType', null) == resource.data.get('pdfSignerSignContentType', null)
+        && request.resource.data.get('pdfSignerSignScale', null) == resource.data.get('pdfSignerSignScale', null)
+        && request.resource.data.get('pdfSignerSignX', null) == resource.data.get('pdfSignerSignX', null)
+        && request.resource.data.get('pdfSignerSignY', null) == resource.data.get('pdfSignerSignY', null)
+        && request.resource.data.get('yesoneAllottedSerials', null) == resource.data.get('yesoneAllottedSerials', null)
+        && request.resource.data.get('yesoneVoidedSerials', null) == resource.data.get('yesoneVoidedSerials', null);
 
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'
@@ -220,6 +225,10 @@ service cloud.firestore {
         && resource.data.role == 'vct'
         && resource.data.rcId == request.auth.uid
         && vctApprovalStatus(resource.data) == 'pending';
+
+      allow delete: if isRCAdmin()
+        && resource.data.role == 'verifier'
+        && resource.data.rcId == request.auth.uid;
 
       match /contractorFeePayments/{dateKey} {
         allow read: if isAuthenticated()
@@ -363,6 +372,25 @@ service cloud.firestore {
           || data.get('vctId', '') == request.auth.uid;
       }
 
+      // Old app builds omit clientAppVersionCode → create/update rejected when min > 0.
+      function meetsMinVerificationAppVersion() {
+        let settings = get(/databases/$(database)/documents/appSettings/global);
+        let minCode = settings.exists
+            && settings.data.keys().hasAny(['minVerificationAppVersionCode'])
+            && settings.data.minVerificationAppVersionCode is int
+            && settings.data.minVerificationAppVersionCode > 0
+          ? settings.data.minVerificationAppVersionCode
+          : 0;
+        let code = request.resource.data.get('clientAppVersionCode', 0);
+        // Gate off when minCode is 0. Otherwise require stamped version >= min.
+        return minCode <= 0
+          || (
+            request.resource.data.keys().hasAll(['clientAppVersionCode'])
+            && (code is int || code is float)
+            && code >= minCode
+          );
+      }
+
       allow read: if isSuperAdmin();
       allow create, update: if isSuperAdmin();
       allow delete: if isSuperAdmin()
@@ -383,16 +411,20 @@ service cloud.firestore {
         && request.resource.data.get('createdByUid', '') == request.auth.uid
         && request.resource.data.get('vctId', '') == request.auth.uid
         && request.resource.data.get('performedBy', '') == 'vct'
+        && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
-        && validVerificationApplicationNumber(request.resource.data);
+        && validVerificationApplicationNumber(request.resource.data)
+        && meetsMinVerificationAppVersion();
 
       allow create: if isOperationalVerifier()
         && request.resource.data.rcId == vctRcId()
         && request.resource.data.get('createdByUid', '') == request.auth.uid
         && request.resource.data.get('vctId', '') == request.auth.uid
         && request.resource.data.get('performedBy', '') == 'verifier'
+        && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
-        && validVerificationApplicationNumber(request.resource.data);
+        && validVerificationApplicationNumber(request.resource.data)
+        && meetsMinVerificationAppVersion();
 
       // RC self verification (performedBy rc).
       allow create: if isRCAdmin()
@@ -401,7 +433,8 @@ service cloud.firestore {
         && request.resource.data.get('performedBy', '') == 'rc'
         && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
-        && validVerificationApplicationNumber(request.resource.data);
+        && validVerificationApplicationNumber(request.resource.data)
+        && meetsMinVerificationAppVersion();
 
       // RC creates draft assigned to a VCT under this centre (createdByUid = vctId for VCT list query).
       allow create: if isRCAdmin()
@@ -414,7 +447,8 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.resource.data.vctId)).data.get('rcId', '') == request.auth.uid
         && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
-        && validVerificationApplicationNumber(request.resource.data);
+        && validVerificationApplicationNumber(request.resource.data)
+        && meetsMinVerificationAppVersion();
 
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
@@ -424,7 +458,8 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) in ['draft', 'submitted']
         && verificationApplicationNumberUnchanged()
         && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
-        && verificationZohoFieldsUnchanged();
+        && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion();
 
       allow update: if isOperationalVct()
         && resource.data.rcId == vctRcId()
@@ -435,7 +470,8 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) in ['draft', 'submitted']
         && verificationApplicationNumberUnchanged()
         && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
-        && verificationZohoFieldsUnchanged();
+        && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion();
 
       allow update: if isOperationalVerifier()
         && resource.data.rcId == vctRcId()
@@ -444,7 +480,8 @@ service cloud.firestore {
         && verificationRecordStatus(resource.data) == 'draft'
         && verificationRecordStatus(request.resource.data) in ['draft', 'pending_rc']
         && verificationApplicationNumberUnchanged()
-        && verificationZohoFieldsUnchanged();
+        && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion();
 
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
@@ -453,7 +490,8 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) in ['pending_rc', 'submitted']
         && verificationApplicationNumberUnchanged()
         && (!rvSubmitRequiresZohoCustomer(request.resource.data) || rcHasZohoCustomerId(resource.data.rcId))
-        && verificationZohoFieldsUnchanged();
+        && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion();
 
       // RC emaapengine — certify / fail / void own submitted jobs (same pipeline as VPS worker).
       allow update: if isRCAdmin()
@@ -540,7 +578,7 @@ service cloud.firestore {
     }
 
     // ── app settings (global toggles) ─────────────────────────────
-    // Super Admin writes yesoneWebhookUrl, yesoneLastPushLog, yesonePushProgress.
+    // Super Admin writes yesoneWebhookUrl, yesoneInboundToken, yesoneLastPushLog.
     // Cloud Functions also merge those fields via Admin SDK (bypasses these rules).
     match /appSettings/{docId} {
       allow read: if isAuthenticated();
@@ -688,6 +726,19 @@ service cloud.firestore {
       allow read: if isSuperAdmin()
         || (isRCAdmin() && resource.data.rcId == request.auth.uid)
         || (isOperationalVct() && resource.data.rcId == vctRcId());
+      allow write: if false;
+    }
+
+    // Yesone inbound — serial allotments + OV quota writes via Admin SDK only.
+    match /serialAllotments/{serialId} {
+      allow read: if isSuperAdmin();
+      allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
+      allow read: if isOperationalFieldStaff() && resource.data.rcId == vctRcId();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /yesoneInboundEvents/{eventId} {
+      allow read: if isSuperAdmin();
       allow write: if false;
     }
   }

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">YES LAB</string>
+    <string name="title_activity_main">YES LAB</string>
+    <string name="package_name">in.yesgatc.app</string>
+    <string name="custom_url_scheme">in.yesgatc.app</string>
+</resources>

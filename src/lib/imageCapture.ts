@@ -1,8 +1,11 @@
+import { isNativeApp } from './nativeApp';
+
 export type ImageCaptureFacing = 'user' | 'environment';
 
-/** Installed PWA or iOS home-screen web app. */
+/** Installed PWA, iOS home-screen web app, or native Capacitor shell. */
 export function isPwaStandalone(): boolean {
   if (typeof window === 'undefined') return false;
+  if (isNativeApp()) return true;
   return (
     window.matchMedia('(display-mode: standalone)').matches
     || window.matchMedia('(display-mode: fullscreen)').matches

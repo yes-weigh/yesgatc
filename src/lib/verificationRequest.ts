@@ -7,6 +7,8 @@ import type {
   VerificationRequestStatus,
   WorkflowMode,
 } from '../types';
+import { capacityFieldsFromProductSpec } from './productSpecifications';
+import { verificationClientVersionFields } from './verificationAppVersion';
 
 export const VERIFICATION_REQUEST_STATUSES: VerificationRequestStatus[] = [
   'draft',
@@ -179,11 +181,14 @@ export function buildVerifierRcReviewPatch(now = new Date().toISOString()): {
   status: VerificationRequestStatus;
   pendingRcAt: string;
   updatedAt: string;
+  clientAppVersion: string;
+  clientAppVersionCode: number;
 } {
   return {
     status: 'pending_rc',
     pendingRcAt: now,
     updatedAt: now,
+    ...verificationClientVersionFields(),
   };
 }
 
@@ -194,11 +199,14 @@ export function buildRcApproveVerifierPatch(
   rcApprovedAt: string;
   rcApprovedByUid: string;
   updatedAt: string;
+  clientAppVersion: string;
+  clientAppVersionCode: number;
 } {
   return {
     rcApprovedAt: now,
     rcApprovedByUid: rcUid,
     updatedAt: now,
+    ...verificationClientVersionFields(),
   };
 }
 
@@ -505,6 +513,7 @@ export function verificationVctLabel(
 
 export function productSnapshotFromProduct(
   product: Product | null | undefined,
+  specificationId?: string | null,
 ): Pick<
   SiteCalibration,
   | 'maximumCapacity'
@@ -515,10 +524,11 @@ export function productSnapshotFromProduct(
   | 'accuracyClass'
 > {
   if (!product) return {};
+  const capacity = capacityFieldsFromProductSpec(product, specificationId);
   return {
-    maximumCapacity: product.maximumCapacity,
-    verificationScaleInterval: product.verificationScaleInterval,
-    unitOfMeasurement: product.unitOfMeasurement,
+    maximumCapacity: capacity.maximumCapacity,
+    verificationScaleInterval: capacity.verificationScaleInterval,
+    unitOfMeasurement: capacity.unitOfMeasurement,
     ...(product.manufacturerBrandSeries?.trim()
       ? { manufacturerBrandSeries: product.manufacturerBrandSeries.trim() }
       : {}),
@@ -686,11 +696,14 @@ export function buildVerificationSubmitPatch(now = new Date().toISOString()): {
   status: VerificationRequestStatus;
   submittedAt: string;
   updatedAt: string;
+  clientAppVersion: string;
+  clientAppVersionCode: number;
 } {
   return {
     status: 'submitted',
     submittedAt: now,
     updatedAt: now,
+    ...verificationClientVersionFields(),
   };
 }
 

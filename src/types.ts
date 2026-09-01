@@ -18,6 +18,16 @@ export interface User {
   phone?: string;       // contact / business (not auth)
 }
 
+export interface ProductSpecification {
+  id: string;
+  maximumCapacity: number;
+  minimumCapacity: number;
+  verificationScaleInterval: number;
+  actualScaleInterval: number;
+  noOfVerificationIntervals: number;
+  maximumPermissibleError: number;
+}
+
 export interface Product {
   id: string; // The firestore ID
   modelid: string; // Unique Model ID
@@ -33,6 +43,12 @@ export interface Product {
   actualScaleInterval: number;
   noOfVerificationIntervals: number;
   maximumPermissibleError: number;
+  /** Extra capacity specs beyond the primary (top-level) row. Primary is always index 0 / top-level fields. */
+  specifications?: ProductSpecification[];
+  /** false = duplicate/obsolete — hidden from OV/RV product pickers. Default true when omitted. */
+  active?: boolean;
+  /** Catalogue display order — lower first. Super admin drag-reorder. */
+  sortOrder?: number;
   supplyVoltage: string;
   modelApprovalNo: string;
   modelApprovalDocUrl?: string;
@@ -256,6 +272,16 @@ export interface FirestoreUserDoc {
   feesStructure?: RcFeesStructure;
   /** Super Admin only — 3-letter code used in certificate remarks (e.g. Original verification by ABC). */
   rcCode?: string;
+  /** Yesone inbound — OV certificates allotted for this RC. */
+  ovQuota?: number;
+  ovQuotaUsed?: number;
+  ovQuotaPeriod?: string;
+  ovQuotaUpdatedAt?: string;
+  ovQuotaSource?: string;
+  /** Yesone inbound — serials allotted to this RC. */
+  yesoneAllottedSerials?: string[];
+  /** Super Admin voided serials — excluded from remaining qty. */
+  yesoneVoidedSerials?: string[];
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
   /** Super Admin only — Zoho Books labour expense account ID (chart of accounts). */
@@ -280,6 +306,11 @@ export interface FirestoreUserDoc {
   pdfSignerSignPath?: string;
   pdfSignerSignName?: string;
   pdfSignerSignContentType?: string;
+  /** PDF signer stamp size (1 = default). */
+  pdfSignerSignScale?: number;
+  /** PDF signer stamp position on the certificate field, percent 0–100. */
+  pdfSignerSignX?: number;
+  pdfSignerSignY?: number;
   /** Square RC logo / display picture. */
   logoUrl?: string;
   logoPath?: string;
@@ -409,6 +440,10 @@ export type StoredVerificationGstBill = {
 export interface SiteCalibration {
   id: string;
   rcId: string;
+  /** App display version that created/last updated this record (e.g. V6.40). */
+  clientAppVersion?: string;
+  /** Numeric app code for min-version gates (V6.40 → 640). */
+  clientAppVersionCode?: number;
   verificationType: JobType;
   customerId: string;
   customerName: string;
@@ -416,6 +451,8 @@ export interface SiteCalibration {
   deviceId?: string;
   productId: string;
   productName: string;
+  /** Selected product specification when the product has multiple capacity rows. */
+  productSpecificationId?: string;
   serialNumber: string;
   /** Product snapshot for table display and certificate server. */
   maximumCapacity?: number;

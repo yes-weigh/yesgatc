@@ -572,7 +572,7 @@ export const RCList: React.FC = () => {
       await assertAadharAvailable(cleanAadhar);
       const cred = await createAuthUserForAadhar(cleanAadhar, formValues.password);
       const uid = cred.user.uid;
-      createdAuthUid = uid;
+      createdAuthUid = cred.created ? uid : undefined;
 
       let certMeta: ProductFileMeta | null = null;
       let panMeta: ProductFileMeta | null = null;
@@ -691,6 +691,9 @@ export const RCList: React.FC = () => {
         delete updates.pdfSignerSignPath;
         delete updates.pdfSignerSignName;
         delete updates.pdfSignerSignContentType;
+        delete updates.pdfSignerSignScale;
+        delete updates.pdfSignerSignX;
+        delete updates.pdfSignerSignY;
       }
 
       if (certRemoved && !cert) {

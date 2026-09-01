@@ -1,38 +1,31 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, type FC } from 'react';
 import { createPortal } from 'react-dom';
 import { Share2, X } from 'lucide-react';
+import { useCertificatePdfPreview } from '../hooks/useCertificatePdfPreview';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
-import { renderCertificatePdfPages } from '../lib/certificatePdfFile';
 import {
   publicCertificateFileName,
   sharePublicCertificatePdf,
   type PublicCertificateHit,
 } from '../lib/publicCertificateLookup';
-import { withPdfViewerChromeHidden } from '../lib/verificationWhatsAppShare';
 
 type PublicCertificatePdfPopupProps = {
   hit: PublicCertificateHit | null;
   onClose: () => void;
 };
 
-async function fetchPublicPdfFile(url: string, fileName: string): Promise<File> {
-  const response = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'no-store' });
-  if (!response.ok) throw new Error('Could not load PDF.');
-  const blob = await response.blob();
-  return new File([blob], fileName, { type: 'application/pdf' });
-}
-
-export const PublicCertificatePdfPopup: React.FC<PublicCertificatePdfPopupProps> = ({
+export const PublicCertificatePdfPopup: FC<PublicCertificatePdfPopupProps> = ({
   hit,
   onClose,
 }) => {
   const open = Boolean(hit?.pdfUrl);
-  const [pages, setPages] = useState<string[]>([]);
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
+  const preview = useCertificatePdfPreview({
+    enabled: open,
+    url: hit?.pdfUrl,
+    fileName: hit ? publicCertificateFileName(hit) : 'certificate.pdf',
+  });
   const [sharing, setSharing] = useState(false);
-  const [useFrame, setUseFrame] = useState(false);
-  const [error, setError] = useState('');
+  const [shareError, setShareError] = useState('');
 
   useHistoryOverlay(open, onClose);
 
@@ -46,42 +39,6 @@ export const PublicCertificatePdfPopup: React.FC<PublicCertificatePdfPopupProps>
   }, [open, onClose]);
 
   useEffect(() => {
-    if (!open || !hit?.pdfUrl) {
-      setPages([]);
-      setFile(null);
-      setError('');
-      setUseFrame(false);
-      return;
-    }
-
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    setPages([]);
-    setFile(null);
-    setUseFrame(false);
-
-    void (async () => {
-      try {
-        const pdfFile = await fetchPublicPdfFile(hit.pdfUrl!, publicCertificateFileName(hit));
-        const images = await renderCertificatePdfPages(pdfFile);
-        if (cancelled) return;
-        setFile(pdfFile);
-        setPages(images);
-      } catch {
-        if (cancelled) return;
-        setUseFrame(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, hit]);
-
-  useEffect(() => {
     if (!open) return;
     document.body.classList.add('pcd-pdf-open');
     return () => document.body.classList.remove('pcd-pdf-open');
@@ -90,16 +47,17 @@ export const PublicCertificatePdfPopup: React.FC<PublicCertificatePdfPopupProps>
   if (!open || !hit?.pdfUrl || typeof document === 'undefined') return null;
 
   const title = hit.certificateNumber?.trim() || 'Certificate';
+  const error = shareError || preview.error;
 
   const handleShare = async () => {
-    if (sharing || !file) return;
+    if (sharing || !preview.file) return;
     setSharing(true);
-    setError('');
+    setShareError('');
     try {
-      await sharePublicCertificatePdf(file, title);
+      await sharePublicCertificatePdf(preview.file, title);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
-      setError(err instanceof Error ? err.message : 'Share failed.');
+      setShareError(err instanceof Error ? err.message : 'Share failed.');
     } finally {
       setSharing(false);
     }
@@ -120,28 +78,30 @@ export const PublicCertificatePdfPopup: React.FC<PublicCertificatePdfPopupProps>
           type="button"
           className="pcd-pdf-box pcd-pdf-box--share"
           onClick={() => void handleShare()}
-          disabled={sharing || !file}
+          disabled={sharing || !preview.file}
           aria-label="Share PDF"
         >
           <Share2 size={18} aria-hidden />
         </button>
       </div>
       <div className="pcd-pdf-body">
-        {loading ? <p className="pcd-pdf-status mb-0">Loading certificate…</p> : null}
+        {preview.loading ? <p className="pcd-pdf-status mb-0">Loading certificate…</p> : null}
         {error ? <p className="pcd-pdf-status pcd-pdf-status--err mb-0">{error}</p> : null}
-        {useFrame ? (
+        {preview.useFrame && preview.frameSrc ? (
           <iframe
             className="pcd-pdf-frame"
-            src={withPdfViewerChromeHidden(hit.pdfUrl)}
+            src={preview.frameSrc}
             title={title}
           />
         ) : null}
-        {pages.map((src, index) => (
+        {preview.pages.map((src, index) => (
           <img
             key={`${title}-${index}`}
             src={src}
             alt={`Certificate page ${index + 1}`}
             className="pcd-pdf-page"
+            decoding="async"
+            fetchPriority={index === 0 ? 'high' : 'low'}
           />
         ))}
       </div>

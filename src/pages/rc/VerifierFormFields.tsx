@@ -62,7 +62,7 @@ export const VerifierFormFields: React.FC<VerifierFormFieldsProps> = ({
       />
     </div>
     <div className="form-group">
-      <label htmlFor="verifier-aadhar">Login Aadhar</label>
+      <label htmlFor="verifier-aadhar">Login Aadhar (not phone)</label>
       <input
         id="verifier-aadhar"
         className="input-field"

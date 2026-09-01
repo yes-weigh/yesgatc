@@ -241,6 +241,7 @@ export const ProductDetailsSpecs: React.FC<{
               url={product.productImageUrl}
               path={product.productImagePath}
               alt=""
+              persistentCache
             />
           ) : (
             <Package size={18} className="text-muted" aria-hidden />
