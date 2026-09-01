@@ -3,6 +3,7 @@ import {
   type ContractorFeeScheduleEntry,
 } from './contractorFeeSettings';
 import { formatRcFeeAmount, productMaximumCapacityKg } from './rcProfileFields';
+import { capacityFieldsFromRecordOrProduct } from './productSpecifications';
 import type { Product, SiteCalibration } from '../types';
 
 /** Admin collected / Interweighing / contractor split (INR) by maximum capacity. */
@@ -30,17 +31,24 @@ export type StampRevenueShare = {
 };
 
 export function recordCapacityKg(
-  record: Pick<SiteCalibration, 'maximumCapacity' | 'unitOfMeasurement' | 'productId'>,
+  record: Pick<
+    SiteCalibration,
+    | 'maximumCapacity'
+    | 'minimumCapacity'
+    | 'verificationScaleInterval'
+    | 'actualScaleInterval'
+    | 'noOfVerificationIntervals'
+    | 'maximumPermissibleError'
+    | 'unitOfMeasurement'
+    | 'productId'
+    | 'productSpecificationId'
+  >,
   productsById: Map<string, Product>,
 ): number | null {
-  if (record.maximumCapacity != null && Number.isFinite(record.maximumCapacity)) {
-    return productMaximumCapacityKg({
-      maximumCapacity: record.maximumCapacity,
-      unitOfMeasurement: record.unitOfMeasurement || 'kg',
-    });
-  }
-  const product = productsById.get(record.productId?.trim() || '');
-  return productMaximumCapacityKg(product ?? null);
+  const product = productsById.get(record.productId?.trim() || '') ?? null;
+  const capacity = capacityFieldsFromRecordOrProduct(record, product);
+  if (!capacity.maximumCapacity) return null;
+  return productMaximumCapacityKg(capacity);
 }
 
 function adminShare(tier: StampCapacityTier): StampRevenueShare {
@@ -54,7 +62,18 @@ function adminShare(tier: StampCapacityTier): StampRevenueShare {
 }
 
 export function stampRevenueShare(
-  record: Pick<SiteCalibration, 'maximumCapacity' | 'unitOfMeasurement' | 'productId'>,
+  record: Pick<
+    SiteCalibration,
+    | 'maximumCapacity'
+    | 'minimumCapacity'
+    | 'verificationScaleInterval'
+    | 'actualScaleInterval'
+    | 'noOfVerificationIntervals'
+    | 'maximumPermissibleError'
+    | 'unitOfMeasurement'
+    | 'productId'
+    | 'productSpecificationId'
+  >,
   productsById: Map<string, Product>,
 ): StampRevenueShare | null {
   const kg = recordCapacityKg(record, productsById);
@@ -64,7 +83,18 @@ export function stampRevenueShare(
 
 /** RC pays contractor from dated Setting schedule. Collected stays admin stamp rate. */
 export function stampRcRevenueShare(
-  record: Pick<SiteCalibration, 'maximumCapacity' | 'unitOfMeasurement' | 'productId'>,
+  record: Pick<
+    SiteCalibration,
+    | 'maximumCapacity'
+    | 'minimumCapacity'
+    | 'verificationScaleInterval'
+    | 'actualScaleInterval'
+    | 'noOfVerificationIntervals'
+    | 'maximumPermissibleError'
+    | 'unitOfMeasurement'
+    | 'productId'
+    | 'productSpecificationId'
+  >,
   productsById: Map<string, Product>,
   dateKey: string,
   schedules: ContractorFeeScheduleEntry[],

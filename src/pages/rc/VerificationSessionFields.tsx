@@ -57,6 +57,7 @@ import { VerificationAiStatusPanel } from '../../components/VerificationAiStatus
 import { VerificationDeclarationPanel } from '../../components/VerificationDeclarationPanel';
 import { VerificationResultSummary } from '../../components/VerificationResultSummary';
 import { VerificationFeesTotalSummary } from '../../components/VerificationFeesTotalSummary';
+import { productWithDeviceSpecification } from '../../lib/productSpecifications';
 import { buildVerificationAiStatusItems } from '../../lib/verificationAiStatus';
 import {
   buildDefaultVerificationTestSummary,
@@ -516,6 +517,29 @@ export const VerificationSessionFields = forwardRef<
     }
     return `${included.length} instruments`;
   }, [values.devices, products]);
+
+  const submitReviewSpecs = useMemo(
+    () =>
+      values.devices.flatMap(row => {
+        if (!row.included) return [];
+        const product = products.find(entry => entry.id === row.productId);
+        if (!product) return [];
+        const mpe = Number(row.maximumPermissibleError);
+        return [
+          {
+            id: row.localId,
+            title: row.productName.trim() || product.name || 'Instrument',
+            serialNumber: row.serialNumber.trim() || undefined,
+            product: productWithDeviceSpecification(
+              product,
+              row.productSpecificationId,
+              Number.isFinite(mpe) ? mpe : null,
+            ),
+          },
+        ];
+      }),
+    [values.devices, products],
+  );
 
   useImperativeHandle(
     ref,
@@ -1362,6 +1386,7 @@ export const VerificationSessionFields = forwardRef<
                 dateTime={submitSummaryDateTime}
                 remarks={DEFAULT_VERIFICATION_SUMMARY_REMARKS}
                 infoMessage={DEFAULT_VERIFICATION_SUMMARY_INFO}
+                specs={submitReviewSpecs}
               />
               <VerificationFeesTotalSummary
                 devices={values.devices}

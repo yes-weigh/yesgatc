@@ -3,6 +3,7 @@ import { IndianRupee } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { DEFAULT_RC_FEES_STRUCTURE } from '../lib/rcProfileFields';
 import { computeRvCustomerFeeLine, sumRvCustomerFeeLines } from '../lib/rvFeeBreakdown';
+import { productWithDeviceSpecification } from '../lib/productSpecifications';
 import type { VerificationDeviceRowValues } from '../lib/siteCalibrationProfileFields';
 import { VerificationFeeBreakdown } from './VerificationFeeBreakdown';
 import type { JobType, RcFeesStructure, VerificationLocation } from '../types';
@@ -40,8 +41,11 @@ export const VerificationFeesTotalSummary: React.FC<VerificationFeesTotalSummary
       if (!isRv) return [];
       return includedDevices.flatMap(row => {
         const product = products.find(entry => entry.id === row.productId) ?? null;
+        const feeProduct = product
+          ? productWithDeviceSpecification(product, row.productSpecificationId)
+          : null;
         const line = computeRvCustomerFeeLine({
-          product,
+          product: feeProduct,
           fees,
           additionalFee: row.additionalFee,
           discountFee: row.discountFee,

@@ -34,6 +34,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import { VerificationFeesTotalSummary } from '../../components/VerificationFeesTotalSummary';
+import { productWithDeviceSpecification } from '../../lib/productSpecifications';
 import type { JobType, RcFeesStructure, VerificationLocation } from '../../types';
 import type { VerificationDeviceRowValues } from '../../lib/siteCalibrationProfileFields';
 
@@ -115,6 +116,32 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
     if (device.productName.trim()) return device.productName.trim();
     return 'Weighing Scale';
   }, [products, device.productId, device.productName]);
+
+  const reviewSpec = useMemo(() => {
+    const product = products.find(entry => entry.id === device.productId);
+    if (!product) return [];
+    const mpe = Number(device.maximumPermissibleError);
+    return [
+      {
+        id: device.localId,
+        title: device.productName.trim() || product.name || 'Instrument',
+        serialNumber: device.serialNumber.trim() || undefined,
+        product: productWithDeviceSpecification(
+          product,
+          device.productSpecificationId,
+          Number.isFinite(mpe) ? mpe : null,
+        ),
+      },
+    ];
+  }, [
+    products,
+    device.localId,
+    device.productId,
+    device.productName,
+    device.serialNumber,
+    device.productSpecificationId,
+    device.maximumPermissibleError,
+  ]);
 
   const testSummary = useMemo(() => buildDefaultVerificationTestSummary('PASS'), []);
   const summaryDateTime = useMemo(() => formatVerificationSummaryDateTime(), []);
@@ -268,6 +295,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
             dateTime={summaryDateTime}
             remarks={DEFAULT_VERIFICATION_SUMMARY_REMARKS}
             infoMessage={DEFAULT_VERIFICATION_SUMMARY_INFO}
+            specs={reviewSpec}
           />
           <VerificationFeesTotalSummary
             devices={devices}

@@ -9,7 +9,7 @@ import { useAppContext } from '../../context/AppContext';
 import { DEFAULT_RC_FEES_STRUCTURE } from '../../lib/rcProfileFields';
 import { computeRvCustomerFeeLine } from '../../lib/rvFeeBreakdown';
 import { VerificationFeeBreakdown } from '../../components/VerificationFeeBreakdown';
-import { capacityFieldsFromProductSpec } from '../../lib/productSpecifications';
+import { capacityFieldsFromProductSpec, productWithDeviceSpecification } from '../../lib/productSpecifications';
 import {
   mpeStringFromProductSpec,
   type DeviceRvDocumentsState,
@@ -276,6 +276,15 @@ function feeProductFromRow(
     maximumCapacity: capacity.maximumCapacity,
     unitOfMeasurement: capacity.unitOfMeasurement,
   };
+}
+
+function specProductFromRow(product: Product, row: VerificationDeviceRowValues): Product {
+  const mpe = Number(row.maximumPermissibleError);
+  return productWithDeviceSpecification(
+    product,
+    row.productSpecificationId,
+    Number.isFinite(mpe) ? mpe : null,
+  );
 }
 
 export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> = ({
@@ -635,7 +644,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       />
                       {product && (
                         <ProductDetailsSpecs
-                          product={product}
+                          product={specProductFromRow(product, row)}
                           dense={compact}
                           embedded={compact}
                           className="verification-device-product-details"
@@ -1050,7 +1059,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
 
                 {product && !ovCompactDetails && (
                   <ProductDetailsSpecs
-                    product={product}
+                    product={specProductFromRow(product, row)}
                     dense={compact}
                     embedded={compact}
                     className="verification-device-product-details"

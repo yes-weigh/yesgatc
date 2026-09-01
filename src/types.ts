@@ -456,7 +456,10 @@ export interface SiteCalibration {
   serialNumber: string;
   /** Product snapshot for table display and certificate server. */
   maximumCapacity?: number;
+  minimumCapacity?: number;
   verificationScaleInterval?: number;
+  actualScaleInterval?: number;
+  noOfVerificationIntervals?: number;
   unitOfMeasurement?: 'kg' | 'g';
   manufacturerBrandSeries?: string;
   modelApprovalNo?: string;

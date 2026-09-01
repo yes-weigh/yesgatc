@@ -141,4 +141,41 @@ internal static class FirestoreFieldReader
 
         return null;
     }
+
+    public static IReadOnlyList<Dictionary<string, JsonElement>> ReadArrayOfMaps(
+        IReadOnlyDictionary<string, JsonElement>? fields,
+        string key)
+    {
+        var list = new List<Dictionary<string, JsonElement>>();
+        if (fields is null
+            || !fields.TryGetValue(key, out var value)
+            || value.ValueKind != JsonValueKind.Object)
+        {
+            return list;
+        }
+
+        if (!value.TryGetProperty("arrayValue", out var arrayValue)
+            || arrayValue.ValueKind != JsonValueKind.Object
+            || !arrayValue.TryGetProperty("values", out var values)
+            || values.ValueKind != JsonValueKind.Array)
+        {
+            return list;
+        }
+
+        foreach (var item in values.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object
+                || !item.TryGetProperty("mapValue", out var mapValue)
+                || mapValue.ValueKind != JsonValueKind.Object
+                || !mapValue.TryGetProperty("fields", out var innerFields)
+                || innerFields.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            list.Add(innerFields.EnumerateObject().ToDictionary(p => p.Name, p => p.Value));
+        }
+
+        return list;
+    }
 }

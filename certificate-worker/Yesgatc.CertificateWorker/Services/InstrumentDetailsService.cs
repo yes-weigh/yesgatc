@@ -48,7 +48,16 @@ public sealed class InstrumentDetailsService
             ? FirestoreFieldReader.ReadString(productFields, "modelApprovalNo")
             : string.Empty;
 
+        var metrology = ProductSpecificationResolver.Resolve(calibrationFields, productFields);
+        var maxCapacity = metrology.MaximumCapacity;
+        var minCapacity = metrology.MinimumCapacity;
+        var verificationScaleInterval = metrology.VerificationScaleInterval;
+        var actualScaleInterval = metrology.ActualScaleInterval;
+        var noOfVerificationIntervals = metrology.NoOfVerificationIntervals;
+        var maximumPermissibleError = metrology.MaximumPermissibleError;
+
         var unitOfMeasurement = FirstNonEmpty(
+            metrology.UnitOfMeasurement,
             productFields is not null
                 ? FirestoreFieldReader.ReadString(productFields, "unitOfMeasurement")
                 : string.Empty,
@@ -102,47 +111,6 @@ public sealed class InstrumentDetailsService
         var verificationSealImageContentType = FirstNonEmpty(
             FirestoreFieldReader.ReadString(calibrationFields, "verificationSealImageContentType"),
             "image/jpeg");
-
-        var maxCapacity = FirstDouble(
-            FirestoreFieldReader.ReadDouble(calibrationFields, "maximumCapacity"),
-            productFields is not null
-                ? FirestoreFieldReader.ReadDouble(productFields, "maximumCapacity")
-                : null);
-
-        var minCapacity = FirstDouble(
-            productFields is not null
-                ? FirestoreFieldReader.ReadDouble(productFields, "minimumCapacity")
-                : null);
-
-        var verificationScaleInterval = FirstDouble(
-            FirestoreFieldReader.ReadDouble(calibrationFields, "verificationScaleInterval"),
-            productFields is not null
-                ? FirestoreFieldReader.ReadDouble(productFields, "verificationScaleInterval")
-                : null);
-
-        var actualScaleInterval = FirstDouble(
-            productFields is not null
-                ? FirestoreFieldReader.ReadDouble(productFields, "actualScaleInterval")
-                : null,
-            verificationScaleInterval);
-
-        var noOfVerificationIntervals = FirstDouble(
-            productFields is not null
-                ? FirestoreFieldReader.ReadDouble(productFields, "noOfVerificationIntervals")
-                : null);
-
-        if (noOfVerificationIntervals is null
-            && maxCapacity is > 0
-            && verificationScaleInterval is > 0)
-        {
-            noOfVerificationIntervals = maxCapacity.Value * 1000 / verificationScaleInterval.Value;
-        }
-
-        var maximumPermissibleError = FirstDouble(
-            FirestoreFieldReader.ReadDouble(calibrationFields, "maximumPermissibleError"),
-            productFields is not null
-                ? FirestoreFieldReader.ReadDouble(productFields, "maximumPermissibleError")
-                : null);
 
         var supplyVoltage = FirstNonEmpty(
             productFields is not null
@@ -216,7 +184,8 @@ public sealed class InstrumentDetailsService
             fees,
             verificationType,
             verificationLocation,
-            verificationSubject);
+            verificationSubject,
+            metrology);
         var isOv = string.Equals(verificationType, "OV", StringComparison.OrdinalIgnoreCase);
         var isRv = string.Equals(verificationType, "RV", StringComparison.OrdinalIgnoreCase);
         var zohoInvoiceNumber = FirstNonEmpty(
@@ -396,19 +365,6 @@ public sealed class InstrumentDetailsService
             .Replace("°c", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Replace("%", string.Empty, StringComparison.OrdinalIgnoreCase)
             .Trim();
-    }
-
-    private static double? FirstDouble(params double?[] values)
-    {
-        foreach (var value in values)
-        {
-            if (value is > 0)
-            {
-                return value;
-            }
-        }
-
-        return values.FirstOrDefault(v => v is not null);
     }
 
     private static string FirstNonEmpty(params string?[] values)

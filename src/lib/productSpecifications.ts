@@ -1,4 +1,4 @@
-import type { Product, ProductSpecification } from '../types';
+import type { Product, ProductSpecification, SiteCalibration } from '../types';
 import { computeProductDerived } from './productCalculations';
 
 function formatRounded(value: number): string {
@@ -183,3 +183,106 @@ export function capacityFieldsFromProductSpec(
     unitOfMeasurement: product.unitOfMeasurement || 'kg',
   };
 }
+
+/** Overlay selected spec (and optional MPE) onto a product for display / fees. */
+export function productWithDeviceSpecification(
+  product: Product,
+  specificationId?: string | null,
+  mpeOverride?: number | null,
+): Product {
+  const capacity = capacityFieldsFromProductSpec(product, specificationId);
+  const mpe =
+    mpeOverride != null && Number.isFinite(mpeOverride) && mpeOverride > 0
+      ? mpeOverride
+      : capacity.maximumPermissibleError;
+  return {
+    ...product,
+    ...capacity,
+    maximumPermissibleError: mpe,
+  };
+}
+
+function firstPositive(...values: Array<number | null | undefined>): number | undefined {
+  for (const value of values) {
+    if (value != null && Number.isFinite(value) && value > 0) return value;
+  }
+  return undefined;
+}
+
+/** Submitted snapshot first, then selected spec, then product primary. Derive Min/d/n from Max+e. */
+export function capacityFieldsFromRecordOrProduct(
+  record: Pick<
+    SiteCalibration,
+    | 'maximumCapacity'
+    | 'minimumCapacity'
+    | 'verificationScaleInterval'
+    | 'actualScaleInterval'
+    | 'noOfVerificationIntervals'
+    | 'maximumPermissibleError'
+    | 'unitOfMeasurement'
+    | 'productSpecificationId'
+  >,
+  product?: Product | null,
+): Pick<
+  Product,
+  | 'maximumCapacity'
+  | 'minimumCapacity'
+  | 'verificationScaleInterval'
+  | 'actualScaleInterval'
+  | 'noOfVerificationIntervals'
+  | 'maximumPermissibleError'
+  | 'unitOfMeasurement'
+> {
+  const specId = record.productSpecificationId?.trim();
+  const specMatch = product && specId
+    ? getProductSpecifications(product).find(spec => spec.id === specId)
+    : undefined;
+  const fromSpec = specMatch && product ? capacityFieldsFromProductSpec(product, specId) : null;
+  const fromPrimary = product && !specId
+    ? {
+        maximumCapacity: product.maximumCapacity,
+        minimumCapacity: product.minimumCapacity,
+        verificationScaleInterval: product.verificationScaleInterval,
+        actualScaleInterval: product.actualScaleInterval,
+        noOfVerificationIntervals: product.noOfVerificationIntervals,
+        maximumPermissibleError: product.maximumPermissibleError,
+        unitOfMeasurement: product.unitOfMeasurement || 'kg',
+      }
+    : null;
+  const max = firstPositive(record.maximumCapacity, fromSpec?.maximumCapacity, fromPrimary?.maximumCapacity);
+  const e = firstPositive(
+    record.verificationScaleInterval,
+    fromSpec?.verificationScaleInterval,
+    fromPrimary?.verificationScaleInterval,
+  );
+  const derived = max != null && e != null ? computeProductDerived(max, e) : null;
+  return {
+    maximumCapacity: max ?? 0,
+    minimumCapacity:
+      firstPositive(
+        record.minimumCapacity,
+        fromSpec?.minimumCapacity,
+        derived?.minimumCapacity,
+        fromPrimary?.minimumCapacity,
+      ) ?? 0,
+    verificationScaleInterval: e ?? 0,
+    actualScaleInterval:
+      firstPositive(
+        record.actualScaleInterval,
+        fromSpec?.actualScaleInterval,
+        derived?.actualScaleInterval,
+        fromPrimary?.actualScaleInterval,
+      ) ?? 0,
+    noOfVerificationIntervals:
+      firstPositive(
+        record.noOfVerificationIntervals,
+        fromSpec?.noOfVerificationIntervals,
+        derived?.noOfVerificationIntervals,
+        fromPrimary?.noOfVerificationIntervals,
+      ) ?? 0,
+    maximumPermissibleError:
+      firstPositive(record.maximumPermissibleError, fromSpec?.maximumPermissibleError, fromPrimary?.maximumPermissibleError) ?? 0,
+    unitOfMeasurement: record.unitOfMeasurement || fromSpec?.unitOfMeasurement || fromPrimary?.unitOfMeasurement || 'kg',
+  };
+}
+

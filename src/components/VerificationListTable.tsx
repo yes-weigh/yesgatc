@@ -41,8 +41,8 @@ import { canMoveFailedSubmitToDraft } from '../lib/verificationPipelineRepair';
 import {
   formatProductGramValue,
   formatProductMaximumCapacity,
-  formatProductMinimumCapacity,
 } from '../lib/productCalculations';
+import { capacityFieldsFromRecordOrProduct } from '../lib/productSpecifications';
 import {
   formatVerificationListTime,
 } from '../lib/verificationListFormat';
@@ -132,18 +132,13 @@ function verificationListSpecFields(
   record: SiteCalibration,
   product: Product | undefined,
 ): { max: string; min: string; klass: string } {
+  const capacity = capacityFieldsFromRecordOrProduct(record, product ?? null);
   const max = formatProductMaximumCapacity({
-    maximumCapacity: record.maximumCapacity ?? product?.maximumCapacity ?? 0,
-    unitOfMeasurement: record.unitOfMeasurement ?? product?.unitOfMeasurement ?? 'kg',
+    maximumCapacity: capacity.maximumCapacity,
+    unitOfMeasurement: capacity.unitOfMeasurement,
   });
-  const min = product
-    ? formatProductMinimumCapacity(product)
-    : formatProductGramValue(
-        record.verificationScaleInterval != null
-          ? record.verificationScaleInterval * 20
-          : undefined,
-      );
-  const klass = product?.accuracyClass?.trim() || '—';
+  const min = formatProductGramValue(capacity.minimumCapacity || undefined);
+  const klass = product?.accuracyClass?.trim() || record.accuracyClass?.trim() || '—';
   return { max, min, klass };
 }
 

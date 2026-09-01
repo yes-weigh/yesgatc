@@ -152,16 +152,33 @@ export function formatProductBriefSummary(product: Product | null | undefined): 
 }
 
 export function formatVerificationInstrumentFields(
-  record: Pick<SiteCalibration, 'maximumCapacity' | 'unitOfMeasurement' | 'verificationScaleInterval'>,
+  record: Pick<
+    SiteCalibration,
+    | 'maximumCapacity'
+    | 'minimumCapacity'
+    | 'unitOfMeasurement'
+    | 'verificationScaleInterval'
+    | 'productSpecificationId'
+  >,
   product?: Product | null,
 ): { max: string; min: string; e: string } {
+  const specId = record.productSpecificationId?.trim();
+  const spec = specId && product?.specifications?.length
+    ? product.specifications.find(row => row.id === specId)
+    : undefined;
+  const maxValue = record.maximumCapacity ?? spec?.maximumCapacity ?? product?.maximumCapacity ?? 0;
+  const eValue =
+    record.verificationScaleInterval
+    ?? spec?.verificationScaleInterval
+    ?? product?.verificationScaleInterval;
+  const minValue =
+    record.minimumCapacity
+    ?? spec?.minimumCapacity
+    ?? (eValue != null && Number.isFinite(eValue) ? eValue * 20 : undefined)
+    ?? product?.minimumCapacity;
   const max = formatProductMaximumCapacity({
-    maximumCapacity: record.maximumCapacity ?? product?.maximumCapacity ?? 0,
+    maximumCapacity: maxValue,
     unitOfMeasurement: record.unitOfMeasurement ?? product?.unitOfMeasurement ?? 'kg',
   });
-  const eValue = record.verificationScaleInterval ?? product?.verificationScaleInterval;
-  const min = product
-    ? formatProductMinimumCapacity(product)
-    : formatProductGramValue(eValue != null ? eValue * 20 : undefined);
-  return { max, min, e: formatProductGramValue(eValue) };
+  return { max, min: formatProductGramValue(minValue), e: formatProductGramValue(eValue) };
 }

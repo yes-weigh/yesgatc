@@ -1,5 +1,6 @@
 import { computeProductDerived } from './productCalculations';
 import { maximumCapacityKgFromRecord } from './zohoRvSubmit';
+import { capacityFieldsFromRecordOrProduct } from './productSpecifications';
 import { resolveVerificationParty, resolveVerificationProduct } from './verificationPartyDetails';
 import {
   verificationLocationLabel,
@@ -215,17 +216,18 @@ export function buildVerificationTestReportData(
   const productInfo = resolveVerificationProduct(record, product);
   const party = resolveVerificationParty(record, { customer });
   const accuracyClass = parseAccuracyClass(productInfo.accuracyClass || product?.accuracyClass);
+  const capacity = capacityFieldsFromRecordOrProduct(record, product);
   const maxKg = maximumCapacityKgFromRecord({
-    maximumCapacity: record.maximumCapacity ?? product?.maximumCapacity,
-    unitOfMeasurement: record.unitOfMeasurement ?? product?.unitOfMeasurement,
+    maximumCapacity: capacity.maximumCapacity || undefined,
+    unitOfMeasurement: capacity.unitOfMeasurement,
   });
-  const eGrams = record.verificationScaleInterval ?? product?.verificationScaleInterval ?? null;
+  const eGrams = capacity.verificationScaleInterval > 0 ? capacity.verificationScaleInterval : null;
   const derived =
     maxKg != null && eGrams != null && eGrams > 0
       ? computeProductDerived(maxKg, eGrams)
       : null;
-  const minGrams = product?.minimumCapacity && product.minimumCapacity > 0
-    ? product.minimumCapacity
+  const minGrams = capacity.minimumCapacity > 0
+    ? capacity.minimumCapacity
     : derived?.minimumCapacity ?? (eGrams != null ? eGrams * 20 : null);
   const minKg = minGrams != null ? minGrams / 1000 : null;
 

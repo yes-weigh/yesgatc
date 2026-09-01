@@ -1,6 +1,15 @@
 import React from 'react';
 import { CheckCircle2, ClipboardList, Info, Scale, ShieldCheck } from 'lucide-react';
+import { ProductDetailsSpecs } from './ProductDetailsSpecs';
+import type { Product } from '../types';
 import type { VerificationTestOutcome, VerificationTestSummaryRow } from '../lib/verificationTestSummary';
+
+export type VerificationReviewSpecItem = {
+  id: string;
+  title: string;
+  serialNumber?: string;
+  product: Product;
+};
 
 type VerificationResultSummaryProps = {
   instrumentLabel: string;
@@ -9,6 +18,7 @@ type VerificationResultSummaryProps = {
   dateTime: string;
   remarks: string;
   infoMessage: string;
+  specs?: VerificationReviewSpecItem[];
 };
 
 function ResultBadge({ result }: { result: VerificationTestOutcome }) {
@@ -32,8 +42,10 @@ export const VerificationResultSummary: React.FC<VerificationResultSummaryProps>
   dateTime,
   remarks,
   infoMessage,
+  specs = [],
 }) => {
   const isPass = overallResult === 'PASS';
+  const showSpecHeadings = specs.length > 1;
 
   return (
     <section className="verification-result-summary" aria-labelledby="verification-result-summary-title">
@@ -50,6 +62,30 @@ export const VerificationResultSummary: React.FC<VerificationResultSummaryProps>
           <span className="verification-result-summary-instrument-name">{instrumentLabel}</span>
         </div>
       </div>
+
+      {specs.length > 0 ? (
+        <div className="verification-result-summary-specs" aria-label="Selected specification">
+          {specs.map(item => (
+            <div key={item.id} className="verification-result-summary-spec">
+              {showSpecHeadings || item.serialNumber ? (
+                <p className="verification-result-summary-spec-head mb-0">
+                  {showSpecHeadings ? <span>{item.title}</span> : null}
+                  {item.serialNumber ? (
+                    <span className="verification-result-summary-spec-serial">{item.serialNumber}</span>
+                  ) : null}
+                </p>
+              ) : null}
+              <ProductDetailsSpecs
+                product={item.product}
+                dense
+                embedded
+                metrologyOnly
+                className="verification-result-summary-spec-grid"
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <div className="verification-result-summary-table-wrap">
         <table className="verification-result-summary-table">

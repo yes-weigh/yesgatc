@@ -118,7 +118,7 @@ export const VerificationDetailSpecs: React.FC<VerificationDetailSpecsProps> = (
           <Field label="Product" value={displayText(productInfo.name)} full />
           <Field label="Manufacturer" value={displayText(productInfo.manufacturer)} />
           <Field label="Model approval" value={displayText(productInfo.modelApprovalNo)} mono />
-          <Field label="Cap / e" value={formatVerificationCapAcc(record)} />
+          <Field label="Cap / e" value={formatVerificationCapAcc(record, product)} />
           <Field
             label="Class / MPE"
             value={`${displayText(productInfo.accuracyClass || 'III')} / ${formatProductMpe(record.maximumPermissibleError)}`}

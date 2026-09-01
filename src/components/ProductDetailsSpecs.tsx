@@ -33,43 +33,52 @@ import {
 } from '../lib/productCalculations';
 import type { Product } from '../types';
 
-const ProductDetailsFieldsGrid: React.FC<{ product: Product; dense?: boolean }> = ({
+const ProductDetailsFieldsGrid: React.FC<{
+  product: Product;
+  dense?: boolean;
+  metrologyOnly?: boolean;
+}> = ({
   product,
   dense = false,
+  metrologyOnly = false,
 }) => {
   if (dense) {
     return (
       <div className="details-specs-icon-grid">
-        <ProductSpecIconTile
-          label="Unit"
-          value={formatProductText(product.unitOfMeasurement)}
-          icon={Scale}
-          tone="sky"
-        />
-        <ProductSpecIconTile
-          label="Type"
-          value={formatProductText(product.typeOfInstrument)}
-          icon={Gauge}
-          tone="violet"
-        />
-        <ProductSpecIconTile
-          label="Mfr"
-          value={formatProductText(product.manufacturerBrandSeries)}
-          icon={Factory}
-          tone="amber"
-        />
-        <ProductSpecIconTile
-          label="Class"
-          value={formatProductText(product.accuracyClass)}
-          icon={Award}
-          tone="emerald"
-        />
-        <ProductSpecIconTile
-          label="Voltage"
-          value={formatProductText(product.supplyVoltage)}
-          icon={Zap}
-          tone="yellow"
-        />
+        {!metrologyOnly ? (
+          <>
+            <ProductSpecIconTile
+              label="Unit"
+              value={formatProductText(product.unitOfMeasurement)}
+              icon={Scale}
+              tone="sky"
+            />
+            <ProductSpecIconTile
+              label="Type"
+              value={formatProductText(product.typeOfInstrument)}
+              icon={Gauge}
+              tone="violet"
+            />
+            <ProductSpecIconTile
+              label="Mfr"
+              value={formatProductText(product.manufacturerBrandSeries)}
+              icon={Factory}
+              tone="amber"
+            />
+            <ProductSpecIconTile
+              label="Class"
+              value={formatProductText(product.accuracyClass)}
+              icon={Award}
+              tone="emerald"
+            />
+            <ProductSpecIconTile
+              label="Voltage"
+              value={formatProductText(product.supplyVoltage)}
+              icon={Zap}
+              tone="yellow"
+            />
+          </>
+        ) : null}
         <ProductSpecIconTile
           label="Max cap"
           value={formatProductMaximumCapacity(product)}
@@ -106,34 +115,38 @@ const ProductDetailsFieldsGrid: React.FC<{ product: Product; dense?: boolean }> 
           icon={Target}
           tone="orange"
         />
-        <ProductSpecIconTile
-          label="Approval #"
-          value={formatProductText(product.modelApprovalNo)}
-          icon={BadgeCheck}
-          tone="lime"
-          mono
-        />
-        <ProductSpecIconTile
-          label="Approval doc"
-          spanFull
-          icon={FileText}
-          tone="rose"
-          value={
-            product.modelApprovalDocUrl ? (
-              <a
-                href={product.modelApprovalDocUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="details-specs-doc-link"
-              >
-                <ExternalLink size={12} aria-hidden />
-                View
-              </a>
-            ) : (
-              '—'
-            )
-          }
-        />
+        {!metrologyOnly ? (
+          <>
+            <ProductSpecIconTile
+              label="Approval #"
+              value={formatProductText(product.modelApprovalNo)}
+              icon={BadgeCheck}
+              tone="lime"
+              mono
+            />
+            <ProductSpecIconTile
+              label="Approval doc"
+              spanFull
+              icon={FileText}
+              tone="rose"
+              value={
+                product.modelApprovalDocUrl ? (
+                  <a
+                    href={product.modelApprovalDocUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="details-specs-doc-link"
+                  >
+                    <ExternalLink size={12} aria-hidden />
+                    View
+                  </a>
+                ) : (
+                  '—'
+                )
+              }
+            />
+          </>
+        ) : null}
       </div>
     );
   }
@@ -195,7 +208,9 @@ export const ProductDetailsSpecs: React.FC<{
   embedded?: boolean;
   /** Tight icon tile grid for wizard / mobile device cards. */
   dense?: boolean;
-}> = ({ product, className, embedded = false, dense = false }) => {
+  /** Max / e / Min / d / n / MPE only. */
+  metrologyOnly?: boolean;
+}> = ({ product, className, embedded = false, dense = false, metrologyOnly = false }) => {
   if (embedded || dense) {
     return (
       <div
@@ -217,7 +232,7 @@ export const ProductDetailsSpecs: React.FC<{
             .filter(Boolean)
             .join(' ')}
         >
-          <ProductDetailsFieldsGrid product={product} dense={dense} />
+          <ProductDetailsFieldsGrid product={product} dense={dense} metrologyOnly={metrologyOnly} />
         </div>
       </div>
     );

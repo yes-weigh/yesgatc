@@ -7,7 +7,7 @@ import type {
   VerificationRequestStatus,
   WorkflowMode,
 } from '../types';
-import { capacityFieldsFromProductSpec } from './productSpecifications';
+import { capacityFieldsFromProductSpec, capacityFieldsFromRecordOrProduct } from './productSpecifications';
 import { verificationClientVersionFields } from './verificationAppVersion';
 
 export const VERIFICATION_REQUEST_STATUSES: VerificationRequestStatus[] = [
@@ -517,7 +517,10 @@ export function productSnapshotFromProduct(
 ): Pick<
   SiteCalibration,
   | 'maximumCapacity'
+  | 'minimumCapacity'
   | 'verificationScaleInterval'
+  | 'actualScaleInterval'
+  | 'noOfVerificationIntervals'
   | 'unitOfMeasurement'
   | 'manufacturerBrandSeries'
   | 'modelApprovalNo'
@@ -527,7 +530,10 @@ export function productSnapshotFromProduct(
   const capacity = capacityFieldsFromProductSpec(product, specificationId);
   return {
     maximumCapacity: capacity.maximumCapacity,
+    minimumCapacity: capacity.minimumCapacity,
     verificationScaleInterval: capacity.verificationScaleInterval,
+    actualScaleInterval: capacity.actualScaleInterval,
+    noOfVerificationIntervals: capacity.noOfVerificationIntervals,
     unitOfMeasurement: capacity.unitOfMeasurement,
     ...(product.manufacturerBrandSeries?.trim()
       ? { manufacturerBrandSeries: product.manufacturerBrandSeries.trim() }
@@ -539,11 +545,15 @@ export function productSnapshotFromProduct(
   };
 }
 
-export function formatVerificationCapAcc(record: SiteCalibration): string {
-  const cap = record.maximumCapacity;
-  const interval = record.verificationScaleInterval;
-  if (cap == null || interval == null) return '—';
-  const unit = record.unitOfMeasurement || 'kg';
+export function formatVerificationCapAcc(
+  record: SiteCalibration,
+  product?: Product | null,
+): string {
+  const capacity = capacityFieldsFromRecordOrProduct(record, product);
+  const cap = capacity.maximumCapacity;
+  const interval = capacity.verificationScaleInterval;
+  if (!cap || !interval) return '—';
+  const unit = capacity.unitOfMeasurement || 'kg';
   return `${cap} ${unit} / ${interval} g`;
 }
 

@@ -13,7 +13,8 @@ internal static class DocaVerificationCharges
         RcFeesStructure fees,
         string verificationType,
         string verificationLocation,
-        string verificationSubject)
+        string verificationSubject,
+        ResolvedProductMetrology? metrology = null)
     {
         /** OV certificates have no verification fees — leave DOCA charge fields empty. */
         if (string.Equals(verificationType, "OV", StringComparison.OrdinalIgnoreCase))
@@ -26,12 +27,13 @@ internal static class DocaVerificationCharges
             return stored;
         }
 
+        var resolved = metrology ?? ProductSpecificationResolver.Resolve(calibrationFields, productFields);
         var baseFee = ResolveBaseFee(
             fees,
             verificationType,
             verificationLocation,
             verificationSubject,
-            productFields);
+            resolved);
 
         if (baseFee is null)
         {
@@ -101,9 +103,9 @@ internal static class DocaVerificationCharges
         string verificationType,
         string verificationLocation,
         string verificationSubject,
-        IReadOnlyDictionary<string, System.Text.Json.JsonElement>? productFields)
+        ResolvedProductMetrology metrology)
     {
-        var capacityKg = ProductMaximumCapacityKg(productFields);
+        var capacityKg = metrology.MaximumCapacityKg;
         if (capacityKg is null or <= 0)
         {
             return null;
@@ -128,29 +130,6 @@ internal static class DocaVerificationCharges
         return string.Equals(verificationLocation, "in_situ", StringComparison.OrdinalIgnoreCase)
             ? tier.InSitu
             : tier.InPremise;
-    }
-
-    private static double? ProductMaximumCapacityKg(
-        IReadOnlyDictionary<string, System.Text.Json.JsonElement>? productFields)
-    {
-        if (productFields is null)
-        {
-            return null;
-        }
-
-        var max = FirestoreFieldReader.ReadDouble(productFields, "maximumCapacity");
-        if (max is null or <= 0)
-        {
-            return null;
-        }
-
-        var unit = FirestoreFieldReader.ReadString(productFields, "unitOfMeasurement");
-        if (string.Equals(unit, "g", StringComparison.OrdinalIgnoreCase))
-        {
-            return max / 1000d;
-        }
-
-        return max;
     }
 }
 
