@@ -226,15 +226,23 @@ export function VerificationJobKindPicker({
               </span>
               Back
             </button>
-            <div className="verification-ov-seat-intro">
-              <h2 id="verification-ov-seat-title">
-                {isRvManual ? 'Enter serial number' : 'Pending serials'}
-              </h2>
-              <p>
-                {isRvManual
-                  ? `${verificationJobKindLabel(pickingKind)} — serial + year of manufacturing`
-                  : `${verificationJobKindLabel(pickingKind)} — select one seat`}
-              </p>
+            <div className="verification-ov-seat-intro-row">
+              <div className="verification-ov-seat-intro">
+                <h2 id="verification-ov-seat-title">
+                  {isRvManual ? 'Enter serial number' : 'Pending serials'}
+                </h2>
+                <p>
+                  {isRvManual
+                    ? `${verificationJobKindLabel(pickingKind)} — serial + year of manufacturing`
+                    : `${verificationJobKindLabel(pickingKind)} — select one serial number`}
+                </p>
+              </div>
+              {!isRvManual ? (
+                <div className="verification-ov-seat-qty" role="status" aria-label={`Quantity ${balanceLabel}`}>
+                  <span className="verification-ov-seat-qty-label">Qty</span>
+                  <strong className="verification-ov-seat-qty-value">{balanceLabel}</strong>
+                </div>
+              ) : null}
             </div>
           </header>
 

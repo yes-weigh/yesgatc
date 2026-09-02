@@ -325,6 +325,12 @@ test('inbound GET and POST serial + quota', async () => {
   assert.equal(db._store['serialAllotments/Y9'].status, 'allotted');
   assert.equal(db._store['serialAllotments/Y9'].rcId, 'rc1');
   assert.deepEqual(db._store['users/rc1'].yesoneAllottedSerials, ['Y9']);
+  const inwardKeys = Object.keys(db._store).filter(key => key.startsWith('serialInwardBatches/'));
+  assert.ok(inwardKeys.length >= 1);
+  const inwardDoc = db._store[inwardKeys[inwardKeys.length - 1]];
+  assert.equal(inwardDoc.serialStart, 'Y9');
+  assert.equal(inwardDoc.serialEnd, 'Y9');
+  assert.equal(inwardDoc.totalQty, 1);
 
   const bulk = mockRes();
   await yesoneInboundHttpHandler(
@@ -411,6 +417,14 @@ test('inbound GET and POST serial + quota', async () => {
   assert.equal(yesoneLive.body.ok, true);
   assert.equal(db._store['serialAllotments/G0001'].rcId, 'rc1');
   assert.equal(db._store['serialAllotments/G0001'].rcCode, 'ABC');
+  assert.equal(
+    db._store['serialAllotments/G0001'].invoiceNo,
+    'b21f76db-f5c6-4b3a-8d57-3efd60a12aa7',
+  );
+  const liveInward = Object.keys(db._store).filter(key => key.startsWith('serialInwardBatches/'));
+  assert.ok(liveInward.some(key => (
+    db._store[key].invoiceNo === 'b21f76db-f5c6-4b3a-8d57-3efd60a12aa7'
+  )));
   assert.equal(db._store['users/rc1'].ovQuota, 10);
   assert.equal(db._store['users/rc1'].ovQuotaUsed, 3);
   assert.ok(db._store['users/rc1'].yesoneAllottedSerials.includes('G0001'));

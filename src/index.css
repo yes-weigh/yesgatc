@@ -2088,6 +2088,27 @@ button.admin-setting-serial-seat:disabled {
     min-width: 0;
   }
 
+  .reports-inward-card__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .reports-inward-card__grid dd {
+    font-weight: 700;
+    color: #f8fafc;
+  }
+
+  .reports-inward-card__invoice {
+    grid-column: 1 / -1;
+  }
+
+  .reports-inward-card__invoice dd {
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    color: #93c5fd;
+    word-break: break-all;
+  }
+
   .reports-rev-card__grid dt {
     margin: 0 0 0.12rem;
     font-size: 0.62rem;
@@ -25777,9 +25798,20 @@ select.input-field--table {
   border-bottom: 1px solid rgba(148, 163, 184, 0.14);
 }
 
+.verification-ov-seat-intro-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 0.65rem 0.35rem;
+  position: relative;
+}
+
 .verification-ov-seat-intro {
   text-align: center;
-  padding: 0 1rem 0.35rem;
+  padding: 0 3.25rem;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .verification-ov-seat-intro h2 {
@@ -25793,6 +25825,32 @@ select.input-field--table {
   margin: 0;
   font-size: 0.8rem;
   color: #94a3b8;
+}
+
+.verification-ov-seat-qty {
+  position: absolute;
+  top: 0;
+  right: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  line-height: 1.1;
+}
+
+.verification-ov-seat-qty-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #f87171;
+}
+
+.verification-ov-seat-qty-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #ef4444;
+  letter-spacing: -0.02em;
 }
 
 .verification-ov-seat-grid {

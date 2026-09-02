@@ -755,8 +755,17 @@ service cloud.firestore {
       allow create, update, delete: if isSuperAdmin();
     }
 
-    match /yesoneInboundEvents/{eventId} {
+    // YesOne → YesGATC serial inward batches (invoice / range / qty).
+    match /serialInwardBatches/{batchId} {
       allow read: if isSuperAdmin();
+      allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
+      allow read: if isOperationalFieldStaff() && resource.data.rcId == vctRcId();
+      allow create, update, delete: if false;
+    }
+
+    match /yesoneInboundEvents/{eventId} {
+      // Webhook audit — RCs filter client-side by their rcCode.
+      allow read: if isSuperAdmin() || isRCAdmin() || isOperationalFieldStaff();
       allow write: if false;
     }
   }

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { Building2, X } from 'lucide-react';
 import { FilterIcon } from '../../components/FilterIcon';
 import { ContractorFeePayControl } from '../../components/ContractorFeePayControl';
@@ -22,13 +22,23 @@ import {
   type ContractorFeePayment,
 } from '../../lib/contractorFeePayment';
 import { buildReportPdf, shareReportPdf } from '../../lib/reportPdf';
+import {
+  filterInwardBatchesForRc,
+  formatInwardDate,
+  formatInwardTime,
+  inwardBatchesFromInboundEvents,
+  inwardMonthKey,
+  mergeWebhookInwardBatches,
+  serialInwardBatchFromDoc,
+  type SerialInwardBatch,
+} from '../../lib/serialInwardReport';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { getVerificationDisplayStatus } from '../../lib/verificationRequest';
 import type { FirestoreUserDoc, Product, SiteCalibration } from '../../types';
 
-type RcOption = { id: string; name: string; district: string };
+type RcOption = { id: string; name: string; district: string; rcCode?: string };
 type TypeFilter = 'all' | 'OV' | 'RV';
-type ReportView = 'day_summary' | 'revenue_share';
+type ReportView = 'day_summary' | 'revenue_share' | 'serial_inward';
 
 type DayRow = {
   dateKey: string;
@@ -181,11 +191,43 @@ export const Reports: React.FC = () => {
   const [paymentsByDate, setPaymentsByDate] = useState<Map<string, ContractorFeePayment>>(
     () => new Map(),
   );
+  const [inwardBatches, setInwardBatches] = useState<SerialInwardBatch[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setListError('');
     try {
+      const loadInward = async (scope?: { rcId?: string; rcCode?: string } | null) => {
+        let stored: SerialInwardBatch[] = [];
+        let fromEvents: SerialInwardBatch[] = [];
+
+        try {
+          const inwardQ = scope?.rcId
+            ? query(collection(db, 'serialInwardBatches'), where('rcId', '==', scope.rcId))
+            : collection(db, 'serialInwardBatches');
+          const inwardSnap = await getDocs(inwardQ);
+          stored = inwardSnap.docs.map(d => serialInwardBatchFromDoc(d.id, d.data()));
+        } catch {
+          stored = [];
+        }
+
+        // Webhook audit log — YesOne inbound events.
+        try {
+          const eventSnap = await getDocs(collection(db, 'yesoneInboundEvents'));
+          fromEvents = inwardBatchesFromInboundEvents(
+            eventSnap.docs.map(d => {
+              const data = d.data() as { at?: string; payload?: unknown };
+              return { id: d.id, at: data.at, payload: data.payload };
+            }),
+          );
+        } catch {
+          fromEvents = [];
+        }
+
+        const merged = mergeWebhookInwardBatches({ fromEvents, stored });
+        setInwardBatches(filterInwardBatchesForRc(merged, scope));
+      };
+
       if (isSuper) {
         const [calibrationSnap, userSnap, productSnap] = await Promise.all([
           getDocs(collection(db, 'siteCalibrations')),
@@ -211,9 +253,11 @@ export const Reports: React.FC = () => {
             id: d.id,
             name: data.companyName?.trim() || data.username?.trim() || 'GATC',
             district: data.place?.trim() || '',
+            rcCode: data.rcCode?.trim() || '',
           });
         });
         setRcOptions(rcs);
+        await loadInward(null);
         return;
       }
 
@@ -221,6 +265,7 @@ export const Reports: React.FC = () => {
         setRecords([]);
         setRcOptions([]);
         setProductsById(new Map());
+        setInwardBatches([]);
         return;
       }
 
@@ -241,18 +286,22 @@ export const Reports: React.FC = () => {
       });
       setProductsById(products);
       const rcData = rcSnap.exists() ? (rcSnap.data() as FirestoreUserDoc) : null;
+      const rcCode = rcData?.rcCode?.trim() || '';
       setRcOptions([
         {
           id: rcUid,
           name: rcData?.companyName?.trim() || rcData?.username?.trim() || 'GATC',
           district: rcData?.place?.trim() || '',
+          rcCode,
         },
       ]);
       setRcFilter(rcUid);
+      await loadInward({ rcId: rcUid, rcCode });
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to load report.');
       setRecords([]);
       setProductsById(new Map());
+      setInwardBatches([]);
     } finally {
       setLoading(false);
     }
@@ -293,7 +342,14 @@ export const Reports: React.FC = () => {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [filterOpen]);
 
-  const monthOptions = useMemo(() => buildMonthOptions(records), [records]);
+  const monthOptions = useMemo(() => {
+    const keys = new Set(buildMonthOptions(records));
+    for (const row of inwardBatches) {
+      const key = inwardMonthKey(row.at);
+      if (key >= GATC_START_MONTH_KEY) keys.add(key);
+    }
+    return [...keys].sort((a, b) => b.localeCompare(a));
+  }, [inwardBatches, records]);
 
   const monthRecords = useMemo(
     () =>
@@ -513,7 +569,36 @@ export const Reports: React.FC = () => {
   }, [contractorDueByDate, revenueRows]);
 
   const isRevenue = reportView === 'revenue_share';
-  const listLength = isRevenue ? revenueRows.length : dayRows.length;
+  const isSerialInward = reportView === 'serial_inward';
+
+  const selectedRcCode =
+    sortedRcOptions.find(rc => rc.id === rcFilter)?.rcCode?.trim() || '';
+
+  const inwardRows = useMemo(() => {
+    const scopedToRc =
+      rcFilter && rcFilter !== 'all'
+        ? filterInwardBatchesForRc(inwardBatches, { rcId: rcFilter, rcCode: selectedRcCode })
+        : inwardBatches;
+    const scoped = scopedToRc.filter(row => {
+      const key = inwardMonthKey(row.at);
+      if (!key) return monthKey === LIFETIME_MONTH_KEY;
+      if (key < GATC_START_MONTH_KEY) return false;
+      if (monthKey === LIFETIME_MONTH_KEY) return true;
+      return key === monthKey;
+    });
+    return [...scoped].sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  }, [inwardBatches, monthKey, rcFilter, selectedRcCode]);
+
+  const inwardQtyTotal = useMemo(
+    () => inwardRows.reduce((sum, row) => sum + (row.totalQty || 0), 0),
+    [inwardRows],
+  );
+
+  const listLength = isSerialInward
+    ? inwardRows.length
+    : isRevenue
+      ? revenueRows.length
+      : dayRows.length;
   const showHandling = isRcRevenue && revenueTotals.handling > 0;
 
   useEffect(() => {
@@ -527,6 +612,10 @@ export const Reports: React.FC = () => {
   const pagedRevenueRows = useMemo(
     () => paginateItems(revenueRows, page, REPORTS_TABLE_PAGE_SIZE),
     [page, revenueRows],
+  );
+  const pagedInwardRows = useMemo(
+    () => paginateItems(inwardRows, page, REPORTS_TABLE_PAGE_SIZE),
+    [inwardRows, page],
   );
   const pageStart = paginationRange(page, listLength, REPORTS_TABLE_PAGE_SIZE).start;
 
@@ -558,11 +647,17 @@ export const Reports: React.FC = () => {
   const filterSlot = filterSlots.mobile ?? filterSlots.desktop;
   const monthLabel = formatMonthYear(monthKey);
   const periodText = `${monthLabel}${
-    isRevenue ? (isRcRevenue ? ' · Contractor fee' : ' · Revenue share') : ' · Day summary'
-  }${typeFilter === 'all' ? '' : ` · ${typeFilter}`}`;
+    isSerialInward
+      ? ' · Serial inward (YesOne webhook)'
+      : isRevenue
+        ? isRcRevenue
+          ? ' · Contractor fee'
+          : ' · Revenue share'
+        : ' · Day summary'
+  }${isSerialInward || typeFilter === 'all' ? '' : ` · ${typeFilter}`}`;
 
   const shareReport = useCallback(() => {
-    if (sharing) return;
+    if (sharing || isSerialInward) return;
     setShareError('');
     setSharing(true);
     void (async () => {
@@ -626,6 +721,7 @@ export const Reports: React.FC = () => {
     dayVerifiedTotal,
     isRcRevenue,
     isRevenue,
+    isSerialInward,
     monthKey,
     periodText,
     revenueRows,
@@ -639,10 +735,10 @@ export const Reports: React.FC = () => {
     setReportsAppBar({
       title: selectedRcName,
       period: periodText,
-      onShare: shareReport,
+      onShare: isSerialInward ? undefined : shareReport,
       sharing: sharing || loading,
     });
-  }, [loading, periodText, selectedRcName, setReportsAppBar, shareReport, sharing]);
+  }, [isSerialInward, loading, periodText, selectedRcName, setReportsAppBar, shareReport, sharing]);
 
   useLayoutEffect(() => {
     return () => setReportsAppBar?.(null);
@@ -693,6 +789,7 @@ export const Reports: React.FC = () => {
                 <option value="revenue_share">
                   {isSuper ? 'Revenue share' : 'Contractor fee'}
                 </option>
+                <option value="serial_inward">Serial inward (YesOne webhook)</option>
               </select>
             </div>
             {showRcSelect ? (
@@ -718,6 +815,8 @@ export const Reports: React.FC = () => {
                 </div>
               </>
             ) : null}
+            {draftView !== 'serial_inward' ? (
+              <>
             <label className="verification-app-filter__label" htmlFor="reports-filter-type">
               Type
             </label>
@@ -733,6 +832,8 @@ export const Reports: React.FC = () => {
                 <option value="RV">RV</option>
               </select>
             </div>
+              </>
+            ) : null}
             <label className="verification-app-filter__label" htmlFor="reports-filter-month">
               Month year
             </label>
@@ -790,16 +891,29 @@ export const Reports: React.FC = () => {
             <div className="reports-empty">
               <Building2 size={28} strokeWidth={1.6} aria-hidden />
               <p>
-                {isRevenue
-                  ? isRcRevenue
-                    ? `No contractor fee for ${monthLabel}.`
-                    : `No revenue share for ${monthLabel}.`
-                  : `No day summary for ${monthLabel}.`}
+                {isSerialInward
+                  ? `No YesOne webhook serial inward for ${monthLabel}. Try Lifetime.`
+                  : isRevenue
+                    ? isRcRevenue
+                      ? `No contractor fee for ${monthLabel}.`
+                      : `No revenue share for ${monthLabel}.`
+                    : `No day summary for ${monthLabel}.`}
               </p>
             </div>
           ) : (
             <>
               <div className="reports-sticky">
+                {isSerialInward ? (
+                  <div className="reports-rev-totals reports-rev-totals--contractor" aria-label="Serial inward totals">
+                    <div className="reports-rev-total reports-rev-total--qty" aria-label={`Total qty ${inwardQtyTotal}`}>
+                      <span className="reports-rev-total__label">
+                        <span className="reports-rev-total__full">Total qty</span>
+                        <span className="reports-rev-total__abbr" aria-hidden>Qty</span>
+                      </span>
+                      <span className="reports-rev-total__value">{inwardQtyTotal}</span>
+                    </div>
+                  </div>
+                ) : null}
                 {isRevenue ? (
                   <div
                     className={`reports-rev-totals${isRcRevenue ? ' reports-rev-totals--contractor' : ''}${
@@ -870,7 +984,7 @@ export const Reports: React.FC = () => {
                     )}
           </div>
                 ) : null}
-                <div className={`reports-toolbar${isRevenue ? ' reports-toolbar--pager' : ''}`}>
+                <div className={`reports-toolbar${isRevenue || isSerialInward ? ' reports-toolbar--pager' : ''}`}>
                   <TablePagination
                     page={page}
                     totalItems={listLength}
@@ -878,7 +992,7 @@ export const Reports: React.FC = () => {
                     onPageChange={setPage}
                     placement="top"
                   />
-                  {!isRevenue ? (
+                  {!isRevenue && !isSerialInward ? (
                     <p className="reports-toolbar__stat">
                       <span>Total qty</span>
                       <strong>{dayVerifiedTotal}</strong>
@@ -886,7 +1000,84 @@ export const Reports: React.FC = () => {
                   ) : null}
           </div>
         </div>
-              {isRevenue ? (
+              {isSerialInward ? (
+                <>
+                  <ul className="reports-rev-cards reports-inward-cards">
+                    {pagedInwardRows.map((row, index) => (
+                      <li key={row.id} className="reports-rev-card reports-inward-card">
+                        <div className="reports-rev-card__head">
+                          <span className="reports-rev-card__sl">{pageStart + index}</span>
+                          <span className="reports-rev-card__date">{formatInwardDate(row.at)}</span>
+                          <span className="reports-rev-card__qty">{row.totalQty} qty</span>
+                        </div>
+                        <div className="reports-rev-card__body">
+                          <dl className="reports-rev-card__grid reports-inward-card__grid">
+                            <div className="reports-inward-card__invoice">
+                              <dt>Invoice no</dt>
+                              <dd>{row.invoiceNo || '—'}</dd>
+                            </div>
+                            <div>
+                              <dt>Date</dt>
+                              <dd>{formatInwardDate(row.at)}</dd>
+                            </div>
+                            <div>
+                              <dt>Time</dt>
+                              <dd className="text-mono">{formatInwardTime(row.at)}</dd>
+                            </div>
+                            <div>
+                              <dt>Qty</dt>
+                              <dd className="text-mono">{row.totalQty}</dd>
+                            </div>
+                            <div>
+                              <dt>Serial start</dt>
+                              <dd className="text-mono">{row.serialStart || '—'}</dd>
+                            </div>
+                            <div>
+                              <dt>Serial end</dt>
+                              <dd className="text-mono">{row.serialEnd || '—'}</dd>
+                            </div>
+                          </dl>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="table-wrap reports-table-wrap">
+                    <table className="data-table reports-table reports-inward-table">
+                      <thead>
+                        <tr>
+                          <th className="reports-col-sl">Sl</th>
+                          <th>Invoice no</th>
+                          <th>Date</th>
+                          <th>Time</th>
+                          <th>Serial start</th>
+                          <th>Serial end</th>
+                          <th className="reports-col-qty">Total qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pagedInwardRows.map((row, index) => (
+                          <tr key={row.id}>
+                            <td className="reports-col-sl">{pageStart + index}</td>
+                            <td>{row.invoiceNo || '—'}</td>
+                            <td>{formatInwardDate(row.at)}</td>
+                            <td className="text-mono">{formatInwardTime(row.at)}</td>
+                            <td className="text-mono">{row.serialStart || '—'}</td>
+                            <td className="text-mono">{row.serialEnd || '—'}</td>
+                            <td className="reports-col-qty text-mono">{row.totalQty}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td className="reports-col-sl" />
+                          <td colSpan={5}>Total</td>
+                          <td className="reports-col-qty text-mono">{inwardQtyTotal}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </>
+              ) : isRevenue ? (
                 <>
                   <ul className="reports-rev-cards">
                     {pagedRevenueRows.map((row, index) => (

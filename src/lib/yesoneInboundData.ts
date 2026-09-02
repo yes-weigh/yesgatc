@@ -9,6 +9,7 @@ export type YesoneSerialAllotment = {
   allottedAt: string;
   previousSerialNumber: string;
   updatedAt: string;
+  invoiceNo: string;
 };
 
 export type YesoneInboundEventRow = {
@@ -45,9 +46,10 @@ export function yesoneSerialFromDoc(id: string, data: unknown): YesoneSerialAllo
     rcCompanyName: text(row.rcCompanyName),
     productName: text(row.productName),
     status: text(row.status) || 'allotted',
-    allottedAt: text(row.allottedAt),
+    allottedAt: text(row.allottedAt) || text(row.updatedAt),
     previousSerialNumber: text(row.previousSerialNumber),
     updatedAt: text(row.updatedAt),
+    invoiceNo: text(row.invoiceNo) || text(row.allotmentId),
   };
 }
 
