@@ -1,5 +1,5 @@
 import type { YesoneSerialAllotment } from './yesoneInboundData';
-import { expandSerialRange, uniqueSerials } from './yesoneInboundData';
+import { expandSerialRange, looksLikeYesoneSerial, uniqueSerials } from './yesoneInboundData';
 
 export const SERIAL_INWARD_BATCHES_COLLECTION = 'serialInwardBatches';
 
@@ -14,6 +14,8 @@ export type SerialInwardBatch = {
   rcCode: string;
   rcCompanyName: string;
 };
+
+type DetailRow = { serial: string; rcCode: string; rcCompanyName: string; rcId: string };
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -31,6 +33,8 @@ export function normalizeInwardRcCode(code: string): string {
 
 function readInvoiceNoFromPayload(rec: Record<string, unknown>): string {
   const invoice = asRecord(rec.invoice);
+  const links = Array.isArray(rec.invoiceLinks) ? rec.invoiceLinks : [];
+  const link0 = asRecord(links[0]);
   return (
     text(rec.invoiceNo)
     || text(rec.invoiceNumber)
@@ -38,11 +42,61 @@ function readInvoiceNoFromPayload(rec: Record<string, unknown>): string {
     || text(rec.allotmentId)
     || text(invoice.no)
     || text(invoice.number)
-    || text(invoice.id)
+    || text(invoice.invoiceNumber)
     || text(invoice.invoiceNo)
+    || text(invoice.id)
+    || text(link0.invoiceNumber)
+    || text(link0.invoiceNo)
+    || text(link0.invoiceId)
     || (typeof rec.invoice === 'string' || typeof rec.invoice === 'number' ? text(rec.invoice) : '')
     || text(rec.id)
   );
+}
+
+function rcMetaFromPayload(
+  row: Record<string, unknown>,
+  root: Record<string, unknown>,
+  detail?: DetailRow | null,
+): { rcId: string; rcCode: string; rcCompanyName: string } {
+  const rowRc = asRecord(row.rc);
+  const rootRc = asRecord(root.rc);
+  const links = Array.isArray(row.invoiceLinks) ? row.invoiceLinks : [];
+  const link0 = asRecord(links[0]);
+  return {
+    rcId:
+      text(row.rcId)
+      || text(rowRc.id)
+      || text(rowRc.uid)
+      || text(root.rcId)
+      || text(rootRc.id)
+      || text(rootRc.uid)
+      || text(detail?.rcId)
+      || '',
+    rcCode:
+      text(row.rcCode)
+      || text(rowRc.rcCode)
+      || text(rowRc.code)
+      || text(link0.rcCode)
+      || text(root.rcCode)
+      || text(rootRc.rcCode)
+      || text(rootRc.code)
+      || text(detail?.rcCode)
+      || '',
+    rcCompanyName:
+      text(row.rcCompanyName)
+      || text(row.rcName)
+      || text(rowRc.name)
+      || text(rowRc.companyName)
+      || text(link0.rcName)
+      || text(link0.dealerName)
+      || text(root.rcCompanyName)
+      || text(root.rcName)
+      || text(rootRc.name)
+      || text(rootRc.companyName)
+      || text(rootRc.rcName)
+      || text(detail?.rcCompanyName)
+      || '',
+  };
 }
 
 function parseSerialParts(value: string): { prefix: string; n: bigint } | null {
@@ -73,13 +127,45 @@ function isAllotEvent(root: Record<string, unknown>): boolean {
   if (!name) return true;
   if (name.includes('cancel')) return false;
   if (name.includes('quota')) return false;
+  // Ignore serial.updated / patch noise — only fresh allotments drive inward rows.
+  if (name.includes('update') && !name.includes('allot')) return false;
   return (
     name.includes('allot')
     || name.includes('allocat')
-    || name.includes('serial')
     || name.includes('created')
     || name.includes('new')
   );
+}
+
+function isValidInwardSerialBound(value: string): boolean {
+  return looksLikeYesoneSerial(value);
+}
+
+/** One invoice + RC → one row (prefer valid range, then earlier allot time). */
+export function collapseInwardBatchesByInvoice(rows: SerialInwardBatch[]): SerialInwardBatch[] {
+  const byKey = new Map<string, SerialInwardBatch>();
+  for (const row of rows) {
+    const invoiceNo = row.invoiceNo?.trim();
+    if (!invoiceNo) continue;
+    if (!isValidInwardSerialBound(row.serialStart) || !isValidInwardSerialBound(row.serialEnd)) continue;
+    const key = `${invoiceNo}|${normalizeInwardRcCode(row.rcCode)}|${row.rcId}`;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, row);
+      continue;
+    }
+    const prevSpan = expandSerialRange(prev.serialStart, prev.serialEnd).length;
+    const nextSpan = expandSerialRange(row.serialStart, row.serialEnd).length;
+    const prevFit = prev.totalQty > 0 && prev.totalQty === prevSpan ? 1 : 0;
+    const nextFit = row.totalQty > 0 && row.totalQty === nextSpan ? 1 : 0;
+    if (nextFit !== prevFit) {
+      if (nextFit > prevFit) byKey.set(key, row);
+      continue;
+    }
+    // Same invoice: keep earliest allotment (corrupt later updates lose).
+    if ((row.at || '') < (prev.at || '')) byKey.set(key, row);
+  }
+  return [...byKey.values()];
 }
 
 export function serialInwardBatchFromDoc(id: string, data: unknown): SerialInwardBatch {
@@ -96,8 +182,6 @@ export function serialInwardBatchFromDoc(id: string, data: unknown): SerialInwar
     rcCompanyName: text(row.rcCompanyName),
   };
 }
-
-type DetailRow = { serial: string; rcCode: string; rcCompanyName: string; rcId: string };
 
 function detailRowsFromPayload(root: Record<string, unknown>): DetailRow[] {
   const details = root.generatedSerialDetails || root.rcAllottedSerialDetails;
@@ -165,8 +249,9 @@ export function inwardBatchesFromInboundEvents(
         const from = text(row.from) || text(asRecord(row.series).from);
         const to = text(row.to) || text(asRecord(row.series).to);
         if (!invoiceNo || !from || !to) continue;
-        const rc = asRecord(row.rc);
+        if (!isValidInwardSerialBound(from) || !isValidInwardSerialBound(to)) continue;
         const fromDetail = rcFromDetails(details, from, to);
+        const rcMeta = rcMetaFromPayload(row, root, fromDetail);
         const listed = Array.isArray(row.serialNumbers)
           ? uniqueSerials(row.serialNumbers)
           : Array.isArray(row.serials)
@@ -184,20 +269,9 @@ export function inwardBatchesFromInboundEvents(
           serialStart: from,
           serialEnd: to,
           totalQty: qty,
-          rcId: text(row.rcId) || text(rc.id) || text(rc.uid) || fromDetail?.rcId || '',
-          rcCode:
-            text(row.rcCode)
-            || text(rc.rcCode)
-            || text(rc.code)
-            || fromDetail?.rcCode
-            || '',
-          rcCompanyName:
-            text(row.rcCompanyName)
-            || text(row.rcName)
-            || text(rc.name)
-            || text(rc.companyName)
-            || fromDetail?.rcCompanyName
-            || '',
+          rcId: rcMeta.rcId,
+          rcCode: rcMeta.rcCode,
+          rcCompanyName: rcMeta.rcCompanyName,
         });
       }
       continue;
@@ -207,7 +281,11 @@ export function inwardBatchesFromInboundEvents(
     const from = text(root.from) || text(asRecord(root.series).from);
     const to = text(root.to) || text(asRecord(root.series).to);
     if (invoiceNo && from && to) {
+      if (!isValidInwardSerialBound(from) || !isValidInwardSerialBound(to)) {
+        // skip corrupt bounds like startNumber "Numbers"
+      } else {
       const fromDetail = rcFromDetails(details, from, to);
+      const rcMeta = rcMetaFromPayload(root, root, fromDetail);
       pushBatch(out, {
         id: `evt_${event.id}_${invoiceNo}_${from}`,
         invoiceNo,
@@ -215,22 +293,22 @@ export function inwardBatchesFromInboundEvents(
         serialStart: from,
         serialEnd: to,
         totalQty: Number(root.qty) || expandSerialRange(from, to).length,
-        rcId: text(root.rcId) || fromDetail?.rcId || '',
-        rcCode: text(root.rcCode) || fromDetail?.rcCode || '',
-        rcCompanyName:
-          text(root.rcCompanyName) || text(root.rcName) || fromDetail?.rcCompanyName || '',
+        rcId: rcMeta.rcId,
+        rcCode: rcMeta.rcCode,
+        rcCompanyName: rcMeta.rcCompanyName,
       });
+      }
     }
   }
 
-  // Dedupe identical invoice+range (keep latest at).
+  // Dedupe identical invoice+range, then one row per invoice+RC.
   const byKey = new Map<string, SerialInwardBatch>();
   for (const row of out) {
     const key = `${row.invoiceNo}|${row.serialStart}|${row.serialEnd}|${normalizeInwardRcCode(row.rcCode)}`;
     const prev = byKey.get(key);
     if (!prev || (row.at || '') >= (prev.at || '')) byKey.set(key, row);
   }
-  return [...byKey.values()];
+  return collapseInwardBatchesByInvoice([...byKey.values()]);
 }
 
 export function filterInwardBatchesForRc(
@@ -285,6 +363,35 @@ export function inwardMonthKey(at: string): string {
   return year && month ? `${year}-${month}` : '';
 }
 
+function serialRangeOverlaps(
+  aStart: string,
+  aEnd: string,
+  bStart: string,
+  bEnd: string,
+): boolean {
+  const a0 = parseSerialParts(aStart);
+  const a1 = parseSerialParts(aEnd);
+  const b0 = parseSerialParts(bStart);
+  const b1 = parseSerialParts(bEnd);
+  if (!a0 || !a1 || !b0 || !b1) {
+    return (
+      aStart.toUpperCase() === bStart.toUpperCase()
+      || aEnd.toUpperCase() === bEnd.toUpperCase()
+      || aStart.toUpperCase() === bEnd.toUpperCase()
+      || aEnd.toUpperCase() === bStart.toUpperCase()
+    );
+  }
+  if (a0.prefix !== b0.prefix || a0.prefix !== a1.prefix || b0.prefix !== b1.prefix) return false;
+  return a0.n <= b1.n && b0.n <= a1.n;
+}
+
+function sameInwardRc(a: SerialInwardBatch, b: SerialInwardBatch): boolean {
+  if (a.rcId && b.rcId && a.rcId === b.rcId) return true;
+  const ca = normalizeInwardRcCode(a.rcCode);
+  const cb = normalizeInwardRcCode(b.rcCode);
+  return Boolean(ca && cb && ca === cb);
+}
+
 /** Merge webhook event rows with persisted batch docs (webhook wins when same key). */
 export function mergeWebhookInwardBatches(parts: {
   fromEvents: SerialInwardBatch[];
@@ -292,14 +399,40 @@ export function mergeWebhookInwardBatches(parts: {
 }): SerialInwardBatch[] {
   const byKey = new Map<string, SerialInwardBatch>();
   const push = (row: SerialInwardBatch) => {
-    if (!row.invoiceNo?.trim() || !row.serialStart || !row.serialEnd) return;
-    const key = `${row.invoiceNo}|${row.serialStart}|${row.serialEnd}|${normalizeInwardRcCode(row.rcCode)}|${row.rcId}`;
+    if (!row.serialStart || !row.serialEnd) return;
+    const invoice = row.invoiceNo?.trim() || '_';
+    const key = `${invoice}|${row.serialStart}|${row.serialEnd}|${normalizeInwardRcCode(row.rcCode)}|${row.rcId}`;
     const prev = byKey.get(key);
-    if (!prev || (row.at || '') >= (prev.at || '')) byKey.set(key, row);
+    if (!prev) {
+      byKey.set(key, row);
+      return;
+    }
+    // Prefer row that has a real invoice number.
+    const prevInv = Boolean(prev.invoiceNo?.trim());
+    const nextInv = Boolean(row.invoiceNo?.trim());
+    if (nextInv && !prevInv) {
+      byKey.set(key, row);
+      return;
+    }
+    if (prevInv && !nextInv) return;
+    if ((row.at || '') >= (prev.at || '')) byKey.set(key, row);
   };
   for (const row of parts.stored) push(row);
   for (const row of parts.fromEvents) push(row);
-  return [...byKey.values()];
+
+  const merged = [...byKey.values()];
+  const invoiced = merged.filter(row => row.invoiceNo?.trim());
+  // Drop synthetic (no invoice) ranges that overlap an invoiced batch for same RC.
+  return collapseInwardBatchesByInvoice(
+    merged.filter(row => {
+      if (row.invoiceNo?.trim()) return true;
+      return !invoiced.some(
+        inv =>
+          sameInwardRc(row, inv)
+          && serialRangeOverlaps(row.serialStart, row.serialEnd, inv.serialStart, inv.serialEnd),
+      );
+    }),
+  );
 }
 
 /** Fallback: contiguous allotted serials → inward rows (RC when webhook events locked). */

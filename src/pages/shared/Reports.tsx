@@ -165,7 +165,7 @@ export const Reports: React.FC = () => {
   const setReportsAppBar = useSetReportsAppBar();
   const isSuper = user?.role === 'super_admin';
   const isRcRevenue = !isSuper;
-  const defaultReportView: ReportView = isSuper ? 'day_summary' : 'revenue_share';
+  const defaultReportView: ReportView = isSuper ? 'day_summary' : 'serial_inward';
 
   const [records, setRecords] = useState<SiteCalibration[]>([]);
   const [rcOptions, setRcOptions] = useState<RcOption[]>([]);
@@ -202,28 +202,58 @@ export const Reports: React.FC = () => {
       const loadInward = async (
         scope?: { rcId?: string; rcCode?: string; seatSerials?: string[] } | null,
       ) => {
-        // Super: webhook audit. RC: allotted seats only (events/batches rules may be undeployed).
+        let stored: SerialInwardBatch[] = [];
+        let fromEvents: SerialInwardBatch[] = [];
+
+        try {
+          const inwardSnap = scope?.rcId
+            ? await getDocs(
+                query(collection(db, 'serialInwardBatches'), where('rcId', '==', scope.rcId)),
+              )
+            : await getDocs(collection(db, 'serialInwardBatches'));
+          stored = inwardSnap.docs.map(d => serialInwardBatchFromDoc(d.id, d.data()));
+        } catch {
+          stored = [];
+        }
+
+        try {
+          const eventSnap = await getDocs(collection(db, 'yesoneInboundEvents'));
+          fromEvents = inwardBatchesFromInboundEvents(
+            eventSnap.docs.map(d => {
+              const data = d.data() as { at?: string; payload?: unknown };
+              return { id: d.id, at: data.at, payload: data.payload };
+            }),
+          );
+          if (scope?.rcId || scope?.rcCode) {
+            fromEvents = filterInwardBatchesForRc(fromEvents, {
+              rcId: scope.rcId || '',
+              rcCode: scope.rcCode || '',
+            });
+          }
+        } catch {
+          fromEvents = [];
+        }
+
         if (!scope?.rcId) {
-          let stored: SerialInwardBatch[] = [];
-          let fromEvents: SerialInwardBatch[] = [];
+          // Super: webhook rows + allotment ranges for every RC (fills gaps / old data).
+          const allotDocs: ReturnType<typeof yesoneSerialFromDoc>[] = [];
           try {
-            const inwardSnap = await getDocs(collection(db, 'serialInwardBatches'));
-            stored = inwardSnap.docs.map(d => serialInwardBatchFromDoc(d.id, d.data()));
+            const allotSnap = await getDocs(collection(db, 'serialAllotments'));
+            for (const d of allotSnap.docs) {
+              allotDocs.push(yesoneSerialFromDoc(d.id, d.data()));
+            }
           } catch {
-            stored = [];
+            /* ignore */
           }
-          try {
-            const eventSnap = await getDocs(collection(db, 'yesoneInboundEvents'));
-            fromEvents = inwardBatchesFromInboundEvents(
-              eventSnap.docs.map(d => {
-                const data = d.data() as { at?: string; payload?: unknown };
-                return { id: d.id, at: data.at, payload: data.payload };
-              }),
-            );
-          } catch {
-            fromEvents = [];
-          }
-          setInwardBatches(mergeWebhookInwardBatches({ fromEvents, stored }));
+          const synthetic = syntheticInwardBatchesFromAllotments(allotDocs, {
+            requireInvoice: true,
+          });
+          setInwardBatches(
+            mergeWebhookInwardBatches({
+              fromEvents: [...fromEvents, ...synthetic],
+              stored,
+            }),
+          );
           return;
         }
 
@@ -236,7 +266,7 @@ export const Reports: React.FC = () => {
             allotDocs.push(yesoneSerialFromDoc(d.id, d.data()));
           }
         } catch {
-          /* ignore — seats below still work */
+          /* ignore */
         }
 
         const have = new Set(allotDocs.map(row => row.serialNumber.toUpperCase()));
@@ -260,8 +290,15 @@ export const Reports: React.FC = () => {
           });
         }
 
+        const synthetic = syntheticInwardBatchesFromAllotments(allotDocs, {
+          requireInvoice: true,
+        });
+        // Prefer webhook rows (have invoice); fill gaps from allotment ranges.
         setInwardBatches(
-          syntheticInwardBatchesFromAllotments(allotDocs, { requireInvoice: false }),
+          mergeWebhookInwardBatches({
+            fromEvents: [...fromEvents, ...synthetic],
+            stored,
+          }),
         );
       };
 
@@ -622,6 +659,7 @@ export const Reports: React.FC = () => {
         ? filterInwardBatchesForRc(inwardBatches, { rcId: rcFilter, rcCode: selectedRcCode })
         : inwardBatches;
     const scoped = scopedToRc.filter(row => {
+      if (!row.invoiceNo?.trim()) return false;
       const key = inwardMonthKey(row.at);
       if (!key) return monthKey === LIFETIME_MONTH_KEY;
       if (key < GATC_START_MONTH_KEY) return false;
@@ -646,13 +684,6 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     setPage(1);
   }, [monthKey, rcFilter, reportView, typeFilter]);
-
-  useEffect(() => {
-    if (reportView !== 'serial_inward') return;
-    if (monthKey !== LIFETIME_MONTH_KEY) setMonthKey(LIFETIME_MONTH_KEY);
-    // Intentionally only when entering this report view.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportView]);
 
   const pagedDayRows = useMemo(
     () => paginateItems(dayRows, page, REPORTS_TABLE_PAGE_SIZE),
@@ -684,12 +715,7 @@ export const Reports: React.FC = () => {
   const applyFilters = () => {
     setReportView(draftView);
     setTypeFilter(draftType);
-    // Webhook audit spans many months — default Lifetime when opening that report.
-    setMonthKey(
-      draftView === 'serial_inward' && draftMonth === currentMonthKey()
-        ? LIFETIME_MONTH_KEY
-        : draftMonth,
-    );
+    setMonthKey(draftMonth);
     if (draftRc) setRcFilter(draftRc);
     setFilterOpen(false);
   };
@@ -702,7 +728,7 @@ export const Reports: React.FC = () => {
   const monthLabel = formatMonthYear(monthKey);
   const periodText = `${monthLabel}${
     isSerialInward
-      ? ' · Serial inward (YesOne webhook)'
+      ? ' · Serial inward'
       : isRevenue
         ? isRcRevenue
           ? ' · Contractor fee'
@@ -843,7 +869,7 @@ export const Reports: React.FC = () => {
                 <option value="revenue_share">
                   {isSuper ? 'Revenue share' : 'Contractor fee'}
                 </option>
-                <option value="serial_inward">Serial inward (YesOne webhook)</option>
+                <option value="serial_inward">Serial inward</option>
               </select>
             </div>
             {showRcSelect ? (
@@ -946,7 +972,7 @@ export const Reports: React.FC = () => {
               <Building2 size={28} strokeWidth={1.6} aria-hidden />
               <p>
                 {isSerialInward
-                  ? `No serial inward records for ${monthLabel}.`
+                  ? `No invoiced serial inward for ${monthLabel}.`
                   : isRevenue
                     ? isRcRevenue
                       ? `No contractor fee for ${monthLabel}.`
@@ -1059,77 +1085,33 @@ export const Reports: React.FC = () => {
                   <ul className="reports-rev-cards reports-inward-cards">
                     {pagedInwardRows.map((row, index) => (
                       <li key={row.id} className="reports-rev-card reports-inward-card">
-                        <div className="reports-rev-card__head">
-                          <span className="reports-rev-card__sl">{pageStart + index}</span>
-                          <span className="reports-rev-card__date">{formatInwardDate(row.at)}</span>
-                          <span className="reports-rev-card__qty">{row.totalQty} qty</span>
-                        </div>
-                        <div className="reports-rev-card__body">
-                          <dl className="reports-rev-card__grid reports-inward-card__grid">
-                            <div className="reports-inward-card__invoice">
-                              <dt>Invoice no</dt>
-                              <dd>{row.invoiceNo || '—'}</dd>
-                            </div>
-                            <div>
-                              <dt>Date</dt>
-                              <dd>{formatInwardDate(row.at)}</dd>
-                            </div>
-                            <div>
-                              <dt>Time</dt>
-                              <dd className="text-mono">{formatInwardTime(row.at)}</dd>
-                            </div>
-                            <div>
-                              <dt>Qty</dt>
-                              <dd className="text-mono">{row.totalQty}</dd>
-                            </div>
-                            <div>
-                              <dt>Serial start</dt>
-                              <dd className="text-mono">{row.serialStart || '—'}</dd>
-                            </div>
-                            <div>
-                              <dt>Serial end</dt>
-                              <dd className="text-mono">{row.serialEnd || '—'}</dd>
-                            </div>
-                          </dl>
+                        <span className="reports-rev-card__sl reports-inward-card__sl">
+                          {pageStart + index}
+                        </span>
+                        <div className="reports-inward-card__lines">
+                          <p className="reports-inward-card__line">
+                            <span className="reports-inward-card__inv">{row.invoiceNo || '—'}</span>
+                            <span>{formatInwardDate(row.at)}</span>
+                            <span className="text-mono">{formatInwardTime(row.at)}</span>
+                          </p>
+                          <p className="reports-inward-card__line reports-inward-card__line--serials">
+                            {row.totalQty <= 1
+                            || !row.serialEnd
+                            || row.serialStart.trim().toUpperCase() === row.serialEnd.trim().toUpperCase() ? (
+                              <span className="text-mono">{row.serialStart || '—'}</span>
+                            ) : (
+                              <>
+                                <span className="text-mono">{row.serialStart}</span>
+                                <span className="reports-inward-card__sep">–</span>
+                                <span className="text-mono">{row.serialEnd}</span>
+                              </>
+                            )}
+                            <span className="reports-inward-card__qty">{row.totalQty} qty</span>
+                          </p>
                         </div>
                       </li>
                     ))}
                   </ul>
-                  <div className="table-wrap reports-table-wrap">
-                    <table className="data-table reports-table reports-inward-table">
-                      <thead>
-                        <tr>
-                          <th className="reports-col-sl">Sl</th>
-                          <th>Invoice no</th>
-                          <th>Date</th>
-                          <th>Time</th>
-                          <th>Serial start</th>
-                          <th>Serial end</th>
-                          <th className="reports-col-qty">Total qty</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pagedInwardRows.map((row, index) => (
-                          <tr key={row.id}>
-                            <td className="reports-col-sl">{pageStart + index}</td>
-                            <td>{row.invoiceNo || '—'}</td>
-                            <td>{formatInwardDate(row.at)}</td>
-                            <td className="text-mono">{formatInwardTime(row.at)}</td>
-                            <td className="text-mono">{row.serialStart || '—'}</td>
-                            <td className="text-mono">{row.serialEnd || '—'}</td>
-                            <td className="reports-col-qty text-mono">{row.totalQty}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td className="reports-col-sl" />
-                          <td colSpan={5}>Total</td>
-                          <td className="reports-col-qty text-mono">{inwardQtyTotal}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
                 </>
               ) : isRevenue ? (
                 <>

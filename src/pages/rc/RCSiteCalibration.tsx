@@ -20,6 +20,8 @@ import { VerificationListTable } from '../../components/VerificationListTable';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
+import { RcUnsignedCertificateNotice } from '../../components/RcUnsignedCertificateNotice';
+import { RcUnsignedPdfNewJobGate } from '../../components/RcUnsignedPdfDisturbHost';
 import { OvSelfSpecSerialBlock } from './OvSelfWizardPanels';
 import { TablePagination } from '../../components/TablePagination';
 import { buildCustomerDevice } from '../../lib/customerProfileFields';
@@ -140,6 +142,7 @@ import {
 } from './VerificationSessionFields';
 import { VerificationJobKindPicker } from './VerificationJobKindPicker';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
+import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
 import { ovQuotaSeatCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import type { PersistVerificationPartyResult } from '../../lib/verificationPartyPersist';
@@ -377,6 +380,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [showJobKindPicker, setShowJobKindPicker] = useState(false);
+  const [unsignedJobGate, setUnsignedJobGate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [lastViewedVerificationId, setLastViewedVerificationId] = useState<string | null>(null);
   const [rowHighlightFlashId, setRowHighlightFlashId] = useState<string | null>(null);
@@ -413,17 +417,18 @@ export const RCSiteCalibration: React.FC = () => {
   });
   const [assignableVcts, setAssignableVcts] = useState<AssignableVctOption[]>([]);
   const quotaSeats = useRcQuotaSeats(rcUid, records);
+  const pickSerials = pickQuotaSerialsForActor(quotaSeats, { isRcAdmin, actorUid });
   const ovQuotaGate = useMemo<OvQuotaGate>(() => {
     const editingRecord = editingId ? records.find(r => r.id === editingId) : null;
     const held = editingRecord?.serialNumber?.trim()
       ? [editingRecord.serialNumber.trim()]
       : [];
     return {
-      remaining: quotaSeats.remaining,
+      remaining: pickSerials,
       balanceQty: quotaSeats.balanceQty,
       heldSerials: held,
     };
-  }, [quotaSeats.remaining, quotaSeats.balanceQty, editingId, records]);
+  }, [pickSerials, quotaSeats.balanceQty, editingId, records]);
 
   const validationOptions = useMemo(() => {
     const editingRecordForValidation = editingId
@@ -482,7 +487,7 @@ export const RCSiteCalibration: React.FC = () => {
         ovQuota:
           record.verificationType === 'OV'
             ? {
-                remaining: quotaSeats.remaining,
+                remaining: pickSerials,
                 balanceQty: quotaSeats.balanceQty,
                 heldSerials: record.serialNumber?.trim() ? [record.serialNumber.trim()] : [],
               }
@@ -490,7 +495,7 @@ export const RCSiteCalibration: React.FC = () => {
         isNewJob: false,
       };
     },
-    [validationOptions, customers, rcProfile?.pincode, quotaSeats.remaining, quotaSeats.balanceQty],
+    [validationOptions, customers, rcProfile?.pincode, pickSerials, quotaSeats.balanceQty],
   );
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
@@ -2254,8 +2259,13 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
     setListError('');
-    setShowJobKindPicker(true);
+    setUnsignedJobGate(true);
   };
+
+  const handleUnsignedJobGateContinue = useCallback(() => {
+    setUnsignedJobGate(false);
+    setShowJobKindPicker(true);
+  }, []);
 
   const handleJobKindSelect = useCallback(
     (kind: VerificationJobKind, serial?: string, manufacturingYear?: string) => {
@@ -2306,7 +2316,7 @@ export const RCSiteCalibration: React.FC = () => {
     } else if (verificationRequiresMobileCapture(user?.role) && !isVerificationCaptureDevice()) {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
     } else {
-      setShowJobKindPicker(true);
+      setUnsignedJobGate(true);
     }
 
     setSearchParams(
@@ -2611,6 +2621,7 @@ export const RCSiteCalibration: React.FC = () => {
     [durationScoped],
   );
   const signedPdfCounts = useMemo(() => tallySignedPdfFilters(durationScoped), [durationScoped]);
+  const pendingUnsignedTotal = useMemo(() => tallySignedPdfFilters(records).notSigned, [records]);
 
   const filteredRecords = useMemo(() => {
     const filtered = durationScoped.filter(record => {
@@ -3086,14 +3097,20 @@ export const RCSiteCalibration: React.FC = () => {
               <p className="rc-vehicle-required-notice__text mb-0">{gatesError}</p>
             </div>
           ) : null}
+          {isRcAdmin && !showForm ? (
+            <RcUnsignedCertificateNotice count={pendingUnsignedTotal} compact />
+          ) : null}
           <VerificationListStatusDash
             counts={dashCounts}
             ovCount={dashOvCount}
             rvCount={dashRvCount}
+            notSignedCount={signedPdfCounts.notSigned}
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
+            signedPdfFilter={signedPdfFilter}
+            onSignedPdfFilterChange={setSignedPdfFilter}
             loading={loading}
           />
           <VerificationListFilters
@@ -3236,11 +3253,26 @@ export const RCSiteCalibration: React.FC = () => {
         />
       )}
 
+      {unsignedJobGate ? (
+        <RcUnsignedPdfNewJobGate
+          open={unsignedJobGate}
+          onContinue={handleUnsignedJobGateContinue}
+          onCancel={() => setUnsignedJobGate(false)}
+        />
+      ) : null}
+
       {showJobKindPicker && (
         <VerificationJobKindPicker
-          ovBalanceQty={quotaSeats.ready ? quotaSeats.balanceQty : null}
-          ovRemainingCount={quotaSeats.ready ? quotaSeats.remaining.length : undefined}
-          pendingSerials={quotaSeats.remaining}
+          ovBalanceQty={
+            quotaSeats.ready
+              ? isVerifier
+                ? pickSerials.length
+                : quotaSeats.balanceQty
+              : null
+          }
+          ovRemainingCount={quotaSeats.ready ? pickSerials.length : undefined}
+          pendingSerials={pickSerials}
+          verifierMode={isVerifier}
           onSelect={handleJobKindSelect}
           onClose={() => setShowJobKindPicker(false)}
         />

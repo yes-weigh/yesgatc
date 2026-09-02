@@ -9,8 +9,10 @@ import {
   downloadCertificatePdfFile,
   fetchCertificatePdfFile,
 } from '../lib/certificatePdfFile';
+import { certificateSignStatus } from '../lib/signedCertificatePdf';
 import { shareCertificatePdfFile, shareVerificationCertificate } from '../lib/verificationWhatsAppShare';
 import type { SiteCalibration } from '../types';
+import { UnsignedCertificateDownloadWarn } from './RcUnsignedPdfDisturbHost';
 
 type CertificatePdfShareViewerProps = {
   open: boolean;
@@ -18,6 +20,8 @@ type CertificatePdfShareViewerProps = {
   url: string | null;
   storagePath?: string | null;
   heading?: string;
+  /** Popup + sound before download when certificate is not signed. */
+  warnUnsignedDownload?: boolean;
   onClose: () => void;
 };
 
@@ -27,6 +31,7 @@ export const CertificatePdfShareViewer: FC<CertificatePdfShareViewerProps> = ({
   url,
   storagePath,
   heading,
+  warnUnsignedDownload = false,
   onClose,
 }) => {
   const isPhone = useMobileViewport();
@@ -39,6 +44,7 @@ export const CertificatePdfShareViewer: FC<CertificatePdfShareViewerProps> = ({
   });
   const [sharing, setSharing] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [downloadWarnOpen, setDownloadWarnOpen] = useState(false);
 
   useHistoryOverlay(open, onClose);
 
@@ -48,31 +54,19 @@ export const CertificatePdfShareViewer: FC<CertificatePdfShareViewerProps> = ({
     return () => document.body.classList.remove('wl-cert-pdf-viewer-open');
   }, [open]);
 
+  useEffect(() => {
+    if (!open) setDownloadWarnOpen(false);
+  }, [open]);
+
   if (!open || !record || typeof document === 'undefined') return null;
 
   const title = heading?.trim()
     || (record.certificateNumber?.trim() ? record.certificateNumber.trim() : 'Certificate');
   const error = actionError || preview.error;
+  const needsUnsignedWarn =
+    warnUnsignedDownload && certificateSignStatus(record) === 'not_signed';
 
-  const handleShare = async () => {
-    if (sharing) return;
-    setSharing(true);
-    setActionError('');
-    try {
-      if (preview.file) {
-        await shareCertificatePdfFile(preview.file, title);
-        return;
-      }
-      await shareVerificationCertificate(record, url);
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return;
-      setActionError(err instanceof Error ? err.message : 'Share failed.');
-    } finally {
-      setSharing(false);
-    }
-  };
-
-  const handleDownload = async () => {
+  const runDownload = async () => {
     if (sharing) return;
     setSharing(true);
     setActionError('');
@@ -92,6 +86,32 @@ export const CertificatePdfShareViewer: FC<CertificatePdfShareViewerProps> = ({
     } finally {
       setSharing(false);
     }
+  };
+
+  const handleShare = async () => {
+    if (sharing) return;
+    setSharing(true);
+    setActionError('');
+    try {
+      if (preview.file) {
+        await shareCertificatePdfFile(preview.file, title);
+        return;
+      }
+      await shareVerificationCertificate(record, url);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setActionError(err instanceof Error ? err.message : 'Share failed.');
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (needsUnsignedWarn) {
+      setDownloadWarnOpen(true);
+      return;
+    }
+    void runDownload();
   };
 
   return createPortal(
@@ -145,6 +165,14 @@ export const CertificatePdfShareViewer: FC<CertificatePdfShareViewerProps> = ({
           />
         ))}
       </div>
+      <UnsignedCertificateDownloadWarn
+        open={downloadWarnOpen}
+        onContinue={() => {
+          setDownloadWarnOpen(false);
+          void runDownload();
+        }}
+        onCancel={() => setDownloadWarnOpen(false)}
+      />
     </div>,
     document.body,
   );

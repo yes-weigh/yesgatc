@@ -53,6 +53,7 @@ import {
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { embedVerificationPath, isEmbedSession, rememberEmbedMode } from '../lib/embedMode';
 import { APP_VERSION } from '../lib/appVersion';
+import { RcUnsignedPdfDisturbHost } from './RcUnsignedPdfDisturbHost';
 import { ROLE_LABELS, type FirestoreUserDoc } from '../types';
 
 type NavItem = {
@@ -254,7 +255,6 @@ export const Layout: React.FC = () => {
           { path: '/verifier', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
           { path: '/verifier/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
           { path: '/verifier/certificates', icon: <Award size={20} />, label: 'Certificates' },
-          { path: '/verifier/customers', icon: <UserRound size={20} />, label: 'Customers' },
           { path: '/verifier/profile', icon: <Settings size={20} />, label: 'My Profile' },
         ];
       default:
@@ -625,6 +625,7 @@ export const Layout: React.FC = () => {
           <Outlet key={`${location.pathname}-${pageRefreshKey}`} />
         </div>
       </main>
+      <RcUnsignedPdfDisturbHost />
       {accountOpen && (
         <div
           className="modal-overlay sidebar-account-overlay"

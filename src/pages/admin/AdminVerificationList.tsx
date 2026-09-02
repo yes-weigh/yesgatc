@@ -789,6 +789,7 @@ export const AdminVerificationList: React.FC = () => {
             counts={dashCounts}
             ovCount={dashOvCount}
             rvCount={dashRvCount}
+            notSignedCount={signedPdfCounts.notSigned}
             statusFilter={statusFilter}
             onStatusFilterChange={value => {
               setVoidOnly(false);
@@ -796,6 +797,8 @@ export const AdminVerificationList: React.FC = () => {
             }}
             typeFilter={typeFilter}
             onTypeFilterChange={setTypeFilter}
+            signedPdfFilter={signedPdfFilter}
+            onSignedPdfFilterChange={setSignedPdfFilter}
             loading={loading}
           />
           <VerificationListFilters

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { doc, getDoc, getDocs } from 'firebase/firestore';
 import {
   Wallet,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { RcQuotaOverview } from '../../components/RcQuotaOverview';
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
+import { RcUnsignedCertificateNotice } from '../../components/RcUnsignedCertificateNotice';
 import { DashboardPeriodFilter } from '../../components/DashboardPeriodFilter';
 import {
   recordActivityStamp,
@@ -47,6 +48,7 @@ import {
   tallyVerificationTypeFilters,
   type VerificationStatusFilter,
 } from '../../lib/verificationRequest';
+import { tallySignedPdfFilters } from '../../lib/signedCertificatePdf';
 import type { FirestoreUserDoc, SiteCalibration } from '../../types';
 
 type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange' | 'slate' | 'cyan';
@@ -133,6 +135,8 @@ export const RCDashboard: React.FC = () => {
   const { rcUid, actorUid, isVct, isVerifier, isFieldStaff, isRcAdmin } = useRcScope();
   const basePath = useRoleBasePath();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const mockUnsignedWarn = searchParams.get('mockUnsignedWarn') === '1';
   const [verifications, setVerifications] = useState<SiteCalibration[]>([]);
   const [loadingVerifications, setLoadingVerifications] = useState(true);
   const [rcHasVehicle, setRcHasVehicle] = useState<boolean | null>(null);
@@ -249,6 +253,14 @@ export const RCDashboard: React.FC = () => {
     () => tallyVerificationTypeFilters(scopedVerifications),
     [scopedVerifications],
   );
+  const unsignedCertCount = useMemo(
+    () => tallySignedPdfFilters(scopedVerifications).notSigned,
+    [scopedVerifications],
+  );
+  const pendingUnsignedTotal = useMemo(
+    () => tallySignedPdfFilters(verifications).notSigned,
+    [verifications],
+  );
   const lifetimeCertified = useMemo(
     () => tallyVerificationStatusFilters(verifications).certified,
     [verifications],
@@ -280,12 +292,12 @@ export const RCDashboard: React.FC = () => {
         href: verificationHref('failed_submit'),
       },
       {
-        key: 'draft',
-        label: 'Draft',
-        count: tally.draft,
+        key: 'not_signed',
+        label: 'Not sign',
+        count: unsignedCertCount,
         tone: 'violet',
         icon: <FileText size={18} strokeWidth={1.9} />,
-        href: verificationHref('draft'),
+        href: `${basePath}/certificates?status=not_signed`,
       },
       {
         key: 'pending_rc',
@@ -341,7 +353,18 @@ export const RCDashboard: React.FC = () => {
       return cards.filter(card => card.key !== 'vcts' && card.key !== 'rc_rank');
     }
     return cards;
-  }, [tally, lifetimeCertified, vctCount, rcRank, rcCompanyName, isRcAdmin, isVerifier, basePath, listDuration]);
+  }, [
+    tally,
+    unsignedCertCount,
+    lifetimeCertified,
+    vctCount,
+    rcRank,
+    rcCompanyName,
+    isRcAdmin,
+    isVerifier,
+    basePath,
+    listDuration,
+  ]);
 
   const recent = useMemo(
     () =>
@@ -365,6 +388,12 @@ export const RCDashboard: React.FC = () => {
   return (
     <div className="fade-in wl-dash">
       {isRcAdmin && rcHasVehicle === false ? <RcVehicleRequiredNotice variant="rc" /> : null}
+      {isRcAdmin || mockUnsignedWarn ? (
+        <RcUnsignedCertificateNotice
+          count={pendingUnsignedTotal}
+          mock={mockUnsignedWarn}
+        />
+      ) : null}
 
       {rcUid && !isVerifier ? <RcQuotaOverview rcUid={rcUid} records={verifications} /> : null}
 

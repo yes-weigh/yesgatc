@@ -18,9 +18,14 @@ import {
   rehomeMasterPoolSerials,
   remainingQuotaSerials,
   rcOvUsedFromRecords,
+  serialsLinkedToInvoice,
   toggleVoidedSerial,
 } from '../../lib/rcMasterQuota';
-import { parseQuotaInput, uniqueSerials, yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
+import { expandSerialRange, parseQuotaInput, uniqueSerials, yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
+import {
+  inwardBatchesFromInboundEvents,
+  serialInwardBatchFromDoc,
+} from '../../lib/serialInwardReport';
 import type { SiteCalibration } from '../../types';
 import { SerialSeatOverlay } from '../../components/SerialSeatOverlay';
 
@@ -39,17 +44,6 @@ function quotaBalanceValue(quota: string, used: string): number | null {
   const u = parseQuotaInput(used);
   if (q == null || u == null) return null;
   return q - u;
-}
-
-function quotaBalance(quota: string, used: string): string {
-  const value = quotaBalanceValue(quota, used);
-  return value == null ? '—' : String(value);
-}
-
-function qtyMismatch(quota: string, used: string, serialCount: number): boolean {
-  const balance = quotaBalanceValue(quota, used);
-  if (balance == null) return serialCount > 0;
-  return balance !== serialCount;
 }
 
 function displayNum(value: string): string {
@@ -122,6 +116,9 @@ export function RcQuotaPanel() {
   const { user } = useAuth();
   const [quotas, setQuotas] = useState<QuotaRow[]>([]);
   const [serialsByRc, setSerialsByRc] = useState<Map<string, string[]>>(new Map());
+  const [allotInvoicedByRc, setAllotInvoicedByRc] = useState<Map<string, string[]>>(new Map());
+  const [batchInvoicedByRc, setBatchInvoicedByRc] = useState<Map<string, string[]>>(new Map());
+  const [eventInvoicedByRc, setEventInvoicedByRc] = useState<Map<string, string[]>>(new Map());
   const [usedByRc, setUsedByRc] = useState<Map<string, { count: number; serials: string[] }>>(
     new Map(),
   );
@@ -220,6 +217,7 @@ export function RcQuotaPanel() {
       collection(db, 'serialAllotments'),
       snap => {
         const byKey = new Map<string, string[]>();
+        const invoicedKey = new Map<string, string[]>();
         for (const item of snap.docs) {
           const row = yesoneSerialFromDoc(item.id, item.data());
           if (row.status === 'cancelled' || row.status === 'replaced') continue;
@@ -228,16 +226,77 @@ export function RcQuotaPanel() {
             const list = byKey.get(key) || [];
             list.push(row.serialNumber);
             byKey.set(key, list);
+            if (row.invoiceNo.trim()) {
+              const inv = invoicedKey.get(key) || [];
+              inv.push(row.serialNumber);
+              invoicedKey.set(key, inv);
+            }
           }
         }
         setSerialsByRc(byKey);
+        const normalized = new Map<string, string[]>();
+        for (const [key, list] of invoicedKey) normalized.set(key, uniqueSerials(list));
+        setAllotInvoicedByRc(normalized);
       },
-      () => setSerialsByRc(new Map()),
+      () => {
+        setSerialsByRc(new Map());
+        setAllotInvoicedByRc(new Map());
+      },
+    );
+
+    const unsubBatches = onSnapshot(
+      collection(db, 'serialInwardBatches'),
+      snap => {
+        const invoicedKey = new Map<string, string[]>();
+        for (const item of snap.docs) {
+          const row = serialInwardBatchFromDoc(item.id, item.data());
+          if (!row.invoiceNo.trim()) continue;
+          const keys = [row.rcId, row.rcCode.toUpperCase()].filter(Boolean);
+          const serials = expandSerialRange(row.serialStart, row.serialEnd);
+          for (const key of keys) {
+            const list = invoicedKey.get(key) || [];
+            list.push(...serials);
+            invoicedKey.set(key, list);
+          }
+        }
+        const normalized = new Map<string, string[]>();
+        for (const [key, list] of invoicedKey) normalized.set(key, uniqueSerials(list));
+        setBatchInvoicedByRc(normalized);
+      },
+      () => setBatchInvoicedByRc(new Map()),
+    );
+
+    const unsubEvents = onSnapshot(
+      collection(db, 'yesoneInboundEvents'),
+      snap => {
+        const events = snap.docs.map(item => {
+          const data = item.data() as { at?: string; payload?: unknown };
+          return { id: item.id, at: data.at, payload: data.payload };
+        });
+        const batches = inwardBatchesFromInboundEvents(events);
+        const byKey = new Map<string, string[]>();
+        for (const row of batches) {
+          if (!row.invoiceNo.trim()) continue;
+          const keys = [row.rcId, row.rcCode.toUpperCase()].filter(Boolean);
+          const serials = expandSerialRange(row.serialStart, row.serialEnd);
+          for (const key of keys) {
+            const list = byKey.get(key) || [];
+            list.push(...serials);
+            byKey.set(key, list);
+          }
+        }
+        const normalized = new Map<string, string[]>();
+        for (const [key, list] of byKey) normalized.set(key, uniqueSerials(list));
+        setEventInvoicedByRc(normalized);
+      },
+      () => setEventInvoicedByRc(new Map()),
     );
 
     return () => {
       unsubRcs();
       unsubAllot();
+      unsubBatches();
+      unsubEvents();
     };
   }, []);
 
@@ -290,7 +349,18 @@ export function RcQuotaPanel() {
         ? uniqueSerials([...fromStore.filter(serial => !isMasterPoolSerial(serial)), ...masterRcPoolSerials()])
         : fromStore.filter(serial => !isMasterPoolSerial(serial));
       const ovUsed = usedByRc.get(row.uid) || { count: 0, serials: [] };
-      const remaining = remainingQuotaSerials(allotted, ovUsed.serials, row.voidedSerials);
+      let remaining = remainingQuotaSerials(allotted, ovUsed.serials, row.voidedSerials);
+      if (!master) {
+        const invoiced = uniqueSerials([
+          ...(allotInvoicedByRc.get(row.uid) || []),
+          ...(code ? allotInvoicedByRc.get(code) || [] : []),
+          ...(batchInvoicedByRc.get(row.uid) || []),
+          ...(code ? batchInvoicedByRc.get(code) || [] : []),
+          ...(eventInvoicedByRc.get(row.uid) || []),
+          ...(code ? eventInvoicedByRc.get(code) || [] : []),
+        ]);
+        remaining = serialsLinkedToInvoice(remaining, invoiced);
+      }
       return {
         ...row,
         allotted,
@@ -300,7 +370,7 @@ export function RcQuotaPanel() {
         serials: remaining,
       };
     });
-  }, [quotas, serialsByRc, usedByRc]);
+  }, [allotInvoicedByRc, batchInvoicedByRc, eventInvoicedByRc, quotas, serialsByRc, usedByRc]);
 
   const openRow = useMemo(
     () => rows.find(row => row.uid === openUid) ?? null,
@@ -323,10 +393,9 @@ export function RcQuotaPanel() {
             </thead>
             <tbody>
               {rows.map(row => {
-                const balance = quotaBalance(row.sold, row.used);
-                const mismatch = qtyMismatch(row.sold, row.used, row.serials.length);
-                const canOpen = row.allotted.length > 0 || mismatch;
-                const bad = mismatch ? ' admin-setting-qty--bad' : '';
+                const balance = quotaBalanceValue(row.sold, row.used);
+                const seatBalance = row.serials.length;
+                const canOpen = row.allotted.length > 0 || seatBalance > 0 || row.voidedSerials.length > 0;
                 return (
                   <tr key={row.uid}>
                     <td>
@@ -347,14 +416,16 @@ export function RcQuotaPanel() {
                       {canOpen ? (
                         <button
                           type="button"
-                          className={`admin-setting-quota-balance-btn${bad}`}
+                          className="admin-setting-quota-balance-btn"
                           onClick={() => setOpenUid(row.uid)}
                           aria-label={`Serial numbers for ${row.companyName}`}
                         >
-                          {balance}
+                          {balance == null ? '—' : balance}
                         </button>
                       ) : (
-                        <span className={`text-mono admin-setting-quota-balance${bad}`}>{balance}</span>
+                        <span className="text-mono admin-setting-quota-balance">
+                          {balance == null ? '—' : balance}
+                        </span>
                       )}
                     </td>
                   </tr>

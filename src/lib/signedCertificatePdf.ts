@@ -44,6 +44,16 @@ export function canShowSignedCertificatePdf(record: SiteCalibration): boolean {
   return hasEmaapSignedPdfUpload(record);
 }
 
+/**
+ * Verifier Certificates list: own job is visible only after RC signed PDF
+ * and eMAAP Issued upload (legacy signed sequences included).
+ */
+export function isVerifierVisibleIssuedCertificate(record: SiteCalibration): boolean {
+  if (isVerificationCertificateVoided(record)) return false;
+  if (!record.certificateNumber?.trim()) return false;
+  return canShowSignedCertificatePdf(record);
+}
+
 export function certificateSignStatus(record: SiteCalibration): CertificateSignStatus {
   if (isVerificationCertificateVoided(record)) return 'voided';
   if (canShowSignedCertificatePdf(record)) return 'signed';

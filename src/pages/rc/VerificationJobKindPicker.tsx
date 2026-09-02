@@ -22,6 +22,8 @@ type VerificationJobKindPickerProps = {
   ovBalanceQty: number | null;
   ovRemainingCount?: number;
   pendingSerials: string[];
+  /** Verifier: only OV Self — hide OV/RV Customer + balance card. */
+  verifierMode?: boolean;
   onSelect: (kind: VerificationJobKind, serial?: string, manufacturingYear?: string) => void;
   onClose: () => void;
 };
@@ -64,6 +66,7 @@ export function VerificationJobKindPicker({
   ovBalanceQty,
   ovRemainingCount,
   pendingSerials,
+  verifierMode = false,
   onSelect,
   onClose,
 }: VerificationJobKindPickerProps) {
@@ -76,6 +79,10 @@ export function VerificationJobKindPicker({
   const [manualSerial, setManualSerial] = useState('');
   const [manufacturingYear, setManufacturingYear] = useState('');
 
+  const visibleKinds = useMemo(
+    () => (verifierMode ? KINDS.filter(kind => kind.id === 'ov_self') : KINDS),
+    [verifierMode],
+  );
   const seats = useMemo(
     () =>
       [...pendingSerials].sort((a, b) =>
@@ -159,7 +166,7 @@ export function VerificationJobKindPicker({
 
       <div className="verification-job-kind-page-body">
         <div className="verification-job-kind-page-list">
-          {KINDS.map(kind => {
+          {visibleKinds.map(kind => {
             const disabled = kind.ov && ovBlocked;
             const Icon = kind.Icon;
             return (
@@ -185,24 +192,26 @@ export function VerificationJobKindPicker({
             );
           })}
 
-          <div className="verification-job-kind-balance-card" role="status">
-            <span className="verification-job-kind-avatar verification-job-kind-avatar--purple">
-              <ClipboardList size={18} strokeWidth={2.2} aria-hidden />
-            </span>
-            <span className="verification-job-kind-copy">
-              <span className="verification-job-kind-copy-title">Balance OV Quantity to do</span>
-              <span className="verification-job-kind-copy-sub">Total OV Self + OV Customer</span>
-            </span>
-            <span className="verification-job-kind-balance-stat">
-              <strong>{balanceLabel}</strong>
-              <span>Jobs</span>
-            </span>
-          </div>
+          {!verifierMode ? (
+            <div className="verification-job-kind-balance-card" role="status">
+              <span className="verification-job-kind-avatar verification-job-kind-avatar--purple">
+                <ClipboardList size={18} strokeWidth={2.2} aria-hidden />
+              </span>
+              <span className="verification-job-kind-copy">
+                <span className="verification-job-kind-copy-title">Balance OV Quantity to do</span>
+                <span className="verification-job-kind-copy-sub">Total OV Self + OV Customer</span>
+              </span>
+              <span className="verification-job-kind-balance-stat">
+                <strong>{balanceLabel}</strong>
+                <span>Jobs</span>
+              </span>
+            </div>
+          ) : null}
         </div>
 
-        {qtyBlocked ? (
+        {!verifierMode && qtyBlocked ? (
           <p className="verification-job-kind-hint">OV quota is 0. RV Customer still available.</p>
-        ) : serialBlocked ? (
+        ) : !verifierMode && serialBlocked ? (
           <p className="verification-job-kind-hint">No allotted serials left. RV Customer still available.</p>
         ) : null}
       </div>

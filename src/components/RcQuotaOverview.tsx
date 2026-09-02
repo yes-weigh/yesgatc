@@ -3,15 +3,21 @@ import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { CircleDot, Hash, Layers } from 'lucide-react';
 import { db } from '../firebase';
 import {
-  IWP_USED_FROM_DATE,
-  isMasterPoolSerial,
-  isMasterRc,
-  masterRcPoolSerials,
-  masterRcUnusedQty,
-  remainingQuotaSerials,
-  rcOvUsedFromRecords,
+  computeRcQuotaSeats,
+  toggleReservedSerial,
 } from '../lib/rcMasterQuota';
-import { parseQuotaInput, uniqueSerials, yesoneSerialFromDoc } from '../lib/yesoneInboundData';
+import { uniqueSerials, yesoneSerialFromDoc } from '../lib/yesoneInboundData';
+import {
+  filterInwardBatchesForRc,
+  inwardBatchesFromInboundEvents,
+  serialInwardBatchFromDoc,
+  type SerialInwardBatch,
+} from '../lib/serialInwardReport';
+import {
+  invoicedSerialsFromAllotments,
+  serialsForReservedInvoices,
+  serialsFromInwardBatches,
+} from '../lib/invoicedQuotaSerials';
 import type { SiteCalibration } from '../types';
 import { SerialSeatOverlay } from './SerialSeatOverlay';
 
@@ -30,7 +36,13 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   const [ovQuota, setOvQuota] = useState('');
   const [storedSerials, setStoredSerials] = useState<string[]>([]);
   const [voidedSerials, setVoidedSerials] = useState<string[]>([]);
+  const [reservedSerials, setReservedSerials] = useState<string[]>([]);
+  const [reservedInvoices, setReservedInvoices] = useState<string[]>([]);
+  const [reservedForUids, setReservedForUids] = useState<string[]>([]);
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
+  const [allotInvoiced, setAllotInvoiced] = useState<string[]>([]);
+  const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
+  const [eventRows, setEventRows] = useState<SerialInwardBatch[]>([]);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -42,6 +54,13 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
       setOvQuota(data.ovQuota == null || data.ovQuota === '' ? '' : String(data.ovQuota));
       setStoredSerials(uniqueSerials(data.yesoneAllottedSerials));
       setVoidedSerials(uniqueSerials(data.yesoneVoidedSerials));
+      setReservedSerials(uniqueSerials(data.yesoneReservedSerials));
+      setReservedInvoices(
+        uniqueSerials(Array.isArray(data.yesoneReservedInvoices) ? data.yesoneReservedInvoices : []),
+      );
+      setReservedForUids(
+        uniqueSerials(Array.isArray(data.yesoneReservedForUids) ? data.yesoneReservedForUids : []),
+      );
     });
   }, [rcUid]);
 
@@ -49,37 +68,89 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
     return onSnapshot(
       query(collection(db, 'serialAllotments'), where('rcId', '==', rcUid)),
       snap => {
-        const list: string[] = [];
-        for (const item of snap.docs) {
-          const row = yesoneSerialFromDoc(item.id, item.data());
-          if (row.status === 'cancelled' || row.status === 'replaced') continue;
-          list.push(row.serialNumber);
-        }
-        setAllotSerials(uniqueSerials(list));
+        const rows = snap.docs.map(item => yesoneSerialFromDoc(item.id, item.data()));
+        const active = rows.filter(row => row.status !== 'cancelled' && row.status !== 'replaced');
+        setAllotSerials(uniqueSerials(active.map(row => row.serialNumber)));
+        setAllotInvoiced(invoicedSerialsFromAllotments(active));
       },
-      () => setAllotSerials([]),
+      () => {
+        setAllotSerials([]);
+        setAllotInvoiced([]);
+      },
     );
   }, [rcUid]);
 
-  const quota = useMemo(() => {
-    const master = isMasterRc({ rcCode, companyName });
-    const fromStore = uniqueSerials([...storedSerials, ...allotSerials]);
-    const allottedSerials = master
-      ? uniqueSerials([
-        ...fromStore.filter(serial => !isMasterPoolSerial(serial)),
-        ...masterRcPoolSerials(),
-      ])
-      : fromStore.filter(serial => !isMasterPoolSerial(serial));
-    const used = rcOvUsedFromRecords(
-      records,
-      master ? { fromDate: IWP_USED_FROM_DATE } : undefined,
+  useEffect(() => {
+    return onSnapshot(
+      query(collection(db, 'serialInwardBatches'), where('rcId', '==', rcUid)),
+      snap => {
+        setBatchRows(snap.docs.map(item => serialInwardBatchFromDoc(item.id, item.data())));
+      },
+      () => setBatchRows([]),
     );
-    const remaining = remainingQuotaSerials(allottedSerials, used.serials, voidedSerials);
-    const allottedQty = master ? masterRcUnusedQty() : parseQuotaInput(ovQuota);
-    const usedQty = used.count;
-    const balanceQty = allottedQty == null ? null : allottedQty - usedQty;
-    return { remaining, allottedQty, usedQty, balanceQty };
-  }, [allotSerials, companyName, ovQuota, rcCode, records, storedSerials, voidedSerials]);
+  }, [rcUid]);
+
+  useEffect(() => {
+    return onSnapshot(collection(db, 'yesoneInboundEvents'), snap => {
+      const events = snap.docs.map(item => {
+        const data = item.data() as { at?: string; payload?: unknown };
+        return { id: item.id, at: data.at, payload: data.payload };
+      });
+      setEventRows(
+        filterInwardBatchesForRc(inwardBatchesFromInboundEvents(events), {
+          rcId: rcUid,
+          rcCode,
+        }),
+      );
+    }, () => setEventRows([]));
+  }, [rcCode, rcUid]);
+
+  const invoicedSerials = useMemo(
+    () =>
+      uniqueSerials([
+        ...allotInvoiced,
+        ...serialsFromInwardBatches(batchRows),
+        ...serialsFromInwardBatches(eventRows),
+      ]),
+    [allotInvoiced, batchRows, eventRows],
+  );
+
+  const mergedReserved = useMemo(
+    () =>
+      uniqueSerials([
+        ...reservedSerials,
+        ...serialsForReservedInvoices([...batchRows, ...eventRows], reservedInvoices),
+      ]),
+    [batchRows, eventRows, reservedInvoices, reservedSerials],
+  );
+
+  const quota = useMemo(
+    () =>
+      computeRcQuotaSeats({
+        rcCode,
+        companyName,
+        ovQuota,
+        storedSerials,
+        allotSerials,
+        voidedSerials,
+        records,
+        invoicedSerials,
+        reservedSerials: mergedReserved,
+        reservedForUids,
+      }),
+    [
+      allotSerials,
+      companyName,
+      invoicedSerials,
+      mergedReserved,
+      ovQuota,
+      rcCode,
+      records,
+      reservedForUids,
+      storedSerials,
+      voidedSerials,
+    ],
+  );
 
   return (
     <>
@@ -125,8 +196,11 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
           rcCode={rcCode}
           serials={quota.remaining}
           voidedSerials={[]}
+          reservedSerials={quota.reservedSerials}
           expectedCount={quota.balanceQty}
           canVoid={false}
+          canReserve
+          onToggleReserve={(serial, reserved) => toggleReservedSerial(rcUid, serial, reserved)}
           onClose={() => setOpen(false)}
         />
       ) : null}

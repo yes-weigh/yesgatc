@@ -25,6 +25,7 @@ import {
   certificatePdfDownloadedAt,
   certificateRequiresSignedUpload,
   certificateSignStatus,
+  isVerifierVisibleIssuedCertificate,
   markCertificatePdfDownloaded,
   resolveUnsignedCertificatePdfUrl,
   storedSignedCertificatePdfPath,
@@ -32,6 +33,7 @@ import {
   uploadSignedCertificatePdf,
   validateSignedCertificatePdf,
 } from '../../lib/signedCertificatePdf';
+import { UnsignedCertificateDownloadWarn } from '../../components/RcUnsignedPdfDisturbHost';
 import type { SiteCalibration } from '../../types';
 
 function formatStamp(iso?: string | null): string {
@@ -67,7 +69,7 @@ export const CertificateSign: React.FC = () => {
   const navigate = useNavigate();
   const basePath = useRoleBasePath();
   const { user } = useAuth();
-  const { rcUid, isRcAdmin } = useRcScope();
+  const { rcUid, isRcAdmin, isVerifier } = useRcScope();
   const isPhone = useMobileViewport();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,6 +83,7 @@ export const CertificateSign: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
   const [viewingPdf, setViewingPdf] = useState(false);
+  const [downloadWarnOpen, setDownloadWarnOpen] = useState(false);
 
   const listPath = `${basePath}/certificates`;
 
@@ -105,6 +108,11 @@ export const CertificateSign: React.FC = () => {
         setError('Certificate not found.');
         return;
       }
+      if (isVerifier && !isVerifierVisibleIssuedCertificate(next)) {
+        setRecord(null);
+        setError('Certificate not ready yet. Visible after RC signs and eMAAP upload.');
+        return;
+      }
       setRecord(next);
       setDownloadedAt(certificatePdfDownloadedAt(next.id));
     } catch (err) {
@@ -113,7 +121,7 @@ export const CertificateSign: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [rcUid, recordId]);
+  }, [isVerifier, rcUid, recordId]);
 
   useEffect(() => {
     void load();
@@ -135,7 +143,7 @@ export const CertificateSign: React.FC = () => {
     return record.signedCertificatePdfName?.trim() || certificatePdfFileName(record);
   }, [record]);
 
-  const handleDownload = () => {
+  const runDownload = () => {
     if (!record || !pdfUrl) return;
     markCertificatePdfDownloaded(record.id);
     setDownloadedAt(new Date().toISOString());
@@ -144,6 +152,15 @@ export const CertificateSign: React.FC = () => {
       return;
     }
     window.open(pdfUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleDownload = () => {
+    if (!record || !pdfUrl) return;
+    if (certificateSignStatus(record) === 'not_signed') {
+      setDownloadWarnOpen(true);
+      return;
+    }
+    runDownload();
   };
 
   const takeFile = (file: File | null) => {
@@ -461,7 +478,16 @@ export const CertificateSign: React.FC = () => {
             : null
         }
         heading={record && hasSignedCertificatePdf(record) ? 'Signed certificate' : undefined}
+        warnUnsignedDownload
         onClose={() => setViewingPdf(false)}
+      />
+      <UnsignedCertificateDownloadWarn
+        open={downloadWarnOpen}
+        onContinue={() => {
+          setDownloadWarnOpen(false);
+          runDownload();
+        }}
+        onCancel={() => setDownloadWarnOpen(false)}
       />
     </div>
   );

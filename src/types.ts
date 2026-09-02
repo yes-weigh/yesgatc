@@ -282,6 +282,14 @@ export interface FirestoreUserDoc {
   yesoneAllottedSerials?: string[];
   /** Super Admin voided serials — excluded from remaining qty. */
   yesoneVoidedSerials?: string[];
+  /** Reserved seats — RC admin + assigned verifiers; hidden from VCT / other staff. */
+  yesoneReservedSerials?: string[];
+  /** Invoice nos whose serials join the reserved pool. */
+  yesoneReservedInvoices?: string[];
+  /** Verifier/VCT uids allowed to pick reserved serials (legacy / union of assignees). */
+  yesoneReservedForUids?: string[];
+  /** Per-invoice verifier assignment for reserved inward batches. */
+  yesoneReservedAssignments?: Array<{ invoiceNo: string; verifierUid: string }>;
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
   /** Super Admin only — Zoho Books labour expense account ID (chart of accounts). */

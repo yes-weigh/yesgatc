@@ -26,6 +26,12 @@ const LOCAL_QUICK_LOGINS = import.meta.env.DEV
         aadhar: '261870165022',
         password: 'Gatc@2026',
       },
+      {
+        id: 'rasheed-verifier',
+        label: 'Rasheed verifier',
+        aadhar: '650113424777',
+        password: 'Gatc@2026',
+      },
     ]
   : [];
 

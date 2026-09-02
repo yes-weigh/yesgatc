@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { Award, Search, Share2 } from 'lucide-react';
 import { FilterIcon } from '../../components/FilterIcon';
@@ -18,6 +18,7 @@ import { paginateItems, VERIFICATION_TABLE_PAGE_SIZE } from '../../lib/tablePagi
 import {
   certificateSignStatus,
   canShowSignedCertificatePdf,
+  isVerifierVisibleIssuedCertificate,
   resolveCertificatePdfFileUrl,
   resolveCertificatePdfStoragePath,
   type CertificateSignStatus,
@@ -27,6 +28,11 @@ import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 type CertTypeFilter = 'all' | 'OV' | 'RV';
 type CertStatusFilter = 'all' | CertificateSignStatus;
+
+function parseCertStatusParam(raw: string | null): CertStatusFilter {
+  if (raw === 'signed' || raw === 'not_signed' || raw === 'voided') return raw;
+  return 'all';
+}
 
 function certLocation(
   record: SiteCalibration,
@@ -68,10 +74,11 @@ function matchesCertificateOrMachine(record: SiteCalibration, query: string): bo
 }
 
 export const Certificates: React.FC = () => {
-  const { rcUid, actorUid, isFieldStaff } = useRcScope();
+  const { rcUid, actorUid, isFieldStaff, isVerifier } = useRcScope();
   const { products } = useAppContext();
   const basePath = useRoleBasePath();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const filterRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [records, setRecords] = useState<SiteCalibration[]>([]);
@@ -83,8 +90,9 @@ export const Certificates: React.FC = () => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<CertTypeFilter>('all');
-  const [statusFilter, setStatusFilter] = useState<CertStatusFilter>('all');
-  const [viewingRecord, setViewingRecord] = useState<SiteCalibration | null>(null);
+  const [statusFilter, setStatusFilter] = useState<CertStatusFilter>(() =>
+    parseCertStatusParam(searchParams.get('status')),
+  );  const [viewingRecord, setViewingRecord] = useState<SiteCalibration | null>(null);
   const [filterSlots, setFilterSlots] = useState<{
     mobile: HTMLElement | null;
     desktop: HTMLElement | null;
@@ -121,6 +129,10 @@ export const Certificates: React.FC = () => {
   }, [fetchRecords]);
 
   useEffect(() => {
+    setStatusFilter(parseCertStatusParam(searchParams.get('status')));
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!filterOpen) return;
     const onDoc = (event: MouseEvent) => {
       if (filterRef.current?.contains(event.target as Node)) return;
@@ -144,9 +156,13 @@ export const Certificates: React.FC = () => {
   const issued = useMemo(
     () =>
       records
-        .filter(isVerificationCertifiedOnDoca)
+        .filter(record =>
+          isVerifier
+            ? isVerifierVisibleIssuedCertificate(record)
+            : isVerificationCertifiedOnDoca(record),
+        )
         .sort((a, b) => (b.certifiedAt || b.approvedAt || '').localeCompare(a.certifiedAt || a.approvedAt || '')),
-    [records],
+    [isVerifier, records],
   );
 
   const filtered = useMemo(() => {
@@ -284,7 +300,11 @@ export const Certificates: React.FC = () => {
         ) : issued.length === 0 ? (
           <div className="wl-recent__empty">
             <Award size={28} strokeWidth={1.6} aria-hidden />
-            <p>No certificates issued yet.</p>
+            <p>
+              {isVerifier
+                ? 'No certificates yet. Visible after RC signs and eMAAP upload.'
+                : 'No certificates issued yet.'}
+            </p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="wl-recent__empty">

@@ -153,6 +153,11 @@ function readInvoiceNo(item) {
   if (nested) return nested;
   const raw = pickValue(rec, ['invoice']);
   if (typeof raw === 'string' || typeof raw === 'number') return optionalTrimmed(raw);
+  const links = Array.isArray(rec.invoiceLinks) ? rec.invoiceLinks : [];
+  if (links.length) {
+    const linkInv = pickText(asRecord(links[0]), ['invoiceNumber', 'invoiceNo', 'invoiceId', 'number']);
+    if (linkInv) return linkInv;
+  }
   // YesOne allotment row id is the inward reference when invoice fields are absent.
   const allotmentId = optionalTrimmed(rec.allotmentId || rec.allotment_id);
   if (allotmentId) return allotmentId;
