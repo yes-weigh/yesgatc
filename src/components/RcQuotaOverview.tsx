@@ -4,18 +4,18 @@ import { CircleDot, Hash, Layers } from 'lucide-react';
 import { db } from '../firebase';
 import {
   computeRcQuotaSeats,
+  excludeReservedSerials,
+  normalizeReservedAssignments,
   toggleReservedSerial,
 } from '../lib/rcMasterQuota';
-import { uniqueSerials, yesoneSerialFromDoc } from '../lib/yesoneInboundData';
+import { expandSerialRange, uniqueSerials, yesoneSerialFromDoc } from '../lib/yesoneInboundData';
 import {
   filterInwardBatchesForRc,
   inwardBatchesFromInboundEvents,
   serialInwardBatchFromDoc,
   type SerialInwardBatch,
 } from '../lib/serialInwardReport';
-import {
-  serialsForReservedInvoices,
-} from '../lib/invoicedQuotaSerials';
+import { serialsForReservedInvoices } from '../lib/invoicedQuotaSerials';
 import { useRcScope } from '../lib/roleScope';
 import type { SiteCalibration } from '../types';
 import { SerialSeatOverlay } from './SerialSeatOverlay';
@@ -40,25 +40,33 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   const [reservedSerials, setReservedSerials] = useState<string[]>([]);
   const [reservedInvoices, setReservedInvoices] = useState<string[]>([]);
   const [reservedForUids, setReservedForUids] = useState<string[]>([]);
+  const [reservedAssignments, setReservedAssignments] = useState<
+    Array<{ invoiceNo: string; verifierUid: string; serialStart?: string; serialEnd?: string }>
+  >([]);
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
   const [eventRows, setEventRows] = useState<SerialInwardBatch[]>([]);
   const [quotaRecords, setQuotaRecords] = useState<SiteCalibration[]>(records);
+  const [rcWideOk, setRcWideOk] = useState(false);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     setQuotaRecords(records);
+    setRcWideOk(false);
   }, [records]);
 
   useEffect(() => {
+    setRcWideOk(false);
     return onSnapshot(
       query(collection(db, 'siteCalibrations'), where('rcId', '==', rcUid)),
       snap => {
         setQuotaRecords(
           snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
         );
+        setRcWideOk(true);
       },
       () => {
+        setRcWideOk(false);
         /* keep list-scoped records if RC-wide read denied */
       },
     );
@@ -83,6 +91,7 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
       setReservedForUids(
         uniqueSerials(Array.isArray(data.yesoneReservedForUids) ? data.yesoneReservedForUids : []),
       );
+      setReservedAssignments(normalizeReservedAssignments(data.yesoneReservedAssignments));
     });
   }, [rcUid]);
 
@@ -125,14 +134,21 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
     }, () => setEventRows([]));
   }, [rcCode, rcUid]);
 
-  const mergedReserved = useMemo(
-    () =>
-      uniqueSerials([
-        ...reservedSerials,
-        ...serialsForReservedInvoices([...batchRows, ...eventRows], reservedInvoices),
-      ]),
-    [batchRows, eventRows, reservedInvoices, reservedSerials],
-  );
+  const mergedReserved = useMemo(() => {
+    const fromAssignments: string[] = [];
+    for (const row of reservedAssignments) {
+      if (row.serialStart) {
+        fromAssignments.push(
+          ...expandSerialRange(row.serialStart, row.serialEnd || row.serialStart),
+        );
+      }
+    }
+    return uniqueSerials([
+      ...reservedSerials,
+      ...fromAssignments,
+      ...serialsForReservedInvoices([...batchRows, ...eventRows], reservedInvoices),
+    ]);
+  }, [batchRows, eventRows, reservedAssignments, reservedInvoices, reservedSerials]);
 
   const quota = useMemo(
     () =>
@@ -141,6 +157,7 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
         companyName,
         ovQuota,
         ovQuotaUsed,
+        recordsAreRcWide: rcWideOk,
         storedSerials,
         allotSerials,
         voidedSerials,
@@ -156,13 +173,21 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
       ovQuotaUsed,
       quotaRecords,
       rcCode,
+      rcWideOk,
       reservedForUids,
       storedSerials,
       voidedSerials,
     ],
   );
 
-  const balanceSerials = isRcAdmin ? quota.remaining : quota.vctRemaining;
+  // VCT: never show verifier-reserved stickers (mask from balance overlay + count).
+  const balanceSerials = useMemo(() => {
+    if (isRcAdmin) return quota.remaining;
+    // Field staff / VCT: public pool only.
+    return excludeReservedSerials(quota.vctRemaining, mergedReserved);
+  }, [isRcAdmin, mergedReserved, quota.remaining, quota.vctRemaining]);
+
+  const balanceQty = isRcAdmin ? quota.balanceQty : balanceSerials.length;
 
   return (
     <>
@@ -197,7 +222,9 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
               <Hash size={16} strokeWidth={2.2} aria-hidden />
               Balance
             </p>
-            <p className="rc-summary-tile__value">{displayQty(quota.balanceQty)}</p>
+            <p className="rc-summary-tile__value">
+              {displayQty(balanceQty)}
+            </p>
           </button>
         </div>
       </section>
@@ -209,13 +236,7 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
           serials={balanceSerials}
           voidedSerials={[]}
           reservedSerials={isRcAdmin ? quota.reservedSerials : []}
-          expectedCount={
-            isRcAdmin
-              ? quota.balanceQty
-              : quota.balanceQty == null
-                ? null
-                : Math.max(0, quota.balanceQty - quota.reservedSerials.length)
-          }
+          expectedCount={balanceQty}
           canVoid={false}
           canReserve={isRcAdmin}
           onToggleReserve={(serial, reserved) => toggleReservedSerial(rcUid, serial, reserved)}

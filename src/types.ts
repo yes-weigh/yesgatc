@@ -289,7 +289,12 @@ export interface FirestoreUserDoc {
   /** Verifier/VCT uids allowed to pick reserved serials (legacy / union of assignees). */
   yesoneReservedForUids?: string[];
   /** Per-invoice verifier assignment for reserved inward batches. */
-  yesoneReservedAssignments?: Array<{ invoiceNo: string; verifierUid: string }>;
+  yesoneReservedAssignments?: Array<{
+    invoiceNo: string;
+    verifierUid: string;
+    serialStart?: string;
+    serialEnd?: string;
+  }>;
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
   /** Super Admin only — Zoho Books labour expense account ID (chart of accounts). */

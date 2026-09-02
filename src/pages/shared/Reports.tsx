@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { Building2, X } from 'lucide-react';
 import { FilterIcon } from '../../components/FilterIcon';
 import { ContractorFeePayControl } from '../../components/ContractorFeePayControl';
@@ -33,7 +33,13 @@ import {
   syntheticInwardBatchesFromAllotments,
   type SerialInwardBatch,
 } from '../../lib/serialInwardReport';
-import { yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
+import {
+  clearInvoiceReservation,
+  normalizeReservedAssignments,
+  reserveInvoiceForVerifier,
+} from '../../lib/rcMasterQuota';
+import { fetchRcVerifierUsers } from '../../lib/rcVerifierMembers';
+import { expandSerialRange, yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { getVerificationDisplayStatus } from '../../lib/verificationRequest';
 import type { FirestoreUserDoc, Product, SiteCalibration } from '../../types';
@@ -194,6 +200,60 @@ export const Reports: React.FC = () => {
     () => new Map(),
   );
   const [inwardBatches, setInwardBatches] = useState<SerialInwardBatch[]>([]);
+  const [verifiers, setVerifiers] = useState<Array<FirestoreUserDoc & { uid: string }>>([]);
+  const [reservedByInvoice, setReservedByInvoice] = useState<Record<string, string>>({});
+  const [reserveRow, setReserveRow] = useState<SerialInwardBatch | null>(null);
+  const [reserveVerifierUid, setReserveVerifierUid] = useState('');
+  const [reserveBusy, setReserveBusy] = useState(false);
+  const [reserveError, setReserveError] = useState('');
+
+  useEffect(() => {
+    if (!isRcAdmin || !rcUid) {
+      setVerifiers([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchRcVerifierUsers(rcUid).then(rows => {
+      if (!cancelled) setVerifiers(rows.filter(row => row.active !== false));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isRcAdmin, rcUid]);
+
+  useEffect(() => {
+    if (!isRcAdmin || !rcUid) {
+      setReservedByInvoice({});
+      return;
+    }
+    return onSnapshot(doc(db, 'users', rcUid), snap => {
+      if (!snap.exists()) {
+        setReservedByInvoice({});
+        return;
+      }
+      const map: Record<string, string> = {};
+      for (const row of normalizeReservedAssignments(snap.data()?.yesoneReservedAssignments)) {
+        map[row.invoiceNo.trim().toUpperCase()] = row.verifierUid;
+      }
+      // Legacy: reserved invoices without assignment map.
+      const invoices = Array.isArray(snap.data()?.yesoneReservedInvoices)
+        ? snap.data()?.yesoneReservedInvoices
+        : [];
+      for (const inv of invoices || []) {
+        const key = String(inv || '').trim().toUpperCase();
+        if (key && !map[key]) map[key] = '';
+      }
+      setReservedByInvoice(map);
+    });
+  }, [isRcAdmin, rcUid]);
+
+  const verifierNameByUid = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const row of verifiers) {
+      map[row.uid] = String(row.username || row.aadhar || row.uid).trim();
+    }
+    return map;
+  }, [verifiers]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1083,7 +1143,16 @@ export const Reports: React.FC = () => {
               {isSerialInward ? (
                 <>
                   <ul className="reports-rev-cards reports-inward-cards">
-                    {pagedInwardRows.map((row, index) => (
+                    {pagedInwardRows.map((row, index) => {
+                      const invKey = String(row.invoiceNo || '').trim().toUpperCase();
+                      const reservedUid = invKey ? reservedByInvoice[invKey] : undefined;
+                      const isReserved = reservedUid !== undefined;
+                      const reservedLabel = reservedUid
+                        ? verifierNameByUid[reservedUid] || 'Verifier'
+                        : isReserved
+                          ? 'RC reserved'
+                          : '';
+                      return (
                       <li key={row.id} className="reports-rev-card reports-inward-card">
                         <span className="reports-rev-card__sl reports-inward-card__sl">
                           {pageStart + index}
@@ -1108,10 +1177,160 @@ export const Reports: React.FC = () => {
                             )}
                             <span className="reports-inward-card__qty">{row.totalQty} qty</span>
                           </p>
+                          {isRcAdmin && row.invoiceNo.trim() ? (
+                            <div className="reports-inward-card__reserve">
+                              {isReserved ? (
+                                <>
+                                  <span className="reports-inward-card__reserve-tag">
+                                    Reserved → {reservedLabel}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    disabled={reserveBusy}
+                                    onClick={() => {
+                                      if (!rcUid) return;
+                                      setReserveBusy(true);
+                                      setReserveError('');
+                                      void clearInvoiceReservation(
+                                        rcUid,
+                                        row.invoiceNo,
+                                        expandSerialRange(row.serialStart, row.serialEnd || row.serialStart),
+                                      )
+                                        .catch(err => {
+                                          setReserveError(
+                                            err instanceof Error ? err.message : 'Could not clear reservation.',
+                                          );
+                                        })
+                                        .finally(() => setReserveBusy(false));
+                                    }}
+                                  >
+                                    Unreserve
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={reserveBusy || verifiers.length === 0}
+                                  onClick={() => {
+                                    setReserveError('');
+                                    setReserveVerifierUid(verifiers[0]?.uid || '');
+                                    setReserveRow(row);
+                                  }}
+                                >
+                                  Reserve for verifier
+                                </button>
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
+                  {reserveRow && isRcAdmin ? (
+                    createPortal(
+                      <div
+                        className="reports-reserve-overlay"
+                        role="presentation"
+                        onClick={() => !reserveBusy && setReserveRow(null)}
+                      >
+                        <div
+                          className="reports-reserve-dialog"
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="reports-reserve-title"
+                          onClick={event => event.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className="rv-payment-panel-close"
+                            aria-label="Close"
+                            disabled={reserveBusy}
+                            onClick={() => setReserveRow(null)}
+                          >
+                            <X size={18} />
+                          </button>
+                          <h2 id="reports-reserve-title" className="reports-reserve-dialog__title">
+                            Reserve bill seats
+                          </h2>
+                          <p className="reports-reserve-dialog__meta text-mono">
+                            {reserveRow.invoiceNo}
+                          </p>
+                          <p className="reports-reserve-dialog__meta">
+                            {reserveRow.serialStart}
+                            {reserveRow.serialEnd
+                              && reserveRow.serialEnd.trim().toUpperCase()
+                                !== reserveRow.serialStart.trim().toUpperCase()
+                              ? ` – ${reserveRow.serialEnd}`
+                              : ''}
+                            {' · '}
+                            {reserveRow.totalQty} qty
+                          </p>
+                          <p className="text-muted text-sm">
+                            Assigned verifier can use these serials for OV drafts. Hidden from VCT.
+                          </p>
+                          <label className="reports-reserve-dialog__label" htmlFor="reports-reserve-verifier">
+                            Verifier
+                          </label>
+                          <select
+                            id="reports-reserve-verifier"
+                            className="form-control"
+                            value={reserveVerifierUid}
+                            disabled={reserveBusy}
+                            onChange={event => setReserveVerifierUid(event.target.value)}
+                          >
+                            {verifiers.map(row => (
+                              <option key={row.uid} value={row.uid}>
+                                {row.username || row.aadhar || row.uid}
+                              </option>
+                            ))}
+                          </select>
+                          {verifiers.length === 0 ? (
+                            <p className="login-error">Add a verifier under Verifiers first.</p>
+                          ) : null}
+                          {reserveError ? <p className="login-error">{reserveError}</p> : null}
+                          <div className="reports-reserve-dialog__actions">
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={reserveBusy}
+                              onClick={() => setReserveRow(null)}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              disabled={reserveBusy || !reserveVerifierUid || !rcUid}
+                              onClick={() => {
+                                if (!rcUid || !reserveRow || !reserveVerifierUid) return;
+                                setReserveBusy(true);
+                                setReserveError('');
+                                void reserveInvoiceForVerifier(rcUid, {
+                                  invoiceNo: reserveRow.invoiceNo,
+                                  serialStart: reserveRow.serialStart,
+                                  serialEnd: reserveRow.serialEnd || reserveRow.serialStart,
+                                  verifierUid: reserveVerifierUid,
+                                })
+                                  .then(() => setReserveRow(null))
+                                  .catch(err => {
+                                    setReserveError(
+                                      err instanceof Error ? err.message : 'Could not reserve invoice.',
+                                    );
+                                  })
+                                  .finally(() => setReserveBusy(false));
+                              }}
+                            >
+                              {reserveBusy ? 'Saving…' : 'Reserve'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>,
+                      document.body,
+                    )
+                  ) : null}
                 </>
               ) : isRevenue ? (
                 <>

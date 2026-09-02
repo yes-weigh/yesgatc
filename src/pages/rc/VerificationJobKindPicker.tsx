@@ -70,10 +70,24 @@ export function VerificationJobKindPicker({
   onSelect,
   onClose,
 }: VerificationJobKindPickerProps) {
-  const qtyBlocked = ovBalanceQty != null && ovBalanceQty <= 0;
-  const serialBlocked = ovRemainingCount === 0;
+  const seats = useMemo(
+    () =>
+      [...pendingSerials].sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+      ),
+    [pendingSerials],
+  );
+  const qtyBlocked = verifierMode
+    ? seats.length === 0
+    : ovBalanceQty != null && ovBalanceQty <= 0;
+  const serialBlocked = ovRemainingCount === 0 || (verifierMode && seats.length === 0);
   const ovBlocked = qtyBlocked || serialBlocked;
-  const balanceLabel = ovBalanceQty == null ? '—' : String(Math.max(0, ovBalanceQty));
+  // Verifier QTY = reserved seats only (not RC balance).
+  const balanceLabel = verifierMode
+    ? String(seats.length)
+    : ovBalanceQty == null
+      ? '—'
+      : String(Math.max(0, ovBalanceQty));
   const [pickingKind, setPickingKind] = useState<VerificationJobKind | null>(null);
   const [pickedSerial, setPickedSerial] = useState('');
   const [manualSerial, setManualSerial] = useState('');
@@ -82,13 +96,6 @@ export function VerificationJobKindPicker({
   const visibleKinds = useMemo(
     () => (verifierMode ? KINDS.filter(kind => kind.id === 'ov_self') : KINDS),
     [verifierMode],
-  );
-  const seats = useMemo(
-    () =>
-      [...pendingSerials].sort((a, b) =>
-        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
-      ),
-    [pendingSerials],
   );
 
   const isRvManual = pickingKind === 'rv_customer';

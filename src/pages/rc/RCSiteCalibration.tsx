@@ -417,7 +417,17 @@ export const RCSiteCalibration: React.FC = () => {
   });
   const [assignableVcts, setAssignableVcts] = useState<AssignableVctOption[]>([]);
   const quotaSeats = useRcQuotaSeats(rcUid, records);
-  const pickSerials = pickQuotaSerialsForActor(quotaSeats, { isRcAdmin, actorUid });
+  const pickSerials = pickQuotaSerialsForActor(quotaSeats, {
+    isRcAdmin,
+    isVerifier,
+    isVct,
+    actorUid,
+  });
+  const actorBalanceQty = isRcAdmin
+    ? quotaSeats.balanceQty
+    : isVerifier || isVct
+      ? pickSerials.length
+      : quotaSeats.balanceQty;
   const ovQuotaGate = useMemo<OvQuotaGate>(() => {
     const editingRecord = editingId ? records.find(r => r.id === editingId) : null;
     const held = editingRecord?.serialNumber?.trim()
@@ -425,10 +435,10 @@ export const RCSiteCalibration: React.FC = () => {
       : [];
     return {
       remaining: pickSerials,
-      balanceQty: quotaSeats.balanceQty,
+      balanceQty: actorBalanceQty,
       heldSerials: held,
     };
-  }, [pickSerials, quotaSeats.balanceQty, editingId, records]);
+  }, [pickSerials, actorBalanceQty, editingId, records]);
 
   const validationOptions = useMemo(() => {
     const editingRecordForValidation = editingId
@@ -488,14 +498,14 @@ export const RCSiteCalibration: React.FC = () => {
           record.verificationType === 'OV'
             ? {
                 remaining: pickSerials,
-                balanceQty: quotaSeats.balanceQty,
+                balanceQty: actorBalanceQty,
                 heldSerials: record.serialNumber?.trim() ? [record.serialNumber.trim()] : [],
               }
             : undefined,
         isNewJob: false,
       };
     },
-    [validationOptions, customers, rcProfile?.pincode, pickSerials, quotaSeats.balanceQty],
+    [validationOptions, customers, rcProfile?.pincode, pickSerials, actorBalanceQty],
   );
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
@@ -3263,13 +3273,7 @@ export const RCSiteCalibration: React.FC = () => {
 
       {showJobKindPicker && (
         <VerificationJobKindPicker
-          ovBalanceQty={
-            quotaSeats.ready
-              ? isVerifier
-                ? pickSerials.length
-                : quotaSeats.balanceQty
-              : null
-          }
+          ovBalanceQty={quotaSeats.ready ? actorBalanceQty : null}
           ovRemainingCount={quotaSeats.ready ? pickSerials.length : undefined}
           pendingSerials={pickSerials}
           verifierMode={isVerifier}

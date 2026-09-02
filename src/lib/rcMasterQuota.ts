@@ -8,6 +8,8 @@ import type { SiteCalibration } from '../types';
 export type YesoneReservedAssignment = {
   invoiceNo: string;
   verifierUid: string;
+  serialStart?: string;
+  serialEnd?: string;
 };
 
 export function normalizeReservedAssignments(raw: unknown): YesoneReservedAssignment[] {
@@ -23,7 +25,13 @@ export function normalizeReservedAssignments(raw: unknown): YesoneReservedAssign
     const key = invoiceNo.toUpperCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ invoiceNo, verifierUid });
+    const serialStart = String(row.serialStart || '').trim();
+    const serialEnd = String(row.serialEnd || '').trim();
+    out.push({
+      invoiceNo,
+      verifierUid,
+      ...(serialStart ? { serialStart, serialEnd: serialEnd || serialStart } : {}),
+    });
   }
   return out;
 }
@@ -177,16 +185,29 @@ export function excludeReservedSerials(serials: string[], reserved: string[]): s
   return serials.filter(serial => !blocked.has(serial.trim().toUpperCase()));
 }
 
-/** RC admin: all. Assigned verifier: only their reserved seats. Others: public pool. */
+/** RC admin: all. Verifier: reserved only. VCT: public pool only (never reserved). */
 export function pickQuotaSerialsForActor(
   seats: Pick<
     RcQuotaSeats,
     'remaining' | 'vctRemaining' | 'reservedForUids' | 'reservedByUid' | 'reservedSerials'
   >,
-  actor: { isRcAdmin?: boolean; actorUid?: string | null },
+  actor: {
+    isRcAdmin?: boolean;
+    isVerifier?: boolean;
+    isVct?: boolean;
+    actorUid?: string | null;
+  },
 ): string[] {
   if (actor.isRcAdmin) return seats.remaining;
   const uid = String(actor.actorUid || '').trim();
+  // Verifier: only RC-reserved seats for this uid — never the public VCT pool.
+  if (actor.isVerifier) {
+    if (!uid) return [];
+    const mine = seats.reservedByUid[uid];
+    return mine && mine.length > 0 ? mine : [];
+  }
+  // VCT: never see verifier-reserved stickers (e.g. Hafiz ≠ Rasheed's range).
+  if (actor.isVct) return seats.vctRemaining;
   if (!uid) return seats.vctRemaining;
   const mine = seats.reservedByUid[uid];
   if (mine && mine.length > 0) return mine;
@@ -201,8 +222,10 @@ export function computeRcQuotaSeats(input: {
   rcCode: string;
   companyName: string;
   ovQuota: string;
-  /** YesOne RC-wide used — needed when `records` is VCT/own-scoped. */
+  /** YesOne RC-wide used — floor when `records` are incomplete (VCT own-only). */
   ovQuotaUsed?: string | number | null;
+  /** True when `records` cover the whole RC (not field-staff own-only). */
+  recordsAreRcWide?: boolean;
   storedSerials: string[];
   allotSerials: string[];
   voidedSerials: string[];
@@ -226,24 +249,29 @@ export function computeRcQuotaSeats(input: {
   );
   let remaining = remainingQuotaSerials(allottedSerials, used.serials, input.voidedSerials);
   // Show all unused allotted seats (incl. uninvoiced realloc / RCs without inward invoices).
-  const reservedSerials = uniqueSerials(input.reservedSerials || []).filter(serial =>
-    remaining.some(item => item.trim().toUpperCase() === serial.trim().toUpperCase()),
+  const reservedSerials = unusedSerials(
+    uniqueSerials(input.reservedSerials || []),
+    [...used.serials, ...input.voidedSerials],
   );
   const vctRemaining = excludeReservedSerials(remaining, reservedSerials);
   const reservedForUids = uniqueSerials(input.reservedForUids || []);
   const reservedByUid: Record<string, string[]> = {};
   for (const [uid, serials] of Object.entries(input.reservedByUid || {})) {
-    const kept = uniqueSerials(serials).filter(serial =>
-      remaining.some(item => item.trim().toUpperCase() === serial.trim().toUpperCase()),
-    );
+    const kept = unusedSerials(uniqueSerials(serials), [...used.serials, ...input.voidedSerials]);
     if (kept.length > 0) reservedByUid[uid] = kept;
   }
   const allottedQty = master ? masterRcUnusedQty() : parseQuotaInput(input.ovQuota);
   const storedUsed = parseQuotaInput(
     input.ovQuotaUsed == null || input.ovQuotaUsed === '' ? '' : String(input.ovQuotaUsed),
   );
-  // Prefer the higher of local OV records vs YesOne RC-wide used (VCT only sees own jobs).
-  const usedQty = storedUsed == null ? used.count : Math.max(used.count, storedUsed);
+  // RC-wide records = source of truth for Used.
+  // Own-scoped VCT list: lift Used with YesOne ovQuotaUsed (never trust partial count alone).
+  const usedQty =
+    storedUsed == null
+      ? used.count
+      : input.recordsAreRcWide
+        ? used.count
+        : Math.max(used.count, storedUsed);
   const balanceQty = allottedQty == null ? remaining.length : allottedQty - usedQty;
   return {
     remaining,
@@ -317,7 +345,12 @@ export async function reserveInvoiceForVerifier(
   const prev = normalizeReservedAssignments(snap.data()?.yesoneReservedAssignments);
   const next = [
     ...prev.filter(row => row.invoiceNo.trim().toUpperCase() !== invoiceNo.toUpperCase()),
-    { invoiceNo, verifierUid },
+    {
+      invoiceNo,
+      verifierUid,
+      serialStart: start,
+      serialEnd: end,
+    },
   ];
   await updateDoc(ref, {
     yesoneReservedInvoices: arrayUnion(invoiceNo),
@@ -325,12 +358,16 @@ export async function reserveInvoiceForVerifier(
     yesoneReservedForUids: arrayUnion(verifierUid),
     updatedAt: new Date().toISOString(),
   });
-  const CHUNK = 100;
-  for (let i = 0; i < serials.length; i += CHUNK) {
-    await updateDoc(ref, {
-      yesoneReservedSerials: arrayUnion(...serials.slice(i, i + CHUNK)),
-    });
-  }
+  // Replace reserved serial list for this invoice range (exact bill qty — no leftovers).
+  const otherReserved = uniqueSerials(snap.data()?.yesoneReservedSerials).filter(serial => {
+    const key = serial.trim().toUpperCase();
+    return !serials.some(item => item.trim().toUpperCase() === key);
+  });
+  // Keep other invoices' reserved stickers; set this bill's exact expanded set.
+  const nextReserved = uniqueSerials([...otherReserved, ...serials]);
+  await updateDoc(ref, {
+    yesoneReservedSerials: nextReserved,
+  });
 }
 
 export async function clearInvoiceReservation(
@@ -344,9 +381,12 @@ export async function clearInvoiceReservation(
   const snap = await getDoc(ref);
   const prev = normalizeReservedAssignments(snap.data()?.yesoneReservedAssignments);
   const next = prev.filter(row => row.invoiceNo.trim().toUpperCase() !== trimmed.toUpperCase());
+  const still = new Set(next.map(row => row.verifierUid));
+  const dropUids = uniqueSerials(snap.data()?.yesoneReservedForUids).filter(uid => !still.has(uid));
   await updateDoc(ref, {
     yesoneReservedInvoices: arrayRemove(trimmed),
     yesoneReservedAssignments: next,
+    ...(dropUids.length > 0 ? { yesoneReservedForUids: arrayRemove(...dropUids) } : {}),
     updatedAt: new Date().toISOString(),
   });
   const CHUNK = 100;

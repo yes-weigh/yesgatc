@@ -1663,6 +1663,67 @@ button.admin-setting-serial-seat:disabled {
   text-transform: lowercase;
 }
 
+.reports-inward-card__reserve {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  margin-top: 0.35rem;
+}
+
+.reports-inward-card__reserve-tag {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.reports-reserve-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.reports-reserve-dialog {
+  position: relative;
+  width: min(26rem, 100%);
+  padding: 1.25rem 1.15rem 1.1rem;
+  border-radius: 14px;
+  background: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+  color: #e2e8f0;
+}
+
+.reports-reserve-dialog__title {
+  margin: 0 1.75rem 0.35rem 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.reports-reserve-dialog__meta {
+  margin: 0 0 0.35rem;
+  font-size: 0.88rem;
+}
+
+.reports-reserve-dialog__label {
+  display: block;
+  margin: 0.85rem 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.reports-reserve-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
 .reports-inward-card .reports-rev-card__sl {
   display: inline-flex;
   align-items: center;

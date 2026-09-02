@@ -9,7 +9,7 @@ import {
   normalizeReservedAssignments,
   type RcQuotaSeats,
 } from '../lib/rcMasterQuota';
-import { uniqueSerials, yesoneSerialFromDoc } from '../lib/yesoneInboundData';
+import { expandSerialRange, uniqueSerials, yesoneSerialFromDoc } from '../lib/yesoneInboundData';
 import {
   filterInwardBatchesForRc,
   inwardBatchesFromInboundEvents,
@@ -34,7 +34,7 @@ export function useRcQuotaSeats(
   const [reservedInvoices, setReservedInvoices] = useState<string[]>([]);
   const [reservedForUids, setReservedForUids] = useState<string[]>([]);
   const [reservedAssignments, setReservedAssignments] = useState<
-    Array<{ invoiceNo: string; verifierUid: string }>
+    Array<{ invoiceNo: string; verifierUid: string; serialStart?: string; serialEnd?: string }>
   >([]);
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
@@ -57,7 +57,7 @@ export function useRcQuotaSeats(
           snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
         );
       },
-      () => setRcWideRecords([]),
+      () => setRcWideRecords(null),
     );
   }, [isRcAdmin, rcUid]);
 
@@ -166,31 +166,50 @@ export function useRcQuotaSeats(
     );
   }, [rcCode, rcUid]);
 
-  const mergedReserved = useMemo(
-    () =>
-      uniqueSerials([
-        ...reservedSerials,
-        ...serialsForReservedInvoices([...batchRows, ...eventRows], reservedInvoices),
-      ]),
-    [batchRows, eventRows, reservedInvoices, reservedSerials],
-  );
+  const mergedReserved = useMemo(() => {
+    const fromAssignments: string[] = [];
+    for (const row of reservedAssignments) {
+      if (row.serialStart) {
+        fromAssignments.push(
+          ...expandSerialRange(row.serialStart, row.serialEnd || row.serialStart),
+        );
+      }
+    }
+    return uniqueSerials([
+      ...reservedSerials,
+      ...fromAssignments,
+      ...serialsForReservedInvoices([...batchRows, ...eventRows], reservedInvoices),
+    ]);
+  }, [batchRows, eventRows, reservedAssignments, reservedInvoices, reservedSerials]);
 
   const reservedByUid = useMemo(() => {
     const map: Record<string, string[]> = {};
     const batches = [...batchRows, ...eventRows];
+    const reservedAllow = new Set(reservedSerials.map(s => s.trim().toUpperCase()).filter(Boolean));
     for (const row of reservedAssignments) {
-      const serials = serialsForReservedInvoices(batches, [row.invoiceNo]);
+      let serials =
+        row.serialStart
+          ? expandSerialRange(row.serialStart, row.serialEnd || row.serialStart)
+          : serialsForReservedInvoices(batches, [row.invoiceNo]);
+      if (serials.length === 0 && reservedSerials.length > 0) {
+        serials = reservedSerials;
+      }
+      // Clip to yesoneReservedSerials so leftover stickers never inflate QTY.
+      if (reservedAllow.size > 0) {
+        const clipped = serials.filter(s => reservedAllow.has(s.trim().toUpperCase()));
+        if (clipped.length > 0) serials = clipped;
+      }
       if (serials.length === 0) continue;
       map[row.verifierUid] = uniqueSerials([...(map[row.verifierUid] || []), ...serials]);
     }
-    // Legacy: reserved serials + assignee uids, no invoice map → give full reserved pool to each.
-    if (Object.keys(map).length === 0 && reservedForUids.length > 0 && mergedReserved.length > 0) {
+    // Legacy: reserved serials + assignee uids, no invoice map → reserved pool only.
+    if (Object.keys(map).length === 0 && reservedForUids.length > 0 && reservedSerials.length > 0) {
       for (const uid of reservedForUids) {
-        map[uid] = mergedReserved;
+        map[uid] = reservedSerials;
       }
     }
     return map;
-  }, [batchRows, eventRows, mergedReserved, reservedAssignments, reservedForUids]);
+  }, [batchRows, eventRows, reservedAssignments, reservedForUids, reservedSerials]);
 
   const seats = useMemo(
     () =>
@@ -199,6 +218,7 @@ export function useRcQuotaSeats(
         companyName,
         ovQuota,
         ovQuotaUsed,
+        recordsAreRcWide: isRcAdmin || rcWideRecords != null,
         storedSerials,
         allotSerials,
         voidedSerials,

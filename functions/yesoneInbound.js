@@ -329,10 +329,10 @@ function withSeriesFields(item) {
   const to = pickText(rec, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
     || pickText(series, ['to', 'end', 'endNumber', 'endSerial', 'serialTo'])
     || pickText(invoice, ['to', 'end', 'endNumber']);
-  const listed = pickValue(rec, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials', 'cancelledSerials'])
+  const listed = pickValue(rec, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials', 'cancelledSerials', 'removeSerialNumbers'])
     || pickValue(rc, ['serials', 'serialNumbers'])
     || pickValue(series, ['serials', 'serialNumbers'])
-    || pickValue(invoice, ['serials', 'serialNumbers']);
+    || pickValue(invoice, ['serials', 'serialNumbers', 'removeSerialNumbers', 'cancelledSerials']);
   return {
     ...rec,
     from: from || optionalTrimmed(rec.from),
@@ -391,7 +391,16 @@ function expandSerialRange(from, to, missing, max = MAX_EVENTS) {
 }
 
 function serialListFromRec(rec) {
-  const listed = pickValue(rec, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials', 'cancelledSerials']);
+  const invoice = asRecord(pickValue(rec, ['invoice']));
+  const listed = pickValue(rec, [
+    'serials',
+    'serialNumbers',
+    'serial_numbers',
+    'allottedSerials',
+    'cancelledSerials',
+    'removeSerialNumbers',
+  ])
+    || pickValue(invoice, ['removeSerialNumbers', 'serialNumbers', 'serials', 'cancelledSerials']);
   if (Array.isArray(listed)) return listed;
   if (Array.isArray(rec.allotted)) return rec.allotted;
   return [];
@@ -701,7 +710,9 @@ function expandInboundItems(body) {
   delete mergedRoot.items;
 
   const named = inferEventName(mergedRoot);
-  if (SERIAL_MUTATION_EVENTS.has(named) && !isYesoneDump(root)) {
+  // Named cancel/allot wins even when payload also has dump-shaped fields
+  // (generatedSerialDetails). Otherwise cancel is misread as allot-to-IWP.
+  if (SERIAL_MUTATION_EVENTS.has(named) && (named === 'serial.cancelled' || !isYesoneDump(root))) {
     const namedItems = expandNamedSerialEvent(root, mergedRoot, named);
     if (namedItems.length) {
       return applyAllotmentInvoiceMeta(namedItems, mergedRoot).slice(0, MAX_EVENTS);
@@ -1225,10 +1236,22 @@ async function applySerialCancelled(db, item) {
     },
     { merge: true },
   );
-  await patchRcAllottedSerials(db, rc?.id || previous.rcId, list => (
-    list.filter(serial => serial !== serialNumber)
-  ));
-  return { ok: true, event: 'serial.cancelled', id: serialNumber };
+  // Prefer current holder (allotment rcId) — payload.rc is often Master IWP on returns.
+  const dropKey = serialNumber.trim().toUpperCase();
+  const targets = [...new Set(
+    [previous.rcId, rc?.id].map(value => optionalTrimmed(value)).filter(Boolean),
+  )];
+  for (const rcId of targets) {
+    await patchRcAllottedSerials(db, rcId, list => (
+      list.filter(serial => serial.trim().toUpperCase() !== dropKey)
+    ));
+  }
+  return {
+    ok: true,
+    event: 'serial.cancelled',
+    id: serialNumber,
+    rcId: previous.rcId || rc?.id || null,
+  };
 }
 
 async function applySerialUpdated(db, item) {
