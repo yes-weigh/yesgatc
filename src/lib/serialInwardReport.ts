@@ -1,3 +1,4 @@
+import type { YesoneSerialAllotment } from './yesoneInboundData';
 import { expandSerialRange, uniqueSerials } from './yesoneInboundData';
 
 export const SERIAL_INWARD_BATCHES_COLLECTION = 'serialInwardBatches';
@@ -299,4 +300,71 @@ export function mergeWebhookInwardBatches(parts: {
   for (const row of parts.stored) push(row);
   for (const row of parts.fromEvents) push(row);
   return [...byKey.values()];
+}
+
+/** Fallback: contiguous allotted serials → inward rows (RC when webhook events locked). */
+export function syntheticInwardBatchesFromAllotments(
+  allotments: YesoneSerialAllotment[],
+  options?: { requireInvoice?: boolean },
+): SerialInwardBatch[] {
+  const requireInvoice = options?.requireInvoice === true;
+  const byKey = new Map<string, YesoneSerialAllotment[]>();
+  for (const row of allotments) {
+    if (!row.serialNumber) continue;
+    const invoiceNo = text(row.invoiceNo);
+    if (requireInvoice && !invoiceNo) continue;
+    const day = (row.allottedAt || row.updatedAt || '').slice(0, 10) || 'unknown';
+    const key = `${row.rcId}|${day}|${invoiceNo || '_'}`;
+    const list = byKey.get(key) || [];
+    list.push(row);
+    byKey.set(key, list);
+  }
+
+  const out: SerialInwardBatch[] = [];
+  for (const [key, rows] of byKey) {
+    const serials = uniqueSerials(rows.map(r => r.serialNumber));
+    if (serials.length === 0) continue;
+    const parts = key.split('|');
+    const rcId = parts[0] || '';
+    const day = parts[1] || '';
+    const invoiceNo = parts.slice(2).join('|');
+    const invoiceLabel = invoiceNo === '_' ? '' : invoiceNo;
+    const at =
+      rows.map(r => r.allottedAt || r.updatedAt).filter(Boolean).sort()[0]
+      || `${day}T00:00:00.000Z`;
+    let rangeStart = 0;
+    const flush = (endIndex: number) => {
+      const slice = serials.slice(rangeStart, endIndex + 1);
+      out.push({
+        id: `syn_${invoiceLabel || 'na'}_${slice[0]}_${slice[slice.length - 1]}`,
+        invoiceNo: invoiceLabel,
+        at,
+        serialStart: slice[0],
+        serialEnd: slice[slice.length - 1],
+        totalQty: slice.length,
+        rcId: rows[0]?.rcId || rcId,
+        rcCode: rows[0]?.rcCode || '',
+        rcCompanyName: rows[0]?.rcCompanyName || '',
+      });
+    };
+    for (let i = 1; i < serials.length; i += 1) {
+      if (!areConsecutiveSerials(serials[i - 1], serials[i])) {
+        flush(i - 1);
+        rangeStart = i;
+      }
+    }
+    flush(serials.length - 1);
+  }
+  return out;
+}
+
+function areConsecutiveSerials(a: string, b: string): boolean {
+  const ma = a.match(/^(.*?)(\d+)$/);
+  const mb = b.match(/^(.*?)(\d+)$/);
+  if (!ma || !mb || ma[1] !== mb[1]) return false;
+  try {
+    return BigInt(mb[2]) - BigInt(ma[2]) === 1n;
+  } catch {
+    return false;
+  }
 }

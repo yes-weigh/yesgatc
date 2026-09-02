@@ -30,8 +30,10 @@ import {
   inwardMonthKey,
   mergeWebhookInwardBatches,
   serialInwardBatchFromDoc,
+  syntheticInwardBatchesFromAllotments,
   type SerialInwardBatch,
 } from '../../lib/serialInwardReport';
+import { yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { getVerificationDisplayStatus } from '../../lib/verificationRequest';
 import type { FirestoreUserDoc, Product, SiteCalibration } from '../../types';
@@ -197,35 +199,70 @@ export const Reports: React.FC = () => {
     setLoading(true);
     setListError('');
     try {
-      const loadInward = async (scope?: { rcId?: string; rcCode?: string } | null) => {
-        let stored: SerialInwardBatch[] = [];
-        let fromEvents: SerialInwardBatch[] = [];
-
-        try {
-          const inwardQ = scope?.rcId
-            ? query(collection(db, 'serialInwardBatches'), where('rcId', '==', scope.rcId))
-            : collection(db, 'serialInwardBatches');
-          const inwardSnap = await getDocs(inwardQ);
-          stored = inwardSnap.docs.map(d => serialInwardBatchFromDoc(d.id, d.data()));
-        } catch {
-          stored = [];
+      const loadInward = async (
+        scope?: { rcId?: string; rcCode?: string; seatSerials?: string[] } | null,
+      ) => {
+        // Super: webhook audit. RC: allotted seats only (events/batches rules may be undeployed).
+        if (!scope?.rcId) {
+          let stored: SerialInwardBatch[] = [];
+          let fromEvents: SerialInwardBatch[] = [];
+          try {
+            const inwardSnap = await getDocs(collection(db, 'serialInwardBatches'));
+            stored = inwardSnap.docs.map(d => serialInwardBatchFromDoc(d.id, d.data()));
+          } catch {
+            stored = [];
+          }
+          try {
+            const eventSnap = await getDocs(collection(db, 'yesoneInboundEvents'));
+            fromEvents = inwardBatchesFromInboundEvents(
+              eventSnap.docs.map(d => {
+                const data = d.data() as { at?: string; payload?: unknown };
+                return { id: d.id, at: data.at, payload: data.payload };
+              }),
+            );
+          } catch {
+            fromEvents = [];
+          }
+          setInwardBatches(mergeWebhookInwardBatches({ fromEvents, stored }));
+          return;
         }
 
-        // Webhook audit log — YesOne inbound events.
+        const allotDocs: ReturnType<typeof yesoneSerialFromDoc>[] = [];
         try {
-          const eventSnap = await getDocs(collection(db, 'yesoneInboundEvents'));
-          fromEvents = inwardBatchesFromInboundEvents(
-            eventSnap.docs.map(d => {
-              const data = d.data() as { at?: string; payload?: unknown };
-              return { id: d.id, at: data.at, payload: data.payload };
-            }),
+          const allotSnap = await getDocs(
+            query(collection(db, 'serialAllotments'), where('rcId', '==', scope.rcId)),
           );
+          for (const d of allotSnap.docs) {
+            allotDocs.push(yesoneSerialFromDoc(d.id, d.data()));
+          }
         } catch {
-          fromEvents = [];
+          /* ignore — seats below still work */
         }
 
-        const merged = mergeWebhookInwardBatches({ fromEvents, stored });
-        setInwardBatches(filterInwardBatchesForRc(merged, scope));
+        const have = new Set(allotDocs.map(row => row.serialNumber.toUpperCase()));
+        const nowIso = new Date().toISOString();
+        for (const serial of scope.seatSerials || []) {
+          const key = serial.trim().toUpperCase();
+          if (!key || have.has(key)) continue;
+          have.add(key);
+          allotDocs.push({
+            id: serial,
+            serialNumber: serial,
+            rcId: scope.rcId,
+            rcCode: scope.rcCode || '',
+            rcCompanyName: '',
+            productName: '',
+            status: 'allotted',
+            allottedAt: nowIso,
+            previousSerialNumber: '',
+            updatedAt: nowIso,
+            invoiceNo: '',
+          });
+        }
+
+        setInwardBatches(
+          syntheticInwardBatchesFromAllotments(allotDocs, { requireInvoice: false }),
+        );
       };
 
       if (isSuper) {
@@ -287,6 +324,11 @@ export const Reports: React.FC = () => {
       setProductsById(products);
       const rcData = rcSnap.exists() ? (rcSnap.data() as FirestoreUserDoc) : null;
       const rcCode = rcData?.rcCode?.trim() || '';
+      const seatSerials = Array.isArray((rcData as { yesoneAllottedSerials?: unknown })?.yesoneAllottedSerials)
+        ? ((rcData as { yesoneAllottedSerials: unknown[] }).yesoneAllottedSerials)
+            .map(item => String(item ?? '').trim())
+            .filter(Boolean)
+        : [];
       setRcOptions([
         {
           id: rcUid,
@@ -296,7 +338,7 @@ export const Reports: React.FC = () => {
         },
       ]);
       setRcFilter(rcUid);
-      await loadInward({ rcId: rcUid, rcCode });
+      await loadInward({ rcId: rcUid, rcCode, seatSerials });
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to load report.');
       setRecords([]);
@@ -605,6 +647,13 @@ export const Reports: React.FC = () => {
     setPage(1);
   }, [monthKey, rcFilter, reportView, typeFilter]);
 
+  useEffect(() => {
+    if (reportView !== 'serial_inward') return;
+    if (monthKey !== LIFETIME_MONTH_KEY) setMonthKey(LIFETIME_MONTH_KEY);
+    // Intentionally only when entering this report view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportView]);
+
   const pagedDayRows = useMemo(
     () => paginateItems(dayRows, page, REPORTS_TABLE_PAGE_SIZE),
     [dayRows, page],
@@ -635,7 +684,12 @@ export const Reports: React.FC = () => {
   const applyFilters = () => {
     setReportView(draftView);
     setTypeFilter(draftType);
-    setMonthKey(draftMonth);
+    // Webhook audit spans many months — default Lifetime when opening that report.
+    setMonthKey(
+      draftView === 'serial_inward' && draftMonth === currentMonthKey()
+        ? LIFETIME_MONTH_KEY
+        : draftMonth,
+    );
     if (draftRc) setRcFilter(draftRc);
     setFilterOpen(false);
   };
@@ -892,7 +946,7 @@ export const Reports: React.FC = () => {
               <Building2 size={28} strokeWidth={1.6} aria-hidden />
               <p>
                 {isSerialInward
-                  ? `No YesOne webhook serial inward for ${monthLabel}. Try Lifetime.`
+                  ? `No serial inward records for ${monthLabel}.`
                   : isRevenue
                     ? isRcRevenue
                       ? `No contractor fee for ${monthLabel}.`
