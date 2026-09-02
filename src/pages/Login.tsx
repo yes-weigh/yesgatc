@@ -32,6 +32,12 @@ const LOCAL_QUICK_LOGINS = import.meta.env.DEV
         aadhar: '650113424777',
         password: 'Gatc@2026',
       },
+      {
+        id: 'hafiz-meezan',
+        label: 'Hafiz Meezan',
+        aadhar: '234156653134',
+        password: 'GATC1234',
+      },
     ]
   : [];
 

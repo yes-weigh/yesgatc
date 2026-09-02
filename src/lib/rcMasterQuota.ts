@@ -143,7 +143,7 @@ export function remainingQuotaSerials(
   return unusedSerials(unusedSerials(allotted, used), voided);
 }
 
-/** Keep only stickers that have an inward invoice link. */
+/** Keep only stickers that have an inward invoice link. Empty set = no filter. */
 export function serialsLinkedToInvoice(
   serials: string[],
   invoicedSerials: Iterable<string>,
@@ -153,7 +153,7 @@ export function serialsLinkedToInvoice(
     const key = String(serial || '').trim().toUpperCase();
     if (key) ok.add(key);
   }
-  if (ok.size === 0) return [];
+  if (ok.size === 0) return serials;
   return serials.filter(serial => ok.has(serial.trim().toUpperCase()));
 }
 
@@ -201,12 +201,12 @@ export function computeRcQuotaSeats(input: {
   rcCode: string;
   companyName: string;
   ovQuota: string;
+  /** YesOne RC-wide used — needed when `records` is VCT/own-scoped. */
+  ovQuotaUsed?: string | number | null;
   storedSerials: string[];
   allotSerials: string[];
   voidedSerials: string[];
   records: SiteCalibration[];
-  /** Serials that have inward invoiceNo (from allotments / batches). */
-  invoicedSerials?: string[];
   reservedSerials?: string[];
   reservedForUids?: string[];
   /** Expanded serials per assigned verifier. */
@@ -225,9 +225,7 @@ export function computeRcQuotaSeats(input: {
     master ? { fromDate: IWP_USED_FROM_DATE } : undefined,
   );
   let remaining = remainingQuotaSerials(allottedSerials, used.serials, input.voidedSerials);
-  if (!master && input.invoicedSerials) {
-    remaining = serialsLinkedToInvoice(remaining, input.invoicedSerials);
-  }
+  // Show all unused allotted seats (incl. uninvoiced realloc / RCs without inward invoices).
   const reservedSerials = uniqueSerials(input.reservedSerials || []).filter(serial =>
     remaining.some(item => item.trim().toUpperCase() === serial.trim().toUpperCase()),
   );
@@ -241,7 +239,11 @@ export function computeRcQuotaSeats(input: {
     if (kept.length > 0) reservedByUid[uid] = kept;
   }
   const allottedQty = master ? masterRcUnusedQty() : parseQuotaInput(input.ovQuota);
-  const usedQty = used.count;
+  const storedUsed = parseQuotaInput(
+    input.ovQuotaUsed == null || input.ovQuotaUsed === '' ? '' : String(input.ovQuotaUsed),
+  );
+  // Prefer the higher of local OV records vs YesOne RC-wide used (VCT only sees own jobs).
+  const usedQty = storedUsed == null ? used.count : Math.max(used.count, storedUsed);
   const balanceQty = allottedQty == null ? remaining.length : allottedQty - usedQty;
   return {
     remaining,

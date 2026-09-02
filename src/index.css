@@ -936,6 +936,13 @@ label.admin-setting-webbook-yesone-label,
   color: var(--accent-red);
 }
 
+.admin-setting-serial-count-mismatch {
+  font-size: 0.72em;
+  font-weight: 700;
+  opacity: 0.92;
+  margin-left: 0.2em;
+}
+
 .admin-setting-serial-panel .admin-setting-yesone-table th,
 .admin-setting-serial-panel .admin-setting-yesone-table td {
   padding: 0.55rem 0.85rem;

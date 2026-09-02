@@ -2,9 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
-  invoicedSerialsFromAllotments,
   serialsForReservedInvoices,
-  serialsFromInwardBatches,
 } from '../lib/invoicedQuotaSerials';
 import {
   computeRcQuotaSeats,
@@ -18,15 +16,18 @@ import {
   serialInwardBatchFromDoc,
   type SerialInwardBatch,
 } from '../lib/serialInwardReport';
+import { useRcScope } from '../lib/roleScope';
 import type { SiteCalibration } from '../types';
 
 export function useRcQuotaSeats(
   rcUid: string | null | undefined,
   records: SiteCalibration[],
 ): RcQuotaSeats & { ready: boolean } {
+  const { isRcAdmin } = useRcScope();
   const [companyName, setCompanyName] = useState('');
   const [rcCode, setRcCode] = useState('');
   const [ovQuota, setOvQuota] = useState('');
+  const [ovQuotaUsed, setOvQuotaUsed] = useState('');
   const [storedSerials, setStoredSerials] = useState<string[]>([]);
   const [voidedSerials, setVoidedSerials] = useState<string[]>([]);
   const [reservedSerials, setReservedSerials] = useState<string[]>([]);
@@ -36,13 +37,29 @@ export function useRcQuotaSeats(
     Array<{ invoiceNo: string; verifierUid: string }>
   >([]);
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
-  const [allotInvoiced, setAllotInvoiced] = useState<string[]>([]);
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
   const [eventRows, setEventRows] = useState<SerialInwardBatch[]>([]);
+  const [rcWideRecords, setRcWideRecords] = useState<SiteCalibration[] | null>(null);
   const [userLoaded, setUserLoaded] = useState(false);
   const [allotLoaded, setAllotLoaded] = useState(!rcUid);
   const [batchLoaded, setBatchLoaded] = useState(!rcUid);
   const [eventLoaded, setEventLoaded] = useState(!rcUid);
+
+  useEffect(() => {
+    if (!rcUid || isRcAdmin) {
+      setRcWideRecords(null);
+      return;
+    }
+    return onSnapshot(
+      query(collection(db, 'siteCalibrations'), where('rcId', '==', rcUid)),
+      snap => {
+        setRcWideRecords(
+          snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
+        );
+      },
+      () => setRcWideRecords([]),
+    );
+  }, [isRcAdmin, rcUid]);
 
   useEffect(() => {
     if (!rcUid) {
@@ -56,6 +73,9 @@ export function useRcQuotaSeats(
         setCompanyName(String(data.companyName || data.username || 'RC').trim());
         setRcCode(String(data.rcCode || '').trim());
         setOvQuota(data.ovQuota == null || data.ovQuota === '' ? '' : String(data.ovQuota));
+        setOvQuotaUsed(
+          data.ovQuotaUsed == null || data.ovQuotaUsed === '' ? '' : String(data.ovQuotaUsed),
+        );
         setStoredSerials(uniqueSerials(data.yesoneAllottedSerials));
         setVoidedSerials(uniqueSerials(data.yesoneVoidedSerials));
         setReservedSerials(uniqueSerials(data.yesoneReservedSerials));
@@ -78,7 +98,6 @@ export function useRcQuotaSeats(
   useEffect(() => {
     if (!rcUid) {
       setAllotSerials([]);
-      setAllotInvoiced([]);
       setAllotLoaded(true);
       return;
     }
@@ -89,12 +108,10 @@ export function useRcQuotaSeats(
         const rows = snap.docs.map(item => yesoneSerialFromDoc(item.id, item.data()));
         const active = rows.filter(row => row.status !== 'cancelled' && row.status !== 'replaced');
         setAllotSerials(uniqueSerials(active.map(row => row.serialNumber)));
-        setAllotInvoiced(invoicedSerialsFromAllotments(active));
         setAllotLoaded(true);
       },
       () => {
         setAllotSerials([]);
-        setAllotInvoiced([]);
         setAllotLoaded(true);
       },
     );
@@ -149,16 +166,6 @@ export function useRcQuotaSeats(
     );
   }, [rcCode, rcUid]);
 
-  const invoicedSerials = useMemo(
-    () =>
-      uniqueSerials([
-        ...allotInvoiced,
-        ...serialsFromInwardBatches(batchRows),
-        ...serialsFromInwardBatches(eventRows),
-      ]),
-    [allotInvoiced, batchRows, eventRows],
-  );
-
   const mergedReserved = useMemo(
     () =>
       uniqueSerials([
@@ -191,11 +198,11 @@ export function useRcQuotaSeats(
         rcCode,
         companyName,
         ovQuota,
+        ovQuotaUsed,
         storedSerials,
         allotSerials,
         voidedSerials,
-        records,
-        invoicedSerials,
+        records: isRcAdmin || !rcWideRecords ? records : rcWideRecords,
         reservedSerials: mergedReserved,
         reservedForUids,
         reservedByUid,
@@ -203,10 +210,12 @@ export function useRcQuotaSeats(
     [
       allotSerials,
       companyName,
-      invoicedSerials,
+      isRcAdmin,
       mergedReserved,
       ovQuota,
+      ovQuotaUsed,
       rcCode,
+      rcWideRecords,
       records,
       reservedByUid,
       reservedForUids,

@@ -32,10 +32,10 @@ export function SerialSeatOverlay({
 }: SerialSeatOverlayProps) {
   const voidedKeys = new Set(voidedSerials.map(serial => serial.toLowerCase()));
   const reservedKeys = new Set(reservedSerials.map(serial => serial.toLowerCase()));
-  const activeCount = serials.filter(serial => !voidedKeys.has(serial.toLowerCase())).length;
-  // Header count = Balance (Allotted − Used). Red if sticker list length differs.
-  const displayCount = expectedCount == null ? activeCount : Math.max(0, expectedCount);
-  const mismatch = expectedCount == null ? false : expectedCount !== activeCount;
+  // Exact seats on screen (non-voided stickers in the list).
+  const seatCount = serials.filter(serial => !voidedKeys.has(serial.toLowerCase())).length;
+  const balanceCount = expectedCount == null ? null : Math.max(0, expectedCount);
+  const mismatch = balanceCount != null && balanceCount !== seatCount;
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
@@ -89,8 +89,18 @@ export function SerialSeatOverlay({
         <h2 id="serial-total-title" className="admin-setting-serial-stage-title">
           {companyName}
           {rcCode ? <span>{rcCode}</span> : null}
-          <span className={`admin-setting-serial-count-num${mismatch ? ' admin-setting-qty--bad' : ''}`}>
-            {displayCount}
+          <span
+            className={`admin-setting-serial-count-num${mismatch ? ' admin-setting-qty--bad' : ''}`}
+            title={
+              mismatch && balanceCount != null
+                ? `Mismatch: balance ${balanceCount}, seats ${seatCount}`
+                : undefined
+            }
+          >
+            {seatCount}
+            {mismatch && balanceCount != null ? (
+              <span className="admin-setting-serial-count-mismatch"> ≠{balanceCount}</span>
+            ) : null}
           </span>
         </h2>
         <button

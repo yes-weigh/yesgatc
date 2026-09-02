@@ -402,12 +402,10 @@ service cloud.firestore {
 
       allow read: if isRCAdmin() && resource.data.rcId == request.auth.uid;
 
+      // VCT may read all RC jobs for quota used/balance (list UI still own-scoped).
       allow read: if isOperationalVct()
-        && resource.data.rcId == vctRcId()
-        && vctOwnsVerification(resource.data);
+        && resource.data.rcId == vctRcId();
 
-      // Verifier may read own jobs (draft → certified). Certificates UI shows issued
-      // PDFs only after RC DSC sign + eMAAP upload (isVerifierVisibleIssuedCertificate).
       // Verifier may read own jobs (draft → certified). Certificates UI shows issued
       // PDFs only after RC DSC sign + eMAAP upload (isVerifierVisibleIssuedCertificate).
       allow read: if isOperationalVerifier()
