@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Award, BarChart3, Receipt, ScrollText, Tag } from 'lucide-react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useMobileViewport } from '../hooks/useMobileViewport';
 import {
   buildVerificationCertifiedActions,
@@ -17,11 +19,12 @@ import {
 } from '../lib/signedCertificatePdf';
 import { prefetchPdfJs } from '../lib/pdfJs';
 import { CertificatePdfShareViewer } from './CertificatePdfShareViewer';
+import { UnsignedCertificateDownloadWarn } from './RcUnsignedPdfDisturbHost';
 import { VerificationGstBillModal } from './VerificationGstBillModal';
 import { VerificationLabelModal } from './VerificationLabelModal';
 import { VerificationReceiptModal } from './VerificationReceiptModal';
 import { VerificationTestReportModal } from './VerificationTestReportModal';
-import type { SiteCalibration } from '../types';
+import type { FirestoreUserDoc, SiteCalibration } from '../types';
 
 type VerificationCertifiedActionsProps = {
   record: SiteCalibration;
@@ -91,7 +94,7 @@ function CertifiedActionTile({
   action: VerificationCertifiedAction;
   record: SiteCalibration;
   isPhone: boolean;
-  onCertificateOpen: () => void;
+  onCertificateOpen: (event?: React.MouseEvent) => void;
   onLabelOpen: () => void;
   onTestReportOpen: () => void;
   onGstBillOpen: () => void;
@@ -167,7 +170,7 @@ function CertifiedActionTile({
       <button
         type="button"
         className={className}
-        onClick={onCertificateOpen}
+        onClick={() => onCertificateOpen()}
         aria-label={ariaLabel}
       >
         <ActionTileContent action={action} record={record} />
@@ -182,6 +185,12 @@ function CertifiedActionTile({
       rel="noopener noreferrer"
       className={className}
       aria-label={ariaLabel}
+      onClick={event => {
+        if (signStatus === 'not_signed') {
+          event.preventDefault();
+          onCertificateOpen(event);
+        }
+      }}
     >
       <ActionTileContent action={action} record={record} />
     </a>
@@ -198,14 +207,32 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
   const [gstBillOpen, setGstBillOpen] = useState(false);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [certificateOpen, setCertificateOpen] = useState(false);
+  const [downloadWarnOpen, setDownloadWarnOpen] = useState(false);
+  const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
 
   useEffect(() => {
     prefetchPdfJs();
   }, []);
 
-  if (!canShowVerificationCertifiedActions(record)) return null;
+  useEffect(() => {
+    const rcId = record.rcId?.trim();
+    if (!rcId) {
+      setRcProfile(null);
+      return;
+    }
+    return onSnapshot(
+      doc(db, 'users', rcId),
+      snap => setRcProfile(snap.exists() ? (snap.data() as FirestoreUserDoc) : null),
+      () => setRcProfile(null),
+    );
+  }, [record.rcId]);
 
-  const actions = buildVerificationCertifiedActions(record);
+  const actions = useMemo(
+    () => buildVerificationCertifiedActions(record, rcProfile),
+    [record, rcProfile],
+  );
+
+  if (!canShowVerificationCertifiedActions(record)) return null;
   if (!actions.length) return null;
 
   const signed = canShowSignedCertificatePdf(record);
@@ -215,6 +242,32 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
   const pdfPath = signed
     ? resolveSignedCertificatePdfOnlyPath(record)
     : resolveUnsignedCertificatePdfStoragePath(record);
+
+  const openCertificate = () => {
+    if (isPhone) {
+      setCertificateOpen(true);
+      return;
+    }
+    const href =
+      (signed ? resolveSignedCertificatePdfOnlyUrl(record) : null)
+      || resolveUnsignedCertificatePdfUrl(record)
+      || actions.find(item => item.id === 'certificate' && item.kind === 'link')?.href
+      || null;
+    if (href) window.open(href, '_blank', 'noopener,noreferrer');
+  };
+
+  const requestCertificateOpen = () => {
+    if (certificateSignStatus(record) === 'not_signed') {
+      setDownloadWarnOpen(true);
+      return;
+    }
+    openCertificate();
+  };
+
+  const continueAfterWarn = () => {
+    setDownloadWarnOpen(false);
+    openCertificate();
+  };
 
   return (
     <>
@@ -229,7 +282,7 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
             action={action}
             record={record}
             isPhone={isPhone}
-            onCertificateOpen={() => setCertificateOpen(true)}
+            onCertificateOpen={requestCertificateOpen}
             onLabelOpen={() => setLabelOpen(true)}
             onTestReportOpen={() => setTestReportOpen(true)}
             onGstBillOpen={() => setGstBillOpen(true)}
@@ -268,7 +321,14 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
         url={pdfUrl}
         storagePath={pdfPath}
         heading={signed ? 'Signed certificate' : undefined}
+        warnUnsignedDownload
         onClose={() => setCertificateOpen(false)}
+      />
+
+      <UnsignedCertificateDownloadWarn
+        open={downloadWarnOpen}
+        onContinue={continueAfterWarn}
+        onCancel={() => setDownloadWarnOpen(false)}
       />
     </>
   );

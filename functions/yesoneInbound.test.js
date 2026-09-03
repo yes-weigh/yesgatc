@@ -198,6 +198,32 @@ test('cancel and allot expand serials list, aliases, from-to', () => {
   assert.equal(readSerialNumber({ serial: { id: 'G0540' } }), 'G0540');
 });
 
+test('serial.cancelled with generatedSerialDetails stays cancel (not allot dump)', () => {
+  const items = expandInboundItems({
+    event: 'serial.cancelled',
+    action: 'cancel',
+    startNumber: 'X00261',
+    endNumber: 'X00263',
+    qty: 3,
+    serialNumbers: ['X00261'],
+    generatedSerialDetails: [
+      { serial: 'X00261', status: 'unused' },
+      { serial: 'X00262', status: 'unused' },
+      { serial: 'X00263', status: 'unused' },
+    ],
+    rc: { rcCode: 'IWP', name: 'INTERWEIGHING PVT LTD' },
+    invoice: {
+      invoiceNumber: 'YES/26-27/2090',
+      customerName: 'MEEZAN ELECTRONIC SCALES PRIVATE LIMITED',
+      removeSerialNumbers: ['X00261', 'X00262', 'X00263'],
+      qty: 3,
+    },
+  });
+  assert.equal(items.length, 3);
+  assert.equal(items.every(item => item.event === 'serial.cancelled'), true);
+  assert.deepEqual(items.map(item => item.serialNumber), ['X00261', 'X00262', 'X00263']);
+});
+
 test('nested series/rc and PascalCase cancel+allot', () => {
   const cancelled = expandInboundItems({
     event: 'serial.cancelled',
@@ -325,6 +351,12 @@ test('inbound GET and POST serial + quota', async () => {
   assert.equal(db._store['serialAllotments/Y9'].status, 'allotted');
   assert.equal(db._store['serialAllotments/Y9'].rcId, 'rc1');
   assert.deepEqual(db._store['users/rc1'].yesoneAllottedSerials, ['Y9']);
+  const inwardKeys = Object.keys(db._store).filter(key => key.startsWith('serialInwardBatches/'));
+  assert.ok(inwardKeys.length >= 1);
+  const inwardDoc = db._store[inwardKeys[inwardKeys.length - 1]];
+  assert.equal(inwardDoc.serialStart, 'Y9');
+  assert.equal(inwardDoc.serialEnd, 'Y9');
+  assert.equal(inwardDoc.totalQty, 1);
 
   const bulk = mockRes();
   await yesoneInboundHttpHandler(
@@ -411,6 +443,14 @@ test('inbound GET and POST serial + quota', async () => {
   assert.equal(yesoneLive.body.ok, true);
   assert.equal(db._store['serialAllotments/G0001'].rcId, 'rc1');
   assert.equal(db._store['serialAllotments/G0001'].rcCode, 'ABC');
+  assert.equal(
+    db._store['serialAllotments/G0001'].invoiceNo,
+    'b21f76db-f5c6-4b3a-8d57-3efd60a12aa7',
+  );
+  const liveInward = Object.keys(db._store).filter(key => key.startsWith('serialInwardBatches/'));
+  assert.ok(liveInward.some(key => (
+    db._store[key].invoiceNo === 'b21f76db-f5c6-4b3a-8d57-3efd60a12aa7'
+  )));
   assert.equal(db._store['users/rc1'].ovQuota, 10);
   assert.equal(db._store['users/rc1'].ovQuotaUsed, 3);
   assert.ok(db._store['users/rc1'].yesoneAllottedSerials.includes('G0001'));

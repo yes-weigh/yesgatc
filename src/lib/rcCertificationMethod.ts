@@ -34,6 +34,20 @@ export function rcCertificationMethodLabel(
   return RC_CERTIFICATION_METHOD_OPTIONS.find(option => option.id === id)?.label ?? 'Auto DSC engine';
 }
 
+/** Cash receipt only for Auto DSC / PDF signer — not Manual upload. */
+export function rcAllowsCashReceipt(
+  method: RcCertificationMethod | null | undefined,
+): boolean {
+  const id = method ?? DEFAULT_RC_CERTIFICATION_METHOD;
+  return id === 'auto_dsc' || id === 'pdf_signer';
+}
+
+export function rcAllowsCashReceiptFromUser(
+  doc: Pick<FirestoreUserDoc, 'certificationMethod'> | null | undefined,
+): boolean {
+  return rcAllowsCashReceipt(rcCertificationMethodFromUser(doc));
+}
+
 export function canEditRcCertificationSettings(user: {
   role?: Role | null;
 } | null): boolean {

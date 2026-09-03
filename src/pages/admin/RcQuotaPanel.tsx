@@ -41,17 +41,6 @@ function quotaBalanceValue(quota: string, used: string): number | null {
   return q - u;
 }
 
-function quotaBalance(quota: string, used: string): string {
-  const value = quotaBalanceValue(quota, used);
-  return value == null ? '—' : String(value);
-}
-
-function qtyMismatch(quota: string, used: string, serialCount: number): boolean {
-  const balance = quotaBalanceValue(quota, used);
-  if (balance == null) return serialCount > 0;
-  return balance !== serialCount;
-}
-
 function displayNum(value: string): string {
   return value.trim() || '—';
 }
@@ -323,10 +312,9 @@ export function RcQuotaPanel() {
             </thead>
             <tbody>
               {rows.map(row => {
-                const balance = quotaBalance(row.sold, row.used);
-                const mismatch = qtyMismatch(row.sold, row.used, row.serials.length);
-                const canOpen = row.allotted.length > 0 || mismatch;
-                const bad = mismatch ? ' admin-setting-qty--bad' : '';
+                const balance = quotaBalanceValue(row.sold, row.used);
+                const seatBalance = row.serials.length;
+                const canOpen = row.allotted.length > 0 || seatBalance > 0 || row.voidedSerials.length > 0;
                 return (
                   <tr key={row.uid}>
                     <td>
@@ -347,14 +335,16 @@ export function RcQuotaPanel() {
                       {canOpen ? (
                         <button
                           type="button"
-                          className={`admin-setting-quota-balance-btn${bad}`}
+                          className="admin-setting-quota-balance-btn"
                           onClick={() => setOpenUid(row.uid)}
                           aria-label={`Serial numbers for ${row.companyName}`}
                         >
-                          {balance}
+                          {balance == null ? '—' : balance}
                         </button>
                       ) : (
-                        <span className={`text-mono admin-setting-quota-balance${bad}`}>{balance}</span>
+                        <span className="text-mono admin-setting-quota-balance">
+                          {balance == null ? '—' : balance}
+                        </span>
                       )}
                     </td>
                   </tr>

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { Building2, X } from 'lucide-react';
 import { FilterIcon } from '../../components/FilterIcon';
 import { ContractorFeePayControl } from '../../components/ContractorFeePayControl';
@@ -22,13 +22,31 @@ import {
   type ContractorFeePayment,
 } from '../../lib/contractorFeePayment';
 import { buildReportPdf, shareReportPdf } from '../../lib/reportPdf';
+import {
+  filterInwardBatchesForRc,
+  formatInwardDate,
+  formatInwardTime,
+  inwardBatchesFromInboundEvents,
+  inwardMonthKey,
+  mergeWebhookInwardBatches,
+  serialInwardBatchFromDoc,
+  syntheticInwardBatchesFromAllotments,
+  type SerialInwardBatch,
+} from '../../lib/serialInwardReport';
+import {
+  clearInvoiceReservation,
+  normalizeReservedAssignments,
+  reserveInvoiceForVerifier,
+} from '../../lib/rcMasterQuota';
+import { fetchRcVerifierUsers } from '../../lib/rcVerifierMembers';
+import { expandSerialRange, yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { getVerificationDisplayStatus } from '../../lib/verificationRequest';
 import type { FirestoreUserDoc, Product, SiteCalibration } from '../../types';
 
-type RcOption = { id: string; name: string; district: string };
+type RcOption = { id: string; name: string; district: string; rcCode?: string };
 type TypeFilter = 'all' | 'OV' | 'RV';
-type ReportView = 'day_summary' | 'revenue_share';
+type ReportView = 'day_summary' | 'revenue_share' | 'serial_inward';
 
 type DayRow = {
   dateKey: string;
@@ -153,7 +171,7 @@ export const Reports: React.FC = () => {
   const setReportsAppBar = useSetReportsAppBar();
   const isSuper = user?.role === 'super_admin';
   const isRcRevenue = !isSuper;
-  const defaultReportView: ReportView = isSuper ? 'day_summary' : 'revenue_share';
+  const defaultReportView: ReportView = isSuper ? 'day_summary' : 'serial_inward';
 
   const [records, setRecords] = useState<SiteCalibration[]>([]);
   const [rcOptions, setRcOptions] = useState<RcOption[]>([]);
@@ -181,11 +199,169 @@ export const Reports: React.FC = () => {
   const [paymentsByDate, setPaymentsByDate] = useState<Map<string, ContractorFeePayment>>(
     () => new Map(),
   );
+  const [inwardBatches, setInwardBatches] = useState<SerialInwardBatch[]>([]);
+  const [verifiers, setVerifiers] = useState<Array<FirestoreUserDoc & { uid: string }>>([]);
+  const [reservedByInvoice, setReservedByInvoice] = useState<Record<string, string>>({});
+  const [reserveRow, setReserveRow] = useState<SerialInwardBatch | null>(null);
+  const [reserveVerifierUid, setReserveVerifierUid] = useState('');
+  const [reserveBusy, setReserveBusy] = useState(false);
+  const [reserveError, setReserveError] = useState('');
+
+  useEffect(() => {
+    if (!isRcAdmin || !rcUid) {
+      setVerifiers([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchRcVerifierUsers(rcUid).then(rows => {
+      if (!cancelled) setVerifiers(rows.filter(row => row.active !== false));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isRcAdmin, rcUid]);
+
+  useEffect(() => {
+    if (!isRcAdmin || !rcUid) {
+      setReservedByInvoice({});
+      return;
+    }
+    return onSnapshot(doc(db, 'users', rcUid), snap => {
+      if (!snap.exists()) {
+        setReservedByInvoice({});
+        return;
+      }
+      const map: Record<string, string> = {};
+      for (const row of normalizeReservedAssignments(snap.data()?.yesoneReservedAssignments)) {
+        map[row.invoiceNo.trim().toUpperCase()] = row.verifierUid;
+      }
+      // Legacy: reserved invoices without assignment map.
+      const invoices = Array.isArray(snap.data()?.yesoneReservedInvoices)
+        ? snap.data()?.yesoneReservedInvoices
+        : [];
+      for (const inv of invoices || []) {
+        const key = String(inv || '').trim().toUpperCase();
+        if (key && !map[key]) map[key] = '';
+      }
+      setReservedByInvoice(map);
+    });
+  }, [isRcAdmin, rcUid]);
+
+  const verifierNameByUid = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const row of verifiers) {
+      map[row.uid] = String(row.username || row.aadhar || row.uid).trim();
+    }
+    return map;
+  }, [verifiers]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setListError('');
     try {
+      const loadInward = async (
+        scope?: { rcId?: string; rcCode?: string; seatSerials?: string[] } | null,
+      ) => {
+        let stored: SerialInwardBatch[] = [];
+        let fromEvents: SerialInwardBatch[] = [];
+
+        try {
+          const inwardSnap = scope?.rcId
+            ? await getDocs(
+                query(collection(db, 'serialInwardBatches'), where('rcId', '==', scope.rcId)),
+              )
+            : await getDocs(collection(db, 'serialInwardBatches'));
+          stored = inwardSnap.docs.map(d => serialInwardBatchFromDoc(d.id, d.data()));
+        } catch {
+          stored = [];
+        }
+
+        try {
+          const eventSnap = await getDocs(collection(db, 'yesoneInboundEvents'));
+          fromEvents = inwardBatchesFromInboundEvents(
+            eventSnap.docs.map(d => {
+              const data = d.data() as { at?: string; payload?: unknown };
+              return { id: d.id, at: data.at, payload: data.payload };
+            }),
+          );
+          if (scope?.rcId || scope?.rcCode) {
+            fromEvents = filterInwardBatchesForRc(fromEvents, {
+              rcId: scope.rcId || '',
+              rcCode: scope.rcCode || '',
+            });
+          }
+        } catch {
+          fromEvents = [];
+        }
+
+        if (!scope?.rcId) {
+          // Super: webhook rows + allotment ranges for every RC (fills gaps / old data).
+          const allotDocs: ReturnType<typeof yesoneSerialFromDoc>[] = [];
+          try {
+            const allotSnap = await getDocs(collection(db, 'serialAllotments'));
+            for (const d of allotSnap.docs) {
+              allotDocs.push(yesoneSerialFromDoc(d.id, d.data()));
+            }
+          } catch {
+            /* ignore */
+          }
+          const synthetic = syntheticInwardBatchesFromAllotments(allotDocs, {
+            requireInvoice: true,
+          });
+          setInwardBatches(
+            mergeWebhookInwardBatches({
+              fromEvents: [...fromEvents, ...synthetic],
+              stored,
+            }),
+          );
+          return;
+        }
+
+        const allotDocs: ReturnType<typeof yesoneSerialFromDoc>[] = [];
+        try {
+          const allotSnap = await getDocs(
+            query(collection(db, 'serialAllotments'), where('rcId', '==', scope.rcId)),
+          );
+          for (const d of allotSnap.docs) {
+            allotDocs.push(yesoneSerialFromDoc(d.id, d.data()));
+          }
+        } catch {
+          /* ignore */
+        }
+
+        const have = new Set(allotDocs.map(row => row.serialNumber.toUpperCase()));
+        const nowIso = new Date().toISOString();
+        for (const serial of scope.seatSerials || []) {
+          const key = serial.trim().toUpperCase();
+          if (!key || have.has(key)) continue;
+          have.add(key);
+          allotDocs.push({
+            id: serial,
+            serialNumber: serial,
+            rcId: scope.rcId,
+            rcCode: scope.rcCode || '',
+            rcCompanyName: '',
+            productName: '',
+            status: 'allotted',
+            allottedAt: nowIso,
+            previousSerialNumber: '',
+            updatedAt: nowIso,
+            invoiceNo: '',
+          });
+        }
+
+        const synthetic = syntheticInwardBatchesFromAllotments(allotDocs, {
+          requireInvoice: true,
+        });
+        // Prefer webhook rows (have invoice); fill gaps from allotment ranges.
+        setInwardBatches(
+          mergeWebhookInwardBatches({
+            fromEvents: [...fromEvents, ...synthetic],
+            stored,
+          }),
+        );
+      };
+
       if (isSuper) {
         const [calibrationSnap, userSnap, productSnap] = await Promise.all([
           getDocs(collection(db, 'siteCalibrations')),
@@ -211,9 +387,11 @@ export const Reports: React.FC = () => {
             id: d.id,
             name: data.companyName?.trim() || data.username?.trim() || 'GATC',
             district: data.place?.trim() || '',
+            rcCode: data.rcCode?.trim() || '',
           });
         });
         setRcOptions(rcs);
+        await loadInward(null);
         return;
       }
 
@@ -221,6 +399,7 @@ export const Reports: React.FC = () => {
         setRecords([]);
         setRcOptions([]);
         setProductsById(new Map());
+        setInwardBatches([]);
         return;
       }
 
@@ -241,18 +420,27 @@ export const Reports: React.FC = () => {
       });
       setProductsById(products);
       const rcData = rcSnap.exists() ? (rcSnap.data() as FirestoreUserDoc) : null;
+      const rcCode = rcData?.rcCode?.trim() || '';
+      const seatSerials = Array.isArray((rcData as { yesoneAllottedSerials?: unknown })?.yesoneAllottedSerials)
+        ? ((rcData as { yesoneAllottedSerials: unknown[] }).yesoneAllottedSerials)
+            .map(item => String(item ?? '').trim())
+            .filter(Boolean)
+        : [];
       setRcOptions([
         {
           id: rcUid,
           name: rcData?.companyName?.trim() || rcData?.username?.trim() || 'GATC',
           district: rcData?.place?.trim() || '',
+          rcCode,
         },
       ]);
       setRcFilter(rcUid);
+      await loadInward({ rcId: rcUid, rcCode, seatSerials });
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to load report.');
       setRecords([]);
       setProductsById(new Map());
+      setInwardBatches([]);
     } finally {
       setLoading(false);
     }
@@ -293,7 +481,14 @@ export const Reports: React.FC = () => {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [filterOpen]);
 
-  const monthOptions = useMemo(() => buildMonthOptions(records), [records]);
+  const monthOptions = useMemo(() => {
+    const keys = new Set(buildMonthOptions(records));
+    for (const row of inwardBatches) {
+      const key = inwardMonthKey(row.at);
+      if (key >= GATC_START_MONTH_KEY) keys.add(key);
+    }
+    return [...keys].sort((a, b) => b.localeCompare(a));
+  }, [inwardBatches, records]);
 
   const monthRecords = useMemo(
     () =>
@@ -513,7 +708,37 @@ export const Reports: React.FC = () => {
   }, [contractorDueByDate, revenueRows]);
 
   const isRevenue = reportView === 'revenue_share';
-  const listLength = isRevenue ? revenueRows.length : dayRows.length;
+  const isSerialInward = reportView === 'serial_inward';
+
+  const selectedRcCode =
+    sortedRcOptions.find(rc => rc.id === rcFilter)?.rcCode?.trim() || '';
+
+  const inwardRows = useMemo(() => {
+    const scopedToRc =
+      rcFilter && rcFilter !== 'all'
+        ? filterInwardBatchesForRc(inwardBatches, { rcId: rcFilter, rcCode: selectedRcCode })
+        : inwardBatches;
+    const scoped = scopedToRc.filter(row => {
+      if (!row.invoiceNo?.trim()) return false;
+      const key = inwardMonthKey(row.at);
+      if (!key) return monthKey === LIFETIME_MONTH_KEY;
+      if (key < GATC_START_MONTH_KEY) return false;
+      if (monthKey === LIFETIME_MONTH_KEY) return true;
+      return key === monthKey;
+    });
+    return [...scoped].sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  }, [inwardBatches, monthKey, rcFilter, selectedRcCode]);
+
+  const inwardQtyTotal = useMemo(
+    () => inwardRows.reduce((sum, row) => sum + (row.totalQty || 0), 0),
+    [inwardRows],
+  );
+
+  const listLength = isSerialInward
+    ? inwardRows.length
+    : isRevenue
+      ? revenueRows.length
+      : dayRows.length;
   const showHandling = isRcRevenue && revenueTotals.handling > 0;
 
   useEffect(() => {
@@ -527,6 +752,10 @@ export const Reports: React.FC = () => {
   const pagedRevenueRows = useMemo(
     () => paginateItems(revenueRows, page, REPORTS_TABLE_PAGE_SIZE),
     [page, revenueRows],
+  );
+  const pagedInwardRows = useMemo(
+    () => paginateItems(inwardRows, page, REPORTS_TABLE_PAGE_SIZE),
+    [inwardRows, page],
   );
   const pageStart = paginationRange(page, listLength, REPORTS_TABLE_PAGE_SIZE).start;
 
@@ -558,11 +787,17 @@ export const Reports: React.FC = () => {
   const filterSlot = filterSlots.mobile ?? filterSlots.desktop;
   const monthLabel = formatMonthYear(monthKey);
   const periodText = `${monthLabel}${
-    isRevenue ? (isRcRevenue ? ' · Contractor fee' : ' · Revenue share') : ' · Day summary'
-  }${typeFilter === 'all' ? '' : ` · ${typeFilter}`}`;
+    isSerialInward
+      ? ' · Serial inward'
+      : isRevenue
+        ? isRcRevenue
+          ? ' · Contractor fee'
+          : ' · Revenue share'
+        : ' · Day summary'
+  }${isSerialInward || typeFilter === 'all' ? '' : ` · ${typeFilter}`}`;
 
   const shareReport = useCallback(() => {
-    if (sharing) return;
+    if (sharing || isSerialInward) return;
     setShareError('');
     setSharing(true);
     void (async () => {
@@ -626,6 +861,7 @@ export const Reports: React.FC = () => {
     dayVerifiedTotal,
     isRcRevenue,
     isRevenue,
+    isSerialInward,
     monthKey,
     periodText,
     revenueRows,
@@ -639,10 +875,10 @@ export const Reports: React.FC = () => {
     setReportsAppBar({
       title: selectedRcName,
       period: periodText,
-      onShare: shareReport,
+      onShare: isSerialInward ? undefined : shareReport,
       sharing: sharing || loading,
     });
-  }, [loading, periodText, selectedRcName, setReportsAppBar, shareReport, sharing]);
+  }, [isSerialInward, loading, periodText, selectedRcName, setReportsAppBar, shareReport, sharing]);
 
   useLayoutEffect(() => {
     return () => setReportsAppBar?.(null);
@@ -693,6 +929,7 @@ export const Reports: React.FC = () => {
                 <option value="revenue_share">
                   {isSuper ? 'Revenue share' : 'Contractor fee'}
                 </option>
+                <option value="serial_inward">Serial inward</option>
               </select>
             </div>
             {showRcSelect ? (
@@ -718,6 +955,8 @@ export const Reports: React.FC = () => {
                 </div>
               </>
             ) : null}
+            {draftView !== 'serial_inward' ? (
+              <>
             <label className="verification-app-filter__label" htmlFor="reports-filter-type">
               Type
             </label>
@@ -733,6 +972,8 @@ export const Reports: React.FC = () => {
                 <option value="RV">RV</option>
               </select>
             </div>
+              </>
+            ) : null}
             <label className="verification-app-filter__label" htmlFor="reports-filter-month">
               Month year
             </label>
@@ -790,16 +1031,29 @@ export const Reports: React.FC = () => {
             <div className="reports-empty">
               <Building2 size={28} strokeWidth={1.6} aria-hidden />
               <p>
-                {isRevenue
-                  ? isRcRevenue
-                    ? `No contractor fee for ${monthLabel}.`
-                    : `No revenue share for ${monthLabel}.`
-                  : `No day summary for ${monthLabel}.`}
+                {isSerialInward
+                  ? `No invoiced serial inward for ${monthLabel}.`
+                  : isRevenue
+                    ? isRcRevenue
+                      ? `No contractor fee for ${monthLabel}.`
+                      : `No revenue share for ${monthLabel}.`
+                    : `No day summary for ${monthLabel}.`}
               </p>
             </div>
           ) : (
             <>
               <div className="reports-sticky">
+                {isSerialInward ? (
+                  <div className="reports-rev-totals reports-rev-totals--contractor" aria-label="Serial inward totals">
+                    <div className="reports-rev-total reports-rev-total--qty" aria-label={`Total qty ${inwardQtyTotal}`}>
+                      <span className="reports-rev-total__label">
+                        <span className="reports-rev-total__full">Total qty</span>
+                        <span className="reports-rev-total__abbr" aria-hidden>Qty</span>
+                      </span>
+                      <span className="reports-rev-total__value">{inwardQtyTotal}</span>
+                    </div>
+                  </div>
+                ) : null}
                 {isRevenue ? (
                   <div
                     className={`reports-rev-totals${isRcRevenue ? ' reports-rev-totals--contractor' : ''}${
@@ -870,7 +1124,7 @@ export const Reports: React.FC = () => {
                     )}
           </div>
                 ) : null}
-                <div className={`reports-toolbar${isRevenue ? ' reports-toolbar--pager' : ''}`}>
+                <div className={`reports-toolbar${isRevenue || isSerialInward ? ' reports-toolbar--pager' : ''}`}>
                   <TablePagination
                     page={page}
                     totalItems={listLength}
@@ -878,7 +1132,7 @@ export const Reports: React.FC = () => {
                     onPageChange={setPage}
                     placement="top"
                   />
-                  {!isRevenue ? (
+                  {!isRevenue && !isSerialInward ? (
                     <p className="reports-toolbar__stat">
                       <span>Total qty</span>
                       <strong>{dayVerifiedTotal}</strong>
@@ -886,7 +1140,199 @@ export const Reports: React.FC = () => {
                   ) : null}
           </div>
         </div>
-              {isRevenue ? (
+              {isSerialInward ? (
+                <>
+                  <ul className="reports-rev-cards reports-inward-cards">
+                    {pagedInwardRows.map((row, index) => {
+                      const invKey = String(row.invoiceNo || '').trim().toUpperCase();
+                      const reservedUid = invKey ? reservedByInvoice[invKey] : undefined;
+                      const isReserved = reservedUid !== undefined;
+                      const reservedLabel = reservedUid
+                        ? verifierNameByUid[reservedUid] || 'Verifier'
+                        : isReserved
+                          ? 'RC reserved'
+                          : '';
+                      return (
+                      <li key={row.id} className="reports-rev-card reports-inward-card">
+                        <span className="reports-rev-card__sl reports-inward-card__sl">
+                          {pageStart + index}
+                        </span>
+                        <div className="reports-inward-card__lines">
+                          <p className="reports-inward-card__line">
+                            <span className="reports-inward-card__inv">{row.invoiceNo || '—'}</span>
+                            <span>{formatInwardDate(row.at)}</span>
+                            <span className="text-mono">{formatInwardTime(row.at)}</span>
+                          </p>
+                          <p className="reports-inward-card__line reports-inward-card__line--serials">
+                            {row.totalQty <= 1
+                            || !row.serialEnd
+                            || row.serialStart.trim().toUpperCase() === row.serialEnd.trim().toUpperCase() ? (
+                              <span className="text-mono">{row.serialStart || '—'}</span>
+                            ) : (
+                              <>
+                                <span className="text-mono">{row.serialStart}</span>
+                                <span className="reports-inward-card__sep">–</span>
+                                <span className="text-mono">{row.serialEnd}</span>
+                              </>
+                            )}
+                            <span className="reports-inward-card__qty">{row.totalQty} qty</span>
+                          </p>
+                          {isRcAdmin && row.invoiceNo.trim() ? (
+                            <div className="reports-inward-card__reserve">
+                              {isReserved ? (
+                                <>
+                                  <span className="reports-inward-card__reserve-tag">
+                                    Reserved → {reservedLabel}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    disabled={reserveBusy}
+                                    onClick={() => {
+                                      if (!rcUid) return;
+                                      setReserveBusy(true);
+                                      setReserveError('');
+                                      void clearInvoiceReservation(
+                                        rcUid,
+                                        row.invoiceNo,
+                                        expandSerialRange(row.serialStart, row.serialEnd || row.serialStart),
+                                      )
+                                        .catch(err => {
+                                          setReserveError(
+                                            err instanceof Error ? err.message : 'Could not clear reservation.',
+                                          );
+                                        })
+                                        .finally(() => setReserveBusy(false));
+                                    }}
+                                  >
+                                    Unreserve
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  disabled={reserveBusy || verifiers.length === 0}
+                                  onClick={() => {
+                                    setReserveError('');
+                                    setReserveVerifierUid(verifiers[0]?.uid || '');
+                                    setReserveRow(row);
+                                  }}
+                                >
+                                  Reserve for verifier
+                                </button>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      </li>
+                      );
+                    })}
+                  </ul>
+                  {reserveRow && isRcAdmin ? (
+                    createPortal(
+                      <div
+                        className="reports-reserve-overlay"
+                        role="presentation"
+                        onClick={() => !reserveBusy && setReserveRow(null)}
+                      >
+                        <div
+                          className="reports-reserve-dialog"
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="reports-reserve-title"
+                          onClick={event => event.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className="rv-payment-panel-close"
+                            aria-label="Close"
+                            disabled={reserveBusy}
+                            onClick={() => setReserveRow(null)}
+                          >
+                            <X size={18} />
+                          </button>
+                          <h2 id="reports-reserve-title" className="reports-reserve-dialog__title">
+                            Reserve bill seats
+                          </h2>
+                          <p className="reports-reserve-dialog__meta text-mono">
+                            {reserveRow.invoiceNo}
+                          </p>
+                          <p className="reports-reserve-dialog__meta">
+                            {reserveRow.serialStart}
+                            {reserveRow.serialEnd
+                              && reserveRow.serialEnd.trim().toUpperCase()
+                                !== reserveRow.serialStart.trim().toUpperCase()
+                              ? ` – ${reserveRow.serialEnd}`
+                              : ''}
+                            {' · '}
+                            {reserveRow.totalQty} qty
+                          </p>
+                          <p className="text-muted text-sm">
+                            Assigned verifier can use these serials for OV drafts. Hidden from VCT.
+                          </p>
+                          <label className="reports-reserve-dialog__label" htmlFor="reports-reserve-verifier">
+                            Verifier
+                          </label>
+                          <select
+                            id="reports-reserve-verifier"
+                            className="form-control"
+                            value={reserveVerifierUid}
+                            disabled={reserveBusy}
+                            onChange={event => setReserveVerifierUid(event.target.value)}
+                          >
+                            {verifiers.map(row => (
+                              <option key={row.uid} value={row.uid}>
+                                {row.username || row.aadhar || row.uid}
+                              </option>
+                            ))}
+                          </select>
+                          {verifiers.length === 0 ? (
+                            <p className="login-error">Add a verifier under Verifiers first.</p>
+                          ) : null}
+                          {reserveError ? <p className="login-error">{reserveError}</p> : null}
+                          <div className="reports-reserve-dialog__actions">
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={reserveBusy}
+                              onClick={() => setReserveRow(null)}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              disabled={reserveBusy || !reserveVerifierUid || !rcUid}
+                              onClick={() => {
+                                if (!rcUid || !reserveRow || !reserveVerifierUid) return;
+                                setReserveBusy(true);
+                                setReserveError('');
+                                void reserveInvoiceForVerifier(rcUid, {
+                                  invoiceNo: reserveRow.invoiceNo,
+                                  serialStart: reserveRow.serialStart,
+                                  serialEnd: reserveRow.serialEnd || reserveRow.serialStart,
+                                  verifierUid: reserveVerifierUid,
+                                })
+                                  .then(() => setReserveRow(null))
+                                  .catch(err => {
+                                    setReserveError(
+                                      err instanceof Error ? err.message : 'Could not reserve invoice.',
+                                    );
+                                  })
+                                  .finally(() => setReserveBusy(false));
+                              }}
+                            >
+                              {reserveBusy ? 'Saving…' : 'Reserve'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>,
+                      document.body,
+                    )
+                  ) : null}
+                </>
+              ) : isRevenue ? (
                 <>
                   <ul className="reports-rev-cards">
                     {pagedRevenueRows.map((row, index) => (

@@ -7,9 +7,13 @@ type SerialSeatOverlayProps = {
   rcCode: string;
   serials: string[];
   voidedSerials: string[];
+  reservedSerials?: string[];
   expectedCount: number | null;
   canVoid: boolean;
   onToggleVoid?: (serial: string, voided: boolean) => Promise<void>;
+  /** RC admin: mark sticker reserved (hidden from VCT). */
+  canReserve?: boolean;
+  onToggleReserve?: (serial: string, reserved: boolean) => Promise<void>;
   onClose: () => void;
 };
 
@@ -18,14 +22,20 @@ export function SerialSeatOverlay({
   rcCode,
   serials,
   voidedSerials,
+  reservedSerials = [],
   expectedCount,
   canVoid,
   onToggleVoid,
+  canReserve = false,
+  onToggleReserve,
   onClose,
 }: SerialSeatOverlayProps) {
   const voidedKeys = new Set(voidedSerials.map(serial => serial.toLowerCase()));
-  const activeCount = serials.filter(serial => !voidedKeys.has(serial.toLowerCase())).length;
-  const mismatch = expectedCount == null ? activeCount > 0 : expectedCount !== activeCount;
+  const reservedKeys = new Set(reservedSerials.map(serial => serial.toLowerCase()));
+  // Exact seats on screen (non-voided stickers in the list).
+  const seatCount = serials.filter(serial => !voidedKeys.has(serial.toLowerCase())).length;
+  const balanceCount = expectedCount == null ? null : Math.max(0, expectedCount);
+  const mismatch = balanceCount != null && balanceCount !== seatCount;
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
@@ -55,6 +65,19 @@ export function SerialSeatOverlay({
     }
   };
 
+  const handleReserve = async (serial: string, nextReserved: boolean) => {
+    if (!canReserve || !onToggleReserve || busy) return;
+    setError('');
+    setBusy(serial);
+    try {
+      await onToggleReserve(serial, nextReserved);
+    } catch {
+      setError('Could not reserve serial.');
+    } finally {
+      setBusy('');
+    }
+  };
+
   return createPortal(
     <div
       className="admin-setting-serial-overlay"
@@ -66,8 +89,18 @@ export function SerialSeatOverlay({
         <h2 id="serial-total-title" className="admin-setting-serial-stage-title">
           {companyName}
           {rcCode ? <span>{rcCode}</span> : null}
-          <span className={`admin-setting-serial-count-num${mismatch ? ' admin-setting-qty--bad' : ''}`}>
-            {activeCount}
+          <span
+            className={`admin-setting-serial-count-num${mismatch ? ' admin-setting-qty--bad' : ''}`}
+            title={
+              mismatch && balanceCount != null
+                ? `Mismatch: balance ${balanceCount}, seats ${seatCount}`
+                : undefined
+            }
+          >
+            {seatCount}
+            {mismatch && balanceCount != null ? (
+              <span className="admin-setting-serial-count-mismatch"> ≠{balanceCount}</span>
+            ) : null}
           </span>
         </h2>
         <button
@@ -79,6 +112,11 @@ export function SerialSeatOverlay({
           <X size={18} />
         </button>
       </header>
+      {canReserve ? (
+        <p className="text-muted text-sm admin-setting-serial-hint">
+          Tap a serial to reserve for RC admin (hidden from VCT). Reserved stickers show amber.
+        </p>
+      ) : null}
       {error ? <p className="login-error">{error}</p> : null}
       {serials.length === 0 ? (
         <p className="text-muted text-sm">No serial numbers.</p>
@@ -86,24 +124,52 @@ export function SerialSeatOverlay({
         <ul className="admin-setting-serial-seats">
           {serials.map(serial => {
             const voided = voidedKeys.has(serial.toLowerCase());
-            const className = `admin-setting-serial-seat${voided ? ' admin-setting-serial-seat--voided' : ''}`;
-            if (!canVoid || !onToggleVoid) {
+            const reserved = reservedKeys.has(serial.toLowerCase());
+            const className = [
+              'admin-setting-serial-seat',
+              'text-mono',
+              voided ? 'admin-setting-serial-seat--voided' : '',
+              reserved && !voided ? 'admin-setting-serial-seat--reserved' : '',
+            ]
+              .filter(Boolean)
+              .join(' ');
+            if (canVoid && onToggleVoid) {
               return (
-                <li key={serial} className={`${className} text-mono`}>{serial}</li>
+                <li key={serial}>
+                  <button
+                    type="button"
+                    className={className}
+                    aria-pressed={voided}
+                    aria-label={voided ? `Restore ${serial}` : `Void ${serial}`}
+                    disabled={Boolean(busy)}
+                    onClick={() => void handleVoid(serial, !voided)}
+                  >
+                    {serial}
+                  </button>
+                </li>
+              );
+            }
+            if (canReserve && onToggleReserve && !voided) {
+              return (
+                <li key={serial}>
+                  <button
+                    type="button"
+                    className={className}
+                    aria-pressed={reserved}
+                    aria-label={
+                      reserved ? `Unreserve ${serial} for VCT` : `Reserve ${serial} for RC admin`
+                    }
+                    disabled={Boolean(busy)}
+                    onClick={() => void handleReserve(serial, !reserved)}
+                  >
+                    {serial}
+                  </button>
+                </li>
               );
             }
             return (
-              <li key={serial}>
-                <button
-                  type="button"
-                  className={`${className} text-mono`}
-                  aria-pressed={voided}
-                  aria-label={voided ? `Restore ${serial}` : `Void ${serial}`}
-                  disabled={Boolean(busy)}
-                  onClick={() => void handleVoid(serial, !voided)}
-                >
-                  {serial}
-                </button>
+              <li key={serial} className={className}>
+                {serial}
               </li>
             );
           })}

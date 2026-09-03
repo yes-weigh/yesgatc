@@ -22,6 +22,8 @@ type VerificationJobKindPickerProps = {
   ovBalanceQty: number | null;
   ovRemainingCount?: number;
   pendingSerials: string[];
+  /** Verifier: only OV Self — hide OV/RV Customer + balance card. */
+  verifierMode?: boolean;
   onSelect: (kind: VerificationJobKind, serial?: string, manufacturingYear?: string) => void;
   onClose: () => void;
 };
@@ -64,24 +66,36 @@ export function VerificationJobKindPicker({
   ovBalanceQty,
   ovRemainingCount,
   pendingSerials,
+  verifierMode = false,
   onSelect,
   onClose,
 }: VerificationJobKindPickerProps) {
-  const qtyBlocked = ovBalanceQty != null && ovBalanceQty <= 0;
-  const serialBlocked = ovRemainingCount === 0;
-  const ovBlocked = qtyBlocked || serialBlocked;
-  const balanceLabel = ovBalanceQty == null ? '—' : String(Math.max(0, ovBalanceQty));
-  const [pickingKind, setPickingKind] = useState<VerificationJobKind | null>(null);
-  const [pickedSerial, setPickedSerial] = useState('');
-  const [manualSerial, setManualSerial] = useState('');
-  const [manufacturingYear, setManufacturingYear] = useState('');
-
   const seats = useMemo(
     () =>
       [...pendingSerials].sort((a, b) =>
         a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
       ),
     [pendingSerials],
+  );
+  const qtyBlocked = verifierMode
+    ? seats.length === 0
+    : ovBalanceQty != null && ovBalanceQty <= 0;
+  const serialBlocked = ovRemainingCount === 0 || (verifierMode && seats.length === 0);
+  const ovBlocked = qtyBlocked || serialBlocked;
+  // Verifier QTY = reserved seats only (not RC balance).
+  const balanceLabel = verifierMode
+    ? String(seats.length)
+    : ovBalanceQty == null
+      ? '—'
+      : String(Math.max(0, ovBalanceQty));
+  const [pickingKind, setPickingKind] = useState<VerificationJobKind | null>(null);
+  const [pickedSerial, setPickedSerial] = useState('');
+  const [manualSerial, setManualSerial] = useState('');
+  const [manufacturingYear, setManufacturingYear] = useState('');
+
+  const visibleKinds = useMemo(
+    () => (verifierMode ? KINDS.filter(kind => kind.id === 'ov_self') : KINDS),
+    [verifierMode],
   );
 
   const isRvManual = pickingKind === 'rv_customer';
@@ -159,7 +173,7 @@ export function VerificationJobKindPicker({
 
       <div className="verification-job-kind-page-body">
         <div className="verification-job-kind-page-list">
-          {KINDS.map(kind => {
+          {visibleKinds.map(kind => {
             const disabled = kind.ov && ovBlocked;
             const Icon = kind.Icon;
             return (
@@ -185,24 +199,26 @@ export function VerificationJobKindPicker({
             );
           })}
 
-          <div className="verification-job-kind-balance-card" role="status">
-            <span className="verification-job-kind-avatar verification-job-kind-avatar--purple">
-              <ClipboardList size={18} strokeWidth={2.2} aria-hidden />
-            </span>
-            <span className="verification-job-kind-copy">
-              <span className="verification-job-kind-copy-title">Balance OV Quantity to do</span>
-              <span className="verification-job-kind-copy-sub">Total OV Self + OV Customer</span>
-            </span>
-            <span className="verification-job-kind-balance-stat">
-              <strong>{balanceLabel}</strong>
-              <span>Jobs</span>
-            </span>
-          </div>
+          {!verifierMode ? (
+            <div className="verification-job-kind-balance-card" role="status">
+              <span className="verification-job-kind-avatar verification-job-kind-avatar--purple">
+                <ClipboardList size={18} strokeWidth={2.2} aria-hidden />
+              </span>
+              <span className="verification-job-kind-copy">
+                <span className="verification-job-kind-copy-title">Balance OV Quantity to do</span>
+                <span className="verification-job-kind-copy-sub">Total OV Self + OV Customer</span>
+              </span>
+              <span className="verification-job-kind-balance-stat">
+                <strong>{balanceLabel}</strong>
+                <span>Jobs</span>
+              </span>
+            </div>
+          ) : null}
         </div>
 
-        {qtyBlocked ? (
+        {!verifierMode && qtyBlocked ? (
           <p className="verification-job-kind-hint">OV quota is 0. RV Customer still available.</p>
-        ) : serialBlocked ? (
+        ) : !verifierMode && serialBlocked ? (
           <p className="verification-job-kind-hint">No allotted serials left. RV Customer still available.</p>
         ) : null}
       </div>
@@ -226,15 +242,23 @@ export function VerificationJobKindPicker({
               </span>
               Back
             </button>
-            <div className="verification-ov-seat-intro">
-              <h2 id="verification-ov-seat-title">
-                {isRvManual ? 'Enter serial number' : 'Pending serials'}
-              </h2>
-              <p>
-                {isRvManual
-                  ? `${verificationJobKindLabel(pickingKind)} — serial + year of manufacturing`
-                  : `${verificationJobKindLabel(pickingKind)} — select one seat`}
-              </p>
+            <div className="verification-ov-seat-intro-row">
+              <div className="verification-ov-seat-intro">
+                <h2 id="verification-ov-seat-title">
+                  {isRvManual ? 'Enter serial number' : 'Pending serials'}
+                </h2>
+                <p>
+                  {isRvManual
+                    ? `${verificationJobKindLabel(pickingKind)} — serial + year of manufacturing`
+                    : `${verificationJobKindLabel(pickingKind)} — select one serial number`}
+                </p>
+              </div>
+              {!isRvManual ? (
+                <div className="verification-ov-seat-qty" role="status" aria-label={`Quantity ${balanceLabel}`}>
+                  <span className="verification-ov-seat-qty-label">Qty</span>
+                  <strong className="verification-ov-seat-qty-value">{balanceLabel}</strong>
+                </div>
+              ) : null}
             </div>
           </header>
 

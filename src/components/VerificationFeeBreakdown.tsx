@@ -79,11 +79,11 @@ function FeeRows({
   return (
     <>
       <div className={`${lineClassName} verification-fees-total-line--primary`}>
-        <span>GATC verification fees</span>
+        <span>Interweighing fees (GATC)</span>
         <span>{formatRcFeeAmount(line.gatcFee)}</span>
       </div>
       <div className={`${lineClassName} verification-fees-total-line--section`}>
-        <span>GST ({GST_PERCENT_LABEL})</span>
+        <span>Interweighing GST ({GST_PERCENT_LABEL})</span>
         <span>{formatRcFeeAmount(line.gst)}</span>
       </div>
       <div className={lineClassName}>

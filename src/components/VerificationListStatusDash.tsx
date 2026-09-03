@@ -4,6 +4,7 @@ import type {
   VerificationStatusFilterCounts,
   VerificationTypeFilter,
 } from '../lib/verificationRequest';
+import type { VerificationSignedPdfFilter } from '../lib/signedCertificatePdf';
 
 type DashTone = 'emerald' | 'sky' | 'amber' | 'rose' | 'slate' | 'orange' | 'blue';
 
@@ -18,17 +19,20 @@ const STATUS_TILES: {
   { key: 'submitted', label: 'Sub', tone: 'sky', countKey: 'submitted', Icon: Send },
   { key: 'failed_submit', label: 'Fail', tone: 'amber', countKey: 'failed_submit', Icon: AlertTriangle },
   { key: 'rejected', label: 'Rej', tone: 'rose', countKey: 'rejected', Icon: XCircle },
-  { key: 'draft', label: 'Draft', tone: 'slate', countKey: 'draft', Icon: FileText },
 ];
 
 type VerificationListStatusDashProps = {
   counts: VerificationStatusFilterCounts;
   ovCount: number;
   rvCount: number;
+  /** Unsigned certified count (No signed PDF). */
+  notSignedCount?: number;
   statusFilter: VerificationStatusFilter;
   onStatusFilterChange: (value: VerificationStatusFilter) => void;
   typeFilter: VerificationTypeFilter;
   onTypeFilterChange: (value: VerificationTypeFilter) => void;
+  signedPdfFilter?: VerificationSignedPdfFilter;
+  onSignedPdfFilterChange?: (value: VerificationSignedPdfFilter) => void;
   loading?: boolean;
 };
 
@@ -36,14 +40,18 @@ export function VerificationListStatusDash({
   counts,
   ovCount,
   rvCount,
+  notSignedCount = 0,
   statusFilter,
   onStatusFilterChange,
   typeFilter,
   onTypeFilterChange,
+  signedPdfFilter = 'all',
+  onSignedPdfFilterChange,
   loading = false,
 }: VerificationListStatusDashProps) {
   const ovActive = typeFilter === 'OV';
   const rvActive = typeFilter === 'RV';
+  const notSignActive = signedPdfFilter === 'not_signed';
 
   return (
     <section className="verification-status-dash" aria-label="Verification status">
@@ -72,6 +80,26 @@ export function VerificationListStatusDash({
             </button>
           );
         })}
+        <button
+          type="button"
+          className={`verification-status-dash__tile verification-status-dash__tile--slate${
+            notSignActive ? ' is-active' : ''
+          }`}
+          onClick={() => {
+            if (!onSignedPdfFilterChange) return;
+            onSignedPdfFilterChange(notSignActive ? 'all' : 'not_signed');
+          }}
+          aria-pressed={notSignActive}
+          aria-label={`Not sign: ${notSignedCount}`}
+        >
+          <span className="verification-status-dash__icon" aria-hidden>
+            <FileText size={14} strokeWidth={2.25} />
+          </span>
+          <span className="verification-status-dash__label">Not sign</span>
+          <span className="verification-status-dash__count">
+            {loading ? '—' : notSignedCount}
+          </span>
+        </button>
         <button
           type="button"
           className={`verification-status-dash__tile verification-status-dash__tile--blue${

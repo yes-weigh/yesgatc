@@ -4,6 +4,7 @@ const APP_SETTINGS_COLLECTION = 'appSettings';
 const APP_SETTINGS_GLOBAL_DOC = 'global';
 const SERIAL_COLLECTION = 'serialAllotments';
 const INBOUND_EVENTS_COLLECTION = 'yesoneInboundEvents';
+const INWARD_BATCHES_COLLECTION = 'serialInwardBatches';
 const INBOUND_LOG_LIMIT = 200;
 const MAX_EVENTS = 8000;
 const MASTER_RC_CODE = 'IWP';
@@ -132,6 +133,43 @@ function pickValue(item, names) {
 
 function pickText(item, names) {
   return optionalTrimmed(pickValue(item, names));
+}
+
+function readInvoiceNo(item) {
+  const rec = asRecord(item);
+  const invoice = asRecord(pickValue(rec, ['invoice']));
+  const direct = pickText(rec, [
+    'invoiceNo',
+    'invoiceNumber',
+    'invoiceId',
+    'invoice_no',
+    'billNo',
+    'billNumber',
+    'allotmentId',
+    'allotment_id',
+  ]);
+  if (direct) return direct;
+  const nested = pickText(invoice, ['no', 'number', 'id', 'invoiceNo', 'invoiceNumber', 'invoiceId']);
+  if (nested) return nested;
+  const raw = pickValue(rec, ['invoice']);
+  if (typeof raw === 'string' || typeof raw === 'number') return optionalTrimmed(raw);
+  const links = Array.isArray(rec.invoiceLinks) ? rec.invoiceLinks : [];
+  if (links.length) {
+    const linkInv = pickText(asRecord(links[0]), ['invoiceNumber', 'invoiceNo', 'invoiceId', 'number']);
+    if (linkInv) return linkInv;
+  }
+  // YesOne allotment row id is the inward reference when invoice fields are absent.
+  const allotmentId = optionalTrimmed(rec.allotmentId || rec.allotment_id);
+  if (allotmentId) return allotmentId;
+  return null;
+}
+
+function allotmentInvoiceRef(row, fallbackItem) {
+  const rec = asRecord(row);
+  return readInvoiceNo(rec)
+    || readInvoiceNo(fallbackItem)
+    || optionalTrimmed(rec.id)
+    || null;
 }
 
 function normalizeEventName(raw) {
@@ -291,14 +329,15 @@ function withSeriesFields(item) {
   const to = pickText(rec, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
     || pickText(series, ['to', 'end', 'endNumber', 'endSerial', 'serialTo'])
     || pickText(invoice, ['to', 'end', 'endNumber']);
-  const listed = pickValue(rec, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials', 'cancelledSerials'])
+  const listed = pickValue(rec, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials', 'cancelledSerials', 'removeSerialNumbers'])
     || pickValue(rc, ['serials', 'serialNumbers'])
     || pickValue(series, ['serials', 'serialNumbers'])
-    || pickValue(invoice, ['serials', 'serialNumbers']);
+    || pickValue(invoice, ['serials', 'serialNumbers', 'removeSerialNumbers', 'cancelledSerials']);
   return {
     ...rec,
     from: from || optionalTrimmed(rec.from),
     to: to || optionalTrimmed(rec.to),
+    invoiceNo: readInvoiceNo(rec) || readInvoiceNo({ invoice }) || optionalTrimmed(rec.invoiceNo),
     rcCode: rcCodeFrom(rec) || rcCodeFrom(rc),
     rcId: pickText(rec, ['rcId', 'rcUid']) || pickText(rc, ['id', 'uid', 'rcId']),
     rcCompanyName: pickText(rec, ['rcCompanyName', 'rcName', 'companyName', 'dealerName'])
@@ -352,7 +391,16 @@ function expandSerialRange(from, to, missing, max = MAX_EVENTS) {
 }
 
 function serialListFromRec(rec) {
-  const listed = pickValue(rec, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials', 'cancelledSerials']);
+  const invoice = asRecord(pickValue(rec, ['invoice']));
+  const listed = pickValue(rec, [
+    'serials',
+    'serialNumbers',
+    'serial_numbers',
+    'allottedSerials',
+    'cancelledSerials',
+    'removeSerialNumbers',
+  ])
+    || pickValue(invoice, ['removeSerialNumbers', 'serialNumbers', 'serials', 'cancelledSerials']);
   if (Array.isArray(listed)) return listed;
   if (Array.isArray(rec.allotted)) return rec.allotted;
   return [];
@@ -582,11 +630,16 @@ function expandNamedSerialEvent(root, mergedRoot, named) {
       });
       const serials = serialsFromGroup(rec);
       if (serials.length) {
+        const invoiceNo = allotmentInvoiceRef(raw, mergedRoot);
         pushSerialItems(out, mergedRoot, serials, {
           event: named,
           rcCode: rec.rcCode || base.rcCode,
           rcId: rec.rcId || base.rcId,
           rcCompanyName: rec.rcCompanyName || base.rcCompanyName,
+          from: rec.from || optionalTrimmed(raw.from),
+          to: rec.to || optionalTrimmed(raw.to),
+          invoiceNo: invoiceNo || undefined,
+          allotmentId: optionalTrimmed(raw.id) || undefined,
         });
       }
     }
@@ -604,6 +657,46 @@ function expandNamedSerialEvent(root, mergedRoot, named) {
   return out;
 }
 
+function allotmentInvoiceBySerial(root) {
+  const map = new Map();
+  const allotments = pickValue(root, ['allotments']);
+  if (!Array.isArray(allotments)) return map;
+  for (const row of allotments) {
+    const raw = asRecord(row);
+    const rec = withSeriesFields(raw);
+    const invoiceNo = allotmentInvoiceRef(raw, root);
+    if (!invoiceNo) continue;
+    const from = optionalTrimmed(rec.from) || optionalTrimmed(raw.from);
+    const to = optionalTrimmed(rec.to) || optionalTrimmed(raw.to);
+    const allotmentId = optionalTrimmed(raw.id) || undefined;
+    for (const serial of serialsFromGroup(rec)) {
+      if (!map.has(serial)) {
+        map.set(serial, { invoiceNo, from, to, allotmentId });
+      }
+    }
+  }
+  return map;
+}
+
+function applyAllotmentInvoiceMeta(items, root) {
+  const map = allotmentInvoiceBySerial(root);
+  if (map.size === 0) return items;
+  return items.map(item => {
+    if (inferEventName(item) !== 'serial.allotted') return item;
+    const serial = readSerialNumber(item);
+    if (!serial) return item;
+    const meta = map.get(serial);
+    if (!meta) return item;
+    return {
+      ...item,
+      invoiceNo: optionalTrimmed(item.invoiceNo) || meta.invoiceNo,
+      allotmentId: optionalTrimmed(item.allotmentId) || meta.allotmentId,
+      from: optionalTrimmed(item.from) || meta.from,
+      to: optionalTrimmed(item.to) || meta.to,
+    };
+  });
+}
+
 function expandInboundItems(body) {
   const root = asRecord(body);
   const data = asRecord(root.data);
@@ -617,14 +710,24 @@ function expandInboundItems(body) {
   delete mergedRoot.items;
 
   const named = inferEventName(mergedRoot);
-  if (SERIAL_MUTATION_EVENTS.has(named) && !isYesoneDump(root)) {
+  // Named cancel/allot wins even when payload also has dump-shaped fields
+  // (generatedSerialDetails). Otherwise cancel is misread as allot-to-IWP.
+  if (SERIAL_MUTATION_EVENTS.has(named) && (named === 'serial.cancelled' || !isYesoneDump(root))) {
     const namedItems = expandNamedSerialEvent(root, mergedRoot, named);
-    if (namedItems.length) return namedItems.slice(0, MAX_EVENTS);
+    if (namedItems.length) {
+      return applyAllotmentInvoiceMeta(namedItems, mergedRoot).slice(0, MAX_EVENTS);
+    }
   }
 
-  if (Array.isArray(body)) return expandRecordList(body);
-  if (Array.isArray(eventRows)) return expandRecordList(eventRows, mergedRoot);
-  if (Array.isArray(itemRows)) return expandRecordList(itemRows, mergedRoot);
+  if (Array.isArray(body)) {
+    return applyAllotmentInvoiceMeta(expandRecordList(body), mergedRoot);
+  }
+  if (Array.isArray(eventRows)) {
+    return applyAllotmentInvoiceMeta(expandRecordList(eventRows, mergedRoot), mergedRoot);
+  }
+  if (Array.isArray(itemRows)) {
+    return applyAllotmentInvoiceMeta(expandRecordList(itemRows, mergedRoot), mergedRoot);
+  }
 
   const out = [];
   const details = root.generatedSerialDetails || root.rcAllottedSerialDetails;
@@ -683,8 +786,10 @@ function expandInboundItems(body) {
     }
   }
 
-  if (out.length > 0) return out.slice(0, MAX_EVENTS);
-  return explodeItem(mergedRoot).slice(0, MAX_EVENTS);
+  if (out.length > 0) {
+    return applyAllotmentInvoiceMeta(out, mergedRoot).slice(0, MAX_EVENTS);
+  }
+  return applyAllotmentInvoiceMeta(explodeItem(mergedRoot), mergedRoot).slice(0, MAX_EVENTS);
 }
 
 function stripUndefined(value) {
@@ -758,6 +863,7 @@ async function resolveRc(db, item) {
 
 function allotmentFields(item, rc, serialNumber, extra = {}) {
   const product = asRecord(item.product);
+  const invoiceNo = readInvoiceNo(item) || optionalTrimmed(item.allotmentId);
   return {
     serialNumber,
     rcId: rc?.id || null,
@@ -766,6 +872,7 @@ function allotmentFields(item, rc, serialNumber, extra = {}) {
     productId: optionalTrimmed(item.productId || product.id),
     productName: optionalTrimmed(item.productName || product.name || product.productName),
     modelNo: optionalTrimmed(item.modelNo || product.modelNo),
+    invoiceNo: invoiceNo || null,
     source: 'yesone',
     updatedAt: new Date().toISOString(),
     ...extra,
@@ -896,6 +1003,83 @@ async function commitDocSets(db, writes) {
   }
 }
 
+function sortSerials(serials) {
+  return [...new Set(serials.map(item => String(item || '').trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+  );
+}
+
+async function recordSerialInwardBatches(db, items, results, now) {
+  const okSerials = new Set(
+    (Array.isArray(results) ? results : [])
+      .filter(row => row && row.ok === true && row.event === 'serial.allotted' && !row.skipped)
+      .map(row => optionalTrimmed(row.id))
+      .filter(Boolean),
+  );
+  if (okSerials.size === 0) return;
+
+  const groups = new Map();
+  for (const item of items) {
+    const serialNumber = readSerialNumber(item);
+    if (!serialNumber || !okSerials.has(serialNumber)) continue;
+    const flat = withSeriesFields(item);
+    const invoiceNo = readInvoiceNo(flat) || optionalTrimmed(flat.allotmentId) || '';
+    const from = optionalTrimmed(flat.from) || serialNumber;
+    const to = optionalTrimmed(flat.to) || serialNumber;
+    const rcKey =
+      normalizeRcCode(flat.rcCode)
+      || optionalTrimmed(flat.rcId)
+      || '';
+    const key = `${invoiceNo}|${from}|${to}|${rcKey}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        invoiceNo,
+        from,
+        to,
+        serials: [],
+        rcCode: normalizeRcCode(flat.rcCode) || '',
+        rcId: optionalTrimmed(flat.rcId) || '',
+        rcCompanyName: optionalTrimmed(flat.rcCompanyName) || '',
+      };
+      groups.set(key, group);
+    }
+    group.serials.push(serialNumber);
+    if (!group.rcId && results) {
+      const hit = results.find(row => row.id === serialNumber && row.rcId);
+      if (hit?.rcId) group.rcId = hit.rcId;
+    }
+  }
+
+  const writes = [];
+  for (const group of groups.values()) {
+    const serials = sortSerials(group.serials);
+    if (serials.length === 0) continue;
+    const serialStart = looksLikeYesoneSerial(group.from) ? group.from : serials[0];
+    const serialEnd = looksLikeYesoneSerial(group.to) ? group.to : serials[serials.length - 1];
+    const totalQty = serials.length;
+    const id = `in_${Date.now()}_${serialStart}_${crypto.randomBytes(3).toString('hex')}`;
+    writes.push({
+      path: `${INWARD_BATCHES_COLLECTION}/${id}`,
+      data: stripUndefined({
+        id,
+        invoiceNo: group.invoiceNo || null,
+        at: now,
+        serialStart,
+        serialEnd,
+        totalQty,
+        serials: serials.length <= 200 ? serials : undefined,
+        rcId: group.rcId || null,
+        rcCode: group.rcCode || null,
+        rcCompanyName: group.rcCompanyName || null,
+        source: 'yesone',
+        createdAt: now,
+      }),
+    });
+  }
+  await commitDocSets(db, writes);
+}
+
 async function applySerialAllottedMany(db, items, rcCache) {
   const results = [];
   const writes = [];
@@ -914,6 +1098,11 @@ async function applySerialAllottedMany(db, items, rcCache) {
     }
     const rc = await resolveRcCached(db, item, rcCache);
     const id = serialDocId(serialNumber);
+    if (rc?.id && !optionalTrimmed(item.rcId)) item.rcId = rc.id;
+    if (rc?.rcCode && !normalizeRcCode(item.rcCode)) item.rcCode = rc.rcCode;
+    if (rc?.companyName && !optionalTrimmed(item.rcCompanyName)) {
+      item.rcCompanyName = rc.companyName;
+    }
     writes.push({
       path: `${SERIAL_COLLECTION}/${id}`,
       data: allotmentFields(item, rc, serialNumber, {
@@ -942,6 +1131,11 @@ async function applySerialAllottedMany(db, items, rcCache) {
       for (const serial of serials) next.add(serial);
       return [...next];
     });
+  }
+  try {
+    await recordSerialInwardBatches(db, items, results, now);
+  } catch (err) {
+    console.error('yesone inward batch record failed', err);
   }
   return results;
 }
@@ -1010,13 +1204,19 @@ async function applySerialAllotted(db, item) {
   await patchRcAllottedSerials(db, rc?.id, list => (
     list.includes(serialNumber) ? list : [...list, serialNumber]
   ));
-  return {
+  const result = {
     ok: true,
     event: 'serial.allotted',
     id: serialNumber,
     rcId: rc?.id || null,
     warning: rc ? null : 'rc_not_found',
   };
+  try {
+    await recordSerialInwardBatches(db, [item], [result], now);
+  } catch (err) {
+    console.error('yesone inward batch record failed', err);
+  }
+  return result;
 }
 
 async function applySerialCancelled(db, item) {
@@ -1036,10 +1236,22 @@ async function applySerialCancelled(db, item) {
     },
     { merge: true },
   );
-  await patchRcAllottedSerials(db, rc?.id || previous.rcId, list => (
-    list.filter(serial => serial !== serialNumber)
-  ));
-  return { ok: true, event: 'serial.cancelled', id: serialNumber };
+  // Prefer current holder (allotment rcId) — payload.rc is often Master IWP on returns.
+  const dropKey = serialNumber.trim().toUpperCase();
+  const targets = [...new Set(
+    [previous.rcId, rc?.id].map(value => optionalTrimmed(value)).filter(Boolean),
+  )];
+  for (const rcId of targets) {
+    await patchRcAllottedSerials(db, rcId, list => (
+      list.filter(serial => serial.trim().toUpperCase() !== dropKey)
+    ));
+  }
+  return {
+    ok: true,
+    event: 'serial.cancelled',
+    id: serialNumber,
+    rcId: previous.rcId || rc?.id || null,
+  };
 }
 
 async function applySerialUpdated(db, item) {

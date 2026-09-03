@@ -8,7 +8,7 @@ function serialKey(value: string): string {
   return value.trim().toUpperCase();
 }
 
-/** New OV seats left: min(balance qty, unused allotted serials). */
+/** New OV seats left: min(Allotted − Used, unused stickers). */
 export function ovQuotaSeatCap(gate: OvQuotaGate): number {
   const remainingCount = gate.remaining.length;
   const fromBalance = gate.balanceQty == null ? remainingCount : Math.max(0, gate.balanceQty);

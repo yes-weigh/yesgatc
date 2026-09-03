@@ -1,9 +1,50 @@
-import { arrayRemove, arrayUnion, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, doc, getDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { isVerificationCertificateVoided } from './verificationCertificateVoid';
 import { isVerificationRejected } from './verificationRequest';
 import { expandSerialRange, parseQuotaInput, uniqueSerials, unusedSerials } from './yesoneInboundData';
 import type { SiteCalibration } from '../types';
+
+export type YesoneReservedAssignment = {
+  invoiceNo: string;
+  verifierUid: string;
+  serialStart?: string;
+  serialEnd?: string;
+};
+
+export function normalizeReservedAssignments(raw: unknown): YesoneReservedAssignment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: YesoneReservedAssignment[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const invoiceNo = String(row.invoiceNo || '').trim();
+    const verifierUid = String(row.verifierUid || '').trim();
+    if (!invoiceNo || !verifierUid) continue;
+    const key = invoiceNo.toUpperCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const serialStart = String(row.serialStart || '').trim();
+    const serialEnd = String(row.serialEnd || '').trim();
+    out.push({
+      invoiceNo,
+      verifierUid,
+      ...(serialStart ? { serialStart, serialEnd: serialEnd || serialStart } : {}),
+    });
+  }
+  return out;
+}
+
+export function invoiceAssigneeUid(
+  assignments: YesoneReservedAssignment[],
+  invoiceNo: string,
+): string | null {
+  const key = invoiceNo.trim().toUpperCase();
+  if (!key) return null;
+  const hit = assignments.find(row => row.invoiceNo.trim().toUpperCase() === key);
+  return hit?.verifierUid || null;
+}
 
 export const MASTER_RC_CODE = 'IWP';
 
@@ -110,21 +151,89 @@ export function remainingQuotaSerials(
   return unusedSerials(unusedSerials(allotted, used), voided);
 }
 
+/** Keep only stickers that have an inward invoice link. Empty set = no filter. */
+export function serialsLinkedToInvoice(
+  serials: string[],
+  invoicedSerials: Iterable<string>,
+): string[] {
+  const ok = new Set<string>();
+  for (const serial of invoicedSerials) {
+    const key = String(serial || '').trim().toUpperCase();
+    if (key) ok.add(key);
+  }
+  if (ok.size === 0) return serials;
+  return serials.filter(serial => ok.has(serial.trim().toUpperCase()));
+}
+
 export type RcQuotaSeats = {
   remaining: string[];
+  /** Unused invoiced seats default field staff may pick (excludes reserved). */
+  vctRemaining: string[];
+  reservedSerials: string[];
+  /** Field-staff uids allowed to see reserved pool with RC admin. */
+  reservedForUids: string[];
+  /** Per-verifier reserved serials (from invoice assignments). */
+  reservedByUid: Record<string, string[]>;
   allottedQty: number | null;
   usedQty: number;
   balanceQty: number | null;
 };
 
+export function excludeReservedSerials(serials: string[], reserved: string[]): string[] {
+  const blocked = new Set(reserved.map(serial => serial.trim().toUpperCase()).filter(Boolean));
+  if (blocked.size === 0) return serials;
+  return serials.filter(serial => !blocked.has(serial.trim().toUpperCase()));
+}
+
+/** RC admin: all. Verifier: reserved only. VCT: public pool only (never reserved). */
+export function pickQuotaSerialsForActor(
+  seats: Pick<
+    RcQuotaSeats,
+    'remaining' | 'vctRemaining' | 'reservedForUids' | 'reservedByUid' | 'reservedSerials'
+  >,
+  actor: {
+    isRcAdmin?: boolean;
+    isVerifier?: boolean;
+    isVct?: boolean;
+    actorUid?: string | null;
+  },
+): string[] {
+  if (actor.isRcAdmin) return seats.remaining;
+  const uid = String(actor.actorUid || '').trim();
+  // Verifier: only RC-reserved seats for this uid — never the public VCT pool.
+  if (actor.isVerifier) {
+    if (!uid) return [];
+    const mine = seats.reservedByUid[uid];
+    return mine && mine.length > 0 ? mine : [];
+  }
+  // VCT: never see verifier-reserved stickers (e.g. Hafiz ≠ Rasheed's range).
+  if (actor.isVct) return seats.vctRemaining;
+  if (!uid) return seats.vctRemaining;
+  const mine = seats.reservedByUid[uid];
+  if (mine && mine.length > 0) return mine;
+  // Legacy: uid on reservedForUids, no per-invoice map → reserved pool only.
+  if (seats.reservedForUids.includes(uid)) {
+    return seats.reservedSerials.length > 0 ? seats.reservedSerials : [];
+  }
+  return seats.vctRemaining;
+}
+
 export function computeRcQuotaSeats(input: {
   rcCode: string;
   companyName: string;
   ovQuota: string;
+  /** YesOne RC-wide used — floor when `records` are incomplete (VCT own-only). */
+  ovQuotaUsed?: string | number | null;
+  /** True when `records` cover the whole RC (not field-staff own-only). */
+  recordsAreRcWide?: boolean;
   storedSerials: string[];
   allotSerials: string[];
   voidedSerials: string[];
   records: SiteCalibration[];
+  reservedSerials?: string[];
+  reservedForUids?: string[];
+  /** Expanded serials per assigned verifier. */
+  reservedByUid?: Record<string, string[]>;
 }): RcQuotaSeats {
   const master = isMasterRc({ rcCode: input.rcCode, companyName: input.companyName });
   const fromStore = uniqueSerials([...input.storedSerials, ...input.allotSerials]);
@@ -138,11 +247,42 @@ export function computeRcQuotaSeats(input: {
     input.records,
     master ? { fromDate: IWP_USED_FROM_DATE } : undefined,
   );
-  const remaining = remainingQuotaSerials(allottedSerials, used.serials, input.voidedSerials);
+  let remaining = remainingQuotaSerials(allottedSerials, used.serials, input.voidedSerials);
+  // Show all unused allotted seats (incl. uninvoiced realloc / RCs without inward invoices).
+  const reservedSerials = unusedSerials(
+    uniqueSerials(input.reservedSerials || []),
+    [...used.serials, ...input.voidedSerials],
+  );
+  const vctRemaining = excludeReservedSerials(remaining, reservedSerials);
+  const reservedForUids = uniqueSerials(input.reservedForUids || []);
+  const reservedByUid: Record<string, string[]> = {};
+  for (const [uid, serials] of Object.entries(input.reservedByUid || {})) {
+    const kept = unusedSerials(uniqueSerials(serials), [...used.serials, ...input.voidedSerials]);
+    if (kept.length > 0) reservedByUid[uid] = kept;
+  }
   const allottedQty = master ? masterRcUnusedQty() : parseQuotaInput(input.ovQuota);
-  const usedQty = used.count;
+  const storedUsed = parseQuotaInput(
+    input.ovQuotaUsed == null || input.ovQuotaUsed === '' ? '' : String(input.ovQuotaUsed),
+  );
+  // RC-wide records = source of truth for Used.
+  // Own-scoped VCT list: lift Used with YesOne ovQuotaUsed (never trust partial count alone).
+  const usedQty =
+    storedUsed == null
+      ? used.count
+      : input.recordsAreRcWide
+        ? used.count
+        : Math.max(used.count, storedUsed);
   const balanceQty = allottedQty == null ? remaining.length : allottedQty - usedQty;
-  return { remaining, allottedQty, usedQty, balanceQty };
+  return {
+    remaining,
+    vctRemaining,
+    reservedSerials,
+    reservedForUids,
+    reservedByUid,
+    allottedQty,
+    usedQty,
+    balanceQty,
+  };
 }
 
 export async function toggleVoidedSerial(
@@ -156,6 +296,106 @@ export async function toggleVoidedSerial(
     yesoneVoidedSerials: voided ? arrayUnion(trimmed) : arrayRemove(trimmed),
     updatedAt: new Date().toISOString(),
   });
+}
+
+export async function toggleReservedSerial(
+  rcUid: string,
+  serial: string,
+  reserved: boolean,
+): Promise<void> {
+  const trimmed = serial.trim();
+  if (!rcUid || !trimmed) return;
+  await updateDoc(doc(db, 'users', rcUid), {
+    yesoneReservedSerials: reserved ? arrayUnion(trimmed) : arrayRemove(trimmed),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function toggleReservedInvoice(
+  rcUid: string,
+  invoiceNo: string,
+  reserved: boolean,
+): Promise<void> {
+  const trimmed = invoiceNo.trim();
+  if (!rcUid || !trimmed) return;
+  await updateDoc(doc(db, 'users', rcUid), {
+    yesoneReservedInvoices: reserved ? arrayUnion(trimmed) : arrayRemove(trimmed),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/** Reserve one inward invoice range to one verifier (RC admin + that verifier see serials). */
+export async function reserveInvoiceForVerifier(
+  rcUid: string,
+  input: {
+    invoiceNo: string;
+    serialStart: string;
+    serialEnd: string;
+    verifierUid: string;
+  },
+): Promise<void> {
+  const invoiceNo = input.invoiceNo.trim();
+  const verifierUid = input.verifierUid.trim();
+  if (!rcUid || !invoiceNo || !verifierUid) return;
+  const start = input.serialStart.trim();
+  const end = (input.serialEnd || input.serialStart).trim();
+  const serials = expandSerialRange(start, end);
+  const ref = doc(db, 'users', rcUid);
+  const snap = await getDoc(ref);
+  const prev = normalizeReservedAssignments(snap.data()?.yesoneReservedAssignments);
+  const next = [
+    ...prev.filter(row => row.invoiceNo.trim().toUpperCase() !== invoiceNo.toUpperCase()),
+    {
+      invoiceNo,
+      verifierUid,
+      serialStart: start,
+      serialEnd: end,
+    },
+  ];
+  await updateDoc(ref, {
+    yesoneReservedInvoices: arrayUnion(invoiceNo),
+    yesoneReservedAssignments: next,
+    yesoneReservedForUids: arrayUnion(verifierUid),
+    updatedAt: new Date().toISOString(),
+  });
+  // Replace reserved serial list for this invoice range (exact bill qty — no leftovers).
+  const otherReserved = uniqueSerials(snap.data()?.yesoneReservedSerials).filter(serial => {
+    const key = serial.trim().toUpperCase();
+    return !serials.some(item => item.trim().toUpperCase() === key);
+  });
+  // Keep other invoices' reserved stickers; set this bill's exact expanded set.
+  const nextReserved = uniqueSerials([...otherReserved, ...serials]);
+  await updateDoc(ref, {
+    yesoneReservedSerials: nextReserved,
+  });
+}
+
+export async function clearInvoiceReservation(
+  rcUid: string,
+  invoiceNo: string,
+  serials: string[],
+): Promise<void> {
+  const trimmed = invoiceNo.trim();
+  if (!rcUid || !trimmed) return;
+  const ref = doc(db, 'users', rcUid);
+  const snap = await getDoc(ref);
+  const prev = normalizeReservedAssignments(snap.data()?.yesoneReservedAssignments);
+  const next = prev.filter(row => row.invoiceNo.trim().toUpperCase() !== trimmed.toUpperCase());
+  const still = new Set(next.map(row => row.verifierUid));
+  const dropUids = uniqueSerials(snap.data()?.yesoneReservedForUids).filter(uid => !still.has(uid));
+  await updateDoc(ref, {
+    yesoneReservedInvoices: arrayRemove(trimmed),
+    yesoneReservedAssignments: next,
+    ...(dropUids.length > 0 ? { yesoneReservedForUids: arrayRemove(...dropUids) } : {}),
+    updatedAt: new Date().toISOString(),
+  });
+  const CHUNK = 100;
+  const list = uniqueSerials(serials);
+  for (let i = 0; i < list.length; i += CHUNK) {
+    await updateDoc(ref, {
+      yesoneReservedSerials: arrayRemove(...list.slice(i, i + CHUNK)),
+    });
+  }
 }
 
 function serialAllotmentId(serial: string): string {

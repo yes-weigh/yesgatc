@@ -49,8 +49,8 @@ export function buildVerificationReceiptEscPosPayload(
   for (const line of issuer.addressLines) {
     builder.textLine(line);
   }
-  if (issuer.gstin) {
-    builder.textLine(`GSTIN ${issuer.gstin}`);
+  if (issuer.phone) {
+    builder.textLine(`Ph: ${issuer.phone}`);
   }
 
   builder.align('left').textLine(dashedRule());
@@ -64,24 +64,30 @@ export function buildVerificationReceiptEscPosPayload(
   builder.textLine(labelValueEscPosLine('Time', receipt.receiptTime, RECEIPT_CHAR_WIDTH));
 
   builder.textLine(dashedRule());
+  builder.bold(true);
   builder.textLine(labelValueEscPosLine('Customer Name', receipt.customerName, RECEIPT_CHAR_WIDTH));
   appendLabeledValue(builder, 'Phone', receipt.customerPhone);
   appendLabeledValue(builder, 'Place', receipt.customerAddress);
   builder.textLine(labelValueEscPosLine('Pincode', receipt.customerPincode, RECEIPT_CHAR_WIDTH));
   builder.textLine(labelValueEscPosLine('District', receipt.customerDistrict, RECEIPT_CHAR_WIDTH));
   builder.textLine(labelValueEscPosLine('State', receipt.customerState, RECEIPT_CHAR_WIDTH));
-
-  builder.textLine(dashedRule());
-  builder.textLine(leftRightEscPosLine('Description', 'Amount (Rs.)', RECEIPT_CHAR_WIDTH));
-  builder.textLine(repeatChar('-', RECEIPT_CHAR_WIDTH));
-  builder.textLine(
-    leftRightEscPosLine(receipt.lineDescription, formatReceiptLineAmount(receipt.amount), RECEIPT_CHAR_WIDTH),
-  );
+  builder.textLine(labelValueEscPosLine('VCT Name', receipt.vctName, RECEIPT_CHAR_WIDTH));
+  builder.textLine(labelValueEscPosLine('VCT Number', receipt.vctNumber, RECEIPT_CHAR_WIDTH));
+  builder.bold(false);
 
   builder.textLine(dashedRule());
   builder.bold(true);
+  builder.textLine(leftRightEscPosLine('Description', 'Amount (Rs.)', RECEIPT_CHAR_WIDTH));
+  builder.textLine(repeatChar('-', RECEIPT_CHAR_WIDTH));
+  for (const line of receipt.lines) {
+    builder.textLine(
+      leftRightEscPosLine(line.description, formatReceiptLineAmount(line.amount), RECEIPT_CHAR_WIDTH),
+    );
+  }
+
+  builder.textLine(dashedRule());
   builder.textLine(
-    leftRightEscPosLine('Total Amount', formatReceiptMoneyEscPos(receipt.totalAmount), RECEIPT_CHAR_WIDTH),
+    leftRightEscPosLine('Cash Total', formatReceiptMoneyEscPos(receipt.totalAmount), RECEIPT_CHAR_WIDTH),
   );
   builder.bold(false);
 

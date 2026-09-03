@@ -1,4 +1,5 @@
 import { inrAmountToWords } from './inrAmountToWords';
+import { rcAllowsCashReceiptFromUser } from './rcCertificationMethod';
 import { computeRvCustomerFeeLineForRecord } from './rvFeeBreakdown';
 import { resolveGstBillCustomerContact, VERIFICATION_GST_BILL_RECEIPT } from './verificationGstBill';
 import type { Customer, FirestoreUserDoc, Product, RcFeesStructure, SiteCalibration } from '../types';
@@ -8,13 +9,19 @@ export const VERIFICATION_RECEIPT_THERMAL = VERIFICATION_GST_BILL_RECEIPT;
 
 export const VERIFICATION_RECEIPT_PAYMENT_MODE = 'UPI/Cash';
 
-export const VERIFICATION_RECEIPT_LINE_DESCRIPTION = 'Service charges';
+export const VERIFICATION_RECEIPT_RC_FEES_LABEL = 'RC fees';
 
 export type VerificationReceiptIssuer = {
   companyName: string;
   addressLines: string[];
-  gstin: string;
+  /** RC contact phone — shown in cash receipt header (no GSTIN). */
+  phone: string;
   paymentMode: string;
+};
+
+export type VerificationReceiptLine = {
+  description: string;
+  amount: number;
 };
 
 export type VerificationReceiptData = {
@@ -28,8 +35,14 @@ export type VerificationReceiptData = {
   customerPincode: string;
   customerDistrict: string;
   customerState: string;
+  vctName: string;
+  vctNumber: string;
+  /** @deprecated use lines — kept for older print callers */
   lineDescription: string;
+  /** @deprecated use lines */
   amount: number;
+  lines: VerificationReceiptLine[];
+  /** Cash collected by RC = admin package − Interweighing (GATC + GST) ± add/discount. */
   totalAmount: number;
   amountInWords: string;
   missingFields: string[];
@@ -98,15 +111,17 @@ export function buildCashReceiptIssuerFromRc(
     | 'address'
     | 'place'
     | 'pincode'
-    | 'gstNumber'
+    | 'phone'
   > | null | undefined,
 ): VerificationReceiptIssuer {
   const companyName = receiptCaps(rc?.companyName?.trim() || rc?.username?.trim() || 'REGIONAL CENTRE');
+  const phoneDigits = (rc?.phone ?? '').replace(/\D/g, '');
+  const phone = phoneDigits.length >= 10 ? phoneDigits.slice(-10) : (rc?.phone?.trim() || '');
 
   return {
     companyName,
     addressLines: cashReceiptAddressLinesFromRc(rc),
-    gstin: rc?.gstNumber?.trim().toUpperCase() || '',
+    phone,
     paymentMode: VERIFICATION_RECEIPT_PAYMENT_MODE,
   };
 }
@@ -163,17 +178,31 @@ function resolveReceiptNumber(record: SiteCalibration): string {
   return '—';
 }
 
+/** Cash RC collects = package − Interweighing (GATC + GST) ± additional/discount. */
 export function resolveRvCashReceiptAmount(
   record: SiteCalibration,
   products: Product[],
   fees: RcFeesStructure,
 ): number | null {
-  const total = computeRvCustomerFeeLineForRecord(record, products, fees)?.total;
-  return total != null && total > 0 ? total : null;
+  const line = computeRvCustomerFeeLineForRecord(record, products, fees);
+  const amount = line?.netRcFees;
+  return amount != null && amount > 0 ? amount : null;
 }
 
-export function canShowVerificationWalletReceipt(record: SiteCalibration): boolean {
-  return record.verificationType === 'RV' && record.rvPaymentStatus === 'paid';
+/** RV paid + RC uses Auto DSC or PDF signer (not Manual upload). */
+export function canShowVerificationWalletReceipt(
+  record: SiteCalibration,
+  rc?: Pick<FirestoreUserDoc, 'certificationMethod'> | null,
+): boolean {
+  if (record.verificationType !== 'RV' || record.rvPaymentStatus !== 'paid') return false;
+  if (rc === undefined) return true;
+  return rcAllowsCashReceiptFromUser(rc);
+}
+
+function formatReceiptPhone(raw: string | null | undefined): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (digits.length >= 10) return digits.slice(-10);
+  return String(raw || '').trim();
 }
 
 export function buildVerificationReceiptData(
@@ -188,8 +217,10 @@ export function buildVerificationReceiptData(
     | 'address'
     | 'place'
     | 'pincode'
-    | 'gstNumber'
+    | 'phone'
+    | 'contactPerson'
   > | null,
+  vct?: Pick<FirestoreUserDoc, 'username' | 'phone' | 'contactPerson'> | null,
 ): VerificationReceiptData {
   const missingFields: string[] = [];
   const paidAt = record.rvPaidAt || record.submittedAt || record.certifiedAt;
@@ -205,10 +236,33 @@ export function buildVerificationReceiptData(
   const contact = resolveGstBillCustomerContact(record, customer);
   if (contact.name === '—') missingFields.push('Customer name');
 
-  const amount = resolveRvCashReceiptAmount(record, products, fees);
-  if (amount == null || amount <= 0) missingFields.push('Total');
+  const feeLine = computeRvCustomerFeeLineForRecord(record, products, fees);
+  const rcFeesCash = feeLine?.netRcFees ?? 0;
+  const cashTotal = resolveRvCashReceiptAmount(record, products, fees);
+  if (cashTotal == null || cashTotal <= 0) missingFields.push('Total');
 
-  const totalAmount = amount ?? 0;
+  const totalAmount = cashTotal ?? 0;
+  const lines: VerificationReceiptLine[] = [];
+  if (rcFeesCash > 0) {
+    lines.push({ description: VERIFICATION_RECEIPT_RC_FEES_LABEL, amount: rcFeesCash });
+  } else if (totalAmount > 0) {
+    lines.push({ description: VERIFICATION_RECEIPT_RC_FEES_LABEL, amount: totalAmount });
+  }
+
+  const vctName = receiptCaps(
+    record.vctName?.trim()
+      || vct?.contactPerson?.trim()
+      || vct?.username?.trim()
+      || (record.performedBy === 'rc'
+        ? rc?.contactPerson?.trim() || rc?.username?.trim() || ''
+        : '')
+      || '',
+  );
+  const vctNumber =
+    formatReceiptPhone(vct?.phone)
+    || (record.performedBy === 'rc' ? formatReceiptPhone(rc?.phone) : '');
+  if (!vctName) missingFields.push('VCT name');
+  if (!vctNumber) missingFields.push('VCT number');
 
   return {
     issuer: buildCashReceiptIssuerFromRc(rc),
@@ -221,8 +275,11 @@ export function buildVerificationReceiptData(
     customerPincode: contact.pincode,
     customerDistrict: contact.district,
     customerState: contact.state,
-    lineDescription: VERIFICATION_RECEIPT_LINE_DESCRIPTION,
+    vctName: vctName || '—',
+    vctNumber: vctNumber || '—',
+    lineDescription: VERIFICATION_RECEIPT_RC_FEES_LABEL,
     amount: totalAmount,
+    lines,
     totalAmount,
     amountInWords: inrAmountToWords(totalAmount),
     missingFields,
