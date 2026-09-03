@@ -88,10 +88,45 @@ export function formatShopCapacityLine(
   return '';
 }
 
+function specMinGrams(
+  spec: Pick<ProductSpecification, 'minimumCapacity' | 'verificationScaleInterval'>,
+): string {
+  if (Number.isFinite(spec.minimumCapacity) && spec.minimumCapacity > 0) {
+    return formatRounded(spec.minimumCapacity);
+  }
+  if (Number.isFinite(spec.verificationScaleInterval) && spec.verificationScaleInterval > 0) {
+    return formatRounded(spec.verificationScaleInterval * 20);
+  }
+  return '';
+}
+
+/** One spec row — Max e Min, e.g. "10 kg 1 g 20 g". */
+function formatShopCapacityTriple(
+  spec: Pick<
+    ProductSpecification,
+    'maximumCapacity' | 'verificationScaleInterval' | 'minimumCapacity'
+  >,
+  unit: 'kg' | 'g' = 'kg',
+): string {
+  const parts: string[] = [];
+  if (Number.isFinite(spec.maximumCapacity) && spec.maximumCapacity > 0) {
+    parts.push(`${spec.maximumCapacity} ${unit}`);
+  }
+  const e =
+    Number.isFinite(spec.verificationScaleInterval) && spec.verificationScaleInterval > 0
+      ? formatRounded(spec.verificationScaleInterval)
+      : '';
+  if (e) parts.push(`${e} g`);
+  const min = specMinGrams(spec);
+  if (min) parts.push(`${min} g`);
+  return parts.join('  ');
+}
+
+/** Shop card left stack — one Max e Min row per capacity. */
 export function formatShopCapacityLines(product: Product): string[] {
   const unit = product.unitOfMeasurement || 'kg';
   return getProductSpecifications(product)
-    .map(spec => formatShopCapacityLine(spec, unit))
+    .map(spec => formatShopCapacityTriple(spec, unit))
     .filter(Boolean);
 }
 

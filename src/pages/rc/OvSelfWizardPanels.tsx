@@ -13,6 +13,7 @@ import {
   productHasMultipleSpecifications,
   resolveProductSpecification,
 } from '../../lib/productSpecifications';
+import { speakCapacityChoice } from '../../lib/speakText';
 import type { Product, ProductSpecification, VerificationLocation } from '../../types';
 
 export function OvSelfSerialMpeBar({
@@ -165,6 +166,10 @@ function OvSelfSpecChoiceList({
                 role="option"
                 aria-selected={selected}
                 disabled={disabled}
+                onPointerDown={() => {
+                  if (disabled) return;
+                  speakCapacityChoice(label);
+                }}
                 onClick={() => onSelect(spec)}
               >
                 <span className="ov-self-spec-choice-badge">
@@ -260,7 +265,6 @@ export function OvSelfProductPanel({
           showCapacitySpecs
           variant="shop"
           deferMultiSpec
-          shopMediaMeta="identity"
         />
       </div>
 

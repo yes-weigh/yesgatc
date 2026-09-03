@@ -19,6 +19,7 @@ import {
   shareCertificatePdfFile,
   shareVerificationCertificate,
 } from '../lib/verificationWhatsAppShare';
+import { isPhoneShareDevice } from '../lib/imageCapture';
 import { VerificationVoidWatermark } from './VerificationVoidWatermark';
 import type { SiteCalibration } from '../types';
 
@@ -60,6 +61,7 @@ export const VerificationCertificatePreview: FC<VerificationCertificatePreviewPr
   );
   const isVoided = isVerificationCertificateVoided(record);
   const title = activeKind === 'signed' ? 'Signed certificate' : 'Certificate';
+  const isPhone = isPhoneShareDevice();
 
   const handleShare = async () => {
     if (preview.file) {
@@ -112,35 +114,38 @@ export const VerificationCertificatePreview: FC<VerificationCertificatePreviewPr
             </div>
           ) : null}
           {url || preview.file ? (
-            <>
+            isPhone ? (
               <button
                 type="button"
-                className="verification-certificate-preview-action verification-certificate-preview-action--desktop"
-                onClick={handleDownload}
-                title="Download PDF"
-              >
-                <Download size={14} aria-hidden />
-                Download
-              </button>
-              <button
-                type="button"
-                className="verification-certificate-preview-action verification-certificate-preview-action--desktop"
-                onClick={() => url && printCertificateUrl(url)}
-                title="Print"
-              >
-                <Printer size={14} aria-hidden />
-                Print
-              </button>
-              <button
-                type="button"
-                className="verification-certificate-preview-action verification-certificate-preview-action--phone"
+                className="verification-certificate-preview-action"
                 onClick={() => void handleShare()}
                 title="Share"
               >
                 <Share2 size={14} aria-hidden />
                 Share
               </button>
-            </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="verification-certificate-preview-action"
+                  onClick={handleDownload}
+                  title="Download PDF"
+                >
+                  <Download size={14} aria-hidden />
+                  Download
+                </button>
+                <button
+                  type="button"
+                  className="verification-certificate-preview-action"
+                  onClick={() => url && printCertificateUrl(url)}
+                  title="Print"
+                >
+                  <Printer size={14} aria-hidden />
+                  Print
+                </button>
+              </>
+            )
           ) : null}
         </div>
       </div>
