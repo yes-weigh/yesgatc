@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MessageCircle, Printer, X } from 'lucide-react';
-import { QRCode } from 'react-qr-code';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { useVerificationDetailDocs } from '../hooks/useVerificationDetailDocs';
-import { resolveCertificatePdfQrUrl } from '../lib/certificatePdfQr';
 import {
   buildVerificationTestReportData,
   buildVerificationTestReportShareMessage,
@@ -14,7 +14,7 @@ import {
   VERIFICATION_TEST_REPORT_BRANDING,
 } from '../lib/verificationTestReport';
 import { buildWhatsAppShareUrl } from '../lib/verificationWhatsAppShare';
-import type { SiteCalibration } from '../types';
+import type { FirestoreUserDoc, SiteCalibration } from '../types';
 
 type VerificationTestReportModalProps = {
   open: boolean;
@@ -22,13 +22,25 @@ type VerificationTestReportModalProps = {
   onClose: () => void;
 };
 
-function Meta({ label, value }: { label: string; value: string }) {
+function Field({
+  label,
+  value,
+  emphasize = false,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}) {
   return (
-    <div className="vtr-meta">
-      <span className="vtr-meta-label">{label}</span>
-      <span className="vtr-meta-value">{value}</span>
+    <div className={`vtr-field${emphasize ? ' vtr-field--emph' : ''}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
+}
+
+function ResultChip({ ok }: { ok: boolean }) {
+  return <span className={`vtr-chip${ok ? ' is-pass' : ' is-fail'}`}>{ok ? 'PASS' : 'FAIL'}</span>;
 }
 
 export const VerificationTestReportModal: React.FC<VerificationTestReportModalProps> = ({
@@ -37,7 +49,7 @@ export const VerificationTestReportModal: React.FC<VerificationTestReportModalPr
   onClose,
 }) => {
   const { customer, product } = useVerificationDetailDocs(record);
-  const [pdfQrUrl, setPdfQrUrl] = useState<string | null>(null);
+  const [vct, setVct] = useState<{ name?: string; phone?: string } | null>(null);
 
   useHistoryOverlay(open, onClose);
 
@@ -48,21 +60,35 @@ export const VerificationTestReportModal: React.FC<VerificationTestReportModalPr
 
   useEffect(() => {
     if (!open) {
-      setPdfQrUrl(null);
+      setVct(null);
       return;
     }
     let cancelled = false;
-    void resolveCertificatePdfQrUrl(record).then(url => {
-      if (!cancelled) setPdfQrUrl(url);
+    const vctId = record.vctId?.trim();
+    if (!vctId) {
+      setVct(null);
+      return;
+    }
+    void getDoc(doc(db, 'users', vctId)).then(vctSnap => {
+      if (cancelled) return;
+      if (vctSnap.exists()) {
+        const data = vctSnap.data() as FirestoreUserDoc;
+        setVct({
+          name: data.contactPerson || data.username || '',
+          phone: data.phone || '',
+        });
+      } else {
+        setVct(null);
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [open, record.id, record.certificatePdfUrl, record.emaapCertificatePdfUrl]);
+  }, [open, record.vctId]);
 
   const report = useMemo(
-    () => buildVerificationTestReportData(record, customer, product, pdfQrUrl),
-    [record, customer, product, pdfQrUrl],
+    () => buildVerificationTestReportData(record, customer, product, null, vct),
+    [record, customer, product, vct],
   );
 
   const whatsAppShareUrl = useMemo(
@@ -74,6 +100,7 @@ export const VerificationTestReportModal: React.FC<VerificationTestReportModalPr
 
   const passed = report.overallResult === 'PASSED';
   const brand = VERIFICATION_TEST_REPORT_BRANDING;
+  const rep = report.repeatability;
 
   return createPortal(
     <div className="modal-overlay verification-test-report-overlay" role="presentation" onClick={onClose}>
@@ -95,174 +122,276 @@ export const VerificationTestReportModal: React.FC<VerificationTestReportModalPr
 
         <div className="verification-test-report-scroll">
           <article className="verification-test-report" data-verification-test-report-print>
-            <header className="vtr-head">
-              <div className="vtr-brand">
-                <img src={brand.logoSrc} alt="" className="vtr-logo" />
-                <div>
-                  <p className="vtr-company">{brand.companyName}</p>
-                  <p className="vtr-address">{brand.addressLines.join(', ')}</p>
-                  <p className="vtr-address">
-                    {brand.phone} · {brand.website} · GATC {brand.gatcApprovalNumber}
-                  </p>
-                </div>
+            <header className="vtr-mast">
+              <img className="vtr-logo" src={brand.logoSrc} alt="" width={56} height={56} />
+              <div className="vtr-mast__text">
+                <p className="vtr-eyebrow">Government Approved Test Centre</p>
+                <p className="vtr-company">{brand.companyName}</p>
+                <p className="vtr-address">{brand.addressLines.join(', ')}</p>
+                <p className="vtr-contact">
+                  Ph : {brand.phone} · {brand.website} · {brand.gatcApprovalNumber}
+                </p>
               </div>
-              {report.verifyUrl ? (
-                <div className="vtr-qr">
-                  <QRCode
-                    value={report.verifyUrl}
-                    size={72}
-                    bgColor="#FFFFFF"
-                    fgColor="#000000"
-                    level="M"
-                    style={{ width: '3.35rem', height: '3.35rem' }}
-                    aria-hidden
-                  />
-                  <p className="vtr-qr-caption">Scan to verify</p>
-                </div>
-              ) : null}
             </header>
 
             <div className="vtr-banner">
-              <h1 id="verification-test-report-title" className="vtr-title">
-                {report.title}
-              </h1>
-              <span className={`vtr-badge${passed ? ' vtr-badge--pass' : ' vtr-badge--fail'}`}>
-                {report.overallResult}
+              <h1 id="verification-test-report-title">{report.title}</h1>
+              <span className={`vtr-badge${passed ? '' : ' is-fail'}`}>
+                ({passed ? 'PASSED' : 'FAILED'})
               </span>
             </div>
 
-            <div className="vtr-refs">
-              <Meta label="Date" value={report.testDate} />
-              <Meta label="Report No." value={report.reportNumber} />
-              <Meta label="Certificate" value={report.certificateNumber} />
+            <div className="vtr-ids">
+              <div>
+                <span>Date of Test</span>
+                <strong>{report.testDate}</strong>
+              </div>
+              <div>
+                <span>Certificate Number</span>
+                <strong>{report.certificateNumber}</strong>
+              </div>
             </div>
 
-            <div className="vtr-split">
-              <section className="vtr-card" aria-label="Customer">
-                <h2 className="vtr-card-title">Customer</h2>
-                <Meta label="Name" value={report.customerName} />
-                <Meta label="Address" value={report.customerAddress} />
-                <Meta label="Phone" value={report.customerPhone} />
+            <div className="vtr-info-row" aria-label="Customer and instrument">
+              <section className="vtr-panel">
+                <h2 className="vtr-panel__title">Customer Details</h2>
+                <div className="vtr-panel__body">
+                  <Field label="Customer Name" value={report.customerName} />
+                  <Field label="Address" value={report.customerAddress} />
+                  <Field label="Contact Person" value={report.contactPerson} />
+                  <Field label="Phone Number" value={report.customerPhone} />
+                  <Field label="Email" value={report.customerEmail} />
+                  <Field label="Purpose of Test" value={report.purpose} />
+                </div>
               </section>
-              <section className="vtr-card" aria-label="Instrument">
-                <h2 className="vtr-card-title">Instrument</h2>
-                <Meta label="Type" value={report.instrumentType} />
-                <Meta label="Make / model" value={`${report.manufacturer} · ${report.modelApprovalNo}`} />
-                <Meta label="Serial" value={report.serialNumber} />
-                <Meta
-                  label="Max / Min / e"
-                  value={`${report.maxLabel} / ${report.minLabel} / ${report.eLabel}`}
-                />
-                <Meta label="Class / n" value={`${report.accuracyClass} / ${report.nLabel}`} />
-                <Meta label="Seal ID" value={report.sealId} />
+
+              <section className="vtr-panel vtr-panel--instrument">
+                <h2 className="vtr-panel__title">Instrument Details</h2>
+                <div className="vtr-instrument">
+                  <div className="vtr-panel__body">
+                    <Field label="Serial Number" value={report.serialNumber} emphasize />
+                    <Field label="Instrument Type" value={report.instrumentType} />
+                    <Field label="Manufacturer / Brand" value={report.manufacturer} />
+                    <Field label="Model Approval" value={report.modelApprovalNo} />
+                    <Field label="Maximum Capacity" value={report.maxLabel} />
+                    <Field label="Minimum Capacity" value={report.minLabel} />
+                    <Field label="Verification e" value={report.eLabel} />
+                    <Field label="Division d" value={report.dLabel} />
+                    <Field label="Accuracy Class" value={report.accuracyClass} />
+                    <Field label="n (intervals)" value={report.nLabel} />
+                    <Field label="Seal ID" value={report.sealId} />
+                    <Field label="Scale Location" value={report.location} />
+                  </div>
+                  <figure className="vtr-machine">
+                    {report.scaleImageUrl ? (
+                      <img src={report.scaleImageUrl} alt="Instrument" />
+                    ) : (
+                      <span>No image</span>
+                    )}
+                    <figcaption>Machine</figcaption>
+                  </figure>
+                </div>
               </section>
             </div>
 
-            <div className="vtr-strip">
-              <span>{report.verificationType}</span>
-              <span>{brand.testReference}</span>
-              <span>{report.location}</span>
-              <span>{report.temperature}</span>
-              <span>{report.humidity}</span>
-              <span>Due {report.nextDueDate}</span>
-              <span>{report.testedBy}</span>
+            <div className="vtr-meta-row" aria-label="VCT and environment">
+              <section className="vtr-panel vtr-panel--vct">
+                <h2 className="vtr-panel__title">VCT Details</h2>
+                <div className="vtr-panel__body">
+                  <Field label="VCT Name" value={report.vctName} emphasize />
+                  <Field label="VCT Number" value={report.vctNumber} emphasize />
+                  <Field label="Type of Test" value={report.verificationType} />
+                  <Field label="Test Reference" value={report.testReference} />
+                  <Field label="Test Method" value={report.testMethod} />
+                  <Field label="Next Due Date" value={report.nextDueDate} />
+                </div>
+              </section>
+
+              <section className="vtr-panel vtr-panel--green">
+                <h2 className="vtr-panel__title">Environmental Conditions</h2>
+                <div className="vtr-env">
+                  <div>
+                    <span>Temperature</span>
+                    <strong>{report.temperature}</strong>
+                  </div>
+                  <div>
+                    <span>Relative Humidity</span>
+                    <strong>{report.humidity}</strong>
+                  </div>
+                  <div>
+                    <span>Power Supply</span>
+                    <strong>{report.powerSupply}</strong>
+                  </div>
+                </div>
+              </section>
             </div>
 
             <section className="vtr-block" aria-label="Weighing performance">
-              <h2 className="vtr-card-title">Accuracy / weighing performance</h2>
-              {report.weighing.length > 0 ? (
-                <table className="vtr-table">
+              <h2 className="vtr-block__title">1. Weighing Performance</h2>
+              <p className="vtr-formula">
+                E = I + ½e − ΔL − L · Ec = E − E₀ (E₀ = error at or near zero)
+              </p>
+              <table className="vtr-table">
+                <thead>
+                  <tr>
+                    <th>Sr</th>
+                    <th>Load L (kg)</th>
+                    <th>Indication I (kg)</th>
+                    <th>ΔL (g)</th>
+                    <th>Error E (g)</th>
+                    <th>Ec (g)</th>
+                    <th>mpe (±g)</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {report.weighing.map(row => (
+                    <tr key={row.sr}>
+                      <td>{row.sr}</td>
+                      <td>{formatKgPlain(row.loadKg)}</td>
+                      <td>{formatKgPlain(row.indicatedKg)}</td>
+                      <td>0</td>
+                      <td>{formatGPlain(row.errorG)}</td>
+                      <td>{formatGPlain(row.errorG)}</td>
+                      <td>{formatPmPlain(row.mpeG)}</td>
+                      <td>
+                        <ResultChip ok={row.result === 'PASS'} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className={`vtr-overall${passed ? '' : ' is-fail'}`}>
+                <strong>Overall Result : {report.overallResult}</strong>
+                <span>
+                  {passed
+                    ? 'Scale is within permissible error limits.'
+                    : 'Scale exceeds permissible error limits.'}
+                </span>
+              </div>
+            </section>
+
+            <div className="vtr-tests-row" aria-label="Additional weighing tests">
+              <section className="vtr-block">
+                <h2 className="vtr-block__title">2. Discrimination</h2>
+                <table className="vtr-table vtr-table--mini">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Load (kg)</th>
-                      <th>Indication (kg)</th>
-                      <th>Error (g)</th>
-                      <th>MPE (g)</th>
+                      <th>Load L</th>
+                      <th>I₁</th>
+                      <th>ΔL</th>
+                      <th>1/10 e</th>
+                      <th>1.4 e</th>
+                      <th>I₂</th>
+                      <th>I₂−I₁</th>
                       <th>Result</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {report.weighing.map(row => (
-                      <tr key={row.sr}>
-                        <td>{row.sr}</td>
+                    {report.discrimination.map(row => (
+                      <tr key={row.loadKg}>
                         <td>{formatKgPlain(row.loadKg)}</td>
-                        <td>{formatKgPlain(row.indicatedKg)}</td>
-                        <td>{formatGPlain(row.errorG)}</td>
-                        <td>{formatPmPlain(row.mpeG)}</td>
-                        <td className="vtr-pass">{row.result}</td>
+                        <td>{formatKgPlain(row.indication1Kg)}</td>
+                        <td>{formatGPlain(row.removedLoadG)}</td>
+                        <td>{formatGPlain(row.addTenthDG)}</td>
+                        <td>{formatGPlain(row.extraLoadG)}</td>
+                        <td>{formatKgPlain(row.indication2Kg)}</td>
+                        <td>{formatKgPlain(row.deltaKg)}</td>
+                        <td>
+                          <ResultChip ok={row.result === 'PASS'} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              ) : (
-                <p className="vtr-missing">Cannot build load table — Max and e required.</p>
-              )}
-            </section>
+              </section>
 
-            <div className="vtr-tests">
-              {report.repeatability ? (
-                <section className="vtr-block" aria-label="Repeatability">
-                  <h2 className="vtr-card-title">Repeatability</h2>
-                  <p className="vtr-load-line">Load {formatKgPlain(report.repeatability.loadKg)} kg</p>
-                  <table className="vtr-table">
+              {rep ? (
+                <section className="vtr-block">
+                  <h2 className="vtr-block__title">3. Repeatability · {formatKgPlain(rep.loadKg)} kg</h2>
+                  <table className="vtr-table vtr-table--mini">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Indication (kg)</th>
+                        <th>Indication I (kg)</th>
+                        <th>ΔL (g)</th>
+                        <th>E (g)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {report.repeatability.readingsKg.map((reading, index) => (
+                      {rep.readingsKg.map((reading, index) => (
                         <tr key={index}>
                           <td>{index + 1}</td>
                           <td>{formatKgPlain(reading)}</td>
+                          <td>0</td>
+                          <td>0</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  <p className="vtr-result-line">
-                    Emax − Emin {formatGPlain(report.repeatability.eMaxMinusEminG)} g · mpe{' '}
-                    {formatGPlain(report.repeatability.mpeG)} g ·{' '}
-                    <span className="vtr-pass">{report.repeatability.result}</span>
+                  <p className="vtr-mini__foot">
+                    Emax−Emin : {formatGPlain(rep.eMaxMinusEminG)} g · mpe : {formatGPlain(rep.mpeG)}{' '}
+                    g · <ResultChip ok={rep.result === 'PASS'} />
                   </p>
                 </section>
               ) : null}
 
-              {report.eccentricity.length > 0 ? (
-                <section className="vtr-block" aria-label="Corner test">
-                  <h2 className="vtr-card-title">Corner test (eccentricity)</h2>
-                  <p className="vtr-load-line">Load {formatKgPlain(report.eccentricity[0]!.loadKg)} kg</p>
-                  <table className="vtr-table">
-                    <thead>
-                      <tr>
-                        <th>Location</th>
-                        <th>Load (kg)</th>
-                        <th>Indication (kg)</th>
-                        <th>Error (g)</th>
-                        <th>MPE (g)</th>
-                        <th>Result</th>
+              <section className="vtr-block">
+                <h2 className="vtr-block__title">4. Eccentricity</h2>
+                <table className="vtr-table vtr-table--mini">
+                  <thead>
+                    <tr>
+                      <th>Location</th>
+                      <th>Load L</th>
+                      <th>Indication I</th>
+                      <th>E (g)</th>
+                      <th>mpe</th>
+                      <th>Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.eccentricity.map(row => (
+                      <tr key={row.location}>
+                        <td>{row.location}</td>
+                        <td>{formatKgPlain(row.loadKg)}</td>
+                        <td>{formatKgPlain(row.indicatedKg)}</td>
+                        <td>{formatGPlain(row.errorG)}</td>
+                        <td>{formatPmPlain(row.mpeG)}</td>
+                        <td>
+                          <ResultChip ok={row.result === 'PASS'} />
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {report.eccentricity.map(row => (
-                        <tr key={row.location}>
-                          <td>{row.location}</td>
-                          <td>{formatKgPlain(row.loadKg)}</td>
-                          <td>{formatKgPlain(row.indicatedKg)}</td>
-                          <td>{formatGPlain(row.errorG)}</td>
-                          <td>{formatPmPlain(row.mpeG)}</td>
-                          <td className="vtr-pass">{row.result}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </section>
-              ) : null}
+                    ))}
+                  </tbody>
+                </table>
+              </section>
             </div>
 
-            <p className="vtr-disclaimer">
-              Computer generated · OIML R 76 · Valid with certificate {report.certificateNumber}
+            <div className="vtr-compliance">
+              <span>Instrument conforms to OIML R 76 / LMPC Rules.</span>
+              <span>Verified for commercial / trade use.</span>
+              <span>Seal / stamping applied : {report.sealId}</span>
+            </div>
+
+            <div className="vtr-signoff">
+              <div>
+                <p className="vtr-signoff__label">Tested By</p>
+                <p className="vtr-signoff__name">{report.vctName}</p>
+                <p className="vtr-signoff__role">VCT · {report.vctNumber}</p>
+              </div>
+              <div className="vtr-signoff__stamp">
+                <img src={brand.logoSrc} alt="" width={40} height={40} />
+                <span>GATC</span>
+              </div>
+              <div>
+                <p className="vtr-signoff__label">Approved By</p>
+                <p className="vtr-signoff__name">Authorized Signatory</p>
+                <p className="vtr-signoff__role">{brand.companyName}</p>
+              </div>
+            </div>
+
+            <p className="vtr-footer-bar">
+              This is a computer generated report and does not require a signature.
             </p>
 
             {report.missingFields.length > 0 ? (

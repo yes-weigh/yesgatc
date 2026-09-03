@@ -15,8 +15,8 @@ import type { Customer, Product, SiteCalibration } from '../types';
 export const VERIFICATION_TEST_REPORT_BRANDING = {
   companyName: VERIFICATION_GST_BILL_BRANDING.companyName,
   addressLines: VERIFICATION_GST_BILL_BRANDING.addressLines,
-  phone: '0484-2304414',
-  website: 'www.yesweigh.in',
+  phone: '8803333444',
+  website: 'www.yesgatc.in',
   gatcApprovalNumber: VERIFICATION_GST_BILL_BRANDING.gatcApprovalNumber,
   logoSrc: '/brand/label-logo.png',
   testReference: 'OIML R 76 / LMPC Rules 2011',
@@ -57,8 +57,20 @@ export type EccentricityRow = {
   result: 'PASS' | 'FAIL';
 };
 
+export type DiscriminationRow = {
+  loadKg: number;
+  indication1Kg: number;
+  removedLoadG: number;
+  addTenthDG: number;
+  extraLoadG: number;
+  indication2Kg: number;
+  deltaKg: number;
+  result: 'PASS' | 'FAIL';
+};
+
 export type VerificationTestReportData = {
   title: string;
+  documentNo: string;
   overallResult: 'PASSED' | 'FAILED';
   testDate: string;
   reportNumber: string;
@@ -67,11 +79,19 @@ export type VerificationTestReportData = {
   verificationType: string;
   location: string;
   testedBy: string;
+  vctName: string;
+  vctNumber: string;
   temperature: string;
   humidity: string;
+  powerSupply: string;
+  purpose: string;
+  testReference: string;
+  testMethod: string;
   customerName: string;
   customerAddress: string;
   customerPhone: string;
+  customerEmail: string;
+  contactPerson: string;
   instrumentType: string;
   manufacturer: string;
   modelApprovalNo: string;
@@ -80,12 +100,15 @@ export type VerificationTestReportData = {
   maxLabel: string;
   minLabel: string;
   eLabel: string;
+  dLabel: string;
   nLabel: string;
   sealId: string;
+  scaleImageUrl: string | null;
   verifyUrl: string | null;
   weighing: TestReportRow[];
   repeatability: RepeatabilityBlock | null;
   eccentricity: EccentricityRow[];
+  discrimination: DiscriminationRow[];
   missingFields: string[];
 };
 
@@ -211,6 +234,7 @@ export function buildVerificationTestReportData(
   customer?: Customer | null,
   product?: Product | null,
   verifyUrl?: string | null,
+  vct?: { name?: string | null; phone?: string | null } | null,
 ): VerificationTestReportData {
   const missingFields: string[] = [];
   const productInfo = resolveVerificationProduct(record, product);
@@ -261,7 +285,7 @@ export function buildVerificationTestReportData(
     : null;
 
   const eccentricity: EccentricityRow[] = canBuild
-    ? (['Centre', 'Front left', 'Front right', 'Rear left', 'Rear right'] as const).map(location => ({
+    ? (['1', '2', '3', '4'] as const).map(location => ({
         location,
         loadKg: spotKg,
         indicatedKg: spotKg,
@@ -271,11 +295,31 @@ export function buildVerificationTestReportData(
       }))
     : [];
 
+  const discrimination: DiscriminationRow[] = canBuild
+    ? [minKg, spotKg, maxKg].map(loadKg => {
+        const tenth = roundTo(eGrams! / 10, 4);
+        return {
+          loadKg,
+          indication1Kg: loadKg,
+          removedLoadG: 0,
+          addTenthDG: tenth,
+          extraLoadG: roundTo(eGrams! * 1.4, 4),
+          indication2Kg: loadKg,
+          deltaKg: 0,
+          result: 'PASS' as const,
+        };
+      })
+    : [];
+
   const certificateNumber = record.certificateNumber?.trim() || '—';
   const n = derived?.noOfVerificationIntervals;
+  const vctName = dash(vct?.name || record.vctName || verificationVctLabel(record));
+  const vctDigits = String(vct?.phone || '').replace(/\D/g, '');
+  const vctNumber = vctDigits.length >= 10 ? vctDigits.slice(-10) : dash(vct?.phone);
 
   return {
     title: 'ELECTRONIC WEIGHING SCALE TEST REPORT',
+    documentNo: 'IWPL0001',
     overallResult: loads.length > 0 ? 'PASSED' : 'FAILED',
     testDate: formatReportDate(record.certifiedAt || record.submittedAt),
     reportNumber: certificateNumber === '—' ? '—' : `${certificateNumber}-P`,
@@ -284,12 +328,20 @@ export function buildVerificationTestReportData(
     verificationType: verificationTypeLabel(record.verificationType),
     location: verificationLocationLabel(record.verificationLocation),
     testedBy: verificationVctLabel(record),
+    vctName,
+    vctNumber,
     temperature: climateField(record.ambientTemperature, '°C'),
     humidity: climateField(record.relativeHumidity, '%'),
+    powerSupply: '230 V AC',
+    purpose: VERIFICATION_TEST_REPORT_BRANDING.purpose,
+    testReference: VERIFICATION_TEST_REPORT_BRANDING.testReference,
+    testMethod: VERIFICATION_TEST_REPORT_BRANDING.testMethod,
     customerName: dash(party.name),
     customerAddress: [party.address, party.district, party.state, party.pincode].filter(Boolean).join(', ') || '—',
     customerPhone: dash(party.phone),
-    instrumentType: product?.typeOfInstrument?.trim() || 'Electronic Weighing Scale',
+    customerEmail: dash(customer?.email),
+    contactPerson: dash(party.name),
+    instrumentType: product?.typeOfInstrument?.trim() || 'NAWI',
     manufacturer: dash(productInfo.manufacturer),
     modelApprovalNo: dash(productInfo.modelApprovalNo),
     serialNumber: dash(record.serialNumber),
@@ -297,12 +349,15 @@ export function buildVerificationTestReportData(
     maxLabel: maxKg != null ? `${formatKgPlain(maxKg)} kg` : '—',
     minLabel: minGrams != null ? `${roundTo(minGrams, 4)} g` : '—',
     eLabel: eGrams != null ? `${roundTo(eGrams, 4)} g` : '—',
+    dLabel: 'NA',
     nLabel: n != null ? String(roundTo(n, 4)) : '—',
     sealId: dash(record.sealIdentificationNumber),
+    scaleImageUrl: record.scaleImageUrl?.trim() || null,
     verifyUrl: verifyUrl ?? buildCertificateVerifyUrl(record),
     weighing,
     repeatability,
     eccentricity,
+    discrimination,
     missingFields,
   };
 }
