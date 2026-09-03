@@ -60,6 +60,10 @@ async function run() {
         username: 'Test RC',
         companyName: 'Test RC Center',
       });
+      await setDoc(doc(db, 'appSettings', 'global'), {
+        minVerificationAppVersionCode: 0,
+        zohoRvInvoicingEnabled: false,
+      });
     });
 
     const rcDb = testEnv.authenticatedContext(RC_UID).firestore();
@@ -67,7 +71,13 @@ async function run() {
     try {
       await assertSucceeds(
         getDocs(
-          query(collection(rcDb, 'users'), where('aadhar', '==', VCT_AADHAR), limit(1)),
+          query(
+            collection(rcDb, 'users'),
+            where('role', '==', 'vct'),
+            where('rcId', '==', RC_UID),
+            where('aadhar', '==', VCT_AADHAR),
+            limit(1),
+          ),
         ),
       );
       ok('RC admin can run Aadhar duplicate-check query');
@@ -192,10 +202,10 @@ async function run() {
     }
 
     try {
-      await assertFails(getDoc(doc(vctDb, 'siteCalibrations', 'rc-verification-001')));
-      ok('VCT cannot read RC admin verification');
+      await assertSucceeds(getDoc(doc(vctDb, 'siteCalibrations', 'rc-verification-001')));
+      ok('VCT can read RC jobs in their centre');
     } catch (err) {
-      fail('VCT cannot read RC admin verification', err);
+      fail('VCT can read RC jobs in their centre', err);
     }
 
     const verificationId = 'vct-verification-001';
@@ -210,6 +220,7 @@ async function run() {
           requestSource: 'vct_auto',
           status: 'draft',
           verificationType: 'OV',
+          applicationNumber: 'VC/26/1',
           customerName: 'Test Customer',
           productName: 'Test Scale',
           serialNumber: 'SN-001',
