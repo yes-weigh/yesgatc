@@ -1,0 +1,273 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'src/lib/appVersion.ts'
+  workflow_dispatch:
+    inputs:
+      force_functions:
+        description: Deploy all Cloud Functions (ignore change detection)
+        type: boolean
+        default: false
+
+# One deploy at a time — overlapping runs race Firebase Rules releases (HTTP 409).
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  deploy:
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    outputs:
+      worker_tag: ${{ steps.worker_tag.outputs.tag }}
+      worker_skip: ${{ steps.worker_tag.outputs.skip }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch tags
+        run: git fetch --tags --force origin
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.1'
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install functions dependencies
+        run: npm ci --prefix functions
+
+      - name: Test functions
+        run: npm test --prefix functions
+
+      - name: Test Firestore rules
+        run: npx --yes firebase-tools@15.22.1 emulators:exec --only firestore "node scripts/test-vct-firestore-rules.mjs"
+
+      - name: Bump app version
+        id: bump_version
+        if: github.event_name == 'push' && !contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, 'bump app version')
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git show origin/main:src/lib/appVersion.ts > src/lib/appVersion.ts
+          NEXT="$(node scripts/bump-app-version.mjs)"
+          echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
+          cp src/lib/appVersion.ts "${RUNNER_TEMP}/appVersion.ts"
+
+      - name: Commit app version
+        if: steps.bump_version.outcome == 'success'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.bump_version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git worktree add "${RUNNER_TEMP}/version-main" origin/main
+          cp "${RUNNER_TEMP}/appVersion.ts" "${RUNNER_TEMP}/version-main/src/lib/appVersion.ts"
+          git -C "${RUNNER_TEMP}/version-main" add src/lib/appVersion.ts
+          if git -C "${RUNNER_TEMP}/version-main" diff --cached --quiet; then
+            echo "App version already ${VERSION} on main — nothing to commit."
+          else
+            git -C "${RUNNER_TEMP}/version-main" commit -m "chore: bump app version to ${VERSION} [skip ci]"
+            git -C "${RUNNER_TEMP}/version-main" push origin HEAD:main
+          fi
+
+      - name: Decide certificate worker tag
+        id: worker_tag
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          mapfile -t lines < <(node scripts/ci-tag-certificate-worker.mjs --base HEAD~1)
+          for line in "${lines[@]}"; do
+            echo "$line"
+            key="${line%%=*}"
+            val="${line#*=}"
+            echo "${key}=${val}" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Push certificate worker tag
+        if: github.event_name == 'push' && steps.worker_tag.outputs.skip == 'false'
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.worker_tag.outputs.tag }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Pushed ${TAG} (was ${{ steps.worker_tag.outputs.from }})"
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_WEATHERAPI_KEY: ${{ secrets.VITE_WEATHERAPI_KEY }}
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+          VITE_PWA_ORIGIN: https://yesgatc.web.app
+
+      - name: Configure Firebase credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT_YESGATC: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_YESGATC }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_SERVICE_ACCOUNT_B64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_B64 }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: node scripts/ci-write-firebase-credentials.mjs
+
+      - name: Deploy hosting, Firestore, and Storage
+        run: bash scripts/ci-firebase-deploy.sh hosting,firestore,storage
+
+      - name: Resolve functions deploy base
+        id: functions_base
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.force_functions != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          LAST_SUCCESS=""
+          if command -v gh >/dev/null 2>&1; then
+            LAST_SUCCESS="$(
+              gh run list \
+                --workflow "${{ github.workflow }}" \
+                --branch "${{ github.ref_name }}" \
+                --status success \
+                --limit 1 \
+                --json headSha \
+                --jq '.[0].headSha // empty' \
+              2>/dev/null || true
+            )"
+          fi
+
+          BEFORE="${{ github.event.before }}"
+          BASE=""
+          REASON=""
+
+          if [ -n "$LAST_SUCCESS" ] && [ "$LAST_SUCCESS" != "${{ github.sha }}" ]; then
+            if git rev-parse --verify "${LAST_SUCCESS}^{commit}" >/dev/null 2>&1 \
+              || git fetch --depth=1 origin "${LAST_SUCCESS}" >/dev/null 2>&1; then
+              if git merge-base --is-ancestor "${LAST_SUCCESS}" HEAD 2>/dev/null; then
+                BASE="$LAST_SUCCESS"
+                REASON="last successful deploy (${LAST_SUCCESS})"
+              fi
+            fi
+          fi
+
+          if [ -z "$BASE" ]; then
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+              BASE="$BEFORE"
+              REASON="push before SHA (${BEFORE})"
+            else
+              BASE="HEAD~1"
+              REASON="HEAD~1 (no prior success / before SHA)"
+            fi
+          fi
+
+          if ! git rev-parse --verify "${BASE}^{commit}" >/dev/null 2>&1; then
+            echo "Base commit ${BASE} not in clone — fetching from origin"
+            git fetch --depth=1 origin "${BASE}" || true
+          fi
+
+          if ! git rev-parse --verify "${BASE}^{commit}" >/dev/null 2>&1; then
+            echo "::warning::Could not resolve functions base ${BASE}; falling back to HEAD~1"
+            BASE="HEAD~1"
+            REASON="HEAD~1 (fallback)"
+          fi
+
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
+          echo "Functions diff base: ${BASE} (${REASON})"
+
+      - name: Determine changed functions
+        id: changed_functions
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.force_functions != 'true'
+        run: |
+          BASE="${{ steps.functions_base.outputs.base }}"
+          echo "Comparing functions/ against ${BASE} (${{ steps.functions_base.outputs.reason }})"
+          mapfile -t lines < <(node functions/scripts/changed-functions.mjs --base "$BASE")
+          for line in "${lines[@]}"; do
+            echo "$line"
+            key="${line%%=*}"
+            val="${line#*=}"
+            echo "${key}=${val}" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Deploy Functions
+        if: >
+          github.event.inputs.force_functions == 'true' ||
+          (steps.changed_functions.outcome == 'success' && steps.changed_functions.outputs.skip != 'true')
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event.inputs.force_functions }}" = "true" ] || [ "${{ steps.changed_functions.outputs.deploy_all }}" = "true" ]; then
+            DEPLOY_TARGET="functions"
+            SELECTIVE=false
+            echo "Deploying all functions."
+          else
+            DEPLOY_TARGET="${{ steps.changed_functions.outputs.deploy_only }}"
+            SELECTIVE=true
+            echo "Deploying ${DEPLOY_TARGET} (${{ steps.changed_functions.outputs.count }} function(s))."
+          fi
+
+          set +e
+          bash scripts/ci-firebase-deploy.sh "$DEPLOY_TARGET"
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ] && [ "$SELECTIVE" = "true" ]; then
+            echo "::warning::Selective functions deploy failed — retrying full functions deploy."
+            set +e
+            bash scripts/ci-firebase-deploy.sh functions
+            status=$?
+            set -e
+          fi
+
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::Functions deploy had errors."
+            echo "::warning::Secrets live in Firebase Secret Manager (defineSecret). They are not written from GitHub."
+            echo "::warning::If a scheduler job failed, grant the CI service account Cloud Scheduler Admin:"
+            echo "::warning::  https://console.cloud.google.com/iam-admin/iam?project=yesgatc"
+            echo "::warning::If deploy aborted because a function exists in the project but not in source, CI passes --force."
+            echo "FUNCTIONS_DEPLOY_FAILED=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Functions deploy skipped
+        if: >
+          github.event.inputs.force_functions != 'true' &&
+          steps.changed_functions.outcome == 'success' &&
+          steps.changed_functions.outputs.skip == 'true'
+        run: |
+          echo "No functions/ changes since ${{ steps.functions_base.outputs.reason }} — skipping functions deploy (${{ steps.changed_functions.outputs.reason }})."
+
+      - name: Verify Functions deploy
+        if: env.FUNCTIONS_DEPLOY_FAILED == 'true'
+        run: |
+          echo "::error::Functions deploy failed earlier in this workflow."
+          echo "::error::Hosting, Firestore, and Storage may still have deployed successfully."
+          echo "::error::Re-run with workflow_dispatch + force_functions to deploy all functions."
+          echo "::error::Grant Cloud Scheduler Admin to FIREBASE_SERVICE_ACCOUNT_YESGATC if scheduled functions fail."
+          exit 1
+
+  worker_release:
+    needs: deploy
+    if: always() && needs.deploy.result != 'cancelled' && needs.deploy.outputs.worker_skip == 'false'
+    uses: ./.github/workflows/certificate-worker-release.yml
+    with:
+      release_tag: ${{ needs.deploy.outputs.worker_tag }}
+    permissions:
+      contents: write

@@ -96,7 +96,9 @@ You can also paste the key in the worker UI under **Captcha AI Key** → Save Cr
 
 ### GitHub Releases (recommended)
 
-**Dev PC — publish a release:**
+Push to `main` that changes `certificate-worker/` code (not `*.md`) auto-tags `certificate-worker-vX.Y.Z` and builds the release zips.
+
+Manual tag still works:
 
 ```powershell
 git tag certificate-worker-v1.0.0

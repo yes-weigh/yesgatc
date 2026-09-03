@@ -14,6 +14,7 @@
     "android:open": "npx cap open android",
     "android:apk": "npm run android:sync && node scripts/build-android-apk.mjs",
     "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-vct-firestore-rules.mjs\"",
+    "deploy:ci": "bash scripts/ci-firebase-deploy.sh hosting,firestore,storage",
     "audit:cert-pdfs": "node scripts/audit-certificate-pdf-serials.mjs",
     "storage:cors": "gcloud storage buckets update gs://yesgatc.firebasestorage.app --cors-file=storage-cors.json",
     "seed:super-admin": "node scripts/seed-super-admin.mjs",
