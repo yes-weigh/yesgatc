@@ -32,6 +32,12 @@
     "dsc:publish": "powershell -ExecutionPolicy Bypass -File certificate-worker/scripts/publish-dsc-engine.ps1"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/app": "^7.1.0",
+    "@capacitor/core": "^7.4.4",
+    "@capacitor/filesystem": "^7.1.4",
+    "@capacitor/share": "^7.0.2",
+    "@capacitor/status-bar": "^7.0.3",
     "firebase": "^12.13.0",
     "html-to-image": "^1.11.13",
     "jsqr": "^1.4.0",
@@ -41,18 +47,13 @@
     "react-dom": "^19.2.6",
     "react-qr-code": "^2.0.21",
     "react-router-dom": "^7.15.1",
-    "@capacitor/android": "^7.4.4",
-    "@capacitor/app": "^7.1.0",
-    "@capacitor/core": "^7.4.4",
-    "@capacitor/filesystem": "^7.1.4",
-    "@capacitor/share": "^7.0.2",
-    "@capacitor/status-bar": "^7.0.3",
     "recharts": "^3.8.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.4.4",
     "@eslint/js": "^10.0.1",
+    "@firebase/app-compat": "^0.5.17",
     "@firebase/rules-unit-testing": "^5.0.1",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
