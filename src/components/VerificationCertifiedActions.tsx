@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Award, BarChart3, Receipt, ScrollText, Tag } from 'lucide-react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 import { useMobileViewport } from '../hooks/useMobileViewport';
 import {
   buildVerificationCertifiedActions,
@@ -22,7 +24,7 @@ import { VerificationGstBillModal } from './VerificationGstBillModal';
 import { VerificationLabelModal } from './VerificationLabelModal';
 import { VerificationReceiptModal } from './VerificationReceiptModal';
 import { VerificationTestReportModal } from './VerificationTestReportModal';
-import type { SiteCalibration } from '../types';
+import type { FirestoreUserDoc, SiteCalibration } from '../types';
 
 type VerificationCertifiedActionsProps = {
   record: SiteCalibration;
@@ -206,14 +208,31 @@ export const VerificationCertifiedActions: React.FC<VerificationCertifiedActions
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [certificateOpen, setCertificateOpen] = useState(false);
   const [downloadWarnOpen, setDownloadWarnOpen] = useState(false);
+  const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
 
   useEffect(() => {
     prefetchPdfJs();
   }, []);
 
-  if (!canShowVerificationCertifiedActions(record)) return null;
+  useEffect(() => {
+    const rcId = record.rcId?.trim();
+    if (!rcId) {
+      setRcProfile(null);
+      return;
+    }
+    return onSnapshot(
+      doc(db, 'users', rcId),
+      snap => setRcProfile(snap.exists() ? (snap.data() as FirestoreUserDoc) : null),
+      () => setRcProfile(null),
+    );
+  }, [record.rcId]);
 
-  const actions = buildVerificationCertifiedActions(record);
+  const actions = useMemo(
+    () => buildVerificationCertifiedActions(record, rcProfile),
+    [record, rcProfile],
+  );
+
+  if (!canShowVerificationCertifiedActions(record)) return null;
   if (!actions.length) return null;
 
   const signed = canShowSignedCertificatePdf(record);

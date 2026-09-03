@@ -8,8 +8,9 @@ import {
   useRcUnsignedPdfCount,
 } from '../lib/rcUnsignedPdfPending';
 import {
-  playUnsignedCertificateWarningNow,
   resetUnsignedCertificateWarningSession,
+  startUnsignedCertificateWarningLoop,
+  stopUnsignedCertificateWarningLoop,
 } from '../lib/playUnsignedCertificateWarningSound';
 
 function qtyLabelFor(count: number): string {
@@ -41,7 +42,8 @@ function UnsignedPdfDisturbPopup({
   const qtyLabel = qtyLabelFor(count);
 
   useEffect(() => {
-    playUnsignedCertificateWarningNow();
+    startUnsignedCertificateWarningLoop();
+    return () => stopUnsignedCertificateWarningLoop();
   }, []);
 
   const title = downloadWarn

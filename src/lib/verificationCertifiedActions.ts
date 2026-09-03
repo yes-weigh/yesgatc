@@ -1,7 +1,7 @@
 import { buildDocaCertificateViewUrl } from './docaCertificateUrl';
 import { canShowVerificationWalletReceipt } from './verificationReceipt';
 import { canDownloadVerificationCertificate } from './verificationRequest';
-import type { SiteCalibration } from '../types';
+import type { FirestoreUserDoc, SiteCalibration } from '../types';
 
 export type VerificationCertifiedActionId =
   | 'certificate'
@@ -59,6 +59,7 @@ export function resolveCertificatePreviewUrl(record: SiteCalibration): string | 
 
 export function buildVerificationCertifiedActions(
   record: SiteCalibration,
+  rc?: Pick<FirestoreUserDoc, 'certificationMethod'> | null,
 ): VerificationCertifiedAction[] {
   const certificateHref = resolveCertificatePreviewUrl(record);
 
@@ -92,7 +93,7 @@ export function buildVerificationCertifiedActions(
       kind: 'gst-bill-modal',
     });
 
-    if (canShowVerificationWalletReceipt(record)) {
+    if (canShowVerificationWalletReceipt(record, rc ?? null)) {
       byId.set('receipt', {
         id: 'receipt',
         label: 'Receipt',

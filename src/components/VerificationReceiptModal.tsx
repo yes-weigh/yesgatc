@@ -5,7 +5,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAppContext } from '../context/AppContext';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
-import { DEFAULT_RC_FEES_STRUCTURE } from '../lib/rcProfileFields';
+import { resolveRcFeesStructure } from '../lib/rcProfileFields';
 import {
   buildVerificationReceiptData,
   formatReceiptLineAmount,
@@ -31,14 +31,12 @@ function ReceiptRule() {
 function ReceiptRow({
   label,
   value,
-  strong = false,
 }: {
   label: string;
   value: string;
-  strong?: boolean;
 }) {
   return (
-    <div className={`verification-gst-bill-row${strong ? ' verification-gst-bill-row--strong' : ''}`}>
+    <div className="verification-gst-bill-row verification-gst-bill-row--strong">
       <span className="verification-gst-bill-row-label">{label}</span>
       <span className="verification-gst-bill-row-colon" aria-hidden>
         :
@@ -55,12 +53,14 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
 }) => {
   const receiptRef = useRef<HTMLElement>(null);
   const { products } = useAppContext();
-  const fees = DEFAULT_RC_FEES_STRUCTURE;
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [rc, setRc] = useState<FirestoreUserDoc | null>(null);
+  const [vct, setVct] = useState<FirestoreUserDoc | null>(null);
   const [loading, setLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+
+  const fees = resolveRcFeesStructure(rc);
 
   useHistoryOverlay(open, onClose);
 
@@ -69,24 +69,28 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
 
     const customerId = record.customerId?.trim();
     const rcId = record.rcId?.trim();
+    const vctId = record.vctId?.trim();
     let cancelled = false;
     setLoading(true);
 
     void (async () => {
       try {
-        const [customerSnap, rcSnap] = await Promise.all([
+        const [customerSnap, rcSnap, vctSnap] = await Promise.all([
           customerId ? getDoc(doc(db, 'customers', customerId)) : Promise.resolve(null),
           rcId ? getDoc(doc(db, 'users', rcId)) : Promise.resolve(null),
+          vctId ? getDoc(doc(db, 'users', vctId)) : Promise.resolve(null),
         ]);
         if (cancelled) return;
         setCustomer(
           customerSnap?.exists() ? ({ id: customerSnap.id, ...customerSnap.data() } as Customer) : null,
         );
         setRc(rcSnap?.exists() ? (rcSnap.data() as FirestoreUserDoc) : null);
+        setVct(vctSnap?.exists() ? (vctSnap.data() as FirestoreUserDoc) : null);
       } catch {
         if (!cancelled) {
           setCustomer(null);
           setRc(null);
+          setVct(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -96,11 +100,11 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
     return () => {
       cancelled = true;
     };
-  }, [open, record.customerId, record.rcId]);
+  }, [open, record.customerId, record.rcId, record.vctId]);
 
   const receiptData = useMemo(
-    () => buildVerificationReceiptData(record, customer, products, fees, rc),
-    [record, customer, products, fees, rc],
+    () => buildVerificationReceiptData(record, customer, products, fees, rc, vct),
+    [record, customer, products, fees, rc, vct],
   );
 
   const handleShare = async () => {
@@ -183,9 +187,9 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
                   {line}
                 </p>
               ))}
-              {receiptData.issuer.gstin ? (
-                <p className="verification-gst-bill-gstin mb-0">
-                  GSTIN {receiptData.issuer.gstin}
+              {receiptData.issuer.phone ? (
+                <p className="verification-gst-bill-gstin verification-cash-receipt-phone mb-0">
+                  Ph: {receiptData.issuer.phone}
                 </p>
               ) : null}
             </header>
@@ -213,6 +217,8 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
               <ReceiptRow label="Pincode" value={loading ? '…' : receiptData.customerPincode} />
               <ReceiptRow label="District" value={loading ? '…' : receiptData.customerDistrict} />
               <ReceiptRow label="State" value={loading ? '…' : receiptData.customerState} />
+              <ReceiptRow label="VCT Name" value={loading ? '…' : receiptData.vctName} />
+              <ReceiptRow label="VCT Number" value={loading ? '…' : receiptData.vctNumber} />
             </section>
 
             <ReceiptRule />
@@ -222,16 +228,18 @@ export const VerificationReceiptModal: React.FC<VerificationReceiptModalProps> =
                 <span>Description</span>
                 <span>Amount (₹)</span>
               </div>
-              <div className="verification-gst-bill-line-item">
-                <span>{receiptData.lineDescription}</span>
-                <span>{formatReceiptLineAmount(receiptData.amount)}</span>
-              </div>
+              {receiptData.lines.map(line => (
+                <div key={line.description} className="verification-gst-bill-line-item">
+                  <span>{line.description}</span>
+                  <span>{formatReceiptLineAmount(line.amount)}</span>
+                </div>
+              ))}
             </section>
 
             <ReceiptRule />
 
             <div className="verification-gst-bill-total">
-              <span>Total Amount</span>
+              <span>Cash Total</span>
               <strong>{formatReceiptMoney(receiptData.totalAmount)}</strong>
             </div>
 

@@ -1,5 +1,9 @@
 let audioContext: AudioContext | null = null;
 let playedThisSession = false;
+let loopTimer: ReturnType<typeof setInterval> | null = null;
+let loopGeneration = 0;
+
+const LOOP_INTERVAL_MS = 1400;
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -61,10 +65,45 @@ export function playUnsignedCertificateWarningSound(): void {
   }
 }
 
-/** Always play (user gesture / mock preview). */
+/** Always play once (user gesture / mock preview). */
 export function playUnsignedCertificateWarningNow(): void {
   unlockUnsignedCertificateWarningAudio();
   playUnsignedCertificateWarningSound();
+}
+
+export function stopUnsignedCertificateWarningLoop(): void {
+  loopGeneration += 1;
+  if (loopTimer != null) {
+    clearInterval(loopTimer);
+    loopTimer = null;
+  }
+}
+
+/** Loop alert until stopUnsignedCertificateWarningLoop (modal open). */
+export function startUnsignedCertificateWarningLoop(): void {
+  if (typeof window === 'undefined') return;
+  stopUnsignedCertificateWarningLoop();
+  const generation = loopGeneration;
+
+  const tryPlay = () => {
+    if (generation !== loopGeneration) return;
+    playUnsignedCertificateWarningNow();
+  };
+
+  tryPlay();
+  loopTimer = setInterval(tryPlay, LOOP_INTERVAL_MS);
+
+  const ctx = audioContext;
+  if (ctx && ctx.state === 'suspended') {
+    const onGesture = () => {
+      window.removeEventListener('pointerdown', onGesture);
+      window.removeEventListener('keydown', onGesture);
+      if (generation !== loopGeneration) return;
+      tryPlay();
+    };
+    window.addEventListener('pointerdown', onGesture, { once: true });
+    window.addEventListener('keydown', onGesture, { once: true });
+  }
 }
 
 /** Play once per tab session when RC has unsigned cert backlog. */
@@ -72,19 +111,14 @@ export function playUnsignedCertificateWarningOnce(): void {
   if (typeof window === 'undefined') return;
   if (playedThisSession) return;
   playedThisSession = true;
-
-  const tryPlay = () => {
-    playUnsignedCertificateWarningNow();
-  };
-
-  tryPlay();
+  playUnsignedCertificateWarningNow();
 
   const ctx = audioContext;
   if (ctx && ctx.state === 'suspended') {
     const onGesture = () => {
       window.removeEventListener('pointerdown', onGesture);
       window.removeEventListener('keydown', onGesture);
-      tryPlay();
+      playUnsignedCertificateWarningNow();
     };
     window.addEventListener('pointerdown', onGesture, { once: true });
     window.addEventListener('keydown', onGesture, { once: true });
