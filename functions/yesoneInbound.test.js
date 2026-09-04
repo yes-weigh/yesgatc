@@ -688,3 +688,59 @@ test('PAS serials go to number bank, not RC allotted seats', async () => {
   assert.equal(cancel.body.ok, true);
   assert.equal(db._store['pasSerialBank/P1001'].status, 'cancelled');
 });
+
+test('numeric PAS serials land in number bank', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'products/atm': {
+      pasPreAllotted: true,
+      yesoneSku: 'ATM30GAY',
+      modelid: 'ATM30',
+      modelNo: 'YSP-30',
+      name: 'ATM GOLD',
+    },
+  });
+
+  assert.equal(readSerialNumber({ serialNumber: '57676' }), '57676');
+  assert.equal(readSerialNumber({ serialNumber: '50' }), null);
+
+  const pas = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        serialNumber: '57676',
+        yesoneSku: 'ATM30GAY',
+        qty: 1,
+      },
+    },
+    pas,
+    db,
+  );
+  assert.equal(pas.body.ok, true);
+  assert.equal(db._store['pasSerialBank/57676'].status, 'available');
+  assert.equal(db._store['pasSerialBank/57676'].productId, 'atm');
+  assert.equal(db._store['pasSerialBank/57676'].qty, 1);
+  assert.equal(db._store['serialAllotments/57676'], undefined);
+
+  const gas = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: { event: 'serial.allotted', serialNumber: '57677', rcCode: 'ABC' },
+    },
+    gas,
+    db,
+  );
+  assert.equal(gas.body.ok, true);
+  assert.equal(gas.body.results[0].skipped, 'qty_not_serial');
+  assert.equal(db._store['pasSerialBank/57677'], undefined);
+  assert.equal(db._store['serialAllotments/57677'], undefined);
+});
