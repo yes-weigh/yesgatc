@@ -318,7 +318,7 @@ export function RcQuotaPanel() {
                 return (
                   <tr key={row.uid}>
                     <td>
-                      {row.companyName}
+                      <span className="admin-setting-quota-name">{row.companyName}</span>
                       {row.rcCode ? <span className="admin-setting-yesone-sub">{row.rcCode}</span> : null}
                     </td>
                     <td>

@@ -46,6 +46,7 @@ import {
   Award,
   Share2,
   HardHat,
+  Hash,
   Plus,
   UserCheck,
 } from 'lucide-react';
@@ -191,8 +192,9 @@ export const Layout: React.FC = () => {
             label: 'Verification',
             mobileSubtitle: 'Powered by AI',
           },
-          { path: '/admin/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
+          { path: '/admin/rc-quota', icon: <Hash size={20} />, label: 'RC quata' },
           { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
+          { path: '/admin/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
           { path: '/admin/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
           { path: '/admin/rc', icon: <Building2 size={20} />, label: 'Regional Centers' },
           {
@@ -290,15 +292,18 @@ export const Layout: React.FC = () => {
     location.pathname === '/admin';
   const showAppFilterSlot =
     useShieldBrand || isCertificatesList || isCustomersList || isReportsList;
+  const isQuotaPage = /^\/admin\/rc-quota\/?$/.test(location.pathname);
   const isSettingsPage =
     /\/settings\/?$/.test(location.pathname) || /\/contractor-fee\/?$/.test(location.pathname);
+  const showQuotaSynSlot = isSettingsPage || isQuotaPage;
   const stickyMobileAppBar =
     showAppFilterSlot ||
     isHomeDashboard ||
     isEmaapSessions ||
     isRcCentersPage ||
     isProductsPage ||
-    isSettingsPage;
+    isSettingsPage ||
+    isQuotaPage;
 
   const roleLabel = ROLE_LABELS[user.role];
 
@@ -543,7 +548,7 @@ export const Layout: React.FC = () => {
               <div id="product-filter-slot-mobile" className="mobile-app-bar-actions" />
             ) : showAppFilterSlot ? (
               <div id="verification-filter-slot-mobile" className="mobile-app-bar-actions" />
-            ) : isSettingsPage ? (
+            ) : showQuotaSynSlot ? (
               <div id="settings-syn-slot-mobile" className="mobile-app-bar-actions" />
             ) : null}
           </header>
@@ -582,7 +587,7 @@ export const Layout: React.FC = () => {
               )}
             </div>
             <div className="top-bar-end">
-              {isSettingsPage ? <div id="settings-syn-slot-desktop" /> : null}
+              {showQuotaSynSlot ? <div id="settings-syn-slot-desktop" /> : null}
               {rcRegisterBtn}
               {isProductsPage ? <div id="product-filter-slot-desktop" /> : null}
               {isHomeDashboard ? <EmaapStatusShortcut /> : null}

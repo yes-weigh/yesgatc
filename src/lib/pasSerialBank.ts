@@ -1,4 +1,4 @@
-import { doc, getDoc, runTransaction } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, runTransaction, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Product, SiteCalibration } from '../types';
 
@@ -10,9 +10,30 @@ export type PasBankDoc = {
   productId?: string;
   productName?: string;
   yesoneSku?: string;
+  sku?: string;
   modelid?: string;
+  modelId?: string;
   modelNo?: string;
+  modelApprovalNo?: string;
+  invoiceNo?: string;
+  qty?: number;
   usedRecordId?: string;
+};
+
+export type ProductSerialRow = {
+  id: string;
+  serial: string;
+  status: string;
+  pool: 'pas' | 'gas';
+  invoiceNo?: string;
+};
+
+export type ProductSerialBankSummary = {
+  rows: ProductSerialRow[];
+  qty: number;
+  available: number;
+  used: number;
+  cancelled: number;
 };
 
 export type PasCheckRow = {
@@ -54,12 +75,61 @@ export function quotaSerialRows(
     });
 }
 
+function addIdentityKey(set: Set<string>, value?: string | null): void {
+  const raw = norm(value);
+  if (!raw) return;
+  set.add(raw);
+  const compact = raw.replace(/[^a-z0-9]/g, '');
+  if (compact) set.add(compact);
+}
+
+function identityKeys(row: {
+  id?: string;
+  productId?: string;
+  yesoneSku?: string;
+  sku?: string;
+  modelid?: string;
+  modelId?: string;
+  modelNo?: string;
+  modelApprovalNo?: string;
+}): Set<string> {
+  const out = new Set<string>();
+  addIdentityKey(out, row.id);
+  addIdentityKey(out, row.productId);
+  addIdentityKey(out, row.yesoneSku);
+  addIdentityKey(out, row.sku);
+  addIdentityKey(out, row.modelid);
+  addIdentityKey(out, row.modelId);
+  addIdentityKey(out, row.modelNo);
+  addIdentityKey(out, row.modelApprovalNo);
+  return out;
+}
+
+function identityKeysOverlap(left: Set<string>, right: Set<string>): boolean {
+  for (const x of left) {
+    if (right.has(x)) return true;
+    if (x.length < 4) continue;
+    for (const y of right) {
+      if (y.length < 4) continue;
+      if (x.startsWith(y) || y.startsWith(x)) return true;
+    }
+  }
+  return false;
+}
+
 export function pasBankMatchesProduct(bank: PasBankDoc, product: Product): boolean {
-  if (bank.productId && bank.productId === product.id) return true;
-  if (norm(bank.yesoneSku) && norm(bank.yesoneSku) === norm(product.yesoneSku)) return true;
-  if (norm(bank.modelid) && norm(bank.modelid) === norm(product.modelid)) return true;
-  if (norm(bank.modelNo) && norm(bank.modelNo) === norm(product.modelNo)) return true;
-  return !bank.productId && !norm(bank.yesoneSku) && !norm(bank.modelid) && !norm(bank.modelNo);
+  const bankKeys = identityKeys(bank);
+  if (bankKeys.size === 0) return true;
+  return identityKeysOverlap(
+    bankKeys,
+    identityKeys({
+      id: product.id,
+      yesoneSku: product.yesoneSku,
+      modelid: product.modelid,
+      modelNo: product.modelNo,
+      modelApprovalNo: product.modelApprovalNo,
+    }),
+  );
 }
 
 function pasStatusError(serial: string, status: string): string | null {
@@ -188,5 +258,102 @@ export async function markPasSerialsUsedForRows(
       rcId: row.rcId || meta.rcId,
       recordId: row.recordId,
     });
+  }
+}
+
+function serialSortKey(a: ProductSerialRow, b: ProductSerialRow): number {
+  return a.serial.localeCompare(b.serial, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function statusKey(status: string): string {
+  return status.trim().toLowerCase();
+}
+
+function summarizeRows(rows: ProductSerialRow[]): ProductSerialBankSummary {
+  let available = 0;
+  let used = 0;
+  let cancelled = 0;
+  for (const row of rows) {
+    const status = statusKey(row.status);
+    if (status === 'used') used += 1;
+    else if (status === 'cancelled' || status === 'replaced') cancelled += 1;
+    else available += 1;
+  }
+  return { rows, qty: rows.length, available, used, cancelled };
+}
+
+function pasRowFromSnap(
+  id: string,
+  data: PasBankDoc,
+  product: Product,
+): ProductSerialRow | null {
+  if (!pasBankMatchesProduct(data, product)) return null;
+  const serial = String(data.serialNumber || id).trim();
+  if (!serial) return null;
+  return {
+    id,
+    serial,
+    status: String(data.status || 'available'),
+    pool: 'pas',
+    invoiceNo: data.invoiceNo,
+  };
+}
+
+async function queryPasBank(product: Product): Promise<ProductSerialRow[]> {
+  const col = collection(db, PAS_SERIAL_BANK_COLLECTION);
+  const listed = await getDocs(col);
+  const byId = new Map<string, ProductSerialRow>();
+  for (const docSnap of listed.docs) {
+    const row = pasRowFromSnap(docSnap.id, (docSnap.data() || {}) as PasBankDoc, product);
+    if (row) byId.set(row.id, row);
+  }
+  return [...byId.values()].sort(serialSortKey);
+}
+
+async function queryGasAllotments(product: Product): Promise<ProductSerialRow[]> {
+  const col = collection(db, 'serialAllotments');
+  const filters = [query(col, where('productId', '==', product.id))];
+  const sku = product.yesoneSku?.trim();
+  const modelNo = product.modelNo?.trim();
+  if (sku) filters.push(query(col, where('sku', '==', sku)));
+  if (modelNo) filters.push(query(col, where('modelNo', '==', modelNo)));
+
+  const snaps = await Promise.all(filters.map(item => getDocs(item)));
+  const byId = new Map<string, ProductSerialRow>();
+  for (const snap of snaps) {
+    for (const docSnap of snap.docs) {
+      const data = (docSnap.data() || {}) as {
+        serialNumber?: string;
+        status?: string;
+        invoiceNo?: string;
+        productId?: string;
+        sku?: string;
+        modelNo?: string;
+      };
+      const serial = String(data.serialNumber || docSnap.id).trim();
+      if (!serial) continue;
+      byId.set(docSnap.id, {
+        id: docSnap.id,
+        serial,
+        status: String(data.status || 'allotted'),
+        pool: 'gas',
+        invoiceNo: data.invoiceNo,
+      });
+    }
+  }
+  return [...byId.values()].sort(serialSortKey);
+}
+
+export async function listProductSerialBank(product: Product): Promise<ProductSerialBankSummary> {
+  try {
+    const rows = productUsesPasSerials(product)
+      ? await queryPasBank(product)
+      : await queryGasAllotments(product);
+    return summarizeRows(rows);
+  } catch (err) {
+    if (firebaseDenied(err)) {
+      throw new Error('Serial bank is blocked. Super admin must deploy Firestore rules.');
+    }
+    throw err instanceof Error ? err : new Error('Could not load serial numbers.');
   }
 }

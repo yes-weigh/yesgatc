@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Info } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Eye, Info } from 'lucide-react';
 import { InlineFormPanel } from './InlineFormPanel';
 import { ListViewBackBar } from './ListViewBackBar';
+import { ProductSerialBankOverlay } from './ProductSerialBankOverlay';
 import { useSetAppBarTitle } from '../context/AppBarTitleContext';
 import { CalcLabel, UploadField } from '../pages/admin/productFormUi';
 import { PasTag } from './ProductShopMedia';
@@ -62,6 +63,7 @@ export const ProductViewPanel: React.FC<{
   const specRows = useMemo(() => specFormRowsFromProduct(product), [product]);
   const productImage = fileFromProductImage(product);
   const approvalDoc = fileFromApprovalDoc(product);
+  const [serialOpen, setSerialOpen] = useState(false);
 
   useEffect(() => {
     if (!setAppBarTitle) return;
@@ -76,7 +78,22 @@ export const ProductViewPanel: React.FC<{
       className="inline-form-panel--wide inline-form-panel--product-edit"
     >
       <div className="product-form-panel">
-        <ListViewBackBar onBack={onClose} />
+        <ListViewBackBar
+          onBack={onClose}
+          trailing={
+            <div className="product-form-view-actions">
+              <button
+                type="button"
+                className="product-form-edit-toggle"
+                onClick={() => setSerialOpen(true)}
+                aria-label="View serials"
+                title="View serials"
+              >
+                <Eye size={18} strokeWidth={2} />
+              </button>
+            </div>
+          }
+        />
         <form
           className="product-form product-form--admin-edit"
           aria-label="Product details"
@@ -295,6 +312,9 @@ export const ProductViewPanel: React.FC<{
           </div>
         </form>
       </div>
+      {serialOpen ? (
+        <ProductSerialBankOverlay product={product} onClose={() => setSerialOpen(false)} />
+      ) : null}
     </InlineFormPanel>
   );
 };

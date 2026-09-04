@@ -883,6 +883,15 @@ label.admin-setting-webbook-yesone-label,
 .admin-setting-quota-table th:first-child,
 .admin-setting-quota-table td:first-child {
   width: auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.admin-setting-quota-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-setting-quota-table th:not(:first-child),
@@ -1035,6 +1044,34 @@ button.admin-setting-serial-seat:disabled {
   background: rgba(245, 158, 11, 0.14);
   border-color: rgba(245, 158, 11, 0.45);
   color: #fbbf24;
+}
+
+.admin-setting-serial-seat--used {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.38);
+  color: #7dd3fc;
+}
+
+.product-serial-bank-qty {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.9rem;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0.5rem 0.7rem 0.4rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  color: #94a3b8;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.product-serial-bank-qty strong {
+  color: #e2e8f0;
+  font-weight: 800;
+}
+
+.product-serial-bank-empty {
+  margin: 0.75rem 0.7rem;
 }
 
 .admin-setting-serial-hint {

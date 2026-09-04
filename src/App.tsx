@@ -19,7 +19,7 @@ import { AdminWalletTopUps } from './pages/admin/AdminWalletTopUps';
 import { AdminIntegrations } from './pages/admin/AdminIntegrations';
 import { AdminPortalSettings } from './pages/admin/AdminPortalSettings';
 import { AdminEmaapSessionLogs } from './pages/admin/AdminEmaapSessionLogs';
-import { AdminNotifications } from './pages/admin/AdminMenuPages';
+import { AdminNotifications, AdminRcQuotaPage } from './pages/admin/AdminMenuPages';
 import { RCDashboard } from './pages/rc/RCDashboard';
 import { VCTManagement } from './pages/rc/VCTManagement';
 import { VerifierManagement } from './pages/rc/VerifierManagement';
@@ -62,6 +62,7 @@ const App: React.FC = () => {
                 <Route index element={<AdminDashboard />} />
                 <Route path="doca-scraping" element={<Navigate to="/admin/integrations/worker" replace />} />
                 <Route path="verifications" element={<AdminVerificationList />} />
+                <Route path="rc-quota" element={<AdminRcQuotaPage />} />
                 <Route path="wallet" element={<AdminWalletTopUps />} />
                 <Route path="products" element={<Products />} />
                 <Route path="vehicles" element={<AdminVehicleList />} />

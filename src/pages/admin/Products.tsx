@@ -17,10 +17,11 @@ import {
   suggestedCloneIds,
 } from '../../lib/productAccess';
 import {
-  Ban, Copy, GripVertical, Info, Package, Pencil, Plus, Save, Trash2,
+  Ban, Copy, Eye, GripVertical, Info, Package, Pencil, Plus, Save, Trash2,
 } from 'lucide-react';
 import { CalcLabel, UploadField } from './productFormUi';
 import { ProductSerialPoolField } from '../../components/ProductSerialPoolField';
+import { ProductSerialBankOverlay } from '../../components/ProductSerialBankOverlay';
 import type { Product } from '../../types';
 import {
   PRODUCT_CALC_TOOLTIPS,
@@ -115,6 +116,7 @@ export const Products: React.FC = () => {
   const [cloneDraft, setCloneDraft] = useState({ modelid: '', modelNo: '' });
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [cloning, setCloning] = useState(false);
+  const [serialProduct, setSerialProduct] = useState<Product | null>(null);
 
   const formBusy = submitting || uploadingDoc || uploadingImage || reordering;
 
@@ -677,6 +679,7 @@ export const Products: React.FC = () => {
   };
 
   return (
+    <>
     <div className={`fade-in${showForm ? ' product-edit-page' : ' max-w-6xl mx-auto'}`}>
       {showForm && (
         <InlineFormPanel
@@ -689,25 +692,41 @@ export const Products: React.FC = () => {
               onBack={handleCancelEdit}
               disabled={formBusy}
               trailing={
-                editingId && !formEditable ? (
+                editingId ? (
                   <div className="product-form-view-actions">
-                    <button
-                      type="button"
-                      className={`product-form-edit-toggle${productActive ? '' : ' product-form-edit-toggle--inactive'}`}
-                      onClick={handleDeactivateFromForm}
-                      aria-label={productActive ? 'Deactivate product' : 'Reactivate product'}
-                      title={productActive ? 'Deactivate' : 'Reactivate'}
-                    >
-                      <Ban size={18} strokeWidth={2} />
-                    </button>
+                    {!formEditable ? (
+                      <>
+                        <button
+                          type="button"
+                          className={`product-form-edit-toggle${productActive ? '' : ' product-form-edit-toggle--inactive'}`}
+                          onClick={handleDeactivateFromForm}
+                          aria-label={productActive ? 'Deactivate product' : 'Reactivate product'}
+                          title={productActive ? 'Deactivate' : 'Reactivate'}
+                        >
+                          <Ban size={18} strokeWidth={2} />
+                        </button>
+                        <button
+                          type="button"
+                          className="product-form-edit-toggle"
+                          onClick={handleEnableEdit}
+                          aria-label="Edit product"
+                          title="Edit"
+                        >
+                          <Pencil size={18} strokeWidth={2} />
+                        </button>
+                      </>
+                    ) : null}
                     <button
                       type="button"
                       className="product-form-edit-toggle"
-                      onClick={handleEnableEdit}
-                      aria-label="Edit product"
-                      title="Edit"
+                      onClick={() => {
+                        const current = products.find(p => p.id === editingId);
+                        if (current) setSerialProduct(current);
+                      }}
+                      aria-label="View serials"
+                      title="View serials"
                     >
-                      <Pencil size={18} strokeWidth={2} />
+                      <Eye size={18} strokeWidth={2} />
                     </button>
                     <button
                       type="button"
@@ -1179,6 +1198,10 @@ export const Products: React.FC = () => {
         </div>
       )}
     </div>
+    {serialProduct ? (
+      <ProductSerialBankOverlay product={serialProduct} onClose={() => setSerialProduct(null)} />
+    ) : null}
+    </>
   );
 
   function renderProductCard(p: Product) {
@@ -1232,26 +1255,22 @@ export const Products: React.FC = () => {
           <ProductShopMedia product={p} inactive={!active} />
           <ProductShopCardBody product={p} name={displayName} />
         </button>
-        <div className="rc-product-shop-actions">
-          <button
-            type="button"
-            className="rc-product-shop-edit"
-            onClick={() => handleCloneClick(p)}
-            title="Clone product"
-            aria-label={`Clone ${displayName}`}
-          >
-            <Copy size={15} strokeWidth={2} />
-          </button>
-          <button
-            type="button"
-            className="rc-product-shop-edit"
-            onClick={() => handleEditClick(p)}
-            title="Edit product"
-            aria-label={`Edit ${displayName}`}
-          >
-            <Pencil size={15} strokeWidth={2} />
-          </button>
-        </div>
+        {p.pasPreAllotted === true ? (
+          <div className="rc-product-shop-actions">
+            <button
+              type="button"
+              className="rc-product-shop-edit"
+              onClick={e => {
+                e.stopPropagation();
+                setSerialProduct(p);
+              }}
+              title="View serials"
+              aria-label={`View serials for ${displayName}`}
+            >
+              <Eye size={15} strokeWidth={2} />
+            </button>
+          </div>
+        ) : null}
       </li>
     );
   }
