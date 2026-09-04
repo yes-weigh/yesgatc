@@ -13,7 +13,7 @@ import {
 import { db } from '../../firebase';
 import { CertificatePdfShareViewer } from '../../components/CertificatePdfShareViewer';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
-import { useMobileViewport } from '../../hooks/useMobileViewport';
+import { isPhoneShareDevice } from '../../lib/imageCapture';
 import { useAuth } from '../../context/AuthContext';
 import { useRcScope, useRoleBasePath } from '../../lib/roleScope';
 import { certificatePdfFileName } from '../../lib/certificatePdfFile';
@@ -70,7 +70,7 @@ export const CertificateSign: React.FC = () => {
   const basePath = useRoleBasePath();
   const { user } = useAuth();
   const { rcUid, isRcAdmin, isVerifier } = useRcScope();
-  const isPhone = useMobileViewport();
+  const isPhone = isPhoneShareDevice();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [record, setRecord] = useState<SiteCalibration | null>(null);

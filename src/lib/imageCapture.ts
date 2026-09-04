@@ -22,6 +22,12 @@ export function isMobileTouchDevice(): boolean {
   return (coarsePointer && noHover) || (mobileUa && window.innerWidth <= 1024);
 }
 
+/** Phone / native app — Share. Desktop computer — Download, even if the window is narrow. */
+export function isPhoneShareDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  return isNativeApp() || isMobileTouchDevice();
+}
+
 export function shouldUseMobileCameraCapture(): boolean {
   return isPwaStandalone() || isMobileTouchDevice();
 }

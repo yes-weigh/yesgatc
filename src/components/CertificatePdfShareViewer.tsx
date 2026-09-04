@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Download, Share2, X } from 'lucide-react';
 import { useCertificatePdfPreview } from '../hooks/useCertificatePdfPreview';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
-import { useMobileViewport } from '../hooks/useMobileViewport';
+import { isPhoneShareDevice } from '../lib/imageCapture';
 import {
   certificatePdfFileName,
   downloadCertificatePdfFile,
@@ -34,7 +34,7 @@ export const CertificatePdfShareViewer: FC<CertificatePdfShareViewerProps> = ({
   warnUnsignedDownload = false,
   onClose,
 }) => {
-  const isPhone = useMobileViewport();
+  const isPhone = isPhoneShareDevice();
   const fileName = record ? certificatePdfFileName(record) : 'certificate.pdf';
   const preview = useCertificatePdfPreview({
     enabled: open && Boolean(record),

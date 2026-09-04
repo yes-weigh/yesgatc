@@ -11773,25 +11773,19 @@ body.verification-mobile-wizard-active {
   justify-content: center;
   gap: 0.12rem;
   flex: 0 0 auto;
-  max-width: 38%;
+  max-width: 46%;
   min-width: 0;
   padding: 0.15rem 0.1rem;
 }
 
 .product-shop-card-cap-line {
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   font-weight: 700;
   line-height: 1.15;
   color: #0f172a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.product-shop-card-media--identity .product-shop-card-cap-line {
-  font-size: 0.58rem;
-  font-weight: 600;
-  color: #1e293b;
 }
 
 .product-shop-card-img-wrap {

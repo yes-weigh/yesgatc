@@ -6,11 +6,13 @@ import { ProductShopMedia } from './ProductShopMedia';
 import type { Product } from '../types';
 import { formatProductCapacitySpecs } from '../lib/productCalculations';
 import {
+  formatShopCapacityLine,
   formatSpecificationCapacitySpecs,
   getProductSpecifications,
   isProductActive,
   productHasMultipleSpecifications,
 } from '../lib/productSpecifications';
+import { speakCapacityChoice } from '../lib/speakText';
 
 export type ProductSelectValue = {
   productId: string;
@@ -138,6 +140,9 @@ function ProductSpecPickerModal({
                   className={`product-spec-picker-option${selected ? ' product-spec-picker-option--selected' : ''}`}
                   role="option"
                   aria-selected={selected}
+                  onPointerDown={() => {
+                    speakCapacityChoice(formatShopCapacityLine(spec, unit));
+                  }}
                   onClick={e => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -266,8 +271,6 @@ export const ProductCatalogueList: React.FC<{
   deferMultiSpec?: boolean;
   /** Shop cards: media strip. Off = name-only tiles. */
   showShopMedia?: boolean;
-  /** capacity = Max/e; identity = model approval / model no (OV picker). */
-  shopMediaMeta?: 'capacity' | 'identity';
 }> = ({
   products,
   value,
@@ -277,7 +280,6 @@ export const ProductCatalogueList: React.FC<{
   variant = 'list',
   deferMultiSpec = false,
   showShopMedia = true,
-  shopMediaMeta = 'capacity',
 }) => {
   const { activeProducts, pickProduct, specModal } = useProductPick(products, onChange, {
     deferMultiSpec,
@@ -321,7 +323,7 @@ export const ProductCatalogueList: React.FC<{
                 {shop ? (
                   <>
                     {showShopMedia ? (
-                      <ProductShopMedia product={product} meta={shopMediaMeta} />
+                      <ProductShopMedia product={product} />
                     ) : null}
                     <span className="product-shop-card-body">
                       <span className="product-shop-card-name">{product.name}</span>
