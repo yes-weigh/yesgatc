@@ -1,11 +1,59 @@
+export type OvQuotaAllotment = {
+  serialNumber: string;
+  sku?: string;
+  productId?: string;
+  productName?: string;
+  modelNo?: string;
+};
+
 export type OvQuotaGate = {
   remaining: string[];
+  remainingAllotments?: OvQuotaAllotment[];
   balanceQty: number | null;
   heldSerials: string[];
 };
 
 function serialKey(value: string): string {
   return value.trim().toUpperCase();
+}
+
+function compactProductToken(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function productMatchesAllotment(
+  product: { productId?: string; productName?: string; sku?: string; modelNo?: string },
+  row: OvQuotaAllotment,
+): boolean {
+  const want = [product.productId, product.sku, product.modelNo, product.productName]
+    .map(item => compactProductToken(String(item || '')))
+    .filter(Boolean);
+  const have = [row.productId, row.sku, row.modelNo, row.productName]
+    .map(item => compactProductToken(String(item || '')))
+    .filter(Boolean);
+  if (!have.length) return true;
+  if (!want.length) return false;
+  return want.some(token => have.includes(token));
+}
+
+/** Prefer stickers for this GATC product. Legacy rows with no product stay visible. */
+export function remainingSerialsForProduct(
+  remaining: string[],
+  allotments: OvQuotaAllotment[] | undefined,
+  product: { productId?: string; productName?: string; sku?: string; modelNo?: string } | null,
+): string[] {
+  const productId = String(product?.productId || '').trim();
+  const productName = String(product?.productName || '').trim();
+  const sku = String(product?.sku || '').trim();
+  if (!productId && !productName && !sku) return remaining;
+  if (!Array.isArray(allotments) || allotments.length === 0) return remaining;
+  const bySerial = new Map(allotments.map(row => [serialKey(row.serialNumber), row]));
+  return remaining.filter(serial => {
+    const row = bySerial.get(serialKey(serial));
+    if (!row) return true;
+    if (!row.sku && !row.productId && !row.productName && !row.modelNo) return true;
+    return productMatchesAllotment(product || {}, row);
+  });
 }
 
 /** OV quantity left (Allotted − Used). PAS and GAS both consume this. */

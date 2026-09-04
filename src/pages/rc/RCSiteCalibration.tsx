@@ -441,10 +441,17 @@ export const RCSiteCalibration: React.FC = () => {
       : [];
     return {
       remaining: pickSerials,
+      remainingAllotments: quotaSeats.allotmentRows.map(row => ({
+        serialNumber: row.serialNumber,
+        sku: row.sku,
+        productId: row.productId,
+        productName: row.productName,
+        modelNo: row.modelNo,
+      })),
       balanceQty: actorBalanceQty,
       heldSerials: held,
     };
-  }, [pickSerials, actorBalanceQty, editingId, records]);
+  }, [pickSerials, actorBalanceQty, editingId, records, quotaSeats.allotmentRows]);
 
   const validationOptions = useMemo(() => {
     const editingRecordForValidation = editingId

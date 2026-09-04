@@ -683,7 +683,21 @@ async function processYesoneCertificatePush(db, recordId, record, before, option
   }
   const quota = buildOvQuotaPayload(record, rc, quotaAction, liveUsed);
   const payload = buildYesoneCertificatePayload(recordId, record, customer, rc, event, occurredAt, quota);
-  return deliverYesone(db, `siteCalibrations/${recordId}`, record, payload, options);
+  const result = await deliverYesone(db, `siteCalibrations/${recordId}`, record, payload, options);
+  const serial = optionalTrimmed(record.serialNumber);
+  if (serial && isIssuedPublicCertificate(record)) {
+    try {
+      const id = serial.toUpperCase().replace(/[/\\]/g, '_').slice(0, 700);
+      await db.doc(`serialAllotments/${id}`).set({
+        status: 'used',
+        usedAt: occurredAt,
+        updatedAt: occurredAt,
+      }, { merge: true });
+    } catch (err) {
+      console.warn('serialAllotments used mark failed', serial, err);
+    }
+  }
+  return result;
 }
 
 async function processYesoneRcPush(db, uid, record, before, options = {}) {
