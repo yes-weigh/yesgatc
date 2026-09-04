@@ -7,6 +7,8 @@ export type UseHistoryOverlayOptions = {
    * Use when closing because the route changed (e.g. sidebar nav) so navigation is not undone.
    */
   suppressHistoryBackWhenInactive?: boolean;
+  /** Read at cleanup. Set true before unmount when handing off to another overlay. */
+  suppressHistoryBackRef?: { current: boolean };
 };
 
 /**
@@ -21,12 +23,19 @@ export function useHistoryOverlay(
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  const suppressHistoryBackRef = useRef(false);
-  suppressHistoryBackRef.current = Boolean(options?.suppressHistoryBackWhenInactive);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   useEffect(() => {
     if (!active) return;
     const dismiss = registerOverlay(() => onCloseRef.current());
-    return () => dismiss({ suppressHistoryBack: suppressHistoryBackRef.current });
+    return () => {
+      const opts = optionsRef.current;
+      dismiss({
+        suppressHistoryBack:
+          Boolean(opts?.suppressHistoryBackWhenInactive) ||
+          Boolean(opts?.suppressHistoryBackRef?.current),
+      });
+    };
   }, [active]);
 }

@@ -97,6 +97,19 @@ export const UploadField: React.FC<{
   const useIconActions = avatar || iconActions;
   const showImagePreview = variant === 'image' || (file != null && !isPdfContentType(file.contentType));
 
+  const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
+    avatar,
+    disabled: uploading || submitting || readOnly,
+    onSelect: file => {
+      const fileList = {
+        0: file,
+        length: 1,
+        item: (index: number) => (index === 0 ? file : null),
+      } as unknown as FileList;
+      onSelect({ target: { files: fileList, value: '' } } as React.ChangeEvent<HTMLInputElement>);
+    },
+  });
+
   if (readOnly) {
     return (
       <div
@@ -139,21 +152,6 @@ export const UploadField: React.FC<{
       </div>
     );
   }
-
-  const forwardFileSelect = (file: File) => {
-    const fileList = {
-      0: file,
-      length: 1,
-      item: (index: number) => (index === 0 ? file : null),
-    } as unknown as FileList;
-    onSelect({ target: { files: fileList, value: '' } } as React.ChangeEvent<HTMLInputElement>);
-  };
-
-  const { mobileSourceChoice, openPicker, openCamera, openGallery, inputs } = useImageFileInputs(accept, {
-    avatar,
-    disabled: uploading || submitting,
-    onSelect: forwardFileSelect,
-  });
 
   const dropzoneUploadLabel = mobileSourceChoice
     ? 'Add photo'

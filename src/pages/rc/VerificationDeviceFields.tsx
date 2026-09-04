@@ -34,6 +34,7 @@ import {
 } from '../../lib/verificationRvDeviceImages';
 import type { JobType, Product, RcFeesStructure, VerificationLocation } from '../../types';
 import { ovSerialChoicesForRow, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { productUsesPasSerials } from '../../lib/pasSerialBank';
 
 const VerificationImageColumnHead: React.FC<{
   kind: VerificationImageKind;
@@ -183,6 +184,7 @@ function DeviceSerialField({
   locked,
   lockedSerial = '',
   onDeviceChange,
+  pasManual = false,
 }: {
   id: string;
   className: string;
@@ -194,6 +196,7 @@ function DeviceSerialField({
   locked: boolean;
   lockedSerial?: string;
   onDeviceChange: (localId: string, patch: Partial<VerificationDeviceRowValues>) => void;
+  pasManual?: boolean;
 }) {
   const held = lockedSerial.trim();
   const rowSerial = row.serialNumber.trim();
@@ -216,7 +219,7 @@ function DeviceSerialField({
     );
   }
 
-  if (isRv || !ovQuota) {
+  if (isRv || pasManual || !ovQuota) {
     return (
       <input
         id={id}
@@ -663,6 +666,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       isRv={isRv}
                       locked={locked}
                       lockedSerial={lockedSerial}
+                      pasManual={productUsesPasSerials(selectedProduct(products, row))}
                       onDeviceChange={onDeviceChange}
                     />
                   </td>
@@ -835,6 +839,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
+                        pasManual={productUsesPasSerials(selectedProduct(products, row))}
                         onDeviceChange={onDeviceChange}
                       />
                     </div>
@@ -926,6 +931,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
+                        pasManual={productUsesPasSerials(selectedProduct(products, row))}
                         onDeviceChange={onDeviceChange}
                       />
                     </div>
@@ -996,6 +1002,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
+                        pasManual={productUsesPasSerials(selectedProduct(products, row))}
                         onDeviceChange={onDeviceChange}
                       />
                     </div>

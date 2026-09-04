@@ -61,6 +61,8 @@ type VerificationDeviceEvidenceFieldsProps = {
   hideDeviceMeta?: boolean;
   /** Tile layout — hide outer panel chrome; parent provides section title. */
   embedded?: boolean;
+  /** Compact flow: serial plate already captured on the serial step. */
+  excludeStamping?: boolean;
   showAddDevice?: boolean;
   onAddDevice?: () => void;
   showResultSummary?: boolean;
@@ -93,6 +95,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
   readOnly = false,
   hideDeviceMeta = false,
   embedded = false,
+  excludeStamping = false,
   showAddDevice = false,
   onAddDevice,
   showResultSummary = false,
@@ -221,7 +224,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
       )}
 
       <VerificationPhotoUploadSection title="Upload verification photos">
-        {verificationImageKindsForSession(verificationType).map(kind => {
+        {verificationImageKindsForSession(verificationType, { excludeStamping }).map(kind => {
           const config = VERIFICATION_IMAGE_CONFIG[kind];
           const slot = images[kind] ?? emptyDeviceImageSlot();
           return (

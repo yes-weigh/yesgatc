@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import { createPortal } from 'react-dom';
 import { ChevronDown, Image as ImageIcon, X } from 'lucide-react';
 import { StorageImage } from './StorageImage';
-import { ProductShopMedia } from './ProductShopMedia';
+import { PasTag, ProductShopCardBody, ProductShopMedia } from './ProductShopMedia';
 import type { Product } from '../types';
 import { formatProductCapacitySpecs } from '../lib/productCalculations';
 import {
@@ -325,15 +325,16 @@ export const ProductCatalogueList: React.FC<{
                     {showShopMedia ? (
                       <ProductShopMedia product={product} />
                     ) : null}
-                    <span className="product-shop-card-body">
-                      <span className="product-shop-card-name">{product.name}</span>
-                    </span>
+                    <ProductShopCardBody product={product} />
                   </>
                 ) : (
                   <>
                     <ProductThumb product={product} className="product-picker-option-thumb" />
                     <span className="product-picker-option-text">
-                      <span className="product-picker-option-name">{product.name}</span>
+                      <span className="product-picker-option-name">
+                        <span className="product-picker-option-name-text">{product.name}</span>
+                        {product.pasPreAllotted ? <PasTag inline /> : null}
+                      </span>
                       {showCapacitySpecs ? (
                         <span className="product-picker-option-specs text-muted text-sm">{specs}</span>
                       ) : (
@@ -473,7 +474,10 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
                   >
                     <ProductThumb product={product} className="product-picker-option-thumb" />
                     <span className="product-picker-option-text">
-                      <span className="product-picker-option-name">{product.name}</span>
+                      <span className="product-picker-option-name">
+                        <span className="product-picker-option-name-text">{product.name}</span>
+                        {product.pasPreAllotted ? <PasTag inline /> : null}
+                      </span>
                       {!showCapacitySpecs && (
                         <span className="product-picker-option-meta text-muted text-sm">
                           {product.modelid}

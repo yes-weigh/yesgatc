@@ -4316,6 +4316,24 @@ select.input-field option {
   gap: 0.85rem;
 }
 
+.product-edit-page {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--header-height, 3.5rem) - 4rem);
+}
+
+.product-edit-page .inline-form-panel--product-edit {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.product-edit-page .inline-form-panel--product-edit .product-form-panel {
+  flex: 1 1 auto;
+  min-height: 22rem;
+}
+
 .product-edit-section {
   display: flex;
   flex-direction: column;
@@ -4325,12 +4343,91 @@ select.input-field option {
 
 .product-form--admin-edit .product-form-grid--basic {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.45rem 0.5rem;
 }
 
 .product-form--admin-edit .product-form-span-name {
   grid-column: 1 / -1;
+}
+
+.product-form--admin-edit .product-form-span-pas {
+  grid-column: 1 / -1;
+}
+
+.product-serial-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.product-serial-pool__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.product-form--admin-edit .product-form-flat .form-group.product-serial-pool .product-serial-pool__label,
+.product-serial-pool__label {
+  display: block;
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.product-serial-pool__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.25rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+}
+
+.product-serial-pool__status--gas {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.22);
+  border: 1px solid rgba(74, 222, 128, 0.55);
+}
+
+.product-serial-pool__status--pas {
+  color: #e0f2fe;
+  background: rgba(14, 165, 233, 0.28);
+  border: 1px solid rgba(56, 189, 248, 0.55);
+}
+
+.product-serial-pool .segment-toggle {
+  width: 100%;
+  max-width: 16rem;
+}
+
+.product-serial-pool .segment-toggle-btn {
+  font-weight: 750;
+  letter-spacing: 0.04em;
+}
+
+.product-serial-pool__hint {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.product-serial-pool__hint--gas {
+  color: #4ade80;
+}
+
+.product-serial-pool__hint--pas {
+  color: #38bdf8;
 }
 
 .product-form--admin-edit .product-form-unit-approval {
@@ -4339,10 +4436,6 @@ select.input-field option {
   grid-template-columns: 5.5rem minmax(0, 1fr);
   gap: 0.45rem 0.5rem;
   min-width: 0;
-}
-
-.product-form--admin-edit .product-form-span-name {
-  grid-column: auto;
 }
 
 .product-form--admin-edit .product-form-grid--scale {
@@ -4651,6 +4744,8 @@ select.input-field option {
     gap: 0.35rem 0.4rem;
   }
 
+  .product-form--admin-edit .product-form-span-sku,
+  .product-form--admin-edit .product-form-span-pas,
   .product-form--admin-edit .product-form-span-name {
     grid-column: 1 / -1;
   }
@@ -11654,13 +11749,13 @@ body.verification-mobile-wizard-active {
 }
 
 .product-picker-option-name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.25;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .product-picker-option-meta {
@@ -11788,6 +11883,36 @@ body.verification-mobile-wizard-active {
   text-overflow: ellipsis;
 }
 
+.product-shop-pas-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  margin-top: 0.2rem;
+  min-width: 2.35rem;
+  padding: 0.08rem 0.38rem;
+  border-radius: 999px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  color: #e0f2fe;
+  background: #0284c7;
+  border: 1px solid rgba(56, 189, 248, 0.7);
+}
+
+.product-shop-pas-tag--inline {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.product-picker-option-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .product-shop-card-img-wrap {
   position: relative;
   display: flex;
@@ -11833,7 +11958,7 @@ body.verification-mobile-wizard-active {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 0;
+  gap: 0.1rem;
   padding: 0.45rem 0.5rem 0.55rem;
   min-width: 0;
   min-height: 2.4rem;
@@ -11849,6 +11974,16 @@ body.verification-mobile-wizard-active {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.product-shop-card-approval {
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #facc15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rc-list-page--product-shop {
@@ -11987,6 +12122,62 @@ body.verification-mobile-wizard-active {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.product-clone-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.product-modelid-dup {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: rgba(127, 29, 29, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.product-clone-bar-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.product-clone-bar-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.product-clone-bar-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.product-clone-bar-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+@media (max-width: 640px) {
+  .product-clone-bar-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .product-form-edit-toggle--inactive {
@@ -13441,13 +13632,89 @@ body.verification-mobile-wizard-active {
   font-variant-numeric: tabular-nums;
 }
 
+.ov-self-serial-plate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.ov-self-serial-plate .verification-photo-upload-grid {
+  grid-template-columns: 1fr;
+}
+
+.ov-self-plate-status {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #93c5fd;
+}
+
+.ov-self-plate-identified {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.ov-self-plate-identified-row {
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.ov-self-plate-mismatch {
+  color: #facc15;
+  font-weight: 600;
+}
+
+.ov-self-serial-year {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ov-self-serial-year-label,
+.ov-self-allotted-title {
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+
+.ov-self-allotted-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.4rem, 1fr));
+  gap: 0.4rem;
+  padding: 0;
+  margin: 0.4rem 0 0;
+}
+
+.ov-self-serial-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.ov-self-serial-hint--ok {
+  color: #4ade80;
+}
+
+.ov-self-serial-hint--err {
+  color: #f87171;
+}
+
+.ov-self-serial-hint--muted {
+  color: var(--text-muted, #94a3b8);
+}
+
 .verification-wizard--ov-self .verification-photo-upload-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 @media (max-width: 768px) {
   .verification-wizard--ov-self .verification-wizard-stage,
-  .verification-wizard--ov-self .verification-wizard-stage:has(.ov-self-panel--product) {
+  .verification-wizard--ov-self .verification-wizard-stage:has(.ov-self-panel--product),
+  .verification-wizard--ov-self .verification-wizard-stage:has(.ov-self-serial-plate) {
     padding: 0;
     border: none;
     background: transparent;
@@ -13535,6 +13802,10 @@ body.verification-mobile-wizard-active {
     font-size: 0.68rem;
     line-height: 1.2;
     -webkit-line-clamp: 1;
+  }
+
+  .verification-wizard--ov-self .product-shop-card-approval {
+    font-size: 0.52rem;
   }
 
   .verification-wizard--ov-self .product-shop-card-cap-line {

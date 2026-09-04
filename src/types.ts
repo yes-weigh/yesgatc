@@ -32,6 +32,13 @@ export interface Product {
   id: string; // The firestore ID
   modelid: string; // Unique Model ID
   modelNo: string;
+  /** Yesone catalogue SKU. */
+  yesoneSku?: string;
+  /**
+   * PAS = pre-allotted serials (Yesone number bank). Off/omitted = GAS
+   * (general allotted serials, RC remaining seats).
+   */
+  pasPreAllotted?: boolean;
   name: string;
   typeOfInstrument: string;
   manufacturerBrandSeries: string;

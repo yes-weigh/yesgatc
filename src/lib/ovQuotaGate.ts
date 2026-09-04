@@ -8,11 +8,14 @@ function serialKey(value: string): string {
   return value.trim().toUpperCase();
 }
 
-/** New OV seats left: min(Allotted − Used, unused stickers). */
+/** OV quantity left (Allotted − Used). PAS and GAS both consume this. */
+export function ovQuotaQtyCap(gate: OvQuotaGate): number {
+  return gate.balanceQty == null ? gate.remaining.length : Math.max(0, gate.balanceQty);
+}
+
+/** New GAS seats left: min(qty, unused stickers). PAS does not use stickers. */
 export function ovQuotaSeatCap(gate: OvQuotaGate): number {
-  const remainingCount = gate.remaining.length;
-  const fromBalance = gate.balanceQty == null ? remainingCount : Math.max(0, gate.balanceQty);
-  return Math.min(fromBalance, remainingCount);
+  return Math.min(ovQuotaQtyCap(gate), gate.remaining.length);
 }
 
 export function ovSerialChoicesForRow(
@@ -41,44 +44,66 @@ export function validateOvQuotaSetup(
   verificationType: string,
   gate: OvQuotaGate | null | undefined,
   isNew: boolean,
+  hasPasProducts = false,
 ): string | null {
   if (!gate || verificationType !== 'OV' || !isNew) return null;
-  if (ovQuotaSeatCap(gate) <= 0) {
+  if (ovQuotaQtyCap(gate) <= 0) {
     return 'OV quota balance is 0. Cannot start Original Verification.';
+  }
+  if (!hasPasProducts && gate.remaining.length <= 0) {
+    return 'No allotted serials left. Cannot start Original Verification.';
   }
   return null;
 }
 
+export type OvQuotaDeviceRow = {
+  serial: string;
+  pas?: boolean;
+};
+
 export function validateOvQuotaDevices(
   verificationType: string,
-  serials: string[],
+  rows: OvQuotaDeviceRow[],
   gate: OvQuotaGate | null | undefined,
 ): string | null {
   if (!gate || verificationType !== 'OV') return null;
   const held = new Set(gate.heldSerials.map(serialKey).filter(Boolean));
   const remaining = new Set(gate.remaining.map(serialKey).filter(Boolean));
   const seen = new Set<string>();
-  let newCount = 0;
-  for (const raw of serials) {
-    const serial = raw.trim();
+  let newGas = 0;
+  let newPas = 0;
+  for (const row of rows) {
+    const serial = (row.serial || '').trim();
+    const pas = Boolean(row.pas);
     if (!serial) {
-      newCount += 1;
+      if (pas) newPas += 1;
+      else newGas += 1;
       continue;
     }
     const key = serialKey(serial);
     if (seen.has(key)) return `Serial ${serial} is used more than once.`;
     seen.add(key);
     if (held.has(key)) continue;
+    if (pas) {
+      newPas += 1;
+      continue;
+    }
     if (!remaining.has(key)) {
       return `Serial ${serial} is not in allotted balance. Use an allotted serial for OV.`;
     }
-    newCount += 1;
+    newGas += 1;
   }
-  const cap = ovQuotaSeatCap(gate);
-  if (newCount > cap) {
-    return cap <= 0
+  if (newGas > gate.remaining.length) {
+    const stickers = gate.remaining.length;
+    return stickers <= 0
+      ? 'No allotted serials left. Use a PAS product or wait for serial allotment.'
+      : `Allotted serials: ${stickers} left. You can start ${stickers} more GAS Original Verification(s).`;
+  }
+  const qtyCap = ovQuotaQtyCap(gate);
+  if (newGas + newPas > qtyCap) {
+    return qtyCap <= 0
       ? 'OV quota balance is 0. Cannot start more Original Verifications.'
-      : `OV quota: ${cap} left. You can start ${cap} more Original Verification(s).`;
+      : `OV quota: ${qtyCap} left. You can start ${qtyCap} more Original Verification(s).`;
   }
   return null;
 }

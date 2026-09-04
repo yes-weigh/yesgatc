@@ -143,7 +143,13 @@ import {
 import { VerificationJobKindPicker } from './VerificationJobKindPicker';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
 import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
-import { ovQuotaSeatCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import {
+  calibrationRowsForPasCheck,
+  catalogueHasPasProducts,
+  markPasSerialsUsedForRows,
+  verifyPasDevicesInBank,
+} from '../../lib/pasSerialBank';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import type { PersistVerificationPartyResult } from '../../lib/verificationPartyPersist';
 import { useAppContext } from '../../context/AppContext';
@@ -463,6 +469,7 @@ export const RCSiteCalibration: React.FC = () => {
         ),
       ovQuota: sessionValues.verificationType === 'OV' ? ovQuotaGate : undefined,
       isNewJob: showAddForm,
+      products,
     };
   }, [
     partyContext.customerForm,
@@ -479,6 +486,7 @@ export const RCSiteCalibration: React.FC = () => {
     isVerifier,
     ovQuotaGate,
     showAddForm,
+    products,
   ]);
 
   const recordSubmitOptions = useCallback(
@@ -991,7 +999,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleDeviceAdd = () => {
     if (sessionValues.verificationType === 'OV') {
-      const cap = ovQuotaSeatCap(ovQuotaGate);
+      const cap = ovQuotaQtyCap(ovQuotaGate);
       const included = sessionValues.devices.filter(row => row.included).length;
       if (included >= cap) {
         setError(
@@ -1478,6 +1486,12 @@ export const RCSiteCalibration: React.FC = () => {
       }
     }
 
+    const pasBankError = await verifyPasDevicesInBank(sessionValues.devices, products);
+    if (pasBankError) {
+      setError(pasBankError);
+      return;
+    }
+
     const includedRows = sessionValues.devices.filter(row => row.included);
     const walletPaymentId =
       submitAfterSave && rvPayment && isWalletPaymentId(rvPayment.paymentId)
@@ -1612,6 +1626,18 @@ export const RCSiteCalibration: React.FC = () => {
         if (gstBill) record.gstBill = gstBill;
         await setDoc(ref, record);
         draftRecordIds.push(recordId);
+      }
+
+      if (submitAfterSave) {
+        await markPasSerialsUsedForRows(
+          includedRows.map((row, index) => ({
+            productId: row.productId,
+            serialNumber: row.serialNumber,
+            recordId: draftRecordIds[index],
+          })),
+          products,
+          { uid: actorUid, rcId: rcUid },
+        );
       }
 
       if (walletPaymentId && draftRecordIds.length > 0) {
@@ -1772,10 +1798,28 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
+    const pasBankError = await verifyPasDevicesInBank(
+      calibrationRowsForPasCheck([record]),
+      products,
+    );
+    if (pasBankError) {
+      setListError(pasBankError);
+      return;
+    }
+
     unlockVerificationSuccessAudio();
     setSubmitting(true);
     setListError('');
     try {
+      await markPasSerialsUsedForRows(
+        [{
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+        }],
+        products,
+        { uid: actorUid, rcId: rcUid },
+      );
       if (isVerifier) {
         await submitVerifierWorkForRcReview([record.id]);
         if (editingId === record.id) handleCloseForm();
@@ -1825,10 +1869,28 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
+    const pasBankError = await verifyPasDevicesInBank(
+      calibrationRowsForPasCheck(selectedRecords),
+      products,
+    );
+    if (pasBankError) {
+      setListError(pasBankError);
+      return;
+    }
+
     unlockVerificationSuccessAudio();
     setSubmitting(true);
     setListError('');
     try {
+      await markPasSerialsUsedForRows(
+        selectedRecords.map(record => ({
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+        })),
+        products,
+        { uid: actorUid, rcId: rcUid },
+      );
       if (isVerifier) {
         await submitVerifierWorkForRcReview(selectedRecords.map(record => record.id));
         setSelectedDraftIds(new Set());
@@ -1962,6 +2024,12 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
+      const pasBankError = await verifyPasDevicesInBank(sessionValues.devices, products);
+      if (pasBankError) {
+        setError(pasBankError);
+        return;
+      }
+
       let sessionForSave = sessionValues;
       let appliedCustomer: Customer | undefined;
 
@@ -2040,6 +2108,16 @@ export const RCSiteCalibration: React.FC = () => {
         ...buildPerformerPatch(sessionForSave, existing),
       });
 
+      await markPasSerialsUsedForRows(
+        [{
+          productId: row.productId,
+          serialNumber: row.serialNumber,
+          recordId: editingId,
+        }],
+        products,
+        { uid: actorUid, rcId: rcUid },
+      );
+
       if (walletPaymentId) {
         await linkWalletPaymentToRecords({
           paymentId: walletPaymentId,
@@ -2112,6 +2190,12 @@ export const RCSiteCalibration: React.FC = () => {
     );
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    const pasBankError = await verifyPasDevicesInBank(sessionValues.devices, products);
+    if (pasBankError) {
+      setError(pasBankError);
       return;
     }
 
@@ -3277,6 +3361,7 @@ export const RCSiteCalibration: React.FC = () => {
           ovRemainingCount={quotaSeats.ready ? pickSerials.length : undefined}
           pendingSerials={pickSerials}
           verifierMode={isVerifier}
+          hasPasProducts={catalogueHasPasProducts(products)}
           onSelect={handleJobKindSelect}
           onClose={() => setShowJobKindPicker(false)}
         />
