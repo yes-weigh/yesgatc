@@ -36,6 +36,13 @@ export const VERIFICATION_IMAGE_KINDS: VerificationImageKind[] = [
   'verificationSeal',
 ];
 
+/** Serial plate — captured on the serial step in compact OV/RV jobs. */
+export const SERIAL_PLATE_IMAGE_KIND: VerificationImageKind = 'stamping';
+
+/** Remaining evidence photos after the serial plate (compact photos step). */
+export const VERIFICATION_EVIDENCE_PHOTO_KINDS: VerificationImageKind[] =
+  VERIFICATION_IMAGE_KINDS.filter(kind => kind !== 'stamping');
+
 /** All image kinds persisted on a device record (includes legacy slots). */
 export const ALL_STORED_VERIFICATION_IMAGE_KINDS: VerificationImageKind[] = [
   ...VERIFICATION_IMAGE_KINDS,
@@ -218,7 +225,9 @@ export function imageFieldsFromMeta(
 /** Photo slots shown on the evidence step (same set for OV and RV). */
 export function verificationImageKindsForSession(
   _verificationType?: JobType | '' | undefined,
+  options?: { excludeStamping?: boolean },
 ): VerificationImageKind[] {
+  if (options?.excludeStamping) return [...VERIFICATION_EVIDENCE_PHOTO_KINDS];
   return [...VERIFICATION_IMAGE_KINDS];
 }
 
@@ -259,8 +268,9 @@ export function validateDeviceVerificationImages(
   images: DeviceVerificationImagesState,
   deviceLabel: string,
   verificationType?: JobType | '',
+  kinds: VerificationImageKind[] = requiredVerificationImageKinds(verificationType),
 ): string | null {
-  for (const kind of requiredVerificationImageKinds(verificationType)) {
+  for (const kind of kinds) {
     const error = validateDeviceImageSlot(
       images[kind],
       `${deviceLabel}: ${VERIFICATION_IMAGE_CONFIG[kind].label}`,

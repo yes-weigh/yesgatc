@@ -49,6 +49,7 @@ import {
   verificationUploadsInProgressBlockReason,
 } from './verificationSubmitGates';
 import { validateOvQuotaDevices, type OvQuotaGate } from './ovQuotaGate';
+import { quotaSerialRows } from './pasSerialBank';
 import { verificationClientVersionFields } from './verificationAppVersion';
 
 export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind } from './verificationDeviceImages';
@@ -598,6 +599,7 @@ export type VerificationValidationOptions = {
   requireUploadedImages?: boolean;
   ovQuota?: OvQuotaGate | null;
   isNewJob?: boolean;
+  products?: Product[];
 };
 
 function validatePendingCustomerParty(
@@ -715,7 +717,7 @@ export function validateVerificationDraft(
 
   return validateOvQuotaDevices(
     session.verificationType,
-    included.map(row => row.serialNumber),
+    quotaSerialRows(included, options?.products),
     options?.ovQuota,
   );
 }
@@ -931,7 +933,7 @@ export function validateVerificationSession(
 
   return validateOvQuotaDevices(
     session.verificationType,
-    included.map(row => row.serialNumber),
+    quotaSerialRows(included, options?.products),
     options?.ovQuota,
   );
 }

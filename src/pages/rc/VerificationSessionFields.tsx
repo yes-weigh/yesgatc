@@ -14,6 +14,7 @@ import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
 import { VerificationInstrumentMultistage } from './VerificationInstrumentMultistage';
 import { OvSelfProductPanel, OvSelfSitePanel, OvSelfEnvFields, OvSelfSpecSerialBlock } from './OvSelfWizardPanels';
+import { OvSelfSerialPlatePanel } from './OvSelfSerialPlatePanel';
 import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFields';
 import type { GeoStampCoordinates, StampWeather } from '../../components/VerificationPhotoUploadSlot';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
@@ -76,7 +77,8 @@ import {
 } from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
-import { ovQuotaSeatCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { verifyPasDevicesInBank } from '../../lib/pasSerialBank';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import { VerificationPerformerPhotoFields } from './VerificationPerformerPhotoFields';
 import { requiresPerformerIdentityPhotos } from '../../lib/verificationPerformerPhotos';
@@ -193,6 +195,8 @@ export const VerificationSessionFields = forwardRef<
   const [activeStep, setActiveStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [stepError, setStepError] = useState('');
+  const [serialChecking, setSerialChecking] = useState(false);
+  const [productAdvancePending, setProductAdvancePending] = useState(false);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState('');
   const [customerPartyForm, setCustomerPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
@@ -235,6 +239,28 @@ export const VerificationSessionFields = forwardRef<
 
   const currentStep = formSteps[Math.min(activeStep, formSteps.length - 1)] ?? formSteps[0];
 
+  useEffect(() => {
+    if (!productAdvancePending || readOnly) return;
+    if (currentStep.id !== 'product') {
+      setProductAdvancePending(false);
+      return;
+    }
+    if (verificationFormStepBlockReason('product', values, rcProfile, stepContext)) return;
+    setProductAdvancePending(false);
+    const nextStep = Math.min(activeStep + 1, formSteps.length - 1);
+    setFurthestStep(prev => Math.max(prev, nextStep));
+    setActiveStep(nextStep);
+  }, [
+    productAdvancePending,
+    readOnly,
+    currentStep.id,
+    values,
+    rcProfile,
+    stepContext,
+    activeStep,
+    formSteps.length,
+  ]);
+
   const includedDeviceEntries = useMemo(
     () =>
       values.devices
@@ -261,7 +287,9 @@ export const VerificationSessionFields = forwardRef<
     currentStep.id === 'setup' && isOvCompactFlow
       ? 'Product'
       : currentStep.id === 'product'
-        ? 'Photos'
+        ? 'Serial'
+        : currentStep.id === 'serial'
+          ? 'Photos'
         : currentStep.id === 'site'
           ? 'Photos'
           : currentStep.id === 'photos' || (isOnInstrumentsStep && includedDeviceEntries.length > 0)
@@ -279,7 +307,7 @@ export const VerificationSessionFields = forwardRef<
     Boolean(wizardNavIncludesCancel && onCancel && currentStep.id !== 'review');
   const ovSeatCap =
     values.verificationType === 'OV' && ovQuota
-      ? ovQuotaSeatCap(ovQuota)
+      ? ovQuotaQtyCap(ovQuota)
       : Number.POSITIVE_INFINITY;
   const canAddInstrument =
     !readOnly &&
@@ -355,7 +383,7 @@ export const VerificationSessionFields = forwardRef<
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (readOnly) return;
     setStepError('');
 
@@ -363,6 +391,22 @@ export const VerificationSessionFields = forwardRef<
     if (reason) {
       setStepError(reason);
       return;
+    }
+
+    if (currentStep.id === 'serial') {
+      setSerialChecking(true);
+      try {
+        const bankError = await verifyPasDevicesInBank(values.devices, products);
+        if (bankError) {
+          setStepError(bankError);
+          return;
+        }
+      } catch (err) {
+        setStepError(err instanceof Error ? err.message : 'Could not check PAS number bank.');
+        return;
+      } finally {
+        setSerialChecking(false);
+      }
     }
 
     if (currentStep.id === 'setup' && values.devices.length === 0) {
@@ -991,9 +1035,9 @@ export const VerificationSessionFields = forwardRef<
           <button
             type="button"
             className="verification-form-btn verification-form-btn--continue"
-            onClick={handleContinue}
-            disabled={locked || !canContinueCurrentStep}
-            aria-disabled={locked || !canContinueCurrentStep}
+            onClick={() => void handleContinue()}
+            disabled={locked || serialChecking || !canContinueCurrentStep}
+            aria-disabled={locked || serialChecking || !canContinueCurrentStep}
           >
             {continueLabel} <ChevronRight size={16} aria-hidden />
           </button>
@@ -1046,6 +1090,7 @@ export const VerificationSessionFields = forwardRef<
               sealId={laboratorySealIdentification}
               disabled={locked}
               onProductChange={patch => onDeviceChange(ovSelfDevice.localId, patch)}
+              onProductReady={() => setProductAdvancePending(true)}
             />
           )}
 
@@ -1091,6 +1136,24 @@ export const VerificationSessionFields = forwardRef<
                 locked={locked}
               />
             </div>
+          )}
+
+          {currentStep.id === 'serial' && ovSelfDevice && (
+            <OvSelfSerialPlatePanel
+              row={ovSelfDevice}
+              product={products.find(p => p.id === ovSelfDevice.productId) ?? null}
+              images={deviceImages[ovSelfDevice.localId] ?? emptyDeviceVerificationImagesState()}
+              verificationType={values.verificationType}
+              allottedSerials={ovQuota?.remaining ?? []}
+              heldSerials={ovQuota?.heldSerials ?? []}
+              disabled={locked}
+              geoStampCoords={geoStampCoords}
+              geoStampWeather={geoStampWeather}
+              onSerialChange={serial => onDeviceChange(ovSelfDevice.localId, { serialNumber: serial })}
+              onYearChange={year => onDeviceChange(ovSelfDevice.localId, { manufacturingYear: year })}
+              onPlateSelect={file => onDeviceImageSelect(ovSelfDevice.localId, 'stamping', file)}
+              onPlateRemove={() => onDeviceImageRemove(ovSelfDevice.localId, 'stamping')}
+            />
           )}
 
           {currentStep.id === 'photos' && ovSelfDevice && (
@@ -1140,6 +1203,7 @@ export const VerificationSessionFields = forwardRef<
                 readOnly={readOnly}
                 embedded
                 hideDeviceMeta
+                excludeStamping
                 geoStampCoords={geoStampCoords}
                 geoStampWeather={geoStampWeather}
               />

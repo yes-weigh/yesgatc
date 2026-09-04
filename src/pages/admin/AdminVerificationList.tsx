@@ -67,6 +67,11 @@ import {
   siteCalibrationSubmitBlockReason,
 } from '../../lib/siteCalibrationProfileFields';
 import {
+  calibrationRowsForPasCheck,
+  markPasSerialsUsedForRows,
+  verifyPasDevicesInBank,
+} from '../../lib/pasSerialBank';
+import {
   submitVerificationRecord,
   submitVerificationRecords,
   type VerificationSubmitOptions,
@@ -587,9 +592,10 @@ export const AdminVerificationList: React.FC = () => {
         rcZohoId: rcProfile?.zohoId,
         zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
         requireUploadedImages: true,
+        products,
       };
     },
-    [customersById, rcUsersById, appSettings],
+    [customersById, rcUsersById, appSettings, products],
   );
 
   const draftSubmitMeta = useMemo(() => {
@@ -653,9 +659,27 @@ export const AdminVerificationList: React.FC = () => {
       return;
     }
 
+    const pasBankError = await verifyPasDevicesInBank(
+      calibrationRowsForPasCheck([record]),
+      products,
+    );
+    if (pasBankError) {
+      setListError(pasBankError);
+      return;
+    }
+
     setSubmitting(true);
     setListError('');
     try {
+      await markPasSerialsUsedForRows(
+        [{
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+        }],
+        products,
+        { uid: user?.uid, rcId: record.rcId },
+      );
       await ensureRvWalletDebitedForRecords({
         records: [record],
         products,
@@ -702,9 +726,28 @@ export const AdminVerificationList: React.FC = () => {
       return;
     }
 
+    const pasBankError = await verifyPasDevicesInBank(
+      calibrationRowsForPasCheck(selectedRecords),
+      products,
+    );
+    if (pasBankError) {
+      setListError(pasBankError);
+      return;
+    }
+
     setSubmitting(true);
     setListError('');
     try {
+      await markPasSerialsUsedForRows(
+        selectedRecords.map(record => ({
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+          rcId: record.rcId,
+        })),
+        products,
+        { uid: user?.uid, rcId: selectedRecords[0]?.rcId },
+      );
       await ensureRvWalletDebitedForRecords({
         records: selectedRecords,
         products,

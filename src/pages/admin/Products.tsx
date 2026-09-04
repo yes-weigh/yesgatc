@@ -7,12 +7,20 @@ import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { useSetAppBarTitle } from '../../context/AppBarTitleContext';
 import { useSetProductListAppBar } from '../../context/ProductListAppBarContext';
 import { ProductListFilters } from '../../components/ProductListFilters';
-import { ProductShopMedia } from '../../components/ProductShopMedia';
-import { adminProductMeta, nextProductSortOrder } from '../../lib/productAccess';
+import { ProductShopCardBody, ProductShopMedia } from '../../components/ProductShopMedia';
 import {
-  Ban, GripVertical, Info, Package, Pencil, Plus, Save, Trash2,
+  adminProductMeta,
+  buildClonedProduct,
+  groupDuplicateModelIds,
+  nextProductSortOrder,
+  productsWithModelId,
+  suggestedCloneIds,
+} from '../../lib/productAccess';
+import {
+  Ban, Copy, GripVertical, Info, Package, Pencil, Plus, Save, Trash2,
 } from 'lucide-react';
 import { CalcLabel, UploadField } from './productFormUi';
+import { ProductSerialPoolField } from '../../components/ProductSerialPoolField';
 import type { Product } from '../../types';
 import {
   PRODUCT_CALC_TOOLTIPS,
@@ -47,6 +55,7 @@ import {
 const INITIAL_STATE = {
   modelid: '',
   modelNo: '',
+  yesoneSku: '',
   name: '',
   typeOfInstrument: 'Electronic',
   manufacturerBrandSeries: 'YESWEIGH',
@@ -80,6 +89,7 @@ export const Products: React.FC = () => {
   const [formData, setFormData] = useState(INITIAL_STATE);
   const [specRows, setSpecRows] = useState<SpecFormRow[]>([emptySpecFormRow()]);
   const [productActive, setProductActive] = useState(true);
+  const [pasPreAllotted, setPasPreAllotted] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -101,6 +111,10 @@ export const Products: React.FC = () => {
   const [listFilters, setListFilters] = useState<ProductListFilterState>(
     DEFAULT_PRODUCT_LIST_FILTERS,
   );
+  const [cloneSource, setCloneSource] = useState<Product | null>(null);
+  const [cloneDraft, setCloneDraft] = useState({ modelid: '', modelNo: '' });
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  const [cloning, setCloning] = useState(false);
 
   const formBusy = submitting || uploadingDoc || uploadingImage || reordering;
 
@@ -125,6 +139,15 @@ export const Products: React.FC = () => {
   const canUploadFiles = hasModelId;
   const canUploadApprovalDoc =
     hasModelId && formData.modelApprovalNo.trim().length > 0;
+  const modelIdTaken = useMemo(
+    () => productsWithModelId(products, formData.modelid, editingId),
+    [products, formData.modelid, editingId],
+  );
+  const duplicateModelIds = useMemo(() => groupDuplicateModelIds(products), [products]);
+  const cloneModelIdTaken = useMemo(
+    () => (cloneSource ? productsWithModelId(products, cloneDraft.modelid) : []),
+    [cloneSource, cloneDraft.modelid, products],
+  );
 
   const fileKey = (file: ProductFileMeta | null) =>
     file ? `${file.path || ''}|${file.url || ''}|${file.name || ''}` : '';
@@ -135,12 +158,14 @@ export const Products: React.FC = () => {
     active: boolean,
     approval: ProductFileMeta | null,
     image: ProductFileMeta | null,
+    pas = false,
   ) => {
     setBaselineJson(
       JSON.stringify({
         formData: data,
         specRows: specs,
         productActive: active,
+        pasPreAllotted: pas,
         approval: fileKey(approval),
         image: fileKey(image),
       }),
@@ -154,11 +179,12 @@ export const Products: React.FC = () => {
         formData,
         specRows,
         productActive,
+        pasPreAllotted,
         approval: fileKey(approvalDoc),
         image: fileKey(productImage),
       }) !== baselineJson
     );
-  }, [baselineJson, formData, specRows, productActive, approvalDoc, productImage]);
+  }, [baselineJson, formData, specRows, productActive, pasPreAllotted, approvalDoc, productImage]);
 
   const showSave = formEditable && isDirty;
 
@@ -194,13 +220,14 @@ export const Products: React.FC = () => {
     setFormData(INITIAL_STATE);
     setSpecRows(initialSpecs);
     setProductActive(true);
+    setPasPreAllotted(false);
     setApprovalDoc(null);
     setProductImage(null);
     setUploadProgress(0);
     setImageUploadProgress(0);
     setError(null);
     setFormEditable(true);
-    captureBaseline(INITIAL_STATE, initialSpecs, true, null, null);
+    captureBaseline(INITIAL_STATE, initialSpecs, true, null, null, false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (imageInputRef.current) imageInputRef.current.value = '';
     setShowForm(true);
@@ -210,6 +237,7 @@ export const Products: React.FC = () => {
     const nextForm = {
       modelid: product.modelid || '',
       modelNo: product.modelNo || '',
+      yesoneSku: product.yesoneSku || '',
       name: product.name || '',
       typeOfInstrument: product.typeOfInstrument || 'Electronic',
       manufacturerBrandSeries: product.manufacturerBrandSeries || 'YESWEIGH',
@@ -238,18 +266,72 @@ export const Products: React.FC = () => {
             contentType: product.productImageContentType || 'image/jpeg',
           }
         : null;
+    const nextPas = Boolean(product.pasPreAllotted);
     setShowForm(true);
     setEditingId(product.id);
     setFormData(nextForm);
     setSpecRows(nextSpecs);
     setProductActive(nextActive);
+    setPasPreAllotted(nextPas);
     setApprovalDoc(nextApproval);
     setProductImage(nextImage);
     setUploadProgress(0);
     setImageUploadProgress(0);
     setError(null);
     setFormEditable(false);
-    captureBaseline(nextForm, nextSpecs, nextActive, nextApproval, nextImage);
+    captureBaseline(nextForm, nextSpecs, nextActive, nextApproval, nextImage, nextPas);
+  };
+
+  const handleCloneClick = (product: Product) => {
+    setShowForm(false);
+    setEditingId(null);
+    setFormEditable(false);
+    setCloneSource(product);
+    setCloneDraft(suggestedCloneIds(product));
+    setCloneError(null);
+  };
+
+  const handleCancelClone = () => {
+    setCloneSource(null);
+    setCloneDraft({ modelid: '', modelNo: '' });
+    setCloneError(null);
+    setCloning(false);
+  };
+
+  const handleCloneSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cloneSource || cloning) return;
+    const modelid = cloneDraft.modelid.trim();
+    const modelNo = cloneDraft.modelNo.trim();
+    if (!modelid) {
+      setCloneError('Model ID is required.');
+      return;
+    }
+    const taken = productsWithModelId(products, modelid);
+    if (taken.length > 0) {
+      setCloneError(
+        `Model ID must be unique. Already used by ${taken.map(p => p.name || p.modelid).join(', ')}.`,
+      );
+      return;
+    }
+    setCloneError(null);
+    setCloning(true);
+    try {
+      await addProduct(
+        buildClonedProduct(
+          cloneSource,
+          modelid,
+          modelNo,
+          nextProductSortOrder(products),
+          user?.uid,
+        ),
+      );
+      handleCancelClone();
+    } catch (err: unknown) {
+      setCloneError(err instanceof Error ? err.message : 'Failed to clone product');
+    } finally {
+      setCloning(false);
+    }
   };
 
   const handleCancelEdit = () => {
@@ -258,6 +340,7 @@ export const Products: React.FC = () => {
     setFormData(INITIAL_STATE);
     setSpecRows([emptySpecFormRow()]);
     setProductActive(true);
+    setPasPreAllotted(false);
     setApprovalDoc(null);
     setProductImage(null);
     setUploadProgress(0);
@@ -490,13 +573,16 @@ export const Products: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formEditable || !isDirty) return;
-    if (!formData.name || !formData.modelid) {
+    if (!formData.name.trim() || !formData.modelid.trim()) {
       setError('Product Name and Model ID are required.');
       return;
     }
 
-    if (products.some(p => p.modelid === formData.modelid && p.id !== editingId)) {
-      setError('Model ID must be unique. A product with this Model ID already exists.');
+    const taken = productsWithModelId(products, formData.modelid, editingId);
+    if (taken.length > 0) {
+      setError(
+        `Model ID must be unique. Already used by ${taken.map(p => p.name || p.modelid).join(', ')}.`,
+      );
       return;
     }
 
@@ -511,8 +597,10 @@ export const Products: React.FC = () => {
     try {
       const { specifications, primary } = built;
       const productData = {
-        modelid: formData.modelid,
+        modelid: formData.modelid.trim(),
         modelNo: formData.modelNo,
+        yesoneSku: formData.yesoneSku.trim(),
+        pasPreAllotted,
         name: formData.name,
         typeOfInstrument: formData.typeOfInstrument || 'Electronic',
         manufacturerBrandSeries: formData.manufacturerBrandSeries || 'YESWEIGH',
@@ -572,6 +660,7 @@ export const Products: React.FC = () => {
       setFormData(INITIAL_STATE);
       setSpecRows([emptySpecFormRow()]);
       setProductActive(true);
+      setPasPreAllotted(false);
       setEditingId(null);
       setShowForm(false);
       setApprovalDoc(null);
@@ -620,6 +709,18 @@ export const Products: React.FC = () => {
                     >
                       <Pencil size={18} strokeWidth={2} />
                     </button>
+                    <button
+                      type="button"
+                      className="product-form-edit-toggle"
+                      onClick={() => {
+                        const current = products.find(p => p.id === editingId);
+                        if (current) handleCloneClick(current);
+                      }}
+                      aria-label="Clone product"
+                      title="Clone"
+                    >
+                      <Copy size={18} strokeWidth={2} />
+                    </button>
                   </div>
                 ) : null
               }
@@ -652,7 +753,14 @@ export const Products: React.FC = () => {
                           required
                           autoFocus={!editingId && formEditable}
                           readOnly={!formEditable}
+                          aria-invalid={modelIdTaken.length > 0}
                         />
+                        {modelIdTaken.length > 0 ? (
+                          <p className="rc-form-topbar-error" role="alert">
+                            Model ID must be unique. Already used by{' '}
+                            {modelIdTaken.map(p => p.name || p.modelid).join(', ')}.
+                          </p>
+                        ) : null}
                       </div>
                       <div className="form-group mb-0">
                         <label htmlFor="pf-modelno">Model No</label>
@@ -667,6 +775,24 @@ export const Products: React.FC = () => {
                           readOnly={!formEditable}
                         />
                       </div>
+                      <div className="form-group mb-0 product-form-span-sku">
+                        <label htmlFor="pf-yesone-sku">Yesone SKU</label>
+                        <input
+                          id="pf-yesone-sku"
+                          type="text"
+                          name="yesoneSku"
+                          className="input-field"
+                          placeholder="Yesone SKU"
+                          value={formData.yesoneSku}
+                          onChange={handleChange}
+                          readOnly={!formEditable}
+                        />
+                      </div>
+                      <ProductSerialPoolField
+                        pas={pasPreAllotted}
+                        disabled={!formEditable}
+                        onChange={setPasPreAllotted}
+                      />
                       <div className="form-group mb-0 product-form-span-name">
                         <label htmlFor="pf-name">Product Name *</label>
                         <input
@@ -927,7 +1053,7 @@ export const Products: React.FC = () => {
                   <button
                     type="submit"
                     className="btn btn-primary flex items-center gap-2"
-                    disabled={formBusy}
+                    disabled={formBusy || modelIdTaken.length > 0}
                   >
                     {submitting ? (
                       <span className="spinner-inline"></span>
@@ -947,6 +1073,70 @@ export const Products: React.FC = () => {
 
       {!showForm && (
         <div className="rc-list-page rc-list-page--product-shop">
+          {cloneSource ? (
+            <form className="product-clone-bar" onSubmit={handleCloneSubmit}>
+              <p className="product-clone-bar-title mb-0">
+                Clone {cloneSource.name || 'product'}
+              </p>
+              <div className="product-clone-bar-fields">
+                <label className="product-clone-bar-field">
+                  <span>Model ID *</span>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={cloneDraft.modelid}
+                    onChange={e => setCloneDraft(prev => ({ ...prev, modelid: e.target.value }))}
+                    autoFocus
+                    required
+                    aria-invalid={cloneModelIdTaken.length > 0}
+                  />
+                </label>
+                <label className="product-clone-bar-field">
+                  <span>Model No</span>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={cloneDraft.modelNo}
+                    onChange={e => setCloneDraft(prev => ({ ...prev, modelNo: e.target.value }))}
+                  />
+                </label>
+              </div>
+              {cloneError ? (
+                <p className="rc-form-topbar-error mb-0" role="alert">
+                  {cloneError}
+                </p>
+              ) : cloneModelIdTaken.length > 0 ? (
+                <p className="rc-form-topbar-error mb-0" role="alert">
+                  Model ID must be unique. Already used by{' '}
+                  {cloneModelIdTaken.map(p => p.name || p.modelid).join(', ')}.
+                </p>
+              ) : null}
+              <div className="product-clone-bar-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleCancelClone}
+                  disabled={cloning}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={cloning || cloneModelIdTaken.length > 0}>
+                  {cloning ? 'Cloning…' : 'Create clone'}
+                </button>
+              </div>
+            </form>
+          ) : null}
+          {duplicateModelIds.length > 0 ? (
+            <div className="product-modelid-dup" role="alert">
+              {duplicateModelIds.map(group => (
+                <p key={group.modelid} className="rc-form-topbar-error mb-0">
+                  Duplicate Model ID {group.modelid} ×{group.items.length}
+                  {' — '}
+                  {group.items.map(p => p.name || p.id).join(', ')}
+                </p>
+              ))}
+            </div>
+          ) : null}
           <ProductListFilters
             value={listFilters}
             onChange={setListFilters}
@@ -1040,11 +1230,18 @@ export const Products: React.FC = () => {
           aria-label={`Edit ${displayName}`}
         >
           <ProductShopMedia product={p} inactive={!active} />
-          <span className="product-shop-card-body">
-            <span className="product-shop-card-name">{displayName}</span>
-          </span>
+          <ProductShopCardBody product={p} name={displayName} />
         </button>
         <div className="rc-product-shop-actions">
+          <button
+            type="button"
+            className="rc-product-shop-edit"
+            onClick={() => handleCloneClick(p)}
+            title="Clone product"
+            aria-label={`Clone ${displayName}`}
+          >
+            <Copy size={15} strokeWidth={2} />
+          </button>
           <button
             type="button"
             className="rc-product-shop-edit"

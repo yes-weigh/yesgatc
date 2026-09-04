@@ -600,3 +600,91 @@ test('POST cancel then allot nested series to KNR', async () => {
   assert.ok(db._store['users/knr'].yesoneAllottedSerials.includes('G0540'));
   assert.ok(db._store['users/knr'].yesoneAllottedSerials.includes('G0541'));
 });
+
+test('PAS serials go to number bank, not RC allotted seats', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/rc1': { role: 'rc_admin', rcCode: 'ABC', companyName: 'Meezan', yesoneAllottedSerials: ['Y9'] },
+    'products/atm': {
+      pasPreAllotted: true,
+      yesoneSku: 'ATM30GAY',
+      modelid: 'ATM30',
+      modelNo: 'YSP-30',
+      name: 'ATM GOLD',
+    },
+  });
+
+  const pas = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        serialNumber: 'P1001',
+        yesoneSku: 'ATM30GAY',
+      },
+    },
+    pas,
+    db,
+  );
+  assert.equal(pas.body.ok, true);
+  assert.equal(db._store['pasSerialBank/P1001'].status, 'available');
+  assert.equal(db._store['pasSerialBank/P1001'].pool, 'pas');
+  assert.equal(db._store['pasSerialBank/P1001'].productId, 'atm');
+  assert.equal(db._store['pasSerialBank/P1001'].yesoneSku, 'ATM30GAY');
+  assert.equal(db._store['serialAllotments/P1001'], undefined);
+  assert.deepEqual(db._store['users/rc1'].yesoneAllottedSerials, ['Y9']);
+  const pasInward = Object.keys(db._store).filter(key => key.startsWith('serialInwardBatches/'));
+  assert.equal(pasInward.length, 0);
+
+  const typed = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: { event: 'pas.serial.allotted', serialNumber: 'P1002', serialType: 'PAS' },
+    },
+    typed,
+    db,
+  );
+  assert.equal(typed.body.ok, true);
+  assert.equal(db._store['pasSerialBank/P1002'].status, 'available');
+  assert.equal(db._store['serialAllotments/P1002'], undefined);
+
+  const gas = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: { event: 'serial.allotted', serialNumber: 'G9', rcCode: 'ABC' },
+    },
+    gas,
+    db,
+  );
+  assert.equal(gas.body.ok, true);
+  assert.equal(db._store['serialAllotments/G9'].rcId, 'rc1');
+  assert.ok(db._store['users/rc1'].yesoneAllottedSerials.includes('G9'));
+  assert.equal(db._store['pasSerialBank/G9'], undefined);
+
+  const cancel = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: { event: 'serial.cancelled', serialNumber: 'P1001' },
+    },
+    cancel,
+    db,
+  );
+  assert.equal(cancel.body.ok, true);
+  assert.equal(db._store['pasSerialBank/P1001'].status, 'cancelled');
+});

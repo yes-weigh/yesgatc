@@ -6,13 +6,20 @@ import {
   validateVerificationDeviceDetails,
   type VerificationSessionValues,
 } from './siteCalibrationProfileFields';
+import { productHasMultipleSpecifications } from './productSpecifications';
 import {
   emptyDeviceVerificationImagesState,
+  SERIAL_PLATE_IMAGE_KIND,
+  validateDeviceImageSlot,
   validateDeviceVerificationImages,
+  VERIFICATION_EVIDENCE_PHOTO_KINDS,
+  VERIFICATION_IMAGE_CONFIG,
   type DeviceVerificationImagesState,
+  type VerificationImageKind,
 } from './verificationDeviceImages';
 import {
   emptyDeviceRvDocumentsState,
+  isValidManufacturingYear,
   validateDeviceRvDocuments,
   type DeviceRvDocumentsState,
 } from './verificationRvDeviceImages';
@@ -23,8 +30,9 @@ import {
   type PerformerPhotosState,
 } from './verificationPerformerPhotos';
 import { validateOvQuotaDevices, validateOvQuotaSetup, type OvQuotaGate } from './ovQuotaGate';
+import { catalogueHasPasProducts, quotaSerialRows } from './pasSerialBank';
 
-export type VerificationFormStepId = 'setup' | 'instruments' | 'review' | 'product' | 'site' | 'photos';
+export type VerificationFormStepId = 'setup' | 'instruments' | 'review' | 'product' | 'serial' | 'site' | 'photos';
 
 export type VerificationInstrumentSubStage = 'photos' | 'details';
 
@@ -56,19 +64,25 @@ export const VERIFICATION_FORM_STEPS: VerificationFormStepDef[] = [
   },
 ];
 
-/** New OV Self job — serial already picked. Customer is the RC centre. Site skipped (In situ + Self). */
+/** New OV Self job — product → serial plate → photos → submit. */
 export const OV_SELF_FORM_STEPS: VerificationFormStepDef[] = [
   {
     id: 'product',
     label: 'Product',
     shortLabel: 'Product',
-    description: 'Choose the instrument. MPE and seal ID fill automatically.',
+    description: 'Choose the instrument and capacity. MPE and seal ID fill automatically.',
+  },
+  {
+    id: 'serial',
+    label: 'Serial',
+    shortLabel: 'Serial',
+    description: 'Photograph the serial plate, then confirm or pick an allotted serial.',
   },
   {
     id: 'photos',
     label: 'Photos',
     shortLabel: 'Photos',
-    description: 'Upload required verification photos.',
+    description: 'Upload the four remaining verification photos.',
   },
   {
     id: 'review',
@@ -78,7 +92,7 @@ export const OV_SELF_FORM_STEPS: VerificationFormStepDef[] = [
   },
 ];
 
-/** New OV Customer — serial picked, then customer → product → photos → submit. */
+/** New OV Customer — customer → product → serial plate → photos → submit. */
 export const OV_CUSTOMER_FORM_STEPS: VerificationFormStepDef[] = [
   {
     id: 'setup',
@@ -90,13 +104,19 @@ export const OV_CUSTOMER_FORM_STEPS: VerificationFormStepDef[] = [
     id: 'product',
     label: 'Product',
     shortLabel: 'Product',
-    description: 'Choose the instrument. MPE and seal ID fill automatically.',
+    description: 'Choose the instrument and capacity. MPE and seal ID fill automatically.',
+  },
+  {
+    id: 'serial',
+    label: 'Serial',
+    shortLabel: 'Serial',
+    description: 'Photograph the serial plate, then confirm or pick an allotted serial.',
   },
   {
     id: 'photos',
     label: 'Photos',
     shortLabel: 'Photos',
-    description: 'Upload required verification photos.',
+    description: 'Upload the four remaining verification photos.',
   },
   {
     id: 'review',
@@ -130,7 +150,7 @@ export function isRvCustomerWizard(
   return lockKind && values.verificationType === 'RV' && values.verificationSubject === 'customer';
 }
 
-/** Compact mobile flow (product shop → photos → submit) for OV Self / OV Customer / RV Customer. */
+/** Compact mobile flow (product → serial plate → photos → submit) for OV Self / OV Customer / RV Customer. */
 export function isOvCompactWizard(
   lockKind: boolean,
   values: { verificationType: string; verificationSubject: string },
@@ -221,9 +241,10 @@ export function verificationDevicePhotosBlockReason(
   images: DeviceVerificationImagesState,
   rvDocuments: DeviceRvDocumentsState | undefined,
   verificationType: VerificationSessionValues['verificationType'],
+  kinds?: VerificationImageKind[],
 ): string | null {
   const label = `Instrument ${index + 1}`;
-  const imageError = validateDeviceVerificationImages(images, label, verificationType);
+  const imageError = validateDeviceVerificationImages(images, label, verificationType, kinds);
   if (imageError) return imageError;
 
   if (verificationType === 'RV') {
@@ -268,7 +289,61 @@ function instrumentsDetailsBlockReason(
 
   return validateOvQuotaDevices(
     values.verificationType,
-    included.map(row => row.serialNumber),
+    quotaSerialRows(included, context?.products),
+    context?.ovQuota,
+  );
+}
+
+function productSpecOnlyBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
+  const included = values.devices.filter(row => row.included);
+  if (included.length === 0) return 'Add at least one instrument.';
+
+  for (let i = 0; i < values.devices.length; i++) {
+    const row = values.devices[i];
+    if (!row.included) continue;
+    const label = `Device ${i + 1}`;
+    if (!row.productId.trim()) return `${label}: select a product.`;
+    const product = context?.products?.find(p => p.id === row.productId) ?? null;
+    if (product && productHasMultipleSpecifications(product) && !row.productSpecificationId?.trim()) {
+      return `${label}: select a capacity specification.`;
+    }
+    if (!row.sealIdentificationNumber.trim()) {
+      return `${label}: seal identification number is required.`;
+    }
+  }
+  return null;
+}
+
+function serialStepBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
+  const included = values.devices.filter(row => row.included);
+  if (included.length === 0) return 'Add at least one instrument.';
+
+  const deviceImages = context?.deviceImages ?? {};
+  for (let i = 0; i < values.devices.length; i++) {
+    const row = values.devices[i];
+    if (!row.included) continue;
+    const label = `Device ${i + 1}`;
+    const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
+    const plateError = validateDeviceImageSlot(
+      images[SERIAL_PLATE_IMAGE_KIND],
+      `${label}: ${VERIFICATION_IMAGE_CONFIG[SERIAL_PLATE_IMAGE_KIND].label}`,
+    );
+    if (plateError) return plateError;
+    if (!row.serialNumber.trim()) return `${label}: serial number is required.`;
+    if (values.verificationType === 'RV' && !isValidManufacturingYear(row.manufacturingYear)) {
+      return `${label}: select year of manufacturing.`;
+    }
+  }
+
+  return validateOvQuotaDevices(
+    values.verificationType,
+    quotaSerialRows(included, context?.products),
     context?.ovQuota,
   );
 }
@@ -276,6 +351,7 @@ function instrumentsDetailsBlockReason(
 function instrumentsPhotosOnlyBlockReason(
   values: VerificationSessionValues,
   context?: VerificationFormStepContext,
+  kinds?: VerificationImageKind[],
 ): string | null {
   const included = values.devices.filter(row => row.included);
   if (included.length === 0) return 'Add at least one instrument.';
@@ -292,6 +368,7 @@ function instrumentsPhotosOnlyBlockReason(
       deviceImages[row.localId] ?? emptyDeviceVerificationImagesState(),
       deviceRvImages[row.localId],
       values.verificationType,
+      kinds,
     );
     if (photoError) return photoError;
   }
@@ -346,15 +423,31 @@ export function verificationFormStepBlockReason(
       && context?.isNewJob
       && (values.verificationType === 'OV' || values.verificationType === 'RV')
     ) {
-      return validateOvQuotaSetup(values.verificationType, context?.ovQuota, true);
+      return validateOvQuotaSetup(
+        values.verificationType,
+        context?.ovQuota,
+        true,
+        catalogueHasPasProducts(context?.products),
+      );
     }
     const siteReason = siteStepBlockReason(values);
     if (siteReason) return siteReason;
-    return validateOvQuotaSetup(values.verificationType, context?.ovQuota, Boolean(context?.isNewJob));
+    return validateOvQuotaSetup(
+      values.verificationType,
+      context?.ovQuota,
+      Boolean(context?.isNewJob),
+      catalogueHasPasProducts(context?.products),
+    );
   }
 
   if (stepId === 'product') {
-    return instrumentsDetailsBlockReason(values, context);
+    return productSpecOnlyBlockReason(values, context);
+  }
+
+  if (stepId === 'serial') {
+    const productReason = productSpecOnlyBlockReason(values, context);
+    if (productReason) return productReason;
+    return serialStepBlockReason(values, context);
   }
 
   if (stepId === 'site') {
@@ -364,7 +457,11 @@ export function verificationFormStepBlockReason(
   }
 
   if (stepId === 'photos') {
-    return instrumentsPhotosOnlyBlockReason(values, context);
+    return instrumentsPhotosOnlyBlockReason(
+      values,
+      context,
+      VERIFICATION_EVIDENCE_PHOTO_KINDS,
+    );
   }
 
   if (stepId === 'instruments') {
