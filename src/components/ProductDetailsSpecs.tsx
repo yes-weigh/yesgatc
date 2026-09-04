@@ -77,6 +77,21 @@ const ProductDetailsFieldsGrid: React.FC<{
               icon={Zap}
               tone="yellow"
             />
+            <ProductSpecIconTile
+              label="Yesone SKU"
+              value={formatProductText(product.yesoneSku)}
+              icon={Package}
+              tone="sky"
+              mono
+            />
+            {product.pasPreAllotted ? (
+              <ProductSpecIconTile
+                label="Serial"
+                value="PAS"
+                icon={Hash}
+                tone="sky"
+              />
+            ) : null}
           </>
         ) : null}
         <ProductSpecIconTile
@@ -153,6 +168,8 @@ const ProductDetailsFieldsGrid: React.FC<{
 
   return (
     <div className="details-specs-compact-fields">
+      <DetailsCompactField label="Yesone SKU" value={formatProductText(product.yesoneSku)} />
+      {product.pasPreAllotted ? <DetailsCompactField label="Serial" value="PAS" /> : null}
       <DetailsCompactField label="Unit" value={formatProductText(product.unitOfMeasurement)} />
       <DetailsCompactField label="Type" value={formatProductText(product.typeOfInstrument)} />
       <DetailsCompactField

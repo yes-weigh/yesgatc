@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const APP_SETTINGS_COLLECTION = 'appSettings';
 const APP_SETTINGS_GLOBAL_DOC = 'global';
 const SERIAL_COLLECTION = 'serialAllotments';
+const PAS_SERIAL_COLLECTION = 'pasSerialBank';
 const INBOUND_EVENTS_COLLECTION = 'yesoneInboundEvents';
 const INWARD_BATCHES_COLLECTION = 'serialInwardBatches';
 const INBOUND_LOG_LIMIT = 200;
@@ -24,6 +25,9 @@ const EVENT_ALIASES = {
   serial_allotment: 'serial.allotted',
   serialallotted: 'serial.allotted',
   serial_allotted: 'serial.allotted',
+  'pas.serial.allotted': 'serial.allotted',
+  'pas.serial.allotment': 'serial.allotted',
+  pas_serial_allotted: 'serial.allotted',
   'serial.updated': 'serial.updated',
   'serial.changed': 'serial.updated',
   'serial.renamed': 'serial.updated',
@@ -884,6 +888,72 @@ function allotmentFields(item, rc, serialNumber, extra = {}) {
   };
 }
 
+function inboundSerialType(item) {
+  const rec = asRecord(item);
+  const product = asRecord(rec.product);
+  return String(
+    rec.serialType || rec.serialPool || rec.pool || rec.kind || product.serialType || '',
+  ).trim().toLowerCase();
+}
+
+function matchKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+async function loadPasProducts(db) {
+  try {
+    const snap = await db.collection('products').where('pasPreAllotted', '==', true).get();
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (err) {
+    console.error('yesone pas product load failed', err);
+    return [];
+  }
+}
+
+function matchPasProduct(item, pasProducts) {
+  const product = asRecord(item.product);
+  const productId = optionalTrimmed(item.productId || product.id);
+  const sku = optionalTrimmed(
+    item.yesoneSku || item.sku || item.productSku || product.yesoneSku || product.sku,
+  );
+  const modelid = optionalTrimmed(item.modelid || item.modelId || product.modelid || product.modelId);
+  const modelNo = optionalTrimmed(item.modelNo || product.modelNo);
+  return pasProducts.find(row => {
+    if (productId && row.id === productId) return true;
+    if (sku && matchKey(row.yesoneSku) && matchKey(row.yesoneSku) === matchKey(sku)) return true;
+    if (modelid && matchKey(row.modelid) && matchKey(row.modelid) === matchKey(modelid)) return true;
+    if (modelNo && matchKey(row.modelNo) && matchKey(row.modelNo) === matchKey(modelNo)) return true;
+    return false;
+  }) || null;
+}
+
+function isPasInbound(item, pasProduct) {
+  const type = inboundSerialType(item);
+  if (type === 'pas' || type === 'preallotted' || type === 'pre_allotted' || type === 'pre-allotted') {
+    return true;
+  }
+  if (type === 'gas' || type === 'general') return false;
+  return Boolean(pasProduct);
+}
+
+function pasBankFields(item, serialNumber, pasProduct, extra = {}) {
+  const product = asRecord(item.product);
+  return stripUndefined({
+    serialNumber,
+    pool: 'pas',
+    productId: optionalTrimmed(pasProduct?.id || item.productId || product.id),
+    productName: optionalTrimmed(pasProduct?.name || item.productName || product.name),
+    yesoneSku: optionalTrimmed(
+      pasProduct?.yesoneSku || item.yesoneSku || item.sku || product.yesoneSku,
+    ),
+    modelid: optionalTrimmed(pasProduct?.modelid || item.modelid || item.modelId || product.modelid),
+    modelNo: optionalTrimmed(pasProduct?.modelNo || item.modelNo || product.modelNo),
+    source: 'yesone',
+    updatedAt: new Date().toISOString(),
+    ...extra,
+  });
+}
+
 function verificationLocked(record) {
   if (!record) return false;
   if (optionalTrimmed(record.certificateNumber)) return true;
@@ -1017,7 +1087,13 @@ function sortSerials(serials) {
 async function recordSerialInwardBatches(db, items, results, now) {
   const okSerials = new Set(
     (Array.isArray(results) ? results : [])
-      .filter(row => row && row.ok === true && row.event === 'serial.allotted' && !row.skipped)
+      .filter(row => (
+        row
+        && row.ok === true
+        && row.event === 'serial.allotted'
+        && !row.skipped
+        && row.pool !== 'pas'
+      ))
       .map(row => optionalTrimmed(row.id))
       .filter(Boolean),
   );
@@ -1092,6 +1168,7 @@ async function applySerialAllottedMany(db, items, rcCache) {
   const inwardItems = [];
   const inwardResults = [];
   const now = new Date().toISOString();
+  const pasProducts = await loadPasProducts(db);
 
   const prepared = [];
   for (const item of items) {
@@ -1104,7 +1181,30 @@ async function applySerialAllottedMany(db, items, rcCache) {
       results.push({ ok: true, event: 'serial.allotted', id: serialNumber, skipped: 'qty_not_serial' });
       continue;
     }
-    prepared.push({ item, serialNumber, id: serialDocId(serialNumber) });
+    const id = serialDocId(serialNumber);
+    const pasProduct = matchPasProduct(item, pasProducts);
+    if (isPasInbound(item, pasProduct)) {
+      const existing = await db.doc(`${PAS_SERIAL_COLLECTION}/${id}`).get();
+      const prevStatus = existing.exists ? optionalTrimmed(existing.data()?.status) : null;
+      const keepUsed = prevStatus === 'used';
+      writes.push({
+        path: `${PAS_SERIAL_COLLECTION}/${id}`,
+        data: pasBankFields(item, serialNumber, pasProduct, {
+          status: keepUsed ? 'used' : 'available',
+          allottedAt: optionalTrimmed(item.allottedAt) || (existing.exists ? existing.data()?.allottedAt : null) || now,
+          ...(keepUsed ? {} : { usedAt: null, usedByUid: null, usedByRcId: null, usedRecordId: null }),
+        }),
+      });
+      results.push({
+        ok: true,
+        event: 'serial.allotted',
+        id: serialNumber,
+        pool: 'pas',
+        productId: pasProduct?.id || null,
+      });
+      continue;
+    }
+    prepared.push({ item, serialNumber, id });
   }
 
   const existingById = new Map();
@@ -1222,66 +1322,48 @@ async function applyInboundItems(db, items) {
 }
 
 async function applySerialAllotted(db, item) {
-  const serialNumber = readSerialNumber(item);
-  if (!serialNumber) return serialRequiredError('serial.allotted', item);
-  if (!looksLikeYesoneSerial(serialNumber)) {
-    return { ok: true, event: 'serial.allotted', id: serialNumber, skipped: 'qty_not_serial' };
-  }
-  const cache = new Map();
-  const rc = await resolveRcCached(db, item, cache);
-  const id = serialDocId(serialNumber);
-  const now = new Date().toISOString();
-  const snap = await db.doc(`${SERIAL_COLLECTION}/${id}`).get();
-  const previous = snap.exists ? snap.data() : null;
-  const previousStatus = optionalTrimmed(previous?.status);
-  const keepStatus = previousStatus && previousStatus !== 'cancelled' && previousStatus !== 'replaced'
-    ? previousStatus
-    : 'allotted';
-  await db.doc(`${SERIAL_COLLECTION}/${id}`).set(
-    allotmentFields(item, rc, serialNumber, {
-      status: keepStatus,
-      allottedAt: optionalTrimmed(previous?.allottedAt) || optionalTrimmed(item.allottedAt) || now,
-    }),
-    { merge: true },
-  );
-  if ((!previous || previousStatus === 'cancelled' || previousStatus === 'replaced') && rc?.id && !isMasterRcCode(rc.rcCode)) {
-    await patchRcAllottedSerials(db, rc.id, list => (
-      list.includes(serialNumber) ? list : [...list, serialNumber]
-    ));
-  }
-  const result = {
-    ok: true,
-    event: 'serial.allotted',
-    id: serialNumber,
-    rcId: rc?.id || previous?.rcId || null,
-    warning: rc || previous ? null : 'rc_not_found',
-    skipped: previous && previousStatus !== 'cancelled' && previousStatus !== 'replaced'
-      ? 'already_exists'
-      : null,
-  };
-  if (!previous || previousStatus === 'cancelled' || previousStatus === 'replaced') {
-    try {
-      await recordSerialInwardBatches(db, [item], [result], now);
-    } catch (err) {
-      console.error('yesone inward batch record failed', err);
-    }
-  }
-  return result;
+  const results = await applySerialAllottedMany(db, [item], new Map());
+  return results[0] || { ok: false, event: 'serial.allotted', error: 'inbound_failed' };
 }
 
 async function applySerialCancelled(db, item) {
   const serialNumber = readSerialNumber(item);
   if (!serialNumber) return serialRequiredError('serial.cancelled', item);
   const id = serialDocId(serialNumber);
+  const pasSnap = await db.doc(`${PAS_SERIAL_COLLECTION}/${id}`).get();
   const snap = await db.doc(`${SERIAL_COLLECTION}/${id}`).get();
   const previous = snap.exists ? snap.data() : {};
   const rc = await resolveRc(db, item);
+  const now = new Date().toISOString();
+
+  if (pasSnap.exists) {
+    await db.doc(`${PAS_SERIAL_COLLECTION}/${id}`).set(
+      {
+        serialNumber,
+        status: 'cancelled',
+        cancelledAt: now,
+        updatedAt: now,
+        source: 'yesone',
+      },
+      { merge: true },
+    );
+  }
+
+  if (pasSnap.exists && !snap.exists) {
+    return {
+      ok: true,
+      event: 'serial.cancelled',
+      id: serialNumber,
+      pool: 'pas',
+    };
+  }
+
   await db.doc(`${SERIAL_COLLECTION}/${id}`).set(
     {
       serialNumber,
       status: 'cancelled',
-      cancelledAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      cancelledAt: now,
+      updatedAt: now,
       source: 'yesone',
     },
     { merge: true },
@@ -1301,6 +1383,7 @@ async function applySerialCancelled(db, item) {
     event: 'serial.cancelled',
     id: serialNumber,
     rcId: previous.rcId || rc?.id || null,
+    ...(pasSnap.exists ? { pool: 'pas' } : {}),
   };
 }
 
@@ -1318,8 +1401,67 @@ async function applySerialUpdated(db, item) {
   const now = new Date().toISOString();
   const oldId = serialDocId(previousSerial);
   const newId = serialDocId(nextSerial);
+  const oldPasSnap = await db.doc(`${PAS_SERIAL_COLLECTION}/${oldId}`).get();
   const oldSnap = await db.doc(`${SERIAL_COLLECTION}/${oldId}`).get();
   const previous = oldSnap.exists ? oldSnap.data() : {};
+
+  if (oldPasSnap.exists) {
+    const pasPrevious = oldPasSnap.data() || {};
+    const pasProducts = await loadPasProducts(db);
+    const pasProduct = matchPasProduct({ ...pasPrevious, ...item }, pasProducts);
+    await db.doc(`${PAS_SERIAL_COLLECTION}/${oldId}`).set(
+      {
+        ...pasPrevious,
+        serialNumber: previousSerial,
+        status: 'replaced',
+        replacedBy: nextSerial,
+        updatedAt: now,
+        source: 'yesone',
+      },
+      { merge: true },
+    );
+    await db.doc(`${PAS_SERIAL_COLLECTION}/${newId}`).set(
+      pasBankFields(
+        { ...pasPrevious, ...item },
+        nextSerial,
+        pasProduct,
+        {
+          status: 'available',
+          previousSerialNumber: previousSerial,
+          allottedAt: pasPrevious.allottedAt || now,
+        },
+      ),
+      { merge: true },
+    );
+    const calibSnap = await db.collection('siteCalibrations')
+      .where('serialNumber', '==', previousSerial)
+      .limit(40)
+      .get();
+    let updated = 0;
+    let skippedIssued = 0;
+    for (const doc of calibSnap.docs) {
+      const record = doc.data() || {};
+      if (verificationLocked(record)) {
+        skippedIssued += 1;
+        continue;
+      }
+      await doc.ref.update({
+        serialNumber: nextSerial,
+        previousSerialNumber: previousSerial,
+        updatedAt: now,
+      });
+      updated += 1;
+    }
+    return {
+      ok: true,
+      event: 'serial.updated',
+      id: nextSerial,
+      previousSerialNumber: previousSerial,
+      pool: 'pas',
+      verificationsUpdated: updated,
+      issuedSkipped: skippedIssued,
+    };
+  }
 
   await db.doc(`${SERIAL_COLLECTION}/${oldId}`).set(
     {

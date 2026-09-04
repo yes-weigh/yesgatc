@@ -6,7 +6,7 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check lookupPublicCertificates.js && node --check yesoneWebhook.js && node --check yesoneInbound.js",
+    "lint": "node --check index.js && node --check lookupPublicCertificates.js && node --check yesoneWebhook.js && node --check yesoneInbound.js && node --check readSerialPlate.js",
     "test": "node --test lookupPublicCertificates.test.js yesoneWebhook.test.js yesoneInbound.test.js"
   },
   "dependencies": {
