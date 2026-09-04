@@ -4,7 +4,10 @@ export type YesoneSerialAllotment = {
   rcId: string;
   rcCode: string;
   rcCompanyName: string;
+  productId: string;
   productName: string;
+  modelNo: string;
+  sku: string;
   status: string;
   allottedAt: string;
   previousSerialNumber: string;
@@ -44,7 +47,10 @@ export function yesoneSerialFromDoc(id: string, data: unknown): YesoneSerialAllo
     rcId: text(row.rcId),
     rcCode: text(row.rcCode),
     rcCompanyName: text(row.rcCompanyName),
+    productId: text(row.productId),
     productName: text(row.productName),
+    modelNo: text(row.modelNo),
+    sku: text(row.sku),
     status: text(row.status) || 'allotted',
     allottedAt: text(row.allottedAt) || text(row.updatedAt),
     previousSerialNumber: text(row.previousSerialNumber),

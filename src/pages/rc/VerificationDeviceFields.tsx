@@ -33,7 +33,7 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import type { JobType, Product, RcFeesStructure, VerificationLocation } from '../../types';
-import { ovSerialChoicesForRow, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { ovSerialChoicesForRow, remainingSerialsForProduct, type OvQuotaGate } from '../../lib/ovQuotaGate';
 
 const VerificationImageColumnHead: React.FC<{
   kind: VerificationImageKind;
@@ -236,9 +236,14 @@ function DeviceSerialField({
   const otherTaken = devices
     .filter(device => device.localId !== row.localId && device.included)
     .map(device => device.serialNumber);
+  const remaining = remainingSerialsForProduct(
+    ovQuota.remaining,
+    ovQuota.remainingAllotments,
+    { productId: row.productId, productName: row.productName },
+  );
   const choices = ovSerialChoicesForRow(
     row.serialNumber,
-    ovQuota.remaining,
+    remaining,
     ovQuota.heldSerials,
     otherTaken,
   );

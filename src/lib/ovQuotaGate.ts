@@ -1,11 +1,58 @@
+export type OvQuotaAllotment = {
+  serialNumber: string;
+  sku?: string;
+  productId?: string;
+  productName?: string;
+  modelNo?: string;
+};
+
 export type OvQuotaGate = {
   remaining: string[];
+  remainingAllotments?: OvQuotaAllotment[];
   balanceQty: number | null;
   heldSerials: string[];
 };
 
 function serialKey(value: string): string {
   return value.trim().toUpperCase();
+}
+
+function compactProductToken(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function productMatchesAllotment(
+  product: { productId?: string; productName?: string; sku?: string; modelNo?: string },
+  row: OvQuotaAllotment,
+): boolean {
+  const want = [product.productId, product.sku, product.modelNo, product.productName]
+    .map(item => compactProductToken(String(item || '')))
+    .filter(Boolean);
+  const have = [row.productId, row.sku, row.modelNo, row.productName]
+    .map(item => compactProductToken(String(item || '')))
+    .filter(Boolean);
+  if (!have.length) return true;
+  return want.some(token => have.some(hit => hit === token || hit.includes(token) || token.includes(hit)));
+}
+
+/** Prefer stickers for this GATC product. Legacy rows with no product stay visible. If none match, keep the full remaining list so OV is not blocked. */
+export function remainingSerialsForProduct(
+  remaining: string[],
+  allotments: OvQuotaAllotment[] | undefined,
+  product: { productId?: string; productName?: string; sku?: string; modelNo?: string } | null,
+): string[] {
+  const productId = String(product?.productId || '').trim();
+  const productName = String(product?.productName || '').trim();
+  if (!productId && !productName) return remaining;
+  if (!Array.isArray(allotments) || allotments.length === 0) return remaining;
+  const bySerial = new Map(allotments.map(row => [serialKey(row.serialNumber), row]));
+  const matched = remaining.filter(serial => {
+    const row = bySerial.get(serialKey(serial));
+    if (!row) return true;
+    if (!row.sku && !row.productId && !row.productName && !row.modelNo) return true;
+    return productMatchesAllotment(product || {}, row);
+  });
+  return matched.length ? matched : remaining;
 }
 
 /** New OV seats left: min(Allotted − Used, unused stickers). */

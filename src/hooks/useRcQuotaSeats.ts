@@ -9,7 +9,7 @@ import {
   normalizeReservedAssignments,
   type RcQuotaSeats,
 } from '../lib/rcMasterQuota';
-import { expandSerialRange, uniqueSerials, yesoneSerialFromDoc } from '../lib/yesoneInboundData';
+import { expandSerialRange, uniqueSerials, yesoneSerialFromDoc, type YesoneSerialAllotment } from '../lib/yesoneInboundData';
 import {
   filterInwardBatchesForRc,
   inwardBatchesFromInboundEvents,
@@ -22,7 +22,7 @@ import type { SiteCalibration } from '../types';
 export function useRcQuotaSeats(
   rcUid: string | null | undefined,
   records: SiteCalibration[],
-): RcQuotaSeats & { ready: boolean } {
+): RcQuotaSeats & { ready: boolean; allotmentRows: YesoneSerialAllotment[] } {
   const { isRcAdmin } = useRcScope();
   const [companyName, setCompanyName] = useState('');
   const [rcCode, setRcCode] = useState('');
@@ -37,6 +37,7 @@ export function useRcQuotaSeats(
     Array<{ invoiceNo: string; verifierUid: string; serialStart?: string; serialEnd?: string }>
   >([]);
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
+  const [allotmentRows, setAllotmentRows] = useState<YesoneSerialAllotment[]>([]);
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
   const [eventRows, setEventRows] = useState<SerialInwardBatch[]>([]);
   const [rcWideRecords, setRcWideRecords] = useState<SiteCalibration[] | null>(null);
@@ -98,6 +99,7 @@ export function useRcQuotaSeats(
   useEffect(() => {
     if (!rcUid) {
       setAllotSerials([]);
+      setAllotmentRows([]);
       setAllotLoaded(true);
       return;
     }
@@ -107,11 +109,13 @@ export function useRcQuotaSeats(
       snap => {
         const rows = snap.docs.map(item => yesoneSerialFromDoc(item.id, item.data()));
         const active = rows.filter(row => row.status !== 'cancelled' && row.status !== 'replaced');
+        setAllotmentRows(active);
         setAllotSerials(uniqueSerials(active.map(row => row.serialNumber)));
         setAllotLoaded(true);
       },
       () => {
         setAllotSerials([]);
+        setAllotmentRows([]);
         setAllotLoaded(true);
       },
     );
@@ -244,5 +248,5 @@ export function useRcQuotaSeats(
     ],
   );
 
-  return { ...seats, ready: userLoaded && allotLoaded && batchLoaded && eventLoaded };
+  return { ...seats, allotmentRows, ready: userLoaded && allotLoaded && batchLoaded && eventLoaded };
 }
