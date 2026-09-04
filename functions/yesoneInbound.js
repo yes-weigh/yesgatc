@@ -28,6 +28,13 @@ const EVENT_ALIASES = {
   'pas.serial.allotted': 'serial.allotted',
   'pas.serial.allotment': 'serial.allotted',
   pas_serial_allotted: 'serial.allotted',
+  'product.bank': 'serial.allotted',
+  product_bank: 'serial.allotted',
+  productbank: 'serial.allotted',
+  'pas.bank': 'serial.allotted',
+  pas_bank: 'serial.allotted',
+  pasbank: 'serial.allotted',
+  'product.pas.bank': 'serial.allotted',
   'serial.updated': 'serial.updated',
   'serial.changed': 'serial.updated',
   'serial.renamed': 'serial.updated',
@@ -1018,6 +1025,9 @@ function pasProductTokens(row) {
 }
 
 function isPasTyped(item) {
+  const rec = asRecord(item);
+  const product = asRecord(rec.product);
+  if (rec.pasPreAllotted === true || product.pasPreAllotted === true) return true;
   const type = inboundSerialType(item);
   return type === 'pas'
     || type === 'preallotted'

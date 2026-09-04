@@ -109,6 +109,9 @@ function mockRes() {
 
 test('serial event aliases and payload expand', () => {
   assert.equal(normalizeEventName('serial allotment'), 'serial.allotted');
+  assert.equal(normalizeEventName('product.bank'), 'serial.allotted');
+  assert.equal(normalizeEventName('product_bank'), 'serial.allotted');
+  assert.equal(normalizeEventName('pas.bank'), 'serial.allotted');
   assert.equal(normalizeEventName('OV_QUOTA'), 'rc.ov_quota');
   assert.equal(readSerialNumber({ serial: { number: 'Y1001' } }), 'Y1001');
   assert.equal(readPreviousSerial({ from: 'Y1', serialNumber: 'Y2' }), 'Y1');
@@ -743,4 +746,80 @@ test('numeric PAS serials land in number bank', async () => {
   assert.equal(gas.body.results[0].skipped, 'qty_not_serial');
   assert.equal(db._store['pasSerialBank/57677'], undefined);
   assert.equal(db._store['serialAllotments/57677'], undefined);
+});
+
+test('product.bank PAS range writes number bank for ATM GOLD', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'products/atm': {
+      pasPreAllotted: true,
+      yesoneSku: 'ATM30GAY',
+      modelid: 'ATM30',
+      modelNo: 'YSP-30',
+      name: 'ATM GOLD',
+    },
+  });
+
+  const expanded = expandInboundItems({
+    event: 'product.bank',
+    product: {
+      name: 'ATM PC Gold',
+      sku: 'ATM30GAY',
+      serialType: 'PAS',
+      modelid: 'ATM30',
+      pasPreAllotted: true,
+    },
+    series: { from: 'YJ01001', to: 'YJ01003' },
+  });
+  assert.deepEqual(expanded.map(item => item.serialNumber), ['YJ01001', 'YJ01002', 'YJ01003']);
+  assert.equal(expanded.every(item => inferEventName(item) === 'serial.allotted'), true);
+
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'product.bank',
+        sku: 'ATM30GAY',
+        serialType: 'PAS',
+        modelid: 'ATM30',
+        product: { name: 'ATM PC Gold', pasPreAllotted: true },
+        from: 'YJ01001',
+        to: 'YJ01003',
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['pasSerialBank/YJ01001'].status, 'available');
+  assert.equal(db._store['pasSerialBank/YJ01001'].productId, 'atm');
+  assert.equal(db._store['pasSerialBank/YJ01001'].yesoneSku, 'ATM30GAY');
+  assert.equal(db._store['pasSerialBank/YJ01001'].modelid, 'ATM30');
+  assert.equal(db._store['pasSerialBank/YJ01003'].qty, 1);
+  assert.equal(db._store['serialAllotments/YJ01001'], undefined);
+  assert.equal(db._store['serialAllotments/YJ01003'], undefined);
+
+  const skuAllot = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        sku: 'ATM30GAY',
+        serialNumber: 'YJ01004',
+      },
+    },
+    skuAllot,
+    db,
+  );
+  assert.equal(skuAllot.body.ok, true);
+  assert.equal(db._store['pasSerialBank/YJ01004'].productId, 'atm');
+  assert.equal(db._store['serialAllotments/YJ01004'], undefined);
 });
