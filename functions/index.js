@@ -7,7 +7,6 @@ const razorpayKeyId = defineSecret('RAZORPAY_KEY_ID');
 const razorpayKeySecret = defineSecret('RAZORPAY_KEY_SECRET');
 const emaapOtpWebhookSecret = defineSecret('EMAAP_OTP_WEBHOOK_SECRET');
 const yesweighEmbedSecret = defineSecret('YESWEIGH_EMBED_SECRET');
-const geminiApiKey = defineSecret('GEMINI_API_KEY');
 const yesweighEmbedRcAadhar = defineString('YESWEIGH_EMBED_RC_AADHAR', { default: '788971879465' });
 const { razorpayWebhookHandler } = require('./razorpayRv');
 const {
@@ -467,16 +466,20 @@ exports.downloadStorageFileBytes = onCall(
   async request => downloadStorageFileBytesHandler(request, getCallerRole),
 );
 
-/** RC / VCT / verifier — read serial plate photo (Gemini). Secret: GEMINI_API_KEY */
+/**
+ * RC / VCT / verifier — plate OCR.
+ * Reads process.env.GEMINI_API_KEY. Do not defineSecret — missing Secret Manager
+ * key would abort the entire functions codebase deploy (including yesoneInbound).
+ * After `firebase functions:secrets:set GEMINI_API_KEY`, bind secrets: ['GEMINI_API_KEY'] and redeploy.
+ */
 exports.readSerialPlate = onCall(
   {
     region: CALLABLE_REGION,
     cors: CALLABLE_CORS,
-    secrets: [geminiApiKey],
     timeoutSeconds: 60,
     memory: '512MiB',
   },
-  async request => readSerialPlateHandler(request, getCallerRole, geminiApiKey.value()),
+  async request => readSerialPlateHandler(request, getCallerRole, process.env.GEMINI_API_KEY || ''),
 );
 
 /**
