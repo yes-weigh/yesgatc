@@ -757,6 +757,18 @@ service cloud.firestore {
       allow create, update, delete: if isSuperAdmin();
     }
 
+    // PAS pre-allotted serial number bank (Yesone webhook → Admin SDK).
+    match /pasSerialBank/{serialId} {
+      allow read: if isAuthenticated()
+        && (isSuperAdmin() || isRCAdmin() || isVCT() || isVerifier());
+      allow create, delete: if false;
+      allow update: if (isRCAdmin() || isOperationalFieldStaff())
+        && resource.data.status in ['available', 'allotted']
+        && request.resource.data.status == 'used'
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'usedAt', 'usedByUid', 'usedByRcId', 'usedRecordId', 'updatedAt']);
+    }
+
     // YesOne → YesGATC serial inward batches (invoice / range / qty).
     match /serialInwardBatches/{batchId} {
       allow read: if isSuperAdmin();
