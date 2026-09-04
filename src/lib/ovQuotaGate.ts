@@ -32,10 +32,11 @@ function productMatchesAllotment(
     .map(item => compactProductToken(String(item || '')))
     .filter(Boolean);
   if (!have.length) return true;
-  return want.some(token => have.some(hit => hit === token || hit.includes(token) || token.includes(hit)));
+  if (!want.length) return false;
+  return want.some(token => have.includes(token));
 }
 
-/** Prefer stickers for this GATC product. Legacy rows with no product stay visible. If none match, keep the full remaining list so OV is not blocked. */
+/** Prefer stickers for this GATC product. Legacy rows with no product stay visible. */
 export function remainingSerialsForProduct(
   remaining: string[],
   allotments: OvQuotaAllotment[] | undefined,
@@ -43,16 +44,16 @@ export function remainingSerialsForProduct(
 ): string[] {
   const productId = String(product?.productId || '').trim();
   const productName = String(product?.productName || '').trim();
-  if (!productId && !productName) return remaining;
+  const sku = String(product?.sku || '').trim();
+  if (!productId && !productName && !sku) return remaining;
   if (!Array.isArray(allotments) || allotments.length === 0) return remaining;
   const bySerial = new Map(allotments.map(row => [serialKey(row.serialNumber), row]));
-  const matched = remaining.filter(serial => {
+  return remaining.filter(serial => {
     const row = bySerial.get(serialKey(serial));
     if (!row) return true;
     if (!row.sku && !row.productId && !row.productName && !row.modelNo) return true;
     return productMatchesAllotment(product || {}, row);
   });
-  return matched.length ? matched : remaining;
 }
 
 /** New OV seats left: min(Allotted − Used, unused stickers). */
