@@ -4,6 +4,7 @@ const APP_SETTINGS_COLLECTION = 'appSettings';
 const APP_SETTINGS_GLOBAL_DOC = 'global';
 const SERIAL_COLLECTION = 'serialAllotments';
 const PAS_SERIAL_COLLECTION = 'pasSerialBank';
+const PAS_SERIAL_META_COLLECTION = 'pasSerialBankMeta';
 const INBOUND_EVENTS_COLLECTION = 'yesoneInboundEvents';
 const INWARD_BATCHES_COLLECTION = 'serialInwardBatches';
 const INBOUND_LOG_LIMIT = 200;
@@ -345,9 +346,19 @@ function looksLikeSerialRange(rec) {
   return Boolean(from && to);
 }
 
+function nestedRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function withSeriesFields(item) {
   const rec = asRecord(item);
-  const seriesRaw = pickValue(rec, ['series']);
+  const product = asRecord(pickValue(rec, ['product']) || rec.product);
+  const pas = nestedRecord(pickValue(product, ['pas']) || pickValue(rec, ['pas']));
+  const productBank = nestedRecord(pickValue(rec, ['productBank']) || pickValue(product, ['productBank']));
+  const seriesRaw = pickValue(rec, ['series'])
+    || pickValue(product, ['series'])
+    || pickValue(pas, ['series'])
+    || pickValue(productBank, ['series']);
   const series = typeof seriesRaw === 'string' || typeof seriesRaw === 'number'
     ? parseSeriesString(seriesRaw)
     : { ...asRecord(seriesRaw), ...parseSeriesString(seriesRaw) };
@@ -355,11 +366,20 @@ function withSeriesFields(item) {
   const rc = asRecord(pickValue(rec, ['rc']) || rec.rc);
   const from = pickText(rec, ['from', 'start', 'startNumber', 'startSerial', 'serialFrom', 'rangeFrom'])
     || pickText(series, ['from', 'start', 'startNumber', 'startSerial', 'startFrom', 'serialFrom'])
+    || pickText(product, ['from', 'start', 'startNumber', 'startSerial', 'serialFrom', 'rangeFrom'])
+    || pickText(pas, ['from', 'start', 'startNumber', 'startSerial', 'serialFrom', 'rangeFrom'])
+    || pickText(productBank, ['from', 'start', 'startNumber', 'startSerial', 'serialFrom', 'rangeFrom'])
     || pickText(invoice, ['from', 'start', 'startNumber']);
   const to = pickText(rec, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
     || pickText(series, ['to', 'end', 'endNumber', 'endSerial', 'serialTo'])
+    || pickText(product, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
+    || pickText(pas, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
+    || pickText(productBank, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
     || pickText(invoice, ['to', 'end', 'endNumber']);
   const listed = pickValue(rec, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials', 'cancelledSerials', 'removeSerialNumbers'])
+    || pickValue(product, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials'])
+    || pickValue(pas, ['serials', 'serialNumbers'])
+    || pickValue(productBank, ['serials', 'serialNumbers'])
     || pickValue(rc, ['serials', 'serialNumbers'])
     || pickValue(series, ['serials', 'serialNumbers'])
     || pickValue(invoice, ['serials', 'serialNumbers', 'removeSerialNumbers', 'cancelledSerials']);
@@ -389,11 +409,14 @@ function isYesoneDump(root) {
 }
 
 function serialRequiredError(event, item) {
-  const keys = Object.keys(asRecord(item))
-    .filter(key => key !== 'token' && key !== 'secret')
-    .slice(0, 16)
-    .join(',');
-  return { ok: false, event, error: keys ? `serial_required:${keys}` : 'serial_required' };
+  const rec = withSeriesFields(item);
+  if (readSerialNumber(rec) || serialsFromGroup(rec).length) {
+    return { ok: false, event, error: 'serial_required' };
+  }
+  const missing = [];
+  if (!looksLikeBankSerial(rec.from)) missing.push('from');
+  if (!looksLikeBankSerial(rec.to)) missing.push('to');
+  return { ok: false, event, error: missing.length ? `serial_required:${missing.join(',')}` : 'serial_required' };
 }
 
 function parseSerialParts(value) {
@@ -436,10 +459,24 @@ function serialListFromRec(rec) {
   return [];
 }
 
+function pasUsageItemFields(usage) {
+  return stripUndefined({
+    bankQty: usage.qty,
+    bankLinked: usage.linked,
+    bankUnused: usage.unused,
+    serialFrom: usage.from,
+    serialTo: usage.to,
+    linkedSerials: usage.linkedSerials.length ? usage.linkedSerials : undefined,
+  });
+}
+
 function explodeItem(item) {
   const rec = withSeriesFields(item);
   const event = inferEventName(rec) || inferEventName(item);
   const listed = serialsFromGroup(rec);
+  const usage = readPasUsageFields(rec);
+  const usageFields = pasUsageItemFields(usage);
+  const statusBySerial = serialSeatStatusByNumber(rec);
   if (listed.length > 0 && (listed.length > 1 || !readSerialNumber(rec))) {
     return listed.map(serialNumber => ({
       ...rec,
@@ -447,10 +484,19 @@ function explodeItem(item) {
       serialNumber,
       serials: undefined,
       serialNumbers: undefined,
+      ...usageFields,
+      ...(statusBySerial.get(serialNumber) ? { seatStatus: statusBySerial.get(serialNumber) } : {}),
     }));
   }
   const serialNumber = readSerialNumber(rec);
-  return [{ ...rec, ...(serialNumber ? { serialNumber } : {}) }];
+  return [{
+    ...rec,
+    ...(serialNumber ? { serialNumber } : {}),
+    ...usageFields,
+    ...(serialNumber && statusBySerial.get(serialNumber)
+      ? { seatStatus: statusBySerial.get(serialNumber) }
+      : {}),
+  }];
 }
 
 function expandRecordList(rows, base = {}) {
@@ -678,6 +724,7 @@ function expandNamedSerialEvent(root, mergedRoot, named) {
           productName: optionalTrimmed(raw.productName) || undefined,
           modelid: optionalTrimmed(raw.modelid || raw.modelId) || undefined,
           modelNo: optionalTrimmed(raw.modelNo) || undefined,
+          ...pasUsageItemFields(readPasUsageFields(rec)),
         });
       }
     }
@@ -690,6 +737,7 @@ function expandNamedSerialEvent(root, mergedRoot, named) {
       rcCode: base.rcCode,
       rcId: base.rcId,
       rcCompanyName: base.rcCompanyName,
+      ...pasUsageItemFields(readPasUsageFields(base)),
     });
   }
   return out;
@@ -936,34 +984,8 @@ function inboundSerialType(item) {
   return '';
 }
 
-function matchKey(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
-function addIdentityKey(set, value) {
-  const raw = matchKey(value);
-  if (!raw) return;
-  set.add(raw);
-  const compact = raw.replace(/[^a-z0-9]/g, '');
-  if (compact) set.add(compact);
-}
-
-function identityKeySet(values) {
-  const out = new Set();
-  for (const value of values) addIdentityKey(out, value);
-  return out;
-}
-
-function identityKeysOverlap(left, right) {
-  for (const x of left) {
-    if (right.has(x)) return true;
-    if (x.length < 4) continue;
-    for (const y of right) {
-      if (y.length < 4) continue;
-      if (x.startsWith(y) || y.startsWith(x)) return true;
-    }
-  }
-  return false;
+function compactIdent(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function pickInboundSku(item) {
@@ -985,49 +1007,125 @@ function pickInboundSku(item) {
   );
 }
 
-function inboundIdentityTokens(item) {
-  const rec = asRecord(item);
-  const product = asRecord(rec.product);
-  return identityKeySet([
-    rec.productId,
-    rec.itemId,
-    product.id,
-    pickInboundSku(rec),
-    rec.modelid,
-    rec.modelId,
-    rec.model,
-    product.modelid,
-    product.modelId,
-    product.model,
-    rec.modelNo,
-    product.modelNo,
-    rec.modelApprovalNo,
-    product.modelApprovalNo,
-    rec.productName,
-    rec.itemName,
-    rec.name,
-    product.name,
-    product.productName,
-  ]);
+function isSeatStatusToken(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return key === 'used'
+    || key === 'linked'
+    || key === 'assigned'
+    || key === 'unused'
+    || key === 'available'
+    || key === 'allotted'
+    || key === 'cancelled'
+    || key === 'replaced';
 }
 
-function pasProductTokens(row) {
-  return identityKeySet([
-    row.id,
-    row.yesoneSku,
-    row.sku,
-    row.modelid,
-    row.modelId,
-    row.modelNo,
-    row.modelApprovalNo,
-    row.name,
-  ]);
+function isUsedSeatStatus(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return key === 'used' || key === 'linked' || key === 'assigned';
+}
+
+function collectLinkedSerials(rec, product, pas, productBank) {
+  const out = [];
+  for (const raw of [
+    rec.linkedSerials,
+    rec.usedSerials,
+    rec.assignedSerials,
+    product.linkedSerials,
+    product.usedSerials,
+    pas.linkedSerials,
+    productBank.linkedSerials,
+  ]) {
+    for (const serial of serialValues(raw)) {
+      if (typeof serial === 'string' || typeof serial === 'number') {
+        const text = String(serial).trim();
+        if (looksLikeBankSerial(text)) out.push(text);
+        continue;
+      }
+      const row = asRecord(serial);
+      const number = readSerialNumber(row) || optionalTrimmed(row.serial);
+      if (looksLikeBankSerial(number)) out.push(number);
+    }
+  }
+  return [...new Set(out)];
+}
+
+function readPasUsageFields(item) {
+  const rec = withSeriesFields(item);
+  const product = asRecord(rec.product);
+  const pas = nestedRecord(pickValue(product, ['pas']) || pickValue(rec, ['pas']));
+  const productBank = nestedRecord(pickValue(rec, ['productBank']) || pickValue(product, ['productBank']));
+  return {
+    qty: firstFiniteAmount([
+      rec.bankQty,
+      rec.totalQty,
+      product.qty,
+      product.totalQty,
+      pas.qty,
+      productBank.qty,
+      rec.qty,
+      rec.count,
+    ]),
+    linked: firstFiniteAmount([
+      rec.bankLinked,
+      rec.linked,
+      product.linked,
+      pas.linked,
+      productBank.linked,
+    ]),
+    unused: firstFiniteAmount([
+      rec.bankUnused,
+      rec.unused,
+      rec.available,
+      product.unused,
+      product.available,
+      pas.unused,
+      productBank.unused,
+    ]),
+    from: optionalTrimmed(rec.from || rec.serialFrom),
+    to: optionalTrimmed(rec.to || rec.serialTo),
+    linkedSerials: collectLinkedSerials(rec, product, pas, productBank),
+  };
+}
+
+function serialSeatStatusByNumber(rec) {
+  const map = new Map();
+  for (const serial of serialValues(serialListFromRec(rec))) {
+    if (typeof serial !== 'object' || serial == null) continue;
+    const row = asRecord(serial);
+    const number = readSerialNumber(row) || optionalTrimmed(row.serial);
+    if (!looksLikeBankSerial(number)) continue;
+    const status = optionalTrimmed(row.status || row.state || row.serialStatus);
+    if (isSeatStatusToken(status)) map.set(number, status);
+    else if (row.linked === true || row.used === true) map.set(number, 'used');
+  }
+  return map;
+}
+
+function isYesoneLinkedSeat(item, serialNumber) {
+  const rec = asRecord(item);
+  if (isUsedSeatStatus(rec.seatStatus)) return true;
+  if (rec.linked === true || rec.used === true) return true;
+  const usage = readPasUsageFields(rec);
+  return usage.linkedSerials.some(serial => serial.toUpperCase() === String(serialNumber || '').trim().toUpperCase());
+}
+
+function isPasFlag(value) {
+  if (value === true) return true;
+  const type = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return type === 'true' || type === 'pas' || type === 'yes' || type === '1';
 }
 
 function isPasTyped(item) {
   const rec = asRecord(item);
   const product = asRecord(rec.product);
-  if (rec.pasPreAllotted === true || product.pasPreAllotted === true) return true;
+  if (
+    rec.pasPreAllotted === true
+    || product.pasPreAllotted === true
+    || isPasFlag(rec.pas)
+    || isPasFlag(product.pas)
+    || rec.productBank === true
+    || product.productBank === true
+  ) return true;
   const type = inboundSerialType(item);
   return type === 'pas'
     || type === 'preallotted'
@@ -1055,9 +1153,23 @@ async function loadPasProducts(db) {
 }
 
 function matchPasProduct(item, pasProducts) {
-  const tokens = inboundIdentityTokens(item);
-  const hit = pasProducts.find(row => identityKeysOverlap(tokens, pasProductTokens(row)));
-  if (hit) return hit;
+  const rec = asRecord(item);
+  const product = asRecord(rec.product);
+  const sku = compactIdent(pickInboundSku(rec));
+  if (sku) {
+    const hit = pasProducts.find(row => compactIdent(row.yesoneSku || row.sku) === sku);
+    if (hit) return hit;
+  }
+  const productId = compactIdent(rec.productId || rec.itemId || product.id);
+  if (productId) {
+    const hit = pasProducts.find(row => compactIdent(row.id) === productId);
+    if (hit) return hit;
+  }
+  const modelid = compactIdent(rec.modelid || rec.modelId || product.modelid || product.modelId);
+  if (modelid) {
+    const hits = pasProducts.filter(row => compactIdent(row.modelid || row.modelId) === modelid);
+    if (hits.length === 1) return hits[0];
+  }
   if (isPasTyped(item) && pasProducts.length === 1) return pasProducts[0];
   return null;
 }
@@ -1306,6 +1418,7 @@ async function applySerialAllottedMany(db, items, rcCache) {
   const serialsByRc = new Map();
   const inwardItems = [];
   const inwardResults = [];
+  const pasMetaByKey = new Map();
   const now = new Date().toISOString();
   const pasProducts = await loadPasProducts(db);
 
@@ -1324,13 +1437,38 @@ async function applySerialAllottedMany(db, items, rcCache) {
     const id = serialDocId(serialNumber);
     if (isPasInbound(item, pasProduct)) {
       const existing = await db.doc(`${PAS_SERIAL_COLLECTION}/${id}`).get();
-      const prevStatus = existing.exists ? optionalTrimmed(existing.data()?.status) : null;
+      const prev = existing.exists ? existing.data() || {} : {};
+      const prevStatus = existing.exists ? optionalTrimmed(prev.status) : null;
       const keepUsed = prevStatus === 'used';
+      const usage = readPasUsageFields(item);
+      const yesoneUsed = !keepUsed && isYesoneLinkedSeat(item, serialNumber);
+      const yesoneSku = optionalTrimmed(pasProduct?.yesoneSku || pickInboundSku(item));
+      const metaKey = yesoneSku || optionalTrimmed(pasProduct?.id);
+      if (metaKey) {
+        const cur = pasMetaByKey.get(metaKey) || {
+          sku: yesoneSku,
+          productId: optionalTrimmed(pasProduct?.id),
+          modelid: optionalTrimmed(pasProduct?.modelid || item.modelid || item.modelId),
+          serials: [],
+        };
+        cur.serials.push(serialNumber);
+        if (usage.qty != null) cur.qty = usage.qty;
+        if (usage.linked != null) cur.linked = usage.linked;
+        if (usage.unused != null) cur.unused = usage.unused;
+        if (usage.from) cur.from = usage.from;
+        if (usage.to) cur.to = usage.to;
+        pasMetaByKey.set(metaKey, cur);
+      }
       writes.push({
         path: `${PAS_SERIAL_COLLECTION}/${id}`,
         data: pasBankFields(item, serialNumber, pasProduct, {
-          status: keepUsed ? 'used' : 'available',
-          allottedAt: optionalTrimmed(item.allottedAt) || (existing.exists ? existing.data()?.allottedAt : null) || now,
+          status: keepUsed || yesoneUsed ? 'used' : 'available',
+          bankQty: usage.qty,
+          bankLinked: usage.linked,
+          bankUnused: usage.unused,
+          serialFrom: usage.from,
+          serialTo: usage.to,
+          allottedAt: optionalTrimmed(item.allottedAt) || (existing.exists ? prev.allottedAt : null) || now,
           ...(keepUsed ? {} : { usedAt: null, usedByUid: null, usedByRcId: null, usedRecordId: null }),
         }),
       });
@@ -1398,6 +1536,27 @@ async function applySerialAllottedMany(db, items, rcCache) {
       inwardItems.push(row.item);
       inwardResults.push(result);
     }
+  }
+
+  for (const [key, row] of pasMetaByKey) {
+    const id = serialDocId(key);
+    if (!id) continue;
+    writes.push({
+      path: `${PAS_SERIAL_META_COLLECTION}/${id}`,
+      data: stripUndefined({
+        productId: row.productId || null,
+        yesoneSku: row.sku || null,
+        sku: row.sku || null,
+        modelid: row.modelid || null,
+        from: row.from || null,
+        to: row.to || null,
+        qty: row.qty != null ? row.qty : row.serials.length,
+        linked: row.linked,
+        unused: row.unused,
+        source: 'yesone',
+        updatedAt: now,
+      }),
+    });
   }
 
   await commitDocSets(db, writes);
@@ -1884,4 +2043,6 @@ module.exports = {
   serialDocId,
   expandSerialRange,
   yesoneInboundHttpHandler,
+  matchPasProduct,
+  readPasUsageFields,
 };

@@ -20,7 +20,15 @@ import {
   rcOvUsedFromRecords,
   toggleVoidedSerial,
 } from '../../lib/rcMasterQuota';
-import { parseQuotaInput, uniqueSerials, yesoneSerialFromDoc } from '../../lib/yesoneInboundData';
+import {
+  parseQuotaInput,
+  uniqueSerials,
+  yesoneSerialFromDoc,
+  type YesoneSerialAllotment,
+} from '../../lib/yesoneInboundData';
+import { pasProductIdSet, pasSerialsFromAllotments } from '../../lib/pasSerialBank';
+import { excludePasQuotaSerials } from '../../lib/rcQuotaMath';
+import { useAppContext } from '../../context/AppContext';
 import type { SiteCalibration } from '../../types';
 import { SerialSeatOverlay } from '../../components/SerialSeatOverlay';
 
@@ -109,8 +117,10 @@ export function RcQuotaSynButton() {
 
 export function RcQuotaPanel() {
   const { user } = useAuth();
+  const { products } = useAppContext();
   const [quotas, setQuotas] = useState<QuotaRow[]>([]);
   const [serialsByRc, setSerialsByRc] = useState<Map<string, string[]>>(new Map());
+  const [allotmentRows, setAllotmentRows] = useState<YesoneSerialAllotment[]>([]);
   const [usedByRc, setUsedByRc] = useState<Map<string, { count: number; serials: string[] }>>(
     new Map(),
   );
@@ -209,9 +219,11 @@ export function RcQuotaPanel() {
       collection(db, 'serialAllotments'),
       snap => {
         const byKey = new Map<string, string[]>();
+        const active: YesoneSerialAllotment[] = [];
         for (const item of snap.docs) {
           const row = yesoneSerialFromDoc(item.id, item.data());
           if (row.status === 'cancelled' || row.status === 'replaced') continue;
+          active.push(row);
           const keys = [row.rcId, row.rcCode.toUpperCase()].filter(Boolean);
           for (const key of keys) {
             const list = byKey.get(key) || [];
@@ -219,9 +231,13 @@ export function RcQuotaPanel() {
             byKey.set(key, list);
           }
         }
+        setAllotmentRows(active);
         setSerialsByRc(byKey);
       },
-      () => setSerialsByRc(new Map()),
+      () => {
+        setAllotmentRows([]);
+        setSerialsByRc(new Map());
+      },
     );
 
     return () => {
@@ -246,7 +262,10 @@ export function RcQuotaPanel() {
               uid,
               rcOvUsedFromRecords(
                 snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
-                uid === masterUid ? { fromDate: IWP_USED_FROM_DATE } : undefined,
+                {
+                  ...(uid === masterUid ? { fromDate: IWP_USED_FROM_DATE } : {}),
+                  pasProductIds: pasProductIdSet(products),
+                },
               ),
             );
             return next;
@@ -264,17 +283,25 @@ export function RcQuotaPanel() {
     return () => {
       for (const unsub of unsubs) unsub();
     };
-  }, [rcUidsKey, masterUid]);
+  }, [rcUidsKey, masterUid, products]);
+
+  const pasSerials = useMemo(
+    () => pasSerialsFromAllotments(allotmentRows, products),
+    [allotmentRows, products],
+  );
 
   const rows = useMemo(() => {
     return quotas.map(row => {
       const master = isMasterRc(row);
       const code = row.rcCode.toUpperCase();
-      const fromStore = uniqueSerials([
-        ...row.storedSerials,
-        ...(serialsByRc.get(row.uid) || []),
-        ...(code ? serialsByRc.get(code) || [] : []),
-      ]);
+      const fromStore = excludePasQuotaSerials(
+        uniqueSerials([
+          ...row.storedSerials,
+          ...(serialsByRc.get(row.uid) || []),
+          ...(code ? serialsByRc.get(code) || [] : []),
+        ]),
+        pasSerials,
+      );
       const allotted = master
         ? uniqueSerials([...fromStore.filter(serial => !isMasterPoolSerial(serial)), ...masterRcPoolSerials()])
         : fromStore.filter(serial => !isMasterPoolSerial(serial));
@@ -289,7 +316,7 @@ export function RcQuotaPanel() {
         serials: remaining,
       };
     });
-  }, [quotas, serialsByRc, usedByRc]);
+  }, [pasSerials, quotas, serialsByRc, usedByRc]);
 
   const openRow = useMemo(
     () => rows.find(row => row.uid === openUid) ?? null,

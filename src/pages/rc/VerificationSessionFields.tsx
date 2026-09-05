@@ -78,7 +78,7 @@ import {
 import { useAppContext } from '../../context/AppContext';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
 import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
-import { verifyPasDevicesInBank } from '../../lib/pasSerialBank';
+import { catalogueHasPasProducts, verifyPasDevicesInBank } from '../../lib/pasSerialBank';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import { VerificationPerformerPhotoFields } from './VerificationPerformerPhotoFields';
 import { requiresPerformerIdentityPhotos } from '../../lib/verificationPerformerPhotos';
@@ -313,7 +313,7 @@ export const VerificationSessionFields = forwardRef<
     !readOnly &&
     !lockCustomer &&
     currentStep.id === 'instruments' &&
-    includedDeviceEntries.length < ovSeatCap;
+    (includedDeviceEntries.length < ovSeatCap || catalogueHasPasProducts(products));
 
   const showBackNav = activeStep > 0;
   const showWizardBottomBar = !readOnly && !isLastStep;

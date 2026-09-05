@@ -56,6 +56,7 @@ export function ProductSerialBankOverlay({
   }, [product]);
 
   const qty = summary?.qty ?? 0;
+  const available = summary?.available ?? 0;
 
   return createPortal(
     <div
@@ -68,7 +69,7 @@ export function ProductSerialBankOverlay({
         <h2 id="product-serial-bank-title" className="admin-setting-serial-stage-title">
           {product.name.trim() || 'Product'}
           <span>{pas ? 'PAS' : 'GAS'}</span>
-          <span className="admin-setting-serial-count-num">{qty}</span>
+          <span className="admin-setting-serial-count-num">{available}</span>
         </h2>
         <button type="button" className="rv-payment-panel-close" onClick={onClose} aria-label="Close">
           <X size={18} />

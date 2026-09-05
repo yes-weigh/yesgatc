@@ -769,6 +769,12 @@ service cloud.firestore {
             .hasOnly(['status', 'usedAt', 'usedByUid', 'usedByRcId', 'usedRecordId', 'updatedAt']);
     }
 
+    match /pasSerialBankMeta/{metaId} {
+      allow get, list: if isAuthenticated()
+        && (isSuperAdmin() || isRCAdmin() || isVCT() || isVerifier());
+      allow create, update, delete: if false;
+    }
+
     // YesOne → YesGATC serial inward batches (invoice / range / qty).
     match /serialInwardBatches/{batchId} {
       allow read: if isSuperAdmin();

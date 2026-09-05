@@ -3,6 +3,11 @@ import { db } from '../firebase';
 import { isVerificationCertificateVoided } from './verificationCertificateVoid';
 import { isVerificationRejected } from './verificationRequest';
 import { expandSerialRange, parseQuotaInput, uniqueSerials, unusedSerials } from './yesoneInboundData';
+import {
+  excludePasQuotaSerials,
+  recordUsesPasQuota,
+  resolveRcQuotaUsedQty,
+} from './rcQuotaMath';
 import type { SiteCalibration } from '../types';
 
 export type YesoneReservedAssignment = {
@@ -110,14 +115,15 @@ function istDateKey(iso: string): string | null {
   return `${year}-${month}-${day}`;
 }
 
-/** OV consumes quota as soon as it exists — including draft. Skip RV, voided, rejected. */
+/** OV consumes GAS quota as soon as it exists — including draft. Skip RV, voided, rejected, PAS. */
 export function rcOvCountsAsUsed(
   record: SiteCalibration,
-  options?: { fromDate?: string },
+  options?: { fromDate?: string; pasProductIds?: Iterable<string> },
 ): boolean {
   if (record.verificationType === 'RV') return false;
   if (isVerificationCertificateVoided(record)) return false;
   if (isVerificationRejected(record)) return false;
+  if (recordUsesPasQuota(record.productId, options?.pasProductIds)) return false;
   if (options?.fromDate) {
     const key = istDateKey(record.createdAt || '');
     if (!key || key < options.fromDate) return false;
@@ -127,7 +133,7 @@ export function rcOvCountsAsUsed(
 
 export function rcOvUsedFromRecords(
   records: SiteCalibration[],
-  options?: { fromDate?: string },
+  options?: { fromDate?: string; pasProductIds?: Iterable<string> },
 ): {
   count: number;
   serials: string[];
@@ -234,20 +240,27 @@ export function computeRcQuotaSeats(input: {
   reservedForUids?: string[];
   /** Expanded serials per assigned verifier. */
   reservedByUid?: Record<string, string[]>;
+  /** PAS catalogue ids — those OVs do not consume GAS RC quota. */
+  pasProductIds?: Iterable<string>;
+  /** PAS / misfiled bank serials — drop from GAS allotted + remaining. */
+  pasSerials?: Iterable<string>;
 }): RcQuotaSeats {
   const master = isMasterRc({ rcCode: input.rcCode, companyName: input.companyName });
-  const fromStore = uniqueSerials([...input.storedSerials, ...input.allotSerials]);
+  const fromStore = excludePasQuotaSerials(
+    uniqueSerials([...input.storedSerials, ...input.allotSerials]),
+    input.pasSerials,
+  );
   const allottedSerials = master
     ? uniqueSerials([
       ...fromStore.filter(serial => !isMasterPoolSerial(serial)),
       ...masterRcPoolSerials(),
     ])
     : fromStore.filter(serial => !isMasterPoolSerial(serial));
-  const used = rcOvUsedFromRecords(
-    input.records,
-    master ? { fromDate: IWP_USED_FROM_DATE } : undefined,
-  );
-  let remaining = remainingQuotaSerials(allottedSerials, used.serials, input.voidedSerials);
+  const used = rcOvUsedFromRecords(input.records, {
+    ...(master ? { fromDate: IWP_USED_FROM_DATE } : {}),
+    pasProductIds: input.pasProductIds,
+  });
+  const remaining = remainingQuotaSerials(allottedSerials, used.serials, input.voidedSerials);
   // Show all unused allotted seats (incl. uninvoiced realloc / RCs without inward invoices).
   const reservedSerials = unusedSerials(
     uniqueSerials(input.reservedSerials || []),
@@ -264,14 +277,13 @@ export function computeRcQuotaSeats(input: {
   const storedUsed = parseQuotaInput(
     input.ovQuotaUsed == null || input.ovQuotaUsed === '' ? '' : String(input.ovQuotaUsed),
   );
-  // RC-wide records = source of truth for Used.
-  // Own-scoped VCT list: lift Used with YesOne ovQuotaUsed (never trust partial count alone).
-  const usedQty =
-    storedUsed == null
-      ? used.count
-      : input.recordsAreRcWide
-        ? used.count
-        : Math.max(used.count, storedUsed);
+  const usedQty = resolveRcQuotaUsedQty({
+    recordUsedCount: used.count,
+    storedUsed,
+    recordsAreRcWide: Boolean(input.recordsAreRcWide),
+    allottedQty,
+    remainingCount: remaining.length,
+  });
   const balanceQty = allottedQty == null ? remaining.length : allottedQty - usedQty;
   return {
     remaining,

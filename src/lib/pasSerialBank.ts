@@ -1,40 +1,35 @@
 import { collection, doc, getDoc, getDocs, query, runTransaction, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { Product, SiteCalibration } from '../types';
+import {
+  finitePasCount,
+  mergePasBankCounts,
+  mergePasBankUsage,
+  pasBankListedForProduct,
+  pasBankMatchesProduct,
+  summarizeSerialRows,
+  usageFromSerialRows,
+  type PasBankDoc,
+  type PasBankUsage,
+  type ProductSerialBankSummary,
+  type ProductSerialRow,
+} from './pasSerialBankMatch';
 
 export const PAS_SERIAL_BANK_COLLECTION = 'pasSerialBank';
+export const PAS_SERIAL_BANK_META_COLLECTION = 'pasSerialBankMeta';
 
-export type PasBankDoc = {
-  serialNumber?: string;
-  status?: string;
-  productId?: string;
-  productName?: string;
-  yesoneSku?: string;
-  sku?: string;
-  modelid?: string;
-  modelId?: string;
-  modelNo?: string;
-  modelApprovalNo?: string;
-  invoiceNo?: string;
-  qty?: number;
-  usedRecordId?: string;
-};
-
-export type ProductSerialRow = {
-  id: string;
-  serial: string;
-  status: string;
-  pool: 'pas' | 'gas';
-  invoiceNo?: string;
-};
-
-export type ProductSerialBankSummary = {
-  rows: ProductSerialRow[];
-  qty: number;
-  available: number;
-  used: number;
-  cancelled: number;
-};
+export {
+  mergePasBankCounts,
+  mergePasBankUsage,
+  pasBankListedForProduct,
+  pasBankMatchesProduct,
+  serialInInclusiveRange,
+  usageFromSerialRows,
+  type PasBankDoc,
+  type PasBankUsage,
+  type ProductSerialBankSummary,
+  type ProductSerialRow,
+} from './pasSerialBankMatch';
 
 export type PasCheckRow = {
   included?: boolean;
@@ -42,16 +37,60 @@ export type PasCheckRow = {
   serialNumber?: string;
 };
 
-function norm(value?: string | null): string {
-  return (value || '').trim().toLowerCase();
-}
-
 export function productUsesPasSerials(product: Product | null | undefined): boolean {
   return Boolean(product?.pasPreAllotted);
 }
 
 export function catalogueHasPasProducts(products: readonly Product[] | undefined): boolean {
   return Boolean(products?.some(productUsesPasSerials));
+}
+
+export function pasProductIdSet(products: readonly Product[] | undefined): Set<string> {
+  return new Set(
+    (products || []).filter(productUsesPasSerials).map(product => product.id).filter(Boolean),
+  );
+}
+
+export type PasAllotmentIdentity = {
+  serialNumber: string;
+  productId?: string;
+  sku?: string;
+  modelNo?: string;
+  productName?: string;
+  pool?: string;
+};
+
+export function allotmentUsesPasProduct(
+  row: PasAllotmentIdentity,
+  pasProducts: readonly Product[],
+): boolean {
+  if (String(row.pool || '').trim().toLowerCase() === 'pas') return true;
+  if (pasProducts.length === 0) return false;
+  const productId = String(row.productId || '').trim();
+  if (productId && pasProducts.some(product => product.id === productId)) return true;
+  return pasProducts.some(product =>
+    pasBankMatchesProduct(
+      {
+        productId: row.productId,
+        yesoneSku: row.sku,
+        sku: row.sku,
+      },
+      product,
+    ),
+  );
+}
+
+export function pasSerialsFromAllotments(
+  rows: readonly PasAllotmentIdentity[],
+  products: readonly Product[] | undefined,
+): string[] {
+  const pasProducts = (products || []).filter(productUsesPasSerials);
+  if (pasProducts.length === 0) {
+    return rows
+      .filter(row => String(row.pool || '').trim().toLowerCase() === 'pas')
+      .map(row => row.serialNumber);
+  }
+  return rows.filter(row => allotmentUsesPasProduct(row, pasProducts)).map(row => row.serialNumber);
 }
 
 export function pasSerialDocId(serial: string): string | null {
@@ -73,63 +112,6 @@ export function quotaSerialRows(
         pas: productUsesPasSerials(product),
       };
     });
-}
-
-function addIdentityKey(set: Set<string>, value?: string | null): void {
-  const raw = norm(value);
-  if (!raw) return;
-  set.add(raw);
-  const compact = raw.replace(/[^a-z0-9]/g, '');
-  if (compact) set.add(compact);
-}
-
-function identityKeys(row: {
-  id?: string;
-  productId?: string;
-  yesoneSku?: string;
-  sku?: string;
-  modelid?: string;
-  modelId?: string;
-  modelNo?: string;
-  modelApprovalNo?: string;
-}): Set<string> {
-  const out = new Set<string>();
-  addIdentityKey(out, row.id);
-  addIdentityKey(out, row.productId);
-  addIdentityKey(out, row.yesoneSku);
-  addIdentityKey(out, row.sku);
-  addIdentityKey(out, row.modelid);
-  addIdentityKey(out, row.modelId);
-  addIdentityKey(out, row.modelNo);
-  addIdentityKey(out, row.modelApprovalNo);
-  return out;
-}
-
-function identityKeysOverlap(left: Set<string>, right: Set<string>): boolean {
-  for (const x of left) {
-    if (right.has(x)) return true;
-    if (x.length < 4) continue;
-    for (const y of right) {
-      if (y.length < 4) continue;
-      if (x.startsWith(y) || y.startsWith(x)) return true;
-    }
-  }
-  return false;
-}
-
-export function pasBankMatchesProduct(bank: PasBankDoc, product: Product): boolean {
-  const bankKeys = identityKeys(bank);
-  if (bankKeys.size === 0) return true;
-  return identityKeysOverlap(
-    bankKeys,
-    identityKeys({
-      id: product.id,
-      yesoneSku: product.yesoneSku,
-      modelid: product.modelid,
-      modelNo: product.modelNo,
-      modelApprovalNo: product.modelApprovalNo,
-    }),
-  );
 }
 
 function pasStatusError(serial: string, status: string): string | null {
@@ -265,29 +247,13 @@ function serialSortKey(a: ProductSerialRow, b: ProductSerialRow): number {
   return a.serial.localeCompare(b.serial, undefined, { numeric: true, sensitivity: 'base' });
 }
 
-function statusKey(status: string): string {
-  return status.trim().toLowerCase();
-}
-
-function summarizeRows(rows: ProductSerialRow[]): ProductSerialBankSummary {
-  let available = 0;
-  let used = 0;
-  let cancelled = 0;
-  for (const row of rows) {
-    const status = statusKey(row.status);
-    if (status === 'used') used += 1;
-    else if (status === 'cancelled' || status === 'replaced') cancelled += 1;
-    else available += 1;
-  }
-  return { rows, qty: rows.length, available, used, cancelled };
-}
-
 function pasRowFromSnap(
   id: string,
   data: PasBankDoc,
   product: Product,
+  range?: { from?: string; to?: string } | null,
 ): ProductSerialRow | null {
-  if (!pasBankMatchesProduct(data, product)) return null;
+  if (!pasBankListedForProduct(data, product, range)) return null;
   const serial = String(data.serialNumber || id).trim();
   if (!serial) return null;
   return {
@@ -296,18 +262,64 @@ function pasRowFromSnap(
     status: String(data.status || 'available'),
     pool: 'pas',
     invoiceNo: data.invoiceNo,
+    bankQty: finitePasCount(data.bankQty) ?? undefined,
+    bankLinked: finitePasCount(data.bankLinked) ?? undefined,
+    bankUnused: finitePasCount(data.bankUnused) ?? undefined,
+    serialFrom: data.serialFrom,
+    serialTo: data.serialTo,
   };
 }
 
-async function queryPasBank(product: Product): Promise<ProductSerialRow[]> {
+function metaDocIdsForProduct(product: Product): string[] {
+  return [product.yesoneSku, product.id, product.modelid]
+    .map(value => pasSerialDocId(String(value || '')))
+    .filter((id): id is string => Boolean(id));
+}
+
+async function loadPasBankMeta(product: Product): Promise<PasBankUsage | null> {
+  for (const id of metaDocIdsForProduct(product)) {
+    try {
+      const snap = await getDoc(doc(db, PAS_SERIAL_BANK_META_COLLECTION, id));
+      if (!snap.exists()) continue;
+      const data = (snap.data() || {}) as PasBankUsage & { linked?: number; unused?: number };
+      return {
+        qty: finitePasCount(data.qty),
+        linked: finitePasCount(data.linked),
+        unused: finitePasCount(data.unused),
+        from: data.from,
+        to: data.to,
+      };
+    } catch (err) {
+      if (firebaseDenied(err)) continue;
+      throw err;
+    }
+  }
+  return null;
+}
+
+async function queryPasBank(product: Product): Promise<{
+  rows: ProductSerialRow[];
+  usage: PasBankUsage | null;
+}> {
   const col = collection(db, PAS_SERIAL_BANK_COLLECTION);
-  const listed = await getDocs(col);
+  const [listed, meta] = await Promise.all([getDocs(col), loadPasBankMeta(product)]);
+  const snaps = listed.docs.map(docSnap => ({
+    id: docSnap.id,
+    data: (docSnap.data() || {}) as PasBankDoc,
+  }));
+  const tagged: ProductSerialRow[] = [];
+  for (const snap of snaps) {
+    const row = pasRowFromSnap(snap.id, snap.data, product);
+    if (row) tagged.push(row);
+  }
+  const usage = mergePasBankUsage(meta, usageFromSerialRows(tagged));
+  const range = usage?.from && usage.to ? { from: usage.from, to: usage.to } : null;
   const byId = new Map<string, ProductSerialRow>();
-  for (const docSnap of listed.docs) {
-    const row = pasRowFromSnap(docSnap.id, (docSnap.data() || {}) as PasBankDoc, product);
+  for (const snap of snaps) {
+    const row = pasRowFromSnap(snap.id, snap.data, product, range);
     if (row) byId.set(row.id, row);
   }
-  return [...byId.values()].sort(serialSortKey);
+  return { rows: [...byId.values()].sort(serialSortKey), usage };
 }
 
 async function queryGasAllotments(product: Product): Promise<ProductSerialRow[]> {
@@ -346,10 +358,11 @@ async function queryGasAllotments(product: Product): Promise<ProductSerialRow[]>
 
 export async function listProductSerialBank(product: Product): Promise<ProductSerialBankSummary> {
   try {
-    const rows = productUsesPasSerials(product)
-      ? await queryPasBank(product)
-      : await queryGasAllotments(product);
-    return summarizeRows(rows);
+    if (productUsesPasSerials(product)) {
+      const { rows, usage } = await queryPasBank(product);
+      return mergePasBankCounts(rows, usage);
+    }
+    return summarizeSerialRows(await queryGasAllotments(product));
   } catch (err) {
     if (firebaseDenied(err)) {
       throw new Error('Serial bank is blocked. Super admin must deploy Firestore rules.');

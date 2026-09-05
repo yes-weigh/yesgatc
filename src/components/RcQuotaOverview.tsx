@@ -8,7 +8,12 @@ import {
   normalizeReservedAssignments,
   toggleReservedSerial,
 } from '../lib/rcMasterQuota';
-import { expandSerialRange, uniqueSerials, yesoneSerialFromDoc } from '../lib/yesoneInboundData';
+import {
+  expandSerialRange,
+  uniqueSerials,
+  yesoneSerialFromDoc,
+  type YesoneSerialAllotment,
+} from '../lib/yesoneInboundData';
 import {
   filterInwardBatchesForRc,
   inwardBatchesFromInboundEvents,
@@ -16,6 +21,8 @@ import {
   type SerialInwardBatch,
 } from '../lib/serialInwardReport';
 import { serialsForReservedInvoices } from '../lib/invoicedQuotaSerials';
+import { pasProductIdSet, pasSerialsFromAllotments } from '../lib/pasSerialBank';
+import { useAppContext } from '../context/AppContext';
 import { useRcScope } from '../lib/roleScope';
 import type { SiteCalibration } from '../types';
 import { SerialSeatOverlay } from './SerialSeatOverlay';
@@ -31,6 +38,7 @@ function displayQty(value: number | null): string {
 
 export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   const { isRcAdmin } = useRcScope();
+  const { products } = useAppContext();
   const [companyName, setCompanyName] = useState('');
   const [rcCode, setRcCode] = useState('');
   const [ovQuota, setOvQuota] = useState('');
@@ -44,6 +52,7 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
     Array<{ invoiceNo: string; verifierUid: string; serialStart?: string; serialEnd?: string }>
   >([]);
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
+  const [allotmentRows, setAllotmentRows] = useState<YesoneSerialAllotment[]>([]);
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
   const [eventRows, setEventRows] = useState<SerialInwardBatch[]>([]);
   const [quotaRecords, setQuotaRecords] = useState<SiteCalibration[]>(records);
@@ -51,9 +60,8 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    setQuotaRecords(records);
-    setRcWideOk(false);
-  }, [records]);
+    setQuotaRecords(prev => (rcWideOk ? prev : records));
+  }, [rcWideOk, records]);
 
   useEffect(() => {
     setRcWideOk(false);
@@ -101,9 +109,11 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
       snap => {
         const rows = snap.docs.map(item => yesoneSerialFromDoc(item.id, item.data()));
         const active = rows.filter(row => row.status !== 'cancelled' && row.status !== 'replaced');
+        setAllotmentRows(active);
         setAllotSerials(uniqueSerials(active.map(row => row.serialNumber)));
       },
       () => {
+        setAllotmentRows([]);
         setAllotSerials([]);
       },
     );
@@ -150,6 +160,12 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
     ]);
   }, [batchRows, eventRows, reservedAssignments, reservedInvoices, reservedSerials]);
 
+  const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
+  const pasSerials = useMemo(
+    () => pasSerialsFromAllotments(allotmentRows, products),
+    [allotmentRows, products],
+  );
+
   const quota = useMemo(
     () =>
       computeRcQuotaSeats({
@@ -157,20 +173,25 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
         companyName,
         ovQuota,
         ovQuotaUsed,
-        recordsAreRcWide: rcWideOk,
+        recordsAreRcWide: isRcAdmin || rcWideOk,
         storedSerials,
         allotSerials,
         voidedSerials,
         records: quotaRecords,
         reservedSerials: mergedReserved,
         reservedForUids,
+        pasProductIds,
+        pasSerials,
       }),
     [
       allotSerials,
       companyName,
+      isRcAdmin,
       mergedReserved,
       ovQuota,
       ovQuotaUsed,
+      pasProductIds,
+      pasSerials,
       quotaRecords,
       rcCode,
       rcWideOk,

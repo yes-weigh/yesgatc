@@ -16,6 +16,8 @@ import {
   serialInwardBatchFromDoc,
   type SerialInwardBatch,
 } from '../lib/serialInwardReport';
+import { pasProductIdSet, pasSerialsFromAllotments } from '../lib/pasSerialBank';
+import { useAppContext } from '../context/AppContext';
 import { useRcScope } from '../lib/roleScope';
 import type { SiteCalibration } from '../types';
 
@@ -24,6 +26,7 @@ export function useRcQuotaSeats(
   records: SiteCalibration[],
 ): RcQuotaSeats & { ready: boolean; allotmentRows: YesoneSerialAllotment[] } {
   const { isRcAdmin } = useRcScope();
+  const { products } = useAppContext();
   const [companyName, setCompanyName] = useState('');
   const [rcCode, setRcCode] = useState('');
   const [ovQuota, setOvQuota] = useState('');
@@ -215,6 +218,12 @@ export function useRcQuotaSeats(
     return map;
   }, [batchRows, eventRows, reservedAssignments, reservedForUids, reservedSerials]);
 
+  const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
+  const pasSerials = useMemo(
+    () => pasSerialsFromAllotments(allotmentRows, products),
+    [allotmentRows, products],
+  );
+
   const seats = useMemo(
     () =>
       computeRcQuotaSeats({
@@ -230,6 +239,8 @@ export function useRcQuotaSeats(
         reservedSerials: mergedReserved,
         reservedForUids,
         reservedByUid,
+        pasProductIds,
+        pasSerials,
       }),
     [
       allotSerials,
@@ -238,6 +249,8 @@ export function useRcQuotaSeats(
       mergedReserved,
       ovQuota,
       ovQuotaUsed,
+      pasProductIds,
+      pasSerials,
       rcCode,
       rcWideRecords,
       records,

@@ -1008,7 +1008,7 @@ export const RCSiteCalibration: React.FC = () => {
     if (sessionValues.verificationType === 'OV') {
       const cap = ovQuotaQtyCap(ovQuotaGate);
       const included = sessionValues.devices.filter(row => row.included).length;
-      if (included >= cap) {
+      if (included >= cap && !catalogueHasPasProducts(products)) {
         setError(
           cap <= 0
             ? 'OV quota balance is 0. Cannot start more Original Verifications.'

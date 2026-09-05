@@ -8,6 +8,7 @@ export type YesoneSerialAllotment = {
   productName: string;
   modelNo: string;
   sku: string;
+  pool?: string;
   status: string;
   allottedAt: string;
   previousSerialNumber: string;
@@ -51,6 +52,7 @@ export function yesoneSerialFromDoc(id: string, data: unknown): YesoneSerialAllo
     productName: text(row.productName),
     modelNo: text(row.modelNo),
     sku: text(row.sku),
+    pool: text(row.pool),
     status: text(row.status) || 'allotted',
     allottedAt: text(row.allottedAt) || text(row.updatedAt),
     previousSerialNumber: text(row.previousSerialNumber),

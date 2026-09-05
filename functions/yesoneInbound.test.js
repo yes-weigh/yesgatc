@@ -823,3 +823,312 @@ test('product.bank PAS range writes number bank for ATM GOLD', async () => {
   assert.equal(db._store['pasSerialBank/YJ01004'].productId, 'atm');
   assert.equal(db._store['serialAllotments/YJ01004'], undefined);
 });
+
+test('PAS serial.allotted without RC fields writes number bank', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/rc1': { role: 'rc_admin', rcCode: 'ABC', companyName: 'Meezan', yesoneAllottedSerials: ['Y9'] },
+    'products/scale5': {
+      pasPreAllotted: true,
+      yesoneSku: 'KS05BAY',
+      modelid: 'YSK5',
+      modelNo: 'YSK',
+      name: 'Weighing Scale 5 kg',
+    },
+  });
+
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        type: 'serial.allotted',
+        source: 'yesone',
+        sentAt: '2026-09-05T02:12:05.146Z',
+        product: {
+          sku: 'KS05BAY',
+          name: 'Weighing Scale 5Kg',
+          pas: true,
+          productBank: true,
+          modelId: 'YSK5',
+        },
+        from: 'YJ02001',
+        to: 'YJ02003',
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.results.every(row => row.pool === 'pas'), true);
+  assert.equal(db._store['pasSerialBank/YJ02001'].productId, 'scale5');
+  assert.equal(db._store['pasSerialBank/YJ02001'].qty, 1);
+  assert.equal(db._store['pasSerialBank/YJ02003'].yesoneSku, 'KS05BAY');
+  assert.equal(db._store['serialAllotments/YJ02001'], undefined);
+  assert.deepEqual(db._store['users/rc1'].yesoneAllottedSerials, ['Y9']);
+});
+
+test('PAS product.bank product-only body fails with precise serial reason', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'products/scale5': {
+      pasPreAllotted: true,
+      yesoneSku: 'KS05BAY',
+      modelid: 'YSK5',
+      name: 'Weighing Scale 5 kg',
+    },
+  });
+
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'product.bank',
+        type: 'product.bank',
+        source: 'yesone',
+        sentAt: '2026-09-05T02:12:05.146Z',
+        product: {
+          id: '99381000029829020',
+          sku: 'KS05BAY',
+          name: 'Weighing Scale 5Kg',
+          pas: true,
+          productBank: true,
+          modelId: 'YSK5',
+        },
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, false);
+  assert.equal(res.body.results[0].event, 'serial.allotted');
+  assert.equal(res.body.results[0].error, 'serial_required:from,to');
+  assert.equal(String(res.body.results[0].error).includes('rcCode'), false);
+  assert.equal(String(res.body.results[0].error).includes('invoiceNo'), false);
+  assert.equal(db._store['pasSerialBank/YJ02001'], undefined);
+});
+
+test('GAS serial.allotted still uses RC identity; missing serials stay precise', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/rc1': { role: 'rc_admin', rcCode: 'ABC', companyName: 'Meezan' },
+    'users/iwp': { role: 'rc_admin', rcCode: 'IWP', companyName: 'INTERWEIGHING PVT LTD' },
+  });
+
+  const ok = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: { event: 'serial.allotted', serialNumber: 'G88', rcCode: 'ABC', rcId: 'rc1', rcCompanyName: 'Meezan' },
+    },
+    ok,
+    db,
+  );
+  assert.equal(ok.body.ok, true);
+  assert.equal(db._store['serialAllotments/G88'].rcId, 'rc1');
+  assert.equal(db._store['serialAllotments/G88'].rcCode, 'ABC');
+  assert.ok(db._store['users/rc1'].yesoneAllottedSerials.includes('G88'));
+  assert.equal(db._store['pasSerialBank/G88'], undefined);
+
+  const missing = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: { event: 'serial.allotted', rcCode: 'ABC', rcId: 'rc1', rcCompanyName: 'Meezan' },
+    },
+    missing,
+    db,
+  );
+  assert.equal(missing.body.ok, false);
+  assert.equal(missing.body.results[0].error, 'serial_required:from,to');
+});
+
+test('PAS product.bank range nested on product writes number bank', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'products/scale5': {
+      pasPreAllotted: true,
+      yesoneSku: 'KS05BAY',
+      modelid: 'YSK5',
+      name: 'Weighing Scale 5 kg',
+    },
+  });
+
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'product.bank',
+        product: {
+          sku: 'KS05BAY',
+          pas: true,
+          productBank: true,
+          modelId: 'YSK5',
+          from: 'YJ02101',
+          to: 'YJ02102',
+        },
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['pasSerialBank/YJ02101'].productId, 'scale5');
+  assert.equal(db._store['pasSerialBank/YJ02102'].qty, 1);
+  assert.equal(db._store['serialAllotments/YJ02101'], undefined);
+});
+
+test('PAS kitchen scales isolate SKU ranges and store unused/linked', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'products/scale10': {
+      pasPreAllotted: true,
+      yesoneSku: 'KS10BAY',
+      modelid: 'YSK10',
+      modelApprovalNo: 'IND/09/2006/47',
+      name: 'Weighing Scale 10 kg',
+    },
+    'products/scale5': {
+      pasPreAllotted: true,
+      yesoneSku: 'KS05BAY',
+      modelid: 'YSK5',
+      modelApprovalNo: 'IND/09/2006/47',
+      name: 'Weighing Scale 5 kg',
+    },
+  });
+
+  const ten = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'product.bank',
+        sku: 'KS10BAY',
+        serialType: 'PAS',
+        modelid: 'YSK10',
+        product: { name: 'KS10BAY Kitchen Scale 10KG', pas: true, productBank: true },
+        from: 'YJ00001',
+        to: 'YJ00003',
+        qty: 600,
+        linked: 31,
+        unused: 569,
+      },
+    },
+    ten,
+    db,
+  );
+  assert.equal(ten.body.ok, true);
+  assert.equal(db._store['pasSerialBank/YJ00001'].yesoneSku, 'KS10BAY');
+  assert.equal(db._store['pasSerialBank/YJ00001'].sku, 'KS10BAY');
+  assert.equal(db._store['pasSerialBank/YJ00001'].productId, 'scale10');
+  assert.equal(db._store['pasSerialBank/YJ00001'].bankLinked, 31);
+  assert.equal(db._store['pasSerialBank/YJ00001'].bankUnused, 569);
+  assert.equal(db._store['pasSerialBank/YJ00001'].status, 'available');
+  assert.equal(db._store['pasSerialBankMeta/KS10BAY'].qty, 600);
+  assert.equal(db._store['pasSerialBankMeta/KS10BAY'].linked, 31);
+  assert.equal(db._store['pasSerialBankMeta/KS10BAY'].unused, 569);
+  assert.equal(db._store['pasSerialBankMeta/KS10BAY'].from, 'YJ00001');
+
+  const five = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'product.bank',
+        product: {
+          sku: 'KS05BAY',
+          name: 'KS05BAY Kitchen Scale 5KG',
+          pas: true,
+          productBank: true,
+          modelId: 'YSK5',
+        },
+        from: 'YJ00601',
+        to: 'YJ00603',
+        qty: 400,
+        linked: 14,
+        unused: 386,
+      },
+    },
+    five,
+    db,
+  );
+  assert.equal(five.body.ok, true);
+  assert.equal(db._store['pasSerialBank/YJ00601'].yesoneSku, 'KS05BAY');
+  assert.equal(db._store['pasSerialBank/YJ00601'].productId, 'scale5');
+  assert.equal(db._store['pasSerialBank/YJ00001'].yesoneSku, 'KS10BAY');
+  assert.equal(db._store['pasSerialBank/YJ00001'].productId, 'scale10');
+  assert.equal(db._store['pasSerialBankMeta/KS05BAY'].unused, 386);
+  assert.equal(db._store['pasSerialBankMeta/KS05BAY'].linked, 14);
+  assert.equal(db._store['serialAllotments/YJ00001'], undefined);
+  assert.equal(db._store['serialAllotments/YJ00601'], undefined);
+});
+
+test('PAS named linked serial is marked used; local used is kept', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'products/scale10': {
+      pasPreAllotted: true,
+      yesoneSku: 'KS10BAY',
+      modelid: 'YSK10',
+      name: 'Weighing Scale 10 kg',
+    },
+    'pasSerialBank/YJ00002': {
+      serialNumber: 'YJ00002',
+      status: 'used',
+      yesoneSku: 'KS10BAY',
+      usedRecordId: 'ov1',
+    },
+  });
+
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'product.bank',
+        sku: 'KS10BAY',
+        serialType: 'PAS',
+        from: 'YJ00001',
+        to: 'YJ00003',
+        linkedSerials: ['YJ00001'],
+        qty: 3,
+        linked: 1,
+        unused: 2,
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['pasSerialBank/YJ00001'].status, 'used');
+  assert.equal(db._store['pasSerialBank/YJ00002'].status, 'used');
+  assert.equal(db._store['pasSerialBank/YJ00002'].usedRecordId, 'ov1');
+  assert.equal(db._store['pasSerialBank/YJ00003'].status, 'available');
+});

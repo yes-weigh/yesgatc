@@ -56,7 +56,7 @@ export function remainingSerialsForProduct(
   });
 }
 
-/** OV quantity left (Allotted − Used). PAS and GAS both consume this. */
+/** GAS OV quantity left (Allotted − Used). PAS does not consume this. */
 export function ovQuotaQtyCap(gate: OvQuotaGate): number {
   return gate.balanceQty == null ? gate.remaining.length : Math.max(0, gate.balanceQty);
 }
@@ -95,7 +95,7 @@ export function validateOvQuotaSetup(
   hasPasProducts = false,
 ): string | null {
   if (!gate || verificationType !== 'OV' || !isNew) return null;
-  if (ovQuotaQtyCap(gate) <= 0) {
+  if (ovQuotaQtyCap(gate) <= 0 && !hasPasProducts) {
     return 'OV quota balance is 0. Cannot start Original Verification.';
   }
   if (!hasPasProducts && gate.remaining.length <= 0) {
@@ -148,10 +148,10 @@ export function validateOvQuotaDevices(
       : `Allotted serials: ${stickers} left. You can start ${stickers} more GAS Original Verification(s).`;
   }
   const qtyCap = ovQuotaQtyCap(gate);
-  if (newGas + newPas > qtyCap) {
+  if (newGas > qtyCap) {
     return qtyCap <= 0
-      ? 'OV quota balance is 0. Cannot start more Original Verifications.'
-      : `OV quota: ${qtyCap} left. You can start ${qtyCap} more Original Verification(s).`;
+      ? 'OV quota balance is 0. Cannot start more GAS Original Verifications.'
+      : `OV quota: ${qtyCap} left. You can start ${qtyCap} more GAS Original Verification(s).`;
   }
   return null;
 }
