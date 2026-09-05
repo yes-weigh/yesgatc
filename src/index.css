@@ -12310,9 +12310,11 @@ body.verification-mobile-wizard-active {
 }
 
 .product-spec-picker-modal {
+  display: flex;
+  flex-direction: column;
   width: min(100%, 26rem);
   max-height: min(78dvh, 34rem);
-  overflow: auto;
+  overflow: hidden;
   border-radius: 1.1rem;
   border: 1px solid rgba(74, 222, 128, 0.28);
   background: #0b1220;
@@ -12363,6 +12365,8 @@ body.verification-mobile-wizard-active {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  overflow: auto;
+  min-height: 0;
 }
 
 .product-spec-picker-option {
@@ -12399,6 +12403,7 @@ body.verification-mobile-wizard-active {
   box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.35);
 }
 
+.product-spec-picker-option:active,
 .product-spec-picker-option--selected {
   background: #10b981 !important;
   border-color: #34d399 !important;
@@ -12430,6 +12435,7 @@ body.verification-mobile-wizard-active {
   flex-shrink: 0;
 }
 
+.product-spec-picker-option:active .product-spec-picker-badge,
 .product-spec-picker-option--selected .product-spec-picker-badge {
   background: rgba(255, 255, 255, 0.96);
   border-color: transparent;
@@ -12449,6 +12455,7 @@ body.verification-mobile-wizard-active {
   color: #e2e8f0;
 }
 
+.product-spec-picker-option:active .product-spec-picker-option-name,
 .product-spec-picker-option--selected .product-spec-picker-option-name {
   color: #ffffff;
 }
@@ -12458,15 +12465,17 @@ body.verification-mobile-wizard-active {
   color: rgba(148, 163, 184, 0.95);
 }
 
+.product-spec-picker-option:active .product-spec-picker-option-meta,
 .product-spec-picker-option--selected .product-spec-picker-option-meta {
   color: rgba(236, 253, 245, 0.9);
 }
 
 .product-spec-picker-hint {
   margin: 0;
-  padding: 0 0.85rem 0.95rem;
+  padding: 0 0.85rem 0.45rem;
   font-size: 0.72rem;
   color: rgba(148, 163, 184, 0.9);
+  flex-shrink: 0;
 }
 
 .product-spec-picker-foot {
@@ -13564,10 +13573,20 @@ body.verification-mobile-wizard-active {
 .product-spec-picker-actions {
   display: flex;
   justify-content: flex-end;
+  flex-shrink: 0;
   gap: 0.5rem;
-  margin-top: 0.75rem;
-  padding-top: 0.65rem;
+  margin-top: 0;
+  padding: 0.65rem 0.85rem calc(0.85rem + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.product-spec-picker-actions .verification-form-btn--continue {
+  flex: 0 0 auto;
+  min-width: 7.5rem;
+}
+
+body.product-spec-picker-open .verification-mobile-chrome--actions {
+  display: none;
 }
 
 .ov-self-check-spec-name {

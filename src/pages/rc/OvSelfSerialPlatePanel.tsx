@@ -6,9 +6,16 @@ import {
   type GeoStampCoordinates,
   type StampWeather,
 } from '../../components/VerificationPhotoUploadSlot';
-import { ovSerialChoicesForRow } from '../../lib/ovQuotaGate';
-import { productUsesPasSerials, verifyPasSerialInBank } from '../../lib/pasSerialBank';
+import { type OvQuotaAllotment } from '../../lib/ovQuotaGate';
+import { verifyPasSerialInBank } from '../../lib/pasSerialBank';
 import { formatShopCapacityLine, getProductSpecifications, resolveProductSpecification } from '../../lib/productSpecifications';
+import { readSerialPlate } from '../../lib/readSerialPlate';
+import {
+  applyOcrSerialToPool,
+  gasAllottedChoices,
+  serialEntryMode,
+  serialInChoiceList,
+} from '../../lib/serialEntryPool';
 import {
   SERIAL_PLATE_IMAGE_KIND,
   VERIFICATION_IMAGE_CONFIG,
@@ -24,6 +31,7 @@ export function OvSelfSerialPlatePanel({
   images,
   verificationType,
   allottedSerials,
+  allotments,
   heldSerials = [],
   disabled,
   geoStampCoords,
@@ -38,6 +46,7 @@ export function OvSelfSerialPlatePanel({
   images: DeviceVerificationImagesState;
   verificationType: JobType | '';
   allottedSerials: string[];
+  allotments?: OvQuotaAllotment[];
   heldSerials?: string[];
   disabled?: boolean;
   geoStampCoords?: GeoStampCoordinates | null;
@@ -52,13 +61,26 @@ export function OvSelfSerialPlatePanel({
   const serialInputRef = useRef<HTMLInputElement>(null);
   const isRv = verificationType === 'RV';
   const isOv = verificationType === 'OV';
-  const isPas = productUsesPasSerials(product);
+  const mode = serialEntryMode(product);
+  const isPas = mode === 'pas-type';
+  const isGasSelect = mode === 'gas-select' && isOv;
   const [pasHint, setPasHint] = useState<{ tone: 'ok' | 'err' | 'muted'; text: string } | null>(null);
+  const [ocrHint, setOcrHint] = useState<string | null>(null);
 
   const seats = useMemo(
-    () => ovSerialChoicesForRow(row.serialNumber, allottedSerials, heldSerials, []),
-    [row.serialNumber, allottedSerials, heldSerials],
+    () =>
+      isGasSelect
+        ? gasAllottedChoices({
+            remaining: allottedSerials,
+            allotments,
+            heldSerials,
+            product,
+          })
+        : [],
+    [isGasSelect, allottedSerials, allotments, heldSerials, product],
   );
+  const selectedSeat =
+    seats.find(serial => serial.trim().toUpperCase() === row.serialNumber.trim().toUpperCase()) ?? '';
 
   const selectedSpecLabel = useMemo(() => {
     if (!product) return '';
@@ -69,9 +91,9 @@ export function OvSelfSerialPlatePanel({
   }, [product, row.productSpecificationId]);
 
   useEffect(() => {
-    if (!hasPlate || disabled) return;
+    if (disabled || isGasSelect) return;
     serialInputRef.current?.focus();
-  }, [hasPlate, disabled]);
+  }, [disabled, isGasSelect]);
 
   useEffect(() => {
     if (!isPas || !product) {
@@ -80,7 +102,7 @@ export function OvSelfSerialPlatePanel({
     }
     const serial = row.serialNumber.trim();
     if (!serial) {
-      setPasHint({ tone: 'muted', text: 'Type the serial. Checked against the PAS number bank.' });
+      setPasHint({ tone: 'muted', text: 'Type the serial. Checked against this product’s PAS number bank.' });
       return;
     }
     let cancelled = false;
@@ -105,17 +127,66 @@ export function OvSelfSerialPlatePanel({
     };
   }, [isPas, product, row.serialNumber]);
 
+  const runPasVerifyNow = () => {
+    if (!isPas || !product) return;
+    const serial = row.serialNumber.trim();
+    if (!serial) return;
+    void verifyPasSerialInBank(serial, product).then(error => {
+      setPasHint(
+        error
+          ? { tone: 'err', text: error }
+          : { tone: 'ok', text: 'Serial is in the PAS number bank.' },
+      );
+    });
+  };
+
+  const handlePlateSelect = (file: File) => {
+    onPlateSelect(file);
+    setOcrHint('Reading plate…');
+    void readSerialPlate(file, isGasSelect ? seats : [])
+      .then(read => {
+        const filled = applyOcrSerialToPool({
+          mode,
+          ocrSerial: read.serialNumber,
+          allottedMatch: read.allottedMatch,
+          gasChoices: seats,
+        });
+        if (filled && !row.serialNumber.trim()) {
+          onSerialChange(filled);
+          setOcrHint(isGasSelect ? `Matched allotted serial ${filled}.` : 'Filled serial from plate photo (you can edit).');
+          return;
+        }
+        if (filled && isGasSelect && !serialInChoiceList(row.serialNumber, seats)) {
+          onSerialChange(filled);
+          setOcrHint(`Matched allotted serial ${filled}.`);
+          return;
+        }
+        setOcrHint(
+          isGasSelect
+            ? 'Plate photo saved. Select an allotted serial if it is not filled.'
+            : 'Plate photo saved. Type the serial if it is not filled.',
+        );
+      })
+      .catch(() => {
+        setOcrHint(null);
+      });
+  };
+
+  const recapHint = isPas
+    ? 'Type the serial. Plate photo still required to continue.'
+    : isGasSelect
+      ? 'Select an allotted serial. Plate photo still required to continue.'
+      : 'Type the existing serial. Plate photo still required to continue.';
+
   return (
     <div className="ov-self-serial-plate">
       <div className="ov-self-photos-recap">
         <span>
           <strong>{row.productName.trim() || product?.name || 'Product'}</strong>
           {selectedSpecLabel ? ` · ${selectedSpecLabel}` : ''}
-          {isPas ? ' · PAS' : ''}
+          {isPas ? ' · PAS' : ' · GAS'}
         </span>
-        <span className="text-muted text-sm">
-          {isPas ? 'Photo first, then type the serial' : 'Photo first, then type or pick the serial'}
-        </span>
+        <span className="text-muted text-sm">{recapHint}</span>
       </div>
 
       <VerificationPhotoUploadSection title="Serial number plate">
@@ -130,62 +201,52 @@ export function OvSelfSerialPlatePanel({
           geoStamp
           geoStampCoords={geoStampCoords}
           geoStampWeather={geoStampWeather}
-          onSelect={onPlateSelect}
-          onRemove={onPlateRemove}
+          onSelect={handlePlateSelect}
+          onRemove={() => {
+            setOcrHint(null);
+            onPlateRemove();
+          }}
         />
       </VerificationPhotoUploadSection>
 
-      <div className="form-group mb-0 ov-self-serial-edit">
-        <label htmlFor="ov-self-serial-input">Serial number *</label>
-        <input
-          id="ov-self-serial-input"
-          ref={serialInputRef}
-          type="text"
-          className="input-field text-mono"
-          autoComplete="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          placeholder={hasPlate ? 'Type serial from the plate' : 'Add plate photo first'}
-          value={row.serialNumber}
-          readOnly={disabled || !hasPlate}
-          onChange={e => onSerialChange(e.target.value)}
-        />
-        {pasHint ? (
-          <p className={`ov-self-serial-hint ov-self-serial-hint--${pasHint.tone}`} role="status">
-            {pasHint.text}
-          </p>
-        ) : null}
-      </div>
-
-      {isRv && onYearChange ? (
-        <div className="ov-self-serial-year">
-          <span className="ov-self-serial-year-label">
-            Year of manufacturing <span className="verification-device-required">*</span>
-          </span>
-          <ManufacturingYearPicker
-            value={row.manufacturingYear}
-            onChange={onYearChange}
-            disabled={disabled || !hasPlate}
-          />
-        </div>
+      {ocrHint ? (
+        <p className="ov-self-plate-status" role="status">
+          {ocrHint}
+        </p>
       ) : null}
 
-      {isOv && !isPas ? (
-        <div className="ov-self-allotted">
-          <p className="ov-self-allotted-title mb-0">Allotted serials</p>
+      {isGasSelect ? (
+        <div className="form-group mb-0 ov-self-serial-edit">
+          <label htmlFor="ov-self-serial-select">Serial number *</label>
+          <select
+            id="ov-self-serial-select"
+            className="input-field text-mono"
+            value={selectedSeat}
+            disabled={disabled}
+            onChange={e => onSerialChange(e.target.value)}
+          >
+            <option value="">{seats.length ? 'Select allotted serial' : 'No allotted serials left'}</option>
+            {seats.map(serial => (
+              <option key={serial} value={serial}>
+                {serial}
+              </option>
+            ))}
+          </select>
           {seats.length === 0 ? (
-            <p className="text-muted text-sm mb-0">No allotted serials left.</p>
+            <p className="ov-self-serial-hint ov-self-serial-hint--err" role="status">
+              No unused allotted serials for this product. Cannot invent a serial.
+            </p>
           ) : (
             <ul className="admin-setting-serial-seats ov-self-allotted-grid">
               {seats.map(serial => {
-                const picked = row.serialNumber.trim() === serial;
+                const picked = serialInChoiceList(row.serialNumber, [serial]);
                 return (
                   <li key={serial}>
                     <button
                       type="button"
                       className={`admin-setting-serial-seat text-mono${picked ? ' admin-setting-serial-seat--picked' : ''}`}
                       aria-pressed={picked}
-                      disabled={disabled || !hasPlate}
+                      disabled={disabled}
                       onClick={() => onSerialChange(picked ? '' : serial)}
                     >
                       {serial}
@@ -196,6 +257,48 @@ export function OvSelfSerialPlatePanel({
             </ul>
           )}
         </div>
+      ) : (
+        <div className="form-group mb-0 ov-self-serial-edit">
+          <label htmlFor="ov-self-serial-input">Serial number *</label>
+          <input
+            id="ov-self-serial-input"
+            ref={serialInputRef}
+            type="text"
+            className="input-field text-mono"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            placeholder={isPas ? 'Type serial from the plate' : 'Type existing serial'}
+            value={row.serialNumber}
+            readOnly={disabled}
+            onChange={e => onSerialChange(e.target.value)}
+            onBlur={runPasVerifyNow}
+          />
+          {pasHint ? (
+            <p className={`ov-self-serial-hint ov-self-serial-hint--${pasHint.tone}`} role="status">
+              {pasHint.text}
+            </p>
+          ) : null}
+        </div>
+      )}
+
+      {isRv && onYearChange ? (
+        <div className="ov-self-serial-year">
+          <span className="ov-self-serial-year-label">
+            Year of manufacturing <span className="verification-device-required">*</span>
+          </span>
+          <ManufacturingYearPicker
+            value={row.manufacturingYear}
+            onChange={onYearChange}
+            disabled={disabled}
+          />
+        </div>
+      ) : null}
+
+      {!hasPlate ? (
+        <p className="ov-self-serial-hint ov-self-serial-hint--muted mb-0">
+          Serial number plate photo is still required to continue.
+        </p>
       ) : null}
     </div>
   );

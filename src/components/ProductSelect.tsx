@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Image as ImageIcon, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Image as ImageIcon, X } from 'lucide-react';
 import { StorageImage } from './StorageImage';
 import { PasTag, ProductShopCardBody, ProductShopMedia } from './ProductShopMedia';
 import type { Product } from '../types';
@@ -87,6 +87,11 @@ function ProductSpecPickerModal({
   }, []);
 
   useEffect(() => {
+    document.body.classList.add('product-spec-picker-open');
+    return () => document.body.classList.remove('product-spec-picker-open');
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -166,22 +171,19 @@ function ProductSpecPickerModal({
           })}
         </ul>
         <p className="product-spec-picker-hint mb-0">
-          Tap a capacity (turns green). Change anytime, then Confirm.
+          Tap a capacity (turns green). Change anytime, then Serial.
         </p>
         <div className="product-spec-picker-actions">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
           <button
             type="button"
-            className="btn btn-primary"
+            className="verification-form-btn verification-form-btn--continue"
             disabled={!selectedId}
             onClick={() => {
               if (!selectedId) return;
               onPick(selectedId);
             }}
           >
-            Confirm
+            Serial <ChevronRight size={16} aria-hidden />
           </button>
         </div>
       </div>

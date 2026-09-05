@@ -31,6 +31,11 @@ import {
 } from './verificationPerformerPhotos';
 import { validateOvQuotaDevices, validateOvQuotaSetup, type OvQuotaGate } from './ovQuotaGate';
 import { catalogueHasPasProducts, quotaSerialRows } from './pasSerialBank';
+import {
+  gasAllottedChoices,
+  serialEntryMode,
+  validateSerialForProductPool,
+} from './serialEntryPool';
 
 export type VerificationFormStepId = 'setup' | 'instruments' | 'review' | 'product' | 'serial' | 'site' | 'photos';
 
@@ -76,7 +81,7 @@ export const OV_SELF_FORM_STEPS: VerificationFormStepDef[] = [
     id: 'serial',
     label: 'Serial',
     shortLabel: 'Serial',
-    description: 'Photograph the serial plate, then confirm or pick an allotted serial.',
+    description: 'Photograph the serial plate. GAS: pick an allotted serial. PAS: type and verify.',
   },
   {
     id: 'photos',
@@ -110,7 +115,7 @@ export const OV_CUSTOMER_FORM_STEPS: VerificationFormStepDef[] = [
     id: 'serial',
     label: 'Serial',
     shortLabel: 'Serial',
-    description: 'Photograph the serial plate, then confirm or pick an allotted serial.',
+    description: 'Photograph the serial plate. GAS: pick an allotted serial. PAS: type and verify.',
   },
   {
     id: 'photos',
@@ -338,6 +343,24 @@ function serialStepBlockReason(
     if (!row.serialNumber.trim()) return `${label}: serial number is required.`;
     if (values.verificationType === 'RV' && !isValidManufacturingYear(row.manufacturingYear)) {
       return `${label}: select year of manufacturing.`;
+    }
+    const product = context?.products?.find(item => item.id === row.productId) ?? null;
+    const mode = serialEntryMode(product);
+    const gasChoices = gasAllottedChoices({
+      remaining: context?.ovQuota?.remaining ?? [],
+      allotments: context?.ovQuota?.remainingAllotments,
+      heldSerials: context?.ovQuota?.heldSerials,
+      product,
+      fallbackProduct: { productId: row.productId, productName: row.productName },
+    });
+    const poolError = validateSerialForProductPool({
+      mode,
+      verificationType: values.verificationType,
+      serial: row.serialNumber,
+      gasChoices,
+    });
+    if (poolError && poolError !== 'Serial number is required.') {
+      return `${label}: ${poolError}`;
     }
   }
 

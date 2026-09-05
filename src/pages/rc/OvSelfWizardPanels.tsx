@@ -174,7 +174,7 @@ export function OvSelfProductPanel({
         />
       ) : (
         <p className="ov-self-selected-hint ov-self-selected-hint--wait mb-0">
-          Select a product. Multiple Max? Tap Max — green bar, then Confirm.
+          Select a product. Multiple Max? Tap Max, then Serial.
         </p>
       )}
 

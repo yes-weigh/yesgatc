@@ -4,6 +4,7 @@ export type OvQuotaAllotment = {
   productId?: string;
   productName?: string;
   modelNo?: string;
+  pool?: string;
 };
 
 export type OvQuotaGate = {

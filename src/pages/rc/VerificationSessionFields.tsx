@@ -1145,6 +1145,7 @@ export const VerificationSessionFields = forwardRef<
               images={deviceImages[ovSelfDevice.localId] ?? emptyDeviceVerificationImagesState()}
               verificationType={values.verificationType}
               allottedSerials={ovQuota?.remaining ?? []}
+              allotments={ovQuota?.remainingAllotments}
               heldSerials={ovQuota?.heldSerials ?? []}
               disabled={locked}
               geoStampCoords={geoStampCoords}

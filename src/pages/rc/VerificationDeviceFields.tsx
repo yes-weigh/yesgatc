@@ -33,8 +33,9 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import type { JobType, Product, RcFeesStructure, VerificationLocation } from '../../types';
-import { ovSerialChoicesForRow, remainingSerialsForProduct, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { productUsesPasSerials } from '../../lib/pasSerialBank';
+import { gasAllottedChoices, serialInChoiceList } from '../../lib/serialEntryPool';
 
 const VerificationImageColumnHead: React.FC<{
   kind: VerificationImageKind;
@@ -185,6 +186,7 @@ function DeviceSerialField({
   lockedSerial = '',
   onDeviceChange,
   pasManual = false,
+  product = null,
 }: {
   id: string;
   className: string;
@@ -197,6 +199,7 @@ function DeviceSerialField({
   lockedSerial?: string;
   onDeviceChange: (localId: string, patch: Partial<VerificationDeviceRowValues>) => void;
   pasManual?: boolean;
+  product?: Product | null;
 }) {
   const held = lockedSerial.trim();
   const rowSerial = row.serialNumber.trim();
@@ -239,23 +242,20 @@ function DeviceSerialField({
   const otherTaken = devices
     .filter(device => device.localId !== row.localId && device.included)
     .map(device => device.serialNumber);
-  const remaining = remainingSerialsForProduct(
-    ovQuota.remaining,
-    ovQuota.remainingAllotments,
-    { productId: row.productId, productName: row.productName },
-  );
-  const choices = ovSerialChoicesForRow(
-    row.serialNumber,
-    remaining,
-    ovQuota.heldSerials,
+  const choices = gasAllottedChoices({
+    remaining: ovQuota.remaining,
+    allotments: ovQuota.remainingAllotments,
+    heldSerials: ovQuota.heldSerials,
     otherTaken,
-  );
+    product,
+    fallbackProduct: { productId: row.productId, productName: row.productName },
+  });
 
   return (
     <select
       id={id}
       className={className}
-      value={row.serialNumber}
+      value={serialInChoiceList(row.serialNumber, choices) ? row.serialNumber : ''}
       onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
       disabled={disabled}
     >
@@ -672,6 +672,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       locked={locked}
                       lockedSerial={lockedSerial}
                       pasManual={productUsesPasSerials(selectedProduct(products, row))}
+                      product={selectedProduct(products, row)}
                       onDeviceChange={onDeviceChange}
                     />
                   </td>
@@ -845,6 +846,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         locked={locked}
                         lockedSerial={lockedSerial}
                         pasManual={productUsesPasSerials(selectedProduct(products, row))}
+                        product={selectedProduct(products, row)}
                         onDeviceChange={onDeviceChange}
                       />
                     </div>
@@ -937,6 +939,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         locked={locked}
                         lockedSerial={lockedSerial}
                         pasManual={productUsesPasSerials(selectedProduct(products, row))}
+                        product={selectedProduct(products, row)}
                         onDeviceChange={onDeviceChange}
                       />
                     </div>
@@ -1008,6 +1011,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         locked={locked}
                         lockedSerial={lockedSerial}
                         pasManual={productUsesPasSerials(selectedProduct(products, row))}
+                        product={selectedProduct(products, row)}
                         onDeviceChange={onDeviceChange}
                       />
                     </div>
