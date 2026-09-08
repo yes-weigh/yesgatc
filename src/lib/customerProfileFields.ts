@@ -1,6 +1,13 @@
 import type { ProductFileMeta } from './productApprovalUpload';
 import { isValidEmail, isValidPhone, isValidPincode, normalizePhone, normalizePincode } from './contactFields';
 import type { Customer, CustomerDevice, CustomerLocation } from '../types';
+import {
+  CUSTOMER_GPS_REQUIRED_MESSAGE,
+  customerGpsRequiredError,
+  parseCustomerLatLng,
+} from './customerGps.ts';
+
+export { CUSTOMER_GPS_REQUIRED_MESSAGE };
 
 export type CustomerFormValues = {
   name: string;
@@ -41,7 +48,10 @@ export function isCustomerPartyReadyToPersist(form: CustomerFormValues): boolean
   return true;
 }
 
-export function validateCustomerProfile(input: CustomerFormValues): string | null {
+export function validateCustomerProfile(
+  input: CustomerFormValues,
+  options?: { requireLocation?: boolean },
+): string | null {
   if (!input.name.trim()) return 'Customer name is required.';
   if (!isValidPhone(input.phone)) return 'Mobile number must be exactly 10 digits.';
   if (input.email.trim() && !isValidEmail(input.email)) return 'Enter a valid email address.';
@@ -56,7 +66,7 @@ export function validateCustomerProfile(input: CustomerFormValues): string | nul
   const latStr = input.latitude.trim();
   const lngStr = input.longitude.trim();
   if (latStr || lngStr) {
-    if (!latStr || !lngStr) return 'Enter both latitude and longitude, or leave both empty.';
+    if (!latStr || !lngStr) return 'Enter both latitude and longitude.';
     const lat = Number(latStr);
     const lng = Number(lngStr);
     if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
@@ -66,7 +76,11 @@ export function validateCustomerProfile(input: CustomerFormValues): string | nul
       return 'Longitude must be between -180 and 180.';
     }
   }
-  return null;
+  return customerGpsRequiredError(
+    input.latitude,
+    input.longitude,
+    options?.requireLocation !== false,
+  );
 }
 
 export function validateCustomerDevices(devices: CustomerDeviceFormValues[]): string | null {
@@ -79,13 +93,7 @@ export function validateCustomerDevices(devices: CustomerDeviceFormValues[]): st
 }
 
 export function parseCustomerLocation(input: CustomerFormValues): CustomerLocation | undefined {
-  const latStr = input.latitude.trim();
-  const lngStr = input.longitude.trim();
-  if (!latStr || !lngStr) return undefined;
-  const lat = Number(latStr);
-  const lng = Number(lngStr);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
-  return { lat, lng };
+  return parseCustomerLatLng(input.latitude, input.longitude);
 }
 
 export function buildCustomerProfileFields(

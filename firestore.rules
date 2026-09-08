@@ -46,6 +46,18 @@ service cloud.firestore {
       return data.get('approvalStatus', 'approved');
     }
 
+    function customerLocationValid(data) {
+      return data.keys().hasAll(['location'])
+        && data.location is map
+        && data.location.keys().hasAll(['lat', 'lng'])
+        && data.location.lat is number
+        && data.location.lng is number
+        && data.location.lat >= -90
+        && data.location.lat <= 90
+        && data.location.lng >= -180
+        && data.location.lng <= 180;
+    }
+
     function validVerificationApplicationNumber(data) {
       return data.get('applicationNumber', '') is string
         && data.applicationNumber.matches('^VC/[0-9]{2}/[0-9]+$');
@@ -340,27 +352,33 @@ service cloud.firestore {
       allow read: if isOperationalVerifier() && resource.data.rcId == vctRcId();
 
       allow create: if isRCAdmin()
-        && request.resource.data.rcId == request.auth.uid;
+        && request.resource.data.rcId == request.auth.uid
+        && customerLocationValid(request.resource.data);
 
       allow create: if isOperationalVct()
         && request.resource.data.rcId == vctRcId()
-        && request.resource.data.get('createdByUid', '') == request.auth.uid;
+        && request.resource.data.get('createdByUid', '') == request.auth.uid
+        && customerLocationValid(request.resource.data);
 
       allow create: if isOperationalVerifier()
         && request.resource.data.rcId == vctRcId()
-        && request.resource.data.get('createdByUid', '') == request.auth.uid;
+        && request.resource.data.get('createdByUid', '') == request.auth.uid
+        && customerLocationValid(request.resource.data);
 
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
-        && request.resource.data.rcId == request.auth.uid;
+        && request.resource.data.rcId == request.auth.uid
+        && customerLocationValid(request.resource.data);
 
       allow update: if isOperationalVct()
         && resource.data.rcId == vctRcId()
-        && request.resource.data.rcId == vctRcId();
+        && request.resource.data.rcId == vctRcId()
+        && customerLocationValid(request.resource.data);
 
       allow update: if isOperationalVerifier()
         && resource.data.rcId == vctRcId()
-        && request.resource.data.rcId == vctRcId();
+        && request.resource.data.rcId == vctRcId()
+        && customerLocationValid(request.resource.data);
 
       // RC cannot delete customers once registered; Super Admin may remove records.
     }

@@ -195,12 +195,13 @@ function ProductSpecPickerModal({
 function useProductPick(
   products: Product[],
   onChange: (value: ProductSelectValue) => void,
-  options?: { deferMultiSpec?: boolean },
+  options?: { deferMultiSpec?: boolean; onSpecCommitted?: () => void },
 ) {
   const [pendingProduct, setPendingProduct] = useState<Product | null>(null);
   const pendingRef = useRef<Product | null>(null);
   pendingRef.current = pendingProduct;
   const deferMultiSpec = Boolean(options?.deferMultiSpec);
+  const onSpecCommitted = options?.onSpecCommitted;
 
   const pickProduct = useCallback(
     (product: Product) => {
@@ -237,8 +238,9 @@ function useProductPick(
         productSpecificationId: specificationId,
       });
       setPendingProduct(null);
+      onSpecCommitted?.();
     },
-    [onChange],
+    [onChange, onSpecCommitted],
   );
 
   const cancelSpec = useCallback(() => {
@@ -271,6 +273,8 @@ export const ProductCatalogueList: React.FC<{
   variant?: 'list' | 'shop';
   /** Multi-spec: emit product only; parent shows capacity list (no modal / no auto-select). */
   deferMultiSpec?: boolean;
+  /** Spec modal Serial — commit only, not a product-card tap. */
+  onSpecCommitted?: () => void;
   /** Shop cards: media strip. Off = name-only tiles. */
   showShopMedia?: boolean;
 }> = ({
@@ -281,10 +285,12 @@ export const ProductCatalogueList: React.FC<{
   showCapacitySpecs = true,
   variant = 'list',
   deferMultiSpec = false,
+  onSpecCommitted,
   showShopMedia = true,
 }) => {
   const { activeProducts, pickProduct, specModal } = useProductPick(products, onChange, {
     deferMultiSpec,
+    onSpecCommitted,
   });
 
   if (activeProducts.length === 0) {

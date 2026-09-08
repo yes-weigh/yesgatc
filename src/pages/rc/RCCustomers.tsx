@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  collection, getDocs, doc, setDoc, updateDoc, query, where, deleteField,
+  collection, getDocs, doc, setDoc, updateDoc, query, where,
 } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useRcScope } from '../../lib/roleScope';
@@ -14,15 +14,16 @@ import { filterCustomersBySearch } from '../../lib/customerLookup';
 import { buildCustomerTileStatsMap } from '../../lib/customerTileStats';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import {
+  CUSTOMER_GPS_REQUIRED_MESSAGE,
   buildCustomerProfileFields,
   customerDeviceCount,
   customerFormFromRecord,
-  parseCustomerLocation,
   shopPhotoFieldsFromMeta,
   shopPhotoFromRecord,
   validateCustomerProfile,
   type CustomerFormValues,
 } from '../../lib/customerProfileFields';
+import { playValidationWarningSound } from '../../lib/playUnsignedCertificateWarningSound';
 import {
   UserRound,
   Pencil,
@@ -296,6 +297,7 @@ export const RCCustomers: React.FC = () => {
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
+      if (validationError === CUSTOMER_GPS_REQUIRED_MESSAGE) playValidationWarningSound();
       return;
     }
 
@@ -328,6 +330,7 @@ export const RCCustomers: React.FC = () => {
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
+      if (validationError === CUSTOMER_GPS_REQUIRED_MESSAGE) playValidationWarningSound();
       return;
     }
 
@@ -342,9 +345,6 @@ export const RCCustomers: React.FC = () => {
         ...photoFields,
         updatedAt: new Date().toISOString(),
       };
-      if (!parseCustomerLocation(formValues)) {
-        updates.location = deleteField();
-      }
 
       await updateDoc(doc(db, 'customers', customerId), updates);
 
@@ -356,9 +356,6 @@ export const RCCustomers: React.FC = () => {
         devices: existing?.devices ?? [],
         updatedAt: updates.updatedAt as string,
       };
-      if (!parseCustomerLocation(formValues)) {
-        delete updated.location;
-      }
 
       restoreFormFromCustomer(updated);
       setFormEditing(false);

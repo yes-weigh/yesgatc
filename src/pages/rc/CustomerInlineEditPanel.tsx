@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { doc, updateDoc, deleteField } from 'firebase/firestore';
+import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { uploadCustomerShopPhoto } from '../../lib/customerPhotoUpload';
 import {
+  CUSTOMER_GPS_REQUIRED_MESSAGE,
   buildCustomerProfileFields,
   customerDeviceCount,
   customerFormFromRecord,
-  parseCustomerLocation,
   shopPhotoFieldsFromMeta,
   shopPhotoFromRecord,
   validateCustomerProfile,
   type CustomerFormValues,
 } from '../../lib/customerProfileFields';
+import { playValidationWarningSound } from '../../lib/playUnsignedCertificateWarningSound';
 import type { CustomerTileStats } from '../../lib/customerTileStats';
 import type { Customer } from '../../types';
 import {
@@ -120,6 +121,7 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
     const validationError = validateCustomerProfile(formValues);
     if (validationError) {
       setError(validationError);
+      if (validationError === CUSTOMER_GPS_REQUIRED_MESSAGE) playValidationWarningSound();
       return;
     }
 
@@ -134,9 +136,6 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
         ...photoFields,
         updatedAt: new Date().toISOString(),
       };
-      if (!parseCustomerLocation(formValues)) {
-        updates.location = deleteField();
-      }
 
       await updateDoc(doc(db, 'customers', customer.id), updates);
 
@@ -146,9 +145,6 @@ export const CustomerInlineEditPanel: React.FC<CustomerInlineEditPanelProps> = (
         ...photoFields,
         updatedAt: updates.updatedAt as string,
       };
-      if (!parseCustomerLocation(formValues)) {
-        delete updated.location;
-      }
 
       restoreFormFromCustomer(updated);
       setFormEditing(false);

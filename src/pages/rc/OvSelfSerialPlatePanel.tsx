@@ -36,6 +36,7 @@ export function OvSelfSerialPlatePanel({
   disabled,
   geoStampCoords,
   geoStampWeather,
+  geoStampAllowLiveGps,
   onSerialChange,
   onYearChange,
   onPlateSelect,
@@ -51,6 +52,7 @@ export function OvSelfSerialPlatePanel({
   disabled?: boolean;
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
+  geoStampAllowLiveGps?: boolean;
   onSerialChange: (serial: string) => void;
   onYearChange?: (year: string) => void;
   onPlateSelect: (file: File) => void;
@@ -201,6 +203,7 @@ export function OvSelfSerialPlatePanel({
           geoStamp
           geoStampCoords={geoStampCoords}
           geoStampWeather={geoStampWeather}
+          geoStampAllowLiveGps={geoStampAllowLiveGps}
           onSelect={handlePlateSelect}
           onRemove={() => {
             setOcrHint(null);

@@ -19,7 +19,18 @@ import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFi
 import type { GeoStampCoordinates, StampWeather } from '../../components/VerificationPhotoUploadSlot';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
 import type { AssignableVctOption } from '../../lib/verificationRequest';
-import { customerFormFromRecord, isPendingNewCustomerParty } from '../../lib/customerProfileFields';
+import {
+  customerFormFromRecord,
+  isPendingNewCustomerParty,
+  parseCustomerLocation,
+} from '../../lib/customerProfileFields';
+import {
+  CUSTOMER_GPS_REQUIRED_MESSAGE,
+  allowsLiveGpsPhotoStamp,
+  isCustomerImageGpsJob,
+  resolveVerificationImageGeoStampCoords,
+} from '../../lib/verificationImageGeoStamp';
+import { playValidationWarningSound } from '../../lib/playUnsignedCertificateWarningSound';
 import {
   applyLockedSerialToDevices,
   buildInitialSelfDeviceRows,
@@ -78,6 +89,10 @@ import {
 import { useAppContext } from '../../context/AppContext';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
 import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import {
+  compactWizardWorkingDevices,
+  devicesForVerificationCustomerSelect,
+} from '../../lib/compactWizardProductStep';
 import { catalogueHasPasProducts, verifyPasDevicesInBank } from '../../lib/pasSerialBank';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import { VerificationPerformerPhotoFields } from './VerificationPerformerPhotoFields';
@@ -116,7 +131,7 @@ type VerificationSessionFieldsProps = {
   /** RC admin can assign draft verifications to a linked VCT. */
   allowPerformerAssignment?: boolean;
   assignableVcts?: AssignableVctOption[];
-  /** RC centre GPS for desktop photo geo-stamp. */
+  /** RC centre GPS — used for OV / self photo geo-stamp. RV customer uses party GPS instead. */
   geoStampCoords?: GeoStampCoordinates | null;
   laboratorySealIdentification?: string;
   onWizardStepChange?: (stepId: VerificationFormStepId, isLastStep: boolean) => void;
@@ -270,6 +285,20 @@ export const VerificationSessionFields = forwardRef<
   );
   const ovSelfDevice = includedDeviceEntries[0]?.row ?? values.devices[0];
 
+  useEffect(() => {
+    if (!isOvCompactFlow || readOnly) return;
+    if (values.devices.length <= 1) return;
+    const working = compactWizardWorkingDevices(values.devices);
+    const seal = laboratorySealIdentification.trim();
+    const next = seal
+      ? working.map(row => ({ ...row, sealIdentificationNumber: seal }))
+      : working;
+    if (next.length === values.devices.length && next[0]?.localId === values.devices[0]?.localId) {
+      return;
+    }
+    onChange({ devices: next });
+  }, [isOvCompactFlow, readOnly, values.devices, onChange, laboratorySealIdentification]);
+
   const isOnInstrumentsStep = currentStep.id === 'instruments' || currentStep.id === 'photos';
   const isOnReviewStep = currentStep.id === 'review';
   const isLastStep = isOnReviewStep;
@@ -296,12 +325,12 @@ export const VerificationSessionFields = forwardRef<
             ? 'Review'
             : 'Proceed';
 
-  const canContinueCurrentStep = useMemo(() => {
-    if (readOnly) return true;
-    return (
-      verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext) === null
-    );
+  const continueBlockReason = useMemo(() => {
+    if (readOnly) return null;
+    return verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext);
   }, [readOnly, currentStep.id, values, rcProfile, stepContext]);
+  const canContinueCurrentStep = continueBlockReason === null;
+  const allowGpsWarningContinue = continueBlockReason === CUSTOMER_GPS_REQUIRED_MESSAGE;
 
   const showWizardCancel =
     Boolean(wizardNavIncludesCancel && onCancel && currentStep.id !== 'review');
@@ -390,6 +419,7 @@ export const VerificationSessionFields = forwardRef<
     const reason = verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext);
     if (reason) {
       setStepError(reason);
+      if (reason === CUSTOMER_GPS_REQUIRED_MESSAGE) playValidationWarningSound();
       return;
     }
 
@@ -490,6 +520,29 @@ export const VerificationSessionFields = forwardRef<
     const party = isSelf ? rcPartyForm : customerPartyForm;
     return Boolean(party.latitude.trim() && party.longitude.trim());
   }, [isSelf, rcPartyForm, customerPartyForm]);
+
+  const imageGeoStampCoords = useMemo(
+    () =>
+      resolveVerificationImageGeoStampCoords({
+        verificationType: values.verificationType,
+        verificationSubject: values.verificationSubject,
+        customerLocation: parseCustomerLocation(customerPartyForm),
+        rcLocation: geoStampCoords,
+      }),
+    [
+      values.verificationType,
+      values.verificationSubject,
+      customerPartyForm,
+      geoStampCoords,
+    ],
+  );
+  const geoStampAllowLiveGps = allowsLiveGpsPhotoStamp(
+    values.verificationType,
+    values.verificationSubject,
+  );
+  const showCustomerGpsStampNotice =
+    isCustomerImageGpsJob(values.verificationType, values.verificationSubject)
+    && imageGeoStampCoords == null;
 
   const geoStampWeather = useMemo<StampWeather | null>(() => {
     const t = values.ambientTemperature.trim();
@@ -863,7 +916,7 @@ export const VerificationSessionFields = forwardRef<
     ).trim();
     const location = isSelf
       ? rcProfile?.location
-      : listedCustomer?.location;
+      : parseCustomerLocation(customerPartyForm) ?? listedCustomer?.location;
 
     const hasPincode = isValidPincode(pincode);
     const hasLocation = location?.lat != null && location?.lng != null;
@@ -896,6 +949,8 @@ export const VerificationSessionFields = forwardRef<
     customerPartyForm.pincode,
     customerPartyForm.district,
     customerPartyForm.state,
+    customerPartyForm.latitude,
+    customerPartyForm.longitude,
     rcPartyForm.pincode,
     rcPartyForm.district,
     rcPartyForm.state,
@@ -956,20 +1011,15 @@ export const VerificationSessionFields = forwardRef<
     if (lockCustomer) return;
     const lockedSerial = values.lockedSerial?.trim() ?? '';
     const customer = customers.find(c => c.id === next.customerId) ?? null;
-    const seed = values.devices.find(d => d.isNewDevice) ?? values.devices[0];
-    const devices = lockedSerial
-      ? applyLockedSerialToDevices(
-          withLaboratorySeal([
-            seed
-              ? { ...seed, serialNumber: lockedSerial }
-              : { ...createEmptyVerificationDeviceRow(), serialNumber: lockedSerial },
-          ]),
-          lockedSerial,
-        )
-      : withLaboratorySeal([
-          ...withLaboratorySeal(deviceRowsFromCustomer(customer, products)),
-          ...values.devices.filter(d => d.isNewDevice),
-        ]);
+    const devices = withLaboratorySeal(
+      devicesForVerificationCustomerSelect({
+        compact: isOvCompactFlow,
+        lockedSerial,
+        currentDevices: values.devices,
+        customerRows: deviceRowsFromCustomer(customer, products),
+        createEmpty: createEmptyVerificationDeviceRow,
+      }),
+    );
     onCustomerChange(next.customerId, next.customerName, devices);
     onChange({
       verificationSubject: 'customer',
@@ -1036,8 +1086,16 @@ export const VerificationSessionFields = forwardRef<
             type="button"
             className="verification-form-btn verification-form-btn--continue"
             onClick={() => void handleContinue()}
-            disabled={locked || serialChecking || !canContinueCurrentStep}
-            aria-disabled={locked || serialChecking || !canContinueCurrentStep}
+            disabled={
+              locked
+              || serialChecking
+              || (!canContinueCurrentStep && !allowGpsWarningContinue)
+            }
+            aria-disabled={
+              locked
+              || serialChecking
+              || (!canContinueCurrentStep && !allowGpsWarningContinue)
+            }
           >
             {continueLabel} <ChevronRight size={16} aria-hidden />
           </button>
@@ -1148,8 +1206,9 @@ export const VerificationSessionFields = forwardRef<
               allotments={ovQuota?.remainingAllotments}
               heldSerials={ovQuota?.heldSerials ?? []}
               disabled={locked}
-              geoStampCoords={geoStampCoords}
+              geoStampCoords={imageGeoStampCoords}
               geoStampWeather={geoStampWeather}
+              geoStampAllowLiveGps={geoStampAllowLiveGps}
               onSerialChange={serial => onDeviceChange(ovSelfDevice.localId, { serialNumber: serial })}
               onYearChange={year => onDeviceChange(ovSelfDevice.localId, { manufacturingYear: year })}
               onPlateSelect={file => onDeviceImageSelect(ovSelfDevice.localId, 'stamping', file)}
@@ -1159,6 +1218,11 @@ export const VerificationSessionFields = forwardRef<
 
           {currentStep.id === 'photos' && ovSelfDevice && (
             <div className="ov-self-photos">
+              {showCustomerGpsStampNotice ? (
+                <p className="verification-kerala-notice" role="status">
+                  {CUSTOMER_GPS_REQUIRED_MESSAGE}
+                </p>
+              ) : null}
               <div className="ov-self-photos-recap">
                 <span>
                   <strong>{ovSelfDevice.serialNumber.trim() || '—'}</strong>
@@ -1205,8 +1269,9 @@ export const VerificationSessionFields = forwardRef<
                 embedded
                 hideDeviceMeta
                 excludeStamping
-                geoStampCoords={geoStampCoords}
+                geoStampCoords={imageGeoStampCoords}
                 geoStampWeather={geoStampWeather}
+                geoStampAllowLiveGps={geoStampAllowLiveGps}
               />
             </div>
           )}
@@ -1314,12 +1379,19 @@ export const VerificationSessionFields = forwardRef<
                           }
                     }
                     footer={
-                      fileCertificateAsRc ? (
-                        <p className="verification-kerala-notice" role="status">
-                          GATC certificates are Kerala-only. This PIN is outside Kerala — the
-                          record and eMAAP certificate will use the RC centre name.
-                        </p>
-                      ) : null
+                      <>
+                        {fileCertificateAsRc ? (
+                          <p className="verification-kerala-notice" role="status">
+                            GATC certificates are Kerala-only. This PIN is outside Kerala — the
+                            record and eMAAP certificate will use the RC centre name.
+                          </p>
+                        ) : null}
+                        {showCustomerGpsStampNotice ? (
+                          <p className="verification-kerala-notice" role="status">
+                            {CUSTOMER_GPS_REQUIRED_MESSAGE}
+                          </p>
+                        ) : null}
+                      </>
                     }
                   />
                 )}
@@ -1419,8 +1491,9 @@ export const VerificationSessionFields = forwardRef<
               lockCustomer={lockCustomer}
               isSelf={isSelf}
               laboratorySealIdentification={laboratorySealIdentification}
-              geoStampCoords={geoStampCoords}
+              geoStampCoords={imageGeoStampCoords}
               geoStampWeather={geoStampWeather}
+              geoStampAllowLiveGps={geoStampAllowLiveGps}
               canAddInstrument={canAddInstrument}
               onAddInstrument={handleAddInstrument}
               showDevices={showDevices}

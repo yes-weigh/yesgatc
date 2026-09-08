@@ -5,6 +5,7 @@ import {
   type PhotoCaptureStamp,
   type StampWeather,
 } from './photoCaptureStamp';
+import { resolvePhotoStampCoordSource } from './verificationImageGeoStamp';
 import {
   exportCanvasAsJpeg,
   fitWithinMaxEdge,
@@ -73,9 +74,11 @@ export async function produceStampedPhotoFromCanvas(
   weather?: StampWeather,
   /** When set, never fall back to live device GPS. */
   forcedCoords?: { lat: number; lng: number } | null,
+  allowLiveGps = true,
 ): Promise<File | null> {
+  const source = resolvePhotoStampCoordSource({ forcedCoords, allowLiveGps });
   let base: PhotoCaptureStamp | null;
-  if (forcedCoords) {
+  if (source === 'forced' && forcedCoords) {
     const prefetchMatches =
       prefetched != null
       && prefetched.latitude === forcedCoords.lat
@@ -88,10 +91,12 @@ export async function produceStampedPhotoFromCanvas(
           capturedAt,
           weather,
         );
-  } else {
+  } else if (source === 'live') {
     base = prefetched
       ? { ...prefetched, capturedAt }
       : await stampForCapture(capturedAt, null);
+  } else {
+    base = null;
   }
   const stamp =
     base && weather

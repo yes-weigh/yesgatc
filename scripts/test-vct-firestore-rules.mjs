@@ -12,12 +12,14 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
   limit,
   query,
   setDoc,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 
@@ -246,6 +248,71 @@ async function run() {
       ok('VCT can list customers for their RC');
     } catch (err) {
       fail('VCT can list customers for their RC', err);
+    }
+
+    const customerBase = {
+      rcId: RC_UID,
+      name: 'GPS Shop',
+      phone: '9876543210',
+      address: 'Main road',
+      pincode: '682001',
+      state: 'Kerala',
+      district: 'Ernakulam',
+      createdAt: new Date().toISOString(),
+      createdByUid: VCT_UID,
+    };
+
+    try {
+      await assertFails(setDoc(doc(vctDb, 'customers', 'cust-no-gps'), customerBase));
+      ok('VCT cannot create customer without GPS');
+    } catch (err) {
+      fail('VCT cannot create customer without GPS', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(doc(vctDb, 'customers', 'cust-with-gps'), {
+          ...customerBase,
+          location: { lat: 10.015, lng: 76.341 },
+        }),
+      );
+      ok('VCT can create customer with GPS');
+    } catch (err) {
+      fail('VCT can create customer with GPS', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(vctDb, 'customers', 'cust-with-gps'), {
+          location: { lat: 11.258, lng: 75.78 },
+        }),
+      );
+      ok('VCT can update customer GPS');
+    } catch (err) {
+      fail('VCT can update customer GPS', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(vctDb, 'customers', 'cust-with-gps'), {
+          location: deleteField(),
+        }),
+      );
+      ok('VCT cannot clear customer GPS');
+    } catch (err) {
+      fail('VCT cannot clear customer GPS', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(doc(rcDb, 'customers', 'rc-cust-no-gps'), {
+          ...customerBase,
+          createdByUid: RC_UID,
+        }),
+      );
+      ok('RC cannot create customer without GPS');
+    } catch (err) {
+      fail('RC cannot create customer without GPS', err);
     }
 
     try {

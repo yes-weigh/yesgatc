@@ -73,7 +73,8 @@ import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
 import { canEditResubmitOvSerialGroup, canResubmitSerialGroup, getVerificationSerialGroup } from '../../lib/verificationResubmit';
-import type { VerificationFormStepContext, VerificationFormStepId } from '../../lib/verificationFormSteps';
+import { isOvCompactWizard, type VerificationFormStepContext, type VerificationFormStepId } from '../../lib/verificationFormSteps';
+import { compactWizardWorkingDevices } from '../../lib/compactWizardProductStep';
 import { uploadSiteCalibrationDeviceImage } from '../../lib/siteCalibrationPhotoUpload';
 import {
   emptyDeviceImageSlot,
@@ -391,6 +392,13 @@ export const RCSiteCalibration: React.FC = () => {
   const [lastViewedVerificationId, setLastViewedVerificationId] = useState<string | null>(null);
   const [rowHighlightFlashId, setRowHighlightFlashId] = useState<string | null>(null);
   const [sessionValues, setSessionValues] = useState<VerificationSessionValues>(EMPTY_VERIFICATION_SESSION);
+  const sessionIncludedRows = useMemo(
+    () =>
+      isOvCompactWizard(showAddForm, sessionValues)
+        ? compactWizardWorkingDevices(sessionValues.devices)
+        : sessionValues.devices.filter(row => row.included),
+    [showAddForm, sessionValues],
+  );
   const [deviceImages, setDeviceImages] = useState<Record<string, DeviceVerificationImagesState>>({});
   const [deviceRvImages, setDeviceRvImages] = useState<Record<string, DeviceRvDocumentsState>>({});
   const [performerPhotos, setPerformerPhotos] = useState<PerformerPhotosState>(
@@ -1500,7 +1508,7 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
-    const includedRows = sessionValues.devices.filter(row => row.included);
+    const includedRows = sessionIncludedRows;
     const walletPaymentId =
       submitAfterSave && rvPayment && isWalletPaymentId(rvPayment.paymentId)
         ? rvPayment.paymentId
@@ -2599,7 +2607,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   const formatDate = formatVerificationListDate;
 
-  const includedDeviceCount = sessionValues.devices.filter(d => d.included).length;
+  const includedDeviceCount = sessionIncludedRows.length;
   const saveDraftLabel =
     showAddForm && includedDeviceCount > 1
       ? `Save ${includedDeviceCount} drafts`

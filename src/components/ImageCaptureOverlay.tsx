@@ -62,6 +62,8 @@ export type ImageCaptureSession = {
   stampWeather?: StampWeather;
   /** When set, stamp uses these coords instead of live device GPS. */
   stampCoords?: { lat: number; lng: number } | null;
+  /** False: never stamp live / last-known device GPS (RV customer). Default true. */
+  allowLiveGps?: boolean;
 };
 
 export type ImageCaptureOverlayProps = {
@@ -171,6 +173,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
   const forcedStampCoords = session?.stampCoords ?? null;
   const forcedStampLat = forcedStampCoords?.lat;
   const forcedStampLng = forcedStampCoords?.lng;
+  const allowLiveGps = session?.allowLiveGps !== false;
 
   useEffect(() => {
     if (!open || !session?.onStamped) return;
@@ -183,7 +186,9 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
             new Date(),
             session.stampWeather,
           )
-        : loadPhotoCaptureStamp();
+        : allowLiveGps
+          ? loadPhotoCaptureStamp()
+          : Promise.resolve(null);
     void load.then(stamp => {
       if (!cancelled) setStampPrefetch(stamp);
     });
@@ -196,6 +201,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     session?.stampWeather,
     forcedStampLat,
     forcedStampLng,
+    allowLiveGps,
   ]);
 
   const handleShutter = useCallback(async () => {
@@ -231,6 +237,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
           baseName,
           session.stampWeather,
           forced,
+          allowLiveGps,
         ).then(stamped => {
           if (stamped) session.onStamped?.(stamped);
         });
@@ -247,6 +254,7 @@ export const ImageCaptureOverlay: React.FC<ImageCaptureOverlayProps> = ({
     onClose,
     forcedStampLat,
     forcedStampLng,
+    allowLiveGps,
   ]);
 
   const handleFlip = useCallback(() => {

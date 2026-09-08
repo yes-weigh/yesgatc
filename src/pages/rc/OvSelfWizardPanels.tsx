@@ -143,7 +143,6 @@ export function OvSelfProductPanel({
       ),
       sealIdentificationNumber: seal,
     });
-    onProductReady?.();
   };
 
   return (
@@ -157,6 +156,7 @@ export function OvSelfProductPanel({
             productSpecificationId: row.productSpecificationId,
           }}
           onChange={handlePick}
+          onSpecCommitted={onProductReady}
           disabled={disabled}
           showCapacitySpecs
           variant="shop"

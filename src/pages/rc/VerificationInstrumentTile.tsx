@@ -44,6 +44,7 @@ type VerificationInstrumentTileProps = {
   laboratorySealIdentification?: string;
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
+  geoStampAllowLiveGps?: boolean;
   tileRef?: (node: HTMLElement | null) => void;
   ovQuota?: OvQuotaGate | null;
   lockedSerial?: string;
@@ -75,6 +76,7 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
   laboratorySealIdentification = '',
   geoStampCoords = null,
   geoStampWeather = null,
+  geoStampAllowLiveGps = true,
   tileRef,
   ovQuota = null,
   lockedSerial = '',
@@ -251,6 +253,7 @@ export const VerificationInstrumentTile: React.FC<VerificationInstrumentTileProp
               embedded
               geoStampCoords={geoStampCoords}
               geoStampWeather={geoStampWeather}
+              geoStampAllowLiveGps={geoStampAllowLiveGps}
             />
           </div>
           {photosComplete && !readOnly && (

@@ -55,6 +55,7 @@ type VerificationDeviceEvidenceFieldsProps = {
   onRvDocumentRemove?: (kind: RvDocumentKind) => void;
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
+  geoStampAllowLiveGps?: boolean;
   submitting: boolean;
   readOnly?: boolean;
   /** Hide instrument index line when parent shows sub-step progress. */
@@ -91,6 +92,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
   onRvDocumentRemove,
   geoStampCoords = null,
   geoStampWeather = null,
+  geoStampAllowLiveGps = true,
   submitting,
   readOnly = false,
   hideDeviceMeta = false,
@@ -240,6 +242,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
               geoStamp={kind === 'stamping' || kind === 'scale' || kind === 'instrumentRear'}
               geoStampCoords={geoStampCoords}
               geoStampWeather={geoStampWeather}
+              geoStampAllowLiveGps={geoStampAllowLiveGps}
               onSelect={file => onImageSelect(kind, file)}
               onRemove={() => onImageRemove(kind)}
             />

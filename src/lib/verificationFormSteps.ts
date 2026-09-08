@@ -1,12 +1,16 @@
 import type { FirestoreUserDoc, Product } from '../types';
-import { isPendingNewCustomerParty, type CustomerFormValues } from './customerProfileFields';
+import {
+  isPendingNewCustomerParty,
+  type CustomerFormValues,
+} from './customerProfileFields';
+import { customerPartyGpsBlockReason } from './customerGps.ts';
 import { isValidPincode, normalizePincode } from './contactFields';
 import { VERIFICATION_PINCODE_REQUIRED_MESSAGE } from './verificationSubmitGates';
 import {
   validateVerificationDeviceDetails,
   type VerificationSessionValues,
 } from './siteCalibrationProfileFields';
-import { productHasMultipleSpecifications } from './productSpecifications';
+import { productStepBlockReason } from './compactWizardProductStep';
 import {
   emptyDeviceVerificationImagesState,
   SERIAL_PLATE_IMAGE_KIND,
@@ -189,6 +193,19 @@ export type VerificationFormStepContext = {
   products?: Product[];
 };
 
+function customerGpsBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
+  return customerPartyGpsBlockReason({
+    verificationType: values.verificationType,
+    verificationSubject: values.verificationSubject,
+    isNewJob: context?.isNewJob,
+    latitude: context?.customerForm?.latitude,
+    longitude: context?.customerForm?.longitude,
+  });
+}
+
 function partyStepBlockReason(
   values: VerificationSessionValues,
   rcProfile: FirestoreUserDoc | null | undefined,
@@ -212,13 +229,13 @@ function partyStepBlockReason(
     if (context?.customerForm && !isValidPincode(normalizePincode(pin))) {
       return VERIFICATION_PINCODE_REQUIRED_MESSAGE;
     }
-    return null;
+    return customerGpsBlockReason(values, context);
   }
   if (context?.customerForm && isPendingNewCustomerParty(context.customerForm)) {
     if (!isValidPincode(normalizePincode(context.customerForm.pincode))) {
       return VERIFICATION_PINCODE_REQUIRED_MESSAGE;
     }
-    return null;
+    return customerGpsBlockReason(values, context);
   }
   return 'Select a customer from lookup or enter name and mobile number.';
 }
@@ -271,21 +288,41 @@ export function verificationDeviceDetailsBlockReason(
   return validateVerificationDeviceDetails(row, index, { verificationType, product });
 }
 
+function includedDeviceEntries(values: VerificationSessionValues): {
+  row: VerificationSessionValues['devices'][number];
+  index: number;
+}[] {
+  return values.devices
+    .map((row, index) => ({ row, index }))
+    .filter(entry => entry.row.included);
+}
+
+/** Compact product/serial/photos UI only edits the first included row. */
+function compactWorkingDeviceEntries(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): { row: VerificationSessionValues['devices'][number]; index: number }[] {
+  const included = includedDeviceEntries(values);
+  if (isOvCompactWizard(Boolean(context?.isNewJob), values)) {
+    return included.slice(0, 1);
+  }
+  return included;
+}
+
 function instrumentsDetailsBlockReason(
   values: VerificationSessionValues,
   context?: VerificationFormStepContext,
 ): string | null {
-  const included = values.devices.filter(row => row.included);
+  const included = includedDeviceEntries(values);
   if (included.length === 0) return 'Add at least one instrument.';
 
-  for (let i = 0; i < values.devices.length; i++) {
-    const row = values.devices[i];
-    if (!row.included) continue;
+  const rows = compactWorkingDeviceEntries(values, context);
+  for (const { row, index } of rows) {
     const product =
       context?.products?.find(p => p.id === row.productId) ?? null;
     const detailsError = verificationDeviceDetailsBlockReason(
       row,
-      i,
+      index,
       values.verificationType,
       product,
     );
@@ -294,7 +331,7 @@ function instrumentsDetailsBlockReason(
 
   return validateOvQuotaDevices(
     values.verificationType,
-    quotaSerialRows(included, context?.products),
+    quotaSerialRows(rows.map(entry => entry.row), context?.products),
     context?.ovQuota,
   );
 }
@@ -303,37 +340,23 @@ function productSpecOnlyBlockReason(
   values: VerificationSessionValues,
   context?: VerificationFormStepContext,
 ): string | null {
-  const included = values.devices.filter(row => row.included);
-  if (included.length === 0) return 'Add at least one instrument.';
-
-  for (let i = 0; i < values.devices.length; i++) {
-    const row = values.devices[i];
-    if (!row.included) continue;
-    const label = `Device ${i + 1}`;
-    if (!row.productId.trim()) return `${label}: select a product.`;
-    const product = context?.products?.find(p => p.id === row.productId) ?? null;
-    if (product && productHasMultipleSpecifications(product) && !row.productSpecificationId?.trim()) {
-      return `${label}: select a capacity specification.`;
-    }
-    if (!row.sealIdentificationNumber.trim()) {
-      return `${label}: seal identification number is required.`;
-    }
-  }
-  return null;
+  return productStepBlockReason(values.devices, {
+    compact: isOvCompactWizard(Boolean(context?.isNewJob), values),
+    products: context?.products,
+  });
 }
 
 function serialStepBlockReason(
   values: VerificationSessionValues,
   context?: VerificationFormStepContext,
 ): string | null {
-  const included = values.devices.filter(row => row.included);
+  const included = includedDeviceEntries(values);
   if (included.length === 0) return 'Add at least one instrument.';
 
   const deviceImages = context?.deviceImages ?? {};
-  for (let i = 0; i < values.devices.length; i++) {
-    const row = values.devices[i];
-    if (!row.included) continue;
-    const label = `Device ${i + 1}`;
+  const serialRows = compactWorkingDeviceEntries(values, context);
+  for (const { row, index } of serialRows) {
+    const label = `Device ${index + 1}`;
     const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
     const plateError = validateDeviceImageSlot(
       images[SERIAL_PLATE_IMAGE_KIND],
@@ -366,7 +389,7 @@ function serialStepBlockReason(
 
   return validateOvQuotaDevices(
     values.verificationType,
-    quotaSerialRows(included, context?.products),
+    quotaSerialRows(serialRows.map(entry => entry.row), context?.products),
     context?.ovQuota,
   );
 }
@@ -376,18 +399,16 @@ function instrumentsPhotosOnlyBlockReason(
   context?: VerificationFormStepContext,
   kinds?: VerificationImageKind[],
 ): string | null {
-  const included = values.devices.filter(row => row.included);
+  const included = includedDeviceEntries(values);
   if (included.length === 0) return 'Add at least one instrument.';
 
   const deviceImages = context?.deviceImages ?? {};
   const deviceRvImages = context?.deviceRvImages ?? {};
 
-  for (let i = 0; i < values.devices.length; i++) {
-    const row = values.devices[i];
-    if (!row.included) continue;
+  for (const { row, index } of compactWorkingDeviceEntries(values, context)) {
     const photoError = verificationDevicePhotosBlockReason(
       row,
-      i,
+      index,
       deviceImages[row.localId] ?? emptyDeviceVerificationImagesState(),
       deviceRvImages[row.localId],
       values.verificationType,
