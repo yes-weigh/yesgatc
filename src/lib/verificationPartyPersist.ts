@@ -5,7 +5,6 @@ import { normalizePhone } from './contactFields';
 import {
   buildCustomerProfileFields,
   isCustomerPartyReadyToPersist,
-  parseCustomerLocation,
   validateCustomerProfile,
   type CustomerFormValues,
 } from './customerProfileFields';
