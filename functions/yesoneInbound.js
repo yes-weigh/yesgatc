@@ -44,6 +44,10 @@ const EVENT_ALIASES = {
   'rc.quota': 'rc.ov_quota',
   ov_quota: 'rc.ov_quota',
   quota: 'rc.ov_quota',
+  'product.bank': 'product.bank',
+  product_bank: 'product.bank',
+  'product.bank.remove': 'serial.cancelled',
+  product_bank_remove: 'serial.cancelled',
 };
 
 function optionalTrimmed(value) {
@@ -185,7 +189,7 @@ function inferEventName(item) {
     pickValue(rec, ['event', 'type', 'kind', 'name']) || pickValue(rec, ['action']),
   );
   if (named) return named;
-  if (readPreviousSerial(item) && readSerialNumber(item)) return 'serial.updated';
+  if (isSerialRename(item)) return 'serial.updated';
   if (readQuotaValue(item) != null) return 'rc.ov_quota';
   if (readSerialNumber(item) || Array.isArray(pickValue(rec, ['serials']))) return 'serial.allotted';
   return null;
@@ -216,18 +220,36 @@ function readSerialNumber(item) {
   return looksLikeYesoneSerial(raw) ? raw : null;
 }
 
-function readPreviousSerial(item) {
-  const serial = asRecord(item.serial);
+function readRenameSerial(item) {
+  const rec = asRecord(item);
+  const serial = asRecord(rec.serial);
   return optionalTrimmed(
-    item.previousSerialNumber
-    || item.oldSerialNumber
-    || item.oldSerial
-    || item.from
-    || item.fromSerial
-    || item.previous
+    rec.previousSerialNumber
+    || rec.oldSerialNumber
+    || rec.oldSerial
+    || rec.fromSerial
+    || rec.previous
     || serial.previous
     || serial.old,
   );
+}
+
+function readPreviousSerial(item) {
+  const explicit = readRenameSerial(item);
+  if (explicit) return explicit;
+  const rec = asRecord(item);
+  if (Array.isArray(rec.allotments) || Array.isArray(rec.serialNumbers) || Array.isArray(rec.serials)) {
+    return null;
+  }
+  const from = optionalTrimmed(rec.from);
+  const to = optionalTrimmed(rec.to);
+  const next = readSerialNumber(rec);
+  if (from && next && from !== next && !to) return from;
+  return null;
+}
+
+function isSerialRename(item) {
+  return Boolean(readPreviousSerial(item) && readSerialNumber(item));
 }
 
 function firstFiniteAmount(candidates) {
@@ -640,10 +662,11 @@ function expandNamedSerialEvent(root, mergedRoot, named) {
           to: rec.to || optionalTrimmed(raw.to),
           invoiceNo: invoiceNo || undefined,
           allotmentId: optionalTrimmed(raw.id) || undefined,
-          sku: optionalTrimmed(raw.sku) || undefined,
+          sku: optionalTrimmed(raw.sku || raw.modelId || raw.modelNo) || undefined,
           productId: optionalTrimmed(raw.productId || raw.itemId) || undefined,
-          productName: optionalTrimmed(raw.productName) || undefined,
-          modelNo: optionalTrimmed(raw.modelNo) || undefined,
+          productName: optionalTrimmed(raw.productName || raw.name) || undefined,
+          modelNo: optionalTrimmed(raw.modelNo || raw.modelId) || undefined,
+          modelId: optionalTrimmed(raw.modelId || raw.modelNo) || undefined,
         });
       }
     }
@@ -701,6 +724,44 @@ function applyAllotmentInvoiceMeta(items, root) {
   });
 }
 
+function applyInvoiceLineProductMeta(items, root) {
+  const invoice = asRecord(pickValue(root, ['invoice']) || root.invoice);
+  const lines = Array.isArray(invoice.lines) ? invoice.lines : [];
+  if (!lines.length) return items;
+  const bySerial = new Map();
+  for (const line of lines) {
+    const rec = asRecord(line);
+    const sku = pickText(rec, ['sku', 'modelId', 'modelNo']);
+    const productName = pickText(rec, ['name', 'productName']);
+    const productId = pickText(rec, ['productId', 'itemId']);
+    const modelId = pickText(rec, ['modelId', 'modelNo', 'sku']);
+    if (!sku && !productName && !productId) continue;
+    for (const serial of serialsFromGroup(rec)) {
+      if (!bySerial.has(serial)) {
+        bySerial.set(serial, { sku, productName, productId, modelId, modelNo: modelId });
+      }
+    }
+  }
+  if (bySerial.size === 0) return items;
+  return items.map(item => {
+    const serial = readSerialNumber(item);
+    const meta = serial ? bySerial.get(serial) : null;
+    if (!meta) return item;
+    return {
+      ...item,
+      sku: optionalTrimmed(item.sku) || meta.sku || undefined,
+      productName: optionalTrimmed(item.productName) || meta.productName || undefined,
+      productId: optionalTrimmed(item.productId) || meta.productId || undefined,
+      modelNo: optionalTrimmed(item.modelNo) || meta.modelNo || undefined,
+      modelId: optionalTrimmed(item.modelId) || meta.modelId || undefined,
+    };
+  });
+}
+
+function finalizeInboundItems(items, root) {
+  return applyInvoiceLineProductMeta(applyAllotmentInvoiceMeta(items, root), root);
+}
+
 function expandInboundItems(body) {
   const root = asRecord(body);
   const data = asRecord(root.data);
@@ -713,24 +774,29 @@ function expandInboundItems(body) {
   delete mergedRoot.events;
   delete mergedRoot.items;
 
-  const named = inferEventName(mergedRoot);
+  const namedRaw = inferEventName(mergedRoot);
+  const named = namedRaw === 'serial.updated' && !isSerialRename(mergedRoot)
+    ? 'serial.allotted'
+    : namedRaw === 'product.bank'
+      ? 'serial.allotted'
+      : namedRaw;
   // Named cancel/allot wins even when payload also has dump-shaped fields
   // (generatedSerialDetails). Otherwise cancel is misread as allot-to-IWP.
   if (SERIAL_MUTATION_EVENTS.has(named) && (named === 'serial.cancelled' || !isYesoneDump(root))) {
     const namedItems = expandNamedSerialEvent(root, mergedRoot, named);
     if (namedItems.length) {
-      return applyAllotmentInvoiceMeta(namedItems, mergedRoot).slice(0, MAX_EVENTS);
+      return finalizeInboundItems(namedItems, mergedRoot).slice(0, MAX_EVENTS);
     }
   }
 
   if (Array.isArray(body)) {
-    return applyAllotmentInvoiceMeta(expandRecordList(body), mergedRoot);
+    return finalizeInboundItems(expandRecordList(body), mergedRoot);
   }
   if (Array.isArray(eventRows)) {
-    return applyAllotmentInvoiceMeta(expandRecordList(eventRows, mergedRoot), mergedRoot);
+    return finalizeInboundItems(expandRecordList(eventRows, mergedRoot), mergedRoot);
   }
   if (Array.isArray(itemRows)) {
-    return applyAllotmentInvoiceMeta(expandRecordList(itemRows, mergedRoot), mergedRoot);
+    return finalizeInboundItems(expandRecordList(itemRows, mergedRoot), mergedRoot);
   }
 
   const out = [];
@@ -791,9 +857,9 @@ function expandInboundItems(body) {
   }
 
   if (out.length > 0) {
-    return applyAllotmentInvoiceMeta(out, mergedRoot).slice(0, MAX_EVENTS);
+    return finalizeInboundItems(out, mergedRoot).slice(0, MAX_EVENTS);
   }
-  return applyAllotmentInvoiceMeta(explodeItem(mergedRoot), mergedRoot).slice(0, MAX_EVENTS);
+  return finalizeInboundItems(explodeItem(mergedRoot), mergedRoot).slice(0, MAX_EVENTS);
 }
 
 function stripUndefined(value) {
@@ -875,8 +941,10 @@ function allotmentFields(item, rc, serialNumber, extra = {}) {
     rcCompanyName: optionalTrimmed(rc?.companyName || item.rcCompanyName || item.rcName),
     productId: optionalTrimmed(item.productId || product.id),
     productName: optionalTrimmed(item.productName || product.name || product.productName),
-    modelNo: optionalTrimmed(item.modelNo || product.modelNo),
-    sku: optionalTrimmed(item.sku || product.sku || item.modelNo || product.modelNo),
+    modelNo: optionalTrimmed(item.modelNo || item.modelId || product.modelNo || product.modelId),
+    sku: optionalTrimmed(
+      item.sku || product.sku || item.modelId || item.modelNo || product.modelId || product.modelNo,
+    ),
     invoiceNo: invoiceNo || null,
     source: 'yesone',
     updatedAt: new Date().toISOString(),
@@ -1182,8 +1250,18 @@ async function applyInboundItems(db, items) {
   const allotted = [];
   const rest = [];
   for (const item of items) {
-    if (inferEventName(item) === 'serial.allotted') allotted.push(item);
-    else rest.push(item);
+    const event = inferEventName(item);
+    if (event === 'product.bank' && !readSerialNumber(item)) {
+      rest.push(item);
+    } else if (
+      event === 'serial.allotted'
+      || event === 'product.bank'
+      || (event === 'serial.updated' && !isSerialRename(item))
+    ) {
+      allotted.push({ ...item, event: 'serial.allotted' });
+    } else {
+      rest.push(item);
+    }
   }
 
   const results = [];
@@ -1436,8 +1514,16 @@ async function applyOvQuota(db, item) {
 async function applyInboundItem(db, item) {
   const event = inferEventName(item);
   if (!event) return { ok: false, event: 'unknown', error: 'event_required' };
-  if (event === 'serial.allotted') return applySerialAllotted(db, item);
-  if (event === 'serial.updated') return applySerialUpdated(db, item);
+  if (event === 'serial.allotted' || event === 'product.bank') {
+    if (event === 'product.bank' && !readSerialNumber(item)) {
+      return { ok: true, event: 'product.bank', skipped: 'product_meta' };
+    }
+    return applySerialAllotted(db, item);
+  }
+  if (event === 'serial.updated') {
+    if (!isSerialRename(item)) return applySerialAllotted(db, item);
+    return applySerialUpdated(db, item);
+  }
   if (event === 'serial.cancelled') return applySerialCancelled(db, item);
   if (event === 'rc.ov_quota') return applyOvQuota(db, item);
   return { ok: false, event, error: 'event_unsupported' };
@@ -1530,7 +1616,7 @@ async function yesoneInboundHttpHandler(req, res, db) {
       res.status(200).json({
         ok: true,
         service: 'yesgatc-yesone-inbound',
-        events: ['serial.allotted', 'serial.updated', 'serial.cancelled', 'rc.ov_quota'],
+        events: ['serial.allotted', 'serial.updated', 'serial.cancelled', 'rc.ov_quota', 'product.bank'],
       });
       return;
     }

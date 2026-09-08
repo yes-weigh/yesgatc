@@ -441,6 +441,7 @@ export const RCSiteCalibration: React.FC = () => {
         productId: row.productId,
         productName: row.productName,
         modelNo: row.modelNo,
+        modelId: row.modelNo,
       })),
       balanceQty: actorBalanceQty,
       heldSerials: held,

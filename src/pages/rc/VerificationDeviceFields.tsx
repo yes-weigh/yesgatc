@@ -195,6 +195,7 @@ function DeviceSerialField({
   lockedSerial?: string;
   onDeviceChange: (localId: string, patch: Partial<VerificationDeviceRowValues>) => void;
 }) {
+  const { products } = useAppContext();
   const held = lockedSerial.trim();
   const rowSerial = row.serialNumber.trim();
   const lockThisRow =
@@ -233,13 +234,21 @@ function DeviceSerialField({
     );
   }
 
+  const catalogue = selectedProduct(products, row);
   const otherTaken = devices
     .filter(device => device.localId !== row.localId && device.included)
     .map(device => device.serialNumber);
   const remaining = remainingSerialsForProduct(
     ovQuota.remaining,
     ovQuota.remainingAllotments,
-    { productId: row.productId, productName: row.productName },
+    {
+      productId: row.productId || catalogue?.id,
+      productName: row.productName || catalogue?.name,
+      sku: catalogue?.modelid,
+      modelNo: catalogue?.modelNo,
+      modelid: catalogue?.modelid,
+      modelId: catalogue?.modelid,
+    },
   );
   const choices = ovSerialChoicesForRow(
     row.serialNumber,

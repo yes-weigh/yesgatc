@@ -600,3 +600,56 @@ test('POST cancel then allot nested series to KNR', async () => {
   assert.ok(db._store['users/knr'].yesoneAllottedSerials.includes('G0540'));
   assert.ok(db._store['users/knr'].yesoneAllottedSerials.includes('G0541'));
 });
+
+test('invoice serial.updated with range is allot, not rename', () => {
+  const items = expandInboundItems({
+    event: 'serial.updated',
+    action: 'upsert',
+    from: 'YJ01468',
+    to: 'YJ01493',
+    allotments: [{
+      sku: 'ATM30GAY',
+      productName: 'ATM PC Gold',
+      serialNumbers: ['YJ01493', 'YJ01468'],
+      from: 'YJ01468',
+      to: 'YJ01493',
+    }],
+    rc: { rcCode: 'IWP', name: 'INTERWEIGHING PVT LTD' },
+    invoice: {
+      invoiceNumber: 'YES/26-27/2213',
+      lines: [{
+        sku: 'ATM30GAY',
+        name: 'ATM PC Gold',
+        serialNumbers: ['YJ01493', 'YJ01468'],
+      }],
+    },
+  });
+  assert.equal(items.length, 2);
+  assert.equal(items.every(item => item.event === 'serial.allotted'), true);
+  assert.equal(items.every(item => item.sku === 'ATM30GAY'), true);
+  assert.deepEqual(items.map(item => item.serialNumber).sort(), ['YJ01468', 'YJ01493']);
+  assert.equal(readPreviousSerial(items[0]), null);
+});
+
+test('product.bank without serials is skipped', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+  });
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'product.bank',
+        product: { sku: 'ATM30GAY', name: 'ATM PC Gold', modelId: 'ATM30GAY' },
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(res.body.results[0].skipped, 'product_meta');
+});
