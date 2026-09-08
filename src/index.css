@@ -25248,6 +25248,7 @@ select.input-field--table {
 .verification-list-error {
   margin: 0;
   padding: 0.65rem 1rem 0;
+  white-space: pre-line;
 }
 
 .verification-mobile-only-notice {
@@ -30189,6 +30190,13 @@ a.wl-live:hover {
 
 .wl-section__link:hover {
   color: #93c5fd;
+}
+
+.wl-section__links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-shrink: 0;
 }
 
 .wl-stages-panel {
