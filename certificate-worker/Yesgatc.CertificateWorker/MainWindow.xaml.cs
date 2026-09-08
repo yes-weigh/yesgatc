@@ -1127,7 +1127,7 @@ public partial class MainWindow : Window
         AddActivityEntry($"{label} process switch {(on ? "ON" : "OFF")}.");
         SetStatus(
             on
-                ? $"{label} will process when Auto-run is on (fill ↔ signed upload, stamp bursts between)."
+                ? $"{label} will process when Auto-run is on (signed drain, then fill streak of {WorkerQueueStagePicker.FillStreakMax}, stamp bursts between)."
                 : $"{label} skipped until switch is on.",
             StatusKind.Info);
 
@@ -2223,19 +2223,23 @@ public partial class MainWindow : Window
             if (emaap == WorkerQueueStage.FillCertify)
             {
                 _lastEmaapStage = WorkerQueueStage.FillCertify;
+                var fillMax = WorkerQueueStagePicker.EmaapBatchMaxJobs(WorkerQueueStage.FillCertify);
+                var fillTake = Math.Min(fillMax, fillQueue.Count);
                 SetStatusSafe(
-                    $"Auto worker — fill & certify · {fillQueue.Count} waiting…",
+                    $"Auto worker — fill & certify streak ({fillTake}) · {fillQueue.Count} waiting…",
                     StatusKind.Working);
-                await ProcessAllJobsSequentiallyAsync(fillQueue, fromAutoWorker: true, maxJobs: 1)
+                await ProcessAllJobsSequentiallyAsync(fillQueue, fromAutoWorker: true, maxJobs: fillMax)
                     .ConfigureAwait(false);
             }
             else if (emaap == WorkerQueueStage.SignedEmaapUpload)
             {
                 _lastEmaapStage = WorkerQueueStage.SignedEmaapUpload;
+                var signedMax = WorkerQueueStagePicker.EmaapBatchMaxJobs(WorkerQueueStage.SignedEmaapUpload);
+                var signedTake = Math.Min(signedMax, signedQueue.Count);
                 SetStatusSafe(
-                    $"Auto worker — signed PDF → eMAAP · {signedQueue.Count} waiting…",
+                    $"Auto worker — signed PDF drain ({signedTake}) · {signedQueue.Count} waiting…",
                     StatusKind.Working);
-                await ProcessAllJobsSequentiallyAsync(signedQueue, fromAutoWorker: true, maxJobs: 1)
+                await ProcessAllJobsSequentiallyAsync(signedQueue, fromAutoWorker: true, maxJobs: signedMax)
                     .ConfigureAwait(false);
             }
 
@@ -2438,9 +2442,11 @@ public partial class MainWindow : Window
         var skipNote = skipped.Count > 0 ? $" · {string.Join(", ", skipped)}" : string.Empty;
         var nextNote = stage switch
         {
-            WorkerQueueStage.FillCertify => $"{fillEligible} fill & certify next",
+            WorkerQueueStage.FillCertify =>
+                $"fill streak up to {Math.Min(WorkerQueueStagePicker.FillStreakMax, fillEligible)} of {fillEligible}",
             WorkerQueueStage.PdfSigner => $"{signerEligible} PDF signer next",
-            WorkerQueueStage.SignedEmaapUpload => $"{signedEligible} signed PDF upload next",
+            WorkerQueueStage.SignedEmaapUpload =>
+                $"signed drain up to {Math.Min(WorkerQueueStagePicker.SignedDrainMax, signedEligible)} of {signedEligible}",
             _ => !_processFillQueue && !_processSignerQueue && !_processSignedUploadQueue
                 ? "all process switches off"
                 : "queues empty",
@@ -4479,11 +4485,11 @@ public partial class MainWindow : Window
         QueueCountText.Text = stage switch
         {
             WorkerQueueStage.FillCertify =>
-                $"Next: fill & certify ({fillEligible}). Then signed PDF ({signedEligible}) · PDF signer ({signerEligible}).",
+                $"Next: fill streak (up to {WorkerQueueStagePicker.FillStreakMax} of {fillEligible}). Then signed drain ({signedEligible}) · PDF signer ({signerEligible}).",
             WorkerQueueStage.PdfSigner =>
                 $"Next: PDF signer ({signerEligible}). Fill {fillEligible} · signed upload {signedEligible}.",
             WorkerQueueStage.SignedEmaapUpload =>
-                $"Next: upload signed PDFs ({signedEligible}). Then fill ({fillEligible}) · PDF signer ({signerEligible}).",
+                $"Next: signed drain (up to {WorkerQueueStagePicker.SignedDrainMax} of {signedEligible}). Then fill streak ({fillEligible}) · PDF signer ({signerEligible}).",
             _ => !_processFillQueue && !_processSignerQueue && !_processSignedUploadQueue
                 ? "All process switches off."
                 : "Idle — no eligible jobs on ON queues.",

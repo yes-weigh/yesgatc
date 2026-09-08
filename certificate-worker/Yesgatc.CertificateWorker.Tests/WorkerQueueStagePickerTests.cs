@@ -6,7 +6,7 @@ namespace Yesgatc.CertificateWorker.Tests;
 public sealed class WorkerQueueStagePickerTests
 {
     [Fact]
-    public void Next_fill_first_when_all_wait_and_no_last_emaap()
+    public void Next_drains_signed_first_when_all_wait_and_no_last_emaap()
     {
         var stage = WorkerQueueStagePicker.Next(
             processFill: true,
@@ -16,7 +16,20 @@ public sealed class WorkerQueueStagePickerTests
             signerEligibleCount: 4,
             signedEligibleCount: 3);
 
-        Assert.Equal(WorkerQueueStage.FillCertify, stage);
+        Assert.Equal(WorkerQueueStage.SignedEmaapUpload, stage);
+    }
+
+    [Fact]
+    public void NextEmaap_startup_drains_signed_before_fill()
+    {
+        var stage = WorkerQueueStagePicker.NextEmaap(
+            processFill: true,
+            processSigned: true,
+            fillEligibleCount: 52,
+            signedEligibleCount: 5,
+            lastEmaapStage: null);
+
+        Assert.Equal(WorkerQueueStage.SignedEmaapUpload, stage);
     }
 
     [Fact]
@@ -43,6 +56,32 @@ public sealed class WorkerQueueStagePickerTests
             lastEmaapStage: WorkerQueueStage.SignedEmaapUpload);
 
         Assert.Equal(WorkerQueueStage.FillCertify, stage);
+    }
+
+    [Fact]
+    public void NextEmaap_after_signed_stays_on_fill_when_signed_empty()
+    {
+        var stage = WorkerQueueStagePicker.NextEmaap(
+            processFill: true,
+            processSigned: true,
+            fillEligibleCount: 40,
+            signedEligibleCount: 0,
+            lastEmaapStage: WorkerQueueStage.SignedEmaapUpload);
+
+        Assert.Equal(WorkerQueueStage.FillCertify, stage);
+    }
+
+    [Fact]
+    public void EmaapBatchMaxJobs_uses_streak_and_drain_caps()
+    {
+        Assert.Equal(5, WorkerQueueStagePicker.FillStreakMax);
+        Assert.Equal(5, WorkerQueueStagePicker.SignedDrainMax);
+        Assert.Equal(
+            WorkerQueueStagePicker.FillStreakMax,
+            WorkerQueueStagePicker.EmaapBatchMaxJobs(WorkerQueueStage.FillCertify));
+        Assert.Equal(
+            WorkerQueueStagePicker.SignedDrainMax,
+            WorkerQueueStagePicker.EmaapBatchMaxJobs(WorkerQueueStage.SignedEmaapUpload));
     }
 
     [Fact]

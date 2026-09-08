@@ -8,14 +8,22 @@ internal enum WorkerQueueStage
 }
 
 /// <summary>
-/// One job (or a short stamp burst), then re-pick.
-/// Fill vs signed-upload: never two fills in a row while signed PDFs wait.
-/// After any eMAAP job the auto-worker stamps a burst, then picks again.
+/// One Chrome for eMAAP. Auto-run drains signed uploads (short, last-mile), then a fill
+/// streak, then drain again. Stamp bursts run after each eMAAP batch (local, no portal).
 /// </summary>
 internal static class WorkerQueueStagePicker
 {
     public const int StampBurstMax = 8;
+    public const int FillStreakMax = 5;
+    public const int SignedDrainMax = 5;
 
+    public static int EmaapBatchMaxJobs(WorkerQueueStage stage) =>
+        stage == WorkerQueueStage.FillCertify ? FillStreakMax : SignedDrainMax;
+
+    /// <summary>
+    /// Signed drain whenever uploads are waiting, except immediately after a drain
+    /// (then fill streak). Startup with both queues waiting drains signed first.
+    /// </summary>
     public static WorkerQueueStage? NextEmaap(
         bool processFill,
         bool processSigned,
@@ -23,19 +31,20 @@ internal static class WorkerQueueStagePicker
         int signedEligibleCount,
         WorkerQueueStage? lastEmaapStage)
     {
-        if (processSigned
-            && signedEligibleCount > 0
-            && lastEmaapStage == WorkerQueueStage.FillCertify)
+        var signedWaiting = processSigned && signedEligibleCount > 0;
+        var fillWaiting = processFill && fillEligibleCount > 0;
+
+        if (signedWaiting && lastEmaapStage != WorkerQueueStage.SignedEmaapUpload)
         {
             return WorkerQueueStage.SignedEmaapUpload;
         }
 
-        if (processFill && fillEligibleCount > 0)
+        if (fillWaiting)
         {
             return WorkerQueueStage.FillCertify;
         }
 
-        if (processSigned && signedEligibleCount > 0)
+        if (signedWaiting)
         {
             return WorkerQueueStage.SignedEmaapUpload;
         }
