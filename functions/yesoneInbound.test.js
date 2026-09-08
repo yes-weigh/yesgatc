@@ -631,6 +631,121 @@ test('invoice serial.updated with range is allot, not rename', () => {
   assert.equal(readPreviousSerial(items[0]), null);
 });
 
+test('dealer invoice allotments keep KLM, not IWP default', () => {
+  const items = expandInboundItems({
+    event: 'serial.allotted',
+    series: 'non_gatc',
+    rc: {
+      id: 'yesone-link-not-a-user',
+      code: 'KLM',
+      rcCode: 'KLM',
+      name: 'TAKYON SYSTEMS',
+    },
+    invoice: {
+      invoiceNumber: 'YES/26-27/2170',
+      serialNumbers: ['X00531', 'X00532'],
+      lines: [{
+        sku: 'ACS30RAD',
+        name: 'Table top scale',
+        serialNumbers: ['X00531', 'X00532'],
+      }],
+    },
+    allotments: [{
+      series: 'non_gatc',
+      sku: 'ACS30RAD',
+      productName: 'Table top scale',
+      from: 'X00531',
+      to: 'X00532',
+      serialNumbers: ['X00531', 'X00532'],
+      invoiceLinks: [{ rcCode: 'KLM', invoiceNumber: 'YES/26-27/2170' }],
+    }],
+  });
+  assert.equal(items.length, 2);
+  assert.deepEqual(items.map(item => item.serialNumber).sort(), ['X00531', 'X00532']);
+  for (const item of items) {
+    assert.equal(item.rcCode, 'KLM');
+    assert.equal(item.sku, 'ACS30RAD');
+  }
+});
+
+test('invoice re-push moves warehouse X serials from IWP to KLM', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/iwp': {
+      role: 'rc_admin',
+      rcCode: 'IWP',
+      companyName: 'INTERWEIGHING PVT LTD',
+      yesoneAllottedSerials: ['X00531', 'X00532', 'X00307'],
+    },
+    'users/klm': {
+      role: 'rc_admin',
+      rcCode: 'KLM',
+      companyName: 'TAKYON SYSTEMS',
+      yesoneAllottedSerials: ['X00307'],
+    },
+    'serialAllotments/X00531': {
+      serialNumber: 'X00531',
+      rcId: 'iwp',
+      rcCode: 'IWP',
+      status: 'allotted',
+    },
+    'serialAllotments/X00532': {
+      serialNumber: 'X00532',
+      rcId: 'iwp',
+      rcCode: 'IWP',
+      status: 'allotted',
+    },
+  });
+
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        series: 'non_gatc',
+        rc: {
+          id: 'yesone-link-not-a-user',
+          code: 'KLM',
+          rcCode: 'KLM',
+          name: 'TAKYON SYSTEMS',
+        },
+        invoice: {
+          invoiceNumber: 'YES/26-27/2170',
+          serialNumbers: ['X00531', 'X00532'],
+          lines: [{
+            sku: 'ACS30RAD',
+            name: 'Table top scale',
+            serialNumbers: ['X00531', 'X00532'],
+          }],
+        },
+        allotments: [{
+          series: 'non_gatc',
+          sku: 'ACS30RAD',
+          productName: 'Table top scale',
+          from: 'X00531',
+          to: 'X00532',
+          serialNumbers: ['X00531', 'X00532'],
+        }],
+      },
+    },
+    res,
+    db,
+  );
+
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['serialAllotments/X00531'].rcId, 'klm');
+  assert.equal(db._store['serialAllotments/X00531'].rcCode, 'KLM');
+  assert.equal(db._store['serialAllotments/X00532'].rcId, 'klm');
+  assert.ok(db._store['users/klm'].yesoneAllottedSerials.includes('X00531'));
+  assert.ok(db._store['users/klm'].yesoneAllottedSerials.includes('X00532'));
+  assert.equal(db._store['users/iwp'].yesoneAllottedSerials.includes('X00531'), false);
+  assert.equal(db._store['users/iwp'].yesoneAllottedSerials.includes('X00532'), false);
+});
+
 test('product.bank without serials is skipped', async () => {
   const db = createMemoryDb({
     'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },

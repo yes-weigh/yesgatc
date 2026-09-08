@@ -653,9 +653,15 @@ function expandNamedSerialEvent(root, mergedRoot, named) {
       const serials = serialsFromGroup(rec);
       if (serials.length) {
         const invoiceNo = allotmentInvoiceRef(raw, mergedRoot);
+        const dealerCode = rec.rcCode || base.rcCode || rcCodeFrom(mergedRoot);
         pushSerialItems(out, mergedRoot, serials, {
           event: named,
-          rcCode: rec.rcCode || base.rcCode || MASTER_RC_CODE,
+          ...(dealerCode
+            ? { rcCode: dealerCode }
+            : invoiceNo
+              ? {}
+              : { rcCode: MASTER_RC_CODE }),
+          rc: pickValue(raw, ['rc']) || mergedRoot.rc,
           rcId: rec.rcId || base.rcId,
           rcCompanyName: rec.rcCompanyName || base.rcCompanyName,
           from: rec.from || optionalTrimmed(raw.from),
@@ -1187,13 +1193,16 @@ async function applySerialAllottedMany(db, items, rcCache) {
   }
 
   for (const row of prepared) {
-    const rc = await resolveRcCached(db, row.item, rcCache);
+    const resolved = await resolveRcCached(db, row.item, rcCache);
+    const previous = existingById.get(row.id);
+    const rc = resolved || (previous?.rcId
+      ? { id: previous.rcId, rcCode: previous.rcCode, companyName: previous.rcCompanyName }
+      : null);
     if (rc?.id && !optionalTrimmed(row.item.rcId)) row.item.rcId = rc.id;
     if (rc?.rcCode && !normalizeRcCode(row.item.rcCode)) row.item.rcCode = rc.rcCode;
     if (rc?.companyName && !optionalTrimmed(row.item.rcCompanyName)) {
       row.item.rcCompanyName = rc.companyName;
     }
-    const previous = existingById.get(row.id);
     const previousStatus = optionalTrimmed(previous?.status);
     const keepStatus = previousStatus && previousStatus !== 'cancelled' && previousStatus !== 'replaced'
       ? previousStatus
@@ -1216,12 +1225,25 @@ async function applySerialAllottedMany(db, items, rcCache) {
         : null,
     };
     results.push(result);
-    const reallot = !previous || previousStatus === 'cancelled' || previousStatus === 'replaced'
-      || (rc?.id && previous?.rcId && previous.rcId !== rc.id);
-    if (rc?.id && !isMasterRcCode(rc.rcCode) && reallot) {
+    const reallot = Boolean(
+      rc?.id
+      && !isMasterRcCode(rc.rcCode)
+      && (
+        !previous
+        || previousStatus === 'cancelled'
+        || previousStatus === 'replaced'
+        || previous.rcId !== rc.id
+      ),
+    );
+    if (reallot) {
       const list = serialsByRc.get(rc.id) || [];
       list.push(row.serialNumber);
       serialsByRc.set(rc.id, list);
+    }
+    if (previous?.rcId && rc?.id && previous.rcId !== rc.id) {
+      const drop = serialsByRc.get(`drop:${previous.rcId}`) || [];
+      drop.push(row.serialNumber);
+      serialsByRc.set(`drop:${previous.rcId}`, drop);
     }
     if (!previous || previousStatus === 'cancelled' || previousStatus === 'replaced') {
       inwardItems.push(row.item);
@@ -1231,6 +1253,14 @@ async function applySerialAllottedMany(db, items, rcCache) {
 
   await commitDocSets(db, writes);
   for (const [rcId, serials] of serialsByRc) {
+    if (rcId.startsWith('drop:')) {
+      const dropId = rcId.slice(5);
+      const remove = new Set(serials.map(item => String(item || '').trim().toUpperCase()));
+      await patchRcAllottedSerials(db, dropId, list => (
+        list.filter(serial => !remove.has(String(serial || '').trim().toUpperCase()))
+      ));
+      continue;
+    }
     await patchRcAllottedSerials(db, rcId, list => {
       const next = new Set(list);
       for (const serial of serials) next.add(serial);

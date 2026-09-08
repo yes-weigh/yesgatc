@@ -18,6 +18,7 @@ import {
   limit,
   query,
   setDoc,
+  updateDoc,
   where,
 } from 'firebase/firestore';
 
@@ -402,6 +403,76 @@ async function run() {
       ok('RC admin cannot resubmit with serial mismatch');
     } catch (err) {
       fail('RC admin cannot resubmit with serial mismatch', err);
+    }
+
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'pasSerialBank', 'Y10334'), {
+        serialNumber: 'Y10334',
+        status: 'available',
+        source: 'yesone',
+      });
+      await setDoc(doc(db, 'pasSerialBankMeta', 'ATM30GAY'), {
+        sku: 'ATM30GAY',
+        qty: 2,
+      });
+    });
+
+    try {
+      await assertSucceeds(getDoc(doc(vctDb, 'pasSerialBank', 'Y10334')));
+      ok('VCT can read PAS number bank serial');
+    } catch (err) {
+      fail('VCT can read PAS number bank serial', err);
+    }
+
+    try {
+      await assertSucceeds(getDocs(collection(vctDb, 'pasSerialBank')));
+      ok('VCT can list PAS number bank');
+    } catch (err) {
+      fail('VCT can list PAS number bank', err);
+    }
+
+    try {
+      await assertSucceeds(getDoc(doc(vctDb, 'pasSerialBankMeta', 'ATM30GAY')));
+      ok('VCT can read PAS number bank meta');
+    } catch (err) {
+      fail('VCT can read PAS number bank meta', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(vctDb, 'pasSerialBank', 'Y10334'), {
+          status: 'used',
+          usedAt: new Date().toISOString(),
+          usedByUid: VCT_UID,
+          usedByRcId: RC_UID,
+          usedRecordId: verificationId,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+      ok('VCT can mark PAS serial used');
+    } catch (err) {
+      fail('VCT can mark PAS serial used', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(doc(vctDb, 'pasSerialBank', 'Y99999'), {
+          serialNumber: 'Y99999',
+          status: 'available',
+        }),
+      );
+      ok('VCT cannot create PAS number bank docs');
+    } catch (err) {
+      fail('VCT cannot create PAS number bank docs', err);
+    }
+
+    const anonDb = testEnv.unauthenticatedContext().firestore();
+    try {
+      await assertFails(getDoc(doc(anonDb, 'pasSerialBank', 'Y10334')));
+      ok('Unauthenticated cannot read PAS number bank');
+    } catch (err) {
+      fail('Unauthenticated cannot read PAS number bank', err);
     }
   } finally {
     await testEnv.cleanup();
