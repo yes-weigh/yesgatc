@@ -63,6 +63,12 @@ import {
   moveFailedSubmitVerificationToDraft,
 } from '../../lib/verificationPipelineRepair';
 import {
+  canActorBulkResubmitFailedSubmit,
+  canActorResubmitFailedSubmit,
+  filterFailedSubmitResubmitTargets,
+} from '../../lib/verificationFailedSubmitResubmit';
+import { resubmitFailedSubmitVerifications } from '../../lib/verificationFailedSubmitWrite';
+import {
   isSiteCalibrationSubmittable,
   siteCalibrationSubmitBlockReason,
 } from '../../lib/siteCalibrationProfileFields';
@@ -131,8 +137,10 @@ export const AdminVerificationList: React.FC = () => {
   const [movingToDraftId, setMovingToDraftId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
+  const [selectedFailedIds, setSelectedFailedIds] = useState<Set<string>>(() => new Set());
   const [listError, setListError] = useState('');
   const selectAllDraftsRef = useRef<HTMLInputElement | null>(null);
+  const selectAllFailedRef = useRef<HTMLInputElement | null>(null);
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
     () => ({
@@ -621,6 +629,7 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
+    setSelectedFailedIds(new Set());
   }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
@@ -647,6 +656,46 @@ export const AdminVerificationList: React.FC = () => {
         return next;
       }
       return new Set([...prev, ...selectableDraftIds]);
+    });
+  };
+
+  const canBulkFailed = canActorBulkResubmitFailedSubmit(user?.role);
+  const selectableFailedIds = useMemo(() => {
+    if (!canBulkFailed || statusFilter !== 'failed_submit') return [];
+    return filterFailedSubmitResubmitTargets(filteredRecords)
+      .filter(record => canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid }))
+      .map(record => record.id);
+  }, [canBulkFailed, statusFilter, filteredRecords, user?.role, user?.uid]);
+
+  const allSelectableFailedSelected =
+    selectableFailedIds.length > 0 && selectableFailedIds.every(id => selectedFailedIds.has(id));
+
+  const someSelectableFailedSelected =
+    selectableFailedIds.some(id => selectedFailedIds.has(id)) && !allSelectableFailedSelected;
+
+  useEffect(() => {
+    if (selectAllFailedRef.current) {
+      selectAllFailedRef.current.indeterminate = someSelectableFailedSelected;
+    }
+  }, [someSelectableFailedSelected, selectableFailedIds.length]);
+
+  const toggleFailedSelection = (id: string) => {
+    setSelectedFailedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFailed = () => {
+    setSelectedFailedIds(prev => {
+      if (allSelectableFailedSelected) {
+        const next = new Set(prev);
+        selectableFailedIds.forEach(id => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...selectableFailedIds]);
     });
   };
 
@@ -772,6 +821,81 @@ export const AdminVerificationList: React.FC = () => {
             ? err.message
             : 'Failed to submit selected verifications.',
       );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResubmitFailedRecord = async (record: SiteCalibration) => {
+    if (!canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid })) return;
+
+    const appNo = record.applicationNumber?.trim() || '—';
+    const serial = record.serialNumber?.trim() || '—';
+    const ok = await confirm({
+      title: 'Resubmit for certification?',
+      message: [
+        `Re-queue App ${appNo} (serial ${serial}) for eMAAP.`,
+        '',
+        'Same certificate job. Application number is kept.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Resubmit',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await resubmitFailedSubmitVerifications([record.id], 'manual', db);
+      setSelectedFailedIds(prev => {
+        if (!prev.has(record.id)) return prev;
+        const next = new Set(prev);
+        next.delete(record.id);
+        return next;
+      });
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(err instanceof Error ? err.message : 'Failed to resubmit verification.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkResubmitFailed = async () => {
+    if (!canBulkFailed) return;
+
+    const selectedRecords = filterFailedSubmitResubmitTargets(
+      filteredRecords.filter(record => selectedFailedIds.has(record.id)),
+    );
+    if (selectedRecords.length === 0) {
+      setListError('Select failed-at-submit jobs to resubmit.');
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Resubmit selected?',
+      message: [
+        `Re-queue ${selectedRecords.length} failed-at-submit job${selectedRecords.length === 1 ? '' : 's'} for eMAAP.`,
+        '',
+        'Same certificate jobs. Application numbers are kept.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Resubmit selected',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await resubmitFailedSubmitVerifications(
+        selectedRecords.map(record => record.id),
+        'bulk',
+        db,
+      );
+      setSelectedFailedIds(new Set());
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(err instanceof Error ? err.message : 'Failed to resubmit selected verifications.');
     } finally {
       setSubmitting(false);
     }
@@ -904,6 +1028,36 @@ export const AdminVerificationList: React.FC = () => {
             </div>
           )}
 
+          {canBulkFailed && selectedFailedIds.size > 0 && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {selectedFailedIds.size} failed at submit selected
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleBulkResubmitFailed()}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <span className="spinner-inline" />
+                ) : (
+                  <>
+                    <Send size={16} /> Resubmit selected
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3"
+                onClick={() => setSelectedFailedIds(new Set())}
+                disabled={submitting}
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex justify-center py-16">
               <span className="spinner-inline large" />
@@ -934,6 +1088,10 @@ export const AdminVerificationList: React.FC = () => {
                 adminMoveFailedSubmitEnabled={isSuperAdmin}
                 onDelete={record => void handleDelete(record as VerificationRow)}
                 onMoveToDraft={record => void handleMoveToDraft(record as VerificationRow)}
+                onResubmitFailedSubmit={record => void handleResubmitFailedRecord(record)}
+                canResubmitFailedSubmit={record =>
+                  canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid })
+                }
                 onSubmit={
                   isSuperAdmin
                     ? record => void handleSubmitRecord(record)
@@ -952,6 +1110,16 @@ export const AdminVerificationList: React.FC = () => {
                         allSelectableDraftsSelected,
                         onToggleDraftSelection: toggleDraftSelection,
                         onToggleSelectAllDrafts: toggleSelectAllDrafts,
+                        failedSelect: canBulkFailed
+                          ? {
+                              selectedIds: selectedFailedIds,
+                              selectableIds: selectableFailedIds,
+                              allSelected: allSelectableFailedSelected,
+                              selectAllRef: selectAllFailedRef,
+                              onToggle: toggleFailedSelection,
+                              onToggleSelectAll: toggleSelectAllFailed,
+                            }
+                          : undefined,
                       }
                     : undefined
                 }

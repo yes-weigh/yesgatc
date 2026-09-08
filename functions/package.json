@@ -6,8 +6,8 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check lookupPublicCertificates.js && node --check yesoneWebhook.js && node --check yesoneInbound.js && node --check readSerialPlate.js",
-    "test": "node --test lookupPublicCertificates.test.js yesoneWebhook.test.js yesoneInbound.test.js readSerialPlate.test.js"
+    "lint": "node --check index.js && node --check lookupPublicCertificates.js && node --check yesoneWebhook.js && node --check yesoneInbound.js && node --check readSerialPlate.js && node --check verificationStaleToDraft.js && node --check verificationFailedSubmitAutoResubmit.js",
+    "test": "node --test lookupPublicCertificates.test.js yesoneWebhook.test.js yesoneInbound.test.js readSerialPlate.test.js verificationFailedSubmitAutoResubmit.test.js verificationStaleToDraft.test.js"
   },
   "dependencies": {
     "@fastify/busboy": "^3.2.0",

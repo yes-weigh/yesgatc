@@ -31,6 +31,9 @@ const {
 const {
   moveStaleFailedVerificationsToDraftHandler,
 } = require('./verificationStaleToDraft');
+const {
+  autoResubmitFailedSubmitVerificationsHandler,
+} = require('./verificationFailedSubmitAutoResubmit');
 const { pushLegacyRvZohoSettlementHandler } = require('./zohoRvSettlement');
 const { migrateRcZohoExpenseAccountFieldsHandler } = require('./migrateRcZohoExpenseAccount');
 const {
@@ -227,7 +230,7 @@ exports.reconcileZohoOutstandingScheduled = onSchedule(
   async () => reconcileZohoOutstandingScheduledHandler(adminDb()),
 );
 
-/** Every 15 minutes — reopen rejected / failed-at-submit drafts after 12 hours. */
+/** Every 15 minutes — reopen rejected drafts after 12 hours. */
 exports.moveStaleFailedVerificationsToDraft = onSchedule(
   {
     schedule: 'every 15 minutes',
@@ -236,6 +239,17 @@ exports.moveStaleFailedVerificationsToDraft = onSchedule(
     memory: '256MiB',
   },
   async () => moveStaleFailedVerificationsToDraftHandler(adminDb()),
+);
+
+/** Every 15 minutes — re-queue failed-at-submit jobs older than 12 hours (max 3 autos). */
+exports.autoResubmitFailedSubmitVerifications = onSchedule(
+  {
+    schedule: 'every 15 minutes',
+    region: CALLABLE_REGION,
+    timeoutSeconds: 120,
+    memory: '256MiB',
+  },
+  async () => autoResubmitFailedSubmitVerificationsHandler(adminDb()),
 );
 
 /** Super Admin on-demand sweep for unpushed Zoho RV invoices and wallet transfers. */

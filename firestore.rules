@@ -413,6 +413,33 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/siteCalibrations/$(request.resource.data.resubmittedFromId));
       }
 
+      function isFailedAtSubmitResource() {
+        return verificationRecordStatus(resource.data) == 'submitted'
+          && resource.data.get('pipelineFailedPhase', '') == 'submit';
+      }
+
+      function isFailedSubmitResubmitUpdate() {
+        return isFailedAtSubmitResource()
+          && verificationRecordStatus(request.resource.data) == 'submitted'
+          && !request.resource.data.keys().hasAny(['pipelineFailedPhase'])
+          && verificationApplicationNumberUnchanged()
+          && verificationZohoFieldsUnchanged()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly([
+                 'status',
+                 'submittedAt',
+                 'updatedAt',
+                 'pipelineFailedPhase',
+                 'pipelineFailureMessage',
+                 'pipelineFailedAt',
+                 'certificationLastError',
+                 'lastFailedSubmitResubmitAt',
+                 'failedSubmitResubmitSource',
+                 'clientAppVersion',
+                 'clientAppVersionCode'
+               ]);
+      }
+
       allow read: if isSuperAdmin();
       allow create, update: if isSuperAdmin();
       allow delete: if isSuperAdmin()
@@ -519,6 +546,14 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) in ['draft', 'pending_rc']
         && verificationApplicationNumberUnchanged()
         && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion();
+
+      // VCT — re-queue own failed-at-submit job (same document, not a clone).
+      allow update: if isOperationalVct()
+        && resource.data.rcId == vctRcId()
+        && request.resource.data.rcId == resource.data.rcId
+        && vctOwnsVerification(resource.data)
+        && isFailedSubmitResubmitUpdate()
         && meetsMinVerificationAppVersion();
 
       allow update: if isRCAdmin()

@@ -470,6 +470,130 @@ async function run() {
     } catch (err) {
       fail('RC admin cannot resubmit with serial mismatch', err);
     }
+
+    const FAIL_OWN = 'vct-failed-submit-own';
+    const FAIL_RC = 'rc-failed-submit-001';
+    const FAIL_REJECTED = 'vct-rejected-001';
+    const FAIL_UNSIGNED = 'vct-unsigned-cert-001';
+    const nowIso = new Date().toISOString();
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'siteCalibrations', FAIL_OWN), {
+        rcId: RC_UID,
+        createdByUid: VCT_UID,
+        vctId: VCT_UID,
+        performedBy: 'vct',
+        status: 'submitted',
+        verificationType: 'OV',
+        serialNumber: 'SN-FAIL-OWN',
+        applicationNumber: 'VC/26/50',
+        pipelineFailedPhase: 'submit',
+        pipelineFailedAt: nowIso,
+        submittedAt: nowIso,
+        createdAt: nowIso,
+      });
+      await setDoc(doc(db, 'siteCalibrations', FAIL_RC), {
+        rcId: RC_UID,
+        createdByUid: RC_UID,
+        performedBy: 'rc',
+        status: 'submitted',
+        verificationType: 'OV',
+        serialNumber: 'SN-FAIL-RC',
+        applicationNumber: 'VC/26/51',
+        pipelineFailedPhase: 'submit',
+        pipelineFailedAt: nowIso,
+        submittedAt: nowIso,
+        createdAt: nowIso,
+      });
+      await setDoc(doc(db, 'siteCalibrations', FAIL_REJECTED), {
+        rcId: RC_UID,
+        createdByUid: VCT_UID,
+        vctId: VCT_UID,
+        performedBy: 'vct',
+        status: 'rejected',
+        verificationType: 'OV',
+        serialNumber: 'SN-REJ',
+        applicationNumber: 'VC/26/52',
+        pipelineFailedPhase: 'submit',
+        submittedAt: nowIso,
+        createdAt: nowIso,
+      });
+      await setDoc(doc(db, 'siteCalibrations', FAIL_UNSIGNED), {
+        rcId: RC_UID,
+        createdByUid: VCT_UID,
+        vctId: VCT_UID,
+        performedBy: 'vct',
+        status: 'certified',
+        verificationType: 'OV',
+        serialNumber: 'SN-UNSIGNED',
+        applicationNumber: 'VC/26/53',
+        certificateNumber: 'IND/GATC/KL/26/04/99',
+        certifiedAt: nowIso,
+        createdAt: nowIso,
+      });
+    });
+
+    const failedSubmitResubmitPatch = {
+      status: 'submitted',
+      submittedAt: nowIso,
+      updatedAt: nowIso,
+      pipelineFailedPhase: deleteField(),
+      pipelineFailureMessage: deleteField(),
+      pipelineFailedAt: deleteField(),
+      certificationLastError: deleteField(),
+      lastFailedSubmitResubmitAt: nowIso,
+      failedSubmitResubmitSource: 'manual',
+      clientAppVersion: '0.0.0-test',
+      clientAppVersionCode: 1,
+    };
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(vctDb, 'siteCalibrations', FAIL_OWN), failedSubmitResubmitPatch),
+      );
+      ok('VCT can resubmit own failed-at-submit job');
+    } catch (err) {
+      fail('VCT can resubmit own failed-at-submit job', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(vctDb, 'siteCalibrations', FAIL_RC), failedSubmitResubmitPatch),
+      );
+      ok('VCT cannot resubmit RC-owned failed-at-submit job');
+    } catch (err) {
+      fail('VCT cannot resubmit RC-owned failed-at-submit job', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(vctDb, 'siteCalibrations', FAIL_REJECTED), failedSubmitResubmitPatch),
+      );
+      ok('VCT cannot resubmit rejected verification');
+    } catch (err) {
+      fail('VCT cannot resubmit rejected verification', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(vctDb, 'siteCalibrations', FAIL_UNSIGNED), {
+          ...failedSubmitResubmitPatch,
+          status: 'submitted',
+        }),
+      );
+      ok('VCT cannot resubmit unsigned certified verification');
+    } catch (err) {
+      fail('VCT cannot resubmit unsigned certified verification', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(rcDb, 'siteCalibrations', FAIL_RC), failedSubmitResubmitPatch),
+      );
+      ok('RC admin can resubmit own failed-at-submit job');
+    } catch (err) {
+      fail('RC admin can resubmit own failed-at-submit job', err);
+    }
   } finally {
     await testEnv.cleanup();
   }

@@ -582,6 +582,14 @@ export interface SiteCalibration {
   pipelineFailedPhase?: 'submit' | 'certification';
   pipelineFailureMessage?: string;
   pipelineFailedAt?: string;
+  /**
+   * Failed-at-submit re-queue (same document, not a clone).
+   * Auto scheduler caps at 3 attempts / 12h — see verificationFailedSubmitResubmit.ts.
+   */
+  lastFailedSubmitResubmitAt?: string;
+  lastAutoResubmitAt?: string;
+  autoResubmitCount?: number;
+  failedSubmitResubmitSource?: 'manual' | 'bulk' | 'auto';
   /** Set when status becomes rejected (permanent worker close). */
   rejectedAt?: string;
   certificatePdfUrl?: string;

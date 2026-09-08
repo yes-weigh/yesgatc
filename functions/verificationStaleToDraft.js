@@ -3,7 +3,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const APP_SETTINGS_COLLECTION = 'appSettings';
 const APP_SETTINGS_GLOBAL_DOC = 'global';
 
-/** Age before failed-at-submit / rejected records are reopened as draft. */
+/** Age before rejected records are reopened as draft. Failed-at-submit uses auto-resubmit. */
 const STALE_AGE_MS = 12 * 60 * 60 * 1000;
 const QUERY_LIMIT = 150;
 const BATCH_LIMIT = 50;
@@ -38,7 +38,9 @@ function isEligibleStaleCandidate(data, nowMs) {
   if (typeof data.supersededByResubmissionId === 'string' && data.supersededByResubmissionId.trim()) {
     return false;
   }
-  if (!isRejected(data) && !isFailedAtSubmit(data)) return false;
+  // Failed-at-submit is owned by auto-resubmit (verificationFailedSubmitAutoResubmit), not draft reopen.
+  if (isFailedAtSubmit(data)) return false;
+  if (!isRejected(data)) return false;
   const failedAt = failureTimestampMs(data);
   if (failedAt == null) return false;
   return nowMs - failedAt >= STALE_AGE_MS;
@@ -79,23 +81,12 @@ async function collectStaleCandidates(db, nowMs, limit) {
     tryAdd(doc.id, doc.data());
   }
 
-  if (candidates.length < limit) {
-    const failedPhaseSnap = await db
-      .collection('siteCalibrations')
-      .where('pipelineFailedPhase', '==', 'submit')
-      .limit(QUERY_LIMIT)
-      .get();
-    for (const doc of failedPhaseSnap.docs) {
-      tryAdd(doc.id, doc.data());
-    }
-  }
-
   return candidates.slice(0, limit);
 }
 
 /**
- * Moves rejected + failed-at-submit verifications older than 12h back to draft
- * so RC/VCT can fix and submit again.
+ * Moves rejected verifications older than 12h back to draft so RC/VCT can fix
+ * and submit again. Failed-at-submit is re-queued by auto-resubmit, not this job.
  */
 async function moveStaleFailedVerificationsToDraftHandler(db) {
   if (!(await isStaleVerificationToDraftEnabled(db))) {
