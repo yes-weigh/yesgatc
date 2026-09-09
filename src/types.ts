@@ -303,6 +303,10 @@ export interface FirestoreUserDoc {
     serialStart?: string;
     serialEnd?: string;
     allottedAt?: string;
+    invoiceUrl?: string;
+    invoicePath?: string;
+    invoiceName?: string;
+    invoiceContentType?: string;
   }>;
   /** Per-verifier GAS seats allotted by RC admin (includes used). */
   yesoneVerifierAllottedByUid?: Record<string, string[]>;

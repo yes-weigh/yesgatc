@@ -23,7 +23,48 @@ export type YesoneReservedAssignment = {
   serialStart?: string;
   serialEnd?: string;
   allottedAt?: string;
+  invoiceUrl?: string;
+  invoicePath?: string;
+  invoiceName?: string;
+  invoiceContentType?: string;
 };
+
+export type ReservedAssignmentInvoiceFile = {
+  url: string;
+  path?: string;
+  name?: string;
+  contentType?: string;
+};
+
+function reservedAssignmentInvoiceFields(
+  invoice?: ReservedAssignmentInvoiceFile | null,
+): Pick<
+  YesoneReservedAssignment,
+  'invoiceUrl' | 'invoicePath' | 'invoiceName' | 'invoiceContentType'
+> {
+  const url = invoice?.url?.trim() || '';
+  const path = invoice?.path?.trim() || '';
+  const name = invoice?.name?.trim() || '';
+  const contentType = invoice?.contentType?.trim() || '';
+  return {
+    ...(url ? { invoiceUrl: url } : {}),
+    ...(path ? { invoicePath: path } : {}),
+    ...(name ? { invoiceName: name } : {}),
+    ...(contentType ? { invoiceContentType: contentType } : {}),
+  };
+}
+
+function invoiceFileFromAssignment(
+  row?: YesoneReservedAssignment,
+): ReservedAssignmentInvoiceFile | undefined {
+  if (!row?.invoiceUrl && !row?.invoicePath) return undefined;
+  return {
+    url: row.invoiceUrl || '',
+    path: row.invoicePath,
+    name: row.invoiceName,
+    contentType: row.invoiceContentType,
+  };
+}
 
 export function normalizeReservedAssignments(raw: unknown): YesoneReservedAssignment[] {
   if (!Array.isArray(raw)) return [];
@@ -51,6 +92,12 @@ export function normalizeReservedAssignments(raw: unknown): YesoneReservedAssign
       ...(verifierUids.length > 1 ? { verifierUids } : {}),
       ...(serialStart ? { serialStart, serialEnd: serialEnd || serialStart } : {}),
       ...(allottedAt ? { allottedAt } : {}),
+      ...reservedAssignmentInvoiceFields({
+        url: String(row.invoiceUrl || '').trim(),
+        path: String(row.invoicePath || '').trim(),
+        name: String(row.invoiceName || '').trim(),
+        contentType: String(row.invoiceContentType || '').trim(),
+      }),
     });
   }
   return out;
@@ -424,6 +471,7 @@ export async function saveVerifierInvoiceAllotment(input: {
   verifierUids: string[];
   allottedAt?: string;
   allowedSerials: string[];
+  invoice?: ReservedAssignmentInvoiceFile | null;
 }): Promise<void> {
   const rcUid = input.rcUid.trim();
   const invoiceNo = input.invoiceNo.trim();
@@ -470,6 +518,9 @@ export async function saveVerifierInvoiceAllotment(input: {
       serialStart: start,
       serialEnd: end,
       ...(input.allottedAt?.trim() ? { allottedAt: input.allottedAt.trim() } : {}),
+      ...reservedAssignmentInvoiceFields(
+        input.invoice === undefined ? invoiceFileFromAssignment(prevRow) : input.invoice,
+      ),
     },
   ];
 
@@ -527,6 +578,34 @@ export async function saveVerifierInvoiceAllotment(input: {
     yesoneReservedSerials: nextReserved,
     yesoneVerifierAllottedByUid: allotted,
     yesoneReservedForUids: assignmentUids,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/** Attach / replace Yesone invoice file on an existing allotment row. Serials unchanged. */
+export async function attachReservedAssignmentInvoice(input: {
+  rcUid: string;
+  invoiceNo: string;
+  invoice: ReservedAssignmentInvoiceFile;
+}): Promise<void> {
+  const rcUid = input.rcUid.trim();
+  const invoiceNo = input.invoiceNo.trim();
+  const fields = reservedAssignmentInvoiceFields(input.invoice);
+  if (!rcUid || !invoiceNo || !fields.invoiceUrl && !fields.invoicePath) {
+    throw new Error('Invoice file is required.');
+  }
+  const ref = doc(db, 'users', rcUid);
+  const snap = await getDoc(ref);
+  const prev = normalizeReservedAssignments(snap.data()?.yesoneReservedAssignments);
+  const key = invoiceNo.toUpperCase();
+  const idx = prev.findIndex(row => row.invoiceNo.trim().toUpperCase() === key);
+  if (idx < 0) {
+    throw new Error('Allotment not found.');
+  }
+  const next = [...prev];
+  next[idx] = { ...prev[idx], ...fields };
+  await updateDoc(ref, {
+    yesoneReservedAssignments: next,
     updatedAt: new Date().toISOString(),
   });
 }

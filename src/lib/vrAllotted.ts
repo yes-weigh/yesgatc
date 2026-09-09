@@ -217,6 +217,41 @@ export function vrAllottedRangeFullyInPool(
   return serials.every(serial => keys.has(serial.trim().toUpperCase()));
 }
 
+/** Serials for one allotment entry. Empty when start is missing — never invents. */
+export function vrAllottedEntrySerials(input: {
+  serialStart?: string;
+  serialEnd?: string;
+  usedSerials: readonly string[];
+  voidedSerials?: readonly string[];
+}): Array<{ serial: string; used: boolean }> {
+  const start = (input.serialStart || '').trim();
+  if (!start) return [];
+  const usedKeys = new Set(input.usedSerials.map(serial => serial.trim().toUpperCase()).filter(Boolean));
+  const voidedKeys = new Set(
+    (input.voidedSerials || []).map(serial => serial.trim().toUpperCase()).filter(Boolean),
+  );
+  return vrAllottedRangeSerials(start, input.serialEnd || start)
+    .filter(serial => !voidedKeys.has(serial.trim().toUpperCase()))
+    .map(serial => ({
+      serial,
+      used: usedKeys.has(serial.trim().toUpperCase()),
+    }));
+}
+
+export function vrAllottedEntryMatchesFilter(input: {
+  verifierUids: readonly string[];
+  seats: readonly { used: boolean }[];
+  verifierFilter?: string;
+  statusFilter?: VrAllottedStatusFilter;
+}): boolean {
+  const verifierFilter = (input.verifierFilter || 'all').trim();
+  if (verifierFilter !== 'all' && !input.verifierUids.includes(verifierFilter)) return false;
+  const statusFilter = input.statusFilter || 'all';
+  if (statusFilter === 'unused') return input.seats.some(seat => !seat.used);
+  if (statusFilter === 'used') return input.seats.some(seat => seat.used);
+  return true;
+}
+
 export type VrAllottedRow = {
   uid: string;
   allotted: number;

@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { Navigate } from 'react-router-dom';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { CircleDot, Hash, Layers, Pencil, Save, X } from 'lucide-react';
+import { Calendar, CircleDot, CloudUpload, Eye, Hash, Layers, Paperclip, Pencil, X } from 'lucide-react';
 import { FilterIcon } from '../../components/FilterIcon';
+import { StorageImage } from '../../components/StorageImage';
 import { db } from '../../firebase';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
@@ -12,10 +13,19 @@ import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
 import { useRcCreatedVerifierCount } from '../../hooks/useRcCreatedVerifierCount';
 import { fetchRcVerifierUsers } from '../../lib/rcVerifierMembers';
-import { rcOvUsedFromRecords, saveVerifierInvoiceAllotment } from '../../lib/rcMasterQuota';
+import {
+  rcOvUsedFromRecords,
+  saveVerifierInvoiceAllotment,
+  type ReservedAssignmentInvoiceFile,
+  type YesoneReservedAssignment,
+} from '../../lib/rcMasterQuota';
+import { deleteProductStorageFile, isPdfContentType } from '../../lib/productApprovalUpload';
 import { pasProductIdSet } from '../../lib/pasSerialBank';
 import { roleCanOpenVrAllotted } from '../../lib/roleNav';
+import { uploadVrAllotmentInvoice } from '../../lib/vrAllottedInvoiceUpload';
 import {
+  vrAllottedEntryMatchesFilter,
+  vrAllottedEntrySerials,
   vrAllottedRangeFullyInPool,
   vrAllottedRangeQty,
   vrAllottedRangeSerials,
@@ -25,6 +35,8 @@ import { uniqueSerials } from '../../lib/yesoneInboundData';
 import type { FirestoreUserDoc, SiteCalibration } from '../../types';
 
 type StatusFilter = 'all' | 'unused' | 'used';
+
+const INVOICE_FILE_ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp,image/gif';
 
 function displayQty(value: number): string {
   return String(value);
@@ -68,6 +80,71 @@ function assignmentUids(row: {
   return [...new Set([...(row.verifierUids || []), row.verifierUid].map(uid => uid.trim()).filter(Boolean))];
 }
 
+function invoiceFileFromRow(row: {
+  invoiceUrl?: string;
+  invoicePath?: string;
+  invoiceName?: string;
+  invoiceContentType?: string;
+}): ReservedAssignmentInvoiceFile | null {
+  const url = (row.invoiceUrl || '').trim();
+  const path = (row.invoicePath || '').trim();
+  if (!url && !path) return null;
+  return {
+    url,
+    ...(path ? { path } : {}),
+    ...(row.invoiceName?.trim() ? { name: row.invoiceName.trim() } : {}),
+    ...(row.invoiceContentType?.trim() ? { contentType: row.invoiceContentType.trim() } : {}),
+  };
+}
+
+function isInvoiceImage(contentType?: string, name?: string): boolean {
+  const type = (contentType || '').trim().toLowerCase();
+  if (type.startsWith('image/')) return true;
+  if (type === 'application/pdf' || isPdfContentType(contentType)) return false;
+  return /\.(jpe?g|png|webp|gif)$/i.test(name || '');
+}
+
+function InvoiceFilePreview({
+  invoice,
+  href,
+}: {
+  invoice: ReservedAssignmentInvoiceFile;
+  href?: string;
+}) {
+  const openHref = (href || invoice.url || '').trim();
+  const image = isInvoiceImage(invoice.contentType, invoice.name);
+  const body = image && (invoice.url || invoice.path) ? (
+    invoice.path ? (
+      <StorageImage
+        url={invoice.url}
+        path={invoice.path}
+        alt=""
+        className="vr-allotted-invoice-thumb"
+      />
+    ) : (
+      <img src={invoice.url} alt="" className="vr-allotted-invoice-thumb" />
+    )
+  ) : (
+    <>
+      <Paperclip size={16} aria-hidden />
+      <span>{invoice.name || 'Invoice'}</span>
+    </>
+  );
+  if (!openHref) {
+    return <span className="vr-allotted-invoice-link">{body}</span>;
+  }
+  return (
+    <a
+      href={openHref}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="vr-allotted-invoice-link"
+    >
+      {body}
+    </a>
+  );
+}
+
 export const VrAllotted: React.FC = () => {
   const { user } = useAuth();
   const { products } = useAppContext();
@@ -88,6 +165,12 @@ export const VrAllotted: React.FC = () => {
   const [allottedAt, setAllottedAt] = useState(todayIstDate);
   const [serialStart, setSerialStart] = useState('');
   const [serialEnd, setSerialEnd] = useState('');
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [existingInvoice, setExistingInvoice] = useState<ReservedAssignmentInvoiceFile | null>(null);
+  const [invoicePreviewUrl, setInvoicePreviewUrl] = useState('');
+  const [dropOver, setDropOver] = useState(false);
+  const [expandedInvoiceNo, setExpandedInvoiceNo] = useState('');
+  const invoiceFileRef = useRef<HTMLInputElement>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [verifierFilter, setVerifierFilter] = useState('all');
@@ -159,6 +242,16 @@ export const VrAllotted: React.FC = () => {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [filterOpen]);
 
+  useEffect(() => {
+    if (!invoiceFile || !isInvoiceImage(invoiceFile.type, invoiceFile.name)) {
+      setInvoicePreviewUrl('');
+      return;
+    }
+    const url = URL.createObjectURL(invoiceFile);
+    setInvoicePreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [invoiceFile]);
+
   const applyFilters = () => {
     setStatusFilter(draftStatus);
     setVerifierFilter(draftVerifier);
@@ -177,12 +270,27 @@ export const VrAllotted: React.FC = () => {
     setAllotOpen(false);
   }, []);
 
-  const openCreateToggle = useCallback(() => {
-    setAllotOpen(open => {
-      setEditingInvoiceNo('');
-      return !open;
-    });
+  const resetAllotForm = useCallback((nextUid = '') => {
+    setEditingInvoiceNo('');
+    setInvoiceNo('');
+    setAllottedAt(todayIstDate());
+    setSerialStart('');
+    setSerialEnd('');
+    setSelectedUid(nextUid);
+    setInvoiceFile(null);
+    setExistingInvoice(null);
+    setDropOver(false);
+    if (invoiceFileRef.current) invoiceFileRef.current.value = '';
   }, []);
+
+  const openCreateToggle = useCallback(() => {
+    if (allotOpen) {
+      setAllotOpen(false);
+      return;
+    }
+    resetAllotForm(verifiers[0]?.uid || '');
+    setAllotOpen(true);
+  }, [allotOpen, resetAllotForm, verifiers]);
 
   useHistoryOverlay(allotOpen, closeAllot);
 
@@ -228,9 +336,7 @@ export const VrAllotted: React.FC = () => {
   );
 
   const allottedSeats = scoped.allSeats;
-  const filteredSeats = scoped.seats;
   const tileTotals = scoped.totals;
-
   const filterActive = statusFilter !== 'all' || verifierFilter !== 'all';
 
   const unusedPool = useMemo(() => {
@@ -264,35 +370,64 @@ export const VrAllotted: React.FC = () => {
 
   const assignmentRows = useMemo(() => {
     return seats.reservedAssignments.map(row => {
-      const serials = row.serialStart
-        ? vrAllottedRangeSerials(row.serialStart, row.serialEnd || row.serialStart)
-        : [];
+      const entrySeats = vrAllottedEntrySerials({
+        serialStart: row.serialStart,
+        serialEnd: row.serialEnd,
+        usedSerials,
+        voidedSerials: seats.voidedSerials,
+      });
       return {
         ...row,
-        qty: serials.length,
+        qty: entrySeats.length,
+        seats: entrySeats,
       };
     });
-  }, [seats.reservedAssignments]);
+  }, [seats.reservedAssignments, seats.voidedSerials, usedSerials]);
+
+  const visibleEntries = useMemo(
+    () =>
+      assignmentRows.filter(row =>
+        vrAllottedEntryMatchesFilter({
+          verifierUids: assignmentUids(row),
+          seats: row.seats,
+          verifierFilter,
+          statusFilter,
+        }),
+      ),
+    [assignmentRows, statusFilter, verifierFilter],
+  );
+
+  const previousAllotments = useMemo(() => {
+    return [...assignmentRows].sort((a, b) => {
+      const byDate = (b.allottedAt || '').slice(0, 10).localeCompare((a.allottedAt || '').slice(0, 10));
+      if (byDate !== 0) return byDate;
+      return b.invoiceNo.localeCompare(a.invoiceNo);
+    });
+  }, [assignmentRows]);
 
   useEffect(() => {
     if (!allotOpen) return;
     setSaveError('');
-    if (editingInvoiceNo) return;
-    setInvoiceNo('');
-    setAllottedAt(todayIstDate());
-    setSerialStart('');
-    setSerialEnd('');
-    setSelectedUid(verifiers[0]?.uid || '');
-  }, [allotOpen, editingInvoiceNo, verifiers]);
+  }, [allotOpen]);
 
-  const openEdit = (row: (typeof assignmentRows)[number]) => {
+  const openEdit = (row: YesoneReservedAssignment) => {
     setEditingInvoiceNo(row.invoiceNo);
     setInvoiceNo(row.invoiceNo);
     setAllottedAt((row.allottedAt || '').slice(0, 10) || todayIstDate());
     setSerialStart(row.serialStart || '');
     setSerialEnd(row.serialEnd || row.serialStart || '');
     setSelectedUid(assignmentUids(row)[0] || '');
+    setInvoiceFile(null);
+    setExistingInvoice(invoiceFileFromRow(row));
+    setDropOver(false);
+    if (invoiceFileRef.current) invoiceFileRef.current.value = '';
     setSaveError('');
+    setAllotOpen(true);
+  };
+
+  const handleInvoicePick = (file?: File | null) => {
+    if (!file) return;
+    setInvoiceFile(file);
   };
 
   const handleSave = async () => {
@@ -300,6 +435,13 @@ export const VrAllotted: React.FC = () => {
     setSaveError('');
     setSaving(true);
     try {
+      let invoice = existingInvoice || undefined;
+      if (invoiceFile) {
+        invoice = await uploadVrAllotmentInvoice(rcUid, invoiceFile);
+        if (existingInvoice?.path && existingInvoice.path !== invoice.path) {
+          void deleteProductStorageFile(existingInvoice.path).catch(() => undefined);
+        }
+      }
       await saveVerifierInvoiceAllotment({
         rcUid,
         invoiceNo,
@@ -309,19 +451,25 @@ export const VrAllotted: React.FC = () => {
         verifierUids: [selectedUid],
         allottedAt,
         allowedSerials: allowedPool,
+        ...(invoice ? { invoice } : {}),
       });
-      setEditingInvoiceNo('');
-      setInvoiceNo('');
-      setAllottedAt(todayIstDate());
-      setSerialStart('');
-      setSerialEnd('');
-      setSelectedUid(verifiers[0]?.uid || '');
+      resetAllotForm(verifiers[0]?.uid || '');
+      closeAllot();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save allotment.');
     } finally {
       setSaving(false);
     }
   };
+
+  const busy = saving;
+  const formInvoice = invoiceFile
+    ? {
+        url: invoicePreviewUrl,
+        name: invoiceFile.name,
+        contentType: invoiceFile.type,
+      }
+    : existingInvoice;
 
   const filterSlot = filterSlots.mobile ?? filterSlots.desktop;
   const filterControl = (
@@ -402,7 +550,7 @@ export const VrAllotted: React.FC = () => {
         <div
           className="reports-reserve-overlay"
           role="presentation"
-          onClick={() => !saving && closeAllot()}
+          onClick={() => !busy && closeAllot()}
         >
           <div
             className="reports-reserve-dialog vr-allotted-dialog"
@@ -411,181 +559,201 @@ export const VrAllotted: React.FC = () => {
             aria-labelledby="vr-allotted-dialog-title"
             onClick={event => event.stopPropagation()}
           >
-            <button
-              type="button"
-              className="rv-payment-panel-close"
-              aria-label="Close"
-              disabled={saving}
-              onClick={closeAllot}
-            >
-              <X size={18} />
-            </button>
-            <h2 id="vr-allotted-dialog-title" className="reports-reserve-dialog__title">
-              Previously allotted
-            </h2>
-            <section className="vr-allotted-history">
-              {assignmentRows.length === 0 ? (
-                <p className="text-muted text-sm">No allotments yet.</p>
-              ) : (
-                <div className="table-scroll-wrap">
-                  <table className="data-table vr-allotted-history-table">
-                    <thead>
-                      <tr>
-                        <th>Verifier</th>
-                        <th>Invoice no</th>
-                        <th>Date</th>
-                        <th>Start no</th>
-                        <th>End no</th>
-                        <th>Total qty</th>
-                        <th>
-                          <span className="sr-only">Edit</span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {assignmentRows.map(row => (
-                        <tr key={row.invoiceNo}>
-                          <td>
-                            {assignmentUids(row)
-                              .map(uid => names.get(uid) || uid)
-                              .join(', ')}
-                          </td>
-                          <td className="text-mono">{row.invoiceNo}</td>
-                          <td>{formatAllotDate(row.allottedAt || '')}</td>
-                          <td className="text-mono">{row.serialStart || '—'}</td>
-                          <td className="text-mono">{row.serialEnd || row.serialStart || '—'}</td>
-                          <td className="text-mono">{row.qty}</td>
-                          <td>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm vr-allotted-history-edit"
-                              aria-label={`Edit allotment ${row.invoiceNo}`}
-                              onClick={() => openEdit(row)}
-                            >
-                              <Pencil size={14} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-            <h3 className="vr-allotted-history__title">
-              {editingInvoiceNo ? 'Edit allotment' : 'New allotment'}
-            </h3>
-            {listError ? <p className="login-error">{listError}</p> : null}
-            <label className="reports-reserve-dialog__label" htmlFor="vr-allotted-pick-verifier">
-              Verifier
-            </label>
-            <select
-              id="vr-allotted-pick-verifier"
-              className="form-control"
-              value={selectedUid}
-              onChange={event => setSelectedUid(event.target.value)}
-              disabled={saving || verifiers.length === 0}
-            >
-              {verifiers.length === 0 ? (
-                <option value="">Add a verifier first</option>
-              ) : null}
-              {verifiers.map(row => (
-                <option key={row.uid} value={row.uid}>
-                  {verifierLabel(row)}
-                </option>
-              ))}
-            </select>
-            <label className="reports-reserve-dialog__label" htmlFor="vr-allotted-invoice">
-              Invoice number
-            </label>
-            <input
-              id="vr-allotted-invoice"
-              className="form-control"
-              value={invoiceNo}
-              onChange={event => setInvoiceNo(event.target.value)}
-              disabled={saving}
-              autoComplete="off"
-            />
-            <label className="reports-reserve-dialog__label" htmlFor="vr-allotted-date">
-              Date
-            </label>
-            <input
-              id="vr-allotted-date"
-              className="form-control"
-              type="date"
-              value={allottedAt}
-              onChange={event => setAllottedAt(event.target.value)}
-              disabled={saving}
-            />
-            <div className="vr-allotted-dialog__range">
-              <div>
-                <label className="reports-reserve-dialog__label" htmlFor="vr-allotted-start">
-                  Start no
-                </label>
-                <input
-                  id="vr-allotted-start"
-                  className="form-control text-mono"
-                  value={serialStart}
-                  onChange={event => setSerialStart(event.target.value)}
-                  disabled={saving}
-                  autoComplete="off"
-                />
-              </div>
-              <div>
-                <label className="reports-reserve-dialog__label" htmlFor="vr-allotted-end">
-                  End no
-                </label>
-                <input
-                  id="vr-allotted-end"
-                  className="form-control text-mono"
-                  value={serialEnd}
-                  onChange={event => setSerialEnd(event.target.value)}
-                  disabled={saving}
-                  autoComplete="off"
-                />
-              </div>
-              <div>
-                <label className="reports-reserve-dialog__label" htmlFor="vr-allotted-qty">
-                  Qty
-                </label>
-                <input
-                  id="vr-allotted-qty"
-                  className="form-control text-mono"
-                  value={rangeQty || ''}
-                  readOnly
-                  tabIndex={-1}
-                />
-              </div>
-            </div>
-            {serialStart.trim() && !rangeOk ? (
-              <p className="login-error">Range must exist in unused GAS seats.</p>
-            ) : null}
-            {saveError ? <p className="login-error">{saveError}</p> : null}
-            <div className="reports-reserve-dialog__actions">
+            <header className="vr-allotted-dialog__head">
+              <h2 id="vr-allotted-dialog-title" className="vr-allotted-dialog__title">
+                Invoice Allotment
+              </h2>
               <button
                 type="button"
-                className="btn btn-secondary"
-                disabled={saving}
-                onClick={() => {
-                  if (editingInvoiceNo) {
-                    setEditingInvoiceNo('');
-                    setInvoiceNo('');
-                    setAllottedAt(todayIstDate());
-                    setSerialStart('');
-                    setSerialEnd('');
-                    setSelectedUid(verifiers[0]?.uid || '');
-                    return;
-                  }
-                  closeAllot();
+                className="vr-allotted-dialog__close"
+                aria-label="Close"
+                disabled={busy}
+                onClick={closeAllot}
+              >
+                <X size={18} strokeWidth={2.2} />
+              </button>
+            </header>
+            <section className="vr-allotted-prev" aria-label="Previous allotment">
+              <h3 className="vr-allotted-prev__label">Previous allotment</h3>
+              <div className="vr-allotted-prev__card">
+                {(previousAllotments.length > 0 ? previousAllotments : [null]).map(row => (
+                  <div key={row?.invoiceNo || 'empty'} className="vr-allotted-prev__row">
+                    <div className="vr-allotted-prev__cell">
+                      <span className="vr-allotted-prev__key">Verifier</span>
+                      <span className="vr-allotted-prev__val">
+                        {row
+                          ? assignmentUids(row)
+                              .map(uid => names.get(uid) || uid)
+                              .join(', ') || '—'
+                          : '—'}
+                      </span>
+                    </div>
+                    <div className="vr-allotted-prev__cell">
+                      <span className="vr-allotted-prev__key">Invoice no</span>
+                      <span className="vr-allotted-prev__val">{row?.invoiceNo || '—'}</span>
+                    </div>
+                    <div className="vr-allotted-prev__cell">
+                      <span className="vr-allotted-prev__key">Date</span>
+                      <span className="vr-allotted-prev__val">
+                        {row ? formatAllotDate(row.allottedAt || '') : '—'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section className="vr-allotted-form">
+              {listError ? <p className="login-error">{listError}</p> : null}
+              <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-pick-verifier">
+                Select verifier
+              </label>
+              <select
+                id="vr-allotted-pick-verifier"
+                className="input-field"
+                value={selectedUid}
+                onChange={event => setSelectedUid(event.target.value)}
+                disabled={busy || verifiers.length === 0}
+              >
+                {verifiers.length === 0 ? (
+                  <option value="">Add a verifier first</option>
+                ) : null}
+                {verifiers.map(row => (
+                  <option key={row.uid} value={row.uid}>
+                    {verifierLabel(row)}
+                  </option>
+                ))}
+              </select>
+              <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-invoice">
+                Invoice no
+              </label>
+              <input
+                id="vr-allotted-invoice"
+                className="input-field"
+                value={invoiceNo}
+                onChange={event => setInvoiceNo(event.target.value)}
+                disabled={busy}
+                autoComplete="off"
+                placeholder="Enter invoice no"
+              />
+              <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-date">
+                Date
+              </label>
+              <div className="vr-allotted-dialog__date">
+                <input
+                  id="vr-allotted-date"
+                  className="input-field"
+                  type="date"
+                  value={allottedAt}
+                  onChange={event => setAllottedAt(event.target.value)}
+                  disabled={busy}
+                />
+                <Calendar className="vr-allotted-dialog__date-icon" size={16} strokeWidth={2} aria-hidden />
+              </div>
+              <div className="vr-allotted-dialog__range">
+                <div>
+                  <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-start">
+                    Serial start no
+                  </label>
+                  <input
+                    id="vr-allotted-start"
+                    className="input-field text-mono"
+                    value={serialStart}
+                    onChange={event => setSerialStart(event.target.value)}
+                    disabled={busy}
+                    autoComplete="off"
+                    placeholder="Start no"
+                  />
+                </div>
+                <div>
+                  <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-end">
+                    End number
+                  </label>
+                  <input
+                    id="vr-allotted-end"
+                    className="input-field text-mono"
+                    value={serialEnd}
+                    onChange={event => setSerialEnd(event.target.value)}
+                    disabled={busy}
+                    autoComplete="off"
+                    placeholder="End no"
+                  />
+                </div>
+                <div>
+                  <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-qty">
+                    Qty
+                  </label>
+                  <input
+                    id="vr-allotted-qty"
+                    className="input-field text-mono"
+                    value={rangeQty || ''}
+                    readOnly
+                    tabIndex={-1}
+                    placeholder="Qty"
+                  />
+                </div>
+              </div>
+              <span className="vr-allotted-dialog__label">Upload images</span>
+              <label
+                className={`vr-allotted-drop${dropOver ? ' is-over' : ''}${formInvoice ? ' has-file' : ''}`}
+                htmlFor="vr-allotted-invoice-file"
+                onDragOver={event => {
+                  event.preventDefault();
+                  if (!busy) setDropOver(true);
+                }}
+                onDragLeave={event => {
+                  if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+                  setDropOver(false);
+                }}
+                onDrop={event => {
+                  event.preventDefault();
+                  setDropOver(false);
+                  if (!busy) handleInvoicePick(event.dataTransfer.files[0]);
                 }}
               >
-                {editingInvoiceNo ? 'Cancel edit' : 'Close'}
-              </button>
+                {formInvoice ? (
+                  <>
+                    <div
+                      className="vr-allotted-drop__file"
+                      onClick={event => event.stopPropagation()}
+                      onKeyDown={event => event.stopPropagation()}
+                    >
+                      <InvoiceFilePreview
+                        invoice={formInvoice}
+                        href={invoiceFile ? undefined : formInvoice.url}
+                      />
+                    </div>
+                    <span className="vr-allotted-drop__title">Tap to replace</span>
+                    <span className="vr-allotted-drop__hint">JPG, PNG or PDF</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudUpload size={28} strokeWidth={1.8} aria-hidden />
+                    <span className="vr-allotted-drop__title">Tap to upload images</span>
+                    <span className="vr-allotted-drop__hint">JPG, PNG or PDF</span>
+                  </>
+                )}
+              </label>
+              <input
+                id="vr-allotted-invoice-file"
+                ref={invoiceFileRef}
+                type="file"
+                accept={INVOICE_FILE_ACCEPT}
+                hidden
+                disabled={busy}
+                onChange={event => {
+                  handleInvoicePick(event.target.files?.[0]);
+                  event.target.value = '';
+                }}
+              />
+              {serialStart.trim() && !rangeOk ? (
+                <p className="login-error">Range must exist in unused GAS seats.</p>
+              ) : null}
+              {saveError ? <p className="login-error">{saveError}</p> : null}
               <button
                 type="button"
-                className="btn btn-primary flex items-center gap-2"
+                className="btn btn-primary vr-allotted-dialog__save"
                 disabled={
-                  saving
+                  busy
                   || !selectedUid
                   || !invoiceNo.trim()
                   || !allottedAt.trim()
@@ -593,10 +761,10 @@ export const VrAllotted: React.FC = () => {
                 }
                 onClick={() => void handleSave()}
               >
-                {saving ? <span className="spinner-inline" /> : <Save size={16} />}
-                Save
+                {saving ? <span className="spinner-inline" /> : null}
+                Save allotment
               </button>
-            </div>
+            </section>
           </div>
         </div>,
         document.body,
@@ -632,26 +800,117 @@ export const VrAllotted: React.FC = () => {
         </article>
       </div>
 
-      {allotOpen ? null : !seats.ready ? (
+      {!seats.ready ? (
         <div className="rc-vehicles-loading">
           <span className="spinner-inline large" />
         </div>
-      ) : filteredSeats.length === 0 ? (
+      ) : visibleEntries.length === 0 ? (
         <p className="text-muted text-sm">
-          {filterActive ? 'No allotted seats match this filter.' : 'No allotted seats.'}
+          {filterActive
+            ? 'No allotment entries match this filter.'
+            : assignmentRows.length === 0
+              ? 'No allotment entries.'
+              : 'No allotment entries match this filter.'}
         </p>
       ) : (
-        <ul className="admin-setting-serial-seats vr-allotted-seats" aria-label="Allotted seats">
-          {filteredSeats.map(seat => (
-            <li
-              key={seat.serial}
-              className={`admin-setting-serial-seat text-mono${
-                seat.used ? ' admin-setting-serial-seat--used' : ''
-              }`}
-            >
-              {seat.serial}
-            </li>
-          ))}
+        <ul className="vr-allotted-entries" aria-label="Allotment entries">
+          {visibleEntries.map(row => {
+            const expanded = expandedInvoiceNo === row.invoiceNo;
+            return (
+              <li key={row.invoiceNo} className="vr-allotted-entry">
+                <div className="vr-allotted-entry__head">
+                  <div className="vr-allotted-entry__fields">
+                    <div>
+                      <span className="vr-allotted-entry__label">Verifier name</span>
+                      <span className="vr-allotted-entry__value">
+                        {assignmentUids(row)
+                          .map(uid => names.get(uid) || uid)
+                          .join(', ')}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="vr-allotted-entry__label">Date</span>
+                      <span className="vr-allotted-entry__value">
+                        {formatAllotDate(row.allottedAt || '')}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="vr-allotted-entry__label">Invoice no</span>
+                      <span className="vr-allotted-entry__value text-mono">{row.invoiceNo}</span>
+                    </div>
+                    <div>
+                      <span className="vr-allotted-entry__label">Start no</span>
+                      <span className="vr-allotted-entry__value text-mono">
+                        {row.serialStart || '—'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="vr-allotted-entry__label">End no</span>
+                      <span className="vr-allotted-entry__value text-mono">
+                        {row.serialEnd || row.serialStart || '—'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="vr-allotted-entry__label">Qty</span>
+                      <span className="vr-allotted-entry__value text-mono">
+                        {row.serialStart ? row.qty : '—'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="vr-allotted-entry__actions">
+                    <button
+                      type="button"
+                      className={`vr-allotted-entry__icon${expanded ? ' is-on' : ''}`}
+                      aria-label={
+                        expanded
+                          ? `Hide serials for ${row.invoiceNo}`
+                          : `Show serials for ${row.invoiceNo}`
+                      }
+                      aria-expanded={expanded}
+                      onClick={() =>
+                        setExpandedInvoiceNo(current =>
+                          current === row.invoiceNo ? '' : row.invoiceNo,
+                        )
+                      }
+                    >
+                      <Eye size={16} strokeWidth={2.2} />
+                    </button>
+                    <button
+                      type="button"
+                      className="vr-allotted-entry__icon"
+                      aria-label={`Edit allotment ${row.invoiceNo}`}
+                      onClick={() => openEdit(row)}
+                    >
+                      <Pencil size={16} strokeWidth={2.2} />
+                    </button>
+                  </div>
+                </div>
+                {expanded ? (
+                  row.seats.length === 0 ? (
+                    <p className="text-muted text-sm vr-allotted-entry__empty">
+                      No serials on this entry.
+                    </p>
+                  ) : (
+                    <ul
+                      className="admin-setting-serial-seats vr-allotted-seats"
+                      aria-label={`Serials for ${row.invoiceNo}`}
+                    >
+                      {row.seats.map(seat => (
+                        <li
+                          key={seat.serial}
+                          className={`admin-setting-serial-seat text-mono${
+                            seat.used ? ' admin-setting-serial-seat--used' : ''
+                          }`}
+                        >
+                          {seat.serial}
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

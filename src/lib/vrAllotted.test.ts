@@ -9,6 +9,8 @@ import {
   reservedSerialsAfterVerifierAllot,
   roleCanOpenVrAllotted,
   unownedReservedSerials,
+  vrAllottedEntryMatchesFilter,
+  vrAllottedEntrySerials,
   vrAllottedRangeFullyInPool,
   vrAllottedRangeQty,
   vrAllottedRangeSerials,
@@ -447,6 +449,63 @@ describe('mergeSerialLists', () => {
     assert.deepEqual(
       mergeSerialLists(['X00423', 'G0541'], ['G0541', 'X00301']),
       ['X00423', 'G0541', 'X00301'],
+    );
+  });
+});
+
+describe('vrAllottedEntrySerials', () => {
+  it('returns nothing when start is missing', () => {
+    assert.deepEqual(
+      vrAllottedEntrySerials({
+        usedSerials: ['X00090'],
+        serialEnd: 'X00092',
+      }),
+      [],
+    );
+  });
+
+  it('marks used vs unused on the inclusive range only', () => {
+    assert.deepEqual(
+      vrAllottedEntrySerials({
+        serialStart: 'X00090',
+        serialEnd: 'X00092',
+        usedSerials: ['X00090', 'X00999'],
+      }),
+      [
+        { serial: 'X00090', used: true },
+        { serial: 'X00091', used: false },
+        { serial: 'X00092', used: false },
+      ],
+    );
+  });
+});
+
+describe('vrAllottedEntryMatchesFilter', () => {
+  it('filters by verifier and used/unused without inventing seats', () => {
+    const seats = [{ used: true }, { used: false }];
+    assert.equal(
+      vrAllottedEntryMatchesFilter({
+        verifierUids: ['rasheed'],
+        seats,
+        verifierFilter: 'other',
+      }),
+      false,
+    );
+    assert.equal(
+      vrAllottedEntryMatchesFilter({
+        verifierUids: ['rasheed'],
+        seats,
+        statusFilter: 'used',
+      }),
+      true,
+    );
+    assert.equal(
+      vrAllottedEntryMatchesFilter({
+        verifierUids: ['rasheed'],
+        seats: [],
+        statusFilter: 'unused',
+      }),
+      false,
     );
   });
 });
