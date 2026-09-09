@@ -39,7 +39,7 @@ import { VerifierProfile } from './pages/verifier/VerifierProfile';
 import { VCTTraining } from './pages/vct/VCTMenuPages';
 import { Certificates } from './pages/vct/Certificates';
 import { CertificateSign } from './pages/vct/CertificateSign';
-import { ManualPdf } from './pages/shared/ManualPdf';
+import { VrAllotted } from './pages/rc/VrAllotted';
 import { Reports } from './pages/shared/Reports';
 import { ContractorFeeSettings } from './pages/shared/ContractorFeeSettings';
 import { PwaInstallBanner } from './components/PwaInstallBanner';
@@ -70,8 +70,8 @@ const App: React.FC = () => {
                 <Route path="technicians" element={<AdminVCTList />} />
                 <Route path="vct" element={<Navigate to="/admin/technicians" replace />} />
                 <Route path="laboratory" element={<AdminLaboratory />} />
-                <Route path="manual-pdf" element={<ManualPdf />} />
-                <Route path="quality-management" element={<Navigate to="/admin/manual-pdf" replace />} />
+                <Route path="manual-pdf" element={<Navigate to="/admin" replace />} />
+                <Route path="quality-management" element={<Navigate to="/admin" replace />} />
                 <Route path="notifications" element={<AdminNotifications />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="contractor-fee" element={<ContractorFeeSettings />} />
@@ -100,8 +100,9 @@ const App: React.FC = () => {
                 <Route path="laboratory" element={<RCLaboratory />} />
                 <Route path="certificates" element={<Certificates />} />
                 <Route path="certificates/:recordId" element={<CertificateSign />} />
-                <Route path="manual-pdf" element={<ManualPdf />} />
-                <Route path="quality-management" element={<Navigate to="/rc/manual-pdf" replace />} />
+                <Route path="vr-allotted" element={<VrAllotted />} />
+                <Route path="manual-pdf" element={<Navigate to="/rc" replace />} />
+                <Route path="quality-management" element={<Navigate to="/rc" replace />} />
                 <Route path="notifications" element={<RCNotifications />} />
                 <Route path="reports" element={<Reports />} />
                 <Route path="settings" element={<ContractorFeeSettings />} />
@@ -121,10 +122,11 @@ const App: React.FC = () => {
                 <Route path="products" element={<RCProducts />} />
                 <Route path="vehicles" element={<RCVehicles />} />
                 <Route path="laboratory" element={<RCLaboratory />} />
-                <Route path="certificates" element={<Certificates />} />
-                <Route path="certificates/:recordId" element={<CertificateSign />} />
-                <Route path="manual-pdf" element={<ManualPdf />} />
-                <Route path="quality-management" element={<Navigate to="/vct/manual-pdf" replace />} />
+                <Route path="certificates" element={<Navigate to="/vct" replace />} />
+                <Route path="certificates/:recordId" element={<Navigate to="/vct" replace />} />
+                <Route path="vr-allotted" element={<Navigate to="/vct" replace />} />
+                <Route path="manual-pdf" element={<Navigate to="/vct" replace />} />
+                <Route path="quality-management" element={<Navigate to="/vct" replace />} />
                 <Route path="training" element={<VCTTraining />} />
                 <Route path="notifications" element={<RCNotifications />} />
                 <Route path="reports" element={<Reports />} />
@@ -137,9 +139,11 @@ const App: React.FC = () => {
             <Route element={<ProtectedRoute allowedRoles={['verifier']} />}>
               <Route path="/verifier" element={<Layout />}>
                 <Route index element={<RCDashboard />} />
+                <Route path="new-job" element={<Navigate to="/verifier/verification?new=1" replace />} />
                 <Route path="verification" element={<RCSiteCalibration />} />
-                <Route path="certificates" element={<Certificates />} />
-                <Route path="certificates/:recordId" element={<CertificateSign />} />
+                <Route path="certificates" element={<Navigate to="/verifier" replace />} />
+                <Route path="certificates/:recordId" element={<Navigate to="/verifier" replace />} />
+                <Route path="vr-allotted" element={<Navigate to="/verifier" replace />} />
                 <Route path="customers" element={<RCCustomers />} />
                 <Route path="profile" element={<VerifierProfile />} />
               </Route>

@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  countReservedOverlaySeats,
   excludePasQuotaSerials,
+  pickQuotaSerialsForActor,
   recordUsesPasQuota,
   resolveRcQuotaUsedQty,
 } from './rcQuotaMath.ts';
+import { mergePasBlockedSerials, pasSerialsFromMetaRanges } from './pasSerialBankMatch.ts';
 import { validateOvQuotaDevices, validateOvQuotaSetup } from './ovQuotaGate.ts';
 
 describe('resolveRcQuotaUsedQty', () => {
@@ -56,10 +59,113 @@ describe('PAS exclusion', () => {
     );
   });
 
+  it('drops PAS meta-range serials that leaked into RC remaining', () => {
+    const blocked = mergePasBlockedSerials(
+      ['YJ00245'],
+      pasSerialsFromMetaRanges([{ from: 'YJ01164', to: 'YJ01164' }]),
+    );
+    assert.deepEqual(
+      excludePasQuotaSerials(['X00168', 'YJ00245', 'YJ01164', 'X00301'], blocked),
+      ['X00168', 'X00301'],
+    );
+  });
+
+  it('never drops GAS X/G because a YJ PAS range exists', () => {
+    const blocked = mergePasBlockedSerials(
+      ['X00423', 'G0541'],
+      pasSerialsFromMetaRanges([{ from: 'YJ00245', to: 'YJ00245' }]),
+    );
+    assert.deepEqual(
+      excludePasQuotaSerials(['X00423', 'G0541', 'YJ00245', 'Y10315'], blocked),
+      ['X00423', 'G0541', 'Y10315'],
+    );
+  });
+
   it('treats PAS product OVs as non-quota', () => {
     assert.equal(recordUsesPasQuota('atm', ['atm']), true);
     assert.equal(recordUsesPasQuota('mzn', ['atm']), false);
     assert.equal(recordUsesPasQuota('', ['atm']), false);
+  });
+});
+
+describe('countReservedOverlaySeats', () => {
+  it('counts displayed reserved seats, not reserved-only leftovers', () => {
+    assert.equal(
+      countReservedOverlaySeats(
+        ['X00423', 'X00301', 'G0541'],
+        ['X00301', 'Y99999'],
+      ),
+      1,
+    );
+  });
+
+  it('skips voided seats even if reserved', () => {
+    assert.equal(
+      countReservedOverlaySeats(
+        ['X00423', 'X00301'],
+        ['X00423', 'X00301'],
+        ['X00301'],
+      ),
+      1,
+    );
+  });
+
+  it('matches reserved flag case-insensitively', () => {
+    assert.equal(
+      countReservedOverlaySeats(['x00423', 'G0541'], ['X00423']),
+      1,
+    );
+  });
+});
+
+describe('pickQuotaSerialsForActor', () => {
+  const meezanUnused = {
+    remaining: ['X00423', 'X00301', 'G0541'],
+    vctRemaining: ['X00423', 'G0541'],
+    reservedSerials: ['X00301'],
+    reservedForUids: ['other-verifier'],
+    reservedByUid: { 'other-verifier': ['X00301'] },
+  };
+
+  it('RC sees reserved seats; VCT does not', () => {
+    const rc = pickQuotaSerialsForActor(meezanUnused, { isRcAdmin: true, actorUid: 'meezan' });
+    const vct = pickQuotaSerialsForActor(meezanUnused, { isVct: true, actorUid: 'hafiz' });
+    assert.deepEqual(rc, ['X00423', 'X00301', 'G0541']);
+    assert.deepEqual(vct, ['X00423', 'G0541']);
+  });
+
+  it('verifier with no reserved-by-uid still sees parent unused', () => {
+    const verifier = pickQuotaSerialsForActor(meezanUnused, {
+      isVerifier: true,
+      actorUid: 'rasheed',
+    });
+    assert.deepEqual(verifier, ['X00423', 'G0541']);
+  });
+
+  it('verifier sees parent unused plus their allotted', () => {
+    const seats = {
+      ...meezanUnused,
+      reservedForUids: ['rasheed'],
+      reservedByUid: { rasheed: ['X00301'] },
+    };
+    assert.deepEqual(
+      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
+      ['X00423', 'G0541', 'X00301'],
+    );
+  });
+
+  it('empty reserved map does not wipe parent unused seats', () => {
+    const seats = {
+      remaining: ['X00423', 'G0541'],
+      vctRemaining: ['X00423', 'G0541'],
+      reservedSerials: [] as string[],
+      reservedForUids: [] as string[],
+      reservedByUid: {} as Record<string, string[]>,
+    };
+    assert.deepEqual(
+      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
+      ['X00423', 'G0541'],
+    );
   });
 });
 

@@ -22,6 +22,18 @@ function compactProductToken(value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+function tokensOverlap(want: string[], have: string[]): boolean {
+  for (const left of want) {
+    for (const right of have) {
+      if (left === right) return true;
+      if (left.length >= 4 && right.length >= 4 && (left.includes(right) || right.includes(left))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function productMatchesAllotment(
   product: { productId?: string; productName?: string; sku?: string; modelNo?: string },
   row: OvQuotaAllotment,
@@ -34,7 +46,13 @@ function productMatchesAllotment(
     .filter(Boolean);
   if (!have.length) return true;
   if (!want.length) return false;
-  return want.some(token => have.includes(token));
+  return tokensOverlap(want, have);
+}
+
+function allotmentHasStrongProductIdentity(row: OvQuotaAllotment): boolean {
+  return Boolean(
+    String(row.productId || '').trim() || String(row.sku || '').trim() || String(row.modelNo || '').trim(),
+  );
 }
 
 /** Prefer stickers for this GATC product. Legacy rows with no product stay visible. */
@@ -52,7 +70,7 @@ export function remainingSerialsForProduct(
   return remaining.filter(serial => {
     const row = bySerial.get(serialKey(serial));
     if (!row) return true;
-    if (!row.sku && !row.productId && !row.productName && !row.modelNo) return true;
+    if (!allotmentHasStrongProductIdentity(row)) return true;
     return productMatchesAllotment(product || {}, row);
   });
 }

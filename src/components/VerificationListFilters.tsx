@@ -9,8 +9,8 @@ import {
 import type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
 import type { VerificationSignedPdfFilter } from '../lib/signedCertificatePdf';
 
-export type { VerificationStatusFilter, VerificationTypeFilter } from '../lib/verificationRequest';
-export type { VerificationSignedPdfFilter } from '../lib/signedCertificatePdf';
+export type { VerificationStatusFilter, VerificationTypeFilter };
+export type { VerificationSignedPdfFilter };
 export type VerificationPaymentDueFilter = 'all' | 'due';
 
 export interface VerificationStatusFilterOption {

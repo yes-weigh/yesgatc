@@ -10,6 +10,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
+import { verificationJobKindsForActor } from '../../lib/verificationJobKinds';
 import type { VerificationJobKind } from '../../lib/siteCalibrationProfileFields';
 
 export type { VerificationJobKind };
@@ -88,10 +89,10 @@ export function VerificationJobKindPicker({
       ? '—'
       : String(Math.max(0, ovBalanceQty));
 
-  const visibleKinds = useMemo(
-    () => (verifierMode ? KINDS.filter(kind => kind.id === 'ov_self') : KINDS),
-    [verifierMode],
-  );
+  const visibleKinds = useMemo(() => {
+    const allowed = new Set(verificationJobKindsForActor(verifierMode));
+    return KINDS.filter(kind => allowed.has(kind.id));
+  }, [verifierMode]);
 
   useHistoryOverlay(true, onClose, { suppressHistoryBackRef: skipHistoryBackRef });
 

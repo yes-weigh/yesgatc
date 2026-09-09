@@ -26,7 +26,8 @@ import {
   yesoneSerialFromDoc,
   type YesoneSerialAllotment,
 } from '../../lib/yesoneInboundData';
-import { pasProductIdSet, pasSerialsFromAllotments } from '../../lib/pasSerialBank';
+import { pasProductIdSet } from '../../lib/pasSerialBank';
+import { usePasBlockedSerials } from '../../hooks/usePasBlockedSerials';
 import { excludePasQuotaSerials } from '../../lib/rcQuotaMath';
 import { useAppContext } from '../../context/AppContext';
 import type { SiteCalibration } from '../../types';
@@ -285,10 +286,7 @@ export function RcQuotaPanel() {
     };
   }, [rcUidsKey, masterUid, products]);
 
-  const pasSerials = useMemo(
-    () => pasSerialsFromAllotments(allotmentRows, products),
-    [allotmentRows, products],
-  );
+  const pasSerials = usePasBlockedSerials(allotmentRows, products);
 
   const rows = useMemo(() => {
     return quotas.map(row => {

@@ -35,6 +35,7 @@ import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import { subscribeRcWalletBalance } from '../../lib/rcWallet';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
+import { roleCanOpenCertificates } from '../../lib/roleNav';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   dashboardPeriodToListDuration,
@@ -132,7 +133,7 @@ function rankVctsByCertified(
 }
 
 export const RCDashboard: React.FC = () => {
-  const { rcUid, actorUid, isVct, isVerifier, isFieldStaff, isRcAdmin } = useRcScope();
+  const { rcUid, actorUid, isVct, isVerifier, isFieldStaff, isRcAdmin, user } = useRcScope();
   const basePath = useRoleBasePath();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -349,10 +350,14 @@ export const RCDashboard: React.FC = () => {
         href: verificationHref('certified'),
       },
     ];
-    if (isVerifier) {
-      return cards.filter(card => card.key !== 'vcts' && card.key !== 'rc_rank');
+    let next = cards;
+    if (!roleCanOpenCertificates(user?.role)) {
+      next = next.filter(card => card.key !== 'not_signed');
     }
-    return cards;
+    if (isVerifier) {
+      next = next.filter(card => card.key !== 'vcts' && card.key !== 'rc_rank');
+    }
+    return next;
   }, [
     tally,
     unsignedCertCount,
@@ -362,6 +367,7 @@ export const RCDashboard: React.FC = () => {
     rcCompanyName,
     isRcAdmin,
     isVerifier,
+    user?.role,
     basePath,
     listDuration,
   ]);

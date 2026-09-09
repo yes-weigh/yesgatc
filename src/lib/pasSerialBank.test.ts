@@ -2,9 +2,16 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Product } from '../types';
 import {
+  allotmentUsesPasProduct,
+  interpretPasBankLookup,
+  isGasStickerSerial,
+  isPasStickerSerial,
   mergePasBankCounts,
+  mergePasBlockedSerials,
   pasBankListedForProduct,
   pasBankMatchesProduct,
+  pasBankOptionsForJob,
+  pasSerialsFromMetaRanges,
   serialInInclusiveRange,
   type PasBankDoc,
   type ProductSerialRow,
@@ -117,5 +124,82 @@ describe('mergePasBankCounts', () => {
     assert.equal(summary.qty, 600);
     assert.equal(summary.used, 35);
     assert.equal(summary.available, 565);
+  });
+});
+
+describe('interpretPasBankLookup', () => {
+  const bank: PasBankDoc = {
+    serialNumber: 'YJ00001',
+    status: 'available',
+    yesoneSku: 'KS10BAY',
+    productId: 'scale10',
+  };
+
+  it('blocks unknown serial', () => {
+    assert.equal(
+      interpretPasBankLookup('YJ99999', null, scale10),
+      'Serial YJ99999 is not in the PAS number bank.',
+    );
+  });
+
+  it('proceeds when bank hits this product', () => {
+    assert.equal(interpretPasBankLookup('YJ00001', bank, scale10), null);
+  });
+
+  it('blocks a serial allotted to a different PAS product', () => {
+    assert.equal(
+      interpretPasBankLookup('YJ00001', bank, scale5),
+      'Serial YJ00001 is not allotted to this PAS product.',
+    );
+  });
+
+  it('blocks used serial on OV', () => {
+    assert.equal(
+      interpretPasBankLookup('YJ00001', { ...bank, status: 'used' }, scale10),
+      'Serial YJ00001 is already used.',
+    );
+    assert.equal(pasBankOptionsForJob('OV').allowUsed, false);
+  });
+
+  it('allows used serial on RV', () => {
+    assert.equal(
+      interpretPasBankLookup('YJ00001', { ...bank, status: 'used' }, scale10, pasBankOptionsForJob('RV')),
+      null,
+    );
+  });
+});
+
+describe('PAS remaining sticker exclusion', () => {
+  it('expands meta ranges and merges with allotment PAS serials', () => {
+    const fromMeta = pasSerialsFromMetaRanges([{ from: 'YJ00001', to: 'YJ00003' }]);
+    assert.deepEqual(fromMeta, ['YJ00001', 'YJ00002', 'YJ00003']);
+    assert.deepEqual(
+      mergePasBlockedSerials(['YJ01001'], fromMeta, ['YJ00002']),
+      ['YJ01001', 'YJ00001', 'YJ00002', 'YJ00003'],
+    );
+  });
+
+  it('does not expand a GAS X/G unused range from PAS meta', () => {
+    assert.deepEqual(pasSerialsFromMetaRanges([{ from: 'X00110', to: 'X00120' }]), []);
+    assert.deepEqual(pasSerialsFromMetaRanges([{ from: 'G0535', to: 'G0583' }]), []);
+    assert.equal(isPasStickerSerial('YJ00245'), true);
+    assert.equal(isGasStickerSerial('X00423'), true);
+    assert.equal(isGasStickerSerial('G0541'), true);
+    assert.equal(isGasStickerSerial('YJ00245'), false);
+  });
+
+  it('does not treat X/G allotments as PAS even if sku matches a PAS product', () => {
+    const rows = [
+      { serialNumber: 'X00423', productId: 'scale10', sku: 'KS10BAY', pool: 'gas' },
+      { serialNumber: 'G0541', productId: 'scale10', sku: 'KS10BAY' },
+      { serialNumber: 'YJ00245', productId: 'scale10', sku: 'KS10BAY', pool: 'pas' },
+    ];
+    assert.equal(allotmentUsesPasProduct(rows[0], [scale10]), false);
+    assert.equal(allotmentUsesPasProduct(rows[1], [scale10]), false);
+    assert.equal(allotmentUsesPasProduct(rows[2], [scale10]), true);
+    assert.deepEqual(
+      rows.filter(row => allotmentUsesPasProduct(row, [scale10])).map(row => row.serialNumber),
+      ['YJ00245'],
+    );
   });
 });

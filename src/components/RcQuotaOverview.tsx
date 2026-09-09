@@ -21,9 +21,14 @@ import {
   type SerialInwardBatch,
 } from '../lib/serialInwardReport';
 import { serialsForReservedInvoices } from '../lib/invoicedQuotaSerials';
-import { pasProductIdSet, pasSerialsFromAllotments } from '../lib/pasSerialBank';
+import { pasProductIdSet } from '../lib/pasSerialBank';
+import { usePasBlockedSerials } from '../hooks/usePasBlockedSerials';
 import { useAppContext } from '../context/AppContext';
 import { useRcScope } from '../lib/roleScope';
+import {
+  flattenAllottedSerials,
+  normalizeVerifierAllottedByUid,
+} from '../lib/vrAllotted';
 import type { SiteCalibration } from '../types';
 import { SerialSeatOverlay } from './SerialSeatOverlay';
 
@@ -51,6 +56,7 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   const [reservedAssignments, setReservedAssignments] = useState<
     Array<{ invoiceNo: string; verifierUid: string; serialStart?: string; serialEnd?: string }>
   >([]);
+  const [verifierAllottedByUid, setVerifierAllottedByUid] = useState<Record<string, string[]>>({});
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
   const [allotmentRows, setAllotmentRows] = useState<YesoneSerialAllotment[]>([]);
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
@@ -100,6 +106,7 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
         uniqueSerials(Array.isArray(data.yesoneReservedForUids) ? data.yesoneReservedForUids : []),
       );
       setReservedAssignments(normalizeReservedAssignments(data.yesoneReservedAssignments));
+      setVerifierAllottedByUid(normalizeVerifierAllottedByUid(data.yesoneVerifierAllottedByUid));
     });
   }, [rcUid]);
 
@@ -157,14 +164,12 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
       ...reservedSerials,
       ...fromAssignments,
       ...serialsForReservedInvoices([...batchRows, ...eventRows], reservedInvoices),
+      ...flattenAllottedSerials(verifierAllottedByUid),
     ]);
-  }, [batchRows, eventRows, reservedAssignments, reservedInvoices, reservedSerials]);
+  }, [batchRows, eventRows, reservedAssignments, reservedInvoices, reservedSerials, verifierAllottedByUid]);
 
   const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
-  const pasSerials = useMemo(
-    () => pasSerialsFromAllotments(allotmentRows, products),
-    [allotmentRows, products],
-  );
+  const pasSerials = usePasBlockedSerials(allotmentRows, products);
 
   const quota = useMemo(
     () =>

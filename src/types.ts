@@ -302,6 +302,8 @@ export interface FirestoreUserDoc {
     serialStart?: string;
     serialEnd?: string;
   }>;
+  /** Per-verifier GAS seats allotted by RC admin (includes used). */
+  yesoneVerifierAllottedByUid?: Record<string, string[]>;
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
   /** Super Admin only — Zoho Books labour expense account ID (chart of accounts). */

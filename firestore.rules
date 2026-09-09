@@ -213,6 +213,8 @@ service cloud.firestore {
         && request.resource.data.get('pdfSignerSignY', null) == resource.data.get('pdfSignerSignY', null)
         && request.resource.data.get('yesoneAllottedSerials', null) == resource.data.get('yesoneAllottedSerials', null)
         && request.resource.data.get('yesoneVoidedSerials', null) == resource.data.get('yesoneVoidedSerials', null);
+        // yesoneReservedSerials / yesoneReservedForUids / yesoneVerifierAllottedByUid
+        // are RC-writable (Vr Allotted + overlay reserve).
 
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'

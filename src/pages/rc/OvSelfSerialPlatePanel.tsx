@@ -7,7 +7,9 @@ import {
   type StampWeather,
 } from '../../components/VerificationPhotoUploadSlot';
 import { type OvQuotaAllotment } from '../../lib/ovQuotaGate';
-import { verifyPasSerialInBank } from '../../lib/pasSerialBank';
+import { pasBankOptionsForJob } from '../../lib/pasSerialBank';
+import { GasAllottedSerialSearch } from '../../components/GasAllottedSerialSearch';
+import { usePasSerialHint } from '../../hooks/usePasSerialHint';
 import { formatShopCapacityLine, getProductSpecifications, resolveProductSpecification } from '../../lib/productSpecifications';
 import { readSerialPlate } from '../../lib/readSerialPlate';
 import {
@@ -15,6 +17,7 @@ import {
   gasAllottedChoices,
   serialEntryMode,
   serialInChoiceList,
+  showsGasAllottedSerialGrid,
 } from '../../lib/serialEntryPool';
 import {
   SERIAL_PLATE_IMAGE_KIND,
@@ -62,11 +65,15 @@ export function OvSelfSerialPlatePanel({
   const hasPlate = Boolean(slot.pendingFile || (slot.file && !slot.removed));
   const serialInputRef = useRef<HTMLInputElement>(null);
   const isRv = verificationType === 'RV';
-  const isOv = verificationType === 'OV';
   const mode = serialEntryMode(product);
   const isPas = mode === 'pas-type';
-  const isGasSelect = mode === 'gas-select' && isOv;
-  const [pasHint, setPasHint] = useState<{ tone: 'ok' | 'err' | 'muted'; text: string } | null>(null);
+  const isGasSelect = showsGasAllottedSerialGrid(product, verificationType);
+  const pasHint = usePasSerialHint(
+    row.serialNumber,
+    product,
+    isPas && !disabled,
+    pasBankOptionsForJob(verificationType),
+  );
   const [ocrHint, setOcrHint] = useState<string | null>(null);
 
   const seats = useMemo(
@@ -96,51 +103,6 @@ export function OvSelfSerialPlatePanel({
     if (disabled || isGasSelect) return;
     serialInputRef.current?.focus();
   }, [disabled, isGasSelect]);
-
-  useEffect(() => {
-    if (!isPas || !product) {
-      setPasHint(null);
-      return;
-    }
-    const serial = row.serialNumber.trim();
-    if (!serial) {
-      setPasHint({ tone: 'muted', text: 'Type the serial. Checked against this product’s PAS number bank.' });
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void verifyPasSerialInBank(serial, product)
-        .then(error => {
-          if (cancelled) return;
-          setPasHint(
-            error
-              ? { tone: 'err', text: error }
-              : { tone: 'ok', text: 'Serial is in the PAS number bank.' },
-          );
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setPasHint({ tone: 'err', text: 'Could not check PAS number bank.' });
-        });
-    }, 400);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [isPas, product, row.serialNumber]);
-
-  const runPasVerifyNow = () => {
-    if (!isPas || !product) return;
-    const serial = row.serialNumber.trim();
-    if (!serial) return;
-    void verifyPasSerialInBank(serial, product).then(error => {
-      setPasHint(
-        error
-          ? { tone: 'err', text: error }
-          : { tone: 'ok', text: 'Serial is in the PAS number bank.' },
-      );
-    });
-  };
 
   const handlePlateSelect = (file: File) => {
     onPlateSelect(file);
@@ -221,44 +183,20 @@ export function OvSelfSerialPlatePanel({
       {isGasSelect ? (
         <div className="form-group mb-0 ov-self-serial-edit">
           <label htmlFor="ov-self-serial-select">Serial number *</label>
-          <select
+          <GasAllottedSerialSearch
             id="ov-self-serial-select"
-            className="input-field text-mono"
+            className="input-field text-mono gas-serial-search-input"
+            choices={seats}
             value={selectedSeat}
             disabled={disabled}
-            onChange={e => onSerialChange(e.target.value)}
-          >
-            <option value="">{seats.length ? 'Select allotted serial' : 'No allotted serials left'}</option>
-            {seats.map(serial => (
-              <option key={serial} value={serial}>
-                {serial}
-              </option>
-            ))}
-          </select>
+            showChips
+            onChange={onSerialChange}
+          />
           {seats.length === 0 ? (
             <p className="ov-self-serial-hint ov-self-serial-hint--err" role="status">
               No unused allotted serials for this product. Cannot invent a serial.
             </p>
-          ) : (
-            <ul className="admin-setting-serial-seats ov-self-allotted-grid">
-              {seats.map(serial => {
-                const picked = serialInChoiceList(row.serialNumber, [serial]);
-                return (
-                  <li key={serial}>
-                    <button
-                      type="button"
-                      className={`admin-setting-serial-seat text-mono${picked ? ' admin-setting-serial-seat--picked' : ''}`}
-                      aria-pressed={picked}
-                      disabled={disabled}
-                      onClick={() => onSerialChange(picked ? '' : serial)}
-                    >
-                      {serial}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          ) : null}
         </div>
       ) : (
         <div className="form-group mb-0 ov-self-serial-edit">
@@ -275,7 +213,6 @@ export function OvSelfSerialPlatePanel({
             value={row.serialNumber}
             readOnly={disabled}
             onChange={e => onSerialChange(e.target.value)}
-            onBlur={runPasVerifyNow}
           />
           {pasHint ? (
             <p className={`ov-self-serial-hint ov-self-serial-hint--${pasHint.tone}`} role="status">

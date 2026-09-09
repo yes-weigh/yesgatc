@@ -12,6 +12,14 @@ export function serialEntryMode(product: Product | null | undefined): SerialEntr
   return Boolean(product?.pasPreAllotted) ? 'pas-type' : 'gas-select';
 }
 
+/** RC/VCT job chip grid: GAS OV only. PAS never lists the bank. Missing product → type, not dump remaining. */
+export function showsGasAllottedSerialGrid(
+  product: Product | null | undefined,
+  verificationType: string,
+): boolean {
+  return Boolean(product) && serialEntryMode(product) === 'gas-select' && verificationType === 'OV';
+}
+
 export function productAllotmentKey(
   product: Product | null | undefined,
   fallback?: { productId?: string; productName?: string },
@@ -64,6 +72,13 @@ export function gasAllottedChoices(options: {
     options.heldSerials ?? [],
     options.otherTaken ?? [],
   );
+}
+
+/** Typeahead filter. Empty query → full unused set. Never invents seats. */
+export function filterGasAllottedChoices(choices: readonly string[], query: string): string[] {
+  const needle = query.trim().toUpperCase().replace(/\s+/g, '');
+  if (!needle) return [...choices];
+  return choices.filter(serial => serial.trim().toUpperCase().replace(/\s+/g, '').includes(needle));
 }
 
 export function serialInChoiceList(serial: string, choices: readonly string[]): boolean {

@@ -2,15 +2,26 @@ import { collection, doc, getDoc, getDocs, query, runTransaction, where } from '
 import { db } from '../firebase';
 import type { Product, SiteCalibration } from '../types';
 import {
+  allotmentUsesPasProduct,
   finitePasCount,
+  interpretPasBankLookup,
+  isGasStickerSerial,
+  isPasStickerSerial,
   mergePasBankCounts,
   mergePasBankUsage,
+  mergePasBlockedSerials,
   pasBankListedForProduct,
   pasBankMatchesProduct,
+  pasBankOptionsForJob,
+  pasBankStatusError,
+  pasSerialsFromMetaRanges,
+  serialInInclusiveRange,
   summarizeSerialRows,
   usageFromSerialRows,
+  type PasAllotmentIdentity,
   type PasBankDoc,
   type PasBankUsage,
+  type PasBankVerifyOptions,
   type ProductSerialBankSummary,
   type ProductSerialRow,
 } from './pasSerialBankMatch';
@@ -19,17 +30,28 @@ export const PAS_SERIAL_BANK_COLLECTION = 'pasSerialBank';
 export const PAS_SERIAL_BANK_META_COLLECTION = 'pasSerialBankMeta';
 
 export {
+  allotmentUsesPasProduct,
+  isGasStickerSerial,
+  isPasStickerSerial,
+  interpretPasBankLookup,
   mergePasBankCounts,
   mergePasBankUsage,
+  mergePasBlockedSerials,
   pasBankListedForProduct,
   pasBankMatchesProduct,
+  pasBankOptionsForJob,
+  pasSerialsFromMetaRanges,
   serialInInclusiveRange,
   usageFromSerialRows,
-  type PasBankDoc,
-  type PasBankUsage,
-  type ProductSerialBankSummary,
-  type ProductSerialRow,
-} from './pasSerialBankMatch';
+};
+export type {
+  PasAllotmentIdentity,
+  PasBankDoc,
+  PasBankUsage,
+  PasBankVerifyOptions,
+  ProductSerialBankSummary,
+  ProductSerialRow,
+};
 
 export type PasCheckRow = {
   included?: boolean;
@@ -51,33 +73,8 @@ export function pasProductIdSet(products: readonly Product[] | undefined): Set<s
   );
 }
 
-export type PasAllotmentIdentity = {
-  serialNumber: string;
-  productId?: string;
-  sku?: string;
-  modelNo?: string;
-  productName?: string;
-  pool?: string;
-};
-
-export function allotmentUsesPasProduct(
-  row: PasAllotmentIdentity,
-  pasProducts: readonly Product[],
-): boolean {
-  if (String(row.pool || '').trim().toLowerCase() === 'pas') return true;
-  if (pasProducts.length === 0) return false;
-  const productId = String(row.productId || '').trim();
-  if (productId && pasProducts.some(product => product.id === productId)) return true;
-  return pasProducts.some(product =>
-    pasBankMatchesProduct(
-      {
-        productId: row.productId,
-        yesoneSku: row.sku,
-        sku: row.sku,
-      },
-      product,
-    ),
-  );
+function pasSerialsOnly(serials: readonly string[]): string[] {
+  return serials.filter(serial => !isGasStickerSerial(serial));
 }
 
 export function pasSerialsFromAllotments(
@@ -86,11 +83,15 @@ export function pasSerialsFromAllotments(
 ): string[] {
   const pasProducts = (products || []).filter(productUsesPasSerials);
   if (pasProducts.length === 0) {
-    return rows
-      .filter(row => String(row.pool || '').trim().toLowerCase() === 'pas')
-      .map(row => row.serialNumber);
+    return pasSerialsOnly(
+      rows
+        .filter(row => String(row.pool || '').trim().toLowerCase() === 'pas' || isPasStickerSerial(row.serialNumber))
+        .map(row => row.serialNumber),
+    );
   }
-  return rows.filter(row => allotmentUsesPasProduct(row, pasProducts)).map(row => row.serialNumber);
+  return pasSerialsOnly(
+    rows.filter(row => allotmentUsesPasProduct(row, pasProducts)).map(row => row.serialNumber),
+  );
 }
 
 export function pasSerialDocId(serial: string): string | null {
@@ -114,13 +115,6 @@ export function quotaSerialRows(
     });
 }
 
-function pasStatusError(serial: string, status: string): string | null {
-  const key = status.trim().toLowerCase();
-  if (!key || key === 'available' || key === 'allotted') return null;
-  if (key === 'used') return `Serial ${serial} is already used.`;
-  return `Serial ${serial} is not available.`;
-}
-
 function firebaseDenied(err: unknown): boolean {
   return Boolean(
     err &&
@@ -133,20 +127,15 @@ function firebaseDenied(err: unknown): boolean {
 export async function verifyPasSerialInBank(
   serial: string,
   product: Product,
+  options?: PasBankVerifyOptions,
 ): Promise<string | null> {
   const trimmed = serial.trim();
   const id = pasSerialDocId(trimmed);
   if (!id) return 'Serial number is required.';
   try {
     const snap = await getDoc(doc(db, PAS_SERIAL_BANK_COLLECTION, id));
-    if (!snap.exists()) return `Serial ${trimmed} is not in the PAS number bank.`;
-    const data = (snap.data() || {}) as PasBankDoc;
-    const statusError = pasStatusError(trimmed, String(data.status || ''));
-    if (statusError) return statusError;
-    if (!pasBankMatchesProduct(data, product)) {
-      return `Serial ${trimmed} is not allotted to this PAS product.`;
-    }
-    return null;
+    const data = snap.exists() ? ((snap.data() || {}) as PasBankDoc) : null;
+    return interpretPasBankLookup(trimmed, data, product, options);
   } catch (err) {
     if (firebaseDenied(err)) {
       return 'PAS number bank is blocked. Super admin must deploy Firestore rules.';
@@ -158,6 +147,7 @@ export async function verifyPasSerialInBank(
 export async function verifyPasDevicesInBank(
   devices: PasCheckRow[],
   products: readonly Product[] | undefined,
+  options?: PasBankVerifyOptions,
 ): Promise<string | null> {
   const seen = new Set<string>();
   for (const row of devices) {
@@ -169,7 +159,22 @@ export async function verifyPasDevicesInBank(
     const key = serial.toUpperCase();
     if (seen.has(key)) return `Serial ${serial} is used more than once.`;
     seen.add(key);
-    const error = await verifyPasSerialInBank(serial, product);
+    const error = await verifyPasSerialInBank(serial, product, options);
+    if (error) return error;
+  }
+  return null;
+}
+
+export async function verifyPasCalibrationRecords(
+  records: Array<Pick<SiteCalibration, 'productId' | 'serialNumber' | 'verificationType'>>,
+  products: readonly Product[] | undefined,
+): Promise<string | null> {
+  for (const record of records) {
+    const error = await verifyPasDevicesInBank(
+      calibrationRowsForPasCheck([record]),
+      products,
+      pasBankOptionsForJob(record.verificationType),
+    );
     if (error) return error;
   }
   return null;
@@ -191,6 +196,7 @@ export async function markPasSerialUsed(options: {
   uid?: string | null;
   rcId?: string | null;
   recordId?: string | null;
+  allowUsed?: boolean;
 }): Promise<void> {
   const trimmed = options.serial.trim();
   const id = pasSerialDocId(trimmed);
@@ -205,9 +211,10 @@ export async function markPasSerialUsed(options: {
     const status = String(data.status || '').trim().toLowerCase();
     if (status === 'used') {
       if (options.recordId && data.usedRecordId === options.recordId) return;
+      if (options.allowUsed) return;
       throw new Error(`Serial ${trimmed} is already used.`);
     }
-    const statusError = pasStatusError(trimmed, status);
+    const statusError = pasBankStatusError(trimmed, status, Boolean(options.allowUsed));
     if (statusError) throw new Error(statusError);
     if (!pasBankMatchesProduct(data, options.product)) {
       throw new Error(`Serial ${trimmed} is not allotted to this PAS product.`);
@@ -227,6 +234,7 @@ export async function markPasSerialsUsedForRows(
   rows: Array<{ productId?: string; serialNumber?: string; recordId?: string; rcId?: string }>,
   products: readonly Product[] | undefined,
   meta: { uid?: string | null; rcId?: string | null },
+  options?: PasBankVerifyOptions,
 ): Promise<void> {
   for (const row of rows) {
     const product = products?.find(item => item.id === row.productId) ?? null;
@@ -239,7 +247,29 @@ export async function markPasSerialsUsedForRows(
       uid: meta.uid,
       rcId: row.rcId || meta.rcId,
       recordId: row.recordId,
+      allowUsed: options?.allowUsed,
     });
+  }
+}
+
+export async function markPasCalibrationRecordsUsed(
+  records: Array<{
+    productId?: string;
+    serialNumber?: string;
+    recordId?: string;
+    rcId?: string;
+    verificationType?: string;
+  }>,
+  products: readonly Product[] | undefined,
+  meta: { uid?: string | null; rcId?: string | null },
+): Promise<void> {
+  for (const record of records) {
+    await markPasSerialsUsedForRows(
+      [record],
+      products,
+      meta,
+      pasBankOptionsForJob(record.verificationType),
+    );
   }
 }
 

@@ -8,6 +8,11 @@ import {
   recordUsesPasQuota,
   resolveRcQuotaUsedQty,
 } from './rcQuotaMath';
+import {
+  nextVerifierAllottedByUid,
+  normalizeVerifierAllottedByUid,
+  reservedSerialsAfterVerifierAllot,
+} from './vrAllotted.ts';
 import type { SiteCalibration } from '../types';
 
 export type YesoneReservedAssignment = {
@@ -191,38 +196,7 @@ export function excludeReservedSerials(serials: string[], reserved: string[]): s
   return serials.filter(serial => !blocked.has(serial.trim().toUpperCase()));
 }
 
-/** RC admin: all. Verifier: reserved only. VCT: public pool only (never reserved). */
-export function pickQuotaSerialsForActor(
-  seats: Pick<
-    RcQuotaSeats,
-    'remaining' | 'vctRemaining' | 'reservedForUids' | 'reservedByUid' | 'reservedSerials'
-  >,
-  actor: {
-    isRcAdmin?: boolean;
-    isVerifier?: boolean;
-    isVct?: boolean;
-    actorUid?: string | null;
-  },
-): string[] {
-  if (actor.isRcAdmin) return seats.remaining;
-  const uid = String(actor.actorUid || '').trim();
-  // Verifier: only RC-reserved seats for this uid — never the public VCT pool.
-  if (actor.isVerifier) {
-    if (!uid) return [];
-    const mine = seats.reservedByUid[uid];
-    return mine && mine.length > 0 ? mine : [];
-  }
-  // VCT: never see verifier-reserved stickers (e.g. Hafiz ≠ Rasheed's range).
-  if (actor.isVct) return seats.vctRemaining;
-  if (!uid) return seats.vctRemaining;
-  const mine = seats.reservedByUid[uid];
-  if (mine && mine.length > 0) return mine;
-  // Legacy: uid on reservedForUids, no per-invoice map → reserved pool only.
-  if (seats.reservedForUids.includes(uid)) {
-    return seats.reservedSerials.length > 0 ? seats.reservedSerials : [];
-  }
-  return seats.vctRemaining;
-}
+export { pickQuotaSerialsForActor } from './rcQuotaMath';
 
 export function computeRcQuotaSeats(input: {
   rcCode: string;
@@ -319,6 +293,103 @@ export async function toggleReservedSerial(
   if (!rcUid || !trimmed) return;
   await updateDoc(doc(db, 'users', rcUid), {
     yesoneReservedSerials: reserved ? arrayUnion(trimmed) : arrayRemove(trimmed),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Allot unused GAS seats to a verifier this RC created.
+ * Writes `yesoneVerifierAllottedByUid` + keeps those seats in `yesoneReservedSerials`
+ * (hidden from VCT). Does not invent serials — `allowedSerials` is the RC unused pool.
+ */
+export async function allotGasSerialsToVerifier(input: {
+  rcUid: string;
+  verifierUid: string;
+  addSerials: string[];
+  removeSerials?: string[];
+  allowedSerials: string[];
+}): Promise<void> {
+  const rcUid = input.rcUid.trim();
+  const verifierUid = input.verifierUid.trim();
+  if (!rcUid || !verifierUid) return;
+  const allowed = new Set(uniqueSerials(input.allowedSerials).map(serial => serial.trim().toUpperCase()));
+  const ref = doc(db, 'users', rcUid);
+  const snap = await getDoc(ref);
+  const data = snap.data() || {};
+  const prev = normalizeVerifierAllottedByUid(data.yesoneVerifierAllottedByUid);
+  const mine = uniqueSerials(prev[verifierUid] || []);
+  const addSerials = uniqueSerials(input.addSerials).filter(serial => {
+    const key = serial.trim().toUpperCase();
+    return allowed.has(key) || mine.some(item => item.trim().toUpperCase() === key);
+  });
+  const removeSerials = uniqueSerials(input.removeSerials || []).filter(serial =>
+    mine.some(item => item.trim().toUpperCase() === serial.trim().toUpperCase()),
+  );
+  const next = nextVerifierAllottedByUid({ prev, verifierUid, addSerials, removeSerials });
+  const nextReserved = reservedSerialsAfterVerifierAllot({
+    reservedSerials: uniqueSerials(data.yesoneReservedSerials),
+    prevAllotted: prev,
+    nextAllotted: next,
+  });
+  const assignmentUids = normalizeReservedAssignments(data.yesoneReservedAssignments).map(
+    row => row.verifierUid.trim(),
+  );
+  const nextForUids = [...new Set([...assignmentUids, ...Object.keys(next)].filter(Boolean))];
+  await updateDoc(ref, {
+    yesoneVerifierAllottedByUid: next,
+    yesoneReservedSerials: nextReserved,
+    yesoneReservedForUids: nextForUids,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/** Unallot every GAS seat for one verifier. Other verifiers unchanged. */
+export async function clearGasSerialsForVerifier(
+  rcUid: string,
+  verifierUid: string,
+): Promise<void> {
+  const trimmedRc = rcUid.trim();
+  const trimmedUid = verifierUid.trim();
+  if (!trimmedRc || !trimmedUid) return;
+  const ref = doc(db, 'users', trimmedRc);
+  const snap = await getDoc(ref);
+  const data = snap.data() || {};
+  const prev = normalizeVerifierAllottedByUid(data.yesoneVerifierAllottedByUid);
+  const assignments = normalizeReservedAssignments(data.yesoneReservedAssignments);
+  const dropped = assignments.filter(row => row.verifierUid === trimmedUid);
+  const keptAssignments = assignments.filter(row => row.verifierUid !== trimmedUid);
+  const assignmentSerials = uniqueSerials(
+    dropped.flatMap(row =>
+      row.serialStart ? expandSerialRange(row.serialStart, row.serialEnd || row.serialStart) : [],
+    ),
+  );
+  const mine = uniqueSerials([...(prev[trimmedUid] || []), ...assignmentSerials]);
+  if (mine.length === 0 && dropped.length === 0) return;
+  const next = nextVerifierAllottedByUid({
+    prev,
+    verifierUid: trimmedUid,
+    addSerials: [],
+    removeSerials: mine,
+  });
+  const nextReserved = reservedSerialsAfterVerifierAllot({
+    reservedSerials: uniqueSerials(data.yesoneReservedSerials),
+    prevAllotted: {
+      ...prev,
+      ...(mine.length > 0 ? { [trimmedUid]: mine } : {}),
+    },
+    nextAllotted: next,
+  });
+  const assignmentUids = keptAssignments.map(row => row.verifierUid.trim());
+  const nextForUids = [...new Set([...assignmentUids, ...Object.keys(next)].filter(Boolean))];
+  const droppedInvoices = [...new Set(dropped.map(row => row.invoiceNo.trim()).filter(Boolean))];
+  await updateDoc(ref, {
+    yesoneVerifierAllottedByUid: next,
+    yesoneReservedAssignments: keptAssignments,
+    yesoneReservedSerials: nextReserved,
+    yesoneReservedForUids: nextForUids,
+    ...(droppedInvoices.length > 0
+      ? { yesoneReservedInvoices: arrayRemove(...droppedInvoices) }
+      : {}),
     updatedAt: new Date().toISOString(),
   });
 }

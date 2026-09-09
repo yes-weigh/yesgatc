@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   Check,
@@ -16,6 +16,7 @@ import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { isPhoneShareDevice } from '../../lib/imageCapture';
 import { useAuth } from '../../context/AuthContext';
 import { useRcScope, useRoleBasePath } from '../../lib/roleScope';
+import { roleCanOpenCertificates } from '../../lib/roleNav';
 import { certificatePdfFileName } from '../../lib/certificatePdfFile';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { isVerificationCertifiedOnDoca } from '../../lib/verificationRequest';
@@ -88,7 +89,7 @@ export const CertificateSign: React.FC = () => {
   const listPath = `${basePath}/certificates`;
 
   const load = useCallback(async () => {
-    if (!rcUid || !recordId) {
+    if (!rcUid || !recordId || !roleCanOpenCertificates(user?.role)) {
       setRecord(null);
       setLoading(false);
       return;
@@ -121,7 +122,7 @@ export const CertificateSign: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [isVerifier, rcUid, recordId]);
+  }, [isVerifier, rcUid, recordId, user?.role]);
 
   useEffect(() => {
     void load();
@@ -191,6 +192,10 @@ export const CertificateSign: React.FC = () => {
       setUploadProgress(0);
     }
   };
+
+  if (!roleCanOpenCertificates(user?.role)) {
+    return <Navigate to={basePath || '/login'} replace />;
+  }
 
   if (loading) {
     return (

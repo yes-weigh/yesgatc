@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
 import { Award, Search, Share2 } from 'lucide-react';
 import { FilterIcon } from '../../components/FilterIcon';
@@ -8,6 +8,7 @@ import { db } from '../../firebase';
 import { TablePagination } from '../../components/TablePagination';
 import { CertificatePdfShareViewer } from '../../components/CertificatePdfShareViewer';
 import { useRcScope, useRoleBasePath } from '../../lib/roleScope';
+import { roleCanOpenCertificates } from '../../lib/roleNav';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { formatVerificationListDate, formatVerificationListTime } from '../../lib/verificationListFormat';
 import { formatVerificationInstrumentFields } from '../../lib/productCalculations';
@@ -24,6 +25,7 @@ import {
   type CertificateSignStatus,
 } from '../../lib/signedCertificatePdf';
 import { SignedCertificateAvailabilityBadge } from '../../components/SignedCertificateAvailabilityBadge';
+import { VerificationListProductThumb } from '../../components/VerificationListTable';
 import type { Customer, FirestoreUserDoc, SiteCalibration } from '../../types';
 
 type CertTypeFilter = 'all' | 'OV' | 'RV';
@@ -74,7 +76,7 @@ function matchesCertificateOrMachine(record: SiteCalibration, query: string): bo
 }
 
 export const Certificates: React.FC = () => {
-  const { rcUid, actorUid, isFieldStaff, isVerifier } = useRcScope();
+  const { rcUid, actorUid, isFieldStaff, isVerifier, user } = useRcScope();
   const { products } = useAppContext();
   const basePath = useRoleBasePath();
   const navigate = useNavigate();
@@ -99,7 +101,7 @@ export const Certificates: React.FC = () => {
   }>({ mobile: null, desktop: null });
 
   const fetchRecords = useCallback(async () => {
-    if (!rcUid) {
+    if (!rcUid || !roleCanOpenCertificates(user?.role)) {
       setRecords([]);
       setCustomersById(new Map());
       setRcPlace('');
@@ -122,7 +124,7 @@ export const Certificates: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [rcUid, isFieldStaff, actorUid]);
+  }, [rcUid, isFieldStaff, actorUid, user?.role]);
 
   useEffect(() => {
     void fetchRecords();
@@ -247,6 +249,10 @@ export const Certificates: React.FC = () => {
     </div>
   );
 
+  if (!roleCanOpenCertificates(user?.role)) {
+    return <Navigate to={basePath || '/login'} replace />;
+  }
+
   return (
     <div className="fade-in wl-cert-page">
       {filterSlot ? createPortal(filterControl, filterSlot) : null}
@@ -313,7 +319,7 @@ export const Certificates: React.FC = () => {
         ) : (
           <>
             <ul className="wl-cert-cards wl-cert-phone">
-                {pageRows.map((record, index) => {
+                {pageRows.map(record => {
                   const pdfUrl = resolveCertificatePdfFileUrl(record);
                   const pdfPath = resolveCertificatePdfStoragePath(record);
                   const certNo = record.certificateNumber?.trim() || '—';
@@ -339,7 +345,9 @@ export const Certificates: React.FC = () => {
                           className="wl-cert-card__main"
                           onClick={() => openSignPage(record)}
                         >
-                          <span className="wl-cert-card__sl">{rowOffset + index + 1}</span>
+                          <span className="wl-cert-card__thumb verification-list-card-status-ring">
+                            <VerificationListProductThumb product={product} />
+                          </span>
                           <span className="wl-cert-card__body">
                             <span className="wl-cert-card__headline">
                               <span className="wl-cert-card__name">

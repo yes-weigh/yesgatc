@@ -594,6 +594,51 @@ async function run() {
     } catch (err) {
       fail('RC admin can resubmit own failed-at-submit job', err);
     }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(rcDb, 'users', RC_UID), {
+          yesoneVerifierAllottedByUid: { 'verifier-rasheed': ['X00423', 'G0541'] },
+          yesoneReservedSerials: ['X00423', 'G0541'],
+          yesoneReservedForUids: ['verifier-rasheed'],
+        }),
+      );
+      ok('RC admin can allot GAS seats to own verifier on own user doc');
+    } catch (err) {
+      fail('RC admin can allot GAS seats to own verifier on own user doc', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(vctDb, 'users', RC_UID), {
+          yesoneVerifierAllottedByUid: { 'verifier-rasheed': ['X99999'] },
+        }),
+      );
+      ok('VCT cannot allot serials on parent RC user doc');
+    } catch (err) {
+      fail('VCT cannot allot serials on parent RC user doc', err);
+    }
+
+    const otherRcAdminDb = testEnv.authenticatedContext('other-rc-admin-002').firestore();
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', 'other-rc-admin-002'), {
+        aadhar: '444444444444',
+        role: 'rc_admin',
+        username: 'Other RC',
+        companyName: 'Other RC',
+      });
+    });
+    try {
+      await assertFails(
+        updateDoc(doc(otherRcAdminDb, 'users', RC_UID), {
+          yesoneVerifierAllottedByUid: { stolen: ['X00423'] },
+        }),
+      );
+      ok('RC admin cannot allot serials on another RC user doc');
+    } catch (err) {
+      fail('RC admin cannot allot serials on another RC user doc', err);
+    }
   } finally {
     await testEnv.cleanup();
   }

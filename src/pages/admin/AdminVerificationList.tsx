@@ -22,6 +22,7 @@ import {
   parseVerificationDurationParam,
   type VerificationDurationFilter,
 } from '../../lib/verificationListDuration';
+import { parseVerificationListStatusParam } from '../../lib/verificationListStatusQuery';
 import { rewriteOutOfKeralaJobsToRcName } from '../../lib/verificationRcFiling';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
@@ -75,15 +76,22 @@ import {
   planFailAndDraftBulkSubmit,
 } from '../../lib/verificationFailAndDraftBulk';
 import {
+  canActorBulkSubmitPendingRc,
+  filterPendingRcSubmitTargets,
+  formatPendingRcBulkConfirmMessage,
+  pendingRcBulkHasWork,
+  planPendingRcBulkSubmit,
+} from '../../lib/verificationPendingRcBulk';
+import {
   isSiteCalibrationSubmittable,
   siteCalibrationSubmitBlockReason,
 } from '../../lib/siteCalibrationProfileFields';
 import {
-  calibrationRowsForPasCheck,
-  markPasSerialsUsedForRows,
-  verifyPasDevicesInBank,
+  markPasCalibrationRecordsUsed,
+  verifyPasCalibrationRecords,
 } from '../../lib/pasSerialBank';
 import {
+  approveAndSubmitPendingRcRecords,
   submitVerificationRecord,
   submitVerificationRecords,
   type VerificationSubmitOptions,
@@ -145,9 +153,11 @@ export const AdminVerificationList: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
   const [selectedFailedIds, setSelectedFailedIds] = useState<Set<string>>(() => new Set());
+  const [selectedPendingRcIds, setSelectedPendingRcIds] = useState<Set<string>>(() => new Set());
   const [listError, setListError] = useState('');
   const selectAllDraftsRef = useRef<HTMLInputElement | null>(null);
   const selectAllFailedRef = useRef<HTMLInputElement | null>(null);
+  const selectAllPendingRcRef = useRef<HTMLInputElement | null>(null);
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
     () => ({
@@ -238,21 +248,9 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     if (!pendingStatusFilter) return;
-    const allowed: VerificationStatusFilter[] = [
-      'all',
-      'draft',
-      'submitted',
-      'certified',
-      'failed_submit',
-      'rejected',
-      'duplicates',
-    ];
-    const raw = pendingStatusFilter as VerificationStatusFilter;
-    if (allowed.includes(raw)) {
-      setStatusFilter(raw);
-      setVoidOnly(false);
-    } else if (raw === 'approved' || raw === 'failed_certification') {
-      setStatusFilter(raw === 'failed_certification' ? 'failed_submit' : 'submitted');
+    const parsed = parseVerificationListStatusParam(pendingStatusFilter);
+    if (parsed) {
+      setStatusFilter(parsed);
       setVoidOnly(false);
     }
     setSearchParams(
@@ -647,6 +645,7 @@ export const AdminVerificationList: React.FC = () => {
   useEffect(() => {
     setSelectedDraftIds(new Set());
     setSelectedFailedIds(new Set());
+    setSelectedPendingRcIds(new Set());
   }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
@@ -716,24 +715,60 @@ export const AdminVerificationList: React.FC = () => {
     });
   };
 
+  const canBulkPendingRc = canActorBulkSubmitPendingRc(user?.role);
+  const selectablePendingRcIds = useMemo(() => {
+    if (!canBulkPendingRc || statusFilter !== 'pending_rc') return [];
+    return filterPendingRcSubmitTargets(filteredRecords).map(record => record.id);
+  }, [canBulkPendingRc, statusFilter, filteredRecords]);
+
+  const allSelectablePendingRcSelected =
+    selectablePendingRcIds.length > 0 && selectablePendingRcIds.every(id => selectedPendingRcIds.has(id));
+
+  const someSelectablePendingRcSelected =
+    selectablePendingRcIds.some(id => selectedPendingRcIds.has(id)) && !allSelectablePendingRcSelected;
+
+  useEffect(() => {
+    if (selectAllPendingRcRef.current) {
+      selectAllPendingRcRef.current.indeterminate = someSelectablePendingRcSelected;
+    }
+  }, [someSelectablePendingRcSelected, selectablePendingRcIds.length]);
+
+  const togglePendingRcSelection = (id: string) => {
+    setSelectedPendingRcIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPendingRc = () => {
+    setSelectedPendingRcIds(prev => {
+      if (allSelectablePendingRcSelected) {
+        const next = new Set(prev);
+        selectablePendingRcIds.forEach(id => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...selectablePendingRcIds]);
+    });
+  };
+
   const submitReadyDraftRecords = useCallback(
     async (selectedRecords: SiteCalibration[]) => {
       if (selectedRecords.length === 0) return;
 
-      const pasBankError = await verifyPasDevicesInBank(
-        calibrationRowsForPasCheck(selectedRecords),
-        products,
-      );
+      const pasBankError = await verifyPasCalibrationRecords(selectedRecords, products);
       if (pasBankError) {
         throw new Error(pasBankError);
       }
 
-      await markPasSerialsUsedForRows(
+      await markPasCalibrationRecordsUsed(
         selectedRecords.map(record => ({
           productId: record.productId,
           serialNumber: record.serialNumber,
           recordId: record.id,
           rcId: record.rcId,
+          verificationType: record.verificationType,
         })),
         products,
         { uid: user?.uid, rcId: selectedRecords[0]?.rcId },
@@ -765,10 +800,7 @@ export const AdminVerificationList: React.FC = () => {
       return;
     }
 
-    const pasBankError = await verifyPasDevicesInBank(
-      calibrationRowsForPasCheck([record]),
-      products,
-    );
+    const pasBankError = await verifyPasCalibrationRecords([record], products);
     if (pasBankError) {
       setListError(pasBankError);
       return;
@@ -777,11 +809,12 @@ export const AdminVerificationList: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await markPasSerialsUsedForRows(
+      await markPasCalibrationRecordsUsed(
         [{
           productId: record.productId,
           serialNumber: record.serialNumber,
           recordId: record.id,
+          verificationType: record.verificationType,
         }],
         products,
         { uid: user?.uid, rcId: record.rcId },
@@ -921,6 +954,54 @@ export const AdminVerificationList: React.FC = () => {
       await fetchRecords();
     } catch (err: unknown) {
       setListError(err instanceof Error ? err.message : 'Failed to resubmit selected verifications.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkSubmitPendingRc = async () => {
+    if (!canBulkPendingRc || !user?.uid) return;
+
+    const plan = planPendingRcBulkSubmit(
+      filteredRecords.filter(record => selectedPendingRcIds.has(record.id)),
+    );
+    if (!pendingRcBulkHasWork(plan)) {
+      setListError('Select pending RC jobs to submit.');
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Submit pending RC?',
+      message: formatPendingRcBulkConfirmMessage(plan),
+      messageFormat: 'preline',
+      confirmLabel: 'Submit selected',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await approveAndSubmitPendingRcRecords(plan.approveAndSubmit, user.uid, db, {
+        ...submitOptions,
+        beforeSubmit: async selectedRecords => {
+          await ensureRvWalletDebitedForRecords({
+            records: selectedRecords,
+            products,
+            feeSettings: appSettings,
+            feesForRc: () => resolveRcFeesStructure(null),
+          });
+        },
+      });
+      setSelectedPendingRcIds(new Set());
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(
+        isZohoInvoiceGateError(err)
+          ? formatZohoInvoiceGateError(err)
+          : err instanceof Error
+            ? err.message
+            : 'Failed to submit pending RC jobs.',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1185,6 +1266,36 @@ export const AdminVerificationList: React.FC = () => {
             </div>
           )}
 
+          {canBulkPendingRc && selectedPendingRcIds.size > 0 && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {selectedPendingRcIds.size} pending RC selected
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleBulkSubmitPendingRc()}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <span className="spinner-inline" />
+                ) : (
+                  <>
+                    <Send size={16} /> Submit selected
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3"
+                onClick={() => setSelectedPendingRcIds(new Set())}
+                disabled={submitting}
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex justify-center py-16">
               <span className="spinner-inline large" />
@@ -1245,6 +1356,16 @@ export const AdminVerificationList: React.FC = () => {
                               selectAllRef: selectAllFailedRef,
                               onToggle: toggleFailedSelection,
                               onToggleSelectAll: toggleSelectAllFailed,
+                            }
+                          : undefined,
+                        pendingRcSelect: canBulkPendingRc
+                          ? {
+                              selectedIds: selectedPendingRcIds,
+                              selectableIds: selectablePendingRcIds,
+                              allSelected: allSelectablePendingRcSelected,
+                              selectAllRef: selectAllPendingRcRef,
+                              onToggle: togglePendingRcSelection,
+                              onToggleSelectAll: toggleSelectAllPendingRc,
                             }
                           : undefined,
                       }

@@ -22,7 +22,9 @@ import {
   emptyDeviceVerificationImagesState,
   validateDeviceVerificationImages,
   verificationImagesFromRecord,
+  type DeviceImageSlotState,
   type DeviceVerificationImagesState,
+  type VerificationImageKind,
 } from './verificationDeviceImages';
 import { validateRvZohoSubmitReady } from './zohoRvSubmit';
 import {
@@ -32,6 +34,7 @@ import {
   rvDocumentsFromRecord,
   validateDeviceRvDocuments,
   type DeviceRvDocumentsState,
+  type RvDocumentKind,
 } from './verificationRvDeviceImages';
 import {
   emptyPerformerPhotosState,
@@ -51,9 +54,17 @@ import {
 import { validateOvQuotaDevices, type OvQuotaGate } from './ovQuotaGate';
 import { quotaSerialRows } from './pasSerialBank';
 import { verificationClientVersionFields } from './verificationAppVersion';
+import {
+  ALL_VERIFICATION_JOB_KINDS,
+  verificationJobKindsForActor,
+  type VerificationJobKind,
+} from './verificationJobKinds';
 
-export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind } from './verificationDeviceImages';
-export type { DeviceRvDocumentsState, RvDocumentKind } from './verificationRvDeviceImages';
+export { ALL_VERIFICATION_JOB_KINDS, verificationJobKindsForActor };
+export type { VerificationJobKind };
+
+export type { DeviceVerificationImagesState, DeviceImageSlotState, VerificationImageKind };
+export type { DeviceRvDocumentsState, RvDocumentKind };
 
 export type SiteCalibrationFormValues = {
   verificationType: JobType | '';
@@ -172,8 +183,6 @@ export function buildSelfVerificationSession(
     devices: buildInitialSelfDeviceRows(sealIdentification),
   };
 }
-
-export type VerificationJobKind = 'ov_self' | 'ov_customer' | 'rv_customer';
 
 export function verificationJobKindLabel(kind: VerificationJobKind): string {
   if (kind === 'ov_self') return 'OV Self';

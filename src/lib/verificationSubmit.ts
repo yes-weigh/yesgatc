@@ -1,6 +1,11 @@
 import { doc, updateDoc, type Firestore } from 'firebase/firestore';
 import { db } from '../firebase';
-import { buildVerificationSubmitPatch, buildVerifierRcReviewPatch } from './verificationRequest';
+import {
+  buildRcApproveVerifierPatch,
+  buildVerificationSubmitPatch,
+  buildVerifierRcReviewPatch,
+} from './verificationRequest';
+import { filterPendingRcSubmitTargets } from './verificationPendingRcBulk';
 import { verificationClientVersionFields } from './verificationAppVersion';
 import { hideOvEditResubmitCertificatesAfterSubmit } from './verificationResubmit';
 import { queueRvZohoInvoicesAfterSubmit, submitRvWithZohoGate } from './zohoRvInvoice';
@@ -17,6 +22,11 @@ export type VerificationSubmitOptions = {
   zohoRvInvoicingEnabled?: boolean;
   /** Used to hide old OV certificates when an edit-resubmit clone is submitted. */
   lookupRecords?: SiteCalibration[];
+};
+
+export type PendingRcApproveSubmitOptions = VerificationSubmitOptions & {
+  filingFields?: (record: SiteCalibration) => Partial<RcFilingPartyPatch>;
+  beforeSubmit?: (records: SiteCalibration[]) => Promise<void>;
 };
 
 function submitPatch(target: VerificationSubmitTarget) {
@@ -115,5 +125,34 @@ export async function submitVerifierWorkForRcReview(
   const patch = buildVerifierRcReviewPatch();
   await Promise.all(
     recordIds.map(recordId => updateDoc(doc(firestore, 'siteCalibrations', recordId), patch)),
+  );
+}
+
+/**
+ * RC Admin / Super Admin: stamp RC approval, then the same eMAAP submit as drafts.
+ * Does not invent a certificate flow — Approve row + submitVerificationRecords.
+ */
+export async function approveAndSubmitPendingRcRecords(
+  records: SiteCalibration[],
+  actorUid: string,
+  firestore: Firestore = db,
+  options?: PendingRcApproveSubmitOptions,
+): Promise<void> {
+  const targets = filterPendingRcSubmitTargets(records);
+  if (targets.length === 0) return;
+
+  const patch = buildRcApproveVerifierPatch(actorUid);
+  await Promise.all(
+    targets.map(record => updateDoc(doc(firestore, 'siteCalibrations', record.id), patch)),
+  );
+  await options?.beforeSubmit?.(targets);
+  await submitVerificationRecords(
+    targets.map(record => ({
+      id: record.id,
+      verificationType: record.verificationType,
+      ...options?.filingFields?.(record),
+    })),
+    firestore,
+    options,
   );
 }

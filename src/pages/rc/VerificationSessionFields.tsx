@@ -93,7 +93,7 @@ import {
   compactWizardWorkingDevices,
   devicesForVerificationCustomerSelect,
 } from '../../lib/compactWizardProductStep';
-import { catalogueHasPasProducts, verifyPasDevicesInBank } from '../../lib/pasSerialBank';
+import { catalogueHasPasProducts, pasBankOptionsForJob, verifyPasDevicesInBank } from '../../lib/pasSerialBank';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import { VerificationPerformerPhotoFields } from './VerificationPerformerPhotoFields';
 import { requiresPerformerIdentityPhotos } from '../../lib/verificationPerformerPhotos';
@@ -426,7 +426,11 @@ export const VerificationSessionFields = forwardRef<
     if (currentStep.id === 'serial') {
       setSerialChecking(true);
       try {
-        const bankError = await verifyPasDevicesInBank(values.devices, products);
+        const bankError = await verifyPasDevicesInBank(
+          values.devices,
+          products,
+          pasBankOptionsForJob(values.verificationType),
+        );
         if (bankError) {
           setStepError(bankError);
           return;

@@ -361,6 +361,60 @@ html {
   padding-left: 0.875rem;
 }
 
+.vr-allotted-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.vr-allotted-panel .panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.vr-allotted-search {
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.vr-allotted-search svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.vr-allotted-picked {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+.vr-allotted-save {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+
+.vr-allotted-row--active td {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.data-table tr.vr-allotted-row--active {
+  cursor: pointer;
+}
+
+.vr-allotted-panel .data-table tbody tr {
+  cursor: pointer;
+}
+
 /* VCT admin table */
 .data-table--vct {
   table-layout: fixed;
@@ -950,6 +1004,14 @@ label.admin-setting-webbook-yesone-label,
   font-weight: 700;
   opacity: 0.92;
   margin-left: 0.2em;
+}
+
+.admin-setting-serial-count-num--reserved {
+  color: #fbbf24;
+}
+
+.admin-setting-serial-count-num--reserved span {
+  margin-right: 0.28rem;
 }
 
 .admin-setting-serial-panel .admin-setting-yesone-table th,
@@ -13745,6 +13807,45 @@ body.product-spec-picker-open .verification-mobile-chrome--actions {
   margin: 0.4rem 0 0;
 }
 
+.gas-serial-search {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gas-serial-search-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.gas-serial-search-control--open .gas-serial-search-input {
+  border-color: rgba(59, 130, 246, 0.55);
+}
+
+.gas-serial-search-input {
+  width: 100%;
+  padding-right: 2rem;
+}
+
+.gas-serial-search-input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.gas-serial-search-chevron {
+  position: absolute;
+  right: 0.65rem;
+  color: var(--text-muted, #94a3b8);
+  pointer-events: none;
+}
+
+.gas-serial-search-empty {
+  padding: 0.55rem 0.65rem;
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.82rem;
+}
+
 .ov-self-serial-hint {
   margin: 0.4rem 0 0;
   font-size: 0.75rem;
@@ -25692,14 +25793,59 @@ select.input-field--table {
 }
 
 .verification-list-card-status-ring {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 4.35rem;
   height: 4.35rem;
-  border-radius: 999px;
+  border-radius: 10px;
   border: 2px solid transparent;
-  background: rgba(15, 23, 42, 0.65);
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.verification-list-card-product-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #fff;
+}
+
+.verification-list-card-product-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
+.verification-list-card-product-img {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  border: none;
+  border-radius: inherit;
+  background: #fff;
+}
+
+.verification-list-card-product-img.storage-image-fallback {
+  display: none;
+}
+
+.verification-list-card-product-slot:has(img.verification-list-card-product-img) .verification-list-card-product-fallback {
+  visibility: hidden;
 }
 
 .verification-list-card-status-label {
@@ -32379,7 +32525,7 @@ body.wl-cert-pdf-viewer-open {
 
 .wl-cert-card__main {
   display: grid;
-  grid-template-columns: 1.15rem minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: 0.55rem;
   width: 100%;
@@ -32396,12 +32542,17 @@ body.wl-cert-pdf-viewer-open {
   letter-spacing: -0.01em;
 }
 
-.wl-cert-card__sl {
-  font-size: 0.62rem;
-  font-weight: 700;
-  color: #64748b;
-  font-variant-numeric: tabular-nums;
-  padding-top: 0.18rem;
+.wl-cert-card__thumb.verification-list-card-status-ring {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-color: rgba(52, 211, 153, 0.55);
+  color: #34d399;
+  box-shadow: 0 0 18px rgba(52, 211, 153, 0.12);
+}
+
+.wl-cert-card__thumb.verification-list-card-status-ring svg {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .wl-cert-card__body {

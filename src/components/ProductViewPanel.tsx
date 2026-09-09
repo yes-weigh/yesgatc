@@ -6,6 +6,7 @@ import { ProductSerialBankOverlay } from './ProductSerialBankOverlay';
 import { useSetAppBarTitle } from '../context/AppBarTitleContext';
 import { CalcLabel, UploadField } from '../pages/admin/productFormUi';
 import { PasTag } from './ProductShopMedia';
+import { productUsesPasSerials } from '../lib/pasSerialBank';
 import {
   computeProductDerived,
   formatDerivedDisplay,
@@ -81,17 +82,19 @@ export const ProductViewPanel: React.FC<{
         <ListViewBackBar
           onBack={onClose}
           trailing={
-            <div className="product-form-view-actions">
-              <button
-                type="button"
-                className="product-form-edit-toggle"
-                onClick={() => setSerialOpen(true)}
-                aria-label="View serials"
-                title="View serials"
-              >
-                <Eye size={18} strokeWidth={2} />
-              </button>
-            </div>
+            productUsesPasSerials(product) ? undefined : (
+              <div className="product-form-view-actions">
+                <button
+                  type="button"
+                  className="product-form-edit-toggle"
+                  onClick={() => setSerialOpen(true)}
+                  aria-label="View serials"
+                  title="View serials"
+                >
+                  <Eye size={18} strokeWidth={2} />
+                </button>
+              </div>
+            )
           }
         />
         <form
@@ -312,7 +315,7 @@ export const ProductViewPanel: React.FC<{
           </div>
         </form>
       </div>
-      {serialOpen ? (
+      {serialOpen && !productUsesPasSerials(product) ? (
         <ProductSerialBankOverlay product={product} onClose={() => setSerialOpen(false)} />
       ) : null}
     </InlineFormPanel>

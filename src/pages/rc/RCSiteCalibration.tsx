@@ -52,7 +52,6 @@ import {
   canShowVerificationCertifiedActions,
   canSubmitVerification,
   canRcApproveVerifierVerification,
-  buildRcApproveVerifierPatch,
   isCorruptedVerificationRecord,
   isVerificationEditable,
   isVerificationFailedAtSubmit,
@@ -124,6 +123,7 @@ import {
   verificationListCollapsedForCounts,
 } from '../../lib/verificationListGrouping';
 import {
+  approveAndSubmitPendingRcRecords,
   submitVerificationRecord,
   submitVerificationRecords,
   submitVerifierWorkForRcReview,
@@ -135,6 +135,14 @@ import {
   parseVerificationDurationParam,
   type VerificationDurationFilter,
 } from '../../lib/verificationListDuration';
+import { parseVerificationListStatusParam } from '../../lib/verificationListStatusQuery';
+import {
+  canActorBulkSubmitPendingRc,
+  filterPendingRcSubmitTargets,
+  formatPendingRcBulkConfirmMessage,
+  pendingRcBulkHasWork,
+  planPendingRcBulkSubmit,
+} from '../../lib/verificationPendingRcBulk';
 import type {
   Customer,
   FirestoreUserDoc,
@@ -153,9 +161,13 @@ import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
 import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
 import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
 import {
-  calibrationRowsForPasCheck,
+  allotmentUsesPasProduct,
   catalogueHasPasProducts,
+  markPasCalibrationRecordsUsed,
   markPasSerialsUsedForRows,
+  pasBankOptionsForJob,
+  productUsesPasSerials,
+  verifyPasCalibrationRecords,
   verifyPasDevicesInBank,
 } from '../../lib/pasSerialBank';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
@@ -427,8 +439,10 @@ export const RCSiteCalibration: React.FC = () => {
   const [page, setPage] = useState(1);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
   const [selectedFailedIds, setSelectedFailedIds] = useState<Set<string>>(() => new Set());
+  const [selectedPendingRcIds, setSelectedPendingRcIds] = useState<Set<string>>(() => new Set());
   const selectAllDraftsRef = useRef<HTMLInputElement>(null);
   const selectAllFailedRef = useRef<HTMLInputElement>(null);
+  const selectAllPendingRcRef = useRef<HTMLInputElement>(null);
   const [laboratorySealId, setLaboratorySealId] = useState('');
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
   const [actorProfile, setActorProfile] = useState<FirestoreUserDoc | null>(null);
@@ -458,18 +472,20 @@ export const RCSiteCalibration: React.FC = () => {
       : [];
     return {
       remaining: pickSerials,
-      remainingAllotments: quotaSeats.allotmentRows.map(row => ({
-        serialNumber: row.serialNumber,
-        sku: row.sku,
-        productId: row.productId,
-        productName: row.productName,
-        modelNo: row.modelNo,
-        pool: row.pool,
-      })),
+      remainingAllotments: quotaSeats.allotmentRows
+        .filter(row => !allotmentUsesPasProduct(row, products.filter(productUsesPasSerials)))
+        .map(row => ({
+          serialNumber: row.serialNumber,
+          sku: row.sku,
+          productId: row.productId,
+          productName: row.productName,
+          modelNo: row.modelNo,
+          pool: row.pool,
+        })),
       balanceQty: actorBalanceQty,
       heldSerials: held,
     };
-  }, [pickSerials, actorBalanceQty, editingId, records, quotaSeats.allotmentRows]);
+  }, [pickSerials, actorBalanceQty, editingId, records, quotaSeats.allotmentRows, products]);
 
   const validationOptions = useMemo(() => {
     const editingRecordForValidation = editingId
@@ -1511,7 +1527,11 @@ export const RCSiteCalibration: React.FC = () => {
       }
     }
 
-    const pasBankError = await verifyPasDevicesInBank(sessionValues.devices, products);
+    const pasBankError = await verifyPasDevicesInBank(
+      sessionValues.devices,
+      products,
+      pasBankOptionsForJob(sessionValues.verificationType),
+    );
     if (pasBankError) {
       setError(pasBankError);
       return;
@@ -1662,6 +1682,7 @@ export const RCSiteCalibration: React.FC = () => {
           })),
           products,
           { uid: actorUid, rcId: rcUid },
+          pasBankOptionsForJob(sessionForSave.verificationType),
         );
       }
 
@@ -1823,10 +1844,7 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
-    const pasBankError = await verifyPasDevicesInBank(
-      calibrationRowsForPasCheck([record]),
-      products,
-    );
+    const pasBankError = await verifyPasCalibrationRecords([record], products);
     if (pasBankError) {
       setListError(pasBankError);
       return;
@@ -1836,11 +1854,12 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await markPasSerialsUsedForRows(
+      await markPasCalibrationRecordsUsed(
         [{
           productId: record.productId,
           serialNumber: record.serialNumber,
           recordId: record.id,
+          verificationType: record.verificationType,
         }],
         products,
         { uid: actorUid, rcId: rcUid },
@@ -1894,10 +1913,7 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
-    const pasBankError = await verifyPasDevicesInBank(
-      calibrationRowsForPasCheck(selectedRecords),
-      products,
-    );
+    const pasBankError = await verifyPasCalibrationRecords(selectedRecords, products);
     if (pasBankError) {
       setListError(pasBankError);
       return;
@@ -1907,11 +1923,12 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await markPasSerialsUsedForRows(
+      await markPasCalibrationRecordsUsed(
         selectedRecords.map(record => ({
           productId: record.productId,
           serialNumber: record.serialNumber,
           recordId: record.id,
+          verificationType: record.verificationType,
         })),
         products,
         { uid: actorUid, rcId: rcUid },
@@ -2054,25 +2071,19 @@ export const RCSiteCalibration: React.FC = () => {
     setListError('');
     setError('');
     try {
-      await updateDoc(
-        doc(db, 'siteCalibrations', record.id),
-        buildRcApproveVerifierPatch(user.uid),
-      );
-      await ensureRvWalletDebitedForRecords({
-        records: [record],
-        products,
-        feeSettings: appSettings,
-        feesForRc: () => resolveRcFeesStructure(rcProfile),
-      });
-      await submitVerificationRecord(
-        {
-          id: record.id,
-          verificationType: record.verificationType,
-          ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
+      await approveAndSubmitPendingRcRecords([record], user.uid, db, {
+        ...submitOptions,
+        filingFields: row =>
+          rcFilingFieldsForRecord(row, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
+        beforeSubmit: async rows => {
+          await ensureRvWalletDebitedForRecords({
+            records: rows,
+            products,
+            feeSettings: appSettings,
+            feesForRc: () => resolveRcFeesStructure(rcProfile),
+          });
         },
-        db,
-        submitOptions,
-      );
+      });
       if (editingId === record.id) handleCloseForm();
       await fetchRecords();
       beginSubmitProgress([record.id]);
@@ -2080,6 +2091,72 @@ export const RCSiteCalibration: React.FC = () => {
       const message = isZohoInvoiceGateError(err)
         ? formatZohoInvoiceGateError(err)
         : formatSaveError(err, 'Failed to approve verifier work.', record);
+      setListError(message);
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkSubmitPendingRc = async () => {
+    if (!canActorBulkSubmitPendingRc(user?.role) || !user?.uid) return;
+
+    const plan = planPendingRcBulkSubmit(
+      filteredRecords.filter(record => selectedPendingRcIds.has(record.id)),
+    );
+    if (!pendingRcBulkHasWork(plan)) {
+      setListError('Select pending RC jobs to submit.');
+      return;
+    }
+
+    for (const record of plan.approveAndSubmit) {
+      const zohoError = validateRvZohoSubmitReady(
+        record.verificationType,
+        rcProfile?.zohoId,
+        { zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings) },
+      );
+      if (zohoError) {
+        setListError(zohoError);
+        return;
+      }
+    }
+
+    const ok = await confirm({
+      title: 'Submit pending RC?',
+      message: formatPendingRcBulkConfirmMessage(plan),
+      messageFormat: 'preline',
+      confirmLabel: 'Submit selected',
+    });
+    if (!ok) return;
+
+    unlockVerificationSuccessAudio();
+    setSubmitting(true);
+    setListError('');
+    setError('');
+    try {
+      await approveAndSubmitPendingRcRecords(plan.approveAndSubmit, user.uid, db, {
+        ...submitOptions,
+        filingFields: row =>
+          rcFilingFieldsForRecord(row, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
+        beforeSubmit: async rows => {
+          await ensureRvWalletDebitedForRecords({
+            records: rows,
+            products,
+            feeSettings: appSettings,
+            feesForRc: () => resolveRcFeesStructure(rcProfile),
+          });
+        },
+      });
+      setSelectedPendingRcIds(new Set());
+      if (editingId && plan.approveAndSubmit.some(row => row.id === editingId)) {
+        handleCloseForm();
+      }
+      await fetchRecords();
+      beginSubmitProgress(plan.approveAndSubmit.map(row => row.id));
+    } catch (err: unknown) {
+      const message = isZohoInvoiceGateError(err)
+        ? formatZohoInvoiceGateError(err)
+        : formatSaveError(err, 'Failed to submit pending RC jobs.');
       setListError(message);
       setError(message);
     } finally {
@@ -2125,7 +2202,11 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
-      const pasBankError = await verifyPasDevicesInBank(sessionValues.devices, products);
+      const pasBankError = await verifyPasDevicesInBank(
+      sessionValues.devices,
+      products,
+      pasBankOptionsForJob(sessionValues.verificationType),
+    );
       if (pasBankError) {
         setError(pasBankError);
         return;
@@ -2217,6 +2298,7 @@ export const RCSiteCalibration: React.FC = () => {
         }],
         products,
         { uid: actorUid, rcId: rcUid },
+        pasBankOptionsForJob(sessionForSave.verificationType),
       );
 
       if (walletPaymentId) {
@@ -2294,7 +2376,11 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
-    const pasBankError = await verifyPasDevicesInBank(sessionValues.devices, products);
+    const pasBankError = await verifyPasDevicesInBank(
+      sessionValues.devices,
+      products,
+      pasBankOptionsForJob(sessionValues.verificationType),
+    );
     if (pasBankError) {
       setError(pasBankError);
       return;
@@ -2554,19 +2640,9 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     if (!pendingStatusFilter) return;
-    const allowed: VerificationStatusFilter[] = [
-      'all',
-      'draft',
-      'submitted',
-      'certified',
-      'failed_submit',
-      'rejected',
-    ];
-    const raw = pendingStatusFilter as VerificationStatusFilter;
-    if (allowed.includes(raw)) {
-      setStatusFilter(raw);
-    } else if (raw === 'approved' || raw === 'failed_certification') {
-      setStatusFilter(raw === 'failed_certification' ? 'failed_submit' : 'submitted');
+    const parsed = parseVerificationListStatusParam(pendingStatusFilter);
+    if (parsed) {
+      setStatusFilter(parsed);
     }
     setSearchParams(
       prev => {
@@ -2935,6 +3011,7 @@ export const RCSiteCalibration: React.FC = () => {
   useEffect(() => {
     setSelectedDraftIds(new Set());
     setSelectedFailedIds(new Set());
+    setSelectedPendingRcIds(new Set());
   }, [statusFilter, searchTerm, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
@@ -3001,6 +3078,45 @@ export const RCSiteCalibration: React.FC = () => {
         return next;
       }
       return new Set([...prev, ...selectableFailedIds]);
+    });
+  };
+
+  const canBulkPendingRc = canActorBulkSubmitPendingRc(user?.role);
+  const selectablePendingRcIds = useMemo(() => {
+    if (!canBulkPendingRc || statusFilter !== 'pending_rc') return [];
+    return filterPendingRcSubmitTargets(filteredRecords).map(record => record.id);
+  }, [canBulkPendingRc, statusFilter, filteredRecords]);
+
+  const allSelectablePendingRcSelected =
+    selectablePendingRcIds.length > 0
+    && selectablePendingRcIds.every(id => selectedPendingRcIds.has(id));
+
+  const someSelectablePendingRcSelected =
+    selectablePendingRcIds.some(id => selectedPendingRcIds.has(id)) && !allSelectablePendingRcSelected;
+
+  useEffect(() => {
+    if (selectAllPendingRcRef.current) {
+      selectAllPendingRcRef.current.indeterminate = someSelectablePendingRcSelected;
+    }
+  }, [someSelectablePendingRcSelected, selectablePendingRcIds.length]);
+
+  const togglePendingRcSelection = (id: string) => {
+    setSelectedPendingRcIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPendingRc = () => {
+    setSelectedPendingRcIds(prev => {
+      if (allSelectablePendingRcSelected) {
+        const next = new Set(prev);
+        selectablePendingRcIds.forEach(id => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...selectablePendingRcIds]);
     });
   };
 
@@ -3462,6 +3578,35 @@ export const RCSiteCalibration: React.FC = () => {
               </button>
             </div>
           )}
+          {canBulkPendingRc && selectedPendingRcIds.size > 0 && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {selectedPendingRcIds.size} pending RC selected
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleBulkSubmitPendingRc()}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <span className="spinner-inline"></span>
+                ) : (
+                  <>
+                    <Send size={16} /> Submit selected
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3"
+                onClick={() => setSelectedPendingRcIds(new Set())}
+                disabled={submitting}
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
           {loading ? (
             <div className="flex justify-center py-16">
               <span className="spinner-inline large"></span>
@@ -3515,6 +3660,16 @@ export const RCSiteCalibration: React.FC = () => {
                         selectAllRef: selectAllFailedRef,
                         onToggle: toggleFailedSelection,
                         onToggleSelectAll: toggleSelectAllFailed,
+                      }
+                    : undefined,
+                  pendingRcSelect: canBulkPendingRc
+                    ? {
+                        selectedIds: selectedPendingRcIds,
+                        selectableIds: selectablePendingRcIds,
+                        allSelected: allSelectablePendingRcSelected,
+                        selectAllRef: selectAllPendingRcRef,
+                        onToggle: togglePendingRcSelection,
+                        onToggleSelectAll: toggleSelectAllPendingRc,
                       }
                     : undefined,
                 }}
