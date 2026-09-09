@@ -16,6 +16,10 @@ import {
   ProductListAppBarContext,
   type ProductListAppBarChrome,
 } from '../context/ProductListAppBarContext';
+import {
+  VrAllottedAppBarContext,
+  type VrAllottedAppBarChrome,
+} from '../context/VrAllottedAppBarContext';
 import { formatContactSubtitle } from '../lib/contactFields';
 import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
 import { vctProfilePhotoFromUser } from '../lib/vctProfileFields';
@@ -155,6 +159,7 @@ export const Layout: React.FC = () => {
   const [reportsChrome, setReportsChrome] = useState<ReportsAppBarChrome | null>(null);
   const [rcListChrome, setRcListChrome] = useState<RcListAppBarChrome | null>(null);
   const [productListChrome, setProductListChrome] = useState<ProductListAppBarChrome | null>(null);
+  const [vrAllottedChrome, setVrAllottedChrome] = useState<VrAllottedAppBarChrome | null>(null);
   const [appBarTitleOverride, setAppBarTitleOverride] = useState<string | null>(null);
 
   const profilePath =
@@ -189,6 +194,12 @@ export const Layout: React.FC = () => {
   useEffect(() => {
     if (!/\/(admin|rc|vct)\/reports\/?$/.test(location.pathname)) {
       setReportsChrome(null);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!/\/rc\/vr-allotted\/?$/.test(location.pathname)) {
+      setVrAllottedChrome(null);
     }
   }, [location.pathname]);
 
@@ -416,11 +427,26 @@ export const Layout: React.FC = () => {
       </button>
     ) : null;
 
+  const vrAllotBtn =
+    isVrAllottedPage && vrAllottedChrome ? (
+      <button
+        type="button"
+        className="rc-register-add-btn"
+        onClick={vrAllottedChrome.onAllot}
+        title="Allot new serial"
+        aria-label="Allot new serial"
+        aria-pressed={Boolean(vrAllottedChrome.allotOpen)}
+      >
+        <Plus size={22} strokeWidth={2.5} aria-hidden />
+      </button>
+    ) : null;
+
   return (
     <AppBarTitleContext.Provider value={setAppBarTitleOverride}>
     <ReportsAppBarContext.Provider value={setReportsChrome}>
     <RcListAppBarContext.Provider value={setRcListChrome}>
     <ProductListAppBarContext.Provider value={setProductListChrome}>
+    <VrAllottedAppBarContext.Provider value={setVrAllottedChrome}>
     <div className={`app-wrapper${embed ? ' embed-mode' : ''}`}>
       {!isMobile && (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -488,6 +514,8 @@ export const Layout: React.FC = () => {
                   rcRegisterBtn
                 ) : isProductsPage ? (
                   productAddBtn
+                ) : isVrAllottedPage && vrAllotBtn ? (
+                  vrAllotBtn
                 ) : (
                   <MobileAppBarBrandIcon variant={useShieldBrand ? 'shield' : 'page'}>
                     {!useShieldBrand ? pageIcon : null}
@@ -554,9 +582,9 @@ export const Layout: React.FC = () => {
         {!isMobile && (
           <header className="top-bar glass">
             <div className="top-bar-title-wrap">
-              {isProductsPage && productAddBtn ? (
+              {(isProductsPage && productAddBtn) || (isVrAllottedPage && vrAllotBtn) ? (
                 <div className="top-bar-title-with-add">
-                  {productAddBtn}
+                  {isProductsPage ? productAddBtn : vrAllotBtn}
                   <h1 className="page-title">{pageTitle}</h1>
                 </div>
               ) : isReportsList ? (
@@ -666,6 +694,7 @@ export const Layout: React.FC = () => {
         </div>
       )}
     </div>
+    </VrAllottedAppBarContext.Provider>
     </ProductListAppBarContext.Provider>
     </RcListAppBarContext.Provider>
     </ReportsAppBarContext.Provider>

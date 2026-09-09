@@ -51,7 +51,10 @@ function pasPoolSerialKeys(allotments: OvQuotaAllotment[] | undefined): Set<stri
   return keys;
 }
 
-/** Unused GAS seats for this product. Never the PAS bank. */
+/**
+ * Unused GAS seats for chips + search. Shared across GAS products (SKU / productId / model
+ * do not hide the verifier unused bank). Never the PAS bank. Never invents seats.
+ */
 export function gasAllottedChoices(options: {
   remaining: string[];
   allotments?: OvQuotaAllotment[];
@@ -61,14 +64,19 @@ export function gasAllottedChoices(options: {
   fallbackProduct?: { productId?: string; productName?: string };
 }): string[] {
   const pasBlocked = pasPoolSerialKeys(options.allotments);
+  const actorUnused = options.remaining.filter(
+    serial => !pasBlocked.has(serial.trim().toUpperCase()),
+  );
   const remaining = remainingSerialsForProduct(
-    options.remaining.filter(serial => !pasBlocked.has(serial.trim().toUpperCase())),
+    actorUnused,
     gasAllotmentRows(options.allotments),
     productAllotmentKey(options.product, options.fallbackProduct),
   );
+  // Product/SKU match must never hide a non-empty unused allotted bank.
+  const bank = remaining.length > 0 || actorUnused.length === 0 ? remaining : actorUnused;
   return ovSerialChoicesForRow(
     '',
-    remaining,
+    bank,
     options.heldSerials ?? [],
     options.otherTaken ?? [],
   );
@@ -87,6 +95,16 @@ export function serialInChoiceList(serial: string, choices: readonly string[]): 
   return choices.some(item => item.trim().toUpperCase() === key);
 }
 
+export function gasAllottedEmptyLabel(scopedToVerifier: boolean): string {
+  return scopedToVerifier ? 'None allotted to you' : 'No allotted serials left';
+}
+
+export function gasAllottedEmptyProductHint(scopedToVerifier: boolean): string {
+  return scopedToVerifier
+    ? 'No serials allotted to you for this product.'
+    : 'No unused allotted serials for this product. Cannot invent a serial.';
+}
+
 /**
  * Sync pool check. PAS bank lookup stays async (`verifyPasSerialInBank`).
  * OV GAS must be an unused allotted seat for that product — no invented serials.
@@ -97,6 +115,7 @@ export function validateSerialForProductPool(options: {
   verificationType: string;
   serial: string;
   gasChoices: readonly string[];
+  scopedToVerifier?: boolean;
 }): string | null {
   const serial = options.serial.trim();
   if (!serial) return 'Serial number is required.';
@@ -104,7 +123,9 @@ export function validateSerialForProductPool(options: {
   if (options.verificationType !== 'OV') return null;
   if (serialInChoiceList(serial, options.gasChoices)) return null;
   if (options.gasChoices.length === 0) {
-    return 'No unused allotted serials for this product.';
+    return options.scopedToVerifier
+      ? 'No serials allotted to you for this product.'
+      : 'No unused allotted serials for this product.';
   }
   return `Serial ${serial} is not in the allotted list for this product.`;
 }

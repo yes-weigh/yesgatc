@@ -1209,6 +1209,7 @@ export const VerificationSessionFields = forwardRef<
               allottedSerials={ovQuota?.remaining ?? []}
               allotments={ovQuota?.remainingAllotments}
               heldSerials={ovQuota?.heldSerials ?? []}
+              scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
               disabled={locked}
               geoStampCoords={imageGeoStampCoords}
               geoStampWeather={geoStampWeather}

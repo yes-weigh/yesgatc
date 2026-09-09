@@ -28,8 +28,10 @@ const rules = readFileSync(join(__dirname, '..', 'firestore.rules'), 'utf8');
 
 const RC_UID = 'rc-admin-test-001';
 const VCT_UID = 'vct-tech-test-001';
+const VERIFIER_UID = 'verifier-rasheed';
 const RC_AADHAR = '111111111111';
 const VCT_AADHAR = '222222222222';
+const VERIFIER_AADHAR = '555555555555';
 
 let passed = 0;
 let failed = 0;
@@ -595,12 +597,105 @@ async function run() {
       fail('RC admin can resubmit own failed-at-submit job', err);
     }
 
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', VERIFIER_UID), {
+        aadhar: VERIFIER_AADHAR,
+        role: 'verifier',
+        rcId: RC_UID,
+        active: true,
+        username: 'Rasheed',
+        createdAt: new Date().toISOString(),
+      });
+    });
+    const verifierDb = testEnv.authenticatedContext(VERIFIER_UID).firestore();
+
+    const verifierOvDraft = (serialNumber, applicationNumber) => ({
+      rcId: RC_UID,
+      createdByUid: VERIFIER_UID,
+      vctId: VERIFIER_UID,
+      performedBy: 'verifier',
+      requestSource: 'verifier',
+      status: 'draft',
+      verificationType: 'OV',
+      applicationNumber,
+      customerName: 'Verifier Customer',
+      productName: 'Bench PC',
+      serialNumber,
+      createdAt: new Date().toISOString(),
+    });
+
+    try {
+      await assertFails(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-unallotted'),
+          verifierOvDraft('X00423', 'VC/26/10'),
+        ),
+      );
+      ok('Verifier cannot create OV with GAS serial not allotted to them');
+    } catch (err) {
+      fail('Verifier cannot create OV with GAS serial not allotted to them', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-empty'),
+          verifierOvDraft('', 'VC/26/11'),
+        ),
+      );
+      ok('Verifier can create OV draft with empty serial');
+    } catch (err) {
+      fail('Verifier can create OV draft with empty serial', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-pas'),
+          verifierOvDraft('YJ01001', 'VC/26/12'),
+        ),
+      );
+      ok('Verifier can create OV with PAS serial without GAS allotment');
+    } catch (err) {
+      fail('Verifier can create OV with PAS serial without GAS allotment', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(doc(verifierDb, 'siteCalibrations', 'vr-rv-unallotted'), {
+          ...verifierOvDraft('X00423', 'VC/26/13'),
+          verificationType: 'RV',
+        }),
+      );
+      ok('Verifier RV may use existing serial without unused GAS allotment');
+    } catch (err) {
+      fail('Verifier RV may use existing serial without unused GAS allotment', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(doc(verifierDb, 'customers', 'vr-cust-no-gps'), {
+          rcId: RC_UID,
+          name: 'Verifier Shop',
+          phone: '9876543210',
+          address: 'Main road',
+          pincode: '682001',
+          createdByUid: VERIFIER_UID,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      ok('Verifier cannot create customer without GPS');
+    } catch (err) {
+      fail('Verifier cannot create customer without GPS', err);
+    }
+
     try {
       await assertSucceeds(
         updateDoc(doc(rcDb, 'users', RC_UID), {
-          yesoneVerifierAllottedByUid: { 'verifier-rasheed': ['X00423', 'G0541'] },
+          yesoneVerifierAllottedByUid: { [VERIFIER_UID]: ['X00423', 'G0541'] },
           yesoneReservedSerials: ['X00423', 'G0541'],
-          yesoneReservedForUids: ['verifier-rasheed'],
+          yesoneReservedForUids: [VERIFIER_UID],
         }),
       );
       ok('RC admin can allot GAS seats to own verifier on own user doc');
@@ -609,14 +704,71 @@ async function run() {
     }
 
     try {
+      await assertSucceeds(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-allotted'),
+          verifierOvDraft('X00423', 'VC/26/14'),
+        ),
+      );
+      ok('Verifier can create OV with GAS serial allotted to their uid');
+    } catch (err) {
+      fail('Verifier can create OV with GAS serial allotted to their uid', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-other-range'),
+          verifierOvDraft('X00424', 'VC/26/15'),
+        ),
+      );
+      ok('Verifier cannot create OV with RC unused GAS serial not allotted to them');
+    } catch (err) {
+      fail('Verifier cannot create OV with RC unused GAS serial not allotted to them', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'siteCalibrations', 'vr-ov-empty'), {
+          serialNumber: 'X00424',
+        }),
+      );
+      ok('Verifier cannot update draft to unallotted GAS serial');
+    } catch (err) {
+      fail('Verifier cannot update draft to unallotted GAS serial', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(verifierDb, 'siteCalibrations', 'vr-ov-empty'), {
+          serialNumber: 'G0541',
+        }),
+      );
+      ok('Verifier can update draft to allotted GAS serial');
+    } catch (err) {
+      fail('Verifier can update draft to allotted GAS serial', err);
+    }
+
+    try {
       await assertFails(
         updateDoc(doc(vctDb, 'users', RC_UID), {
-          yesoneVerifierAllottedByUid: { 'verifier-rasheed': ['X99999'] },
+          yesoneVerifierAllottedByUid: { [VERIFIER_UID]: ['X99999'] },
         }),
       );
       ok('VCT cannot allot serials on parent RC user doc');
     } catch (err) {
       fail('VCT cannot allot serials on parent RC user doc', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'users', RC_UID), {
+          yesoneVerifierAllottedByUid: { [VERIFIER_UID]: ['X00424'] },
+        }),
+      );
+      ok('Verifier cannot allot serials on parent RC user doc');
+    } catch (err) {
+      fail('Verifier cannot allot serials on parent RC user doc', err);
     }
 
     const otherRcAdminDb = testEnv.authenticatedContext('other-rc-admin-002').firestore();

@@ -381,6 +381,7 @@ function serialStepBlockReason(
       verificationType: values.verificationType,
       serial: row.serialNumber,
       gasChoices,
+      scopedToVerifier: Boolean(context?.ovQuota?.scopedToVerifier),
     });
     if (poolError && poolError !== 'Serial number is required.') {
       return `${label}: ${poolError}`;

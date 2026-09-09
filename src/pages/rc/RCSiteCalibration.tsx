@@ -472,6 +472,7 @@ export const RCSiteCalibration: React.FC = () => {
       : [];
     return {
       remaining: pickSerials,
+      scopedToVerifier: isVerifier,
       remainingAllotments: quotaSeats.allotmentRows
         .filter(row => !allotmentUsesPasProduct(row, products.filter(productUsesPasSerials)))
         .map(row => ({
@@ -485,7 +486,7 @@ export const RCSiteCalibration: React.FC = () => {
       balanceQty: actorBalanceQty,
       heldSerials: held,
     };
-  }, [pickSerials, actorBalanceQty, editingId, records, quotaSeats.allotmentRows, products]);
+  }, [pickSerials, actorBalanceQty, editingId, isVerifier, records, quotaSeats.allotmentRows, products]);
 
   const validationOptions = useMemo(() => {
     const editingRecordForValidation = editingId

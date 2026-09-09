@@ -15,6 +15,7 @@ import { readSerialPlate } from '../../lib/readSerialPlate';
 import {
   applyOcrSerialToPool,
   gasAllottedChoices,
+  gasAllottedEmptyProductHint,
   serialEntryMode,
   serialInChoiceList,
   showsGasAllottedSerialGrid,
@@ -36,6 +37,7 @@ export function OvSelfSerialPlatePanel({
   allottedSerials,
   allotments,
   heldSerials = [],
+  scopedToVerifier = false,
   disabled,
   geoStampCoords,
   geoStampWeather,
@@ -52,6 +54,7 @@ export function OvSelfSerialPlatePanel({
   allottedSerials: string[];
   allotments?: OvQuotaAllotment[];
   heldSerials?: string[];
+  scopedToVerifier?: boolean;
   disabled?: boolean;
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
@@ -190,11 +193,12 @@ export function OvSelfSerialPlatePanel({
             value={selectedSeat}
             disabled={disabled}
             showChips
+            scopedToVerifier={scopedToVerifier}
             onChange={onSerialChange}
           />
           {seats.length === 0 ? (
             <p className="ov-self-serial-hint ov-self-serial-hint--err" role="status">
-              No unused allotted serials for this product. Cannot invent a serial.
+              {gasAllottedEmptyProductHint(scopedToVerifier)}
             </p>
           ) : null}
         </div>

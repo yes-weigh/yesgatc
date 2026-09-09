@@ -7,6 +7,7 @@ import {
   recordUsesPasQuota,
   resolveRcQuotaUsedQty,
 } from './rcQuotaMath.ts';
+import { assignUnownedReservedToSoleUid } from './vrAllotted.ts';
 import { mergePasBlockedSerials, pasSerialsFromMetaRanges } from './pasSerialBankMatch.ts';
 import { validateOvQuotaDevices, validateOvQuotaSetup } from './ovQuotaGate.ts';
 
@@ -134,38 +135,189 @@ describe('pickQuotaSerialsForActor', () => {
     assert.deepEqual(vct, ['X00423', 'G0541']);
   });
 
-  it('verifier with no reserved-by-uid still sees parent unused', () => {
+  it('empty reserved + remaining unused → verifier sees none', () => {
     const verifier = pickQuotaSerialsForActor(meezanUnused, {
       isVerifier: true,
       actorUid: 'rasheed',
     });
-    assert.deepEqual(verifier, ['X00423', 'G0541']);
+    assert.deepEqual(verifier, []);
   });
 
-  it('verifier sees parent unused plus their allotted', () => {
-    const seats = {
-      ...meezanUnused,
-      reservedForUids: ['rasheed'],
-      reservedByUid: { rasheed: ['X00301'] },
-    };
-    assert.deepEqual(
-      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
-      ['X00423', 'G0541', 'X00301'],
+  it('X00423 in remaining but not reserved to Rasheed is not listed', () => {
+    assert.equal(
+      pickQuotaSerialsForActor(meezanUnused, { isVerifier: true, actorUid: 'rasheed' }).includes(
+        'X00423',
+      ),
+      false,
     );
   });
 
-  it('empty reserved map does not wipe parent unused seats', () => {
+  it('verifier sees own reserved unused only; other-verifier reserved excluded', () => {
     const seats = {
-      remaining: ['X00423', 'G0541'],
-      vctRemaining: ['X00423', 'G0541'],
+      ...meezanUnused,
+      reservedForUids: ['rasheed', 'other-verifier'],
+      reservedByUid: { rasheed: ['X00301'], 'other-verifier': ['G0541'] },
+    };
+    assert.deepEqual(
+      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
+      ['X00301'],
+    );
+    assert.deepEqual(
+      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'other-verifier' }),
+      ['G0541'],
+    );
+  });
+
+  it('empty reserved map + remaining 130 → verifier sees []', () => {
+    const unused = Array.from({ length: 130 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`);
+    const seats = {
+      remaining: unused,
+      vctRemaining: unused,
       reservedSerials: [] as string[],
       reservedForUids: [] as string[],
       reservedByUid: {} as Record<string, string[]>,
     };
     assert.deepEqual(
       pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
-      ['X00423', 'G0541'],
+      [],
     );
+  });
+
+  it('reservedToRasheed X00110–X00120 unused → Rasheed sees those only', () => {
+    const remaining = [
+      'X00423',
+      ...Array.from({ length: 11 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`),
+      'X00424',
+    ];
+    const mine = Array.from({ length: 11 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`);
+    const seats = {
+      remaining,
+      vctRemaining: remaining,
+      reservedSerials: mine,
+      reservedForUids: ['rasheed'],
+      reservedByUid: { rasheed: mine },
+    };
+    assert.deepEqual(
+      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
+      mine,
+    );
+  });
+
+  it('used serials stay unpickable even if still on reservedByUid', () => {
+    const unused = ['X00110', 'X00111'];
+    const seats = {
+      remaining: unused,
+      vctRemaining: unused,
+      reservedSerials: unused,
+      reservedForUids: ['rasheed'],
+      reservedByUid: { rasheed: ['X00090', 'X00110'] },
+    };
+    assert.deepEqual(
+      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
+      ['X00110'],
+    );
+  });
+
+  it('own reserved unused not in remaining still listed', () => {
+    const unused = Array.from({ length: 11 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`);
+    const seats = {
+      remaining: [] as string[],
+      vctRemaining: [] as string[],
+      reservedSerials: unused,
+      reservedForUids: ['rasheed'],
+      reservedByUid: { rasheed: unused },
+    };
+    assert.deepEqual(
+      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
+      unused,
+    );
+  });
+
+  it('unreserved reservedSerials bank is not verifier allotment', () => {
+    const unused = Array.from({ length: 130 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`);
+    const seats = {
+      remaining: [] as string[],
+      vctRemaining: [] as string[],
+      reservedSerials: unused,
+      reservedForUids: [] as string[],
+      reservedByUid: {} as Record<string, string[]>,
+    };
+    assert.deepEqual(
+      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
+      [],
+    );
+  });
+
+  it('verifier allotted serial missing from unused bank is dropped', () => {
+    const seats = {
+      remaining: ['X00423', 'G0541'],
+      vctRemaining: ['X00423', 'G0541'],
+      reservedSerials: [] as string[],
+      reservedForUids: ['rasheed'],
+      reservedByUid: { rasheed: ['X00301'] },
+    };
+    assert.deepEqual(
+      pickQuotaSerialsForActor(seats, { isVerifier: true, actorUid: 'rasheed' }),
+      [],
+    );
+  });
+
+  it('verifier with no uid sees empty', () => {
+    assert.deepEqual(
+      pickQuotaSerialsForActor(meezanUnused, { isVerifier: true, actorUid: '' }),
+      [],
+    );
+  });
+
+  it('sole verifier unused is remaining 124 + reserved unused 6, not leftover', () => {
+    const remaining = Array.from({ length: 124 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`);
+    const reservedUnused = Array.from({ length: 6 }, (_, i) => `X${String(234 + i).padStart(5, '0')}`);
+    const leftover = ['X00423'];
+    const reservedByUid = assignUnownedReservedToSoleUid({
+      allottedByUid: { rasheed: remaining },
+      unownedReserved: reservedUnused,
+      reservedForUids: ['rasheed'],
+    });
+    const pick = pickQuotaSerialsForActor(
+      {
+        remaining: [...leftover, ...remaining],
+        vctRemaining: leftover,
+        reservedSerials: [...remaining, ...reservedUnused],
+        reservedForUids: ['rasheed'],
+        reservedByUid,
+      },
+      { isVerifier: true, actorUid: 'rasheed' },
+    );
+    assert.equal(pick.length, 130);
+    assert.equal(pick.includes('X00423'), false);
+    assert.equal(reservedUnused.every(serial => pick.includes(serial)), true);
+  });
+
+  it('sole verifier unused X00110–X00239, not used X00090–X00109, not leftover X00423', () => {
+    const unused = Array.from({ length: 130 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`);
+    const used = Array.from({ length: 20 }, (_, i) => `X${String(90 + i).padStart(5, '0')}`);
+    const leftover = ['X00423'];
+    const reservedByUid = assignUnownedReservedToSoleUid({
+      allottedByUid: { rasheed: [...used, ...unused] },
+      unownedReserved: [],
+      reservedForUids: ['rasheed'],
+      rosterUids: ['rasheed'],
+    });
+    const pick = pickQuotaSerialsForActor(
+      {
+        remaining: [...leftover, ...unused],
+        vctRemaining: leftover,
+        reservedSerials: unused,
+        reservedForUids: ['rasheed'],
+        reservedByUid,
+      },
+      { isVerifier: true, actorUid: 'rasheed' },
+    );
+    assert.deepEqual(pick, unused);
+    assert.equal(pick.length, 130);
+    assert.equal(pick.includes('X00090'), false);
+    assert.equal(pick.includes('X00109'), false);
+    assert.equal(pick.includes('X00423'), false);
   });
 });
 
@@ -177,6 +329,18 @@ describe('OV gate PAS vs GAS', () => {
     assert.equal(
       validateOvQuotaSetup('OV', emptyGate, true, false),
       'OV quota balance is 0. Cannot start Original Verification.',
+    );
+  });
+
+  it('verifier empty remaining is allotted-to-you, not RC qty 0', () => {
+    assert.equal(
+      validateOvQuotaSetup(
+        'OV',
+        { remaining: [], balanceQty: 0, heldSerials: [], scopedToVerifier: true },
+        true,
+        false,
+      ),
+      'No serials allotted to you. Cannot start Original Verification.',
     );
   });
 

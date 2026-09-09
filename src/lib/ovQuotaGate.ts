@@ -12,67 +12,38 @@ export type OvQuotaGate = {
   remainingAllotments?: OvQuotaAllotment[];
   balanceQty: number | null;
   heldSerials: string[];
+  /** Verifier job: remaining is that uid's unused allotment only. */
+  scopedToVerifier?: boolean;
 };
 
 function serialKey(value: string): string {
   return value.trim().toUpperCase();
 }
 
-function compactProductToken(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+function allotmentPool(row: Pick<OvQuotaAllotment, 'pool'>): string {
+  return String(row.pool || '').trim().toLowerCase();
 }
 
-function tokensOverlap(want: string[], have: string[]): boolean {
-  for (const left of want) {
-    for (const right of have) {
-      if (left === right) return true;
-      if (left.length >= 4 && right.length >= 4 && (left.includes(right) || right.includes(left))) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-function productMatchesAllotment(
-  product: { productId?: string; productName?: string; sku?: string; modelNo?: string },
-  row: OvQuotaAllotment,
-): boolean {
-  const want = [product.productId, product.sku, product.modelNo, product.productName]
-    .map(item => compactProductToken(String(item || '')))
-    .filter(Boolean);
-  const have = [row.productId, row.sku, row.modelNo, row.productName]
-    .map(item => compactProductToken(String(item || '')))
-    .filter(Boolean);
-  if (!have.length) return true;
-  if (!want.length) return false;
-  return tokensOverlap(want, have);
-}
-
-function allotmentHasStrongProductIdentity(row: OvQuotaAllotment): boolean {
-  return Boolean(
-    String(row.productId || '').trim() || String(row.sku || '').trim() || String(row.modelNo || '').trim(),
-  );
-}
-
-/** Prefer stickers for this GATC product. Legacy rows with no product stay visible. */
+/**
+ * Unused GAS stickers are one bank for every GAS product.
+ * Yesone sku / productId / model must not hide seats (Bench PC vs other GAS SKU).
+ * PAS-pool stickers never appear here.
+ */
 export function remainingSerialsForProduct(
   remaining: string[],
   allotments: OvQuotaAllotment[] | undefined,
-  product: { productId?: string; productName?: string; sku?: string; modelNo?: string } | null,
+  product?: { productId?: string; productName?: string; sku?: string; modelNo?: string } | null,
 ): string[] {
-  const productId = String(product?.productId || '').trim();
-  const productName = String(product?.productName || '').trim();
-  const sku = String(product?.sku || '').trim();
-  if (!productId && !productName && !sku) return remaining;
+  void product;
   if (!Array.isArray(allotments) || allotments.length === 0) return remaining;
-  const bySerial = new Map(allotments.map(row => [serialKey(row.serialNumber), row]));
-  return remaining.filter(serial => {
-    const row = bySerial.get(serialKey(serial));
-    if (!row) return true;
-    if (!allotmentHasStrongProductIdentity(row)) return true;
-    return productMatchesAllotment(product || {}, row);
-  });
+  const pasKeys = new Set<string>();
+  for (const row of allotments) {
+    if (allotmentPool(row) !== 'pas') continue;
+    const key = serialKey(row.serialNumber);
+    if (key) pasKeys.add(key);
+  }
+  if (pasKeys.size === 0) return remaining;
+  return remaining.filter(serial => !pasKeys.has(serialKey(serial)));
 }
 
 /** GAS OV quantity left (Allotted − Used). PAS does not consume this. */
@@ -114,6 +85,9 @@ export function validateOvQuotaSetup(
   hasPasProducts = false,
 ): string | null {
   if (!gate || verificationType !== 'OV' || !isNew) return null;
+  if (gate.scopedToVerifier && !hasPasProducts && gate.remaining.length <= 0) {
+    return 'No serials allotted to you. Cannot start Original Verification.';
+  }
   if (ovQuotaQtyCap(gate) <= 0 && !hasPasProducts) {
     return 'OV quota balance is 0. Cannot start Original Verification.';
   }
@@ -163,7 +137,9 @@ export function validateOvQuotaDevices(
   if (newGas > gate.remaining.length) {
     const stickers = gate.remaining.length;
     return stickers <= 0
-      ? 'No allotted serials left. Use a PAS product or wait for serial allotment.'
+      ? gate.scopedToVerifier
+        ? 'No serials allotted to you. Use a PAS product or wait for allotment.'
+        : 'No allotted serials left. Use a PAS product or wait for serial allotment.'
       : `Allotted serials: ${stickers} left. You can start ${stickers} more GAS Original Verification(s).`;
   }
   const qtyCap = ovQuotaQtyCap(gate);

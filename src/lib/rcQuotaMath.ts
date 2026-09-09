@@ -1,5 +1,4 @@
 import { isGasStickerSerial, isPasStickerSerial } from './pasSerialBankMatch.ts';
-import { mergeSerialLists } from './vrAllotted.ts';
 
 /** GAS RC quota qty. PAS seats never consume or inflate these numbers. */
 
@@ -82,11 +81,44 @@ export type QuotaSerialActorSeats = {
   reservedByUid: Record<string, string[]>;
 };
 
+function serialKey(serial: string): string {
+  return serial.trim().toUpperCase();
+}
+
+/** Unused GAS bank: parent remaining + unused reserved (Vr Allotted green). */
+function unusedGasBank(seats: QuotaSerialActorSeats): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const serial of [...seats.remaining, ...seats.reservedSerials]) {
+    const key = serialKey(serial);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(serial.trim());
+  }
+  return out;
+}
+
 /**
- * OV GAS stickers for a job.
+ * Unused seats explicitly allotted to this verifier uid.
+ * Intersection with unused bank — never invent, never dump unreserved RC remaining.
+ */
+function unusedAllottedToUid(seats: QuotaSerialActorSeats, uid: string): string[] {
+  if (!uid) return [];
+  const mine = new Set<string>();
+  for (const serial of seats.reservedByUid[uid] || []) {
+    const key = serialKey(serial);
+    if (key) mine.add(key);
+  }
+  if (mine.size === 0) return [];
+  return unusedGasBank(seats).filter(serial => mine.has(serialKey(serial)));
+}
+
+/**
+ * OV GAS stickers for a job. Product/SKU is not applied here — GAS unused is one bank.
  * RC: full unused pool (incl. reserved).
  * VCT: parent unused minus reserved (RC-admin-only + verifier-allotted stay hidden).
- * Verifier: parent unused plus their allotted — never shrink to allotted-only.
+ * Verifier: unused seats reserved to actorUid only. Empty reserved → empty list.
+ * Never leftover remaining that was never on this uid (e.g. X00423).
  */
 export function pickQuotaSerialsForActor(
   seats: QuotaSerialActorSeats,
@@ -98,10 +130,10 @@ export function pickQuotaSerialsForActor(
   },
 ): string[] {
   if (actor.isRcAdmin) return seats.remaining;
-  const uid = String(actor.actorUid || '').trim();
-  const mine = uid ? seats.reservedByUid[uid] || [] : [];
   if (actor.isVct) return seats.vctRemaining;
-  if (actor.isVerifier) return mergeSerialLists(seats.vctRemaining, mine);
+  const uid = String(actor.actorUid || '').trim();
+  const mine = uid ? unusedAllottedToUid(seats, uid) : [];
+  if (actor.isVerifier) return mine;
   if (!uid) return seats.remaining;
   if (mine.length > 0) return mine;
   if (seats.reservedForUids.includes(uid)) {

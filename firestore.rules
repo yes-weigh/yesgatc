@@ -42,6 +42,16 @@ service cloud.firestore {
       return isOperationalVct() || isOperationalVerifier();
     }
 
+    function isPasStickerSerial(serial) {
+      return serial is string && serial.matches('^[Yy][Jj].+');
+    }
+
+    function isGasStickerSerial(serial) {
+      return serial is string
+        && !isPasStickerSerial(serial)
+        && serial.matches('^[GgXx].+');
+    }
+
     function vctApprovalStatus(data) {
       return data.get('approvalStatus', 'approved');
     }
@@ -442,6 +452,25 @@ service cloud.firestore {
                ]);
       }
 
+      // GAS OV stickers must be in parent RC yesoneVerifierAllottedByUid[uid].
+      // PAS YJ and empty/RV serials stay unrestricted here.
+      function serialAllottedToVerifier(serial) {
+        let byUid = get(/databases/$(database)/documents/users/$(vctRcId()))
+          .data.get('yesoneVerifierAllottedByUid', {});
+        let mine = byUid is map ? byUid.get(request.auth.uid, []) : [];
+        return mine is list && mine.hasAny([serial]);
+      }
+
+      function verifierMayWriteVerificationSerial(data) {
+        let serial = data.get('serialNumber', '');
+        return !(serial is string)
+          || serial.size() == 0
+          || data.get('verificationType', '') != 'OV'
+          || isPasStickerSerial(serial)
+          || !isGasStickerSerial(serial)
+          || serialAllottedToVerifier(serial);
+      }
+
       allow read: if isSuperAdmin();
       allow create, update: if isSuperAdmin();
       allow delete: if isSuperAdmin()
@@ -477,7 +506,8 @@ service cloud.firestore {
         && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
         && validVerificationApplicationNumber(request.resource.data)
-        && meetsMinVerificationAppVersion();
+        && meetsMinVerificationAppVersion()
+        && verifierMayWriteVerificationSerial(request.resource.data);
 
       // RC self verification (performedBy rc).
       allow create: if isRCAdmin()
@@ -548,7 +578,8 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) in ['draft', 'pending_rc']
         && verificationApplicationNumberUnchanged()
         && verificationZohoFieldsUnchanged()
-        && meetsMinVerificationAppVersion();
+        && meetsMinVerificationAppVersion()
+        && verifierMayWriteVerificationSerial(request.resource.data);
 
       // VCT — re-queue own failed-at-submit job (same document, not a clone).
       allow update: if isOperationalVct()

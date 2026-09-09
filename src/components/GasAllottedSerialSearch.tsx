@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
-import { filterGasAllottedChoices, serialInChoiceList } from '../lib/serialEntryPool';
+import {
+  filterGasAllottedChoices,
+  gasAllottedEmptyLabel,
+  serialInChoiceList,
+} from '../lib/serialEntryPool';
 
 const CHIP_PREVIEW = 16;
 
@@ -19,6 +23,7 @@ export function GasAllottedSerialSearch({
   onChange,
   disabled,
   showChips = false,
+  scopedToVerifier = false,
 }: {
   id?: string;
   className?: string;
@@ -27,6 +32,7 @@ export function GasAllottedSerialSearch({
   onChange: (serial: string) => void;
   disabled?: boolean;
   showChips?: boolean;
+  scopedToVerifier?: boolean;
 }) {
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -42,7 +48,7 @@ export function GasAllottedSerialSearch({
     : '';
   const display = open ? query : selected;
   const placeholderText = empty
-    ? 'No allotted serials left'
+    ? gasAllottedEmptyLabel(scopedToVerifier)
     : open && selected && !query
       ? selected
       : 'Search allotted serial';
@@ -155,7 +161,7 @@ export function GasAllottedSerialSearch({
   };
 
   const preview = hits.slice(0, CHIP_PREVIEW);
-  const extra = Math.max(0, hits.length - preview.length);
+  const remaining = choices.length;
 
   return (
     <div className="gas-serial-search" ref={rootRef}>
@@ -254,9 +260,9 @@ export function GasAllottedSerialSearch({
           })}
         </ul>
       ) : null}
-      {showChips && extra > 0 ? (
+      {showChips && remaining > CHIP_PREVIEW ? (
         <p className="ov-self-serial-hint ov-self-serial-hint--muted" role="status">
-          {extra} more — type to search.
+          <span className="ov-self-serial-hint--err">{remaining}</span> remaining — type to search.
         </p>
       ) : null}
     </div>

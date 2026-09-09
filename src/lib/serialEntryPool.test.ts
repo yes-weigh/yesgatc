@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { Product } from '../types';
 import { pickQuotaSerialsForActor } from './rcQuotaMath.ts';
+import { assignUnownedReservedToSoleUid } from './vrAllotted.ts';
 import {
   applyOcrSerialToPool,
   filterGasAllottedChoices,
   gasAllottedChoices,
+  gasAllottedEmptyLabel,
+  gasAllottedEmptyProductHint,
   serialEntryMode,
   showsGasAllottedSerialGrid,
   validateSerialForProductPool,
@@ -83,15 +86,19 @@ describe('showsGasAllottedSerialGrid', () => {
   });
 });
 
+function xSerials(from: number, count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `X${String(from + i).padStart(5, '0')}`);
+}
+
 describe('gasAllottedChoices', () => {
-  it('lists unused GAS seats for that product only', () => {
+  it('lists unused GAS seats for every GAS product, never PAS', () => {
     assert.deepEqual(
       gasAllottedChoices({
         remaining: ['G0001', 'G0002', 'G0099', 'YJ00001'],
         allotments,
         product: gasScale,
       }),
-      ['G0001', 'G0002'],
+      ['G0001', 'G0002', 'G0099'],
     );
   });
 
@@ -116,7 +123,7 @@ describe('gasAllottedChoices', () => {
     );
   });
 
-  it('empty product match → empty list, no invented seats', () => {
+  it('different GAS SKU still lists the unused GAS bank', () => {
     const other = product({ id: 'gas-other', name: 'Other', yesoneSku: 'OTHER', pasPreAllotted: false });
     assert.deepEqual(
       gasAllottedChoices({
@@ -124,7 +131,7 @@ describe('gasAllottedChoices', () => {
         allotments,
         product: other,
       }),
-      [],
+      ['G0001', 'G0002'],
     );
   });
 
@@ -144,7 +151,7 @@ describe('gasAllottedChoices', () => {
     );
   });
 
-  it('loosens Yesone name/sku tokens for the same product', () => {
+  it('Yesone SKU/model on allotment rows does not hide other GAS unused', () => {
     const bench = product({
       id: 'bench-pc',
       name: 'Bench PC',
@@ -161,11 +168,11 @@ describe('gasAllottedChoices', () => {
         ],
         product: bench,
       }),
-      ['X00346'],
+      ['X00346', 'X00999'],
     );
   });
 
-  it('VCT/verifier options match parent unused plus own allotted for Bench PC', () => {
+  it('VCT sees parent unused; verifier sees only own allotted unused', () => {
     const bench = product({
       id: 'bench-pc',
       name: 'Bench PC',
@@ -208,11 +215,230 @@ describe('gasAllottedChoices', () => {
       allotments,
       product: bench,
     });
-    assert.deepEqual(rcChoices, ['G0541', 'X00301', 'X00423']);
+    assert.deepEqual(rcChoices, ['G0541', 'X00301', 'X00423', 'X00999']);
     assert.deepEqual(vctChoices, ['G0541', 'X00423']);
-    assert.deepEqual(rasheedChoices, vctChoices);
-    assert.deepEqual(otherChoices, ['G0541', 'X00301', 'X00423']);
-    assert.equal(rasheedChoices.length === 0, false);
+    assert.deepEqual(rasheedChoices, []);
+    assert.deepEqual(otherChoices, ['X00301']);
+  });
+
+  it('verifier chips are own reserved unused only — not RC leftover, not other uid', () => {
+    const bench = product({
+      id: 'bench-pc',
+      name: 'Bench PC',
+      yesoneSku: 'GS50BAY',
+      pasPreAllotted: false,
+    });
+    const allotments = [
+      { serialNumber: 'X00423', productId: 'bench-pc', sku: 'GS50BAY', pool: 'gas' },
+      { serialNumber: 'X00424', productId: 'bench-pc', sku: 'GS50BAY', pool: 'gas' },
+      { serialNumber: 'X00472', productId: 'bench-pc', sku: 'GS50BAY', pool: 'gas' },
+    ];
+    const remaining = pickQuotaSerialsForActor(
+      {
+        remaining: ['X00423', 'X00424', 'X00472'],
+        vctRemaining: ['X00423', 'X00424'],
+        reservedSerials: ['X00423', 'X00472'],
+        reservedForUids: ['rasheed', 'other-verifier'],
+        reservedByUid: { rasheed: ['X00423'], 'other-verifier': ['X00472'] },
+      },
+      { isVerifier: true, actorUid: 'rasheed' },
+    );
+    assert.deepEqual(
+      gasAllottedChoices({ remaining, allotments, product: bench }),
+      ['X00423'],
+    );
+  });
+
+  it('reserved empty + remaining unused → verifier GAS chips empty', () => {
+    const bench = product({
+      id: 'bench-pc',
+      name: 'Bench PC',
+      yesoneSku: 'GS50BAY',
+      pasPreAllotted: false,
+    });
+    const unused = Array.from({ length: 130 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`);
+    const allotments = unused.map(serialNumber => ({
+      serialNumber,
+      productId: 'bench-pc',
+      sku: 'GS50BAY',
+      pool: 'gas',
+    }));
+    const remaining = pickQuotaSerialsForActor(
+      {
+        remaining: unused,
+        vctRemaining: unused,
+        reservedSerials: [] as string[],
+        reservedForUids: [] as string[],
+        reservedByUid: {} as Record<string, string[]>,
+      },
+      { isVerifier: true, actorUid: 'rasheed' },
+    );
+    assert.deepEqual(gasAllottedChoices({ remaining, allotments, product: bench }), []);
+  });
+
+  it('Yesone productId-only allotment row still lists Bench PC unused for this verifier', () => {
+    const bench = product({
+      id: 'bench-pc',
+      name: 'Bench PC',
+      yesoneSku: 'GS50BAY',
+      pasPreAllotted: false,
+    });
+    const mine = ['X00110', 'X00111'];
+    assert.deepEqual(
+      gasAllottedChoices({
+        remaining: mine,
+        allotments: mine.map(serialNumber => ({
+          serialNumber,
+          productId: 'yesone-native-id',
+          pool: 'gas',
+        })),
+        product: bench,
+      }),
+      mine,
+    );
+  });
+
+  it('sole-verifier unowned reserved unused becomes chips; RC leftover remaining does not', () => {
+    const bench = product({
+      id: 'bench-pc',
+      name: 'Bench PC',
+      yesoneSku: 'GS50BAY',
+      pasPreAllotted: false,
+    });
+    const used = Array.from({ length: 20 }, (_, i) => `X${String(90 + i).padStart(5, '0')}`);
+    const unused = Array.from({ length: 11 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`);
+    const leftover = ['X00423', 'X00424', 'X00472', 'X00473'];
+    const reservedByUid = assignUnownedReservedToSoleUid({
+      allottedByUid: { rasheed: used },
+      unownedReserved: unused,
+      reservedForUids: ['rasheed'],
+    });
+    const remaining = pickQuotaSerialsForActor(
+      {
+        remaining: [...leftover, ...unused],
+        vctRemaining: leftover,
+        reservedSerials: unused,
+        reservedForUids: ['rasheed'],
+        reservedByUid,
+      },
+      { isVerifier: true, actorUid: 'rasheed' },
+    );
+    const allotments = [...leftover, ...unused].map(serialNumber => ({
+      serialNumber,
+      productId: 'bench-pc',
+      sku: 'GS50BAY',
+      pool: 'gas',
+    }));
+    assert.deepEqual(gasAllottedChoices({ remaining, allotments, product: bench }), unused);
+    assert.equal(remaining.includes('X00423'), false);
+  });
+
+  it('Rasheed reserved unused X00110–X00120 → those chips only', () => {
+    const bench = product({
+      id: 'bench-pc',
+      name: 'Bench PC',
+      yesoneSku: 'GS50BAY',
+      pasPreAllotted: false,
+    });
+    const mine = Array.from({ length: 11 }, (_, i) => `X${String(110 + i).padStart(5, '0')}`);
+    const leftover = ['X00423', 'X00424', 'X00472', 'X00473'];
+    const remaining = pickQuotaSerialsForActor(
+      {
+        remaining: [...leftover, ...mine],
+        vctRemaining: leftover,
+        reservedSerials: mine,
+        reservedForUids: ['rasheed'],
+        reservedByUid: { rasheed: mine },
+      },
+      { isVerifier: true, actorUid: 'rasheed' },
+    );
+    const allotments = [...leftover, ...mine].map(serialNumber => ({
+      serialNumber,
+      productId: 'bench-pc',
+      sku: 'GS50BAY',
+      pool: 'gas',
+    }));
+    assert.deepEqual(gasAllottedChoices({ remaining, allotments, product: bench }), mine);
+  });
+
+  it('sole verifier unused X00110–X00239 lists for every GAS SKU; used and leftover stay out', () => {
+    const unused = xSerials(110, 130);
+    const used = xSerials(90, 20);
+    const leftover = ['X00423'];
+    const productA = product({
+      id: 'bench-pc',
+      name: 'Bench PC 50kg 5g',
+      yesoneSku: 'GS50BAY',
+      modelNo: 'PC50',
+      pasPreAllotted: false,
+    });
+    const productB = product({
+      id: 'gas-100',
+      name: 'GAS 100 kg',
+      yesoneSku: 'GS100BAY',
+      modelNo: 'PC100',
+      pasPreAllotted: false,
+    });
+    const reservedByUid = assignUnownedReservedToSoleUid({
+      allottedByUid: { rasheed: [...used, ...unused] },
+      unownedReserved: [],
+      reservedForUids: ['rasheed'],
+      rosterUids: ['rasheed'],
+    });
+    const remaining = pickQuotaSerialsForActor(
+      {
+        remaining: [...leftover, ...unused],
+        vctRemaining: leftover,
+        reservedSerials: unused,
+        reservedForUids: ['rasheed'],
+        reservedByUid,
+      },
+      { isVerifier: true, actorUid: 'rasheed' },
+    );
+    const allotments = [
+      ...unused.map(serialNumber => ({
+        serialNumber,
+        productId: 'yesone-native-id',
+        sku: 'GS50BAY',
+        modelNo: 'PC50',
+        productName: 'BENCH PC 50KG 5G',
+        pool: 'gas',
+      })),
+      ...used.map(serialNumber => ({
+        serialNumber,
+        productId: 'yesone-native-id',
+        sku: 'GS50BAY',
+        pool: 'gas',
+      })),
+      { serialNumber: 'X00423', productId: 'bench-pc', sku: 'GS50BAY', pool: 'gas' },
+      { serialNumber: 'YJ00245', productId: 'pas-10', sku: 'KS10BAY', pool: 'pas' },
+    ];
+    const forA = gasAllottedChoices({ remaining, allotments, product: productA });
+    const forB = gasAllottedChoices({ remaining, allotments, product: productB });
+    assert.equal(remaining.length, 130);
+    assert.deepEqual(forA, unused);
+    assert.deepEqual(forB, unused);
+    assert.equal(forA.includes('X00090'), false);
+    assert.equal(forA.includes('X00109'), false);
+    assert.equal(forA.includes('X00423'), false);
+    assert.equal(forA.includes('YJ00245'), false);
+    assert.equal(
+      remaining.length === 0 ? gasAllottedEmptyProductHint(true) : null,
+      null,
+    );
+  });
+
+  it('empty copy is only for empty unused allotted remaining', () => {
+    assert.equal(gasAllottedEmptyLabel(true), 'None allotted to you');
+    assert.equal(gasAllottedEmptyProductHint(true), 'No serials allotted to you for this product.');
+    assert.deepEqual(
+      gasAllottedChoices({
+        remaining: [],
+        allotments: [{ serialNumber: 'X00110', sku: 'GS50BAY', pool: 'gas' }],
+        product: product({ id: 'bench-pc', name: 'Bench PC', yesoneSku: 'GS50BAY' }),
+      }),
+      [],
+    );
   });
 
   it('does not cap the unused GAS list', () => {
@@ -290,6 +516,19 @@ describe('validateSerialForProductPool', () => {
         gasChoices: [],
       }),
       'No unused allotted serials for this product.',
+    );
+  });
+
+  it('verifier empty list is allotted-to-you, not RC pool empty', () => {
+    assert.equal(
+      validateSerialForProductPool({
+        mode: 'gas-select',
+        verificationType: 'OV',
+        serial: 'X00423',
+        gasChoices: [],
+        scopedToVerifier: true,
+      }),
+      'No serials allotted to you for this product.',
     );
   });
 

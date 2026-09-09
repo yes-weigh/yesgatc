@@ -12,14 +12,17 @@ import {
   nextVerifierAllottedByUid,
   normalizeVerifierAllottedByUid,
   reservedSerialsAfterVerifierAllot,
+  vrAllottedRangeSerials,
 } from './vrAllotted.ts';
 import type { SiteCalibration } from '../types';
 
 export type YesoneReservedAssignment = {
   invoiceNo: string;
   verifierUid: string;
+  verifierUids?: string[];
   serialStart?: string;
   serialEnd?: string;
+  allottedAt?: string;
 };
 
 export function normalizeReservedAssignments(raw: unknown): YesoneReservedAssignment[] {
@@ -30,17 +33,24 @@ export function normalizeReservedAssignments(raw: unknown): YesoneReservedAssign
     if (!item || typeof item !== 'object') continue;
     const row = item as Record<string, unknown>;
     const invoiceNo = String(row.invoiceNo || '').trim();
-    const verifierUid = String(row.verifierUid || '').trim();
+    const extraUids = Array.isArray(row.verifierUids)
+      ? row.verifierUids.map(uid => String(uid || '').trim()).filter(Boolean)
+      : [];
+    const verifierUid = String(row.verifierUid || extraUids[0] || '').trim();
     if (!invoiceNo || !verifierUid) continue;
     const key = invoiceNo.toUpperCase();
     if (seen.has(key)) continue;
     seen.add(key);
     const serialStart = String(row.serialStart || '').trim();
     const serialEnd = String(row.serialEnd || '').trim();
+    const allottedAt = String(row.allottedAt || row.date || '').trim();
+    const verifierUids = [...new Set([verifierUid, ...extraUids])];
     out.push({
       invoiceNo,
       verifierUid,
+      ...(verifierUids.length > 1 ? { verifierUids } : {}),
       ...(serialStart ? { serialStart, serialEnd: serialEnd || serialStart } : {}),
+      ...(allottedAt ? { allottedAt } : {}),
     });
   }
   return out;
@@ -188,6 +198,8 @@ export type RcQuotaSeats = {
   allottedQty: number | null;
   usedQty: number;
   balanceQty: number | null;
+  /** Live GAS OV serials that consume quota (PAS jobs excluded). */
+  usedSerials: string[];
 };
 
 export function excludeReservedSerials(serials: string[], reserved: string[]): string[] {
@@ -268,6 +280,7 @@ export function computeRcQuotaSeats(input: {
     allottedQty,
     usedQty,
     balanceQty,
+    usedSerials: excludePasQuotaSerials(used.serials, input.pasSerials),
   };
 }
 
@@ -343,57 +356,6 @@ export async function allotGasSerialsToVerifier(input: {
   });
 }
 
-/** Unallot every GAS seat for one verifier. Other verifiers unchanged. */
-export async function clearGasSerialsForVerifier(
-  rcUid: string,
-  verifierUid: string,
-): Promise<void> {
-  const trimmedRc = rcUid.trim();
-  const trimmedUid = verifierUid.trim();
-  if (!trimmedRc || !trimmedUid) return;
-  const ref = doc(db, 'users', trimmedRc);
-  const snap = await getDoc(ref);
-  const data = snap.data() || {};
-  const prev = normalizeVerifierAllottedByUid(data.yesoneVerifierAllottedByUid);
-  const assignments = normalizeReservedAssignments(data.yesoneReservedAssignments);
-  const dropped = assignments.filter(row => row.verifierUid === trimmedUid);
-  const keptAssignments = assignments.filter(row => row.verifierUid !== trimmedUid);
-  const assignmentSerials = uniqueSerials(
-    dropped.flatMap(row =>
-      row.serialStart ? expandSerialRange(row.serialStart, row.serialEnd || row.serialStart) : [],
-    ),
-  );
-  const mine = uniqueSerials([...(prev[trimmedUid] || []), ...assignmentSerials]);
-  if (mine.length === 0 && dropped.length === 0) return;
-  const next = nextVerifierAllottedByUid({
-    prev,
-    verifierUid: trimmedUid,
-    addSerials: [],
-    removeSerials: mine,
-  });
-  const nextReserved = reservedSerialsAfterVerifierAllot({
-    reservedSerials: uniqueSerials(data.yesoneReservedSerials),
-    prevAllotted: {
-      ...prev,
-      ...(mine.length > 0 ? { [trimmedUid]: mine } : {}),
-    },
-    nextAllotted: next,
-  });
-  const assignmentUids = keptAssignments.map(row => row.verifierUid.trim());
-  const nextForUids = [...new Set([...assignmentUids, ...Object.keys(next)].filter(Boolean))];
-  const droppedInvoices = [...new Set(dropped.map(row => row.invoiceNo.trim()).filter(Boolean))];
-  await updateDoc(ref, {
-    yesoneVerifierAllottedByUid: next,
-    yesoneReservedAssignments: keptAssignments,
-    yesoneReservedSerials: nextReserved,
-    yesoneReservedForUids: nextForUids,
-    ...(droppedInvoices.length > 0
-      ? { yesoneReservedInvoices: arrayRemove(...droppedInvoices) }
-      : {}),
-    updatedAt: new Date().toISOString(),
-  });
-}
-
 export async function toggleReservedInvoice(
   rcUid: string,
   invoiceNo: string,
@@ -450,6 +412,122 @@ export async function reserveInvoiceForVerifier(
   const nextReserved = uniqueSerials([...otherReserved, ...serials]);
   await updateDoc(ref, {
     yesoneReservedSerials: nextReserved,
+  });
+}
+
+export async function saveVerifierInvoiceAllotment(input: {
+  rcUid: string;
+  invoiceNo: string;
+  prevInvoiceNo?: string;
+  serialStart: string;
+  serialEnd: string;
+  verifierUids: string[];
+  allottedAt?: string;
+  allowedSerials: string[];
+}): Promise<void> {
+  const rcUid = input.rcUid.trim();
+  const invoiceNo = input.invoiceNo.trim();
+  const verifierUids = [...new Set(input.verifierUids.map(uid => uid.trim()).filter(Boolean))];
+  const start = input.serialStart.trim();
+  const end = (input.serialEnd || input.serialStart).trim();
+  if (!rcUid || !invoiceNo || !start || verifierUids.length === 0) {
+    throw new Error('Verifier, invoice, and serial range are required.');
+  }
+  const serials = uniqueSerials(vrAllottedRangeSerials(start, end));
+  if (serials.length === 0) {
+    throw new Error('Serial range is empty.');
+  }
+  const allowed = new Set(
+    uniqueSerials(input.allowedSerials).map(serial => serial.trim().toUpperCase()),
+  );
+  if (serials.some(serial => !allowed.has(serial.trim().toUpperCase()))) {
+    throw new Error('Range must exist in unused GAS seats.');
+  }
+
+  const ref = doc(db, 'users', rcUid);
+  const snap = await getDoc(ref);
+  const data = snap.data() || {};
+  const prevAssignments = normalizeReservedAssignments(data.yesoneReservedAssignments);
+  const prevInvoiceKey = (input.prevInvoiceNo || invoiceNo).trim().toUpperCase();
+  const nextInvoiceKey = invoiceNo.toUpperCase();
+  const prevRow = prevAssignments.find(
+    row => row.invoiceNo.trim().toUpperCase() === prevInvoiceKey,
+  );
+  const oldSerials = prevRow?.serialStart
+    ? uniqueSerials(vrAllottedRangeSerials(prevRow.serialStart, prevRow.serialEnd || prevRow.serialStart))
+    : [];
+  const oldKeys = new Set(oldSerials.map(serial => serial.trim().toUpperCase()));
+
+  const nextAssignments: YesoneReservedAssignment[] = [
+    ...prevAssignments.filter(row => {
+      const key = row.invoiceNo.trim().toUpperCase();
+      return key !== prevInvoiceKey && key !== nextInvoiceKey;
+    }),
+    {
+      invoiceNo,
+      verifierUid: verifierUids[0],
+      ...(verifierUids.length > 1 ? { verifierUids } : {}),
+      serialStart: start,
+      serialEnd: end,
+      ...(input.allottedAt?.trim() ? { allottedAt: input.allottedAt.trim() } : {}),
+    },
+  ];
+
+  const nextReserved = uniqueSerials([
+    ...uniqueSerials(data.yesoneReservedSerials).filter(
+      serial => !oldKeys.has(serial.trim().toUpperCase()),
+    ),
+    ...serials,
+  ]);
+
+  const invoiceSeen = new Set<string>();
+  const nextInvoices: string[] = [];
+  const prevInvoices = Array.isArray(data.yesoneReservedInvoices)
+    ? data.yesoneReservedInvoices
+    : [];
+  for (const item of [...prevInvoices, invoiceNo]) {
+    const label = String(item || '').trim();
+    const key = label.toUpperCase();
+    if (!label || key === prevInvoiceKey && key !== nextInvoiceKey) continue;
+    if (invoiceSeen.has(key)) continue;
+    invoiceSeen.add(key);
+    nextInvoices.push(label);
+  }
+
+  let allotted = normalizeVerifierAllottedByUid(data.yesoneVerifierAllottedByUid);
+  if (oldSerials.length > 0) {
+    for (const uid of Object.keys(allotted)) {
+      allotted = nextVerifierAllottedByUid({
+        prev: allotted,
+        verifierUid: uid,
+        addSerials: [],
+        removeSerials: oldSerials,
+      });
+    }
+  }
+  for (const uid of verifierUids) {
+    allotted = nextVerifierAllottedByUid({
+      prev: allotted,
+      verifierUid: uid,
+      addSerials: serials,
+    });
+  }
+
+  const assignmentUids = [
+    ...new Set(
+      nextAssignments.flatMap(row =>
+        row.verifierUids && row.verifierUids.length > 0 ? row.verifierUids : [row.verifierUid],
+      ),
+    ),
+  ];
+
+  await updateDoc(ref, {
+    yesoneReservedAssignments: nextAssignments,
+    yesoneReservedInvoices: nextInvoices,
+    yesoneReservedSerials: nextReserved,
+    yesoneVerifierAllottedByUid: allotted,
+    yesoneReservedForUids: assignmentUids,
+    updatedAt: new Date().toISOString(),
   });
 }
 

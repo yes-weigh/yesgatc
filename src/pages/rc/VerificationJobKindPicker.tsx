@@ -183,7 +183,9 @@ export function VerificationJobKindPicker({
           ) : null}
         </div>
 
-        {!verifierMode && qtyBlocked ? (
+        {verifierMode && ovBlocked ? (
+          <p className="verification-job-kind-hint">No serials allotted to you.</p>
+        ) : !verifierMode && qtyBlocked ? (
           <p className="verification-job-kind-hint">OV quota is 0. RV Customer still available.</p>
         ) : !verifierMode && serialBlocked && !hasPasProducts ? (
           <p className="verification-job-kind-hint">No allotted serials left. RV Customer still available.</p>

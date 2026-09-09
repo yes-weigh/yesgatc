@@ -276,6 +276,7 @@ function DeviceSerialField({
       choices={choices}
       value={serialInChoiceList(row.serialNumber, choices) ? row.serialNumber : ''}
       disabled={disabled}
+      scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
       onChange={serial => onDeviceChange(row.localId, { serialNumber: serial })}
     />
   );

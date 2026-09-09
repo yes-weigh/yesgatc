@@ -299,8 +299,10 @@ export interface FirestoreUserDoc {
   yesoneReservedAssignments?: Array<{
     invoiceNo: string;
     verifierUid: string;
+    verifierUids?: string[];
     serialStart?: string;
     serialEnd?: string;
+    allottedAt?: string;
   }>;
   /** Per-verifier GAS seats allotted by RC admin (includes used). */
   yesoneVerifierAllottedByUid?: Record<string, string[]>;
