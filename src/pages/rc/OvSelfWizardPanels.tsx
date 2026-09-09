@@ -271,6 +271,7 @@ export function OvSelfEnvFields({
 
 export function OvSelfSitePanel({
   rcName,
+  belongsHint = 'OV Self — this job belongs to the RC',
   location,
   onLocationChange,
   temperature,
@@ -282,6 +283,7 @@ export function OvSelfSitePanel({
   locked,
 }: {
   rcName: string;
+  belongsHint?: string;
   location: VerificationLocation | '';
   onLocationChange: (value: VerificationLocation) => void;
   temperature: string;
@@ -304,7 +306,7 @@ export function OvSelfSitePanel({
         <div className="ov-self-rc-copy">
           <span className="ov-self-kicker">Customer</span>
           <strong>{rcName || 'RC centre'}</strong>
-          <span className="ov-self-rc-sub">OV Self — this job belongs to the RC</span>
+          <span className="ov-self-rc-sub">{belongsHint}</span>
         </div>
       </div>
 

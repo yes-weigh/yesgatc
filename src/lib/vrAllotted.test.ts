@@ -8,6 +8,7 @@ import {
   normalizeVerifierAllottedByUid,
   reservedSerialsAfterVerifierAllot,
   roleCanOpenVrAllotted,
+  shouldShowVerificationStageQuotaTiles,
   unownedReservedSerials,
   vrAllottedEntryMatchesFilter,
   vrAllottedEntrySerials,
@@ -19,6 +20,16 @@ import {
   vrAllottedScopedView,
   vrAllottedStatus,
 } from './vrAllotted.ts';
+
+describe('shouldShowVerificationStageQuotaTiles', () => {
+  it('Allotted / Used / Balance are verifier home only', () => {
+    assert.equal(shouldShowVerificationStageQuotaTiles('verifier'), true);
+    assert.equal(shouldShowVerificationStageQuotaTiles('rc_admin'), false);
+    assert.equal(shouldShowVerificationStageQuotaTiles('vct'), false);
+    assert.equal(shouldShowVerificationStageQuotaTiles('super_admin'), false);
+    assert.equal(shouldShowVerificationStageQuotaTiles(undefined), false);
+  });
+});
 
 describe('roleCanOpenVrAllotted', () => {
   it('hides without verifiers and from every non-RC role', () => {

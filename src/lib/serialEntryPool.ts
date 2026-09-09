@@ -116,11 +116,13 @@ export function validateSerialForProductPool(options: {
   serial: string;
   gasChoices: readonly string[];
   scopedToVerifier?: boolean;
+  serialSource?: string;
 }): string | null {
   const serial = options.serial.trim();
   if (!serial) return 'Serial number is required.';
   if (options.mode === 'pas-type') return null;
   if (options.verificationType !== 'OV') return null;
+  if (String(options.serialSource || '').trim() === 'interweighingDirect') return null;
   if (serialInChoiceList(serial, options.gasChoices)) return null;
   if (options.gasChoices.length === 0) {
     return options.scopedToVerifier

@@ -36,6 +36,11 @@ import type { JobType, Product, RcFeesStructure, VerificationLocation } from '..
 import { type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { pasBankOptionsForJob, productUsesPasSerials } from '../../lib/pasSerialBank';
 import { GasAllottedSerialSearch } from '../../components/GasAllottedSerialSearch';
+import {
+  InterweighingDirectSerialField,
+  SerialBankSourceToggle,
+  type SerialBankSourceTab,
+} from '../../components/SerialBankSourceToggle';
 import { gasAllottedChoices, serialInChoiceList, showsGasAllottedSerialGrid } from '../../lib/serialEntryPool';
 import { usePasSerialHint } from '../../hooks/usePasSerialHint';
 
@@ -268,17 +273,54 @@ function DeviceSerialField({
     product,
     fallbackProduct: { productId: row.productId, productName: row.productName },
   });
+  const allowDirect = Boolean(ovQuota?.allowInterweighingDirect);
+  const source: SerialBankSourceTab =
+    row.serialSource === 'interweighingDirect' ? 'interweighingDirect' : 'rcYesone';
+  const setSource = (next: SerialBankSourceTab) => {
+    if (next === 'interweighingDirect') {
+      onDeviceChange(row.localId, { serialSource: 'interweighingDirect' });
+      return;
+    }
+    const keep = serialInChoiceList(row.serialNumber, choices);
+    onDeviceChange(row.localId, {
+      serialSource: 'rcYesone',
+      serialNumber: keep ? row.serialNumber : '',
+    });
+  };
 
   return (
-    <GasAllottedSerialSearch
-      id={id}
-      className={`${className} gas-serial-search-input`}
-      choices={choices}
-      value={serialInChoiceList(row.serialNumber, choices) ? row.serialNumber : ''}
-      disabled={disabled}
-      scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
-      onChange={serial => onDeviceChange(row.localId, { serialNumber: serial })}
-    />
+    <div className="device-serial-source">
+      {allowDirect ? (
+        <SerialBankSourceToggle value={source} onChange={setSource} disabled={disabled} />
+      ) : null}
+      {allowDirect && source === 'interweighingDirect' ? (
+        <InterweighingDirectSerialField
+          id={id}
+          className={className}
+          value={row.serialNumber}
+          choices={ovQuota?.directRemaining ?? []}
+          disabled={disabled}
+          onChange={serial =>
+            onDeviceChange(row.localId, {
+              serialNumber: serial,
+              serialSource: 'interweighingDirect',
+            })
+          }
+        />
+      ) : (
+        <GasAllottedSerialSearch
+          id={id}
+          className={`${className} gas-serial-search-input`}
+          choices={choices}
+          value={serialInChoiceList(row.serialNumber, choices) ? row.serialNumber : ''}
+          disabled={disabled}
+          scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
+          onChange={serial =>
+            onDeviceChange(row.localId, { serialNumber: serial, serialSource: 'rcYesone' })
+          }
+        />
+      )}
+    </div>
   );
 }
 

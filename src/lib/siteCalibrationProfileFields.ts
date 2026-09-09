@@ -1,5 +1,6 @@
 import type { Customer, CustomerDevice, JobType, Product, RcFeesStructure, SiteCalibration, VerificationLocation } from '../types';
 import { rcFilingPartyPatch } from './keralaRegion';
+import { validateVerifierOvStart, type VerifierOvInName } from './verifierOvInName';
 import { DEFAULT_RC_FEES_STRUCTURE } from './rcProfileFields';
 import { computeRvCustomerFeeLine } from './rvFeeBreakdown';
 import { parseAdditionalFeeInput } from './verificationDocaCharges';
@@ -91,6 +92,8 @@ export type VerificationDeviceRowValues = {
   /** Selected capacity row when the product has multiple specifications. */
   productSpecificationId?: string;
   serialNumber: string;
+  /** Isolated Interweighing-direct bank. Omit = RC Yesone GAS path. */
+  serialSource?: 'rcYesone' | 'interweighingDirect';
   maximumPermissibleError: string;
   sealIdentificationNumber: string;
   /** Re-verification only — year of manufacturing (YYYY). */
@@ -114,6 +117,8 @@ export type VerificationSessionValues = {
   assignedVctId?: string;
   customerId: string;
   customerName: string;
+  /** Verifier OV Self — whose name eMAAP files under. */
+  ovInName?: VerifierOvInName;
   ambientTemperature: string;
   relativeHumidity: string;
   verificationLocation: VerificationLocation | '';
@@ -170,13 +175,18 @@ export function buildSelfVerificationSession(
   rc: Pick<import('../types').FirestoreUserDoc, 'companyName' | 'username'>,
   rcUid: string,
   sealIdentification = '',
+  ovParty?: { customerId: string; customerName: string; ovInName?: VerifierOvInName },
 ): VerificationSessionValues {
+  const customerId = ovParty?.customerId.trim() || rcUid;
+  const customerName =
+    ovParty?.customerName.trim() || rc.companyName?.trim() || rc.username?.trim() || '';
   return {
     verificationType: 'OV',
     verificationSubject: 'self',
     assignedVctId: '',
-    customerId: rcUid,
-    customerName: rc.companyName?.trim() || rc.username?.trim() || '',
+    customerId,
+    customerName,
+    ...(ovParty?.ovInName ? { ovInName: ovParty.ovInName } : {}),
     ambientTemperature: '',
     relativeHumidity: '',
     verificationLocation: 'in_situ',
@@ -217,10 +227,11 @@ export function buildVerificationSessionForKind(
   sealIdentification = '',
   serialNumber = '',
   manufacturingYear = '',
+  ovParty?: { customerId: string; customerName: string; ovInName?: VerifierOvInName },
 ): VerificationSessionValues {
   const session =
     kind === 'ov_self'
-      ? buildSelfVerificationSession(rc, rcUid, sealIdentification)
+      ? buildSelfVerificationSession(rc, rcUid, sealIdentification, ovParty)
       : {
           ...EMPTY_VERIFICATION_SESSION,
           verificationType: kind === 'rv_customer' ? ('RV' as const) : ('OV' as const),
@@ -388,6 +399,9 @@ export function verificationSessionFromRecord(
     assignedVctId: record.performedBy === 'vct' && record.vctId ? record.vctId : '',
     customerId: record.customerId || '',
     customerName: record.customerName || '',
+    ...(record.ovInName === 'verifier' || record.ovInName === 'rc'
+      ? { ovInName: record.ovInName }
+      : {}),
     ambientTemperature: record.ambientTemperature || '',
     relativeHumidity: record.relativeHumidity || '',
     verificationLocation: record.verificationLocation || 'in_situ',
@@ -402,6 +416,7 @@ export function verificationSessionFromRecord(
         productName: record.productName || '',
         productSpecificationId: record.productSpecificationId || '',
         serialNumber: record.serialNumber || '',
+        serialSource: record.serialSource,
         maximumPermissibleError:
           record.maximumPermissibleError !== undefined && record.maximumPermissibleError !== null
             ? String(record.maximumPermissibleError)
@@ -483,12 +498,16 @@ export function buildSiteCalibrationFromRow(
     productId: row.productId.trim(),
     productName: row.productName.trim(),
     serialNumber: row.serialNumber.trim(),
+    ...(row.serialSource === 'interweighingDirect'
+      ? { serialSource: 'interweighingDirect' as const }
+      : {}),
     maximumPermissibleError: Number(row.maximumPermissibleError.trim()) || 0,
     ambientTemperature: session.ambientTemperature.trim(),
     relativeHumidity: session.relativeHumidity.trim(),
     sealIdentificationNumber: row.sealIdentificationNumber.trim(),
     verificationLocation: session.verificationLocation as VerificationLocation,
     verificationSubject: filing.verificationSubject ?? session.verificationSubject,
+    ...(session.ovInName ? { ovInName: session.ovInName } : {}),
     fileCertificateAsRc: filing.fileCertificateAsRc,
     ...(filing.sourceCustomerId ? { sourceCustomerId: filing.sourceCustomerId } : {}),
     ...(filing.sourceCustomerName ? { sourceCustomerName: filing.sourceCustomerName } : {}),
@@ -609,6 +628,8 @@ export type VerificationValidationOptions = {
   ovQuota?: OvQuotaGate | null;
   isNewJob?: boolean;
   products?: Product[];
+  isVerifier?: boolean;
+  verifierPincode?: string | null;
 };
 
 function validatePendingCustomerParty(
@@ -639,7 +660,14 @@ function validateSessionHeader(
     if (pendingError) return pendingError;
   }
   if (session.verificationSubject === 'self' && !session.customerName.trim()) {
-    return 'RC centre details are required for self verification.';
+    return session.ovInName === 'verifier'
+      ? 'Verifier name is required for this OV.'
+      : 'RC centre details are required for self verification.';
+  }
+
+  if (options?.isVerifier && session.verificationType === 'OV') {
+    const ovNameError = validateVerifierOvStart(session.ovInName);
+    if (ovNameError) return ovNameError;
   }
 
   const pincodeError = validatePartyPincodeForSubmit({
@@ -647,7 +675,8 @@ function validateSessionHeader(
     customerForm: options?.customerForm,
     rcForm: options?.rcForm,
     customerPincode: options?.customerPincode,
-    rcPincode: options?.rcPincode,
+    rcPincode:
+      session.ovInName === 'verifier' ? (options?.verifierPincode ?? options?.rcPincode) : options?.rcPincode,
   });
   if (pincodeError) return pincodeError;
 

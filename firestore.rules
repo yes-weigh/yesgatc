@@ -68,6 +68,16 @@ service cloud.firestore {
         && data.location.lng <= 180;
     }
 
+    function verifierOwnGpsOnlyUpdate(uid) {
+      return isOperationalVerifier()
+        && request.auth.uid == uid
+        && resource.data.role == 'verifier'
+        && request.resource.data.role == 'verifier'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['location'])
+        && customerLocationValid(request.resource.data)
+        && request.resource.data.location.keys().hasOnly(['lat', 'lng']);
+    }
+
     function validVerificationApplicationNumber(data) {
       return data.get('applicationNumber', '') is string
         && data.applicationNumber.matches('^VC/[0-9]{2}/[0-9]+$');
@@ -244,6 +254,8 @@ service cloud.firestore {
         && request.resource.data.rcId == request.auth.uid
         && request.resource.data.aadhar == resource.data.aadhar
         && validAadhar(request.resource.data);
+
+      allow update: if verifierOwnGpsOnlyUpdate(uid);
 
       allow delete: if isRCAdmin()
         && resource.data.role == 'vct'
@@ -461,6 +473,16 @@ service cloud.firestore {
         return mine is list && mine.hasAny([serial]);
       }
 
+      function serialInVerifierDirectBank(serial) {
+        let mine = get(/databases/$(database)/documents/users/$(request.auth.uid))
+          .data.get('interweighingDirectSerials', []);
+        return mine is list && mine.hasAny([serial]);
+      }
+
+      function isInterweighingDirectSource(data) {
+        return data.get('serialSource', '') == 'interweighingDirect';
+      }
+
       function verifierMayWriteVerificationSerial(data) {
         let serial = data.get('serialNumber', '');
         return !(serial is string)
@@ -468,7 +490,9 @@ service cloud.firestore {
           || data.get('verificationType', '') != 'OV'
           || isPasStickerSerial(serial)
           || !isGasStickerSerial(serial)
-          || serialAllottedToVerifier(serial);
+          || serialAllottedToVerifier(serial)
+          || serialInVerifierDirectBank(serial)
+          || isInterweighingDirectSource(data);
       }
 
       allow read: if isSuperAdmin();

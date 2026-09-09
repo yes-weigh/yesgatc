@@ -9,6 +9,11 @@ import {
 import { type OvQuotaAllotment } from '../../lib/ovQuotaGate';
 import { pasBankOptionsForJob } from '../../lib/pasSerialBank';
 import { GasAllottedSerialSearch } from '../../components/GasAllottedSerialSearch';
+import {
+  InterweighingDirectSerialField,
+  SerialBankSourceToggle,
+  type SerialBankSourceTab,
+} from '../../components/SerialBankSourceToggle';
 import { usePasSerialHint } from '../../hooks/usePasSerialHint';
 import { formatShopCapacityLine, getProductSpecifications, resolveProductSpecification } from '../../lib/productSpecifications';
 import { readSerialPlate } from '../../lib/readSerialPlate';
@@ -38,6 +43,8 @@ export function OvSelfSerialPlatePanel({
   allotments,
   heldSerials = [],
   scopedToVerifier = false,
+  allowInterweighingDirect = false,
+  directRemaining = [],
   disabled,
   geoStampCoords,
   geoStampWeather,
@@ -55,11 +62,13 @@ export function OvSelfSerialPlatePanel({
   allotments?: OvQuotaAllotment[];
   heldSerials?: string[];
   scopedToVerifier?: boolean;
+  allowInterweighingDirect?: boolean;
+  directRemaining?: string[];
   disabled?: boolean;
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
   geoStampAllowLiveGps?: boolean;
-  onSerialChange: (serial: string) => void;
+  onSerialChange: (serial: string, source?: 'rcYesone' | 'interweighingDirect') => void;
   onYearChange?: (year: string) => void;
   onPlateSelect: (file: File) => void;
   onPlateRemove: () => void;
@@ -94,6 +103,10 @@ export function OvSelfSerialPlatePanel({
   const selectedSeat =
     seats.find(serial => serial.trim().toUpperCase() === row.serialNumber.trim().toUpperCase()) ?? '';
 
+  const source: SerialBankSourceTab =
+    row.serialSource === 'interweighingDirect' ? 'interweighingDirect' : 'rcYesone';
+  const directMode = allowInterweighingDirect && isGasSelect && source === 'interweighingDirect';
+
   const selectedSpecLabel = useMemo(() => {
     if (!product) return '';
     const spec = row.productSpecificationId
@@ -110,8 +123,18 @@ export function OvSelfSerialPlatePanel({
   const handlePlateSelect = (file: File) => {
     onPlateSelect(file);
     setOcrHint('Reading plate…');
-    void readSerialPlate(file, isGasSelect ? seats : [])
+    void readSerialPlate(file, isGasSelect && !directMode ? seats : [])
       .then(read => {
+        if (directMode) {
+          const typed = read.serialNumber.trim();
+          if (typed && !row.serialNumber.trim()) {
+            onSerialChange(typed, 'interweighingDirect');
+            setOcrHint('Filled serial from plate photo (you can edit).');
+            return;
+          }
+          setOcrHint('Plate photo saved. Type or pick a direct serial if it is not filled.');
+          return;
+        }
         const filled = applyOcrSerialToPool({
           mode,
           ocrSerial: read.serialNumber,
@@ -119,12 +142,12 @@ export function OvSelfSerialPlatePanel({
           gasChoices: seats,
         });
         if (filled && !row.serialNumber.trim()) {
-          onSerialChange(filled);
+          onSerialChange(filled, 'rcYesone');
           setOcrHint(isGasSelect ? `Matched allotted serial ${filled}.` : 'Filled serial from plate photo (you can edit).');
           return;
         }
         if (filled && isGasSelect && !serialInChoiceList(row.serialNumber, seats)) {
-          onSerialChange(filled);
+          onSerialChange(filled, 'rcYesone');
           setOcrHint(`Matched allotted serial ${filled}.`);
           return;
         }
@@ -141,6 +164,8 @@ export function OvSelfSerialPlatePanel({
 
   const recapHint = isPas
     ? 'Type the serial. Plate photo still required to continue.'
+    : directMode
+      ? 'Direct serial. RC approves. Does not use Yesone quota.'
     : isGasSelect
       ? 'Select an allotted serial. Plate photo still required to continue.'
       : 'Type the existing serial. Plate photo still required to continue.';
@@ -186,21 +211,48 @@ export function OvSelfSerialPlatePanel({
       {isGasSelect ? (
         <div className="form-group mb-0 ov-self-serial-edit">
           <label htmlFor="ov-self-serial-select">Serial number *</label>
-          <GasAllottedSerialSearch
-            id="ov-self-serial-select"
-            className="input-field text-mono gas-serial-search-input"
-            choices={seats}
-            value={selectedSeat}
-            disabled={disabled}
-            showChips
-            scopedToVerifier={scopedToVerifier}
-            onChange={onSerialChange}
-          />
-          {seats.length === 0 ? (
-            <p className="ov-self-serial-hint ov-self-serial-hint--err" role="status">
-              {gasAllottedEmptyProductHint(scopedToVerifier)}
-            </p>
+          {allowInterweighingDirect ? (
+            <SerialBankSourceToggle
+              value={source}
+              disabled={disabled}
+              onChange={next => {
+                if (next === 'interweighingDirect') {
+                  onSerialChange(row.serialNumber, 'interweighingDirect');
+                  return;
+                }
+                const keep = serialInChoiceList(row.serialNumber, seats);
+                onSerialChange(keep ? row.serialNumber : '', 'rcYesone');
+              }}
+            />
           ) : null}
+          {directMode ? (
+            <InterweighingDirectSerialField
+              id="ov-self-serial-select"
+              className="input-field text-mono"
+              value={row.serialNumber}
+              choices={directRemaining}
+              disabled={disabled}
+              onChange={serial => onSerialChange(serial, 'interweighingDirect')}
+            />
+          ) : (
+            <>
+              <GasAllottedSerialSearch
+                id="ov-self-serial-select"
+                className="input-field text-mono gas-serial-search-input"
+                choices={seats}
+                value={selectedSeat}
+                disabled={disabled}
+                showChips
+                scopedToVerifier={scopedToVerifier}
+                onChange={serial => onSerialChange(serial, 'rcYesone')}
+              />
+              {seats.length === 0 ? (
+                <p className="ov-self-serial-hint ov-self-serial-hint--err" role="status">
+                  {gasAllottedEmptyProductHint(scopedToVerifier)}
+                </p>
+              ) : null}
+            </>
+          )}
         </div>
       ) : (
         <div className="form-group mb-0 ov-self-serial-edit">

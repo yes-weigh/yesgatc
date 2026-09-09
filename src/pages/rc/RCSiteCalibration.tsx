@@ -160,6 +160,7 @@ import { VerificationJobKindPicker } from './VerificationJobKindPicker';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
 import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
 import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { computeInterweighingDirectSeats } from '../../lib/interweighingDirectSerials';
 import {
   allotmentUsesPasProduct,
   catalogueHasPasProducts,
@@ -197,6 +198,11 @@ import {
   type RvWalletFeeSettings,
 } from '../../lib/zohoRvSubmit';
 import { rcFilingPartyPatch } from '../../lib/keralaRegion';
+import {
+  isVerifierOvInName,
+  validateVerifierOvStart,
+  verifierOvParty,
+} from '../../lib/verifierOvInName';
 import {
   buildRvPaymentFirestorePatch,
   computeRvPaymentAmount,
@@ -460,6 +466,14 @@ export const RCSiteCalibration: React.FC = () => {
     isVct,
     actorUid,
   });
+  const directSeats = useMemo(
+    () =>
+      computeInterweighingDirectSeats({
+        allotted: actorProfile?.interweighingDirectSerials,
+        records,
+      }),
+    [actorProfile?.interweighingDirectSerials, records],
+  );
   const actorBalanceQty = isRcAdmin
     ? quotaSeats.balanceQty
     : isVerifier || isVct
@@ -473,6 +487,8 @@ export const RCSiteCalibration: React.FC = () => {
     return {
       remaining: pickSerials,
       scopedToVerifier: isVerifier,
+      allowInterweighingDirect: isVerifier,
+      directRemaining: isVerifier ? directSeats.unused : [],
       remainingAllotments: quotaSeats.allotmentRows
         .filter(row => !allotmentUsesPasProduct(row, products.filter(productUsesPasSerials)))
         .map(row => ({
@@ -486,7 +502,16 @@ export const RCSiteCalibration: React.FC = () => {
       balanceQty: actorBalanceQty,
       heldSerials: held,
     };
-  }, [pickSerials, actorBalanceQty, editingId, isVerifier, records, quotaSeats.allotmentRows, products]);
+  }, [
+    pickSerials,
+    actorBalanceQty,
+    editingId,
+    isVerifier,
+    records,
+    quotaSeats.allotmentRows,
+    products,
+    directSeats.unused,
+  ]);
 
   const validationOptions = useMemo(() => {
     const editingRecordForValidation = editingId
@@ -512,6 +537,8 @@ export const RCSiteCalibration: React.FC = () => {
       ovQuota: sessionValues.verificationType === 'OV' ? ovQuotaGate : undefined,
       isNewJob: showAddForm,
       products,
+      isVerifier,
+      verifierPincode: actorProfile?.pincode ?? null,
     };
   }, [
     partyContext.customerForm,
@@ -529,6 +556,7 @@ export const RCSiteCalibration: React.FC = () => {
     ovQuotaGate,
     showAddForm,
     products,
+    actorProfile?.pincode,
   ]);
 
   const recordSubmitOptions = useCallback(
@@ -548,6 +576,10 @@ export const RCSiteCalibration: React.FC = () => {
           record.verificationType === 'OV'
             ? {
                 remaining: pickSerials,
+                scopedToVerifier: isVerifier,
+                allowInterweighingDirect: isVerifier,
+                directRemaining: isVerifier ? directSeats.unused : [],
+                remainingAllotments: ovQuotaGate.remainingAllotments,
                 balanceQty: actorBalanceQty,
                 heldSerials: record.serialNumber?.trim() ? [record.serialNumber.trim()] : [],
               }
@@ -555,7 +587,7 @@ export const RCSiteCalibration: React.FC = () => {
         isNewJob: false,
       };
     },
-    [validationOptions, customers, rcProfile?.pincode, pickSerials, actorBalanceQty],
+    [validationOptions, customers, rcProfile?.pincode, pickSerials, actorBalanceQty, isVerifier, directSeats.unused, ovQuotaGate.remainingAllotments],
   );
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
@@ -2540,6 +2572,13 @@ export const RCSiteCalibration: React.FC = () => {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
       return;
     }
+    if (isVerifier) {
+      const ovNameMsg = validateVerifierOvStart(actorProfile?.ovInName);
+      if (ovNameMsg) {
+        setListError(ovNameMsg);
+        return;
+      }
+    }
     setListError('');
     setUnsignedJobGate(true);
   };
@@ -2560,6 +2599,29 @@ export const RCSiteCalibration: React.FC = () => {
         setListError('RC centre details are still loading.');
         return;
       }
+      const ovName = actorProfile?.ovInName;
+      if (isVerifier && (kind === 'ov_self' || kind === 'ov_customer')) {
+        const ovNameMsg = validateVerifierOvStart(ovName);
+        if (ovNameMsg) {
+          setListError(ovNameMsg);
+          return;
+        }
+      }
+      const ovParty =
+        isVerifier && actorProfile && isVerifierOvInName(ovName) && actorUid
+          ? {
+              ...verifierOvParty(
+                ovName,
+                { uid: actorUid, username: actorProfile.username ?? user?.username },
+                {
+                  uid: rcUid,
+                  companyName: rcProfile?.companyName,
+                  username: rcProfile?.username,
+                },
+              ),
+              ovInName: ovName,
+            }
+          : undefined;
       openNewVerificationSession(
         buildVerificationSessionForKind(
           kind,
@@ -2568,10 +2630,20 @@ export const RCSiteCalibration: React.FC = () => {
           laboratorySealId,
           serial ?? '',
           manufacturingYear ?? '',
+          ovParty,
         ),
       );
     },
-    [rcUid, rcProfile, laboratorySealId, openNewVerificationSession],
+    [
+      rcUid,
+      rcProfile,
+      laboratorySealId,
+      openNewVerificationSession,
+      isVerifier,
+      actorProfile,
+      actorUid,
+      user?.username,
+    ],
   );
 
   const pendingCustomerId = searchParams.get('customerId');
@@ -3411,6 +3483,8 @@ export const RCSiteCalibration: React.FC = () => {
                       mobileFloatingChrome={mobileFloatingChrome}
                       lockKind={showAddForm}
                       ovQuota={sessionValues.verificationType === 'OV' ? ovQuotaGate : null}
+                      isVerifier={isVerifier}
+                      verifierPincode={actorProfile?.pincode ?? null}
                     />
                   </div>
                   {mobileFloatingChrome && verificationFormFooter

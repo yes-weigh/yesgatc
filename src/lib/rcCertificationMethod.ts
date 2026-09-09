@@ -13,6 +13,11 @@ export const RC_CERTIFICATION_METHOD_OPTIONS: ReadonlyArray<{
   { id: 'manual_upload', label: 'Manual upload' },
 ];
 
+/** Super Admin RC form. Manual upload is leftover data only — not selectable. */
+export const RC_CERTIFICATION_METHOD_EDIT_OPTIONS = RC_CERTIFICATION_METHOD_OPTIONS.filter(
+  option => option.id !== 'manual_upload',
+);
+
 export const DEFAULT_RC_CERTIFICATION_METHOD: RcCertificationMethod = 'auto_dsc';
 
 export function isRcCertificationMethod(value: unknown): value is RcCertificationMethod {
@@ -52,4 +57,20 @@ export function canEditRcCertificationSettings(user: {
   role?: Role | null;
 } | null): boolean {
   return user?.role === 'super_admin';
+}
+
+export function rcUsesPdfSigner(
+  doc: Pick<FirestoreUserDoc, 'certificationMethod' | 'emaapSignerType'> | null | undefined,
+): boolean {
+  if (rcCertificationMethodFromUser(doc) === 'auto_dsc') return false;
+  return (
+    doc?.certificationMethod === 'pdf_signer'
+    || doc?.emaapSignerType === 'pdf_signer'
+  );
+}
+
+export function rcUsesManualSignedUpload(
+  doc: Pick<FirestoreUserDoc, 'certificationMethod' | 'emaapSignerType'> | null | undefined,
+): boolean {
+  return rcCertificationMethodFromUser(doc) === 'manual_upload' && !rcUsesPdfSigner(doc);
 }

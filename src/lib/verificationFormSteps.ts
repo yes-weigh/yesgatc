@@ -34,6 +34,7 @@ import {
   type PerformerPhotosState,
 } from './verificationPerformerPhotos';
 import { validateOvQuotaDevices, validateOvQuotaSetup, type OvQuotaGate } from './ovQuotaGate';
+import { validateVerifierOvStart } from './verifierOvInName';
 import { catalogueHasPasProducts, quotaSerialRows } from './pasSerialBank';
 import {
   gasAllottedChoices,
@@ -191,6 +192,9 @@ export type VerificationFormStepContext = {
   ovQuota?: OvQuotaGate | null;
   isNewJob?: boolean;
   products?: Product[];
+  /** Verifier user pincode when OV Self files under verifier name. */
+  verifierPincode?: string | null;
+  isVerifier?: boolean;
 };
 
 function customerGpsBlockReason(
@@ -217,8 +221,15 @@ function partyStepBlockReason(
       rcProfile?.companyName?.trim() ||
       rcProfile?.username?.trim() ||
       '';
-    if (!name) return 'RC centre details are still loading. Please wait a moment.';
-    const pin = context?.rcForm?.pincode ?? rcProfile?.pincode ?? '';
+    if (!name) {
+      return values.ovInName === 'verifier'
+        ? 'Verifier name is missing.'
+        : 'RC centre details are still loading. Please wait a moment.';
+    }
+    const pin =
+      values.ovInName === 'verifier'
+        ? (context?.verifierPincode ?? '')
+        : (context?.rcForm?.pincode ?? rcProfile?.pincode ?? '');
     if (!isValidPincode(normalizePincode(pin))) {
       return VERIFICATION_PINCODE_REQUIRED_MESSAGE;
     }
@@ -382,6 +393,7 @@ function serialStepBlockReason(
       serial: row.serialNumber,
       gasChoices,
       scopedToVerifier: Boolean(context?.ovQuota?.scopedToVerifier),
+      serialSource: row.serialSource,
     });
     if (poolError && poolError !== 'Serial number is required.') {
       return `${label}: ${poolError}`;
@@ -459,6 +471,10 @@ export function verificationFormStepBlockReason(
     }
     if (values.verificationSubject !== 'self' && values.verificationSubject !== 'customer') {
       return 'Choose Self or Customer.';
+    }
+    if (context?.isVerifier && values.verificationType === 'OV') {
+      const ovNameReason = validateVerifierOvStart(values.ovInName);
+      if (ovNameReason) return ovNameReason;
     }
     const partyReason = partyStepBlockReason(values, rcProfile, context);
     if (partyReason) return partyReason;

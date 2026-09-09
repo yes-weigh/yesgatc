@@ -45,6 +45,8 @@ type PartyInformationFormProps = {
   };
   /** Show GPS capture on the party step. */
   locationCapture?: boolean;
+  /** Hide name / phone / email rows (verifier location block). */
+  showIdentity?: boolean;
   /** Optional email row (customer profile only). */
   showEmail?: boolean;
   /** When false, PIN is optional (customer page save still allows empty PIN). */
@@ -55,6 +57,8 @@ type PartyInformationFormProps = {
   hideHeader?: boolean;
   /** View-only display — no inputs (customer profile view mode). */
   readOnly?: boolean;
+  /** Lock street / PIN / district / state; GPS refresh stays. */
+  lockAddressFields?: boolean;
 };
 
 function WhatsAppIcon() {
@@ -74,15 +78,17 @@ function PartyInfoRow({
   children,
   action,
   fieldRef,
+  className,
 }: {
   tone: PartyRowTone;
   icon: React.ReactNode;
   children: React.ReactNode;
   action?: React.ReactNode;
   fieldRef?: React.Ref<HTMLDivElement>;
+  className?: string;
 }) {
   return (
-    <div className={`party-info-row party-info-row--${tone}`}>
+    <div className={`party-info-row party-info-row--${tone}${className ? ` ${className}` : ''}`}>
       <span className="party-info-row-icon" aria-hidden>
         {icon}
       </span>
@@ -221,12 +227,14 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
   districtLabel = 'District',
   lookup,
   locationCapture = false,
+  showIdentity = true,
   showEmail = false,
   pincodeRequired = true,
   footer,
   heroPhoto,
   hideHeader = false,
   readOnly = false,
+  lockAddressFields = false,
 }) => {
   const listId = useId();
   const nameWrapRef = useRef<HTMLDivElement>(null);
@@ -287,6 +295,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
   }, [lookupOpen]);
 
   useEffect(() => {
+    if (lockAddressFields) return;
     const pin = normalizePincode(values.pincode);
     if (!isValidPincode(pin)) {
       lastPincodeLookupRef.current = '';
@@ -334,7 +343,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
       cancelled = true;
       setPincodeLookupLoading(false);
     };
-  }, [values.pincode, values.state, values.district]);
+  }, [values.pincode, values.state, values.district, lockAddressFields]);
 
   const openLookup = (field: 'name' | 'phone', query: string) => {
     if (!lookupEnabled) return;
@@ -392,6 +401,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
 
   const hasLocation = Boolean(values.latitude.trim() && values.longitude.trim());
   const showLocationCapture = locationCapture && !disabled;
+  const addressLocked = disabled || lockAddressFields;
 
   const lookupMenu =
     lookupOpen && menuStyle && lookupEnabled
@@ -621,7 +631,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
       )}
 
       <div className="party-information-form-rows">
-        {!identityInHero && (
+        {!identityInHero && showIdentity && (
           <PartyInfoRow
             tone="emerald"
             icon={<WhatsAppIcon />}
@@ -635,7 +645,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
           </PartyInfoRow>
         )}
 
-        {!identityInHero && (
+        {!identityInHero && showIdentity && (
           <PartyInfoRow
             tone="emerald"
             icon={<User strokeWidth={2} />}
@@ -649,7 +659,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
           </PartyInfoRow>
         )}
 
-        {!identityInHero && showEmail && emailInput && (
+        {!identityInHero && showIdentity && showEmail && emailInput && (
           <PartyInfoRow tone="sky" icon={<Mail strokeWidth={2} />}>
             <label htmlFor="party-info-email" className="sr-only">
               Email
@@ -673,12 +683,12 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
               placeholder="Street, locality"
               value={values.address}
               onChange={e => onChange({ address: e.target.value })}
-              disabled={disabled}
+              disabled={addressLocked}
               required
             />
           </CustomerHeroField>
         ) : (
-          <PartyInfoRow tone="sky" icon={<MapPin strokeWidth={2} />}>
+          <PartyInfoRow tone="sky" icon={<MapPin strokeWidth={2} />} className="party-info-row--address">
             <label htmlFor="party-info-address" className="sr-only">
               Address
             </label>
@@ -689,7 +699,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
               placeholder="Street, locality"
               value={values.address}
               onChange={e => onChange({ address: e.target.value })}
-              disabled={disabled}
+              disabled={addressLocked}
               required
             />
           </PartyInfoRow>
@@ -716,7 +726,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
               placeholder="6-digit PIN"
               value={values.pincode}
               onChange={e => handlePincodeChange(e.target.value)}
-              disabled={disabled}
+              disabled={addressLocked}
               maxLength={6}
               required={pincodeRequired}
               aria-describedby={pincodeLookupError ? 'party-info-pincode-error' : undefined}
@@ -725,6 +735,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
         ) : (
           <PartyInfoRow
             tone="violet"
+            className="party-info-row--pincode"
             icon={
               pincodeLookupLoading ? (
                 <span className="party-info-pin-spinner" aria-label="Looking up location" />
@@ -744,7 +755,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
               placeholder="6-digit PIN"
               value={values.pincode}
               onChange={e => handlePincodeChange(e.target.value)}
-              disabled={disabled}
+              disabled={addressLocked}
               maxLength={6}
               required={pincodeRequired}
               aria-describedby={pincodeLookupError ? 'party-info-pincode-error' : undefined}
@@ -780,7 +791,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
             />
           </CustomerHeroField>
         ) : (
-          <PartyInfoRow tone="violet" icon={<Building2 strokeWidth={2} />}>
+          <PartyInfoRow tone="violet" icon={<Building2 strokeWidth={2} />} className="party-info-row--district">
             <label htmlFor="party-info-district" className="sr-only">
               {districtLabel}
             </label>
@@ -818,6 +829,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
         ) : (
           <PartyInfoRow
             tone="violet"
+            className="party-info-row--state"
             icon={<Map strokeWidth={2} />}
             action={
               <span className="party-info-row-chevron" aria-hidden>
@@ -867,7 +879,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
                           <RefreshCw size={14} strokeWidth={2.25} />
                         )}
                       </button>
-                      {hasLocation && (
+                      {hasLocation && !lockAddressFields && (
                         <button
                           type="button"
                           className="customer-form-hero-action-btn customer-form-hero-action-btn--muted"
@@ -905,6 +917,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
             <>
               <PartyInfoRow
                 tone="cyan"
+                className="party-info-row--gps"
                 icon={<Crosshair strokeWidth={2} />}
                 action={
                   <>
@@ -922,7 +935,7 @@ export const PartyInformationForm: React.FC<PartyInformationFormProps> = ({
                         <RefreshCw strokeWidth={2} />
                       )}
                     </button>
-                    {hasLocation && (
+                    {hasLocation && !lockAddressFields && (
                       <button
                         type="button"
                         className="party-info-row-action-btn party-info-row-action-btn--muted"

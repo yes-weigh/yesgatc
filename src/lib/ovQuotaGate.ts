@@ -14,6 +14,10 @@ export type OvQuotaGate = {
   heldSerials: string[];
   /** Verifier job: remaining is that uid's unused allotment only. */
   scopedToVerifier?: boolean;
+  /** Unused Interweighing-direct serials. Isolated from Yesone remaining. */
+  directRemaining?: string[];
+  /** Verifier may start OV without Yesone remaining (direct bank / typed direct). */
+  allowInterweighingDirect?: boolean;
 };
 
 function serialKey(value: string): string {
@@ -85,6 +89,7 @@ export function validateOvQuotaSetup(
   hasPasProducts = false,
 ): string | null {
   if (!gate || verificationType !== 'OV' || !isNew) return null;
+  if (gate.allowInterweighingDirect) return null;
   if (gate.scopedToVerifier && !hasPasProducts && gate.remaining.length <= 0) {
     return 'No serials allotted to you. Cannot start Original Verification.';
   }
@@ -100,7 +105,12 @@ export function validateOvQuotaSetup(
 export type OvQuotaDeviceRow = {
   serial: string;
   pas?: boolean;
+  serialSource?: string;
 };
+
+function isDirectQuotaRow(row: OvQuotaDeviceRow): boolean {
+  return String(row.serialSource || '').trim() === 'interweighingDirect';
+}
 
 export function validateOvQuotaDevices(
   verificationType: string,
@@ -116,9 +126,10 @@ export function validateOvQuotaDevices(
   for (const row of rows) {
     const serial = (row.serial || '').trim();
     const pas = Boolean(row.pas);
+    const direct = isDirectQuotaRow(row);
     if (!serial) {
       if (pas) newPas += 1;
-      else newGas += 1;
+      else if (!direct) newGas += 1;
       continue;
     }
     const key = serialKey(serial);
@@ -129,6 +140,7 @@ export function validateOvQuotaDevices(
       newPas += 1;
       continue;
     }
+    if (direct) continue;
     if (!remaining.has(key)) {
       return `Serial ${serial} is not in allotted balance. Use an allotted serial for OV.`;
     }

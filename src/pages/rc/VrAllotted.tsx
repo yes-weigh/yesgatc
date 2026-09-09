@@ -13,6 +13,21 @@ import { useHistoryOverlay } from '../../hooks/useHistoryOverlay';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
 import { useRcCreatedVerifierCount } from '../../hooks/useRcCreatedVerifierCount';
 import { fetchRcVerifierUsers } from '../../lib/rcVerifierMembers';
+import { allotInterweighingDirectSerials } from '../../lib/allotInterweighingDirectSerials';
+import {
+  INVOICE_ALLOT_FROM_HINT,
+  INVOICE_ALLOT_FROM_INTERWEIGHING,
+  INVOICE_ALLOT_FROM_LABEL,
+  INVOICE_ALLOT_FROM_OPTIONS,
+  INVOICE_ALLOT_FROM_RC_QUOTA,
+  isInvoiceAllotFrom,
+  type InvoiceAllotFrom,
+  validateInvoiceAllotmentRange,
+} from '../../lib/invoiceAllotmentSource';
+import {
+  computeInterweighingDirectSeats,
+  normalizeInterweighingDirectBatches,
+} from '../../lib/interweighingDirectSerials';
 import {
   rcOvUsedFromRecords,
   saveVerifierInvoiceAllotment,
@@ -26,8 +41,6 @@ import { uploadVrAllotmentInvoice } from '../../lib/vrAllottedInvoiceUpload';
 import {
   vrAllottedEntryMatchesFilter,
   vrAllottedEntrySerials,
-  vrAllottedRangeFullyInPool,
-  vrAllottedRangeQty,
   vrAllottedRangeSerials,
   vrAllottedScopedView,
 } from '../../lib/vrAllotted';
@@ -159,6 +172,7 @@ export const VrAllotted: React.FC = () => {
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
   const [allotOpen, setAllotOpen] = useState(false);
+  const [allotFrom, setAllotFrom] = useState<InvoiceAllotFrom>(INVOICE_ALLOT_FROM_RC_QUOTA);
   const [editingInvoiceNo, setEditingInvoiceNo] = useState('');
   const [selectedUid, setSelectedUid] = useState('');
   const [invoiceNo, setInvoiceNo] = useState('');
@@ -272,6 +286,7 @@ export const VrAllotted: React.FC = () => {
 
   const resetAllotForm = useCallback((nextUid = '') => {
     setEditingInvoiceNo('');
+    setAllotFrom(INVOICE_ALLOT_FROM_RC_QUOTA);
     setInvoiceNo('');
     setAllottedAt(todayIstDate());
     setSerialStart('');
@@ -360,12 +375,36 @@ export const VrAllotted: React.FC = () => {
     [editingSerials, unusedPool],
   );
 
-  const rangeQty = vrAllottedRangeQty(serialStart, serialEnd);
-  const rangeOk = vrAllottedRangeFullyInPool(serialStart, serialEnd, allowedPool);
+  const rangeCheck = useMemo(
+    () =>
+      validateInvoiceAllotmentRange({
+        allotFrom,
+        serialStart,
+        serialEnd,
+        unusedRcSerials: allotFrom === INVOICE_ALLOT_FROM_RC_QUOTA ? allowedPool : [],
+      }),
+    [allotFrom, allowedPool, serialEnd, serialStart],
+  );
+  const rangeQty = rangeCheck.qty;
+  const rangeOk = rangeCheck.ok;
 
   const names = useMemo(
     () => new Map(verifiers.map(row => [row.uid, verifierLabel(row)])),
     [verifiers],
+  );
+
+  const selectedVerifier = useMemo(
+    () => verifiers.find(row => row.uid === selectedUid),
+    [selectedUid, verifiers],
+  );
+
+  const directSeats = useMemo(
+    () =>
+      computeInterweighingDirectSeats({
+        allotted: selectedVerifier?.interweighingDirectSerials,
+        records,
+      }),
+    [records, selectedVerifier?.interweighingDirectSerials],
   );
 
   const assignmentRows = useMemo(() => {
@@ -398,12 +437,39 @@ export const VrAllotted: React.FC = () => {
   );
 
   const previousAllotments = useMemo(() => {
-    return [...assignmentRows].sort((a, b) => {
-      const byDate = (b.allottedAt || '').slice(0, 10).localeCompare((a.allottedAt || '').slice(0, 10));
-      if (byDate !== 0) return byDate;
-      return b.invoiceNo.localeCompare(a.invoiceNo);
-    });
-  }, [assignmentRows]);
+    if (allotFrom === INVOICE_ALLOT_FROM_INTERWEIGHING) {
+      const batches = [
+        ...normalizeInterweighingDirectBatches(selectedVerifier?.interweighingDirectBatches),
+      ].sort((a, b) => {
+        const byDate = (b.allottedAt || '').slice(0, 10).localeCompare((a.allottedAt || '').slice(0, 10));
+        if (byDate !== 0) return byDate;
+        return (b.invoiceNo || '').localeCompare(a.invoiceNo || '');
+      });
+      return batches.map((row, index) => ({
+        key: `${row.invoiceNo || row.serialStart}-${row.allottedAt}-${index}`,
+        verifier: selectedVerifier ? verifierLabel(selectedVerifier) : '—',
+        invoiceNo: row.invoiceNo || '—',
+        allottedAt: row.allottedAt || '',
+        source: INVOICE_ALLOT_FROM_LABEL.interweighingDirect,
+      }));
+    }
+    return [...assignmentRows]
+      .sort((a, b) => {
+        const byDate = (b.allottedAt || '').slice(0, 10).localeCompare((a.allottedAt || '').slice(0, 10));
+        if (byDate !== 0) return byDate;
+        return b.invoiceNo.localeCompare(a.invoiceNo);
+      })
+      .map(row => ({
+        key: row.invoiceNo,
+        verifier:
+          assignmentUids(row)
+            .map(uid => names.get(uid) || uid)
+            .join(', ') || '—',
+        invoiceNo: row.invoiceNo,
+        allottedAt: row.allottedAt || '',
+        source: INVOICE_ALLOT_FROM_LABEL.rcQuota,
+      }));
+  }, [allotFrom, assignmentRows, names, selectedVerifier]);
 
   useEffect(() => {
     if (!allotOpen) return;
@@ -412,6 +478,7 @@ export const VrAllotted: React.FC = () => {
 
   const openEdit = (row: YesoneReservedAssignment) => {
     setEditingInvoiceNo(row.invoiceNo);
+    setAllotFrom(INVOICE_ALLOT_FROM_RC_QUOTA);
     setInvoiceNo(row.invoiceNo);
     setAllottedAt((row.allottedAt || '').slice(0, 10) || todayIstDate());
     setSerialStart(row.serialStart || '');
@@ -442,17 +509,44 @@ export const VrAllotted: React.FC = () => {
           void deleteProductStorageFile(existingInvoice.path).catch(() => undefined);
         }
       }
-      await saveVerifierInvoiceAllotment({
-        rcUid,
-        invoiceNo,
-        prevInvoiceNo: editingInvoiceNo || undefined,
-        serialStart,
-        serialEnd,
-        verifierUids: [selectedUid],
-        allottedAt,
-        allowedSerials: allowedPool,
-        ...(invoice ? { invoice } : {}),
-      });
+      if (allotFrom === INVOICE_ALLOT_FROM_INTERWEIGHING) {
+        const result = await allotInterweighingDirectSerials({
+          verifierUid: selectedUid,
+          allottedByUid: rcUid,
+          serialStart,
+          serialEnd,
+          invoiceNo,
+          allottedAt,
+          previousSerials: selectedVerifier?.interweighingDirectSerials,
+          ...(invoice ? { invoice } : {}),
+        });
+        setVerifiers(prev =>
+          prev.map(row =>
+            row.uid === selectedUid
+              ? {
+                  ...row,
+                  interweighingDirectSerials: result.nextSerials,
+                  interweighingDirectBatches: [
+                    ...(row.interweighingDirectBatches || []),
+                    result.batch,
+                  ],
+                }
+              : row,
+          ),
+        );
+      } else {
+        await saveVerifierInvoiceAllotment({
+          rcUid,
+          invoiceNo,
+          prevInvoiceNo: editingInvoiceNo || undefined,
+          serialStart,
+          serialEnd,
+          verifierUids: [selectedUid],
+          allottedAt,
+          allowedSerials: allowedPool,
+          ...(invoice ? { invoice } : {}),
+        });
+      }
       resetAllotForm(verifiers[0]?.uid || '');
       closeAllot();
     } catch (err) {
@@ -542,7 +636,7 @@ export const VrAllotted: React.FC = () => {
     );
   }
   if (!canOpen) {
-    return <Navigate to="/rc/certificates" replace />;
+    return <Navigate to="/rc" replace />;
   }
 
   const allotDialog = allotOpen
@@ -577,16 +671,13 @@ export const VrAllotted: React.FC = () => {
               <h3 className="vr-allotted-prev__label">Previous allotment</h3>
               <div className="vr-allotted-prev__card">
                 {(previousAllotments.length > 0 ? previousAllotments : [null]).map(row => (
-                  <div key={row?.invoiceNo || 'empty'} className="vr-allotted-prev__row">
+                  <div key={row?.key || 'empty'} className="vr-allotted-prev__row">
                     <div className="vr-allotted-prev__cell">
                       <span className="vr-allotted-prev__key">Verifier</span>
-                      <span className="vr-allotted-prev__val">
-                        {row
-                          ? assignmentUids(row)
-                              .map(uid => names.get(uid) || uid)
-                              .join(', ') || '—'
-                          : '—'}
-                      </span>
+                      <span className="vr-allotted-prev__val">{row?.verifier || '—'}</span>
+                      {row?.source ? (
+                        <span className="vr-allotted-prev__src">{row.source}</span>
+                      ) : null}
                     </div>
                     <div className="vr-allotted-prev__cell">
                       <span className="vr-allotted-prev__key">Invoice no</span>
@@ -623,6 +714,35 @@ export const VrAllotted: React.FC = () => {
                   </option>
                 ))}
               </select>
+              <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-allot-from">
+                Allot from
+              </label>
+              <select
+                id="vr-allotted-allot-from"
+                className="input-field"
+                value={allotFrom}
+                onChange={event => {
+                  const next = event.target.value;
+                  if (!isInvoiceAllotFrom(next)) return;
+                  setAllotFrom(next);
+                  setSaveError('');
+                  if (next === INVOICE_ALLOT_FROM_INTERWEIGHING) setEditingInvoiceNo('');
+                }}
+                disabled={busy}
+              >
+                {INVOICE_ALLOT_FROM_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="vr-allotted-dialog__hint">{INVOICE_ALLOT_FROM_HINT[allotFrom]}</p>
+              {allotFrom === INVOICE_ALLOT_FROM_INTERWEIGHING ? (
+                <p className="vr-allotted-direct-totals" aria-label="Direct serial totals">
+                  Allotted {directSeats.allottedQty} · Used {directSeats.usedQty} · Balance{' '}
+                  {directSeats.balanceQty}
+                </p>
+              ) : null}
               <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-invoice">
                 Invoice no
               </label>
@@ -745,8 +865,8 @@ export const VrAllotted: React.FC = () => {
                   event.target.value = '';
                 }}
               />
-              {serialStart.trim() && !rangeOk ? (
-                <p className="login-error">Range must exist in unused GAS seats.</p>
+              {serialStart.trim() && rangeCheck.error ? (
+                <p className="login-error">{rangeCheck.error}</p>
               ) : null}
               {saveError ? <p className="login-error">{saveError}</p> : null}
               <button

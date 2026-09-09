@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   deleteField,
   doc,
+  getDoc,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
@@ -43,13 +44,11 @@ import { isValidEmail, isValidPhone, normalizePhone } from '../../lib/contactFie
 import {
   Check,
   CreditCard,
-  Pencil,
   Plus,
   RefreshCw,
   Save,
   Trash2,
   UserCircle,
-  UserPlus,
   Users,
 } from 'lucide-react';
 import type { FirestoreUserDoc } from '../../types';
@@ -62,6 +61,17 @@ import {
   VerifierFormFields,
   type VerifierFormValues,
 } from './VerifierFormFields';
+import { playValidationWarningSound } from '../../lib/playUnsignedCertificateWarningSound';
+import {
+  VERIFIER_GPS_REQUIRED_MESSAGE,
+  validateVerifierLocation,
+  verifierLocationFromUser,
+  verifierLocationPersistFields,
+} from '../../lib/verifierProfileFields';
+import {
+  isVerifierOvInName,
+  validateVerifierOvInName,
+} from '../../lib/verifierOvInName';
 
 interface VerifierRecord extends FirestoreUserDoc {
   uid: string;
@@ -78,6 +88,8 @@ function verifierFormFromUser(doc: FirestoreUserDoc): VerifierFormValues {
     phone: doc.phone || '',
     email: doc.email || '',
     password: '',
+    ovInName: isVerifierOvInName(doc.ovInName) ? doc.ovInName : '',
+    ...verifierLocationFromUser(doc),
   };
 }
 
@@ -94,7 +106,9 @@ function validateVerifierForm(values: VerifierFormValues, mode: 'create' | 'edit
   if (mode === 'edit' && values.password.trim() && values.password.trim().length < 6) {
     return 'Password must be at least 6 characters.';
   }
-  return null;
+  const ovNameError = validateVerifierOvInName(values.ovInName);
+  if (ovNameError) return ovNameError;
+  return validateVerifierLocation(values);
 }
 
 export const VerifierManagement: React.FC = () => {
@@ -112,6 +126,7 @@ export const VerifierManagement: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
+  const [rcDisplayName, setRcDisplayName] = useState(user?.username ?? '');
 
   const showForm = showAddForm || editingUid !== null;
   const formBusy = submitting;
@@ -139,6 +154,20 @@ export const VerifierManagement: React.FC = () => {
   useEffect(() => {
     void fetchVerifiers();
   }, [fetchVerifiers]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    setRcDisplayName(user.username || '');
+    let cancelled = false;
+    void getDoc(doc(db, 'users', user.uid)).then(snap => {
+      if (cancelled) return;
+      const data = snap.data() as FirestoreUserDoc | undefined;
+      setRcDisplayName(data?.companyName?.trim() || data?.username?.trim() || user.username || '');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, user?.username]);
 
   const resetForm = () => {
     setFormValues(EMPTY_VERIFIER_FORM);
@@ -191,6 +220,7 @@ export const VerifierManagement: React.FC = () => {
     setError('');
     const validationError = validateVerifierForm(formValues, 'create');
     if (validationError) {
+      if (validationError === VERIFIER_GPS_REQUIRED_MESSAGE) playValidationWarningSound();
       setError(validationError);
       return;
     }
@@ -212,6 +242,8 @@ export const VerifierManagement: React.FC = () => {
         username: formValues.username.trim(),
         phone: normalizePhone(formValues.phone),
         email: formValues.email.trim(),
+        ovInName: formValues.ovInName === 'rc' ? 'rc' : 'verifier',
+        ...verifierLocationPersistFields(formValues),
         clearTextPassword: formValues.password,
         createdAt,
         createdByUid: user.uid,
@@ -242,6 +274,7 @@ export const VerifierManagement: React.FC = () => {
   const handleSaveEdit = async (uid: string) => {
     const validationError = validateVerifierForm(formValues, 'edit');
     if (validationError) {
+      if (validationError === VERIFIER_GPS_REQUIRED_MESSAGE) playValidationWarningSound();
       setError(validationError);
       return;
     }
@@ -256,6 +289,8 @@ export const VerifierManagement: React.FC = () => {
         username: formValues.username.trim(),
         phone: normalizePhone(formValues.phone),
         email: formValues.email.trim(),
+        ovInName: formValues.ovInName === 'rc' ? 'rc' : 'verifier',
+        ...verifierLocationPersistFields(formValues),
         ...photoFields,
       };
       if (formValues.password.trim().length >= 6) {
@@ -361,27 +396,14 @@ export const VerifierManagement: React.FC = () => {
   return (
     <div className="fade-in page-content">
       {showForm && (
-        <InlineFormPanel id="verifier-form" className="mb-6 inline-form-panel--wide">
+        <InlineFormPanel id="verifier-form" className="mb-6 inline-form-panel--wide inline-form-panel--verifier">
           <div className="product-form-panel">
             <ListViewBackBar onBack={handleCloseModal} disabled={formBusy} />
-            <div className="product-form-topbar">
-              <div className="product-form-topbar-text">
-                <h2 id="verifier-form-title">
-                  {showAddForm ? (
-                    <>
-                      <UserPlus className="inline-icon" /> Add Verifier
-                    </>
-                  ) : (
-                    <>
-                      <Pencil className="inline-icon" /> Edit Verifier
-                    </>
-                  )}
-                </h2>
-                <p className="rc-form-topbar-error" role={error ? 'alert' : undefined}>
-                  {error || (showAddForm ? 'Temporary staff. Can enter verifications; you approve before certificates.' : '\u00a0')}
-                </p>
-              </div>
-            </div>
+            {error ? (
+              <p className="rc-form-topbar-error" role="alert">
+                {error}
+              </p>
+            ) : null}
             <form onSubmit={handleFormSubmit} className="product-form" autoComplete="off" noValidate>
               <div className="product-form-body">
                 <VerifierFormFields
@@ -395,6 +417,7 @@ export const VerifierManagement: React.FC = () => {
                   onProfilePhotoSelect={handleProfilePhotoSelect}
                   onProfilePhotoRemove={handleProfilePhotoRemove}
                   submitting={formBusy}
+                  rcDisplayName={rcDisplayName}
                 />
               </div>
               <div className="product-form-footer">

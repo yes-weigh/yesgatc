@@ -46,7 +46,6 @@ import {
   GraduationCap,
   LogOut,
   Wallet,
-  Award,
   Share2,
   HardHat,
   Hash,
@@ -122,8 +121,6 @@ function navIconForPath(path: string): React.ReactNode {
     case '/vct/profile':
     case '/verifier/profile':
       return <Settings size={20} />;
-    case '/rc/certificates':
-      return <Award size={20} />;
     case '/rc/vr-allotted':
       return <Hash size={20} />;
     case '/rc/customers':
@@ -287,7 +284,6 @@ export const Layout: React.FC = () => {
       : currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard');
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
-  const isCertificatesList = /\/rc\/certificates\/?$/.test(location.pathname);
   const isVrAllottedPage = /\/rc\/vr-allotted\/?$/.test(location.pathname);
   const isCustomersList = /\/(rc|vct|verifier)\/customers\/?$/.test(location.pathname);
   const isReportsList = /\/(admin|rc|vct)\/reports\/?$/.test(location.pathname);
@@ -300,7 +296,7 @@ export const Layout: React.FC = () => {
     location.pathname === '/verifier' ||
     location.pathname === '/admin';
   const showAppFilterSlot =
-    useShieldBrand || isCertificatesList || isVrAllottedPage || isCustomersList || isReportsList;
+    useShieldBrand || isVrAllottedPage || isCustomersList || isReportsList;
   const isQuotaPage = /^\/admin\/rc-quota\/?$/.test(location.pathname);
   const isSettingsPage =
     /\/settings\/?$/.test(location.pathname) || /\/contractor-fee\/?$/.test(location.pathname);

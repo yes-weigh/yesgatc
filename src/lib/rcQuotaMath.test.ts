@@ -344,6 +344,32 @@ describe('OV gate PAS vs GAS', () => {
     );
   });
 
+  it('verifier direct bank skips Yesone remaining / reservedByUid gate', () => {
+    assert.equal(
+      validateOvQuotaSetup(
+        'OV',
+        {
+          remaining: [],
+          balanceQty: 0,
+          heldSerials: [],
+          scopedToVerifier: true,
+          allowInterweighingDirect: true,
+        },
+        true,
+        false,
+      ),
+      null,
+    );
+    assert.equal(
+      validateOvQuotaDevices(
+        'OV',
+        [{ serial: 'IW00001', serialSource: 'interweighingDirect' }],
+        { remaining: [], balanceQty: 0, heldSerials: [], scopedToVerifier: true, allowInterweighingDirect: true },
+      ),
+      null,
+    );
+  });
+
   it('does not charge PAS devices against GAS qty', () => {
     assert.equal(
       validateOvQuotaDevices('OV', [{ serial: 'YJ01001', pas: true }], emptyGate),

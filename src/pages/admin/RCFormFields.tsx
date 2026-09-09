@@ -13,7 +13,7 @@ import type { ProductFileMeta } from '../../lib/productApprovalUpload';
 import type { RcFormValues } from '../../lib/rcProfileFields';
 import { StorageImage } from '../../components/StorageImage';
 import {
-  RC_CERTIFICATION_METHOD_OPTIONS,
+  RC_CERTIFICATION_METHOD_EDIT_OPTIONS,
   type RcCertificationMethod,
 } from '../../lib/rcCertificationMethod';
 import { PdfSignerSignEditor } from '../../components/PdfSignerSignEditor';
@@ -472,7 +472,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
       <div className="product-form-flat-row product-form-flat-row--scale rc-form-row-cert-settings">
         <span className="product-form-flat-row-title">Settings for certification</span>
         <div className="rc-cert-settings" role="radiogroup" aria-label="Certification method">
-          {RC_CERTIFICATION_METHOD_OPTIONS.map(option => {
+          {RC_CERTIFICATION_METHOD_EDIT_OPTIONS.map(option => {
             const on = values.certificationMethod === option.id;
             const switchDisabled = locked || submitting || !canEditCertification;
             return (
@@ -495,7 +495,7 @@ export const RCFormFields: React.FC<RCFormFieldsProps> = ({
           <p className="text-muted text-xs mb-0 mt-2 rc-form-hint">Only Super Admin can change this.</p>
         ) : null}
         <p className="text-muted text-xs mb-0 mt-2 rc-form-hint">
-          After 2304: worker generates the eMAAP PDF, DSC Engine / signer / manual stores the signed PDF,
+          After 2304: worker generates the eMAAP PDF, DSC Engine / PDF signer stores the signed PDF,
           then the worker uploads it on Certificates Issued.
         </p>
         {values.certificationMethod === 'pdf_signer' ? (

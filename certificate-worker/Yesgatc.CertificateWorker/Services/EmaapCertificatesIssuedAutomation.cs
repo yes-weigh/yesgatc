@@ -221,10 +221,14 @@ public static class EmaapCertificatesIssuedAutomation
         if (!clicked)
         {
             throw new InvalidOperationException(
-                $"Upload Signed PDF button missing for {certificateNumber}.");
+                $"Upload Signed PDF / Sign and Upload button missing for {certificateNumber}.");
         }
 
-        await AttachAndConfirmSignedPdfModalAsync(page, localPdfPath, certificateNumber, cancellationToken);
+        if (await TryWaitForSignedPdfDropzoneAsync(page))
+        {
+            await AttachAndConfirmSignedPdfModalAsync(page, localPdfPath, certificateNumber, cancellationToken);
+        }
+
         await DismissSuccessOkAsync(page, cancellationToken);
         await WaitUntilOverlaysClearAsync(page, cancellationToken, maxSeconds: 15);
     }
@@ -1161,8 +1165,12 @@ public static class EmaapCertificatesIssuedAutomation
                 if (wantM && !text.includes(wantM)) continue;
                 if (!belongHit(text, cells)) continue;
                 return Array.from(tr.querySelectorAll('button, a, span'))
-                  .some(el => /upload\s*signed\s*pdf/i.test(
-                    (el.innerText || el.textContent || '').trim()));
+                  .some(el => {
+                    const t = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    return /upload\s*signed\s*pdf/i.test(t)
+                      || /sign\s*(?:and|&)\s*upload/i.test(t)
+                      || /^sign\s*pdf$/i.test(t);
+                  });
               }
               return false;
             }
@@ -1187,7 +1195,7 @@ public static class EmaapCertificatesIssuedAutomation
                 if (!compact.includes(want) && !(seq && compact.includes('26/04/26/' + seq))) continue;
                 const btn = tr.querySelector('button.upload-btn')
                   || Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
-                    .find(el => /^upload\s*signed\s*pdf$/i.test(labelOf(el)));
+                    .find(el => /^(upload\s*signed\s*pdf|sign\s*(?:and|&)\s*upload|sign\s*pdf)$/i.test(labelOf(el)));
                 if (!btn) continue;
                 btn.scrollIntoView({ block: 'center' });
                 btn.click();
@@ -1199,6 +1207,24 @@ public static class EmaapCertificatesIssuedAutomation
             best.CertificateNumber);
 
         return clicked;
+    }
+
+    private static async Task<bool> TryWaitForSignedPdfDropzoneAsync(IPage page)
+    {
+        var hint = page.GetByText("Click to select a signed PDF");
+        try
+        {
+            await hint.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = 8_000,
+            });
+            return true;
+        }
+        catch (PlaywrightException)
+        {
+            return false;
+        }
     }
 
     private static ILocator SignedPdfUploadModal(IPage page)
@@ -1307,13 +1333,17 @@ public static class EmaapCertificatesIssuedAutomation
             AriaRole.Button,
             new LocatorGetByRoleOptions
             {
-                NameRegex = new Regex(@"^\s*Upload Signed PDF\s*$", RegexOptions.IgnoreCase),
+                NameRegex = new Regex(
+                    @"^\s*(Upload Signed PDF|Sign and Upload|Sign & Upload|Sign PDF)\s*$",
+                    RegexOptions.IgnoreCase),
             });
         if (await confirm.CountAsync() == 0)
         {
             confirm = modal.Locator("button").Filter(new LocatorFilterOptions
             {
-                HasTextRegex = new Regex(@"^\s*Upload Signed PDF\s*$", RegexOptions.IgnoreCase),
+                HasTextRegex = new Regex(
+                    @"^\s*(Upload Signed PDF|Sign and Upload|Sign & Upload|Sign PDF)\s*$",
+                    RegexOptions.IgnoreCase),
             });
         }
 
@@ -1322,7 +1352,9 @@ public static class EmaapCertificatesIssuedAutomation
             confirm = page.Locator(".modal-footer button, [role='dialog'] button, .modal-content button")
                 .Filter(new LocatorFilterOptions
                 {
-                    HasTextRegex = new Regex(@"^\s*Upload Signed PDF\s*$", RegexOptions.IgnoreCase),
+                    HasTextRegex = new Regex(
+                        @"^\s*(Upload Signed PDF|Sign and Upload|Sign & Upload|Sign PDF)\s*$",
+                        RegexOptions.IgnoreCase),
                 });
         }
 

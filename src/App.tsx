@@ -37,8 +37,6 @@ import {
 import { VCTProfile } from './pages/vct/VCTProfile';
 import { VerifierProfile } from './pages/verifier/VerifierProfile';
 import { VCTTraining } from './pages/vct/VCTMenuPages';
-import { Certificates } from './pages/vct/Certificates';
-import { CertificateSign } from './pages/vct/CertificateSign';
 import { VrAllotted } from './pages/rc/VrAllotted';
 import { Reports } from './pages/shared/Reports';
 import { ContractorFeeSettings } from './pages/shared/ContractorFeeSettings';
@@ -98,8 +96,8 @@ const App: React.FC = () => {
                 <Route path="verifier" element={<VerifierManagement />} />
                 <Route path="vehicles" element={<RCVehicles />} />
                 <Route path="laboratory" element={<RCLaboratory />} />
-                <Route path="certificates" element={<Certificates />} />
-                <Route path="certificates/:recordId" element={<CertificateSign />} />
+                <Route path="certificates" element={<Navigate to="/rc" replace />} />
+                <Route path="certificates/:recordId" element={<Navigate to="/rc" replace />} />
                 <Route path="vr-allotted" element={<VrAllotted />} />
                 <Route path="manual-pdf" element={<Navigate to="/rc" replace />} />
                 <Route path="quality-management" element={<Navigate to="/rc" replace />} />

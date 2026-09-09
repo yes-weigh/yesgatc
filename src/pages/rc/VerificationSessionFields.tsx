@@ -142,6 +142,8 @@ type VerificationSessionFieldsProps = {
   mobileFloatingChrome?: boolean;
   lockKind?: boolean;
   ovQuota?: OvQuotaGate | null;
+  isVerifier?: boolean;
+  verifierPincode?: string | null;
 };
 
 export type VerificationSessionFieldsHandle = {
@@ -201,6 +203,8 @@ export const VerificationSessionFields = forwardRef<
   mobileFloatingChrome = false,
   lockKind = false,
   ovQuota = null,
+  isVerifier = false,
+  verifierPincode = null,
   },
   ref,
 ) {
@@ -228,8 +232,10 @@ export const VerificationSessionFields = forwardRef<
       ovQuota,
       isNewJob: lockKind,
       products,
+      isVerifier,
+      verifierPincode,
     }),
-    [customerPartyForm, rcPartyForm, deviceImages, deviceRvImages, performerPhotos, ovQuota, lockKind, products],
+    [customerPartyForm, rcPartyForm, deviceImages, deviceRvImages, performerPhotos, ovQuota, lockKind, products, isVerifier, verifierPincode],
   );
 
   useEffect(() => {
@@ -1187,6 +1193,11 @@ export const VerificationSessionFields = forwardRef<
                   rcProfile?.username?.trim() ||
                   ''
                 }
+                belongsHint={
+                  values.ovInName === 'verifier'
+                    ? 'OV Self — certificate in verifier name'
+                    : 'OV Self — this job belongs to the RC'
+                }
                 location={values.verificationLocation}
                 onLocationChange={value => onChange({ verificationLocation: value })}
                 temperature={values.ambientTemperature}
@@ -1210,11 +1221,18 @@ export const VerificationSessionFields = forwardRef<
               allotments={ovQuota?.remainingAllotments}
               heldSerials={ovQuota?.heldSerials ?? []}
               scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
+              allowInterweighingDirect={Boolean(ovQuota?.allowInterweighingDirect)}
+              directRemaining={ovQuota?.directRemaining ?? []}
               disabled={locked}
               geoStampCoords={imageGeoStampCoords}
               geoStampWeather={geoStampWeather}
               geoStampAllowLiveGps={geoStampAllowLiveGps}
-              onSerialChange={serial => onDeviceChange(ovSelfDevice.localId, { serialNumber: serial })}
+              onSerialChange={(serial, source) =>
+                onDeviceChange(ovSelfDevice.localId, {
+                  serialNumber: serial,
+                  ...(source ? { serialSource: source } : {}),
+                })
+              }
               onYearChange={year => onDeviceChange(ovSelfDevice.localId, { manufacturingYear: year })}
               onPlateSelect={file => onDeviceImageSelect(ovSelfDevice.localId, 'stamping', file)}
               onPlateRemove={() => onDeviceImageRemove(ovSelfDevice.localId, 'stamping')}

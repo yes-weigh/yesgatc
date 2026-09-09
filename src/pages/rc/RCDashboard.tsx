@@ -42,7 +42,7 @@ import { useRcCreatedVerifierCount } from '../../hooks/useRcCreatedVerifierCount
 import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
 import { roleCanOpenCertificates, roleCanOpenVrAllotted } from '../../lib/roleNav';
-import { verificationStageQuotaTotals } from '../../lib/vrAllotted';
+import { shouldShowVerificationStageQuotaTiles, verificationStageQuotaTotals } from '../../lib/vrAllotted';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   dashboardPeriodToListDuration,
@@ -413,6 +413,11 @@ export const RCDashboard: React.FC = () => {
       },
     ];
     let next = cards;
+    if (!shouldShowVerificationStageQuotaTiles(user?.role)) {
+      next = next.filter(
+        card => card.key !== 'allotted' && card.key !== 'used' && card.key !== 'balance',
+      );
+    }
     if (!roleCanOpenCertificates(user?.role)) {
       next = next.filter(card => card.key !== 'not_signed');
     }

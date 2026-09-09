@@ -10,6 +10,11 @@ export function roleCanOpenVrAllotted(
   return role === 'rc_admin' && hasCreatedVerifiers;
 }
 
+/** VERIFICATION STAGES Allotted / Used / Balance (150/20/130). Verifier home only. */
+export function shouldShowVerificationStageQuotaTiles(role: Role | undefined): boolean {
+  return role === 'verifier';
+}
+
 export function normalizeVerifierAllottedByUid(raw: unknown): Record<string, string[]> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
   const out: Record<string, string[]> = {};

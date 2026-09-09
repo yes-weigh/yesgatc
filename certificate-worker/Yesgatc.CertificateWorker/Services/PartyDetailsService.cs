@@ -27,6 +27,7 @@ public sealed class PartyDetailsService
         var vctId = FirestoreFieldReader.ReadString(calibrationFields, "vctId");
         var customerName = FirestoreFieldReader.ReadString(calibrationFields, "customerName", job.CustomerName);
         var fileCertificateAsRc = FirestoreFieldReader.ReadBool(calibrationFields, "fileCertificateAsRc");
+        var ovInName = FirestoreFieldReader.ReadString(calibrationFields, "ovInName");
 
         var isSelf = verificationSubject == "self"
             || (!string.IsNullOrWhiteSpace(customerId) && customerId == rcId);
@@ -36,8 +37,21 @@ public sealed class PartyDetailsService
 
         PartyProfile profile;
         var filedUnderRc = false;
+        var fileUnderVerifier = string.Equals(ovInName, "verifier", StringComparison.OrdinalIgnoreCase);
 
-        if (isSelf)
+        if (fileUnderVerifier)
+        {
+            var verifierUserId = FirstNonEmpty(vctId, customerId);
+            if (string.IsNullOrWhiteSpace(verifierUserId))
+            {
+                throw new InvalidOperationException(
+                    "OV in verifier name is missing the verifier user id.");
+            }
+
+            profile = await LoadVerifierProfileAsync(
+                verifierUserId, customerName, idToken, cancellationToken);
+        }
+        else if (isSelf)
         {
             profile = await LoadRcProfileAsync(rcUserId, customerName, idToken, cancellationToken);
         }
@@ -111,6 +125,24 @@ public sealed class PartyDetailsService
             IsSelfVerification = isSelf,
             FiledUnderRc = filedUnderRc,
         };
+    }
+
+    private async Task<PartyProfile> LoadVerifierProfileAsync(
+        string verifierUserId,
+        string customerNameFallback,
+        string idToken,
+        CancellationToken cancellationToken)
+    {
+        var fields = await _documents.GetFieldsAsync("users", verifierUserId, idToken, cancellationToken);
+        return new PartyProfile(
+            FirstNonEmpty(
+                FirestoreFieldReader.ReadString(fields, "username"),
+                FirestoreFieldReader.ReadString(fields, "companyName"),
+                customerNameFallback),
+            FirestoreFieldReader.ReadString(fields, "address"),
+            FirestoreFieldReader.ReadString(fields, "pincode"),
+            FirestoreFieldReader.ReadString(fields, "state"),
+            FirestoreFieldReader.ReadString(fields, "district"));
     }
 
     private async Task<PartyProfile> LoadRcProfileAsync(

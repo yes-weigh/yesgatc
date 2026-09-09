@@ -57,7 +57,24 @@ export type PasCheckRow = {
   included?: boolean;
   productId?: string;
   serialNumber?: string;
+  serialSource?: string;
 };
+
+export function quotaSerialRows(
+  devices: PasCheckRow[],
+  products: readonly Product[] | undefined,
+): Array<{ serial: string; pas: boolean; serialSource?: string }> {
+  return devices
+    .filter(row => row.included !== false)
+    .map(row => {
+      const product = products?.find(item => item.id === row.productId) ?? null;
+      return {
+        serial: row.serialNumber ?? '',
+        pas: productUsesPasSerials(product),
+        serialSource: row.serialSource,
+      };
+    });
+}
 
 export function productUsesPasSerials(product: Product | null | undefined): boolean {
   return Boolean(product?.pasPreAllotted);
@@ -98,21 +115,6 @@ export function pasSerialDocId(serial: string): string | null {
   const trimmed = serial.trim();
   if (!trimmed) return null;
   return trimmed.toUpperCase().replace(/[/\\]/g, '_').slice(0, 700);
-}
-
-export function quotaSerialRows(
-  devices: PasCheckRow[],
-  products: readonly Product[] | undefined,
-): Array<{ serial: string; pas: boolean }> {
-  return devices
-    .filter(row => row.included !== false)
-    .map(row => {
-      const product = products?.find(item => item.id === row.productId) ?? null;
-      return {
-        serial: row.serialNumber ?? '',
-        pas: productUsesPasSerials(product),
-      };
-    });
 }
 
 function firebaseDenied(err: unknown): boolean {

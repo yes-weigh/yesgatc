@@ -134,17 +134,23 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
             return Task.CompletedTask;
         });
 
-        if (WorkerProduct.IsEmaapEngineBuild)
+        if (!string.IsNullOrWhiteSpace(ScopeRcId))
         {
-            return;
+            _usersListener = _db.Collection("users").Document(ScopeRcId).Listen((snapshot, _) =>
+            {
+                HandleScopedUserSnapshot(snapshot);
+                return Task.CompletedTask;
+            });
         }
-
-        Query usersQuery = _db.Collection("users").WhereEqualTo("role", "rc_admin");
-        _usersListener = usersQuery.Listen((snapshot, _) =>
+        else
         {
-            HandleUsersSnapshot(snapshot);
-            return Task.CompletedTask;
-        });
+            Query usersQuery = _db.Collection("users").WhereEqualTo("role", "rc_admin");
+            _usersListener = usersQuery.Listen((snapshot, _) =>
+            {
+                HandleUsersSnapshot(snapshot);
+                return Task.CompletedTask;
+            });
+        }
 
         Query signedQuery = _db.Collection("siteCalibrations")
             .WhereNotEqualTo("signedCertificatePdfUrl", "");
@@ -195,6 +201,24 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private void HandleScopedUserSnapshot(DocumentSnapshot snapshot)
+    {
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pdfSignerRcIds = new HashSet<string>(StringComparer.Ordinal);
+        if (snapshot.Exists)
+        {
+            AddRcDocument(snapshot, names, pdfSignerRcIds);
+        }
+
+        lock (_gate)
+        {
+            _rcNames = names;
+            _pdfSignerRcIds = pdfSignerRcIds;
+        }
+
+        ScheduleQueueNotify();
     }
 
     private void HandleUsersSnapshot(QuerySnapshot snapshot)
@@ -349,8 +373,9 @@ public sealed class FirestoreQueueListener : IAsyncDisposable
         document.TryGetValue<string>("companyName", out var companyName);
         document.TryGetValue<string>("username", out var username);
         document.TryGetValue<string>("certificationMethod", out var method);
+        document.TryGetValue<string>("emaapSignerType", out var emaapSignerType);
         names[document.Id] = FirstNonEmpty(companyName, username, document.Id);
-        if (RcCertificationMethods.IsPdfSigner(method))
+        if (RcCertificationMethods.IsEffectivePdfSigner(method, emaapSignerType))
         {
             pdfSignerRcIds.Add(document.Id);
         }

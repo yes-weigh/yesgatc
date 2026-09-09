@@ -12,9 +12,9 @@ export type RoleNavOptions = {
   hasCreatedVerifiers?: boolean;
 };
 
-/** Certificates list + sign pages. RC admin only. Hidden from verifier and VCT. */
-export function roleCanOpenCertificates(role: Role | undefined): boolean {
-  return role === 'rc_admin';
+/** Certificates list + sign pages. Closed for all portal roles. Public `/download` and eMAAP signer stay. */
+export function roleCanOpenCertificates(_role: Role | undefined): boolean {
+  return false;
 }
 
 export { roleCanOpenVrAllotted };
@@ -50,7 +50,6 @@ export function navSpecsForRole(role: Role, options?: RoleNavOptions): RoleNavSp
       return [
         { path: '/rc', label: 'Dashboard' },
         { path: '/rc/verification', label: 'Verification', mobileSubtitle: 'Powered by AI' },
-        { path: '/rc/certificates', label: 'Certificates' },
         ...(roleCanOpenVrAllotted('rc_admin', Boolean(options?.hasCreatedVerifiers))
           ? [{ path: '/rc/vr-allotted', label: 'Vr Allotted' }]
           : []),

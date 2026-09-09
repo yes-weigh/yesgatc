@@ -64,11 +64,6 @@ public sealed class FirestoreService
         string idToken,
         CancellationToken cancellationToken = default)
     {
-        if (WorkerProduct.IsEmaapEngineBuild)
-        {
-            return [];
-        }
-
         var signerRcIds = await GetPdfSignerRcIdsAsync(idToken, cancellationToken);
         if (signerRcIds.Count == 0)
         {
@@ -904,6 +899,22 @@ public sealed class FirestoreService
         var ids = new HashSet<string>(StringComparer.Ordinal);
         if (!string.IsNullOrWhiteSpace(QueueRcIdFilter))
         {
+            try
+            {
+                var documents = new FirestoreDocumentClient(_settings);
+                var fields = await documents.GetFieldsAsync(
+                    "users", QueueRcIdFilter, idToken, cancellationToken);
+                if (RcCertificationMethods.IsEffectivePdfSigner(
+                        FirestoreFieldReader.ReadString(fields, "certificationMethod"),
+                        FirestoreFieldReader.ReadString(fields, "emaapSignerType")))
+                {
+                    ids.Add(QueueRcIdFilter);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
             return ids;
         }
 
@@ -934,8 +945,9 @@ public sealed class FirestoreService
                 }
 
                 var fields = row.Document.Fields ?? new Dictionary<string, JsonElement>();
-                if (RcCertificationMethods.IsPdfSigner(
-                        FirestoreFieldReader.ReadString(fields, "certificationMethod")))
+                if (RcCertificationMethods.IsEffectivePdfSigner(
+                        FirestoreFieldReader.ReadString(fields, "certificationMethod"),
+                        FirestoreFieldReader.ReadString(fields, "emaapSignerType")))
                 {
                     ids.Add(uid);
                 }

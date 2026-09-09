@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, X } from 'lucide-react';
-import { useRcScope, useRoleBasePath } from '../lib/roleScope';
+import { useRcSignerProfile } from '../lib/useRcSignerProfile';
+import { useRcScope } from '../lib/roleScope';
 import {
   UNSIGNED_PDF_DISTURB_THRESHOLD,
   useRcUnsignedPdfCount,
@@ -12,6 +13,11 @@ import {
   startUnsignedCertificateWarningLoop,
   stopUnsignedCertificateWarningLoop,
 } from '../lib/playUnsignedCertificateWarningSound';
+
+function usePdfSignerFlag(): boolean {
+  const { rcUid } = useRcScope();
+  return useRcSignerProfile(rcUid).pdfSigner;
+}
 
 function qtyLabelFor(count: number): string {
   if (count <= 0) return '0 certificates';
@@ -25,6 +31,7 @@ type PopupProps = {
   audience: 'rc' | 'vct';
   /** Shown when opening/downloading a single not-signed certificate. */
   downloadWarn?: boolean;
+  pdfSigner?: boolean;
   onClose: () => void;
   onCancel?: () => void;
 };
@@ -35,10 +42,10 @@ function UnsignedPdfDisturbPopup({
   mock,
   audience,
   downloadWarn = false,
+  pdfSigner = false,
   onClose,
   onCancel,
 }: PopupProps) {
-  const basePath = useRoleBasePath();
   const qtyLabel = qtyLabelFor(count);
 
   useEffect(() => {
@@ -53,18 +60,39 @@ function UnsignedPdfDisturbPopup({
       : 'Action required: signed PDF pending';
 
   const body = downloadWarn ? (
-    <>
-      This certificate is marked <strong>Not signed</strong>. You may download the unsigned PDF
-      now, then sign it with your Class 3 DSC and upload the signed file so it can be issued on
-      eMAAP. Leaving certificates unsigned may interrupt or delay new verifications.
-    </>
+    pdfSigner ? (
+      <>
+        This certificate is marked <strong>Not signed</strong>. EmaapEngine will stamp and
+        upload it on eMAAP Issued. Manual DSC upload is off.
+      </>
+    ) : (
+      <>
+        This certificate is marked <strong>Not signed</strong>. You may download the unsigned PDF
+        now, then sign it with your Class 3 DSC and upload the signed file so it can be issued on
+        eMAAP. Leaving certificates unsigned may interrupt or delay new verifications.
+      </>
+    )
   ) : audience === 'vct' ? (
+    pdfSigner ? (
+      <>
+        Your regional centre has <strong>{qtyLabel}</strong> with{' '}
+        <strong>No signed PDF</strong>. RC EmaapEngine stamps and uploads on eMAAP — ask the RC
+        admin to keep the engine signed in.
+      </>
+    ) : (
+      <>
+        Your regional centre has <strong>{qtyLabel}</strong> with{' '}
+        <strong>No signed PDF</strong>. Ask your RC admin to download, DSC-sign, and upload
+        these certificates for eMAAP. Until the backlog falls to{' '}
+        {UNSIGNED_PDF_DISTURB_THRESHOLD} or fewer, this reminder will appear on every menu
+        change and each new verification.
+      </>
+    )
+  ) : pdfSigner ? (
     <>
-      Your regional centre has <strong>{qtyLabel}</strong> with{' '}
-      <strong>No signed PDF</strong>. Ask your RC admin to download, DSC-sign, and upload
-      these certificates for eMAAP. Until the backlog falls to{' '}
-      {UNSIGNED_PDF_DISTURB_THRESHOLD} or fewer, this reminder will appear on every menu
-      change and each new verification.
+      Your centre has <strong>{qtyLabel}</strong> marked <strong>No signed PDF</strong>.
+      EmaapEngine will stamp the officer signature and Sign and Upload on eMAAP. Keep the engine
+      running — manual file upload is off.
     </>
   ) : (
     <>
@@ -104,15 +132,6 @@ function UnsignedPdfDisturbPopup({
           <p className="rc-unsigned-cert-popup__mock">Mock disturb preview</p>
         ) : null}
         <div className="rc-unsigned-cert-popup__actions">
-          {audience === 'rc' && !downloadWarn ? (
-            <Link
-              to={`${basePath}/certificates?status=not_signed`}
-              className="btn btn-secondary"
-              onClick={onClose}
-            >
-              Review unsigned
-            </Link>
-          ) : null}
           <button type="button" className="btn btn-primary" onClick={onClose}>
             {downloadWarn ? 'Continue download' : 'Continue'}
           </button>
@@ -139,12 +158,14 @@ export function UnsignedCertificateDownloadWarn({
   onCancel: () => void;
 }) {
   const { isVct, isRcAdmin } = useRcScope();
+  const pdfSigner = usePdfSignerFlag();
   if (!open) return null;
   return (
     <UnsignedPdfDisturbPopup
       count={1}
       disturb
       downloadWarn
+      pdfSigner={pdfSigner}
       audience={isVct && !isRcAdmin ? 'vct' : 'rc'}
       onClose={onContinue}
       onCancel={onCancel}
@@ -155,6 +176,7 @@ export function UnsignedCertificateDownloadWarn({
 /** Layout host: popup on every menu change when unsigned PDF backlog &gt; 10 (RC + VCT). */
 export function RcUnsignedPdfDisturbHost() {
   const { rcUid, isRcAdmin, isVct } = useRcScope();
+  const pdfSigner = usePdfSignerFlag();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const mock = searchParams.get('mockUnsignedDisturb') === '1';
@@ -184,6 +206,7 @@ export function RcUnsignedPdfDisturbHost() {
       disturb={effectiveDisturb}
       mock={mock}
       audience={isVct && !isRcAdmin ? 'vct' : 'rc'}
+      pdfSigner={pdfSigner}
       onClose={close}
     />
   );
@@ -198,6 +221,7 @@ type NewJobGateProps = {
 /** Blocks new verification until RC/VCT acknowledges when backlog &gt; 10. */
 export function RcUnsignedPdfNewJobGate({ open, onContinue, onCancel }: NewJobGateProps) {
   const { rcUid, isRcAdmin, isVct } = useRcScope();
+  const pdfSigner = usePdfSignerFlag();
   const eligible = isRcAdmin || isVct;
   const { count, ready, disturb } = useRcUnsignedPdfCount(
     eligible && open ? rcUid : null,
@@ -221,6 +245,7 @@ export function RcUnsignedPdfNewJobGate({ open, onContinue, onCancel }: NewJobGa
       count={count}
       disturb
       audience={isVct && !isRcAdmin ? 'vct' : 'rc'}
+      pdfSigner={pdfSigner}
       onClose={onContinue}
       onCancel={onCancel}
     />

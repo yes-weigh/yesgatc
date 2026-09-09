@@ -640,6 +640,18 @@ async function run() {
     try {
       await assertSucceeds(
         setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-direct-typed'),
+          { ...verifierOvDraft('X00999', 'VC/26/16'), serialSource: 'interweighingDirect' },
+        ),
+      );
+      ok('Verifier can create OV with typed GAS serial tagged interweighingDirect');
+    } catch (err) {
+      fail('Verifier can create OV with typed GAS serial tagged interweighingDirect', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(
           doc(verifierDb, 'siteCalibrations', 'vr-ov-empty'),
           verifierOvDraft('', 'VC/26/11'),
         ),
@@ -701,6 +713,79 @@ async function run() {
       ok('RC admin can allot GAS seats to own verifier on own user doc');
     } catch (err) {
       fail('RC admin can allot GAS seats to own verifier on own user doc', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(rcDb, 'users', VERIFIER_UID), {
+          interweighingDirectSerials: ['X00888'],
+          address: 'Street, locality',
+          pincode: '682001',
+          state: 'Kerala',
+          district: 'Ernakulam',
+          location: { lat: 10.015, lng: 76.341 },
+        }),
+      );
+      ok('RC admin can write verifier location and Interweighing-direct serials');
+    } catch (err) {
+      fail('RC admin can write verifier location and Interweighing-direct serials', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(verifierDb, 'users', VERIFIER_UID), {
+          location: { lat: 10.111, lng: 76.222 },
+        }),
+      );
+      ok('Verifier can update own GPS location only');
+    } catch (err) {
+      fail('Verifier can update own GPS location only', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'users', VERIFIER_UID), {
+          username: 'Hacked',
+        }),
+      );
+      ok('Verifier cannot update own name');
+    } catch (err) {
+      fail('Verifier cannot update own name', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'users', VERIFIER_UID), {
+          ovInName: 'rc',
+        }),
+      );
+      ok('Verifier cannot update ovInName');
+    } catch (err) {
+      fail('Verifier cannot update ovInName', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'users', VERIFIER_UID), {
+          address: 'Other street',
+          location: { lat: 10.2, lng: 76.3 },
+        }),
+      );
+      ok('Verifier GPS write cannot include address');
+    } catch (err) {
+      fail('Verifier GPS write cannot include address', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-direct-bank'),
+          verifierOvDraft('X00888', 'VC/26/18'),
+        ),
+      );
+      ok('Verifier can create OV with serial in own interweighingDirectSerials');
+    } catch (err) {
+      fail('Verifier can create OV with serial in own interweighingDirectSerials', err);
     }
 
     try {

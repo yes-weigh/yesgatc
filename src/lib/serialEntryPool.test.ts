@@ -532,6 +532,20 @@ describe('validateSerialForProductPool', () => {
     );
   });
 
+  it('direct source skips RC allotted-to-uid list', () => {
+    assert.equal(
+      validateSerialForProductPool({
+        mode: 'gas-select',
+        verificationType: 'OV',
+        serial: 'IW00001',
+        gasChoices: [],
+        scopedToVerifier: true,
+        serialSource: 'interweighingDirect',
+      }),
+      null,
+    );
+  });
+
   it('PAS accepts typed serial here; bank check is async', () => {
     assert.equal(
       validateSerialForProductPool({

@@ -11,11 +11,15 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<string> _jobLines = [];
     private readonly List<SiteCalibrationRecord> _jobs = [];
+    private readonly List<SiteCalibrationRecord> _generateJobs = [];
+    private readonly List<SiteCalibrationRecord> _signerJobs = [];
+    private readonly List<SiteCalibrationRecord> _signedJobs = [];
     private readonly FirebaseAuthService _auth;
     private readonly FirestoreService _firestore;
     private readonly FirestoreQueueListener _listener;
     private readonly PartyDetailsService _party;
     private readonly InstrumentDetailsService _instrument;
+    private readonly PdfImageStampService _pdfStamp;
     private readonly AutomationService _automation;
     private readonly LocalCredentialsStore _store = new();
     private readonly JobRetryTracker _retries = new();
@@ -37,10 +41,13 @@ public partial class MainWindow : Window
         _firestore = new FirestoreService(settings.Firebase);
         _listener = new FirestoreQueueListener(settings.Firebase, settings.AutoWorker.ListenerTokenRefreshMinutes);
         _listener.ResolveIdToken = () => GetFreshIdTokenAsync();
-        _listener.QueueUpdated += records => Dispatcher.UIThread.Post(() => OnQueueUpdated(records));
+        _listener.QueueUpdated += records => Dispatcher.UIThread.Post(() => OnGenerateQueueUpdated(records));
+        _listener.PdfSignerQueueUpdated += records => Dispatcher.UIThread.Post(() => OnSignerQueueUpdated(records));
+        _listener.SignedUploadQueueUpdated += records => Dispatcher.UIThread.Post(() => OnSignedQueueUpdated(records));
         _listener.ListenerError += message => Dispatcher.UIThread.Post(() => SetStatus(message));
         _party = new PartyDetailsService(settings.Firebase);
         _instrument = new InstrumentDetailsService(settings.Firebase);
+        _pdfStamp = new PdfImageStampService(settings.Firebase);
         _presence = new WorkerPresenceService(settings.Firebase);
         _automation = new AutomationService(settings.Automation, _firestore)
         {
@@ -125,9 +132,32 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnQueueUpdated(IReadOnlyList<SiteCalibrationRecord> records)
+    private void OnGenerateQueueUpdated(IReadOnlyList<SiteCalibrationRecord> records)
     {
-        ApplyQueue(records);
+        _generateJobs.Clear();
+        _generateJobs.AddRange(records.Where(item => item.IsEligibleForWorkerQueue));
+        RebuildJobList();
+        KickCycle();
+    }
+
+    private void OnSignerQueueUpdated(IReadOnlyList<SiteCalibrationRecord> records)
+    {
+        _signerJobs.Clear();
+        _signerJobs.AddRange(records.Where(item => item.IsEligibleForPdfSignerQueue));
+        RebuildJobList();
+        KickCycle();
+    }
+
+    private void OnSignedQueueUpdated(IReadOnlyList<SiteCalibrationRecord> records)
+    {
+        _signedJobs.Clear();
+        _signedJobs.AddRange(records.Where(item => item.IsEligibleForSignedPdfUpload));
+        RebuildJobList();
+        KickCycle();
+    }
+
+    private void KickCycle()
+    {
         if (AutoRunCheckBox.IsChecked == true && !_busy)
         {
             _ = RunCycleAsync();
@@ -146,14 +176,36 @@ public partial class MainWindow : Window
         }
 
         var token = await GetFreshIdTokenAsync();
-        var records = await _firestore.GetPendingCertificationQueueAsync(token);
-        ApplyQueue(records);
+        var generate = await _firestore.GetPendingCertificationQueueAsync(token);
+        var signer = await _firestore.GetPendingPdfSignerQueueAsync(token);
+        var signed = await _firestore.GetPendingSignedPdfUploadQueueAsync(token);
+        _generateJobs.Clear();
+        _generateJobs.AddRange(generate.Where(item => item.IsEligibleForWorkerQueue));
+        _signerJobs.Clear();
+        _signerJobs.AddRange(signer.Where(item => item.IsEligibleForPdfSignerQueue));
+        _signedJobs.Clear();
+        _signedJobs.AddRange(signed.Where(item => item.IsEligibleForSignedPdfUpload));
+        RebuildJobList();
     }
 
-    private void ApplyQueue(IReadOnlyList<SiteCalibrationRecord> records)
+    private void RebuildJobList()
     {
         _jobs.Clear();
-        _jobs.AddRange(records.Where(item => item.IsEligibleForWorkerQueue));
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Add(IEnumerable<SiteCalibrationRecord> rows)
+        {
+            foreach (var row in rows)
+            {
+                if (seen.Add(row.Id))
+                {
+                    _jobs.Add(row);
+                }
+            }
+        }
+
+        Add(_generateJobs);
+        Add(_signerJobs);
+        Add(_signedJobs);
         _jobLines.Clear();
         foreach (var job in _jobs)
         {
@@ -161,8 +213,8 @@ public partial class MainWindow : Window
         }
 
         QueueHintText.Text = _jobs.Count == 0
-            ? "No submitted jobs for this RC."
-            : $"{_jobs.Count} submitted job(s).";
+            ? "No fill, PDF signer, or signed-upload jobs for this RC."
+            : $"{_jobs.Count} job(s) · fill {_generateJobs.Count} · sign {_signerJobs.Count} · eMAAP upload {_signedJobs.Count}.";
     }
 
     private async Task RunCycleAsync()
@@ -284,6 +336,41 @@ public partial class MainWindow : Window
         }
 
         var token = await GetFreshIdTokenAsync();
+        if (job.IsEligibleForSignedPdfUpload)
+        {
+            try
+            {
+                var message = await _automation.UploadEmaapSignedPdfAsync(job, token);
+                return (true, false, false, message);
+            }
+            catch (EmaapMandatoryStepException ex)
+            {
+                return (false, false, true, ex.Message);
+            }
+            catch (Exception ex) when (
+                ex.Message.Contains("login", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("OTP", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("Sign in to eMAAP", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, true, false, ex.Message);
+            }
+        }
+
+        if (job.IsEligibleForPdfSignerQueue)
+        {
+            var outcome = await _pdfStamp.StampAndUploadAsync(job, token, _session.UserId);
+            var cert = string.IsNullOrWhiteSpace(job.CertificateNumber) ? job.SerialNumber : job.CertificateNumber;
+            return outcome switch
+            {
+                PdfStampOutcome.Uploaded => (true, false, false, $"Stamped and uploaded signed PDF for {cert}."),
+                PdfStampOutcome.SkippedAlreadySigned => (true, false, false, $"{cert} already has a signed PDF."),
+                PdfStampOutcome.SkippedNotPdfSigner => (true, false, false, $"{cert} RC is not PDF signer."),
+                PdfStampOutcome.SkippedDead => (true, false, false, $"{cert} voided or superseded."),
+                PdfStampOutcome.MissingUnsignedPdf => (false, false, false, $"No unsigned PDF yet for {cert}."),
+                _ => (false, false, false, $"PDF signer unknown result for {cert}."),
+            };
+        }
+
         var party = await _party.ResolveForJobAsync(job, job.RcId, token);
         var instrument = await _instrument.ResolveForJobAsync(job, job.RcId, token);
         try
