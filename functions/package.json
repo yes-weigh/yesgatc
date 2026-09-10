@@ -1,6 +1,7 @@
 {
   "name": "yesgatc-functions",
   "private": true,
+  "description": "YesGATC Cloud Functions",
   "main": "index.js",
   "engines": {
     "node": "22"
