@@ -12,6 +12,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -27,8 +28,10 @@ const rules = readFileSync(join(__dirname, '..', 'firestore.rules'), 'utf8');
 
 const RC_UID = 'rc-admin-test-001';
 const VCT_UID = 'vct-tech-test-001';
+const VERIFIER_UID = 'verifier-rasheed';
 const RC_AADHAR = '111111111111';
 const VCT_AADHAR = '222222222222';
+const VERIFIER_AADHAR = '555555555555';
 
 let passed = 0;
 let failed = 0;
@@ -249,6 +252,71 @@ async function run() {
       fail('VCT can list customers for their RC', err);
     }
 
+    const customerBase = {
+      rcId: RC_UID,
+      name: 'GPS Shop',
+      phone: '9876543210',
+      address: 'Main road',
+      pincode: '682001',
+      state: 'Kerala',
+      district: 'Ernakulam',
+      createdAt: new Date().toISOString(),
+      createdByUid: VCT_UID,
+    };
+
+    try {
+      await assertFails(setDoc(doc(vctDb, 'customers', 'cust-no-gps'), customerBase));
+      ok('VCT cannot create customer without GPS');
+    } catch (err) {
+      fail('VCT cannot create customer without GPS', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(doc(vctDb, 'customers', 'cust-with-gps'), {
+          ...customerBase,
+          location: { lat: 10.015, lng: 76.341 },
+        }),
+      );
+      ok('VCT can create customer with GPS');
+    } catch (err) {
+      fail('VCT can create customer with GPS', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(vctDb, 'customers', 'cust-with-gps'), {
+          location: { lat: 11.258, lng: 75.78 },
+        }),
+      );
+      ok('VCT can update customer GPS');
+    } catch (err) {
+      fail('VCT can update customer GPS', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(vctDb, 'customers', 'cust-with-gps'), {
+          location: deleteField(),
+        }),
+      );
+      ok('VCT cannot clear customer GPS');
+    } catch (err) {
+      fail('VCT cannot clear customer GPS', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(doc(rcDb, 'customers', 'rc-cust-no-gps'), {
+          ...customerBase,
+          createdByUid: RC_UID,
+        }),
+      );
+      ok('RC cannot create customer without GPS');
+    } catch (err) {
+      fail('RC cannot create customer without GPS', err);
+    }
+
     try {
       await assertFails(
         setDoc(doc(vctDb, 'siteCalibrations', 'vct-verification-bad'), {
@@ -405,74 +473,408 @@ async function run() {
       fail('RC admin cannot resubmit with serial mismatch', err);
     }
 
+    const FAIL_OWN = 'vct-failed-submit-own';
+    const FAIL_RC = 'rc-failed-submit-001';
+    const FAIL_REJECTED = 'vct-rejected-001';
+    const FAIL_UNSIGNED = 'vct-unsigned-cert-001';
+    const nowIso = new Date().toISOString();
     await testEnv.withSecurityRulesDisabled(async context => {
       const db = context.firestore();
-      await setDoc(doc(db, 'pasSerialBank', 'Y10334'), {
-        serialNumber: 'Y10334',
-        status: 'available',
-        source: 'yesone',
+      await setDoc(doc(db, 'siteCalibrations', FAIL_OWN), {
+        rcId: RC_UID,
+        createdByUid: VCT_UID,
+        vctId: VCT_UID,
+        performedBy: 'vct',
+        status: 'submitted',
+        verificationType: 'OV',
+        serialNumber: 'SN-FAIL-OWN',
+        applicationNumber: 'VC/26/50',
+        pipelineFailedPhase: 'submit',
+        pipelineFailedAt: nowIso,
+        submittedAt: nowIso,
+        createdAt: nowIso,
       });
-      await setDoc(doc(db, 'pasSerialBankMeta', 'ATM30GAY'), {
-        sku: 'ATM30GAY',
-        qty: 2,
+      await setDoc(doc(db, 'siteCalibrations', FAIL_RC), {
+        rcId: RC_UID,
+        createdByUid: RC_UID,
+        performedBy: 'rc',
+        status: 'submitted',
+        verificationType: 'OV',
+        serialNumber: 'SN-FAIL-RC',
+        applicationNumber: 'VC/26/51',
+        pipelineFailedPhase: 'submit',
+        pipelineFailedAt: nowIso,
+        submittedAt: nowIso,
+        createdAt: nowIso,
+      });
+      await setDoc(doc(db, 'siteCalibrations', FAIL_REJECTED), {
+        rcId: RC_UID,
+        createdByUid: VCT_UID,
+        vctId: VCT_UID,
+        performedBy: 'vct',
+        status: 'rejected',
+        verificationType: 'OV',
+        serialNumber: 'SN-REJ',
+        applicationNumber: 'VC/26/52',
+        pipelineFailedPhase: 'submit',
+        submittedAt: nowIso,
+        createdAt: nowIso,
+      });
+      await setDoc(doc(db, 'siteCalibrations', FAIL_UNSIGNED), {
+        rcId: RC_UID,
+        createdByUid: VCT_UID,
+        vctId: VCT_UID,
+        performedBy: 'vct',
+        status: 'certified',
+        verificationType: 'OV',
+        serialNumber: 'SN-UNSIGNED',
+        applicationNumber: 'VC/26/53',
+        certificateNumber: 'IND/GATC/KL/26/04/99',
+        certifiedAt: nowIso,
+        createdAt: nowIso,
       });
     });
 
-    try {
-      await assertSucceeds(getDoc(doc(vctDb, 'pasSerialBank', 'Y10334')));
-      ok('VCT can read PAS number bank serial');
-    } catch (err) {
-      fail('VCT can read PAS number bank serial', err);
-    }
-
-    try {
-      await assertSucceeds(getDocs(collection(vctDb, 'pasSerialBank')));
-      ok('VCT can list PAS number bank');
-    } catch (err) {
-      fail('VCT can list PAS number bank', err);
-    }
-
-    try {
-      await assertSucceeds(getDoc(doc(vctDb, 'pasSerialBankMeta', 'ATM30GAY')));
-      ok('VCT can read PAS number bank meta');
-    } catch (err) {
-      fail('VCT can read PAS number bank meta', err);
-    }
+    const failedSubmitResubmitPatch = {
+      status: 'submitted',
+      submittedAt: nowIso,
+      updatedAt: nowIso,
+      pipelineFailedPhase: deleteField(),
+      pipelineFailureMessage: deleteField(),
+      pipelineFailedAt: deleteField(),
+      certificationLastError: deleteField(),
+      lastFailedSubmitResubmitAt: nowIso,
+      failedSubmitResubmitSource: 'manual',
+      clientAppVersion: '0.0.0-test',
+      clientAppVersionCode: 1,
+    };
 
     try {
       await assertSucceeds(
-        updateDoc(doc(vctDb, 'pasSerialBank', 'Y10334'), {
-          status: 'used',
-          usedAt: new Date().toISOString(),
-          usedByUid: VCT_UID,
-          usedByRcId: RC_UID,
-          usedRecordId: verificationId,
-          updatedAt: new Date().toISOString(),
-        }),
+        updateDoc(doc(vctDb, 'siteCalibrations', FAIL_OWN), failedSubmitResubmitPatch),
       );
-      ok('VCT can mark PAS serial used');
+      ok('VCT can resubmit own failed-at-submit job');
     } catch (err) {
-      fail('VCT can mark PAS serial used', err);
+      fail('VCT can resubmit own failed-at-submit job', err);
     }
 
     try {
       await assertFails(
-        setDoc(doc(vctDb, 'pasSerialBank', 'Y99999'), {
-          serialNumber: 'Y99999',
-          status: 'available',
-        }),
+        updateDoc(doc(vctDb, 'siteCalibrations', FAIL_RC), failedSubmitResubmitPatch),
       );
-      ok('VCT cannot create PAS number bank docs');
+      ok('VCT cannot resubmit RC-owned failed-at-submit job');
     } catch (err) {
-      fail('VCT cannot create PAS number bank docs', err);
+      fail('VCT cannot resubmit RC-owned failed-at-submit job', err);
     }
 
-    const anonDb = testEnv.unauthenticatedContext().firestore();
     try {
-      await assertFails(getDoc(doc(anonDb, 'pasSerialBank', 'Y10334')));
-      ok('Unauthenticated cannot read PAS number bank');
+      await assertFails(
+        updateDoc(doc(vctDb, 'siteCalibrations', FAIL_REJECTED), failedSubmitResubmitPatch),
+      );
+      ok('VCT cannot resubmit rejected verification');
     } catch (err) {
-      fail('Unauthenticated cannot read PAS number bank', err);
+      fail('VCT cannot resubmit rejected verification', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(vctDb, 'siteCalibrations', FAIL_UNSIGNED), {
+          ...failedSubmitResubmitPatch,
+          status: 'submitted',
+        }),
+      );
+      ok('VCT cannot resubmit unsigned certified verification');
+    } catch (err) {
+      fail('VCT cannot resubmit unsigned certified verification', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(rcDb, 'siteCalibrations', FAIL_RC), failedSubmitResubmitPatch),
+      );
+      ok('RC admin can resubmit own failed-at-submit job');
+    } catch (err) {
+      fail('RC admin can resubmit own failed-at-submit job', err);
+    }
+
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', VERIFIER_UID), {
+        aadhar: VERIFIER_AADHAR,
+        role: 'verifier',
+        rcId: RC_UID,
+        active: true,
+        username: 'Rasheed',
+        createdAt: new Date().toISOString(),
+      });
+    });
+    const verifierDb = testEnv.authenticatedContext(VERIFIER_UID).firestore();
+
+    const verifierOvDraft = (serialNumber, applicationNumber) => ({
+      rcId: RC_UID,
+      createdByUid: VERIFIER_UID,
+      vctId: VERIFIER_UID,
+      performedBy: 'verifier',
+      requestSource: 'verifier',
+      status: 'draft',
+      verificationType: 'OV',
+      applicationNumber,
+      customerName: 'Verifier Customer',
+      productName: 'Bench PC',
+      serialNumber,
+      createdAt: new Date().toISOString(),
+    });
+
+    try {
+      await assertFails(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-unallotted'),
+          verifierOvDraft('X00423', 'VC/26/10'),
+        ),
+      );
+      ok('Verifier cannot create OV with GAS serial not allotted to them');
+    } catch (err) {
+      fail('Verifier cannot create OV with GAS serial not allotted to them', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-direct-typed'),
+          { ...verifierOvDraft('X00999', 'VC/26/16'), serialSource: 'interweighingDirect' },
+        ),
+      );
+      ok('Verifier can create OV with typed GAS serial tagged interweighingDirect');
+    } catch (err) {
+      fail('Verifier can create OV with typed GAS serial tagged interweighingDirect', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-empty'),
+          verifierOvDraft('', 'VC/26/11'),
+        ),
+      );
+      ok('Verifier can create OV draft with empty serial');
+    } catch (err) {
+      fail('Verifier can create OV draft with empty serial', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-pas'),
+          verifierOvDraft('YJ01001', 'VC/26/12'),
+        ),
+      );
+      ok('Verifier can create OV with PAS serial without GAS allotment');
+    } catch (err) {
+      fail('Verifier can create OV with PAS serial without GAS allotment', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(doc(verifierDb, 'siteCalibrations', 'vr-rv-unallotted'), {
+          ...verifierOvDraft('X00423', 'VC/26/13'),
+          verificationType: 'RV',
+        }),
+      );
+      ok('Verifier RV may use existing serial without unused GAS allotment');
+    } catch (err) {
+      fail('Verifier RV may use existing serial without unused GAS allotment', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(doc(verifierDb, 'customers', 'vr-cust-no-gps'), {
+          rcId: RC_UID,
+          name: 'Verifier Shop',
+          phone: '9876543210',
+          address: 'Main road',
+          pincode: '682001',
+          createdByUid: VERIFIER_UID,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      ok('Verifier cannot create customer without GPS');
+    } catch (err) {
+      fail('Verifier cannot create customer without GPS', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(rcDb, 'users', RC_UID), {
+          yesoneVerifierAllottedByUid: { [VERIFIER_UID]: ['X00423', 'G0541'] },
+          yesoneReservedSerials: ['X00423', 'G0541'],
+          yesoneReservedForUids: [VERIFIER_UID],
+        }),
+      );
+      ok('RC admin can allot GAS seats to own verifier on own user doc');
+    } catch (err) {
+      fail('RC admin can allot GAS seats to own verifier on own user doc', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(rcDb, 'users', VERIFIER_UID), {
+          interweighingDirectSerials: ['X00888'],
+          address: 'Street, locality',
+          pincode: '682001',
+          state: 'Kerala',
+          district: 'Ernakulam',
+          location: { lat: 10.015, lng: 76.341 },
+        }),
+      );
+      ok('RC admin can write verifier location and Interweighing-direct serials');
+    } catch (err) {
+      fail('RC admin can write verifier location and Interweighing-direct serials', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(verifierDb, 'users', VERIFIER_UID), {
+          location: { lat: 10.111, lng: 76.222 },
+        }),
+      );
+      ok('Verifier can update own GPS location only');
+    } catch (err) {
+      fail('Verifier can update own GPS location only', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'users', VERIFIER_UID), {
+          username: 'Hacked',
+        }),
+      );
+      ok('Verifier cannot update own name');
+    } catch (err) {
+      fail('Verifier cannot update own name', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'users', VERIFIER_UID), {
+          ovInName: 'rc',
+        }),
+      );
+      ok('Verifier cannot update ovInName');
+    } catch (err) {
+      fail('Verifier cannot update ovInName', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'users', VERIFIER_UID), {
+          address: 'Other street',
+          location: { lat: 10.2, lng: 76.3 },
+        }),
+      );
+      ok('Verifier GPS write cannot include address');
+    } catch (err) {
+      fail('Verifier GPS write cannot include address', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-direct-bank'),
+          verifierOvDraft('X00888', 'VC/26/18'),
+        ),
+      );
+      ok('Verifier can create OV with serial in own interweighingDirectSerials');
+    } catch (err) {
+      fail('Verifier can create OV with serial in own interweighingDirectSerials', err);
+    }
+
+    try {
+      await assertSucceeds(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-allotted'),
+          verifierOvDraft('X00423', 'VC/26/14'),
+        ),
+      );
+      ok('Verifier can create OV with GAS serial allotted to their uid');
+    } catch (err) {
+      fail('Verifier can create OV with GAS serial allotted to their uid', err);
+    }
+
+    try {
+      await assertFails(
+        setDoc(
+          doc(verifierDb, 'siteCalibrations', 'vr-ov-other-range'),
+          verifierOvDraft('X00424', 'VC/26/15'),
+        ),
+      );
+      ok('Verifier cannot create OV with RC unused GAS serial not allotted to them');
+    } catch (err) {
+      fail('Verifier cannot create OV with RC unused GAS serial not allotted to them', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'siteCalibrations', 'vr-ov-empty'), {
+          serialNumber: 'X00424',
+        }),
+      );
+      ok('Verifier cannot update draft to unallotted GAS serial');
+    } catch (err) {
+      fail('Verifier cannot update draft to unallotted GAS serial', err);
+    }
+
+    try {
+      await assertSucceeds(
+        updateDoc(doc(verifierDb, 'siteCalibrations', 'vr-ov-empty'), {
+          serialNumber: 'G0541',
+        }),
+      );
+      ok('Verifier can update draft to allotted GAS serial');
+    } catch (err) {
+      fail('Verifier can update draft to allotted GAS serial', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(vctDb, 'users', RC_UID), {
+          yesoneVerifierAllottedByUid: { [VERIFIER_UID]: ['X99999'] },
+        }),
+      );
+      ok('VCT cannot allot serials on parent RC user doc');
+    } catch (err) {
+      fail('VCT cannot allot serials on parent RC user doc', err);
+    }
+
+    try {
+      await assertFails(
+        updateDoc(doc(verifierDb, 'users', RC_UID), {
+          yesoneVerifierAllottedByUid: { [VERIFIER_UID]: ['X00424'] },
+        }),
+      );
+      ok('Verifier cannot allot serials on parent RC user doc');
+    } catch (err) {
+      fail('Verifier cannot allot serials on parent RC user doc', err);
+    }
+
+    const otherRcAdminDb = testEnv.authenticatedContext('other-rc-admin-002').firestore();
+    await testEnv.withSecurityRulesDisabled(async context => {
+      const db = context.firestore();
+      await setDoc(doc(db, 'users', 'other-rc-admin-002'), {
+        aadhar: '444444444444',
+        role: 'rc_admin',
+        username: 'Other RC',
+        companyName: 'Other RC',
+      });
+    });
+    try {
+      await assertFails(
+        updateDoc(doc(otherRcAdminDb, 'users', RC_UID), {
+          yesoneVerifierAllottedByUid: { stolen: ['X00423'] },
+        }),
+      );
+      ok('RC admin cannot allot serials on another RC user doc');
+    } catch (err) {
+      fail('RC admin cannot allot serials on another RC user doc', err);
     }
   } finally {
     await testEnv.cleanup();

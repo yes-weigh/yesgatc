@@ -8,6 +8,7 @@ import {
   computeRcQuotaSeats,
   normalizeReservedAssignments,
   type RcQuotaSeats,
+  type YesoneReservedAssignment,
 } from '../lib/rcMasterQuota';
 import { expandSerialRange, uniqueSerials, yesoneSerialFromDoc, type YesoneSerialAllotment } from '../lib/yesoneInboundData';
 import {
@@ -16,14 +17,31 @@ import {
   serialInwardBatchFromDoc,
   type SerialInwardBatch,
 } from '../lib/serialInwardReport';
+import { pasProductIdSet } from '../lib/pasSerialBank';
+import { usePasBlockedSerials } from './usePasBlockedSerials';
+import { useAppContext } from '../context/AppContext';
 import { useRcScope } from '../lib/roleScope';
+import {
+  assignUnownedReservedToSoleUid,
+  flattenAllottedSerials,
+  mergeAllottedByUid,
+  normalizeVerifierAllottedByUid,
+} from '../lib/vrAllotted';
 import type { SiteCalibration } from '../types';
 
+/** `rcUid` must be the parent RC admin uid — never the verifier/VCT uid. */
 export function useRcQuotaSeats(
   rcUid: string | null | undefined,
   records: SiteCalibration[],
-): RcQuotaSeats & { ready: boolean; allotmentRows: YesoneSerialAllotment[] } {
+): RcQuotaSeats & {
+  ready: boolean;
+  allotmentRows: YesoneSerialAllotment[];
+  allottedByUid: Record<string, string[]>;
+  reservedAssignments: YesoneReservedAssignment[];
+  voidedSerials: string[];
+} {
   const { isRcAdmin } = useRcScope();
+  const { products } = useAppContext();
   const [companyName, setCompanyName] = useState('');
   const [rcCode, setRcCode] = useState('');
   const [ovQuota, setOvQuota] = useState('');
@@ -33,9 +51,10 @@ export function useRcQuotaSeats(
   const [reservedSerials, setReservedSerials] = useState<string[]>([]);
   const [reservedInvoices, setReservedInvoices] = useState<string[]>([]);
   const [reservedForUids, setReservedForUids] = useState<string[]>([]);
-  const [reservedAssignments, setReservedAssignments] = useState<
-    Array<{ invoiceNo: string; verifierUid: string; serialStart?: string; serialEnd?: string }>
-  >([]);
+  const [reservedAssignments, setReservedAssignments] = useState<YesoneReservedAssignment[]>(
+    [],
+  );
+  const [verifierAllottedByUid, setVerifierAllottedByUid] = useState<Record<string, string[]>>({});
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
   const [allotmentRows, setAllotmentRows] = useState<YesoneSerialAllotment[]>([]);
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
@@ -91,6 +110,9 @@ export function useRcQuotaSeats(
           ),
         );
         setReservedAssignments(normalizeReservedAssignments(data.yesoneReservedAssignments));
+        setVerifierAllottedByUid(normalizeVerifierAllottedByUid(data.yesoneVerifierAllottedByUid));
+      } else {
+        setVerifierAllottedByUid({});
       }
       setUserLoaded(true);
     });
@@ -183,10 +205,11 @@ export function useRcQuotaSeats(
       ...reservedSerials,
       ...fromAssignments,
       ...serialsForReservedInvoices([...batchRows, ...eventRows], reservedInvoices),
+      ...flattenAllottedSerials(verifierAllottedByUid),
     ]);
-  }, [batchRows, eventRows, reservedAssignments, reservedInvoices, reservedSerials]);
+  }, [batchRows, eventRows, reservedAssignments, reservedInvoices, reservedSerials, verifierAllottedByUid]);
 
-  const reservedByUid = useMemo(() => {
+  const invoiceReservedByUid = useMemo(() => {
     const map: Record<string, string[]> = {};
     const batches = [...batchRows, ...eventRows];
     const reservedAllow = new Set(reservedSerials.map(s => s.trim().toUpperCase()).filter(Boolean));
@@ -195,25 +218,47 @@ export function useRcQuotaSeats(
         row.serialStart
           ? expandSerialRange(row.serialStart, row.serialEnd || row.serialStart)
           : serialsForReservedInvoices(batches, [row.invoiceNo]);
-      if (serials.length === 0 && reservedSerials.length > 0) {
-        serials = reservedSerials;
-      }
       // Clip to yesoneReservedSerials so leftover stickers never inflate QTY.
       if (reservedAllow.size > 0) {
         const clipped = serials.filter(s => reservedAllow.has(s.trim().toUpperCase()));
         if (clipped.length > 0) serials = clipped;
       }
+      const assignees =
+        row.verifierUids && row.verifierUids.length > 0 ? row.verifierUids : [row.verifierUid];
       if (serials.length === 0) continue;
-      map[row.verifierUid] = uniqueSerials([...(map[row.verifierUid] || []), ...serials]);
-    }
-    // Legacy: reserved serials + assignee uids, no invoice map → reserved pool only.
-    if (Object.keys(map).length === 0 && reservedForUids.length > 0 && reservedSerials.length > 0) {
-      for (const uid of reservedForUids) {
-        map[uid] = reservedSerials;
+      for (const uid of assignees) {
+        const key = uid.trim();
+        if (!key) continue;
+        map[key] = uniqueSerials([...(map[key] || []), ...serials]);
       }
     }
     return map;
-  }, [batchRows, eventRows, reservedAssignments, reservedForUids, reservedSerials]);
+  }, [batchRows, eventRows, reservedAssignments, reservedSerials]);
+
+  const persistedAllottedByUid = useMemo(
+    () => mergeAllottedByUid(invoiceReservedByUid, verifierAllottedByUid),
+    [invoiceReservedByUid, verifierAllottedByUid],
+  );
+
+  const allottedByUid = useMemo(() => {
+    const allottedKeys = new Set(
+      flattenAllottedSerials(persistedAllottedByUid).map(serial => serial.trim().toUpperCase()),
+    );
+    const unownedReserved = uniqueSerials(mergedReserved).filter(serial => {
+      const key = serial.trim().toUpperCase();
+      return Boolean(key) && !allottedKeys.has(key);
+    });
+    return assignUnownedReservedToSoleUid({
+      allottedByUid: persistedAllottedByUid,
+      unownedReserved,
+      reservedForUids,
+    });
+  }, [mergedReserved, persistedAllottedByUid, reservedForUids]);
+
+  const reservedByUid = allottedByUid;
+
+  const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
+  const pasSerials = usePasBlockedSerials(allotmentRows, products);
 
   const seats = useMemo(
     () =>
@@ -230,6 +275,8 @@ export function useRcQuotaSeats(
         reservedSerials: mergedReserved,
         reservedForUids,
         reservedByUid,
+        pasProductIds,
+        pasSerials,
       }),
     [
       allotSerials,
@@ -238,6 +285,8 @@ export function useRcQuotaSeats(
       mergedReserved,
       ovQuota,
       ovQuotaUsed,
+      pasProductIds,
+      pasSerials,
       rcCode,
       rcWideRecords,
       records,
@@ -248,5 +297,12 @@ export function useRcQuotaSeats(
     ],
   );
 
-  return { ...seats, allotmentRows, ready: userLoaded && allotLoaded && batchLoaded && eventLoaded };
+  return {
+    ...seats,
+    allotmentRows,
+    allottedByUid,
+    reservedAssignments,
+    voidedSerials,
+    ready: userLoaded && allotLoaded && batchLoaded && eventLoaded,
+  };
 }

@@ -1,18 +1,29 @@
 import type { FirestoreUserDoc, Product } from '../types';
-import { isPendingNewCustomerParty, type CustomerFormValues } from './customerProfileFields';
+import {
+  isPendingNewCustomerParty,
+  type CustomerFormValues,
+} from './customerProfileFields';
+import { customerPartyGpsBlockReason } from './customerGps.ts';
 import { isValidPincode, normalizePincode } from './contactFields';
 import { VERIFICATION_PINCODE_REQUIRED_MESSAGE } from './verificationSubmitGates';
 import {
   validateVerificationDeviceDetails,
   type VerificationSessionValues,
 } from './siteCalibrationProfileFields';
+import { productStepBlockReason } from './compactWizardProductStep';
 import {
   emptyDeviceVerificationImagesState,
+  SERIAL_PLATE_IMAGE_KIND,
+  validateDeviceImageSlot,
   validateDeviceVerificationImages,
+  VERIFICATION_EVIDENCE_PHOTO_KINDS,
+  VERIFICATION_IMAGE_CONFIG,
   type DeviceVerificationImagesState,
+  type VerificationImageKind,
 } from './verificationDeviceImages';
 import {
   emptyDeviceRvDocumentsState,
+  isValidManufacturingYear,
   validateDeviceRvDocuments,
   type DeviceRvDocumentsState,
 } from './verificationRvDeviceImages';
@@ -23,8 +34,15 @@ import {
   type PerformerPhotosState,
 } from './verificationPerformerPhotos';
 import { validateOvQuotaDevices, validateOvQuotaSetup, type OvQuotaGate } from './ovQuotaGate';
+import { validateVerifierOvStart } from './verifierOvInName';
+import { catalogueHasPasProducts, quotaSerialRows } from './pasSerialBank';
+import {
+  gasAllottedChoices,
+  serialEntryMode,
+  validateSerialForProductPool,
+} from './serialEntryPool';
 
-export type VerificationFormStepId = 'setup' | 'instruments' | 'review' | 'product' | 'site' | 'photos';
+export type VerificationFormStepId = 'setup' | 'instruments' | 'review' | 'product' | 'serial' | 'site' | 'photos';
 
 export type VerificationInstrumentSubStage = 'photos' | 'details';
 
@@ -56,19 +74,25 @@ export const VERIFICATION_FORM_STEPS: VerificationFormStepDef[] = [
   },
 ];
 
-/** New OV Self job — serial already picked. Customer is the RC centre. Site skipped (In situ + Self). */
+/** New OV Self job — product → serial plate → photos → submit. */
 export const OV_SELF_FORM_STEPS: VerificationFormStepDef[] = [
   {
     id: 'product',
     label: 'Product',
     shortLabel: 'Product',
-    description: 'Choose the instrument. MPE and seal ID fill automatically.',
+    description: 'Choose the instrument and capacity. MPE and seal ID fill automatically.',
+  },
+  {
+    id: 'serial',
+    label: 'Serial',
+    shortLabel: 'Serial',
+    description: 'Photograph the serial plate. GAS: pick an allotted serial. PAS: type and verify.',
   },
   {
     id: 'photos',
     label: 'Photos',
     shortLabel: 'Photos',
-    description: 'Upload required verification photos.',
+    description: 'Upload the four remaining verification photos.',
   },
   {
     id: 'review',
@@ -78,7 +102,7 @@ export const OV_SELF_FORM_STEPS: VerificationFormStepDef[] = [
   },
 ];
 
-/** New OV Customer — serial picked, then customer → product → photos → submit. */
+/** New OV Customer — customer → product → serial plate → photos → submit. */
 export const OV_CUSTOMER_FORM_STEPS: VerificationFormStepDef[] = [
   {
     id: 'setup',
@@ -90,13 +114,19 @@ export const OV_CUSTOMER_FORM_STEPS: VerificationFormStepDef[] = [
     id: 'product',
     label: 'Product',
     shortLabel: 'Product',
-    description: 'Choose the instrument. MPE and seal ID fill automatically.',
+    description: 'Choose the instrument and capacity. MPE and seal ID fill automatically.',
+  },
+  {
+    id: 'serial',
+    label: 'Serial',
+    shortLabel: 'Serial',
+    description: 'Photograph the serial plate. GAS: pick an allotted serial. PAS: type and verify.',
   },
   {
     id: 'photos',
     label: 'Photos',
     shortLabel: 'Photos',
-    description: 'Upload required verification photos.',
+    description: 'Upload the four remaining verification photos.',
   },
   {
     id: 'review',
@@ -130,7 +160,7 @@ export function isRvCustomerWizard(
   return lockKind && values.verificationType === 'RV' && values.verificationSubject === 'customer';
 }
 
-/** Compact mobile flow (product shop → photos → submit) for OV Self / OV Customer / RV Customer. */
+/** Compact mobile flow (product → serial plate → photos → submit) for OV Self / OV Customer / RV Customer. */
 export function isOvCompactWizard(
   lockKind: boolean,
   values: { verificationType: string; verificationSubject: string },
@@ -162,7 +192,23 @@ export type VerificationFormStepContext = {
   ovQuota?: OvQuotaGate | null;
   isNewJob?: boolean;
   products?: Product[];
+  /** Verifier user pincode when OV Self files under verifier name. */
+  verifierPincode?: string | null;
+  isVerifier?: boolean;
 };
+
+function customerGpsBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
+  return customerPartyGpsBlockReason({
+    verificationType: values.verificationType,
+    verificationSubject: values.verificationSubject,
+    isNewJob: context?.isNewJob,
+    latitude: context?.customerForm?.latitude,
+    longitude: context?.customerForm?.longitude,
+  });
+}
 
 function partyStepBlockReason(
   values: VerificationSessionValues,
@@ -175,8 +221,15 @@ function partyStepBlockReason(
       rcProfile?.companyName?.trim() ||
       rcProfile?.username?.trim() ||
       '';
-    if (!name) return 'RC centre details are still loading. Please wait a moment.';
-    const pin = context?.rcForm?.pincode ?? rcProfile?.pincode ?? '';
+    if (!name) {
+      return values.ovInName === 'verifier'
+        ? 'Verifier name is missing.'
+        : 'RC centre details are still loading. Please wait a moment.';
+    }
+    const pin =
+      values.ovInName === 'verifier'
+        ? (context?.verifierPincode ?? '')
+        : (context?.rcForm?.pincode ?? rcProfile?.pincode ?? '');
     if (!isValidPincode(normalizePincode(pin))) {
       return VERIFICATION_PINCODE_REQUIRED_MESSAGE;
     }
@@ -187,13 +240,13 @@ function partyStepBlockReason(
     if (context?.customerForm && !isValidPincode(normalizePincode(pin))) {
       return VERIFICATION_PINCODE_REQUIRED_MESSAGE;
     }
-    return null;
+    return customerGpsBlockReason(values, context);
   }
   if (context?.customerForm && isPendingNewCustomerParty(context.customerForm)) {
     if (!isValidPincode(normalizePincode(context.customerForm.pincode))) {
       return VERIFICATION_PINCODE_REQUIRED_MESSAGE;
     }
-    return null;
+    return customerGpsBlockReason(values, context);
   }
   return 'Select a customer from lookup or enter name and mobile number.';
 }
@@ -221,9 +274,10 @@ export function verificationDevicePhotosBlockReason(
   images: DeviceVerificationImagesState,
   rvDocuments: DeviceRvDocumentsState | undefined,
   verificationType: VerificationSessionValues['verificationType'],
+  kinds?: VerificationImageKind[],
 ): string | null {
   const label = `Instrument ${index + 1}`;
-  const imageError = validateDeviceVerificationImages(images, label, verificationType);
+  const imageError = validateDeviceVerificationImages(images, label, verificationType, kinds);
   if (imageError) return imageError;
 
   if (verificationType === 'RV') {
@@ -245,21 +299,41 @@ export function verificationDeviceDetailsBlockReason(
   return validateVerificationDeviceDetails(row, index, { verificationType, product });
 }
 
+function includedDeviceEntries(values: VerificationSessionValues): {
+  row: VerificationSessionValues['devices'][number];
+  index: number;
+}[] {
+  return values.devices
+    .map((row, index) => ({ row, index }))
+    .filter(entry => entry.row.included);
+}
+
+/** Compact product/serial/photos UI only edits the first included row. */
+function compactWorkingDeviceEntries(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): { row: VerificationSessionValues['devices'][number]; index: number }[] {
+  const included = includedDeviceEntries(values);
+  if (isOvCompactWizard(Boolean(context?.isNewJob), values)) {
+    return included.slice(0, 1);
+  }
+  return included;
+}
+
 function instrumentsDetailsBlockReason(
   values: VerificationSessionValues,
   context?: VerificationFormStepContext,
 ): string | null {
-  const included = values.devices.filter(row => row.included);
+  const included = includedDeviceEntries(values);
   if (included.length === 0) return 'Add at least one instrument.';
 
-  for (let i = 0; i < values.devices.length; i++) {
-    const row = values.devices[i];
-    if (!row.included) continue;
+  const rows = compactWorkingDeviceEntries(values, context);
+  for (const { row, index } of rows) {
     const product =
       context?.products?.find(p => p.id === row.productId) ?? null;
     const detailsError = verificationDeviceDetailsBlockReason(
       row,
-      i,
+      index,
       values.verificationType,
       product,
     );
@@ -268,7 +342,67 @@ function instrumentsDetailsBlockReason(
 
   return validateOvQuotaDevices(
     values.verificationType,
-    included.map(row => row.serialNumber),
+    quotaSerialRows(rows.map(entry => entry.row), context?.products),
+    context?.ovQuota,
+  );
+}
+
+function productSpecOnlyBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
+  return productStepBlockReason(values.devices, {
+    compact: isOvCompactWizard(Boolean(context?.isNewJob), values),
+    products: context?.products,
+  });
+}
+
+function serialStepBlockReason(
+  values: VerificationSessionValues,
+  context?: VerificationFormStepContext,
+): string | null {
+  const included = includedDeviceEntries(values);
+  if (included.length === 0) return 'Add at least one instrument.';
+
+  const deviceImages = context?.deviceImages ?? {};
+  const serialRows = compactWorkingDeviceEntries(values, context);
+  for (const { row, index } of serialRows) {
+    const label = `Device ${index + 1}`;
+    const images = deviceImages[row.localId] ?? emptyDeviceVerificationImagesState();
+    const plateError = validateDeviceImageSlot(
+      images[SERIAL_PLATE_IMAGE_KIND],
+      `${label}: ${VERIFICATION_IMAGE_CONFIG[SERIAL_PLATE_IMAGE_KIND].label}`,
+    );
+    if (plateError) return plateError;
+    if (!row.serialNumber.trim()) return `${label}: serial number is required.`;
+    if (values.verificationType === 'RV' && !isValidManufacturingYear(row.manufacturingYear)) {
+      return `${label}: select year of manufacturing.`;
+    }
+    const product = context?.products?.find(item => item.id === row.productId) ?? null;
+    const mode = serialEntryMode(product);
+    const gasChoices = gasAllottedChoices({
+      remaining: context?.ovQuota?.remaining ?? [],
+      allotments: context?.ovQuota?.remainingAllotments,
+      heldSerials: context?.ovQuota?.heldSerials,
+      product,
+      fallbackProduct: { productId: row.productId, productName: row.productName },
+    });
+    const poolError = validateSerialForProductPool({
+      mode,
+      verificationType: values.verificationType,
+      serial: row.serialNumber,
+      gasChoices,
+      scopedToVerifier: Boolean(context?.ovQuota?.scopedToVerifier),
+      serialSource: row.serialSource,
+    });
+    if (poolError && poolError !== 'Serial number is required.') {
+      return `${label}: ${poolError}`;
+    }
+  }
+
+  return validateOvQuotaDevices(
+    values.verificationType,
+    quotaSerialRows(serialRows.map(entry => entry.row), context?.products),
     context?.ovQuota,
   );
 }
@@ -276,22 +410,22 @@ function instrumentsDetailsBlockReason(
 function instrumentsPhotosOnlyBlockReason(
   values: VerificationSessionValues,
   context?: VerificationFormStepContext,
+  kinds?: VerificationImageKind[],
 ): string | null {
-  const included = values.devices.filter(row => row.included);
+  const included = includedDeviceEntries(values);
   if (included.length === 0) return 'Add at least one instrument.';
 
   const deviceImages = context?.deviceImages ?? {};
   const deviceRvImages = context?.deviceRvImages ?? {};
 
-  for (let i = 0; i < values.devices.length; i++) {
-    const row = values.devices[i];
-    if (!row.included) continue;
+  for (const { row, index } of compactWorkingDeviceEntries(values, context)) {
     const photoError = verificationDevicePhotosBlockReason(
       row,
-      i,
+      index,
       deviceImages[row.localId] ?? emptyDeviceVerificationImagesState(),
       deviceRvImages[row.localId],
       values.verificationType,
+      kinds,
     );
     if (photoError) return photoError;
   }
@@ -338,6 +472,10 @@ export function verificationFormStepBlockReason(
     if (values.verificationSubject !== 'self' && values.verificationSubject !== 'customer') {
       return 'Choose Self or Customer.';
     }
+    if (context?.isVerifier && values.verificationType === 'OV') {
+      const ovNameReason = validateVerifierOvStart(values.ovInName);
+      if (ovNameReason) return ovNameReason;
+    }
     const partyReason = partyStepBlockReason(values, rcProfile, context);
     if (partyReason) return partyReason;
     // Compact OV/RV Customer: temp/humidity checked on Submit, not here.
@@ -346,15 +484,31 @@ export function verificationFormStepBlockReason(
       && context?.isNewJob
       && (values.verificationType === 'OV' || values.verificationType === 'RV')
     ) {
-      return validateOvQuotaSetup(values.verificationType, context?.ovQuota, true);
+      return validateOvQuotaSetup(
+        values.verificationType,
+        context?.ovQuota,
+        true,
+        catalogueHasPasProducts(context?.products),
+      );
     }
     const siteReason = siteStepBlockReason(values);
     if (siteReason) return siteReason;
-    return validateOvQuotaSetup(values.verificationType, context?.ovQuota, Boolean(context?.isNewJob));
+    return validateOvQuotaSetup(
+      values.verificationType,
+      context?.ovQuota,
+      Boolean(context?.isNewJob),
+      catalogueHasPasProducts(context?.products),
+    );
   }
 
   if (stepId === 'product') {
-    return instrumentsDetailsBlockReason(values, context);
+    return productSpecOnlyBlockReason(values, context);
+  }
+
+  if (stepId === 'serial') {
+    const productReason = productSpecOnlyBlockReason(values, context);
+    if (productReason) return productReason;
+    return serialStepBlockReason(values, context);
   }
 
   if (stepId === 'site') {
@@ -364,7 +518,11 @@ export function verificationFormStepBlockReason(
   }
 
   if (stepId === 'photos') {
-    return instrumentsPhotosOnlyBlockReason(values, context);
+    return instrumentsPhotosOnlyBlockReason(
+      values,
+      context,
+      VERIFICATION_EVIDENCE_PHOTO_KINDS,
+    );
   }
 
   if (stepId === 'instruments') {

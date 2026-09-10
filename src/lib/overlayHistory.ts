@@ -23,6 +23,11 @@ function ensureListener() {
   window.addEventListener('popstate', onPopState);
 }
 
+function historyHasOverlayState(): boolean {
+  const state = window.history.state;
+  return Boolean(state && typeof state === 'object' && '__yesgatcOverlay' in state);
+}
+
 export type OverlayDismissOptions = {
   /** When true, remove the overlay from the stack without calling `history.back()`. */
   suppressHistoryBack?: boolean;
@@ -35,8 +40,13 @@ export function registerOverlay(close: () => void): OverlayDismiss {
   ensureListener();
   const id = ++nextId;
   const entry: OverlayEntry = { id, close };
+  const reuseDummy = stack.length === 0 && historyHasOverlayState();
   stack.push(entry);
-  window.history.pushState({ __yesgatcOverlay: id }, '');
+  if (reuseDummy) {
+    window.history.replaceState({ __yesgatcOverlay: id }, '');
+  } else {
+    window.history.pushState({ __yesgatcOverlay: id }, '');
+  }
 
   return (options?: OverlayDismissOptions) => {
     const index = stack.findIndex(item => item.id === id);

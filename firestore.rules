@@ -42,8 +42,40 @@ service cloud.firestore {
       return isOperationalVct() || isOperationalVerifier();
     }
 
+    function isPasStickerSerial(serial) {
+      return serial is string && serial.matches('^[Yy][Jj].+');
+    }
+
+    function isGasStickerSerial(serial) {
+      return serial is string
+        && !isPasStickerSerial(serial)
+        && serial.matches('^[GgXx].+');
+    }
+
     function vctApprovalStatus(data) {
       return data.get('approvalStatus', 'approved');
+    }
+
+    function customerLocationValid(data) {
+      return data.keys().hasAll(['location'])
+        && data.location is map
+        && data.location.keys().hasAll(['lat', 'lng'])
+        && data.location.lat is number
+        && data.location.lng is number
+        && data.location.lat >= -90
+        && data.location.lat <= 90
+        && data.location.lng >= -180
+        && data.location.lng <= 180;
+    }
+
+    function verifierOwnGpsOnlyUpdate(uid) {
+      return isOperationalVerifier()
+        && request.auth.uid == uid
+        && resource.data.role == 'verifier'
+        && request.resource.data.role == 'verifier'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['location'])
+        && customerLocationValid(request.resource.data)
+        && request.resource.data.location.keys().hasOnly(['lat', 'lng']);
     }
 
     function validVerificationApplicationNumber(data) {
@@ -201,6 +233,8 @@ service cloud.firestore {
         && request.resource.data.get('pdfSignerSignY', null) == resource.data.get('pdfSignerSignY', null)
         && request.resource.data.get('yesoneAllottedSerials', null) == resource.data.get('yesoneAllottedSerials', null)
         && request.resource.data.get('yesoneVoidedSerials', null) == resource.data.get('yesoneVoidedSerials', null);
+        // yesoneReservedSerials / yesoneReservedForUids / yesoneVerifierAllottedByUid
+        // are RC-writable (Vr Allotted + overlay reserve).
 
       allow update: if isRCAdmin()
         && resource.data.role == 'vct'
@@ -220,6 +254,8 @@ service cloud.firestore {
         && request.resource.data.rcId == request.auth.uid
         && request.resource.data.aadhar == resource.data.aadhar
         && validAadhar(request.resource.data);
+
+      allow update: if verifierOwnGpsOnlyUpdate(uid);
 
       allow delete: if isRCAdmin()
         && resource.data.role == 'vct'
@@ -340,27 +376,33 @@ service cloud.firestore {
       allow read: if isOperationalVerifier() && resource.data.rcId == vctRcId();
 
       allow create: if isRCAdmin()
-        && request.resource.data.rcId == request.auth.uid;
+        && request.resource.data.rcId == request.auth.uid
+        && customerLocationValid(request.resource.data);
 
       allow create: if isOperationalVct()
         && request.resource.data.rcId == vctRcId()
-        && request.resource.data.get('createdByUid', '') == request.auth.uid;
+        && request.resource.data.get('createdByUid', '') == request.auth.uid
+        && customerLocationValid(request.resource.data);
 
       allow create: if isOperationalVerifier()
         && request.resource.data.rcId == vctRcId()
-        && request.resource.data.get('createdByUid', '') == request.auth.uid;
+        && request.resource.data.get('createdByUid', '') == request.auth.uid
+        && customerLocationValid(request.resource.data);
 
       allow update: if isRCAdmin()
         && resource.data.rcId == request.auth.uid
-        && request.resource.data.rcId == request.auth.uid;
+        && request.resource.data.rcId == request.auth.uid
+        && customerLocationValid(request.resource.data);
 
       allow update: if isOperationalVct()
         && resource.data.rcId == vctRcId()
-        && request.resource.data.rcId == vctRcId();
+        && request.resource.data.rcId == vctRcId()
+        && customerLocationValid(request.resource.data);
 
       allow update: if isOperationalVerifier()
         && resource.data.rcId == vctRcId()
-        && request.resource.data.rcId == vctRcId();
+        && request.resource.data.rcId == vctRcId()
+        && customerLocationValid(request.resource.data);
 
       // RC cannot delete customers once registered; Super Admin may remove records.
     }
@@ -393,6 +435,64 @@ service cloud.firestore {
 
       function rcEmaapResubmitSource() {
         return get(/databases/$(database)/documents/siteCalibrations/$(request.resource.data.resubmittedFromId));
+      }
+
+      function isFailedAtSubmitResource() {
+        return verificationRecordStatus(resource.data) == 'submitted'
+          && resource.data.get('pipelineFailedPhase', '') == 'submit';
+      }
+
+      function isFailedSubmitResubmitUpdate() {
+        return isFailedAtSubmitResource()
+          && verificationRecordStatus(request.resource.data) == 'submitted'
+          && !request.resource.data.keys().hasAny(['pipelineFailedPhase'])
+          && verificationApplicationNumberUnchanged()
+          && verificationZohoFieldsUnchanged()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly([
+                 'status',
+                 'submittedAt',
+                 'updatedAt',
+                 'pipelineFailedPhase',
+                 'pipelineFailureMessage',
+                 'pipelineFailedAt',
+                 'certificationLastError',
+                 'lastFailedSubmitResubmitAt',
+                 'failedSubmitResubmitSource',
+                 'clientAppVersion',
+                 'clientAppVersionCode'
+               ]);
+      }
+
+      // GAS OV stickers must be in parent RC yesoneVerifierAllottedByUid[uid].
+      // PAS YJ and empty/RV serials stay unrestricted here.
+      function serialAllottedToVerifier(serial) {
+        let byUid = get(/databases/$(database)/documents/users/$(vctRcId()))
+          .data.get('yesoneVerifierAllottedByUid', {});
+        let mine = byUid is map ? byUid.get(request.auth.uid, []) : [];
+        return mine is list && mine.hasAny([serial]);
+      }
+
+      function serialInVerifierDirectBank(serial) {
+        let mine = get(/databases/$(database)/documents/users/$(request.auth.uid))
+          .data.get('interweighingDirectSerials', []);
+        return mine is list && mine.hasAny([serial]);
+      }
+
+      function isInterweighingDirectSource(data) {
+        return data.get('serialSource', '') == 'interweighingDirect';
+      }
+
+      function verifierMayWriteVerificationSerial(data) {
+        let serial = data.get('serialNumber', '');
+        return !(serial is string)
+          || serial.size() == 0
+          || data.get('verificationType', '') != 'OV'
+          || isPasStickerSerial(serial)
+          || !isGasStickerSerial(serial)
+          || serialAllottedToVerifier(serial)
+          || serialInVerifierDirectBank(serial)
+          || isInterweighingDirectSource(data);
       }
 
       allow read: if isSuperAdmin();
@@ -430,7 +530,8 @@ service cloud.firestore {
         && request.resource.data.get('verificationType', '') in ['OV', 'RV']
         && verificationRecordStatus(request.resource.data) == 'draft'
         && validVerificationApplicationNumber(request.resource.data)
-        && meetsMinVerificationAppVersion();
+        && meetsMinVerificationAppVersion()
+        && verifierMayWriteVerificationSerial(request.resource.data);
 
       // RC self verification (performedBy rc).
       allow create: if isRCAdmin()
@@ -501,6 +602,15 @@ service cloud.firestore {
         && verificationRecordStatus(request.resource.data) in ['draft', 'pending_rc']
         && verificationApplicationNumberUnchanged()
         && verificationZohoFieldsUnchanged()
+        && meetsMinVerificationAppVersion()
+        && verifierMayWriteVerificationSerial(request.resource.data);
+
+      // VCT — re-queue own failed-at-submit job (same document, not a clone).
+      allow update: if isOperationalVct()
+        && resource.data.rcId == vctRcId()
+        && request.resource.data.rcId == resource.data.rcId
+        && vctOwnsVerification(resource.data)
+        && isFailedSubmitResubmitUpdate()
         && meetsMinVerificationAppVersion();
 
       allow update: if isRCAdmin()

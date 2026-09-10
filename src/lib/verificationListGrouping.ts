@@ -17,6 +17,7 @@ import {
 } from './verificationRequest';
 import { matchesVerificationSearch, type VerificationSearchExtras } from './verificationListSearch';
 import { sortVerificationsByCertificateDesc } from './verificationListSort';
+import { verificationListKeepsUncollapsedRows } from './verificationListStatusQuery';
 import type { SiteCalibration } from '../types';
 
 export type VerificationListActiveFilters = {
@@ -242,7 +243,7 @@ export function buildVerificationListDisplay(
   allRecords: SiteCalibration[],
   statusFilter: VerificationStatusFilter,
 ): VerificationListDisplayRecord[] {
-  if (statusFilter === 'duplicates') {
+  if (verificationListKeepsUncollapsedRows(statusFilter)) {
     const groups = buildSerialGroupMap(allRecords);
     return sortVerificationsByCertificateDesc(
       filtered.map(record => {

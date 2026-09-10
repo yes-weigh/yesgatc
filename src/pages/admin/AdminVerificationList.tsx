@@ -22,6 +22,7 @@ import {
   parseVerificationDurationParam,
   type VerificationDurationFilter,
 } from '../../lib/verificationListDuration';
+import { parseVerificationListStatusParam } from '../../lib/verificationListStatusQuery';
 import { rewriteOutOfKeralaJobsToRcName } from '../../lib/verificationRcFiling';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
@@ -63,10 +64,34 @@ import {
   moveFailedSubmitVerificationToDraft,
 } from '../../lib/verificationPipelineRepair';
 import {
+  canActorBulkResubmitFailedSubmit,
+  canActorResubmitFailedSubmit,
+  filterFailedSubmitResubmitTargets,
+} from '../../lib/verificationFailedSubmitResubmit';
+import { resubmitFailedSubmitVerifications } from '../../lib/verificationFailedSubmitWrite';
+import {
+  canActorBulkSubmitFailAndDraft,
+  failDraftBulkHasWork,
+  formatFailDraftBulkConfirmMessage,
+  planFailAndDraftBulkSubmit,
+} from '../../lib/verificationFailAndDraftBulk';
+import {
+  canActorBulkSubmitPendingRc,
+  filterPendingRcSubmitTargets,
+  formatPendingRcBulkConfirmMessage,
+  pendingRcBulkHasWork,
+  planPendingRcBulkSubmit,
+} from '../../lib/verificationPendingRcBulk';
+import {
   isSiteCalibrationSubmittable,
   siteCalibrationSubmitBlockReason,
 } from '../../lib/siteCalibrationProfileFields';
 import {
+  markPasCalibrationRecordsUsed,
+  verifyPasCalibrationRecords,
+} from '../../lib/pasSerialBank';
+import {
+  approveAndSubmitPendingRcRecords,
   submitVerificationRecord,
   submitVerificationRecords,
   type VerificationSubmitOptions,
@@ -106,6 +131,7 @@ export const AdminVerificationList: React.FC = () => {
   const pendingRcFilter = searchParams.get('rc');
   const pendingVoidFilter = searchParams.get('void') === '1';
   const pendingOpenId = searchParams.get('open');
+  const pendingSubmitFailDraft = searchParams.get('submitFailDraft') === '1';
   const [records, setRecords] = useState<VerificationRow[]>([]);
   const [customersById, setCustomersById] = useState<Map<string, Customer>>(() => new Map());
   const [rcUsersById, setRcUsersById] = useState<Map<string, RcListProfile>>(() => new Map());
@@ -126,8 +152,12 @@ export const AdminVerificationList: React.FC = () => {
   const [movingToDraftId, setMovingToDraftId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
+  const [selectedFailedIds, setSelectedFailedIds] = useState<Set<string>>(() => new Set());
+  const [selectedPendingRcIds, setSelectedPendingRcIds] = useState<Set<string>>(() => new Set());
   const [listError, setListError] = useState('');
   const selectAllDraftsRef = useRef<HTMLInputElement | null>(null);
+  const selectAllFailedRef = useRef<HTMLInputElement | null>(null);
+  const selectAllPendingRcRef = useRef<HTMLInputElement | null>(null);
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
     () => ({
@@ -218,21 +248,9 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     if (!pendingStatusFilter) return;
-    const allowed: VerificationStatusFilter[] = [
-      'all',
-      'draft',
-      'submitted',
-      'certified',
-      'failed_submit',
-      'rejected',
-      'duplicates',
-    ];
-    const raw = pendingStatusFilter as VerificationStatusFilter;
-    if (allowed.includes(raw)) {
-      setStatusFilter(raw);
-      setVoidOnly(false);
-    } else if (raw === 'approved' || raw === 'failed_certification') {
-      setStatusFilter(raw === 'failed_certification' ? 'failed_submit' : 'submitted');
+    const parsed = parseVerificationListStatusParam(pendingStatusFilter);
+    if (parsed) {
+      setStatusFilter(parsed);
       setVoidOnly(false);
     }
     setSearchParams(
@@ -587,9 +605,10 @@ export const AdminVerificationList: React.FC = () => {
         rcZohoId: rcProfile?.zohoId,
         zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings),
         requireUploadedImages: true,
+        products,
       };
     },
-    [customersById, rcUsersById, appSettings],
+    [customersById, rcUsersById, appSettings, products],
   );
 
   const draftSubmitMeta = useMemo(() => {
@@ -607,6 +626,16 @@ export const AdminVerificationList: React.FC = () => {
     [draftSubmitMeta],
   );
 
+  const canBulkFailDraft = canActorBulkSubmitFailAndDraft(user?.role);
+  const failDraftPlan = useMemo(
+    () =>
+      planFailAndDraftBulkSubmit(canBulkFailDraft ? durationScoped : [], {
+        draftBlockReason: record =>
+          siteCalibrationSubmitBlockReason(record, recordSubmitOptions(record)),
+      }),
+    [canBulkFailDraft, durationScoped, recordSubmitOptions],
+  );
+
   const allSelectableDraftsSelected =
     selectableDraftIds.length > 0 && selectableDraftIds.every(id => selectedDraftIds.has(id));
 
@@ -615,6 +644,8 @@ export const AdminVerificationList: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
+    setSelectedFailedIds(new Set());
+    setSelectedPendingRcIds(new Set());
   }, [statusFilter, typeFilter, rcFilter, searchTerm, durationFilter, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
@@ -644,6 +675,122 @@ export const AdminVerificationList: React.FC = () => {
     });
   };
 
+  const canBulkFailed = canActorBulkResubmitFailedSubmit(user?.role);
+  const selectableFailedIds = useMemo(() => {
+    if (!canBulkFailed || statusFilter !== 'failed_submit') return [];
+    return filterFailedSubmitResubmitTargets(filteredRecords)
+      .filter(record => canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid }))
+      .map(record => record.id);
+  }, [canBulkFailed, statusFilter, filteredRecords, user?.role, user?.uid]);
+
+  const allSelectableFailedSelected =
+    selectableFailedIds.length > 0 && selectableFailedIds.every(id => selectedFailedIds.has(id));
+
+  const someSelectableFailedSelected =
+    selectableFailedIds.some(id => selectedFailedIds.has(id)) && !allSelectableFailedSelected;
+
+  useEffect(() => {
+    if (selectAllFailedRef.current) {
+      selectAllFailedRef.current.indeterminate = someSelectableFailedSelected;
+    }
+  }, [someSelectableFailedSelected, selectableFailedIds.length]);
+
+  const toggleFailedSelection = (id: string) => {
+    setSelectedFailedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFailed = () => {
+    setSelectedFailedIds(prev => {
+      if (allSelectableFailedSelected) {
+        const next = new Set(prev);
+        selectableFailedIds.forEach(id => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...selectableFailedIds]);
+    });
+  };
+
+  const canBulkPendingRc = canActorBulkSubmitPendingRc(user?.role);
+  const selectablePendingRcIds = useMemo(() => {
+    if (!canBulkPendingRc || statusFilter !== 'pending_rc') return [];
+    return filterPendingRcSubmitTargets(filteredRecords).map(record => record.id);
+  }, [canBulkPendingRc, statusFilter, filteredRecords]);
+
+  const allSelectablePendingRcSelected =
+    selectablePendingRcIds.length > 0 && selectablePendingRcIds.every(id => selectedPendingRcIds.has(id));
+
+  const someSelectablePendingRcSelected =
+    selectablePendingRcIds.some(id => selectedPendingRcIds.has(id)) && !allSelectablePendingRcSelected;
+
+  useEffect(() => {
+    if (selectAllPendingRcRef.current) {
+      selectAllPendingRcRef.current.indeterminate = someSelectablePendingRcSelected;
+    }
+  }, [someSelectablePendingRcSelected, selectablePendingRcIds.length]);
+
+  const togglePendingRcSelection = (id: string) => {
+    setSelectedPendingRcIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPendingRc = () => {
+    setSelectedPendingRcIds(prev => {
+      if (allSelectablePendingRcSelected) {
+        const next = new Set(prev);
+        selectablePendingRcIds.forEach(id => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...selectablePendingRcIds]);
+    });
+  };
+
+  const submitReadyDraftRecords = useCallback(
+    async (selectedRecords: SiteCalibration[]) => {
+      if (selectedRecords.length === 0) return;
+
+      const pasBankError = await verifyPasCalibrationRecords(selectedRecords, products);
+      if (pasBankError) {
+        throw new Error(pasBankError);
+      }
+
+      await markPasCalibrationRecordsUsed(
+        selectedRecords.map(record => ({
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+          rcId: record.rcId,
+          verificationType: record.verificationType,
+        })),
+        products,
+        { uid: user?.uid, rcId: selectedRecords[0]?.rcId },
+      );
+      await ensureRvWalletDebitedForRecords({
+        records: selectedRecords,
+        products,
+        feeSettings: appSettings,
+        feesForRc: () => resolveRcFeesStructure(null),
+      });
+      await submitVerificationRecords(
+        selectedRecords.map(record => ({
+          id: record.id,
+          verificationType: record.verificationType,
+        })),
+        db,
+        submitOptions,
+      );
+    },
+    [products, user?.uid, appSettings, submitOptions],
+  );
+
   const handleSubmitRecord = async (record: SiteCalibration) => {
     if (!isSuperAdmin || !canSubmitVerification(record)) return;
 
@@ -653,9 +800,25 @@ export const AdminVerificationList: React.FC = () => {
       return;
     }
 
+    const pasBankError = await verifyPasCalibrationRecords([record], products);
+    if (pasBankError) {
+      setListError(pasBankError);
+      return;
+    }
+
     setSubmitting(true);
     setListError('');
     try {
+      await markPasCalibrationRecordsUsed(
+        [{
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+          verificationType: record.verificationType,
+        }],
+        products,
+        { uid: user?.uid, rcId: record.rcId },
+      );
       await ensureRvWalletDebitedForRecords({
         records: [record],
         products,
@@ -705,20 +868,7 @@ export const AdminVerificationList: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await ensureRvWalletDebitedForRecords({
-        records: selectedRecords,
-        products,
-        feeSettings: appSettings,
-        feesForRc: () => resolveRcFeesStructure(null),
-      });
-      await submitVerificationRecords(
-        selectedRecords.map(record => ({
-          id: record.id,
-          verificationType: record.verificationType,
-        })),
-        db,
-        submitOptions,
-      );
+      await submitReadyDraftRecords(selectedRecords);
       setSelectedDraftIds(new Set());
       await fetchRecords();
     } catch (err: unknown) {
@@ -733,6 +883,202 @@ export const AdminVerificationList: React.FC = () => {
       setSubmitting(false);
     }
   };
+
+  const handleResubmitFailedRecord = async (record: SiteCalibration) => {
+    if (!canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid })) return;
+
+    const appNo = record.applicationNumber?.trim() || '—';
+    const serial = record.serialNumber?.trim() || '—';
+    const ok = await confirm({
+      title: 'Resubmit for certification?',
+      message: [
+        `Re-queue App ${appNo} (serial ${serial}) for eMAAP.`,
+        '',
+        'Same certificate job. Application number is kept.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Resubmit',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await resubmitFailedSubmitVerifications([record.id], 'manual', db);
+      setSelectedFailedIds(prev => {
+        if (!prev.has(record.id)) return prev;
+        const next = new Set(prev);
+        next.delete(record.id);
+        return next;
+      });
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(err instanceof Error ? err.message : 'Failed to resubmit verification.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkResubmitFailed = async () => {
+    if (!canBulkFailed) return;
+
+    const selectedRecords = filterFailedSubmitResubmitTargets(
+      filteredRecords.filter(record => selectedFailedIds.has(record.id)),
+    );
+    if (selectedRecords.length === 0) {
+      setListError('Select failed-at-submit jobs to resubmit.');
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Resubmit selected?',
+      message: [
+        `Re-queue ${selectedRecords.length} failed-at-submit job${selectedRecords.length === 1 ? '' : 's'} for eMAAP.`,
+        '',
+        'Same certificate jobs. Application numbers are kept.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Resubmit selected',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await resubmitFailedSubmitVerifications(
+        selectedRecords.map(record => record.id),
+        'bulk',
+        db,
+      );
+      setSelectedFailedIds(new Set());
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(err instanceof Error ? err.message : 'Failed to resubmit selected verifications.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkSubmitPendingRc = async () => {
+    if (!canBulkPendingRc || !user?.uid) return;
+
+    const plan = planPendingRcBulkSubmit(
+      filteredRecords.filter(record => selectedPendingRcIds.has(record.id)),
+    );
+    if (!pendingRcBulkHasWork(plan)) {
+      setListError('Select pending RC jobs to submit.');
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Submit pending RC?',
+      message: formatPendingRcBulkConfirmMessage(plan),
+      messageFormat: 'preline',
+      confirmLabel: 'Submit selected',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await approveAndSubmitPendingRcRecords(plan.approveAndSubmit, user.uid, db, {
+        ...submitOptions,
+        beforeSubmit: async selectedRecords => {
+          await ensureRvWalletDebitedForRecords({
+            records: selectedRecords,
+            products,
+            feeSettings: appSettings,
+            feesForRc: () => resolveRcFeesStructure(null),
+          });
+        },
+      });
+      setSelectedPendingRcIds(new Set());
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(
+        isZohoInvoiceGateError(err)
+          ? formatZohoInvoiceGateError(err)
+          : err instanceof Error
+            ? err.message
+            : 'Failed to submit pending RC jobs.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitAllFailAndEligibleDrafts = async () => {
+    if (!canBulkFailDraft) return;
+
+    const plan = planFailAndDraftBulkSubmit(durationScoped, {
+      draftBlockReason: record =>
+        siteCalibrationSubmitBlockReason(record, recordSubmitOptions(record)),
+    });
+
+    if (!failDraftBulkHasWork(plan)) {
+      setListError(
+        plan.draftSkip.length > 0
+          ? formatFailDraftBulkConfirmMessage(plan)
+          : 'No failed-at-submit jobs or eligible drafts in this period.',
+      );
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Submit Fail + eligible Draft?',
+      message: formatFailDraftBulkConfirmMessage(plan),
+      messageFormat: 'preline',
+      confirmLabel: 'Submit all',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      if (plan.failResubmit.length > 0) {
+        await resubmitFailedSubmitVerifications(
+          plan.failResubmit.map(record => record.id),
+          'bulk',
+          db,
+        );
+      }
+      if (plan.draftSubmit.length > 0) {
+        await submitReadyDraftRecords(plan.draftSubmit);
+      }
+      setSelectedDraftIds(new Set());
+      setSelectedFailedIds(new Set());
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(
+        isZohoInvoiceGateError(err)
+          ? formatZohoInvoiceGateError(err)
+          : err instanceof Error
+            ? err.message
+            : 'Failed to submit Fail + Draft queue.',
+      );
+      await fetchRecords();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSubmitAllFailAndEligibleDraftsRef = useRef(handleSubmitAllFailAndEligibleDrafts);
+  handleSubmitAllFailAndEligibleDraftsRef.current = handleSubmitAllFailAndEligibleDrafts;
+
+  useEffect(() => {
+    if (!pendingSubmitFailDraft) return;
+    if (loading) return;
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('submitFailDraft');
+        return next;
+      },
+      { replace: true },
+    );
+    if (!canBulkFailDraft) return;
+    void handleSubmitAllFailAndEligibleDraftsRef.current();
+  }, [pendingSubmitFailDraft, loading, canBulkFailDraft, setSearchParams]);
 
   const filterOptions = buildVerificationStatusFilterOptions(counts);
   const rowOffset = (page - 1) * VERIFICATION_TABLE_PAGE_SIZE;
@@ -801,6 +1147,35 @@ export const AdminVerificationList: React.FC = () => {
             onSignedPdfFilterChange={setSignedPdfFilter}
             loading={loading}
           />
+
+          {canBulkFailDraft
+            && (failDraftBulkHasWork(failDraftPlan) || failDraftPlan.draftSkip.length > 0) && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {failDraftPlan.failResubmit.length} fail
+                {' · '}
+                {failDraftPlan.draftSubmit.length} draft ready
+                {failDraftPlan.draftSkip.length > 0
+                  ? ` · ${failDraftPlan.draftSkip.length} draft skipped`
+                  : ''}
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleSubmitAllFailAndEligibleDrafts()}
+                disabled={submitting || !failDraftBulkHasWork(failDraftPlan)}
+              >
+                {submitting ? (
+                  <span className="spinner-inline" />
+                ) : (
+                  <>
+                    <Send size={16} /> Submit all Fail + eligible Draft
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
           <VerificationListFilters
             searchTerm={searchTerm}
             onSearchTermChange={setSearchTerm}
@@ -861,6 +1236,66 @@ export const AdminVerificationList: React.FC = () => {
             </div>
           )}
 
+          {canBulkFailed && selectedFailedIds.size > 0 && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {selectedFailedIds.size} failed at submit selected
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleBulkResubmitFailed()}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <span className="spinner-inline" />
+                ) : (
+                  <>
+                    <Send size={16} /> Resubmit selected
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3"
+                onClick={() => setSelectedFailedIds(new Set())}
+                disabled={submitting}
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
+          {canBulkPendingRc && selectedPendingRcIds.size > 0 && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {selectedPendingRcIds.size} pending RC selected
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleBulkSubmitPendingRc()}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <span className="spinner-inline" />
+                ) : (
+                  <>
+                    <Send size={16} /> Submit selected
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3"
+                onClick={() => setSelectedPendingRcIds(new Set())}
+                disabled={submitting}
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex justify-center py-16">
               <span className="spinner-inline large" />
@@ -891,6 +1326,10 @@ export const AdminVerificationList: React.FC = () => {
                 adminMoveFailedSubmitEnabled={isSuperAdmin}
                 onDelete={record => void handleDelete(record as VerificationRow)}
                 onMoveToDraft={record => void handleMoveToDraft(record as VerificationRow)}
+                onResubmitFailedSubmit={record => void handleResubmitFailedRecord(record)}
+                canResubmitFailedSubmit={record =>
+                  canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid })
+                }
                 onSubmit={
                   isSuperAdmin
                     ? record => void handleSubmitRecord(record)
@@ -909,6 +1348,26 @@ export const AdminVerificationList: React.FC = () => {
                         allSelectableDraftsSelected,
                         onToggleDraftSelection: toggleDraftSelection,
                         onToggleSelectAllDrafts: toggleSelectAllDrafts,
+                        failedSelect: canBulkFailed
+                          ? {
+                              selectedIds: selectedFailedIds,
+                              selectableIds: selectableFailedIds,
+                              allSelected: allSelectableFailedSelected,
+                              selectAllRef: selectAllFailedRef,
+                              onToggle: toggleFailedSelection,
+                              onToggleSelectAll: toggleSelectAllFailed,
+                            }
+                          : undefined,
+                        pendingRcSelect: canBulkPendingRc
+                          ? {
+                              selectedIds: selectedPendingRcIds,
+                              selectableIds: selectablePendingRcIds,
+                              allSelected: allSelectablePendingRcSelected,
+                              selectAllRef: selectAllPendingRcRef,
+                              onToggle: togglePendingRcSelection,
+                              onToggleSelectAll: toggleSelectAllPendingRc,
+                            }
+                          : undefined,
                       }
                     : undefined
                 }

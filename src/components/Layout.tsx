@@ -16,6 +16,10 @@ import {
   ProductListAppBarContext,
   type ProductListAppBarChrome,
 } from '../context/ProductListAppBarContext';
+import {
+  VrAllottedAppBarContext,
+  type VrAllottedAppBarChrome,
+} from '../context/VrAllottedAppBarContext';
 import { formatContactSubtitle } from '../lib/contactFields';
 import { rcProfilePhotoFromUser } from '../lib/rcProfileFields';
 import { vctProfilePhotoFromUser } from '../lib/vctProfileFields';
@@ -37,15 +41,14 @@ import {
   Settings,
   UserRound,
   Scale,
-  FileText,
   Bell,
   Sparkles,
   GraduationCap,
   LogOut,
   Wallet,
-  Award,
   Share2,
   HardHat,
+  Hash,
   Plus,
   UserCheck,
 } from 'lucide-react';
@@ -54,7 +57,9 @@ import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import { embedVerificationPath, isEmbedSession, rememberEmbedMode } from '../lib/embedMode';
 import { APP_VERSION } from '../lib/appVersion';
 import { RcUnsignedPdfDisturbHost } from './RcUnsignedPdfDisturbHost';
-import { ROLE_LABELS, type FirestoreUserDoc } from '../types';
+import { navSpecsForRole, type RoleNavOptions } from '../lib/roleNav';
+import { ROLE_LABELS, type FirestoreUserDoc, type Role } from '../types';
+import { useRcCreatedVerifierCount } from '../hooks/useRcCreatedVerifierCount';
 
 type NavItem = {
   path: string;
@@ -63,6 +68,77 @@ type NavItem = {
   pageTitle?: string;
   mobileSubtitle?: string;
 };
+
+function navIconForPath(path: string): React.ReactNode {
+  switch (path) {
+    case '/admin':
+    case '/rc':
+    case '/vct':
+    case '/verifier':
+      return <LayoutDashboard size={20} />;
+    case '/admin/verifications':
+    case '/rc/verification':
+    case '/vct/verification':
+    case '/verifier/verification':
+      return <ShieldCheck size={20} />;
+    case '/admin/rc-quota':
+      return <Hash size={20} />;
+    case '/admin/products':
+    case '/rc/products':
+    case '/vct/products':
+      return <Package size={20} />;
+    case '/admin/wallet':
+    case '/rc/wallet':
+      return <Wallet size={20} />;
+    case '/admin/vehicles':
+    case '/rc/vehicles':
+    case '/vct/vehicles':
+      return <VehicleLogoMark size="sm" variant="plain" />;
+    case '/admin/rc':
+      return <Building2 size={20} />;
+    case '/admin/technicians':
+    case '/rc/vct':
+      return <VctOfficerMark />;
+    case '/rc/verifier':
+      return <UserCheck size={20} />;
+    case '/admin/laboratory':
+    case '/rc/laboratory':
+    case '/vct/laboratory':
+      return <Scale size={20} />;
+    case '/admin/notifications':
+      return <Bell size={20} />;
+    case '/admin/reports':
+    case '/rc/reports':
+    case '/vct/reports':
+      return <BarChart3 size={20} />;
+    case '/admin/contractor-fee':
+    case '/rc/settings':
+      return <HardHat size={20} />;
+    case '/admin/integrations':
+      return <Plug size={20} />;
+    case '/admin/settings':
+    case '/rc/profile':
+    case '/vct/profile':
+    case '/verifier/profile':
+      return <Settings size={20} />;
+    case '/rc/vr-allotted':
+      return <Hash size={20} />;
+    case '/rc/customers':
+    case '/vct/customers':
+      return <UserRound size={20} />;
+    case '/vct/training':
+      return <GraduationCap size={20} />;
+    default:
+      return <LayoutDashboard size={20} />;
+  }
+}
+
+function navItemsForRole(role: Role, options?: RoleNavOptions): NavItem[] {
+  return navSpecsForRole(role, options).map(spec => ({
+    ...spec,
+    icon: navIconForPath(spec.path),
+  }));
+}
 
 export const Layout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -80,6 +156,7 @@ export const Layout: React.FC = () => {
   const [reportsChrome, setReportsChrome] = useState<ReportsAppBarChrome | null>(null);
   const [rcListChrome, setRcListChrome] = useState<RcListAppBarChrome | null>(null);
   const [productListChrome, setProductListChrome] = useState<ProductListAppBarChrome | null>(null);
+  const [vrAllottedChrome, setVrAllottedChrome] = useState<VrAllottedAppBarChrome | null>(null);
   const [appBarTitleOverride, setAppBarTitleOverride] = useState<string | null>(null);
 
   const profilePath =
@@ -114,6 +191,12 @@ export const Layout: React.FC = () => {
   useEffect(() => {
     if (!/\/(admin|rc|vct)\/reports\/?$/.test(location.pathname)) {
       setReportsChrome(null);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!/\/rc\/vr-allotted\/?$/.test(location.pathname)) {
+      setVrAllottedChrome(null);
     }
   }, [location.pathname]);
 
@@ -161,6 +244,10 @@ export const Layout: React.FC = () => {
     };
   }, [user?.uid, user?.role, location.pathname]);
 
+  const verifierCount = useRcCreatedVerifierCount(
+    user?.role === 'rc_admin' ? user.uid : null,
+  );
+
   if (!user) return null;
 
   const handleLogout = async () => {
@@ -180,89 +267,9 @@ export const Layout: React.FC = () => {
     setMobileOpen(false);
   };
 
-  const getNavItems = (): NavItem[] => {
-    switch (user.role) {
-      case 'super_admin':
-        return [
-          { path: '/admin', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          {
-            path: '/admin/verifications',
-            icon: <ShieldCheck size={20} />,
-            label: 'Verification',
-            mobileSubtitle: 'Powered by AI',
-          },
-          { path: '/admin/wallet', icon: <Wallet size={20} />, label: 'Wallet' },
-          { path: '/admin/products', icon: <Package size={20} />, label: 'Products' },
-          { path: '/admin/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
-          { path: '/admin/rc', icon: <Building2 size={20} />, label: 'Regional Centers' },
-          {
-            path: '/admin/technicians',
-            icon: <VctOfficerMark />,
-            label: 'VCT',
-            pageTitle: 'Verification and Calibration Technician',
-          },
-          { path: '/admin/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
-          { path: '/admin/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
-          { path: '/admin/notifications', icon: <Bell size={20} />, label: 'Notifications' },
-          { path: '/admin/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
-          { path: '/admin/contractor-fee', icon: <HardHat size={20} />, label: 'Contractor fee' },
-          { path: '/admin/integrations', icon: <Plug size={20} />, label: 'Integrations' },
-          { path: '/admin/settings', icon: <Settings size={20} />, label: 'Setting' },
-        ];
-      case 'rc_admin':
-        return [
-          { path: '/rc', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/rc/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
-          { path: '/rc/certificates', icon: <Award size={20} />, label: 'Certificates' },
-          { path: '/rc/customers', icon: <UserRound size={20} />, label: 'Customers' },
-          { path: '/rc/wallet', icon: <Wallet size={20} />, label: 'Wallets' },
-          { path: '/rc/products', icon: <Package size={20} />, label: 'Product' },
-          {
-            path: '/rc/vct',
-            icon: <VctOfficerMark />,
-            label: 'VCT',
-            pageTitle: 'Verification and Calibration Technician',
-          },
-          {
-            path: '/rc/verifier',
-            icon: <UserCheck size={20} />,
-            label: 'Verifier',
-            pageTitle: 'Temporary verifiers',
-          },
-          { path: '/rc/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
-          { path: '/rc/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
-          { path: '/rc/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
-          { path: '/rc/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
-          { path: '/rc/settings', icon: <HardHat size={20} />, label: 'Setting' },
-          { path: '/rc/profile', icon: <Settings size={20} />, label: 'My Profile' },
-        ];
-      case 'vct':
-        return [
-          { path: '/vct', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/vct/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
-          { path: '/vct/certificates', icon: <Award size={20} />, label: 'Certificates' },
-          { path: '/vct/customers', icon: <UserRound size={20} />, label: 'Customers' },
-          { path: '/vct/products', icon: <Package size={20} />, label: 'Product' },
-          { path: '/vct/vehicles', icon: <VehicleLogoMark size="sm" variant="plain" />, label: 'Car' },
-          { path: '/vct/laboratory', icon: <Scale size={20} />, label: 'Laboratory' },
-          { path: '/vct/manual-pdf', icon: <FileText size={20} />, label: 'Manual PDF' },
-          { path: '/vct/training', icon: <GraduationCap size={20} />, label: 'Training' },
-          { path: '/vct/reports', icon: <BarChart3 size={20} />, label: 'Reports' },
-          { path: '/vct/profile', icon: <Settings size={20} />, label: 'My Profile' },
-        ];
-      case 'verifier':
-        return [
-          { path: '/verifier', icon: <LayoutDashboard size={20} />, label: 'Dashboard' },
-          { path: '/verifier/verification', icon: <ShieldCheck size={20} />, label: 'Verification', mobileSubtitle: 'Powered by AI' },
-          { path: '/verifier/certificates', icon: <Award size={20} />, label: 'Certificates' },
-          { path: '/verifier/profile', icon: <Settings size={20} />, label: 'My Profile' },
-        ];
-      default:
-        return [];
-    }
-  };
-
-  const navItems = getNavItems();
+  const navItems = navItemsForRole(user.role, {
+    hasCreatedVerifiers: user.role === 'rc_admin' && verifierCount.count > 0,
+  });
   const isNavActive = (path: string) => {
     if (path === '/admin' || path === '/rc' || path === '/vct' || path === '/verifier') {
       return location.pathname === path;
@@ -277,7 +284,7 @@ export const Layout: React.FC = () => {
       : currentNavItem?.pageTitle ?? currentNavItem?.label ?? 'Dashboard');
   const pageIcon = currentNavItem?.icon ?? <LayoutDashboard size={22} />;
   const useShieldBrand = location.pathname.includes('verification');
-  const isCertificatesList = /\/(rc|vct|verifier)\/certificates\/?$/.test(location.pathname);
+  const isVrAllottedPage = /\/rc\/vr-allotted\/?$/.test(location.pathname);
   const isCustomersList = /\/(rc|vct|verifier)\/customers\/?$/.test(location.pathname);
   const isReportsList = /\/(admin|rc|vct)\/reports\/?$/.test(location.pathname);
   const isLaboratoryPage = /\/laboratory$/.test(location.pathname);
@@ -289,16 +296,19 @@ export const Layout: React.FC = () => {
     location.pathname === '/verifier' ||
     location.pathname === '/admin';
   const showAppFilterSlot =
-    useShieldBrand || isCertificatesList || isCustomersList || isReportsList;
+    useShieldBrand || isVrAllottedPage || isCustomersList || isReportsList;
+  const isQuotaPage = /^\/admin\/rc-quota\/?$/.test(location.pathname);
   const isSettingsPage =
     /\/settings\/?$/.test(location.pathname) || /\/contractor-fee\/?$/.test(location.pathname);
+  const showQuotaSynSlot = isSettingsPage || isQuotaPage;
   const stickyMobileAppBar =
     showAppFilterSlot ||
     isHomeDashboard ||
     isEmaapSessions ||
     isRcCentersPage ||
     isProductsPage ||
-    isSettingsPage;
+    isSettingsPage ||
+    isQuotaPage;
 
   const roleLabel = ROLE_LABELS[user.role];
 
@@ -413,11 +423,26 @@ export const Layout: React.FC = () => {
       </button>
     ) : null;
 
+  const vrAllotBtn =
+    isVrAllottedPage && vrAllottedChrome ? (
+      <button
+        type="button"
+        className="rc-register-add-btn"
+        onClick={vrAllottedChrome.onAllot}
+        title="Allot new serial"
+        aria-label="Allot new serial"
+        aria-pressed={Boolean(vrAllottedChrome.allotOpen)}
+      >
+        <Plus size={22} strokeWidth={2.5} aria-hidden />
+      </button>
+    ) : null;
+
   return (
     <AppBarTitleContext.Provider value={setAppBarTitleOverride}>
     <ReportsAppBarContext.Provider value={setReportsChrome}>
     <RcListAppBarContext.Provider value={setRcListChrome}>
     <ProductListAppBarContext.Provider value={setProductListChrome}>
+    <VrAllottedAppBarContext.Provider value={setVrAllottedChrome}>
     <div className={`app-wrapper${embed ? ' embed-mode' : ''}`}>
       {!isMobile && (
         <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -485,6 +510,8 @@ export const Layout: React.FC = () => {
                   rcRegisterBtn
                 ) : isProductsPage ? (
                   productAddBtn
+                ) : isVrAllottedPage && vrAllotBtn ? (
+                  vrAllotBtn
                 ) : (
                   <MobileAppBarBrandIcon variant={useShieldBrand ? 'shield' : 'page'}>
                     {!useShieldBrand ? pageIcon : null}
@@ -543,7 +570,7 @@ export const Layout: React.FC = () => {
               <div id="product-filter-slot-mobile" className="mobile-app-bar-actions" />
             ) : showAppFilterSlot ? (
               <div id="verification-filter-slot-mobile" className="mobile-app-bar-actions" />
-            ) : isSettingsPage ? (
+            ) : showQuotaSynSlot ? (
               <div id="settings-syn-slot-mobile" className="mobile-app-bar-actions" />
             ) : null}
           </header>
@@ -551,9 +578,9 @@ export const Layout: React.FC = () => {
         {!isMobile && (
           <header className="top-bar glass">
             <div className="top-bar-title-wrap">
-              {isProductsPage && productAddBtn ? (
+              {(isProductsPage && productAddBtn) || (isVrAllottedPage && vrAllotBtn) ? (
                 <div className="top-bar-title-with-add">
-                  {productAddBtn}
+                  {isProductsPage ? productAddBtn : vrAllotBtn}
                   <h1 className="page-title">{pageTitle}</h1>
                 </div>
               ) : isReportsList ? (
@@ -582,7 +609,7 @@ export const Layout: React.FC = () => {
               )}
             </div>
             <div className="top-bar-end">
-              {isSettingsPage ? <div id="settings-syn-slot-desktop" /> : null}
+              {showQuotaSynSlot ? <div id="settings-syn-slot-desktop" /> : null}
               {rcRegisterBtn}
               {isProductsPage ? <div id="product-filter-slot-desktop" /> : null}
               {isHomeDashboard ? <EmaapStatusShortcut /> : null}
@@ -663,6 +690,7 @@ export const Layout: React.FC = () => {
         </div>
       )}
     </div>
+    </VrAllottedAppBarContext.Provider>
     </ProductListAppBarContext.Provider>
     </RcListAppBarContext.Provider>
     </ReportsAppBarContext.Provider>

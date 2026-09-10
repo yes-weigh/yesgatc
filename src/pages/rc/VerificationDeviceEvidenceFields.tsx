@@ -55,12 +55,15 @@ type VerificationDeviceEvidenceFieldsProps = {
   onRvDocumentRemove?: (kind: RvDocumentKind) => void;
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
+  geoStampAllowLiveGps?: boolean;
   submitting: boolean;
   readOnly?: boolean;
   /** Hide instrument index line when parent shows sub-step progress. */
   hideDeviceMeta?: boolean;
   /** Tile layout — hide outer panel chrome; parent provides section title. */
   embedded?: boolean;
+  /** Compact flow: serial plate already captured on the serial step. */
+  excludeStamping?: boolean;
   showAddDevice?: boolean;
   onAddDevice?: () => void;
   showResultSummary?: boolean;
@@ -89,10 +92,12 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
   onRvDocumentRemove,
   geoStampCoords = null,
   geoStampWeather = null,
+  geoStampAllowLiveGps = true,
   submitting,
   readOnly = false,
   hideDeviceMeta = false,
   embedded = false,
+  excludeStamping = false,
   showAddDevice = false,
   onAddDevice,
   showResultSummary = false,
@@ -221,7 +226,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
       )}
 
       <VerificationPhotoUploadSection title="Upload verification photos">
-        {verificationImageKindsForSession(verificationType).map(kind => {
+        {verificationImageKindsForSession(verificationType, { excludeStamping }).map(kind => {
           const config = VERIFICATION_IMAGE_CONFIG[kind];
           const slot = images[kind] ?? emptyDeviceImageSlot();
           return (
@@ -237,6 +242,7 @@ export const VerificationDeviceEvidenceFields: React.FC<VerificationDeviceEviden
               geoStamp={kind === 'stamping' || kind === 'scale' || kind === 'instrumentRear'}
               geoStampCoords={geoStampCoords}
               geoStampWeather={geoStampWeather}
+              geoStampAllowLiveGps={geoStampAllowLiveGps}
               onSelect={file => onImageSelect(kind, file)}
               onRemove={() => onImageRemove(kind)}
             />

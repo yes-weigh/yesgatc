@@ -53,6 +53,7 @@ export function verificationListPath(
     type?: string | null;
     duration?: VerificationDurationFilter | null;
     rc?: string | null;
+    submitFailDraft?: boolean;
   },
 ): string {
   const params = new URLSearchParams();
@@ -60,6 +61,7 @@ export function verificationListPath(
   if (query?.type && query.type !== 'all') params.set('type', query.type);
   if (query?.duration && query.duration !== 'all') params.set('duration', query.duration);
   if (query?.rc) params.set('rc', query.rc);
+  if (query?.submitFailDraft) params.set('submitFailDraft', '1');
   const qs = params.toString();
   return qs ? `${basePath}?${qs}` : basePath;
 }

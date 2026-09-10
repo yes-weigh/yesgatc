@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { countReservedOverlaySeats } from '../lib/rcQuotaMath';
 
 type SerialSeatOverlayProps = {
   companyName: string;
@@ -34,8 +35,10 @@ export function SerialSeatOverlay({
   const reservedKeys = new Set(reservedSerials.map(serial => serial.toLowerCase()));
   // Exact seats on screen (non-voided stickers in the list).
   const seatCount = serials.filter(serial => !voidedKeys.has(serial.toLowerCase())).length;
+  const reservedCount = countReservedOverlaySeats(serials, reservedSerials, voidedSerials);
   const balanceCount = expectedCount == null ? null : Math.max(0, expectedCount);
   const mismatch = balanceCount != null && balanceCount !== seatCount;
+  const showReservedCount = canReserve || reservedCount > 0;
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
@@ -102,6 +105,15 @@ export function SerialSeatOverlay({
               <span className="admin-setting-serial-count-mismatch"> ≠{balanceCount}</span>
             ) : null}
           </span>
+          {showReservedCount ? (
+            <span
+              className="admin-setting-serial-count-num admin-setting-serial-count-num--reserved"
+              title="Reserved for RC admin (hidden from VCT)"
+            >
+              <span>reserved</span>
+              {reservedCount}
+            </span>
+          ) : null}
         </h2>
         <button
           type="button"

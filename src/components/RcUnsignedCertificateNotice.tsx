@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
 import { AlertTriangle, X } from 'lucide-react';
-import { useRoleBasePath } from '../lib/roleScope';
+import { useRcScope } from '../lib/roleScope';
+import { useRcSignerProfile } from '../lib/useRcSignerProfile';
 import {
   playUnsignedCertificateWarningOnce,
   resetUnsignedCertificateWarningSession,
@@ -29,7 +29,8 @@ export function RcUnsignedCertificateNotice({
   compact = false,
   mock = false,
 }: RcUnsignedCertificateNoticeProps) {
-  const basePath = useRoleBasePath();
+  const { rcUid } = useRcScope();
+  const { pdfSigner } = useRcSignerProfile(rcUid);
   const show = mock || count > 0;
   const displayCount = mock && count <= 0 ? 12 : count;
   const qtyLabel = qtyLabelFor(displayCount);
@@ -76,19 +77,21 @@ export function RcUnsignedCertificateNotice({
         Signed certificate PDF pending — {qtyLabel}
       </p>
       <p className="rc-vehicle-required-notice__text mb-0">
-        Your centre has {qtyLabel} marked <strong>No signed PDF</strong>. Please download each
-        certificate, sign with your Class 3 DSC, and upload the signed file so it can be issued on
-        eMAAP. Kindly complete this promptly — until the backlog is cleared, new verification
-        submissions may be interrupted or delayed.
+        {pdfSigner ? (
+          <>
+            Your centre has {qtyLabel} marked <strong>No signed PDF</strong>. This centre is an
+            eMAAP PDF signer — keep EmaapEngine signed in so it can stamp and upload on
+            Certificates Issued. Manual DSC upload is off.
+          </>
+        ) : (
+          <>
+            Your centre has {qtyLabel} marked <strong>No signed PDF</strong>. Please download each
+            certificate, sign with your Class 3 DSC, and upload the signed file so it can be issued
+            on eMAAP. Kindly complete this promptly — until the backlog is cleared, new verification
+            submissions may be interrupted or delayed.
+          </>
+        )}
       </p>
-      <div className="rc-unsigned-cert-notice__actions">
-        <Link
-          to={`${basePath}/certificates?status=not_signed`}
-          className="btn btn-secondary btn-sm"
-        >
-          Review unsigned certificates
-        </Link>
-      </div>
     </div>
   );
 
@@ -122,21 +125,25 @@ export function RcUnsignedCertificateNotice({
             </h2>
             <p className="rc-unsigned-cert-popup__qty">{qtyLabel}</p>
             <p className="rc-unsigned-cert-popup__text">
-              Certificates under your centre still show <strong>No signed PDF</strong>. Download,
-              sign with Class 3 DSC, and upload so eMAAP can issue them. Please clear this backlog
-              promptly — new verification submissions may otherwise be interrupted or delayed.
+              {pdfSigner ? (
+                <>
+                  Certificates under your centre still show <strong>No signed PDF</strong>.
+                  EmaapEngine will stamp the officer signature and upload on eMAAP Issued. Keep the
+                  engine running — manual file upload is off.
+                </>
+              ) : (
+                <>
+                  Certificates under your centre still show <strong>No signed PDF</strong>. Download,
+                  sign with Class 3 DSC, and upload so eMAAP can issue them. Please clear this
+                  backlog promptly — new verification submissions may otherwise be interrupted or
+                  delayed.
+                </>
+              )}
             </p>
             {mock ? (
               <p className="rc-unsigned-cert-popup__mock">Mock preview — sample count</p>
             ) : null}
             <div className="rc-unsigned-cert-popup__actions">
-              <Link
-                to={`${basePath}/certificates?status=not_signed`}
-                className="btn btn-secondary"
-                onClick={dismissPopup}
-              >
-                Review unsigned
-              </Link>
               <button type="button" className="btn btn-secondary" onClick={dismissPopup}>
                 Dismiss
               </button>

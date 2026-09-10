@@ -71,6 +71,9 @@ export function playUnsignedCertificateWarningNow(): void {
   playUnsignedCertificateWarningSound();
 }
 
+/** Same descending alert — GPS / validation blocks (reuse, no second audio stack). */
+export const playValidationWarningSound = playUnsignedCertificateWarningNow;
+
 export function stopUnsignedCertificateWarningLoop(): void {
   loopGeneration += 1;
   if (loopTimer != null) {

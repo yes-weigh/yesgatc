@@ -14,11 +14,23 @@ import { PartyInformationForm } from '../../components/PartyInformationForm';
 import { VerificationFormStepper } from '../../components/VerificationFormStepper';
 import { VerificationInstrumentMultistage } from './VerificationInstrumentMultistage';
 import { OvSelfProductPanel, OvSelfSitePanel, OvSelfEnvFields, OvSelfSpecSerialBlock } from './OvSelfWizardPanels';
+import { OvSelfSerialPlatePanel } from './OvSelfSerialPlatePanel';
 import { VerificationDeviceEvidenceFields } from './VerificationDeviceEvidenceFields';
 import type { GeoStampCoordinates, StampWeather } from '../../components/VerificationPhotoUploadSlot';
 import type { Customer, FirestoreUserDoc, JobType } from '../../types';
 import type { AssignableVctOption } from '../../lib/verificationRequest';
-import { customerFormFromRecord, isPendingNewCustomerParty } from '../../lib/customerProfileFields';
+import {
+  customerFormFromRecord,
+  isPendingNewCustomerParty,
+  parseCustomerLocation,
+} from '../../lib/customerProfileFields';
+import {
+  CUSTOMER_GPS_REQUIRED_MESSAGE,
+  allowsLiveGpsPhotoStamp,
+  isCustomerImageGpsJob,
+  resolveVerificationImageGeoStampCoords,
+} from '../../lib/verificationImageGeoStamp';
+import { playValidationWarningSound } from '../../lib/playUnsignedCertificateWarningSound';
 import {
   applyLockedSerialToDevices,
   buildInitialSelfDeviceRows,
@@ -76,7 +88,12 @@ import {
 } from '../../lib/verificationFormSteps';
 import { useAppContext } from '../../context/AppContext';
 import type { CustomerFormValues } from '../../lib/customerProfileFields';
-import { ovQuotaSeatCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import {
+  compactWizardWorkingDevices,
+  devicesForVerificationCustomerSelect,
+} from '../../lib/compactWizardProductStep';
+import { catalogueHasPasProducts, pasBankOptionsForJob, verifyPasDevicesInBank } from '../../lib/pasSerialBank';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import { VerificationPerformerPhotoFields } from './VerificationPerformerPhotoFields';
 import { requiresPerformerIdentityPhotos } from '../../lib/verificationPerformerPhotos';
@@ -114,7 +131,7 @@ type VerificationSessionFieldsProps = {
   /** RC admin can assign draft verifications to a linked VCT. */
   allowPerformerAssignment?: boolean;
   assignableVcts?: AssignableVctOption[];
-  /** RC centre GPS for desktop photo geo-stamp. */
+  /** RC centre GPS — used for OV / self photo geo-stamp. RV customer uses party GPS instead. */
   geoStampCoords?: GeoStampCoordinates | null;
   laboratorySealIdentification?: string;
   onWizardStepChange?: (stepId: VerificationFormStepId, isLastStep: boolean) => void;
@@ -125,6 +142,8 @@ type VerificationSessionFieldsProps = {
   mobileFloatingChrome?: boolean;
   lockKind?: boolean;
   ovQuota?: OvQuotaGate | null;
+  isVerifier?: boolean;
+  verifierPincode?: string | null;
 };
 
 export type VerificationSessionFieldsHandle = {
@@ -184,6 +203,8 @@ export const VerificationSessionFields = forwardRef<
   mobileFloatingChrome = false,
   lockKind = false,
   ovQuota = null,
+  isVerifier = false,
+  verifierPincode = null,
   },
   ref,
 ) {
@@ -193,6 +214,8 @@ export const VerificationSessionFields = forwardRef<
   const [activeStep, setActiveStep] = useState(0);
   const [furthestStep, setFurthestStep] = useState(0);
   const [stepError, setStepError] = useState('');
+  const [serialChecking, setSerialChecking] = useState(false);
+  const [productAdvancePending, setProductAdvancePending] = useState(false);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState('');
   const [customerPartyForm, setCustomerPartyForm] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM);
@@ -209,8 +232,10 @@ export const VerificationSessionFields = forwardRef<
       ovQuota,
       isNewJob: lockKind,
       products,
+      isVerifier,
+      verifierPincode,
     }),
-    [customerPartyForm, rcPartyForm, deviceImages, deviceRvImages, performerPhotos, ovQuota, lockKind, products],
+    [customerPartyForm, rcPartyForm, deviceImages, deviceRvImages, performerPhotos, ovQuota, lockKind, products, isVerifier, verifierPincode],
   );
 
   useEffect(() => {
@@ -235,6 +260,28 @@ export const VerificationSessionFields = forwardRef<
 
   const currentStep = formSteps[Math.min(activeStep, formSteps.length - 1)] ?? formSteps[0];
 
+  useEffect(() => {
+    if (!productAdvancePending || readOnly) return;
+    if (currentStep.id !== 'product') {
+      setProductAdvancePending(false);
+      return;
+    }
+    if (verificationFormStepBlockReason('product', values, rcProfile, stepContext)) return;
+    setProductAdvancePending(false);
+    const nextStep = Math.min(activeStep + 1, formSteps.length - 1);
+    setFurthestStep(prev => Math.max(prev, nextStep));
+    setActiveStep(nextStep);
+  }, [
+    productAdvancePending,
+    readOnly,
+    currentStep.id,
+    values,
+    rcProfile,
+    stepContext,
+    activeStep,
+    formSteps.length,
+  ]);
+
   const includedDeviceEntries = useMemo(
     () =>
       values.devices
@@ -243,6 +290,20 @@ export const VerificationSessionFields = forwardRef<
     [values.devices],
   );
   const ovSelfDevice = includedDeviceEntries[0]?.row ?? values.devices[0];
+
+  useEffect(() => {
+    if (!isOvCompactFlow || readOnly) return;
+    if (values.devices.length <= 1) return;
+    const working = compactWizardWorkingDevices(values.devices);
+    const seal = laboratorySealIdentification.trim();
+    const next = seal
+      ? working.map(row => ({ ...row, sealIdentificationNumber: seal }))
+      : working;
+    if (next.length === values.devices.length && next[0]?.localId === values.devices[0]?.localId) {
+      return;
+    }
+    onChange({ devices: next });
+  }, [isOvCompactFlow, readOnly, values.devices, onChange, laboratorySealIdentification]);
 
   const isOnInstrumentsStep = currentStep.id === 'instruments' || currentStep.id === 'photos';
   const isOnReviewStep = currentStep.id === 'review';
@@ -261,31 +322,33 @@ export const VerificationSessionFields = forwardRef<
     currentStep.id === 'setup' && isOvCompactFlow
       ? 'Product'
       : currentStep.id === 'product'
-        ? 'Photos'
+        ? 'Serial'
+        : currentStep.id === 'serial'
+          ? 'Photos'
         : currentStep.id === 'site'
           ? 'Photos'
           : currentStep.id === 'photos' || (isOnInstrumentsStep && includedDeviceEntries.length > 0)
             ? 'Review'
             : 'Proceed';
 
-  const canContinueCurrentStep = useMemo(() => {
-    if (readOnly) return true;
-    return (
-      verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext) === null
-    );
+  const continueBlockReason = useMemo(() => {
+    if (readOnly) return null;
+    return verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext);
   }, [readOnly, currentStep.id, values, rcProfile, stepContext]);
+  const canContinueCurrentStep = continueBlockReason === null;
+  const allowGpsWarningContinue = continueBlockReason === CUSTOMER_GPS_REQUIRED_MESSAGE;
 
   const showWizardCancel =
     Boolean(wizardNavIncludesCancel && onCancel && currentStep.id !== 'review');
   const ovSeatCap =
     values.verificationType === 'OV' && ovQuota
-      ? ovQuotaSeatCap(ovQuota)
+      ? ovQuotaQtyCap(ovQuota)
       : Number.POSITIVE_INFINITY;
   const canAddInstrument =
     !readOnly &&
     !lockCustomer &&
     currentStep.id === 'instruments' &&
-    includedDeviceEntries.length < ovSeatCap;
+    (includedDeviceEntries.length < ovSeatCap || catalogueHasPasProducts(products));
 
   const showBackNav = activeStep > 0;
   const showWizardBottomBar = !readOnly && !isLastStep;
@@ -355,14 +418,35 @@ export const VerificationSessionFields = forwardRef<
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (readOnly) return;
     setStepError('');
 
     const reason = verificationFormStepBlockReason(currentStep.id, values, rcProfile, stepContext);
     if (reason) {
       setStepError(reason);
+      if (reason === CUSTOMER_GPS_REQUIRED_MESSAGE) playValidationWarningSound();
       return;
+    }
+
+    if (currentStep.id === 'serial') {
+      setSerialChecking(true);
+      try {
+        const bankError = await verifyPasDevicesInBank(
+          values.devices,
+          products,
+          pasBankOptionsForJob(values.verificationType),
+        );
+        if (bankError) {
+          setStepError(bankError);
+          return;
+        }
+      } catch (err) {
+        setStepError(err instanceof Error ? err.message : 'Could not check PAS number bank.');
+        return;
+      } finally {
+        setSerialChecking(false);
+      }
     }
 
     if (currentStep.id === 'setup' && values.devices.length === 0) {
@@ -446,6 +530,29 @@ export const VerificationSessionFields = forwardRef<
     const party = isSelf ? rcPartyForm : customerPartyForm;
     return Boolean(party.latitude.trim() && party.longitude.trim());
   }, [isSelf, rcPartyForm, customerPartyForm]);
+
+  const imageGeoStampCoords = useMemo(
+    () =>
+      resolveVerificationImageGeoStampCoords({
+        verificationType: values.verificationType,
+        verificationSubject: values.verificationSubject,
+        customerLocation: parseCustomerLocation(customerPartyForm),
+        rcLocation: geoStampCoords,
+      }),
+    [
+      values.verificationType,
+      values.verificationSubject,
+      customerPartyForm,
+      geoStampCoords,
+    ],
+  );
+  const geoStampAllowLiveGps = allowsLiveGpsPhotoStamp(
+    values.verificationType,
+    values.verificationSubject,
+  );
+  const showCustomerGpsStampNotice =
+    isCustomerImageGpsJob(values.verificationType, values.verificationSubject)
+    && imageGeoStampCoords == null;
 
   const geoStampWeather = useMemo<StampWeather | null>(() => {
     const t = values.ambientTemperature.trim();
@@ -819,7 +926,7 @@ export const VerificationSessionFields = forwardRef<
     ).trim();
     const location = isSelf
       ? rcProfile?.location
-      : listedCustomer?.location;
+      : parseCustomerLocation(customerPartyForm) ?? listedCustomer?.location;
 
     const hasPincode = isValidPincode(pincode);
     const hasLocation = location?.lat != null && location?.lng != null;
@@ -852,6 +959,8 @@ export const VerificationSessionFields = forwardRef<
     customerPartyForm.pincode,
     customerPartyForm.district,
     customerPartyForm.state,
+    customerPartyForm.latitude,
+    customerPartyForm.longitude,
     rcPartyForm.pincode,
     rcPartyForm.district,
     rcPartyForm.state,
@@ -912,20 +1021,15 @@ export const VerificationSessionFields = forwardRef<
     if (lockCustomer) return;
     const lockedSerial = values.lockedSerial?.trim() ?? '';
     const customer = customers.find(c => c.id === next.customerId) ?? null;
-    const seed = values.devices.find(d => d.isNewDevice) ?? values.devices[0];
-    const devices = lockedSerial
-      ? applyLockedSerialToDevices(
-          withLaboratorySeal([
-            seed
-              ? { ...seed, serialNumber: lockedSerial }
-              : { ...createEmptyVerificationDeviceRow(), serialNumber: lockedSerial },
-          ]),
-          lockedSerial,
-        )
-      : withLaboratorySeal([
-          ...withLaboratorySeal(deviceRowsFromCustomer(customer, products)),
-          ...values.devices.filter(d => d.isNewDevice),
-        ]);
+    const devices = withLaboratorySeal(
+      devicesForVerificationCustomerSelect({
+        compact: isOvCompactFlow,
+        lockedSerial,
+        currentDevices: values.devices,
+        customerRows: deviceRowsFromCustomer(customer, products),
+        createEmpty: createEmptyVerificationDeviceRow,
+      }),
+    );
     onCustomerChange(next.customerId, next.customerName, devices);
     onChange({
       verificationSubject: 'customer',
@@ -991,9 +1095,17 @@ export const VerificationSessionFields = forwardRef<
           <button
             type="button"
             className="verification-form-btn verification-form-btn--continue"
-            onClick={handleContinue}
-            disabled={locked || !canContinueCurrentStep}
-            aria-disabled={locked || !canContinueCurrentStep}
+            onClick={() => void handleContinue()}
+            disabled={
+              locked
+              || serialChecking
+              || (!canContinueCurrentStep && !allowGpsWarningContinue)
+            }
+            aria-disabled={
+              locked
+              || serialChecking
+              || (!canContinueCurrentStep && !allowGpsWarningContinue)
+            }
           >
             {continueLabel} <ChevronRight size={16} aria-hidden />
           </button>
@@ -1046,6 +1158,7 @@ export const VerificationSessionFields = forwardRef<
               sealId={laboratorySealIdentification}
               disabled={locked}
               onProductChange={patch => onDeviceChange(ovSelfDevice.localId, patch)}
+              onProductReady={() => setProductAdvancePending(true)}
             />
           )}
 
@@ -1080,6 +1193,11 @@ export const VerificationSessionFields = forwardRef<
                   rcProfile?.username?.trim() ||
                   ''
                 }
+                belongsHint={
+                  values.ovInName === 'verifier'
+                    ? 'OV Self — certificate in verifier name'
+                    : 'OV Self — this job belongs to the RC'
+                }
                 location={values.verificationLocation}
                 onLocationChange={value => onChange({ verificationLocation: value })}
                 temperature={values.ambientTemperature}
@@ -1093,8 +1211,41 @@ export const VerificationSessionFields = forwardRef<
             </div>
           )}
 
+          {currentStep.id === 'serial' && ovSelfDevice && (
+            <OvSelfSerialPlatePanel
+              row={ovSelfDevice}
+              product={products.find(p => p.id === ovSelfDevice.productId) ?? null}
+              images={deviceImages[ovSelfDevice.localId] ?? emptyDeviceVerificationImagesState()}
+              verificationType={values.verificationType}
+              allottedSerials={ovQuota?.remaining ?? []}
+              allotments={ovQuota?.remainingAllotments}
+              heldSerials={ovQuota?.heldSerials ?? []}
+              scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
+              allowInterweighingDirect={Boolean(ovQuota?.allowInterweighingDirect)}
+              directRemaining={ovQuota?.directRemaining ?? []}
+              disabled={locked}
+              geoStampCoords={imageGeoStampCoords}
+              geoStampWeather={geoStampWeather}
+              geoStampAllowLiveGps={geoStampAllowLiveGps}
+              onSerialChange={(serial, source) =>
+                onDeviceChange(ovSelfDevice.localId, {
+                  serialNumber: serial,
+                  ...(source ? { serialSource: source } : {}),
+                })
+              }
+              onYearChange={year => onDeviceChange(ovSelfDevice.localId, { manufacturingYear: year })}
+              onPlateSelect={file => onDeviceImageSelect(ovSelfDevice.localId, 'stamping', file)}
+              onPlateRemove={() => onDeviceImageRemove(ovSelfDevice.localId, 'stamping')}
+            />
+          )}
+
           {currentStep.id === 'photos' && ovSelfDevice && (
             <div className="ov-self-photos">
+              {showCustomerGpsStampNotice ? (
+                <p className="verification-kerala-notice" role="status">
+                  {CUSTOMER_GPS_REQUIRED_MESSAGE}
+                </p>
+              ) : null}
               <div className="ov-self-photos-recap">
                 <span>
                   <strong>{ovSelfDevice.serialNumber.trim() || '—'}</strong>
@@ -1140,8 +1291,10 @@ export const VerificationSessionFields = forwardRef<
                 readOnly={readOnly}
                 embedded
                 hideDeviceMeta
-                geoStampCoords={geoStampCoords}
+                excludeStamping
+                geoStampCoords={imageGeoStampCoords}
                 geoStampWeather={geoStampWeather}
+                geoStampAllowLiveGps={geoStampAllowLiveGps}
               />
             </div>
           )}
@@ -1249,12 +1402,19 @@ export const VerificationSessionFields = forwardRef<
                           }
                     }
                     footer={
-                      fileCertificateAsRc ? (
-                        <p className="verification-kerala-notice" role="status">
-                          GATC certificates are Kerala-only. This PIN is outside Kerala — the
-                          record and eMAAP certificate will use the RC centre name.
-                        </p>
-                      ) : null
+                      <>
+                        {fileCertificateAsRc ? (
+                          <p className="verification-kerala-notice" role="status">
+                            GATC certificates are Kerala-only. This PIN is outside Kerala — the
+                            record and eMAAP certificate will use the RC centre name.
+                          </p>
+                        ) : null}
+                        {showCustomerGpsStampNotice ? (
+                          <p className="verification-kerala-notice" role="status">
+                            {CUSTOMER_GPS_REQUIRED_MESSAGE}
+                          </p>
+                        ) : null}
+                      </>
                     }
                   />
                 )}
@@ -1354,8 +1514,9 @@ export const VerificationSessionFields = forwardRef<
               lockCustomer={lockCustomer}
               isSelf={isSelf}
               laboratorySealIdentification={laboratorySealIdentification}
-              geoStampCoords={geoStampCoords}
+              geoStampCoords={imageGeoStampCoords}
               geoStampWeather={geoStampWeather}
+              geoStampAllowLiveGps={geoStampAllowLiveGps}
               canAddInstrument={canAddInstrument}
               onAddInstrument={handleAddInstrument}
               showDevices={showDevices}

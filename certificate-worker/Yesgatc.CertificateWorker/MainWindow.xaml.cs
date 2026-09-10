@@ -3402,7 +3402,7 @@ public partial class MainWindow : Window
 
     private async Task ProcessStampBurstAsync(IReadOnlyList<SiteCalibrationRecord> queue)
     {
-        if (WorkerProduct.IsEmaapEngineBuild || !_processSignerQueue)
+        if (!_processSignerQueue)
         {
             return;
         }

@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const APP_SETTINGS_COLLECTION = 'appSettings';
 const APP_SETTINGS_GLOBAL_DOC = 'global';
 const SERIAL_COLLECTION = 'serialAllotments';
+const PAS_SERIAL_COLLECTION = 'pasSerialBank';
+const PAS_SERIAL_META_COLLECTION = 'pasSerialBankMeta';
 const INBOUND_EVENTS_COLLECTION = 'yesoneInboundEvents';
 const INWARD_BATCHES_COLLECTION = 'serialInwardBatches';
 const INBOUND_LOG_LIMIT = 200;
@@ -24,6 +26,16 @@ const EVENT_ALIASES = {
   serial_allotment: 'serial.allotted',
   serialallotted: 'serial.allotted',
   serial_allotted: 'serial.allotted',
+  'pas.serial.allotted': 'serial.allotted',
+  'pas.serial.allotment': 'serial.allotted',
+  pas_serial_allotted: 'serial.allotted',
+  'product.bank': 'serial.allotted',
+  product_bank: 'serial.allotted',
+  productbank: 'serial.allotted',
+  'pas.bank': 'serial.allotted',
+  pas_bank: 'serial.allotted',
+  pasbank: 'serial.allotted',
+  'product.pas.bank': 'serial.allotted',
   'serial.updated': 'serial.updated',
   'serial.changed': 'serial.updated',
   'serial.renamed': 'serial.updated',
@@ -44,8 +56,6 @@ const EVENT_ALIASES = {
   'rc.quota': 'rc.ov_quota',
   ov_quota: 'rc.ov_quota',
   quota: 'rc.ov_quota',
-  'product.bank': 'product.bank',
-  product_bank: 'product.bank',
   'product.bank.remove': 'serial.cancelled',
   product_bank_remove: 'serial.cancelled',
 };
@@ -183,13 +193,26 @@ function normalizeEventName(raw) {
   return EVENT_ALIASES[dotted] || EVENT_ALIASES[key] || EVENT_ALIASES[key.replace(/_/g, '')] || optionalTrimmed(raw);
 }
 
+function isSerialTypeToken(value) {
+  const type = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return type === 'pas'
+    || type === 'gas'
+    || type === 'general'
+    || type === 'preallotted'
+    || type === 'pre_allotted'
+    || type === 'numberbank'
+    || type === 'number_bank';
+}
+
 function inferEventName(item) {
   const rec = asRecord(item);
   const named = normalizeEventName(
     pickValue(rec, ['event', 'type', 'kind', 'name']) || pickValue(rec, ['action']),
   );
-  if (named) return named;
-  if (isSerialRename(item)) return 'serial.updated';
+  if (named && !isSerialTypeToken(named)) return named;
+  if (isSerialRename(item) || (readPreviousSerial(item) && readSerialNumber(item))) {
+    return 'serial.updated';
+  }
   if (readQuotaValue(item) != null) return 'rc.ov_quota';
   if (readSerialNumber(item) || Array.isArray(pickValue(rec, ['serials']))) return 'serial.allotted';
   return null;
@@ -198,6 +221,14 @@ function inferEventName(item) {
 function looksLikeYesoneSerial(value) {
   const text = optionalTrimmed(value);
   return Boolean(text) && /[A-Za-z]/.test(text) && /\d/.test(text);
+}
+
+/** PAS bank numbers may be digits only (e.g. 57676). GAS stickers stay letter+digit. */
+function looksLikeBankSerial(value) {
+  const text = optionalTrimmed(value);
+  if (!text) return false;
+  if (looksLikeYesoneSerial(text)) return true;
+  return /^\d{4,24}$/.test(text);
 }
 
 function readSerialNumber(item) {
@@ -217,7 +248,7 @@ function readSerialNumber(item) {
   ])
     || (typeof rec.serial === 'string' ? optionalTrimmed(rec.serial) : null)
     || pickText(serial, ['number', 'serialNumber', 'id', 'value', 'code']);
-  return looksLikeYesoneSerial(raw) ? raw : null;
+  return looksLikeBankSerial(raw) ? raw : null;
 }
 
 function readRenameSerial(item) {
@@ -324,7 +355,7 @@ function parseSeriesString(value) {
   const text = optionalTrimmed(value);
   if (!text) return {};
   const parts = text.split(/\s*(?:-|–|—|\.\.|to)\s*/i).map(part => part.trim()).filter(Boolean);
-  if (parts.length === 2 && looksLikeYesoneSerial(parts[0]) && looksLikeYesoneSerial(parts[1])) {
+  if (parts.length === 2 && looksLikeBankSerial(parts[0]) && looksLikeBankSerial(parts[1])) {
     return { from: parts[0], to: parts[1] };
   }
   return {};
@@ -337,9 +368,19 @@ function looksLikeSerialRange(rec) {
   return Boolean(from && to);
 }
 
+function nestedRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
 function withSeriesFields(item) {
   const rec = asRecord(item);
-  const seriesRaw = pickValue(rec, ['series']);
+  const product = asRecord(pickValue(rec, ['product']) || rec.product);
+  const pas = nestedRecord(pickValue(product, ['pas']) || pickValue(rec, ['pas']));
+  const productBank = nestedRecord(pickValue(rec, ['productBank']) || pickValue(product, ['productBank']));
+  const seriesRaw = pickValue(rec, ['series'])
+    || pickValue(product, ['series'])
+    || pickValue(pas, ['series'])
+    || pickValue(productBank, ['series']);
   const series = typeof seriesRaw === 'string' || typeof seriesRaw === 'number'
     ? parseSeriesString(seriesRaw)
     : { ...asRecord(seriesRaw), ...parseSeriesString(seriesRaw) };
@@ -347,11 +388,20 @@ function withSeriesFields(item) {
   const rc = asRecord(pickValue(rec, ['rc']) || rec.rc);
   const from = pickText(rec, ['from', 'start', 'startNumber', 'startSerial', 'serialFrom', 'rangeFrom'])
     || pickText(series, ['from', 'start', 'startNumber', 'startSerial', 'startFrom', 'serialFrom'])
+    || pickText(product, ['from', 'start', 'startNumber', 'startSerial', 'serialFrom', 'rangeFrom'])
+    || pickText(pas, ['from', 'start', 'startNumber', 'startSerial', 'serialFrom', 'rangeFrom'])
+    || pickText(productBank, ['from', 'start', 'startNumber', 'startSerial', 'serialFrom', 'rangeFrom'])
     || pickText(invoice, ['from', 'start', 'startNumber']);
   const to = pickText(rec, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
     || pickText(series, ['to', 'end', 'endNumber', 'endSerial', 'serialTo'])
+    || pickText(product, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
+    || pickText(pas, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
+    || pickText(productBank, ['to', 'end', 'endNumber', 'endSerial', 'serialTo', 'rangeTo'])
     || pickText(invoice, ['to', 'end', 'endNumber']);
   const listed = pickValue(rec, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials', 'cancelledSerials', 'removeSerialNumbers'])
+    || pickValue(product, ['serials', 'serialNumbers', 'serial_numbers', 'allottedSerials'])
+    || pickValue(pas, ['serials', 'serialNumbers'])
+    || pickValue(productBank, ['serials', 'serialNumbers'])
     || pickValue(rc, ['serials', 'serialNumbers'])
     || pickValue(series, ['serials', 'serialNumbers'])
     || pickValue(invoice, ['serials', 'serialNumbers', 'removeSerialNumbers', 'cancelledSerials']);
@@ -381,11 +431,14 @@ function isYesoneDump(root) {
 }
 
 function serialRequiredError(event, item) {
-  const keys = Object.keys(asRecord(item))
-    .filter(key => key !== 'token' && key !== 'secret')
-    .slice(0, 16)
-    .join(',');
-  return { ok: false, event, error: keys ? `serial_required:${keys}` : 'serial_required' };
+  const rec = withSeriesFields(item);
+  if (readSerialNumber(rec) || serialsFromGroup(rec).length) {
+    return { ok: false, event, error: 'serial_required' };
+  }
+  const missing = [];
+  if (!looksLikeBankSerial(rec.from)) missing.push('from');
+  if (!looksLikeBankSerial(rec.to)) missing.push('to');
+  return { ok: false, event, error: missing.length ? `serial_required:${missing.join(',')}` : 'serial_required' };
 }
 
 function parseSerialParts(value) {
@@ -428,10 +481,24 @@ function serialListFromRec(rec) {
   return [];
 }
 
+function pasUsageItemFields(usage) {
+  return stripUndefined({
+    bankQty: usage.qty,
+    bankLinked: usage.linked,
+    bankUnused: usage.unused,
+    serialFrom: usage.from,
+    serialTo: usage.to,
+    linkedSerials: usage.linkedSerials.length ? usage.linkedSerials : undefined,
+  });
+}
+
 function explodeItem(item) {
   const rec = withSeriesFields(item);
   const event = inferEventName(rec) || inferEventName(item);
   const listed = serialsFromGroup(rec);
+  const usage = readPasUsageFields(rec);
+  const usageFields = pasUsageItemFields(usage);
+  const statusBySerial = serialSeatStatusByNumber(rec);
   if (listed.length > 0 && (listed.length > 1 || !readSerialNumber(rec))) {
     return listed.map(serialNumber => ({
       ...rec,
@@ -439,10 +506,19 @@ function explodeItem(item) {
       serialNumber,
       serials: undefined,
       serialNumbers: undefined,
+      ...usageFields,
+      ...(statusBySerial.get(serialNumber) ? { seatStatus: statusBySerial.get(serialNumber) } : {}),
     }));
   }
   const serialNumber = readSerialNumber(rec);
-  return [{ ...rec, ...(serialNumber ? { serialNumber } : {}) }];
+  return [{
+    ...rec,
+    ...(serialNumber ? { serialNumber } : {}),
+    ...usageFields,
+    ...(serialNumber && statusBySerial.get(serialNumber)
+      ? { seatStatus: statusBySerial.get(serialNumber) }
+      : {}),
+  }];
 }
 
 function expandRecordList(rows, base = {}) {
@@ -462,22 +538,22 @@ function serialsFromGroup(rec) {
   for (const serial of serialValues(serialListFromRec(flat))) {
     if (typeof serial === 'string' || typeof serial === 'number') {
       const text = String(serial).trim();
-      if (looksLikeYesoneSerial(text)) listed.push(text);
+      if (looksLikeBankSerial(text)) listed.push(text);
       continue;
     }
     const number = readSerialNumber(asRecord(serial)) || optionalTrimmed(asRecord(serial).serial);
-    if (looksLikeYesoneSerial(number)) listed.push(number);
+    if (looksLikeBankSerial(number)) listed.push(number);
   }
   const unique = [...new Set(listed)];
   const qty = optionalFiniteNumber(flat.qty ?? flat.count ?? rec.qty ?? rec.count);
   const from = flat.from || rec.startNumber || rec.from || rec.start;
   const to = flat.to || rec.endNumber || rec.to || rec.end;
   if (qty != null && unique.length < qty) {
-    const expanded = expandSerialRange(from, to, rec.missing).filter(looksLikeYesoneSerial);
+    const expanded = expandSerialRange(from, to, rec.missing).filter(looksLikeBankSerial);
     if (expanded.length > unique.length) return expanded;
   }
   if (unique.length > 0) return unique;
-  return expandSerialRange(from, to, rec.missing).filter(looksLikeYesoneSerial);
+  return expandSerialRange(from, to, rec.missing).filter(looksLikeBankSerial);
 }
 
 function isPrimitiveSerialList(value) {
@@ -559,15 +635,16 @@ function isMasterPoolSerial(serial) {
 }
 
 function pushSerialItems(out, base, serials, extra = {}) {
+  const extraClean = stripUndefined(extra);
   for (const serial of serialValues(serials)) {
     if (out.length >= MAX_EVENTS) return;
     if (typeof serial === 'string' || typeof serial === 'number') {
       const serialNumber = String(serial).trim();
-      if (!looksLikeYesoneSerial(serialNumber)) continue;
+      if (!looksLikeBankSerial(serialNumber)) continue;
       out.push({
         ...base,
-        ...extra,
-        event: extra.event || 'serial.allotted',
+        ...extraClean,
+        event: extraClean.event || 'serial.allotted',
         serialNumber,
         serials: undefined,
       });
@@ -575,12 +652,12 @@ function pushSerialItems(out, base, serials, extra = {}) {
     }
     const row = asRecord(serial);
     const serialNumber = readSerialNumber(row) || optionalTrimmed(row.serial);
-    if (!looksLikeYesoneSerial(serialNumber)) continue;
+    if (!looksLikeBankSerial(serialNumber)) continue;
     out.push({
       ...base,
       ...row,
-      ...extra,
-      event: extra.event || inferEventName({ ...row, ...extra }) || 'serial.allotted',
+      ...extraClean,
+      event: extraClean.event || inferEventName({ ...row, ...extraClean }) || 'serial.allotted',
       serialNumber,
       serials: undefined,
     });
@@ -592,7 +669,7 @@ function pushDetailSerials(out, base, rows) {
     if (out.length >= MAX_EVENTS) return;
     const rec = asRecord(row);
     const serialNumber = optionalTrimmed(rec.serial) || readSerialNumber(rec);
-    if (!looksLikeYesoneSerial(serialNumber)) continue;
+    if (!looksLikeBankSerial(serialNumber)) continue;
     out.push({
       ...base,
       ...rec,
@@ -668,11 +745,15 @@ function expandNamedSerialEvent(root, mergedRoot, named) {
           to: rec.to || optionalTrimmed(raw.to),
           invoiceNo: invoiceNo || undefined,
           allotmentId: optionalTrimmed(raw.id) || undefined,
-          sku: optionalTrimmed(raw.sku || raw.modelId || raw.modelNo) || undefined,
+          sku: optionalTrimmed(raw.sku || raw.yesoneSku || raw.itemCode || raw.modelId || raw.modelNo) || undefined,
+          yesoneSku: optionalTrimmed(raw.yesoneSku || raw.sku || raw.itemCode) || undefined,
+          serialType: optionalTrimmed(raw.serialType || raw.serialPool || raw.pool) || undefined,
           productId: optionalTrimmed(raw.productId || raw.itemId) || undefined,
           productName: optionalTrimmed(raw.productName || raw.name) || undefined,
+          modelid: optionalTrimmed(raw.modelid || raw.modelId) || undefined,
           modelNo: optionalTrimmed(raw.modelNo || raw.modelId) || undefined,
           modelId: optionalTrimmed(raw.modelId || raw.modelNo) || undefined,
+          ...pasUsageItemFields(readPasUsageFields(rec)),
         });
       }
     }
@@ -685,6 +766,7 @@ function expandNamedSerialEvent(root, mergedRoot, named) {
       rcCode: base.rcCode,
       rcId: base.rcId,
       rcCompanyName: base.rcCompanyName,
+      ...pasUsageItemFields(readPasUsageFields(base)),
     });
   }
   return out;
@@ -958,6 +1040,245 @@ function allotmentFields(item, rc, serialNumber, extra = {}) {
   };
 }
 
+function inboundSerialType(item) {
+  const rec = asRecord(item);
+  const product = asRecord(rec.product);
+  const candidates = [
+    rec.serialType,
+    rec.serialPool,
+    rec.pool,
+    rec.kind,
+    product.serialType,
+    rec.type,
+  ];
+  for (const candidate of candidates) {
+    const type = String(candidate || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (isSerialTypeToken(type)) return type;
+  }
+  return '';
+}
+
+function compactIdent(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function pickInboundSku(item) {
+  const rec = asRecord(item);
+  const product = asRecord(rec.product);
+  return optionalTrimmed(
+    rec.yesoneSku
+    || rec.sku
+    || rec.productSku
+    || rec.itemCode
+    || rec.productCode
+    || rec.materialCode
+    || rec.partNo
+    || rec.itemNo
+    || product.yesoneSku
+    || product.sku
+    || product.itemCode
+    || product.productCode,
+  );
+}
+
+function isSeatStatusToken(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return key === 'used'
+    || key === 'linked'
+    || key === 'assigned'
+    || key === 'unused'
+    || key === 'available'
+    || key === 'allotted'
+    || key === 'cancelled'
+    || key === 'replaced';
+}
+
+function isUsedSeatStatus(value) {
+  const key = String(value || '').trim().toLowerCase();
+  return key === 'used' || key === 'linked' || key === 'assigned';
+}
+
+function collectLinkedSerials(rec, product, pas, productBank) {
+  const out = [];
+  for (const raw of [
+    rec.linkedSerials,
+    rec.usedSerials,
+    rec.assignedSerials,
+    product.linkedSerials,
+    product.usedSerials,
+    pas.linkedSerials,
+    productBank.linkedSerials,
+  ]) {
+    for (const serial of serialValues(raw)) {
+      if (typeof serial === 'string' || typeof serial === 'number') {
+        const text = String(serial).trim();
+        if (looksLikeBankSerial(text)) out.push(text);
+        continue;
+      }
+      const row = asRecord(serial);
+      const number = readSerialNumber(row) || optionalTrimmed(row.serial);
+      if (looksLikeBankSerial(number)) out.push(number);
+    }
+  }
+  return [...new Set(out)];
+}
+
+function readPasUsageFields(item) {
+  const rec = withSeriesFields(item);
+  const product = asRecord(rec.product);
+  const pas = nestedRecord(pickValue(product, ['pas']) || pickValue(rec, ['pas']));
+  const productBank = nestedRecord(pickValue(rec, ['productBank']) || pickValue(product, ['productBank']));
+  return {
+    qty: firstFiniteAmount([
+      rec.bankQty,
+      rec.totalQty,
+      product.qty,
+      product.totalQty,
+      pas.qty,
+      productBank.qty,
+      rec.qty,
+      rec.count,
+    ]),
+    linked: firstFiniteAmount([
+      rec.bankLinked,
+      rec.linked,
+      product.linked,
+      pas.linked,
+      productBank.linked,
+    ]),
+    unused: firstFiniteAmount([
+      rec.bankUnused,
+      rec.unused,
+      rec.available,
+      product.unused,
+      product.available,
+      pas.unused,
+      productBank.unused,
+    ]),
+    from: optionalTrimmed(rec.from || rec.serialFrom),
+    to: optionalTrimmed(rec.to || rec.serialTo),
+    linkedSerials: collectLinkedSerials(rec, product, pas, productBank),
+  };
+}
+
+function serialSeatStatusByNumber(rec) {
+  const map = new Map();
+  for (const serial of serialValues(serialListFromRec(rec))) {
+    if (typeof serial !== 'object' || serial == null) continue;
+    const row = asRecord(serial);
+    const number = readSerialNumber(row) || optionalTrimmed(row.serial);
+    if (!looksLikeBankSerial(number)) continue;
+    const status = optionalTrimmed(row.status || row.state || row.serialStatus);
+    if (isSeatStatusToken(status)) map.set(number, status);
+    else if (row.linked === true || row.used === true) map.set(number, 'used');
+  }
+  return map;
+}
+
+function isYesoneLinkedSeat(item, serialNumber) {
+  const rec = asRecord(item);
+  if (isUsedSeatStatus(rec.seatStatus)) return true;
+  if (rec.linked === true || rec.used === true) return true;
+  const usage = readPasUsageFields(rec);
+  return usage.linkedSerials.some(serial => serial.toUpperCase() === String(serialNumber || '').trim().toUpperCase());
+}
+
+function isPasFlag(value) {
+  if (value === true) return true;
+  const type = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return type === 'true' || type === 'pas' || type === 'yes' || type === '1';
+}
+
+function isPasTyped(item) {
+  const rec = asRecord(item);
+  const product = asRecord(rec.product);
+  if (
+    rec.pasPreAllotted === true
+    || product.pasPreAllotted === true
+    || isPasFlag(rec.pas)
+    || isPasFlag(product.pas)
+    || rec.productBank === true
+    || product.productBank === true
+  ) return true;
+  const type = inboundSerialType(item);
+  return type === 'pas'
+    || type === 'preallotted'
+    || type === 'pre_allotted'
+    || type === 'numberbank'
+    || type === 'number_bank';
+}
+
+async function loadPasProducts(db) {
+  try {
+    const snap = await db.collection('products').where('pasPreAllotted', '==', true).get();
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (err) {
+    console.error('yesone pas product query failed', err);
+  }
+  try {
+    const snap = await db.collection('products').get();
+    return snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(row => row.pasPreAllotted === true);
+  } catch (err) {
+    console.error('yesone pas product load failed', err);
+    return [];
+  }
+}
+
+function matchPasProduct(item, pasProducts) {
+  const rec = asRecord(item);
+  const product = asRecord(rec.product);
+  const sku = compactIdent(pickInboundSku(rec));
+  if (sku) {
+    const hit = pasProducts.find(row => compactIdent(row.yesoneSku || row.sku) === sku);
+    if (hit) return hit;
+  }
+  const productId = compactIdent(rec.productId || rec.itemId || product.id);
+  if (productId) {
+    const hit = pasProducts.find(row => compactIdent(row.id) === productId);
+    if (hit) return hit;
+  }
+  const modelid = compactIdent(rec.modelid || rec.modelId || product.modelid || product.modelId);
+  if (modelid) {
+    const hits = pasProducts.filter(row => compactIdent(row.modelid || row.modelId) === modelid);
+    if (hits.length === 1) return hits[0];
+  }
+  if (isPasTyped(item) && pasProducts.length === 1) return pasProducts[0];
+  return null;
+}
+
+function isPasInbound(item, pasProduct) {
+  if (isPasTyped(item)) return true;
+  const type = inboundSerialType(item);
+  if (type === 'gas' || type === 'general') return false;
+  return Boolean(pasProduct);
+}
+
+function pasBankFields(item, serialNumber, pasProduct, extra = {}) {
+  const rec = asRecord(item);
+  const product = asRecord(rec.product);
+  const yesoneSku = optionalTrimmed(pasProduct?.yesoneSku || pickInboundSku(rec));
+  return stripUndefined({
+    serialNumber,
+    pool: 'pas',
+    productId: optionalTrimmed(pasProduct?.id || rec.productId || product.id),
+    productName: optionalTrimmed(pasProduct?.name || rec.productName || product.name),
+    yesoneSku,
+    sku: yesoneSku,
+    modelid: optionalTrimmed(pasProduct?.modelid || rec.modelid || rec.modelId || product.modelid),
+    modelNo: optionalTrimmed(pasProduct?.modelNo || rec.modelNo || product.modelNo),
+    modelApprovalNo: optionalTrimmed(
+      pasProduct?.modelApprovalNo || rec.modelApprovalNo || product.modelApprovalNo,
+    ),
+    invoiceNo: readInvoiceNo(rec),
+    qty: 1,
+    source: 'yesone',
+    updatedAt: new Date().toISOString(),
+    ...extra,
+  });
+}
+
 function verificationLocked(record) {
   if (!record) return false;
   if (optionalTrimmed(record.certificateNumber)) return true;
@@ -1091,7 +1412,13 @@ function sortSerials(serials) {
 async function recordSerialInwardBatches(db, items, results, now) {
   const okSerials = new Set(
     (Array.isArray(results) ? results : [])
-      .filter(row => row && row.ok === true && row.event === 'serial.allotted' && !row.skipped)
+      .filter(row => (
+        row
+        && row.ok === true
+        && row.event === 'serial.allotted'
+        && !row.skipped
+        && row.pool !== 'pas'
+      ))
       .map(row => optionalTrimmed(row.id))
       .filter(Boolean),
   );
@@ -1165,7 +1492,9 @@ async function applySerialAllottedMany(db, items, rcCache) {
   const serialsByRc = new Map();
   const inwardItems = [];
   const inwardResults = [];
+  const pasMetaByKey = new Map();
   const now = new Date().toISOString();
+  const pasProducts = await loadPasProducts(db);
 
   const prepared = [];
   for (const item of items) {
@@ -1174,11 +1503,59 @@ async function applySerialAllottedMany(db, items, rcCache) {
       results.push(serialRequiredError('serial.allotted', item));
       continue;
     }
-    if (!looksLikeYesoneSerial(serialNumber)) {
+    const pasProduct = matchPasProduct(item, pasProducts);
+    if (!isPasInbound(item, pasProduct) && !looksLikeYesoneSerial(serialNumber)) {
       results.push({ ok: true, event: 'serial.allotted', id: serialNumber, skipped: 'qty_not_serial' });
       continue;
     }
-    prepared.push({ item, serialNumber, id: serialDocId(serialNumber) });
+    const id = serialDocId(serialNumber);
+    if (isPasInbound(item, pasProduct)) {
+      const existing = await db.doc(`${PAS_SERIAL_COLLECTION}/${id}`).get();
+      const prev = existing.exists ? existing.data() || {} : {};
+      const prevStatus = existing.exists ? optionalTrimmed(prev.status) : null;
+      const keepUsed = prevStatus === 'used';
+      const usage = readPasUsageFields(item);
+      const yesoneUsed = !keepUsed && isYesoneLinkedSeat(item, serialNumber);
+      const yesoneSku = optionalTrimmed(pasProduct?.yesoneSku || pickInboundSku(item));
+      const metaKey = yesoneSku || optionalTrimmed(pasProduct?.id);
+      if (metaKey) {
+        const cur = pasMetaByKey.get(metaKey) || {
+          sku: yesoneSku,
+          productId: optionalTrimmed(pasProduct?.id),
+          modelid: optionalTrimmed(pasProduct?.modelid || item.modelid || item.modelId),
+          serials: [],
+        };
+        cur.serials.push(serialNumber);
+        if (usage.qty != null) cur.qty = usage.qty;
+        if (usage.linked != null) cur.linked = usage.linked;
+        if (usage.unused != null) cur.unused = usage.unused;
+        if (usage.from) cur.from = usage.from;
+        if (usage.to) cur.to = usage.to;
+        pasMetaByKey.set(metaKey, cur);
+      }
+      writes.push({
+        path: `${PAS_SERIAL_COLLECTION}/${id}`,
+        data: pasBankFields(item, serialNumber, pasProduct, {
+          status: keepUsed || yesoneUsed ? 'used' : 'available',
+          bankQty: usage.qty,
+          bankLinked: usage.linked,
+          bankUnused: usage.unused,
+          serialFrom: usage.from,
+          serialTo: usage.to,
+          allottedAt: optionalTrimmed(item.allottedAt) || (existing.exists ? prev.allottedAt : null) || now,
+          ...(keepUsed ? {} : { usedAt: null, usedByUid: null, usedByRcId: null, usedRecordId: null }),
+        }),
+      });
+      results.push({
+        ok: true,
+        event: 'serial.allotted',
+        id: serialNumber,
+        pool: 'pas',
+        productId: pasProduct?.id || null,
+      });
+      continue;
+    }
+    prepared.push({ item, serialNumber, id });
   }
 
   const existingById = new Map();
@@ -1251,6 +1628,27 @@ async function applySerialAllottedMany(db, items, rcCache) {
     }
   }
 
+  for (const [key, row] of pasMetaByKey) {
+    const id = serialDocId(key);
+    if (!id) continue;
+    writes.push({
+      path: `${PAS_SERIAL_META_COLLECTION}/${id}`,
+      data: stripUndefined({
+        productId: row.productId || null,
+        yesoneSku: row.sku || null,
+        sku: row.sku || null,
+        modelid: row.modelid || null,
+        from: row.from || null,
+        to: row.to || null,
+        qty: row.qty != null ? row.qty : row.serials.length,
+        linked: row.linked,
+        unused: row.unused,
+        source: 'yesone',
+        updatedAt: now,
+      }),
+    });
+  }
+
   await commitDocSets(db, writes);
   for (const [rcId, serials] of serialsByRc) {
     if (rcId.startsWith('drop:')) {
@@ -1281,9 +1679,7 @@ async function applyInboundItems(db, items) {
   const rest = [];
   for (const item of items) {
     const event = inferEventName(item);
-    if (event === 'product.bank' && !readSerialNumber(item)) {
-      rest.push(item);
-    } else if (
+    if (
       event === 'serial.allotted'
       || event === 'product.bank'
       || (event === 'serial.updated' && !isSerialRename(item))
@@ -1330,66 +1726,48 @@ async function applyInboundItems(db, items) {
 }
 
 async function applySerialAllotted(db, item) {
-  const serialNumber = readSerialNumber(item);
-  if (!serialNumber) return serialRequiredError('serial.allotted', item);
-  if (!looksLikeYesoneSerial(serialNumber)) {
-    return { ok: true, event: 'serial.allotted', id: serialNumber, skipped: 'qty_not_serial' };
-  }
-  const cache = new Map();
-  const rc = await resolveRcCached(db, item, cache);
-  const id = serialDocId(serialNumber);
-  const now = new Date().toISOString();
-  const snap = await db.doc(`${SERIAL_COLLECTION}/${id}`).get();
-  const previous = snap.exists ? snap.data() : null;
-  const previousStatus = optionalTrimmed(previous?.status);
-  const keepStatus = previousStatus && previousStatus !== 'cancelled' && previousStatus !== 'replaced'
-    ? previousStatus
-    : 'allotted';
-  await db.doc(`${SERIAL_COLLECTION}/${id}`).set(
-    allotmentFields(item, rc, serialNumber, {
-      status: keepStatus,
-      allottedAt: optionalTrimmed(previous?.allottedAt) || optionalTrimmed(item.allottedAt) || now,
-    }),
-    { merge: true },
-  );
-  if ((!previous || previousStatus === 'cancelled' || previousStatus === 'replaced') && rc?.id && !isMasterRcCode(rc.rcCode)) {
-    await patchRcAllottedSerials(db, rc.id, list => (
-      list.includes(serialNumber) ? list : [...list, serialNumber]
-    ));
-  }
-  const result = {
-    ok: true,
-    event: 'serial.allotted',
-    id: serialNumber,
-    rcId: rc?.id || previous?.rcId || null,
-    warning: rc || previous ? null : 'rc_not_found',
-    skipped: previous && previousStatus !== 'cancelled' && previousStatus !== 'replaced'
-      ? 'already_exists'
-      : null,
-  };
-  if (!previous || previousStatus === 'cancelled' || previousStatus === 'replaced') {
-    try {
-      await recordSerialInwardBatches(db, [item], [result], now);
-    } catch (err) {
-      console.error('yesone inward batch record failed', err);
-    }
-  }
-  return result;
+  const results = await applySerialAllottedMany(db, [item], new Map());
+  return results[0] || { ok: false, event: 'serial.allotted', error: 'inbound_failed' };
 }
 
 async function applySerialCancelled(db, item) {
   const serialNumber = readSerialNumber(item);
   if (!serialNumber) return serialRequiredError('serial.cancelled', item);
   const id = serialDocId(serialNumber);
+  const pasSnap = await db.doc(`${PAS_SERIAL_COLLECTION}/${id}`).get();
   const snap = await db.doc(`${SERIAL_COLLECTION}/${id}`).get();
   const previous = snap.exists ? snap.data() : {};
   const rc = await resolveRc(db, item);
+  const now = new Date().toISOString();
+
+  if (pasSnap.exists) {
+    await db.doc(`${PAS_SERIAL_COLLECTION}/${id}`).set(
+      {
+        serialNumber,
+        status: 'cancelled',
+        cancelledAt: now,
+        updatedAt: now,
+        source: 'yesone',
+      },
+      { merge: true },
+    );
+  }
+
+  if (pasSnap.exists && !snap.exists) {
+    return {
+      ok: true,
+      event: 'serial.cancelled',
+      id: serialNumber,
+      pool: 'pas',
+    };
+  }
+
   await db.doc(`${SERIAL_COLLECTION}/${id}`).set(
     {
       serialNumber,
       status: 'cancelled',
-      cancelledAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      cancelledAt: now,
+      updatedAt: now,
       source: 'yesone',
     },
     { merge: true },
@@ -1409,6 +1787,7 @@ async function applySerialCancelled(db, item) {
     event: 'serial.cancelled',
     id: serialNumber,
     rcId: previous.rcId || rc?.id || null,
+    ...(pasSnap.exists ? { pool: 'pas' } : {}),
   };
 }
 
@@ -1426,8 +1805,67 @@ async function applySerialUpdated(db, item) {
   const now = new Date().toISOString();
   const oldId = serialDocId(previousSerial);
   const newId = serialDocId(nextSerial);
+  const oldPasSnap = await db.doc(`${PAS_SERIAL_COLLECTION}/${oldId}`).get();
   const oldSnap = await db.doc(`${SERIAL_COLLECTION}/${oldId}`).get();
   const previous = oldSnap.exists ? oldSnap.data() : {};
+
+  if (oldPasSnap.exists) {
+    const pasPrevious = oldPasSnap.data() || {};
+    const pasProducts = await loadPasProducts(db);
+    const pasProduct = matchPasProduct({ ...pasPrevious, ...item }, pasProducts);
+    await db.doc(`${PAS_SERIAL_COLLECTION}/${oldId}`).set(
+      {
+        ...pasPrevious,
+        serialNumber: previousSerial,
+        status: 'replaced',
+        replacedBy: nextSerial,
+        updatedAt: now,
+        source: 'yesone',
+      },
+      { merge: true },
+    );
+    await db.doc(`${PAS_SERIAL_COLLECTION}/${newId}`).set(
+      pasBankFields(
+        { ...pasPrevious, ...item },
+        nextSerial,
+        pasProduct,
+        {
+          status: 'available',
+          previousSerialNumber: previousSerial,
+          allottedAt: pasPrevious.allottedAt || now,
+        },
+      ),
+      { merge: true },
+    );
+    const calibSnap = await db.collection('siteCalibrations')
+      .where('serialNumber', '==', previousSerial)
+      .limit(40)
+      .get();
+    let updated = 0;
+    let skippedIssued = 0;
+    for (const doc of calibSnap.docs) {
+      const record = doc.data() || {};
+      if (verificationLocked(record)) {
+        skippedIssued += 1;
+        continue;
+      }
+      await doc.ref.update({
+        serialNumber: nextSerial,
+        previousSerialNumber: previousSerial,
+        updatedAt: now,
+      });
+      updated += 1;
+    }
+    return {
+      ok: true,
+      event: 'serial.updated',
+      id: nextSerial,
+      previousSerialNumber: previousSerial,
+      pool: 'pas',
+      verificationsUpdated: updated,
+      issuedSkipped: skippedIssued,
+    };
+  }
 
   await db.doc(`${SERIAL_COLLECTION}/${oldId}`).set(
     {
@@ -1545,9 +1983,6 @@ async function applyInboundItem(db, item) {
   const event = inferEventName(item);
   if (!event) return { ok: false, event: 'unknown', error: 'event_required' };
   if (event === 'serial.allotted' || event === 'product.bank') {
-    if (event === 'product.bank' && !readSerialNumber(item)) {
-      return { ok: true, event: 'product.bank', skipped: 'product_meta' };
-    }
     return applySerialAllotted(db, item);
   }
   if (event === 'serial.updated') {
@@ -1719,4 +2154,6 @@ module.exports = {
   serialDocId,
   expandSerialRange,
   yesoneInboundHttpHandler,
+  matchPasProduct,
+  readPasUsageFields,
 };

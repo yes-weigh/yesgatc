@@ -1,0 +1,154 @@
+import type { Product } from '../types.ts';
+import {
+  ovSerialChoicesForRow,
+  remainingSerialsForProduct,
+  type OvQuotaAllotment,
+} from './ovQuotaGate.ts';
+
+export type SerialEntryMode = 'gas-select' | 'pas-type';
+
+/** GAS = pick unused allotted seat. PAS = type, then verify that product’s bank. */
+export function serialEntryMode(product: Product | null | undefined): SerialEntryMode {
+  return Boolean(product?.pasPreAllotted) ? 'pas-type' : 'gas-select';
+}
+
+/** RC/VCT job chip grid: GAS OV only. PAS never lists the bank. Missing product → type, not dump remaining. */
+export function showsGasAllottedSerialGrid(
+  product: Product | null | undefined,
+  verificationType: string,
+): boolean {
+  return Boolean(product) && serialEntryMode(product) === 'gas-select' && verificationType === 'OV';
+}
+
+export function productAllotmentKey(
+  product: Product | null | undefined,
+  fallback?: { productId?: string; productName?: string },
+): { productId?: string; productName?: string; sku?: string; modelNo?: string } {
+  return {
+    productId: product?.id || fallback?.productId,
+    productName: product?.name || fallback?.productName,
+    sku: product?.yesoneSku,
+    modelNo: product?.modelNo,
+  };
+}
+
+function poolKey(row: Pick<OvQuotaAllotment, 'pool'>): string {
+  return String(row.pool || '').trim().toLowerCase();
+}
+
+function gasAllotmentRows(allotments: OvQuotaAllotment[] | undefined): OvQuotaAllotment[] | undefined {
+  if (!allotments) return allotments;
+  return allotments.filter(row => poolKey(row) !== 'pas');
+}
+
+function pasPoolSerialKeys(allotments: OvQuotaAllotment[] | undefined): Set<string> {
+  const keys = new Set<string>();
+  for (const row of allotments || []) {
+    if (poolKey(row) !== 'pas') continue;
+    const serial = row.serialNumber.trim().toUpperCase();
+    if (serial) keys.add(serial);
+  }
+  return keys;
+}
+
+/**
+ * Unused GAS seats for chips + search. Shared across GAS products (SKU / productId / model
+ * do not hide the verifier unused bank). Never the PAS bank. Never invents seats.
+ */
+export function gasAllottedChoices(options: {
+  remaining: string[];
+  allotments?: OvQuotaAllotment[];
+  heldSerials?: string[];
+  otherTaken?: string[];
+  product?: Product | null;
+  fallbackProduct?: { productId?: string; productName?: string };
+}): string[] {
+  const pasBlocked = pasPoolSerialKeys(options.allotments);
+  const actorUnused = options.remaining.filter(
+    serial => !pasBlocked.has(serial.trim().toUpperCase()),
+  );
+  const remaining = remainingSerialsForProduct(
+    actorUnused,
+    gasAllotmentRows(options.allotments),
+    productAllotmentKey(options.product, options.fallbackProduct),
+  );
+  // Product/SKU match must never hide a non-empty unused allotted bank.
+  const bank = remaining.length > 0 || actorUnused.length === 0 ? remaining : actorUnused;
+  return ovSerialChoicesForRow(
+    '',
+    bank,
+    options.heldSerials ?? [],
+    options.otherTaken ?? [],
+  );
+}
+
+/** Typeahead filter. Empty query → full unused set. Never invents seats. */
+export function filterGasAllottedChoices(choices: readonly string[], query: string): string[] {
+  const needle = query.trim().toUpperCase().replace(/\s+/g, '');
+  if (!needle) return [...choices];
+  return choices.filter(serial => serial.trim().toUpperCase().replace(/\s+/g, '').includes(needle));
+}
+
+export function serialInChoiceList(serial: string, choices: readonly string[]): boolean {
+  const key = serial.trim().toUpperCase();
+  if (!key) return false;
+  return choices.some(item => item.trim().toUpperCase() === key);
+}
+
+export function gasAllottedEmptyLabel(scopedToVerifier: boolean): string {
+  return scopedToVerifier ? 'None allotted to you' : 'No allotted serials left';
+}
+
+export function gasAllottedEmptyProductHint(scopedToVerifier: boolean): string {
+  return scopedToVerifier
+    ? 'No serials allotted to you for this product.'
+    : 'No unused allotted serials for this product. Cannot invent a serial.';
+}
+
+/**
+ * Sync pool check. PAS bank lookup stays async (`verifyPasSerialInBank`).
+ * OV GAS must be an unused allotted seat for that product — no invented serials.
+ * RV GAS types the existing serial (already used; not a new unused seat).
+ */
+export function validateSerialForProductPool(options: {
+  mode: SerialEntryMode;
+  verificationType: string;
+  serial: string;
+  gasChoices: readonly string[];
+  scopedToVerifier?: boolean;
+  serialSource?: string;
+}): string | null {
+  const serial = options.serial.trim();
+  if (!serial) return 'Serial number is required.';
+  if (options.mode === 'pas-type') return null;
+  if (options.verificationType !== 'OV') return null;
+  if (String(options.serialSource || '').trim() === 'interweighingDirect') return null;
+  if (serialInChoiceList(serial, options.gasChoices)) return null;
+  if (options.gasChoices.length === 0) {
+    return options.scopedToVerifier
+      ? 'No serials allotted to you for this product.'
+      : 'No unused allotted serials for this product.';
+  }
+  return `Serial ${serial} is not in the allotted list for this product.`;
+}
+
+/** OCR may fill a field. GAS only accepts a seat already on the allotted list. */
+export function applyOcrSerialToPool(options: {
+  mode: SerialEntryMode;
+  ocrSerial: string;
+  allottedMatch: string | null;
+  gasChoices: readonly string[];
+}): string | null {
+  if (options.mode === 'gas-select') {
+    const candidates = [options.allottedMatch, options.ocrSerial]
+      .map(value => String(value || '').trim())
+      .filter(Boolean);
+    for (const candidate of candidates) {
+      const hit = options.gasChoices.find(item => item.trim().toUpperCase() === candidate.toUpperCase());
+      if (hit) return hit;
+    }
+    return null;
+  }
+  const typed = options.ocrSerial.trim();
+  return typed || null;
+}

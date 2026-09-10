@@ -1,19 +1,10 @@
-export type OvQuotaProductRef = {
-  productId?: string;
-  productName?: string;
-  sku?: string;
-  modelNo?: string;
-  modelid?: string;
-  modelId?: string;
-};
-
 export type OvQuotaAllotment = {
   serialNumber: string;
   sku?: string;
   productId?: string;
   productName?: string;
   modelNo?: string;
-  modelId?: string;
+  pool?: string;
 };
 
 export type OvQuotaGate = {
@@ -21,57 +12,52 @@ export type OvQuotaGate = {
   remainingAllotments?: OvQuotaAllotment[];
   balanceQty: number | null;
   heldSerials: string[];
+  /** Verifier job: remaining is that uid's unused allotment only. */
+  scopedToVerifier?: boolean;
+  /** Unused Interweighing-direct serials. Isolated from Yesone remaining. */
+  directRemaining?: string[];
+  /** Verifier may start OV without Yesone remaining (direct bank / typed direct). */
+  allowInterweighingDirect?: boolean;
 };
 
 function serialKey(value: string): string {
   return value.trim().toUpperCase();
 }
 
-function compactProductToken(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+function allotmentPool(row: Pick<OvQuotaAllotment, 'pool'>): string {
+  return String(row.pool || '').trim().toLowerCase();
 }
 
-function productTokens(value: OvQuotaProductRef | OvQuotaAllotment | null | undefined): string[] {
-  if (!value) return [];
-  const row = value as OvQuotaProductRef & OvQuotaAllotment;
-  return [row.productId, row.sku, row.modelNo, row.modelid, row.modelId, row.productName]
-    .map(item => compactProductToken(String(item || '')))
-    .filter(Boolean);
-}
-
-function productMatchesAllotment(
-  product: OvQuotaProductRef,
-  row: OvQuotaAllotment,
-): boolean {
-  const want = productTokens(product);
-  const have = productTokens(row);
-  if (!have.length) return true;
-  if (!want.length) return false;
-  return want.some(token => have.includes(token));
-}
-
-/** Prefer stickers for this GATC product. Legacy rows with no product stay visible. */
+/**
+ * Unused GAS stickers are one bank for every GAS product.
+ * Yesone sku / productId / model must not hide seats (Bench PC vs other GAS SKU).
+ * PAS-pool stickers never appear here.
+ */
 export function remainingSerialsForProduct(
   remaining: string[],
   allotments: OvQuotaAllotment[] | undefined,
-  product: OvQuotaProductRef | null,
+  product?: { productId?: string; productName?: string; sku?: string; modelNo?: string } | null,
 ): string[] {
-  if (productTokens(product).length === 0) return remaining;
+  void product;
   if (!Array.isArray(allotments) || allotments.length === 0) return remaining;
-  const bySerial = new Map(allotments.map(row => [serialKey(row.serialNumber), row]));
-  return remaining.filter(serial => {
-    const row = bySerial.get(serialKey(serial));
-    if (!row) return true;
-    if (productTokens(row).length === 0) return true;
-    return productMatchesAllotment(product || {}, row);
-  });
+  const pasKeys = new Set<string>();
+  for (const row of allotments) {
+    if (allotmentPool(row) !== 'pas') continue;
+    const key = serialKey(row.serialNumber);
+    if (key) pasKeys.add(key);
+  }
+  if (pasKeys.size === 0) return remaining;
+  return remaining.filter(serial => !pasKeys.has(serialKey(serial)));
 }
 
-/** New OV seats left: min(Allotted − Used, unused stickers). */
+/** GAS OV quantity left (Allotted − Used). PAS does not consume this. */
+export function ovQuotaQtyCap(gate: OvQuotaGate): number {
+  return gate.balanceQty == null ? gate.remaining.length : Math.max(0, gate.balanceQty);
+}
+
+/** New GAS seats left: min(qty, unused stickers). PAS does not use stickers. */
 export function ovQuotaSeatCap(gate: OvQuotaGate): number {
-  const remainingCount = gate.remaining.length;
-  const fromBalance = gate.balanceQty == null ? remainingCount : Math.max(0, gate.balanceQty);
-  return Math.min(fromBalance, remainingCount);
+  return Math.min(ovQuotaQtyCap(gate), gate.remaining.length);
 }
 
 export function ovSerialChoicesForRow(
@@ -100,44 +86,79 @@ export function validateOvQuotaSetup(
   verificationType: string,
   gate: OvQuotaGate | null | undefined,
   isNew: boolean,
+  hasPasProducts = false,
 ): string | null {
   if (!gate || verificationType !== 'OV' || !isNew) return null;
-  if (ovQuotaSeatCap(gate) <= 0) {
+  if (gate.allowInterweighingDirect) return null;
+  if (gate.scopedToVerifier && !hasPasProducts && gate.remaining.length <= 0) {
+    return 'No serials allotted to you. Cannot start Original Verification.';
+  }
+  if (ovQuotaQtyCap(gate) <= 0 && !hasPasProducts) {
     return 'OV quota balance is 0. Cannot start Original Verification.';
+  }
+  if (!hasPasProducts && gate.remaining.length <= 0) {
+    return 'No allotted serials left. Cannot start Original Verification.';
   }
   return null;
 }
 
+export type OvQuotaDeviceRow = {
+  serial: string;
+  pas?: boolean;
+  serialSource?: string;
+};
+
+function isDirectQuotaRow(row: OvQuotaDeviceRow): boolean {
+  return String(row.serialSource || '').trim() === 'interweighingDirect';
+}
+
 export function validateOvQuotaDevices(
   verificationType: string,
-  serials: string[],
+  rows: OvQuotaDeviceRow[],
   gate: OvQuotaGate | null | undefined,
 ): string | null {
   if (!gate || verificationType !== 'OV') return null;
   const held = new Set(gate.heldSerials.map(serialKey).filter(Boolean));
   const remaining = new Set(gate.remaining.map(serialKey).filter(Boolean));
   const seen = new Set<string>();
-  let newCount = 0;
-  for (const raw of serials) {
-    const serial = raw.trim();
+  let newGas = 0;
+  let newPas = 0;
+  for (const row of rows) {
+    const serial = (row.serial || '').trim();
+    const pas = Boolean(row.pas);
+    const direct = isDirectQuotaRow(row);
     if (!serial) {
-      newCount += 1;
+      if (pas) newPas += 1;
+      else if (!direct) newGas += 1;
       continue;
     }
     const key = serialKey(serial);
     if (seen.has(key)) return `Serial ${serial} is used more than once.`;
     seen.add(key);
     if (held.has(key)) continue;
+    if (pas) {
+      newPas += 1;
+      continue;
+    }
+    if (direct) continue;
     if (!remaining.has(key)) {
       return `Serial ${serial} is not in allotted balance. Use an allotted serial for OV.`;
     }
-    newCount += 1;
+    newGas += 1;
   }
-  const cap = ovQuotaSeatCap(gate);
-  if (newCount > cap) {
-    return cap <= 0
-      ? 'OV quota balance is 0. Cannot start more Original Verifications.'
-      : `OV quota: ${cap} left. You can start ${cap} more Original Verification(s).`;
+  if (newGas > gate.remaining.length) {
+    const stickers = gate.remaining.length;
+    return stickers <= 0
+      ? gate.scopedToVerifier
+        ? 'No serials allotted to you. Use a PAS product or wait for allotment.'
+        : 'No allotted serials left. Use a PAS product or wait for serial allotment.'
+      : `Allotted serials: ${stickers} left. You can start ${stickers} more GAS Original Verification(s).`;
+  }
+  const qtyCap = ovQuotaQtyCap(gate);
+  if (newGas > qtyCap) {
+    return qtyCap <= 0
+      ? 'OV quota balance is 0. Cannot start more GAS Original Verifications.'
+      : `OV quota: ${qtyCap} left. You can start ${qtyCap} more GAS Original Verification(s).`;
   }
   return null;
 }

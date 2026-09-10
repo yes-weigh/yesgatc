@@ -30,6 +30,7 @@ service firebase.storage {
     }
 
     // RC / VCT profile documents — folders from rcCertificateUpload + vctDocumentUpload.
+    // Vr Allotted Yesone invoices: vr-allotment-invoice.
     // PAN + RC logo: Super Admin write. Other user folders: signed-in write.
     match /users/{userId}/{docKind}/{fileName} {
       allow read: if docKind != 'pan-card' || isSuperAdmin();

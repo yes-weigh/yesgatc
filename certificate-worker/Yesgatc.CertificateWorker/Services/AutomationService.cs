@@ -1281,12 +1281,14 @@ public sealed class AutomationService : IAsyncDisposable
 
         if (await EmaapLoginAutomation.IsLoggedInAsync(page) && !await IsLoginPageAsync(page))
         {
+            await RefreshEmaapSignerProfileAsync(page, cancellationToken);
             return;
         }
 
         var state = await EnsureDocaLoggedInAsync(page, cancellationToken, forceAutoLogin: true);
         if (state == DocaSessionState.LoggedIn)
         {
+            await RefreshEmaapSignerProfileAsync(page, cancellationToken);
             return;
         }
 
@@ -1298,6 +1300,24 @@ public sealed class AutomationService : IAsyncDisposable
 
         throw new InvalidOperationException(
             "eMAAP browser is on the login page. Sign in to eMAAP first, then retry Fill up in eMAAP.");
+    }
+
+    private async Task RefreshEmaapSignerProfileAsync(IPage page, CancellationToken cancellationToken)
+    {
+        var rcId = _firestoreService.QueueRcIdFilter;
+        if (string.IsNullOrWhiteSpace(rcId) || ResolveFirebaseIdToken is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var token = await ResolveFirebaseIdToken(cancellationToken);
+            await EmaapSignerProfileSync.TryRefreshAsync(page, rcId, token, Firebase, cancellationToken);
+        }
+        catch
+        {
+        }
     }
 
     private async Task FillStarterFormWithSessionRetryAsync(

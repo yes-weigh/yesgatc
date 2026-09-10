@@ -1,16 +1,14 @@
 import React, { useEffect, useState, type RefObject } from 'react';
 import {
-  AlertCircle,
   Check,
-  Clock,
   Download,
   FileInput,
-  FileText,
   Pencil,
   Send,
-  ShieldCheck,
   Trash2,
 } from 'lucide-react';
+import { ElectronicWeighingScaleIcon } from './ElectronicWeighingScaleIcon';
+import { StorageImage } from './StorageImage';
 import { useAppSettings } from '../hooks/useAppSettings';
 import { useAppContext } from '../context/AppContext';
 import {
@@ -27,6 +25,7 @@ import {
   canRcApproveVerifierVerification,
   getVerificationDisplayStatus,
   isVerificationEditable,
+  isVerificationFailedAtSubmit,
   normalizeVerificationStatus,
   sanitizeVerificationDisplayText,
   verificationFilterLabel,
@@ -67,6 +66,24 @@ export interface VerificationListTableRecord extends SiteCalibration {
   serialVersionCount?: number;
 }
 
+export interface VerificationListFailedSelectProps {
+  selectedIds: Set<string>;
+  selectableIds: string[];
+  allSelected: boolean;
+  selectAllRef: RefObject<HTMLInputElement | null>;
+  onToggle: (id: string) => void;
+  onToggleSelectAll: () => void;
+}
+
+export interface VerificationListPendingRcSelectProps {
+  selectedIds: Set<string>;
+  selectableIds: string[];
+  allSelected: boolean;
+  selectAllRef: RefObject<HTMLInputElement | null>;
+  onToggle: (id: string) => void;
+  onToggleSelectAll: () => void;
+}
+
 export interface VerificationListBulkSelectProps {
   selectedDraftIds: Set<string>;
   draftSubmitMeta: Map<string, { submittable: boolean; blockReason: string | null }>;
@@ -75,6 +92,8 @@ export interface VerificationListBulkSelectProps {
   allSelectableDraftsSelected: boolean;
   onToggleDraftSelection: (id: string, submittable: boolean) => void;
   onToggleSelectAllDrafts: () => void;
+  failedSelect?: VerificationListFailedSelectProps;
+  pendingRcSelect?: VerificationListPendingRcSelectProps;
 }
 
 export interface VerificationListTableProps {
@@ -93,6 +112,10 @@ export interface VerificationListTableProps {
   movingToDraftId?: string | null;
   deletingId?: string | null;
   submitting?: boolean;
+  /** Re-queue failed-at-submit on the same document. */
+  onResubmitFailedSubmit?: (record: VerificationListTableRecord) => void;
+  canResubmitFailedSubmit?: (record: VerificationListTableRecord) => boolean;
+  resubmittingFailedId?: string | null;
   bulkSelect?: VerificationListBulkSelectProps;
   hideVctColumn?: boolean;
   lastViewedRecordId?: string | null;
@@ -196,24 +219,27 @@ function VerificationListTypeBadges({
   );
 }
 
-function VerificationListStatusIcon({ tone }: { tone: VerificationListStatusTone }) {
-  const size = 28;
-  const stroke = 1.85;
-  switch (tone) {
-    case 'draft':
-      return <FileText size={size} strokeWidth={stroke} aria-hidden />;
-    case 'submitted':
-      return <Send size={size} strokeWidth={stroke} aria-hidden />;
-    case 'pending_rc':
-      return <Clock size={size} strokeWidth={stroke} aria-hidden />;
-    case 'failed_submit':
-    case 'failed_certification':
-      return <AlertCircle size={size} strokeWidth={stroke} aria-hidden />;
-    case 'approved':
-    case 'certified':
-    default:
-      return <ShieldCheck size={size} strokeWidth={stroke} aria-hidden />;
-  }
+export function VerificationListProductThumb({ product }: { product: Product | undefined }) {
+  const url = product?.productImageUrl?.trim() || '';
+  const path = product?.productImagePath?.trim() || '';
+  const hasImage = Boolean(url || path);
+
+  return (
+    <span className="verification-list-card-product-slot">
+      <span className="verification-list-card-product-fallback">
+        <ElectronicWeighingScaleIcon size={28} strokeWidth={1.85} />
+      </span>
+      {hasImage ? (
+        <StorageImage
+          url={url}
+          path={path}
+          alt=""
+          className="verification-list-card-product-img"
+          persistentCache
+        />
+      ) : null}
+    </span>
+  );
 }
 
 export const VerificationListTable: React.FC<VerificationListTableProps> = ({
@@ -230,6 +256,9 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   movingToDraftId = null,
   deletingId = null,
   submitting = false,
+  onResubmitFailedSubmit,
+  canResubmitFailedSubmit,
+  resubmittingFailedId = null,
   bulkSelect,
   hideVctColumn: _hideVctColumn = false,
   lastViewedRecordId = null,
@@ -266,6 +295,36 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
           </label>
         </div>
       )}
+      {bulk?.failedSelect && bulk.failedSelect.selectableIds.length > 0 && (
+        <div className="verification-list-card-select-all">
+          <label className="verification-device-check verification-device-check--header">
+            <input
+              ref={bulk.failedSelect.selectAllRef}
+              type="checkbox"
+              checked={bulk.failedSelect.allSelected}
+              onChange={bulk.failedSelect.onToggleSelectAll}
+              disabled={submitting}
+              aria-label="Select all failed at submit"
+            />
+            <span>Select all failed at submit</span>
+          </label>
+        </div>
+      )}
+      {bulk?.pendingRcSelect && bulk.pendingRcSelect.selectableIds.length > 0 && (
+        <div className="verification-list-card-select-all">
+          <label className="verification-device-check verification-device-check--header">
+            <input
+              ref={bulk.pendingRcSelect.selectAllRef}
+              type="checkbox"
+              checked={bulk.pendingRcSelect.allSelected}
+              onChange={bulk.pendingRcSelect.onToggleSelectAll}
+              disabled={submitting}
+              aria-label="Select all pending RC"
+            />
+            <span>Select all pending RC</span>
+          </label>
+        </div>
+      )}
 
       {records.length === 0 ? (
         <p className="verification-list-cards-empty text-muted">{emptyMessage}</p>
@@ -294,6 +353,20 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
               && adminMoveFailedSubmitEnabled
               && onMoveToDraft
               && canMoveFailedSubmitToDraft(record, adminMoveFailedSubmitEnabled);
+            const failedAtSubmit = isVerificationFailedAtSubmit(record);
+            const showResubmitFailed =
+              Boolean(onResubmitFailedSubmit)
+              && failedAtSubmit
+              && (canResubmitFailedSubmit ? canResubmitFailedSubmit(record) : true);
+            const failedSelect = bulk?.failedSelect;
+            const showFailedCheckbox =
+              Boolean(failedSelect)
+              && failedAtSubmit
+              && Boolean(failedSelect?.selectableIds.includes(record.id));
+            const pendingRcSelect = bulk?.pendingRcSelect;
+            const showPendingRcCheckbox =
+              Boolean(pendingRcSelect)
+              && Boolean(pendingRcSelect?.selectableIds.includes(record.id));
             const deleteLabel = verificationAdminDeleteLabel(record, adminDevDeleteEnabled);
             const isLastViewed = Boolean(lastViewedRecordId) && lastViewedRecordId === record.id;
             const isFlash = Boolean(flashRecordId) && flashRecordId === record.id;
@@ -355,6 +428,36 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                       />
                     </label>
                   )}
+                  {showFailedCheckbox && failedSelect && (
+                    <label
+                      className="verification-list-card-select verification-device-check"
+                      title="Select for bulk resubmit"
+                      onClick={stopRowClick}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={failedSelect.selectedIds.has(record.id)}
+                        onChange={() => failedSelect.onToggle(record.id)}
+                        disabled={submitting}
+                        aria-label={`Select failed verification ${record.customerName || record.id}`}
+                      />
+                    </label>
+                  )}
+                  {showPendingRcCheckbox && pendingRcSelect && (
+                    <label
+                      className="verification-list-card-select verification-device-check"
+                      title="Select for bulk submit"
+                      onClick={stopRowClick}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={pendingRcSelect.selectedIds.has(record.id)}
+                        onChange={() => pendingRcSelect.onToggle(record.id)}
+                        disabled={submitting}
+                        aria-label={`Select pending RC ${record.customerName || record.id}`}
+                      />
+                    </label>
+                  )}
                   <button
                     type="button"
                     className="verification-list-card-status"
@@ -363,7 +466,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                     aria-label={`${statusLabel} — ${record.customerName || 'verification'}`}
                   >
                     <span className="verification-list-card-status-ring">
-                      <VerificationListStatusIcon tone={statusTone} />
+                      <VerificationListProductThumb product={product} />
                     </span>
                     <span className="verification-list-card-status-label">{statusLabel}</span>
                   </button>
@@ -461,8 +564,23 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
                       <span className="verification-list-card-download-label">Download</span>
                     </button>
                   )}
-                  {(showEdit || showSubmit || showApprove || showDelete || showMoveToDraft) && (
+                  {(showEdit || showSubmit || showApprove || showDelete || showMoveToDraft || showResubmitFailed) && (
                     <div className="verification-list-card-draft-actions">
+                      {showResubmitFailed && (
+                        <button
+                          type="button"
+                          className="verification-list-card-resubmit-btn"
+                          onClick={() => void onResubmitFailedSubmit!(record)}
+                          disabled={submitting || resubmittingFailedId === record.id}
+                          title="Resubmit for certification"
+                          aria-label={`Resubmit failed verification for ${record.customerName}`}
+                        >
+                          <span className="verification-list-card-resubmit-ring">
+                            <Send size={18} strokeWidth={2} aria-hidden />
+                          </span>
+                          <span className="verification-list-card-resubmit-label">Resubmit</span>
+                        </button>
+                      )}
                       {showEdit && (
                         <button
                           type="button"

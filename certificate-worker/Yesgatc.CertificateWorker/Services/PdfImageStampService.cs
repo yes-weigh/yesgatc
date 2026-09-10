@@ -173,8 +173,9 @@ internal sealed class PdfImageStampService
         }
 
         var fields = await _documents.GetFieldsAsync("users", rcId, idToken, cancellationToken);
-        return RcCertificationMethods.IsPdfSigner(
-            FirestoreFieldReader.ReadString(fields, "certificationMethod"));
+        return RcCertificationMethods.IsEffectivePdfSigner(
+            FirestoreFieldReader.ReadString(fields, "certificationMethod"),
+            FirestoreFieldReader.ReadString(fields, "emaapSignerType"));
     }
 
     private static bool HasSignedPdf(SiteCalibrationRecord job) =>

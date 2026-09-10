@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 
 import { createPortal } from 'react-dom';
 import { ChevronDown, Image as ImageIcon } from 'lucide-react';
 import { StorageImage } from './StorageImage';
+import { PasTag } from './ProductShopMedia';
 import type { Product } from '../types';
 
 export type ProductPickerValue = {
@@ -30,7 +31,14 @@ function filterProducts(products: Product[], query: string): Product[] {
   if (!q) return products.slice(0, 12);
   return products
     .filter(p => {
-      const haystack = [p.name, p.modelid, p.modelNo, p.manufacturerBrandSeries]
+      const haystack = [
+        p.name,
+        p.modelid,
+        p.modelNo,
+        p.yesoneSku,
+        p.manufacturerBrandSeries,
+        p.pasPreAllotted ? 'pas' : 'gas',
+      ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
@@ -198,7 +206,10 @@ export const ProductPicker: React.FC<ProductPickerProps> = ({
                       </span>
                     )}
                     <span className="product-picker-option-text">
-                      <span className="product-picker-option-name">{product.name}</span>
+                      <span className="product-picker-option-name">
+                        <span className="product-picker-option-name-text">{product.name}</span>
+                        {product.pasPreAllotted ? <PasTag inline /> : null}
+                      </span>
                       <span className="product-picker-option-meta text-muted text-sm">
                         {product.modelid}
                         {product.modelNo ? ` · ${product.modelNo}` : ''}

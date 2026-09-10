@@ -32,6 +32,13 @@ export interface Product {
   id: string; // The firestore ID
   modelid: string; // Unique Model ID
   modelNo: string;
+  /** Yesone catalogue SKU. */
+  yesoneSku?: string;
+  /**
+   * PAS = pre-allotted serials (Yesone number bank). Off/omitted = GAS
+   * (general allotted serials, RC remaining seats).
+   */
+  pasPreAllotted?: boolean;
   name: string;
   typeOfInstrument: string;
   manufacturerBrandSeries: string;
@@ -247,13 +254,17 @@ export interface FirestoreUserDoc {
   email?: string;
   phone?: string;
   address?: string;
+  state?: string;
+  district?: string;
 
   // RC Admin business profile fields
   companyName?: string;
   contactPerson?: string;
   place?: string;
-  /** RC centre GPS — used for weather prefill on self verifications. */
+  /** RC centre GPS, or verifier GPS set by RC admin. */
   location?: CustomerLocation;
+  /** OV Self eMAAP belong-to: verifier display name or parent RC name. */
+  ovInName?: 'verifier' | 'rc';
   gstNumber?: string;
   standardWeightsCertUrl?: string;
   standardWeightsCertPath?: string;
@@ -292,9 +303,23 @@ export interface FirestoreUserDoc {
   yesoneReservedAssignments?: Array<{
     invoiceNo: string;
     verifierUid: string;
+    verifierUids?: string[];
     serialStart?: string;
     serialEnd?: string;
+    allottedAt?: string;
+    invoiceUrl?: string;
+    invoicePath?: string;
+    invoiceName?: string;
+    invoiceContentType?: string;
   }>;
+  /** Per-verifier GAS seats allotted by RC admin (includes used). */
+  yesoneVerifierAllottedByUid?: Record<string, string[]>;
+  /**
+   * Machines this verifier bought from Interweighing Pvt Ltd.
+   * Isolated from Yesone `serialAllotments` / `yesoneVerifierAllottedByUid`.
+   */
+  interweighingDirectSerials?: string[];
+  interweighingDirectBatches?: InterweighingDirectBatch[];
   /** Super Admin only — Zoho Books customer / contact ID for RV invoicing. */
   zohoId?: string;
   /** Super Admin only — Zoho Books labour expense account ID (chart of accounts). */
@@ -314,6 +339,9 @@ export interface FirestoreUserDoc {
   panCardContentType?: string;
   /** Super Admin only — how this RC issues certificates. */
   certificationMethod?: 'auto_dsc' | 'pdf_signer' | 'manual_upload';
+  /** Cached from the eMAAP GATC profile after login (RC-writable). */
+  emaapSignerType?: 'pdf_signer' | 'manual_upload' | 'auto_dsc';
+  emaapSignerTypeSyncedAt?: string;
   /** PDF signer: officer signature + name image (JPG/PNG). */
   pdfSignerSignUrl?: string;
   pdfSignerSignPath?: string;
@@ -399,6 +427,20 @@ export interface CustomerLocation {
   lng: number;
 }
 
+/** RC admin allotment of Interweighing-direct serials onto a verifier user. */
+export type InterweighingDirectBatch = {
+  serialStart: string;
+  serialEnd: string;
+  qty: number;
+  invoiceNo?: string;
+  allottedAt: string;
+  allottedByUid: string;
+  invoiceUrl?: string;
+  invoicePath?: string;
+  invoiceName?: string;
+  invoiceContentType?: string;
+};
+
 export interface CustomerDevice {
   id: string;
   serialNumber: string;
@@ -467,6 +509,11 @@ export interface SiteCalibration {
   /** Selected product specification when the product has multiple capacity rows. */
   productSpecificationId?: string;
   serialNumber: string;
+  /**
+   * OV serial bank. Omit / `rcYesone` = Yesone GAS quota.
+   * `interweighingDirect` never consumes RC unused / Vr Allotted tiles.
+   */
+  serialSource?: 'rcYesone' | 'interweighingDirect';
   /** Product snapshot for table display and certificate server. */
   maximumCapacity?: number;
   minimumCapacity?: number;
@@ -486,6 +533,8 @@ export interface SiteCalibration {
   verificationLocation?: VerificationLocation;
   /** Self (RC centre) vs customer verification. */
   verificationSubject?: 'self' | 'customer';
+  /** Verifier OV Self — eMAAP belong-to (copied from verifier user `ovInName`). */
+  ovInName?: 'verifier' | 'rc';
   /** eMAAP belong-to is RC because customer PIN is outside Kerala. */
   fileCertificateAsRc?: boolean;
   /** Original customer when the record was rewritten to RC name. */
@@ -575,6 +624,14 @@ export interface SiteCalibration {
   pipelineFailedPhase?: 'submit' | 'certification';
   pipelineFailureMessage?: string;
   pipelineFailedAt?: string;
+  /**
+   * Failed-at-submit re-queue (same document, not a clone).
+   * Auto scheduler caps at 3 attempts / 12h — see verificationFailedSubmitResubmit.ts.
+   */
+  lastFailedSubmitResubmitAt?: string;
+  lastAutoResubmitAt?: string;
+  autoResubmitCount?: number;
+  failedSubmitResubmitSource?: 'manual' | 'bulk' | 'auto';
   /** Set when status becomes rejected (permanent worker close). */
   rejectedAt?: string;
   certificatePdfUrl?: string;

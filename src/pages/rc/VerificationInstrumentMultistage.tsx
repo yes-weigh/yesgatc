@@ -40,6 +40,7 @@ type VerificationInstrumentMultistageProps = {
   showDevices?: boolean;
   geoStampCoords?: GeoStampCoordinates | null;
   geoStampWeather?: StampWeather | null;
+  geoStampAllowLiveGps?: boolean;
   ovQuota?: OvQuotaGate | null;
   lockedSerial?: string;
 };
@@ -70,6 +71,7 @@ export const VerificationInstrumentMultistage: React.FC<VerificationInstrumentMu
   showDevices = true,
   geoStampCoords = null,
   geoStampWeather = null,
+  geoStampAllowLiveGps = true,
   ovQuota = null,
   lockedSerial = '',
 }) => {
@@ -148,6 +150,7 @@ export const VerificationInstrumentMultistage: React.FC<VerificationInstrumentMu
           laboratorySealIdentification={laboratorySealIdentification}
           geoStampCoords={geoStampCoords}
           geoStampWeather={geoStampWeather}
+          geoStampAllowLiveGps={geoStampAllowLiveGps}
           ovQuota={ovQuota}
           lockedSerial={lockedSerial}
           tileRef={node => {

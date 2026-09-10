@@ -74,10 +74,12 @@ type VerificationPhotoUploadSlotProps = {
   cameraFacing?: ImageCaptureFacing;
   /** GPS/date stamp on in-app camera capture. Only instrument + stamping plate. */
   geoStamp?: boolean;
-  /** RC centre coords — desktop file uploads burn the same overlay as mobile. */
+  /** Forced site GPS (customer shop or RC centre) — desktop + in-app camera. */
   geoStampCoords?: GeoStampCoordinates | null;
   /** Ambient temp/humidity burned into the geo banner (govt requirement). */
   geoStampWeather?: StampWeather | null;
+  /** False: do not stamp live / last-known device GPS when forced coords are missing. */
+  geoStampAllowLiveGps?: boolean;
 };
 
 const SlotIcon: React.FC<{ kind: VerificationPhotoSlotIcon }> = ({ kind }) => {
@@ -121,6 +123,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   geoStamp = false,
   geoStampCoords = null,
   geoStampWeather = null,
+  geoStampAllowLiveGps = true,
 }) => {
   const autoKey = useId();
   const slotKey = slotKeyProp ?? autoKey;
@@ -137,7 +140,7 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
 
   const handleSelect = useCallback(
     async (file: File) => {
-      // Forced coords (RC centre / Interweigh site): stamp gallery + desktop uploads.
+      // Forced coords (customer shop / RC centre): stamp gallery + desktop uploads.
       // Live in-app camera stamps via ImageCaptureOverlay instead.
       const useForcedCoordStamp = geoStamp && geoStampCoords != null;
 
@@ -173,15 +176,17 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
   });
 
   const cameraCaptureSession = useCallback((): ImageCaptureSession => {
+    const useForced = geoStamp && geoStampCoords != null;
+    const useLive = geoStamp && !useForced && geoStampAllowLiveGps;
     const session: ImageCaptureSession = {
       onCaptured: immediate => {
-        if (geoStamp && geoStampCoords != null) {
-          // Forced site GPS (Interweigh / RC centre): stamp gallery + native + preview.
+        if (useForced) {
+          // Forced site GPS: stamp gallery + native + preview.
           // In-app shutter may replace via onStamped with the same coords.
           void handleSelect(immediate);
           return;
         }
-        if (geoStamp) {
+        if (useLive) {
           // Live GPS path: preview first; overlay replaces via onStamped.
           setStampPending(true);
           onSelect(immediate);
@@ -191,16 +196,25 @@ export const VerificationPhotoUploadSlot: React.FC<VerificationPhotoUploadSlotPr
       },
       onFallbackNativeCamera: () => openCamera(),
     };
-    if (geoStamp) {
+    if (useForced || useLive) {
       session.onStamped = stamped => {
         setStampPending(false);
         onSelect(stamped);
       };
       session.stampWeather = geoStampWeather ?? undefined;
       session.stampCoords = geoStampCoords;
+      session.allowLiveGps = useLive;
     }
     return session;
-  }, [handleSelect, openCamera, geoStamp, geoStampWeather, geoStampCoords, onSelect]);
+  }, [
+    handleSelect,
+    openCamera,
+    geoStamp,
+    geoStampWeather,
+    geoStampCoords,
+    geoStampAllowLiveGps,
+    onSelect,
+  ]);
 
   const useInAppCamera =
     allowCamera

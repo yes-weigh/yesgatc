@@ -26,9 +26,8 @@ import { ROLE_LABELS } from '../../types';
 import { ContractorFeePanel } from '../shared/ContractorFeeSettings';
 import { WebbookPanel } from './WebbookPanel';
 import { YesoneInboundPanel } from './YesoneInboundPanel';
-import { RcQuotaPanel, RcQuotaSynButton } from './RcQuotaPanel';
 
-type SettingTab = 'account' | 'fees' | 'contractor' | 'webbook' | 'yesone' | 'rcQuota';
+type SettingTab = 'account' | 'fees' | 'contractor' | 'webbook' | 'yesone';
 
 function PasswordField({
   id,
@@ -334,7 +333,7 @@ export const AdminPortalSettings: React.FC = () => {
   };
 
   return (
-    <div className={`fade-in page-content admin-setting-page admin-setting-page--six-tabs${tab === 'rcQuota' || tab === 'yesone' ? ' admin-setting-page--wide' : ''}`}>
+    <div className={`fade-in page-content admin-setting-page admin-setting-page--six-tabs${tab === 'yesone' ? ' admin-setting-page--wide' : ''}`}>
       <div className="admin-setting-bar">
         <div className="admin-setting-tabs" role="tablist" aria-label="Setting">
           <button
@@ -382,18 +381,8 @@ export const AdminPortalSettings: React.FC = () => {
           >
             Yesone
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'rcQuota'}
-            className={`admin-setting-tab${tab === 'rcQuota' ? ' admin-setting-tab--active' : ''}`}
-            onClick={() => setTab('rcQuota')}
-          >
-            RC quata
-          </button>
         </div>
       </div>
-      <RcQuotaSynButton />
 
       {tab === 'account' ? (
         <>
@@ -555,10 +544,8 @@ export const AdminPortalSettings: React.FC = () => {
         <ContractorFeePanel />
       ) : tab === 'webbook' ? (
         <WebbookPanel />
-      ) : tab === 'yesone' ? (
-        <YesoneInboundPanel />
       ) : (
-        <RcQuotaPanel />
+        <YesoneInboundPanel />
       )}
     </div>
   );

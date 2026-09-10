@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   Check,
@@ -16,6 +16,7 @@ import { ListViewBackBar } from '../../components/ListViewBackBar';
 import { isPhoneShareDevice } from '../../lib/imageCapture';
 import { useAuth } from '../../context/AuthContext';
 import { useRcScope, useRoleBasePath } from '../../lib/roleScope';
+import { roleCanOpenCertificates } from '../../lib/roleNav';
 import { certificatePdfFileName } from '../../lib/certificatePdfFile';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { isVerificationCertifiedOnDoca } from '../../lib/verificationRequest';
@@ -33,6 +34,7 @@ import {
   uploadSignedCertificatePdf,
   validateSignedCertificatePdf,
 } from '../../lib/signedCertificatePdf';
+import { useRcSignerProfile } from '../../lib/useRcSignerProfile';
 import { UnsignedCertificateDownloadWarn } from '../../components/RcUnsignedPdfDisturbHost';
 import type { SiteCalibration } from '../../types';
 
@@ -70,6 +72,7 @@ export const CertificateSign: React.FC = () => {
   const basePath = useRoleBasePath();
   const { user } = useAuth();
   const { rcUid, isRcAdmin, isVerifier } = useRcScope();
+  const { manualUpload, pdfSigner } = useRcSignerProfile(rcUid);
   const isPhone = isPhoneShareDevice();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -88,7 +91,7 @@ export const CertificateSign: React.FC = () => {
   const listPath = `${basePath}/certificates`;
 
   const load = useCallback(async () => {
-    if (!rcUid || !recordId) {
+    if (!rcUid || !recordId || !roleCanOpenCertificates(user?.role)) {
       setRecord(null);
       setLoading(false);
       return;
@@ -121,7 +124,7 @@ export const CertificateSign: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [isVerifier, rcUid, recordId]);
+  }, [isVerifier, rcUid, recordId, user?.role]);
 
   useEffect(() => {
     void load();
@@ -130,7 +133,9 @@ export const CertificateSign: React.FC = () => {
   const signStatus = record ? certificateSignStatus(record) : 'not_signed';
   const storedSignedUrl = record ? storedSignedCertificatePdfUrl(record) : null;
   const pdfUrl = storedSignedUrl || (record ? resolveUnsignedCertificatePdfUrl(record) : null);
-  const canUpload = Boolean(record && isRcAdmin && certificateRequiresSignedUpload(record));
+  const canUpload = Boolean(
+    record && isRcAdmin && manualUpload && certificateRequiresSignedUpload(record),
+  );
   const signed = Boolean(record && hasSignedCertificatePdf(record));
   const downloaded = Boolean(downloadedAt) || signed;
   const voided = signStatus === 'voided';
@@ -191,6 +196,10 @@ export const CertificateSign: React.FC = () => {
       setUploadProgress(0);
     }
   };
+
+  if (!roleCanOpenCertificates(user?.role)) {
+    return <Navigate to={basePath || '/login'} replace />;
+  }
 
   if (loading) {
     return (
@@ -266,11 +275,17 @@ export const CertificateSign: React.FC = () => {
           </li>
           <li className={step > 2 ? 'is-done' : step === 2 ? 'is-current' : ''}>
             <span>2</span>
-            <em>{isPhone ? 'Print' : 'Sign with DSC'}</em>
+            <em>{pdfSigner ? 'eMAAP PDF signer' : isPhone ? 'Print' : 'Sign with DSC'}</em>
           </li>
           <li className={step >= 3 ? 'is-done' : ''}>
             <span>3</span>
-            <em>{isPhone ? 'Upload' : 'Upload signed PDF'}</em>
+            <em>
+              {pdfSigner
+                ? 'eMAAP sign and upload'
+                : isPhone
+                  ? 'Upload'
+                  : 'Upload signed PDF'}
+            </em>
           </li>
         </ol>
       ) : null}
@@ -318,6 +333,11 @@ export const CertificateSign: React.FC = () => {
                   : ''}
                 {user?.username ? ` · ${user.username}` : ''}
               </p>
+            ) : pdfSigner ? (
+              <p className="wl-cert-sign-muted">
+                This centre is an eMAAP PDF signer. EmaapEngine stamps the officer signature and
+                uploads the signed PDF on Certificates Issued. Manual file upload is off.
+              </p>
             ) : (
               <p className="wl-cert-sign-muted">
                 {isPhone
@@ -337,12 +357,19 @@ export const CertificateSign: React.FC = () => {
             <header>
               <CloudUpload size={18} aria-hidden />
               <h2>Upload Signed Certificate</h2>
-              <strong>{signed ? 'Completed' : canUpload ? 'Pending' : 'RC only'}</strong>
+              <strong>
+                {signed ? 'Completed' : canUpload ? 'Pending' : pdfSigner ? 'EmaapEngine' : 'RC only'}
+              </strong>
             </header>
             {signed ? (
               <p className="wl-cert-sign-muted">
                 {record.signedCertificatePdfName || 'Signed PDF'} kept in Firebase. Lists and
                 downloads show it after the worker uploads it on eMAAP Issued.
+              </p>
+            ) : pdfSigner ? (
+              <p className="wl-cert-sign-muted">
+                Keep EmaapEngine signed in to eMAAP. It will sign and upload{' '}
+                {record.certificateNumber?.trim() || 'this certificate'} and clear No signed PDF.
               </p>
             ) : canUpload ? (
               <>
@@ -449,7 +476,9 @@ export const CertificateSign: React.FC = () => {
                 <span>
                   {signed
                     ? formatStamp(record.signedCertificateUploadedAt)
-                    : 'Sign the downloaded PDF'}
+                    : pdfSigner
+                      ? 'EmaapEngine PDF signer'
+                      : 'Sign the downloaded PDF'}
                 </span>
               </li>
               <li className={signed ? 'is-done' : ''}>

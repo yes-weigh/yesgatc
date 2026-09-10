@@ -33,7 +33,16 @@ import {
   type RvDocumentKind,
 } from '../../lib/verificationRvDeviceImages';
 import type { JobType, Product, RcFeesStructure, VerificationLocation } from '../../types';
-import { ovSerialChoicesForRow, remainingSerialsForProduct, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { pasBankOptionsForJob, productUsesPasSerials } from '../../lib/pasSerialBank';
+import { GasAllottedSerialSearch } from '../../components/GasAllottedSerialSearch';
+import {
+  InterweighingDirectSerialField,
+  SerialBankSourceToggle,
+  type SerialBankSourceTab,
+} from '../../components/SerialBankSourceToggle';
+import { gasAllottedChoices, serialInChoiceList, showsGasAllottedSerialGrid } from '../../lib/serialEntryPool';
+import { usePasSerialHint } from '../../hooks/usePasSerialHint';
 
 const VerificationImageColumnHead: React.FC<{
   kind: VerificationImageKind;
@@ -183,6 +192,8 @@ function DeviceSerialField({
   locked,
   lockedSerial = '',
   onDeviceChange,
+  pasManual = false,
+  product = null,
 }: {
   id: string;
   className: string;
@@ -194,14 +205,24 @@ function DeviceSerialField({
   locked: boolean;
   lockedSerial?: string;
   onDeviceChange: (localId: string, patch: Partial<VerificationDeviceRowValues>) => void;
+  pasManual?: boolean;
+  product?: Product | null;
 }) {
-  const { products } = useAppContext();
   const held = lockedSerial.trim();
   const rowSerial = row.serialNumber.trim();
   const lockThisRow =
     Boolean(held) &&
     (rowSerial === held || (!rowSerial && devices[0]?.localId === row.localId));
   const disabled = locked || !row.included;
+  const typePas = pasManual || productUsesPasSerials(product);
+  const unknownProduct = Boolean(row.productId.trim()) && !product;
+  const gasSelect = showsGasAllottedSerialGrid(product, isRv ? 'RV' : 'OV') && Boolean(ovQuota);
+  const pasHint = usePasSerialHint(
+    row.serialNumber,
+    product,
+    typePas && !disabled,
+    pasBankOptionsForJob(isRv ? 'RV' : 'OV'),
+  );
 
   if (lockThisRow) {
     return (
@@ -217,61 +238,89 @@ function DeviceSerialField({
     );
   }
 
-  if (isRv || !ovQuota) {
+  if (isRv || typePas || unknownProduct || !gasSelect) {
     return (
-      <input
-        id={id}
-        type="text"
-        inputMode="text"
-        className={className}
-        placeholder={placeholder}
-        value={row.serialNumber}
-        onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-        disabled={disabled}
-        autoComplete="off"
-        enterKeyHint="next"
-      />
+      <>
+        <input
+          id={id}
+          type="text"
+          inputMode="text"
+          className={className}
+          placeholder={typePas ? 'Type serial from the plate' : placeholder}
+          value={row.serialNumber}
+          onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
+          disabled={disabled}
+          autoComplete="off"
+          enterKeyHint="next"
+        />
+        {typePas && pasHint ? (
+          <p className={`ov-self-serial-hint ov-self-serial-hint--${pasHint.tone}`} role="status">
+            {pasHint.text}
+          </p>
+        ) : null}
+      </>
     );
   }
 
-  const catalogue = selectedProduct(products, row);
   const otherTaken = devices
     .filter(device => device.localId !== row.localId && device.included)
     .map(device => device.serialNumber);
-  const remaining = remainingSerialsForProduct(
-    ovQuota.remaining,
-    ovQuota.remainingAllotments,
-    {
-      productId: row.productId || catalogue?.id,
-      productName: row.productName || catalogue?.name,
-      sku: catalogue?.modelid,
-      modelNo: catalogue?.modelNo,
-      modelid: catalogue?.modelid,
-      modelId: catalogue?.modelid,
-    },
-  );
-  const choices = ovSerialChoicesForRow(
-    row.serialNumber,
-    remaining,
-    ovQuota.heldSerials,
+  const choices = gasAllottedChoices({
+    remaining: ovQuota?.remaining ?? [],
+    allotments: ovQuota?.remainingAllotments,
+    heldSerials: ovQuota?.heldSerials,
     otherTaken,
-  );
+    product,
+    fallbackProduct: { productId: row.productId, productName: row.productName },
+  });
+  const allowDirect = Boolean(ovQuota?.allowInterweighingDirect);
+  const source: SerialBankSourceTab =
+    row.serialSource === 'interweighingDirect' ? 'interweighingDirect' : 'rcYesone';
+  const setSource = (next: SerialBankSourceTab) => {
+    if (next === 'interweighingDirect') {
+      onDeviceChange(row.localId, { serialSource: 'interweighingDirect' });
+      return;
+    }
+    const keep = serialInChoiceList(row.serialNumber, choices);
+    onDeviceChange(row.localId, {
+      serialSource: 'rcYesone',
+      serialNumber: keep ? row.serialNumber : '',
+    });
+  };
 
   return (
-    <select
-      id={id}
-      className={className}
-      value={row.serialNumber}
-      onChange={e => onDeviceChange(row.localId, { serialNumber: e.target.value })}
-      disabled={disabled}
-    >
-      <option value="">{choices.length ? 'Select allotted serial' : 'No allotted serials left'}</option>
-      {choices.map(serial => (
-        <option key={serial} value={serial}>
-          {serial}
-        </option>
-      ))}
-    </select>
+    <div className="device-serial-source">
+      {allowDirect ? (
+        <SerialBankSourceToggle value={source} onChange={setSource} disabled={disabled} />
+      ) : null}
+      {allowDirect && source === 'interweighingDirect' ? (
+        <InterweighingDirectSerialField
+          id={id}
+          className={className}
+          value={row.serialNumber}
+          choices={ovQuota?.directRemaining ?? []}
+          disabled={disabled}
+          onChange={serial =>
+            onDeviceChange(row.localId, {
+              serialNumber: serial,
+              serialSource: 'interweighingDirect',
+            })
+          }
+        />
+      ) : (
+        <GasAllottedSerialSearch
+          id={id}
+          className={`${className} gas-serial-search-input`}
+          choices={choices}
+          value={serialInChoiceList(row.serialNumber, choices) ? row.serialNumber : ''}
+          disabled={disabled}
+          scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
+          onChange={serial =>
+            onDeviceChange(row.localId, { serialNumber: serial, serialSource: 'rcYesone' })
+          }
+        />
+      )}
+    </div>
   );
 }
 
@@ -677,6 +726,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       isRv={isRv}
                       locked={locked}
                       lockedSerial={lockedSerial}
+                      pasManual={productUsesPasSerials(selectedProduct(products, row))}
+                      product={selectedProduct(products, row)}
                       onDeviceChange={onDeviceChange}
                     />
                   </td>
@@ -849,6 +900,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
+                        pasManual={productUsesPasSerials(selectedProduct(products, row))}
+                        product={selectedProduct(products, row)}
                         onDeviceChange={onDeviceChange}
                       />
                     </div>
@@ -940,6 +993,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
+                        pasManual={productUsesPasSerials(selectedProduct(products, row))}
+                        product={selectedProduct(products, row)}
                         onDeviceChange={onDeviceChange}
                       />
                     </div>
@@ -1010,6 +1065,8 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
+                        pasManual={productUsesPasSerials(selectedProduct(products, row))}
+                        product={selectedProduct(products, row)}
                         onDeviceChange={onDeviceChange}
                       />
                     </div>

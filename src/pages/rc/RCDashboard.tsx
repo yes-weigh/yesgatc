@@ -15,6 +15,9 @@ import {
   Trophy,
   UserCircle,
   UserCheck,
+  Layers,
+  CircleDot,
+  Hash,
 } from 'lucide-react';
 import { RcQuotaOverview } from '../../components/RcQuotaOverview';
 import { RcVehicleRequiredNotice } from '../../components/RcVehicleRequiredNotice';
@@ -34,7 +37,12 @@ import { rankOfRc, subscribeRcCertificationRanks } from '../../lib/rcCertificati
 import { formatRcFeeAmount } from '../../lib/rcProfileFields';
 import { subscribeRcWalletBalance } from '../../lib/rcWallet';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
+import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
+import { useRcCreatedVerifierCount } from '../../hooks/useRcCreatedVerifierCount';
+import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
+import { roleCanOpenCertificates, roleCanOpenVrAllotted } from '../../lib/roleNav';
+import { shouldShowVerificationStageQuotaTiles, verificationStageQuotaTotals } from '../../lib/vrAllotted';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import {
   dashboardPeriodToListDuration,
@@ -51,7 +59,7 @@ import {
 import { tallySignedPdfFilters } from '../../lib/signedCertificatePdf';
 import type { FirestoreUserDoc, SiteCalibration } from '../../types';
 
-type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'orange' | 'slate' | 'cyan';
+type StageTone = 'blue' | 'violet' | 'green' | 'red' | 'pink' | 'orange' | 'slate' | 'cyan';
 
 type StageCard = {
   key: string;
@@ -59,7 +67,7 @@ type StageCard = {
   count: number | string;
   tone: StageTone;
   icon: React.ReactNode;
-  href: string;
+  href?: string;
   sublabel?: string;
 };
 
@@ -132,7 +140,7 @@ function rankVctsByCertified(
 }
 
 export const RCDashboard: React.FC = () => {
-  const { rcUid, actorUid, isVct, isVerifier, isFieldStaff, isRcAdmin } = useRcScope();
+  const { rcUid, actorUid, isVct, isVerifier, isFieldStaff, isRcAdmin, user } = useRcScope();
   const basePath = useRoleBasePath();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -149,6 +157,8 @@ export const RCDashboard: React.FC = () => {
   const [period, setPeriod] = useState<DashboardPeriod>('month');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const quotaSeats = useRcQuotaSeats(rcUid, verifications);
+  const verifierRoster = useRcCreatedVerifierCount(rcUid);
 
   const fetchVerifications = useCallback(async () => {
     if (!rcUid) return;
@@ -273,8 +283,61 @@ export const RCDashboard: React.FC = () => {
   ) =>
     verificationListPath(`${basePath}/verification`, { status, duration });
 
+  const quotaHref = roleCanOpenVrAllotted(user?.role, verifierRoster.count > 0)
+    ? `${basePath}/vr-allotted`
+    : undefined;
+
+  const quotaTiles = useMemo(() => {
+    const vctUnused = pickQuotaSerialsForActor(quotaSeats, {
+      isRcAdmin,
+      isVerifier,
+      isVct,
+      actorUid,
+    });
+    return verificationStageQuotaTotals({
+      allottedByUid: quotaSeats.allottedByUid,
+      usedSerials: quotaSeats.usedSerials,
+      voidedSerials: quotaSeats.voidedSerials,
+      reservedSerials: quotaSeats.reservedSerials,
+      reservedForUids: quotaSeats.reservedForUids,
+      actor: { isRcAdmin, isVerifier, isVct, actorUid },
+      vctUnusedCount: vctUnused.length,
+    });
+  }, [
+    actorUid,
+    isRcAdmin,
+    isVerifier,
+    isVct,
+    quotaSeats,
+  ]);
+
   const stages = useMemo<StageCard[]>(() => {
+    const quotaCount = (value: number) => (quotaSeats.ready ? value : '—');
     const cards: StageCard[] = [
+      {
+        key: 'allotted',
+        label: 'Allotted',
+        count: quotaCount(quotaTiles.allotted),
+        tone: 'blue',
+        icon: <Layers size={18} strokeWidth={1.9} />,
+        href: quotaHref,
+      },
+      {
+        key: 'used',
+        label: 'Used',
+        count: quotaCount(quotaTiles.used),
+        tone: 'pink',
+        icon: <CircleDot size={18} strokeWidth={1.9} />,
+        href: quotaHref,
+      },
+      {
+        key: 'balance',
+        label: 'Balance',
+        count: quotaCount(quotaTiles.unused),
+        tone: 'red',
+        icon: <Hash size={18} strokeWidth={1.9} />,
+        href: quotaHref,
+      },
       {
         key: 'submitted',
         label: 'Submitted',
@@ -349,10 +412,19 @@ export const RCDashboard: React.FC = () => {
         href: verificationHref('certified'),
       },
     ];
-    if (isVerifier) {
-      return cards.filter(card => card.key !== 'vcts' && card.key !== 'rc_rank');
+    let next = cards;
+    if (!shouldShowVerificationStageQuotaTiles(user?.role)) {
+      next = next.filter(
+        card => card.key !== 'allotted' && card.key !== 'used' && card.key !== 'balance',
+      );
     }
-    return cards;
+    if (!roleCanOpenCertificates(user?.role)) {
+      next = next.filter(card => card.key !== 'not_signed');
+    }
+    if (isVerifier) {
+      next = next.filter(card => card.key !== 'vcts' && card.key !== 'rc_rank');
+    }
+    return next;
   }, [
     tally,
     unsignedCertCount,
@@ -362,8 +434,12 @@ export const RCDashboard: React.FC = () => {
     rcCompanyName,
     isRcAdmin,
     isVerifier,
+    user?.role,
     basePath,
     listDuration,
+    quotaHref,
+    quotaSeats.ready,
+    quotaTiles,
   ]);
 
   const recent = useMemo(
@@ -494,27 +570,37 @@ export const RCDashboard: React.FC = () => {
           </Link>
         </div>
         <div className="wl-stages">
-          {stages.map(stage => (
-            <Link
-              key={stage.key}
-              to={stage.href}
-              className={`wl-stage wl-stage--${stage.tone}`}
-            >
-              <span className="wl-stage__icon" aria-hidden>
-                {stage.icon}
-              </span>
-              <span className="wl-stage__label">{stage.label}</span>
-              <span className="wl-stage__count">
-                {loadingVerifications ? '—' : stage.count}
-              </span>
-              {stage.sublabel ? (
-                <span className={`wl-stage__sub${stage.key === 'rc_rank' ? ' wl-stage__sub--name' : ''}`}>
-                  {stage.sublabel}
+          {stages.map(stage => {
+            const className = `wl-stage wl-stage--${stage.tone}`;
+            const quotaTile =
+              stage.key === 'allotted' || stage.key === 'used' || stage.key === 'balance';
+            const inner = (
+              <>
+                <span className="wl-stage__icon" aria-hidden>
+                  {stage.icon}
                 </span>
-              ) : null}
-              <span className="wl-stage__bar" aria-hidden />
-            </Link>
-          ))}
+                <span className="wl-stage__label">{stage.label}</span>
+                <span className="wl-stage__count">
+                  {quotaTile || !loadingVerifications ? stage.count : '—'}
+                </span>
+                {stage.sublabel ? (
+                  <span className={`wl-stage__sub${stage.key === 'rc_rank' ? ' wl-stage__sub--name' : ''}`}>
+                    {stage.sublabel}
+                  </span>
+                ) : null}
+                <span className="wl-stage__bar" aria-hidden />
+              </>
+            );
+            return stage.href ? (
+              <Link key={stage.key} to={stage.href} className={className}>
+                {inner}
+              </Link>
+            ) : (
+              <div key={stage.key} className={className}>
+                {inner}
+              </div>
+            );
+          })}
         </div>
       </section>
 

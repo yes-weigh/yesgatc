@@ -17,6 +17,7 @@ import { fetchRcVehicles, rcHasRegisteredVehicle, VCT_RC_VEHICLE_REQUIRED_MESSAG
 import { InlineFormPanel } from '../../components/InlineFormPanel';
 import { VerificationListStatusDash } from '../../components/VerificationListStatusDash';
 import { VerificationListTable } from '../../components/VerificationListTable';
+import { FailedSubmitResubmitSection } from '../../components/FailedSubmitResubmitSection';
 import { VerificationSerialGroupView } from '../../components/VerificationSerialGroupView';
 import { VerificationStatusBadge } from '../../components/VerificationStatusBadge';
 import { ListViewBackBar } from '../../components/ListViewBackBar';
@@ -51,7 +52,6 @@ import {
   canShowVerificationCertifiedActions,
   canSubmitVerification,
   canRcApproveVerifierVerification,
-  buildRcApproveVerifierPatch,
   isCorruptedVerificationRecord,
   isVerificationEditable,
   isVerificationFailedAtSubmit,
@@ -73,7 +73,14 @@ import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
 import { enrichVerificationListRecords } from '../../lib/verificationListPartyPhoto';
 import { canEditResubmitOvSerialGroup, canResubmitSerialGroup, getVerificationSerialGroup } from '../../lib/verificationResubmit';
-import type { VerificationFormStepContext, VerificationFormStepId } from '../../lib/verificationFormSteps';
+import {
+  canActorBulkResubmitFailedSubmit,
+  canActorResubmitFailedSubmit,
+  filterFailedSubmitResubmitTargets,
+} from '../../lib/verificationFailedSubmitResubmit';
+import { resubmitFailedSubmitVerifications } from '../../lib/verificationFailedSubmitWrite';
+import { isOvCompactWizard, type VerificationFormStepContext, type VerificationFormStepId } from '../../lib/verificationFormSteps';
+import { compactWizardWorkingDevices } from '../../lib/compactWizardProductStep';
 import { uploadSiteCalibrationDeviceImage } from '../../lib/siteCalibrationPhotoUpload';
 import {
   emptyDeviceImageSlot,
@@ -116,6 +123,7 @@ import {
   verificationListCollapsedForCounts,
 } from '../../lib/verificationListGrouping';
 import {
+  approveAndSubmitPendingRcRecords,
   submitVerificationRecord,
   submitVerificationRecords,
   submitVerifierWorkForRcReview,
@@ -127,6 +135,14 @@ import {
   parseVerificationDurationParam,
   type VerificationDurationFilter,
 } from '../../lib/verificationListDuration';
+import { parseVerificationListStatusParam } from '../../lib/verificationListStatusQuery';
+import {
+  canActorBulkSubmitPendingRc,
+  filterPendingRcSubmitTargets,
+  formatPendingRcBulkConfirmMessage,
+  pendingRcBulkHasWork,
+  planPendingRcBulkSubmit,
+} from '../../lib/verificationPendingRcBulk';
 import type {
   Customer,
   FirestoreUserDoc,
@@ -143,7 +159,18 @@ import {
 import { VerificationJobKindPicker } from './VerificationJobKindPicker';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
 import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
-import { ovQuotaSeatCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
+import { computeInterweighingDirectSeats } from '../../lib/interweighingDirectSerials';
+import {
+  allotmentUsesPasProduct,
+  catalogueHasPasProducts,
+  markPasCalibrationRecordsUsed,
+  markPasSerialsUsedForRows,
+  pasBankOptionsForJob,
+  productUsesPasSerials,
+  verifyPasCalibrationRecords,
+  verifyPasDevicesInBank,
+} from '../../lib/pasSerialBank';
 import { EMPTY_CUSTOMER_FORM } from './CustomerFormFields';
 import type { PersistVerificationPartyResult } from '../../lib/verificationPartyPersist';
 import { useAppContext } from '../../context/AppContext';
@@ -171,6 +198,11 @@ import {
   type RvWalletFeeSettings,
 } from '../../lib/zohoRvSubmit';
 import { rcFilingPartyPatch } from '../../lib/keralaRegion';
+import {
+  isVerifierOvInName,
+  validateVerifierOvStart,
+  verifierOvParty,
+} from '../../lib/verifierOvInName';
 import {
   buildRvPaymentFirestorePatch,
   computeRvPaymentAmount,
@@ -385,6 +417,13 @@ export const RCSiteCalibration: React.FC = () => {
   const [lastViewedVerificationId, setLastViewedVerificationId] = useState<string | null>(null);
   const [rowHighlightFlashId, setRowHighlightFlashId] = useState<string | null>(null);
   const [sessionValues, setSessionValues] = useState<VerificationSessionValues>(EMPTY_VERIFICATION_SESSION);
+  const sessionIncludedRows = useMemo(
+    () =>
+      isOvCompactWizard(showAddForm, sessionValues)
+        ? compactWizardWorkingDevices(sessionValues.devices)
+        : sessionValues.devices.filter(row => row.included),
+    [showAddForm, sessionValues],
+  );
   const [deviceImages, setDeviceImages] = useState<Record<string, DeviceVerificationImagesState>>({});
   const [deviceRvImages, setDeviceRvImages] = useState<Record<string, DeviceRvDocumentsState>>({});
   const [performerPhotos, setPerformerPhotos] = useState<PerformerPhotosState>(
@@ -405,7 +444,11 @@ export const RCSiteCalibration: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(() => new Set());
+  const [selectedFailedIds, setSelectedFailedIds] = useState<Set<string>>(() => new Set());
+  const [selectedPendingRcIds, setSelectedPendingRcIds] = useState<Set<string>>(() => new Set());
   const selectAllDraftsRef = useRef<HTMLInputElement>(null);
+  const selectAllFailedRef = useRef<HTMLInputElement>(null);
+  const selectAllPendingRcRef = useRef<HTMLInputElement>(null);
   const [laboratorySealId, setLaboratorySealId] = useState('');
   const [rcProfile, setRcProfile] = useState<FirestoreUserDoc | null>(null);
   const [actorProfile, setActorProfile] = useState<FirestoreUserDoc | null>(null);
@@ -423,6 +466,14 @@ export const RCSiteCalibration: React.FC = () => {
     isVct,
     actorUid,
   });
+  const directSeats = useMemo(
+    () =>
+      computeInterweighingDirectSeats({
+        allotted: actorProfile?.interweighingDirectSerials,
+        records,
+      }),
+    [actorProfile?.interweighingDirectSerials, records],
+  );
   const actorBalanceQty = isRcAdmin
     ? quotaSeats.balanceQty
     : isVerifier || isVct
@@ -435,18 +486,32 @@ export const RCSiteCalibration: React.FC = () => {
       : [];
     return {
       remaining: pickSerials,
-      remainingAllotments: quotaSeats.allotmentRows.map(row => ({
-        serialNumber: row.serialNumber,
-        sku: row.sku,
-        productId: row.productId,
-        productName: row.productName,
-        modelNo: row.modelNo,
-        modelId: row.modelNo,
-      })),
+      scopedToVerifier: isVerifier,
+      allowInterweighingDirect: isVerifier,
+      directRemaining: isVerifier ? directSeats.unused : [],
+      remainingAllotments: quotaSeats.allotmentRows
+        .filter(row => !allotmentUsesPasProduct(row, products.filter(productUsesPasSerials)))
+        .map(row => ({
+          serialNumber: row.serialNumber,
+          sku: row.sku,
+          productId: row.productId,
+          productName: row.productName,
+          modelNo: row.modelNo,
+          pool: row.pool,
+        })),
       balanceQty: actorBalanceQty,
       heldSerials: held,
     };
-  }, [pickSerials, actorBalanceQty, editingId, records, quotaSeats.allotmentRows]);
+  }, [
+    pickSerials,
+    actorBalanceQty,
+    editingId,
+    isVerifier,
+    records,
+    quotaSeats.allotmentRows,
+    products,
+    directSeats.unused,
+  ]);
 
   const validationOptions = useMemo(() => {
     const editingRecordForValidation = editingId
@@ -471,6 +536,9 @@ export const RCSiteCalibration: React.FC = () => {
         ),
       ovQuota: sessionValues.verificationType === 'OV' ? ovQuotaGate : undefined,
       isNewJob: showAddForm,
+      products,
+      isVerifier,
+      verifierPincode: actorProfile?.pincode ?? null,
     };
   }, [
     partyContext.customerForm,
@@ -487,6 +555,8 @@ export const RCSiteCalibration: React.FC = () => {
     isVerifier,
     ovQuotaGate,
     showAddForm,
+    products,
+    actorProfile?.pincode,
   ]);
 
   const recordSubmitOptions = useCallback(
@@ -506,6 +576,10 @@ export const RCSiteCalibration: React.FC = () => {
           record.verificationType === 'OV'
             ? {
                 remaining: pickSerials,
+                scopedToVerifier: isVerifier,
+                allowInterweighingDirect: isVerifier,
+                directRemaining: isVerifier ? directSeats.unused : [],
+                remainingAllotments: ovQuotaGate.remainingAllotments,
                 balanceQty: actorBalanceQty,
                 heldSerials: record.serialNumber?.trim() ? [record.serialNumber.trim()] : [],
               }
@@ -513,7 +587,7 @@ export const RCSiteCalibration: React.FC = () => {
         isNewJob: false,
       };
     },
-    [validationOptions, customers, rcProfile?.pincode, pickSerials, actorBalanceQty],
+    [validationOptions, customers, rcProfile?.pincode, pickSerials, actorBalanceQty, isVerifier, directSeats.unused, ovQuotaGate.remainingAllotments],
   );
 
   const submitOptions = useMemo<VerificationSubmitOptions>(
@@ -999,9 +1073,9 @@ export const RCSiteCalibration: React.FC = () => {
 
   const handleDeviceAdd = () => {
     if (sessionValues.verificationType === 'OV') {
-      const cap = ovQuotaSeatCap(ovQuotaGate);
+      const cap = ovQuotaQtyCap(ovQuotaGate);
       const included = sessionValues.devices.filter(row => row.included).length;
-      if (included >= cap) {
+      if (included >= cap && !catalogueHasPasProducts(products)) {
         setError(
           cap <= 0
             ? 'OV quota balance is 0. Cannot start more Original Verifications.'
@@ -1486,7 +1560,17 @@ export const RCSiteCalibration: React.FC = () => {
       }
     }
 
-    const includedRows = sessionValues.devices.filter(row => row.included);
+    const pasBankError = await verifyPasDevicesInBank(
+      sessionValues.devices,
+      products,
+      pasBankOptionsForJob(sessionValues.verificationType),
+    );
+    if (pasBankError) {
+      setError(pasBankError);
+      return;
+    }
+
+    const includedRows = sessionIncludedRows;
     const walletPaymentId =
       submitAfterSave && rvPayment && isWalletPaymentId(rvPayment.paymentId)
         ? rvPayment.paymentId
@@ -1620,6 +1704,19 @@ export const RCSiteCalibration: React.FC = () => {
         if (gstBill) record.gstBill = gstBill;
         await setDoc(ref, record);
         draftRecordIds.push(recordId);
+      }
+
+      if (submitAfterSave) {
+        await markPasSerialsUsedForRows(
+          includedRows.map((row, index) => ({
+            productId: row.productId,
+            serialNumber: row.serialNumber,
+            recordId: draftRecordIds[index],
+          })),
+          products,
+          { uid: actorUid, rcId: rcUid },
+          pasBankOptionsForJob(sessionForSave.verificationType),
+        );
       }
 
       if (walletPaymentId && draftRecordIds.length > 0) {
@@ -1780,10 +1877,26 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
+    const pasBankError = await verifyPasCalibrationRecords([record], products);
+    if (pasBankError) {
+      setListError(pasBankError);
+      return;
+    }
+
     unlockVerificationSuccessAudio();
     setSubmitting(true);
     setListError('');
     try {
+      await markPasCalibrationRecordsUsed(
+        [{
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+          verificationType: record.verificationType,
+        }],
+        products,
+        { uid: actorUid, rcId: rcUid },
+      );
       if (isVerifier) {
         await submitVerifierWorkForRcReview([record.id]);
         if (editingId === record.id) handleCloseForm();
@@ -1833,10 +1946,26 @@ export const RCSiteCalibration: React.FC = () => {
       return;
     }
 
+    const pasBankError = await verifyPasCalibrationRecords(selectedRecords, products);
+    if (pasBankError) {
+      setListError(pasBankError);
+      return;
+    }
+
     unlockVerificationSuccessAudio();
     setSubmitting(true);
     setListError('');
     try {
+      await markPasCalibrationRecordsUsed(
+        selectedRecords.map(record => ({
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+          verificationType: record.verificationType,
+        })),
+        products,
+        { uid: actorUid, rcId: rcUid },
+      );
       if (isVerifier) {
         await submitVerifierWorkForRcReview(selectedRecords.map(record => record.id));
         setSelectedDraftIds(new Set());
@@ -1874,6 +2003,82 @@ export const RCSiteCalibration: React.FC = () => {
     }
   };
 
+  const handleResubmitFailedRecord = async (record: SiteCalibration) => {
+    if (!canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid })) return;
+
+    const appNo = record.applicationNumber?.trim() || '—';
+    const serial = record.serialNumber?.trim() || '—';
+    const ok = await confirm({
+      title: 'Resubmit for certification?',
+      message: [
+        `Re-queue App ${appNo} (serial ${serial}) for eMAAP.`,
+        '',
+        'Same certificate job. Application number is kept.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Resubmit',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await resubmitFailedSubmitVerifications([record.id], 'manual', db);
+      setSelectedFailedIds(prev => {
+        if (!prev.has(record.id)) return prev;
+        const next = new Set(prev);
+        next.delete(record.id);
+        return next;
+      });
+      if (editingId === record.id) handleCloseForm();
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(err instanceof Error ? err.message : 'Failed to resubmit verification.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkResubmitFailed = async () => {
+    if (!canActorBulkResubmitFailedSubmit(user?.role)) return;
+
+    const selectedRecords = filterFailedSubmitResubmitTargets(
+      filteredRecords.filter(record => selectedFailedIds.has(record.id)),
+    );
+    if (selectedRecords.length === 0) {
+      setListError('Select failed-at-submit jobs to resubmit.');
+      return;
+    }
+
+    const ok = await confirm({
+      title: 'Resubmit selected?',
+      message: [
+        `Re-queue ${selectedRecords.length} failed-at-submit job${selectedRecords.length === 1 ? '' : 's'} for eMAAP.`,
+        '',
+        'Same certificate jobs. Application numbers are kept.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Resubmit selected',
+    });
+    if (!ok) return;
+
+    setSubmitting(true);
+    setListError('');
+    try {
+      await resubmitFailedSubmitVerifications(
+        selectedRecords.map(record => record.id),
+        'bulk',
+        db,
+      );
+      setSelectedFailedIds(new Set());
+      await fetchRecords();
+    } catch (err: unknown) {
+      setListError(err instanceof Error ? err.message : 'Failed to resubmit selected verifications.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleApproveVerifierWork = async (record: SiteCalibration) => {
     if (!isRcAdmin || !canRcApproveVerifierVerification(record) || !user?.uid) return;
 
@@ -1899,25 +2104,19 @@ export const RCSiteCalibration: React.FC = () => {
     setListError('');
     setError('');
     try {
-      await updateDoc(
-        doc(db, 'siteCalibrations', record.id),
-        buildRcApproveVerifierPatch(user.uid),
-      );
-      await ensureRvWalletDebitedForRecords({
-        records: [record],
-        products,
-        feeSettings: appSettings,
-        feesForRc: () => resolveRcFeesStructure(rcProfile),
-      });
-      await submitVerificationRecord(
-        {
-          id: record.id,
-          verificationType: record.verificationType,
-          ...rcFilingFieldsForRecord(record, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
+      await approveAndSubmitPendingRcRecords([record], user.uid, db, {
+        ...submitOptions,
+        filingFields: row =>
+          rcFilingFieldsForRecord(row, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
+        beforeSubmit: async rows => {
+          await ensureRvWalletDebitedForRecords({
+            records: rows,
+            products,
+            feeSettings: appSettings,
+            feesForRc: () => resolveRcFeesStructure(rcProfile),
+          });
         },
-        db,
-        submitOptions,
-      );
+      });
       if (editingId === record.id) handleCloseForm();
       await fetchRecords();
       beginSubmitProgress([record.id]);
@@ -1925,6 +2124,72 @@ export const RCSiteCalibration: React.FC = () => {
       const message = isZohoInvoiceGateError(err)
         ? formatZohoInvoiceGateError(err)
         : formatSaveError(err, 'Failed to approve verifier work.', record);
+      setListError(message);
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleBulkSubmitPendingRc = async () => {
+    if (!canActorBulkSubmitPendingRc(user?.role) || !user?.uid) return;
+
+    const plan = planPendingRcBulkSubmit(
+      filteredRecords.filter(record => selectedPendingRcIds.has(record.id)),
+    );
+    if (!pendingRcBulkHasWork(plan)) {
+      setListError('Select pending RC jobs to submit.');
+      return;
+    }
+
+    for (const record of plan.approveAndSubmit) {
+      const zohoError = validateRvZohoSubmitReady(
+        record.verificationType,
+        rcProfile?.zohoId,
+        { zohoRvInvoicingEnabled: isZohoRvInvoicingEnabled(appSettings) },
+      );
+      if (zohoError) {
+        setListError(zohoError);
+        return;
+      }
+    }
+
+    const ok = await confirm({
+      title: 'Submit pending RC?',
+      message: formatPendingRcBulkConfirmMessage(plan),
+      messageFormat: 'preline',
+      confirmLabel: 'Submit selected',
+    });
+    if (!ok) return;
+
+    unlockVerificationSuccessAudio();
+    setSubmitting(true);
+    setListError('');
+    setError('');
+    try {
+      await approveAndSubmitPendingRcRecords(plan.approveAndSubmit, user.uid, db, {
+        ...submitOptions,
+        filingFields: row =>
+          rcFilingFieldsForRecord(row, customers, rcFilingPartyFromProfile(rcUid, rcProfile)),
+        beforeSubmit: async rows => {
+          await ensureRvWalletDebitedForRecords({
+            records: rows,
+            products,
+            feeSettings: appSettings,
+            feesForRc: () => resolveRcFeesStructure(rcProfile),
+          });
+        },
+      });
+      setSelectedPendingRcIds(new Set());
+      if (editingId && plan.approveAndSubmit.some(row => row.id === editingId)) {
+        handleCloseForm();
+      }
+      await fetchRecords();
+      beginSubmitProgress(plan.approveAndSubmit.map(row => row.id));
+    } catch (err: unknown) {
+      const message = isZohoInvoiceGateError(err)
+        ? formatZohoInvoiceGateError(err)
+        : formatSaveError(err, 'Failed to submit pending RC jobs.');
       setListError(message);
       setError(message);
     } finally {
@@ -1970,6 +2235,16 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setError('');
     try {
+      const pasBankError = await verifyPasDevicesInBank(
+      sessionValues.devices,
+      products,
+      pasBankOptionsForJob(sessionValues.verificationType),
+    );
+      if (pasBankError) {
+        setError(pasBankError);
+        return;
+      }
+
       let sessionForSave = sessionValues;
       let appliedCustomer: Customer | undefined;
 
@@ -2048,6 +2323,17 @@ export const RCSiteCalibration: React.FC = () => {
         ...buildPerformerPatch(sessionForSave, existing),
       });
 
+      await markPasSerialsUsedForRows(
+        [{
+          productId: row.productId,
+          serialNumber: row.serialNumber,
+          recordId: editingId,
+        }],
+        products,
+        { uid: actorUid, rcId: rcUid },
+        pasBankOptionsForJob(sessionForSave.verificationType),
+      );
+
       if (walletPaymentId) {
         await linkWalletPaymentToRecords({
           paymentId: walletPaymentId,
@@ -2120,6 +2406,16 @@ export const RCSiteCalibration: React.FC = () => {
     );
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    const pasBankError = await verifyPasDevicesInBank(
+      sessionValues.devices,
+      products,
+      pasBankOptionsForJob(sessionValues.verificationType),
+    );
+    if (pasBankError) {
+      setError(pasBankError);
       return;
     }
 
@@ -2276,6 +2572,13 @@ export const RCSiteCalibration: React.FC = () => {
       setListError(VERIFICATION_MOBILE_ONLY_NOTICE);
       return;
     }
+    if (isVerifier) {
+      const ovNameMsg = validateVerifierOvStart(actorProfile?.ovInName);
+      if (ovNameMsg) {
+        setListError(ovNameMsg);
+        return;
+      }
+    }
     setListError('');
     setUnsignedJobGate(true);
   };
@@ -2296,6 +2599,29 @@ export const RCSiteCalibration: React.FC = () => {
         setListError('RC centre details are still loading.');
         return;
       }
+      const ovName = actorProfile?.ovInName;
+      if (isVerifier && (kind === 'ov_self' || kind === 'ov_customer')) {
+        const ovNameMsg = validateVerifierOvStart(ovName);
+        if (ovNameMsg) {
+          setListError(ovNameMsg);
+          return;
+        }
+      }
+      const ovParty =
+        isVerifier && actorProfile && isVerifierOvInName(ovName) && actorUid
+          ? {
+              ...verifierOvParty(
+                ovName,
+                { uid: actorUid, username: actorProfile.username ?? user?.username },
+                {
+                  uid: rcUid,
+                  companyName: rcProfile?.companyName,
+                  username: rcProfile?.username,
+                },
+              ),
+              ovInName: ovName,
+            }
+          : undefined;
       openNewVerificationSession(
         buildVerificationSessionForKind(
           kind,
@@ -2304,10 +2630,20 @@ export const RCSiteCalibration: React.FC = () => {
           laboratorySealId,
           serial ?? '',
           manufacturingYear ?? '',
+          ovParty,
         ),
       );
     },
-    [rcUid, rcProfile, laboratorySealId, openNewVerificationSession],
+    [
+      rcUid,
+      rcProfile,
+      laboratorySealId,
+      openNewVerificationSession,
+      isVerifier,
+      actorProfile,
+      actorUid,
+      user?.username,
+    ],
   );
 
   const pendingCustomerId = searchParams.get('customerId');
@@ -2377,19 +2713,9 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     if (!pendingStatusFilter) return;
-    const allowed: VerificationStatusFilter[] = [
-      'all',
-      'draft',
-      'submitted',
-      'certified',
-      'failed_submit',
-      'rejected',
-    ];
-    const raw = pendingStatusFilter as VerificationStatusFilter;
-    if (allowed.includes(raw)) {
-      setStatusFilter(raw);
-    } else if (raw === 'approved' || raw === 'failed_certification') {
-      setStatusFilter(raw === 'failed_certification' ? 'failed_submit' : 'submitted');
+    const parsed = parseVerificationListStatusParam(pendingStatusFilter);
+    if (parsed) {
+      setStatusFilter(parsed);
     }
     setSearchParams(
       prev => {
@@ -2515,7 +2841,7 @@ export const RCSiteCalibration: React.FC = () => {
 
   const formatDate = formatVerificationListDate;
 
-  const includedDeviceCount = sessionValues.devices.filter(d => d.included).length;
+  const includedDeviceCount = sessionIncludedRows.length;
   const saveDraftLabel =
     showAddForm && includedDeviceCount > 1
       ? `Save ${includedDeviceCount} drafts`
@@ -2757,6 +3083,8 @@ export const RCSiteCalibration: React.FC = () => {
 
   useEffect(() => {
     setSelectedDraftIds(new Set());
+    setSelectedFailedIds(new Set());
+    setSelectedPendingRcIds(new Set());
   }, [statusFilter, searchTerm, paymentDueFilter, signedPdfFilter]);
 
   useEffect(() => {
@@ -2783,6 +3111,85 @@ export const RCSiteCalibration: React.FC = () => {
         return next;
       }
       return new Set([...prev, ...selectableDraftIds]);
+    });
+  };
+
+  const canBulkFailed = canActorBulkResubmitFailedSubmit(user?.role);
+  const selectableFailedIds = useMemo(() => {
+    if (!canBulkFailed || statusFilter !== 'failed_submit') return [];
+    return filterFailedSubmitResubmitTargets(filteredRecords)
+      .filter(record => canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid }))
+      .map(record => record.id);
+  }, [canBulkFailed, statusFilter, filteredRecords, user?.role, user?.uid]);
+
+  const allSelectableFailedSelected =
+    selectableFailedIds.length > 0 && selectableFailedIds.every(id => selectedFailedIds.has(id));
+
+  const someSelectableFailedSelected =
+    selectableFailedIds.some(id => selectedFailedIds.has(id)) && !allSelectableFailedSelected;
+
+  useEffect(() => {
+    if (selectAllFailedRef.current) {
+      selectAllFailedRef.current.indeterminate = someSelectableFailedSelected;
+    }
+  }, [someSelectableFailedSelected, selectableFailedIds.length]);
+
+  const toggleFailedSelection = (id: string) => {
+    setSelectedFailedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFailed = () => {
+    setSelectedFailedIds(prev => {
+      if (allSelectableFailedSelected) {
+        const next = new Set(prev);
+        selectableFailedIds.forEach(id => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...selectableFailedIds]);
+    });
+  };
+
+  const canBulkPendingRc = canActorBulkSubmitPendingRc(user?.role);
+  const selectablePendingRcIds = useMemo(() => {
+    if (!canBulkPendingRc || statusFilter !== 'pending_rc') return [];
+    return filterPendingRcSubmitTargets(filteredRecords).map(record => record.id);
+  }, [canBulkPendingRc, statusFilter, filteredRecords]);
+
+  const allSelectablePendingRcSelected =
+    selectablePendingRcIds.length > 0
+    && selectablePendingRcIds.every(id => selectedPendingRcIds.has(id));
+
+  const someSelectablePendingRcSelected =
+    selectablePendingRcIds.some(id => selectedPendingRcIds.has(id)) && !allSelectablePendingRcSelected;
+
+  useEffect(() => {
+    if (selectAllPendingRcRef.current) {
+      selectAllPendingRcRef.current.indeterminate = someSelectablePendingRcSelected;
+    }
+  }, [someSelectablePendingRcSelected, selectablePendingRcIds.length]);
+
+  const togglePendingRcSelection = (id: string) => {
+    setSelectedPendingRcIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPendingRc = () => {
+    setSelectedPendingRcIds(prev => {
+      if (allSelectablePendingRcSelected) {
+        const next = new Set(prev);
+        selectablePendingRcIds.forEach(id => next.delete(id));
+        return next;
+      }
+      return new Set([...prev, ...selectablePendingRcIds]);
     });
   };
 
@@ -2990,6 +3397,16 @@ export const RCSiteCalibration: React.FC = () => {
                       <RvZohoSubmitGateBanner record={editingRecord} />
                     )}
                     {isViewMode && editingRecord && (
+                      <FailedSubmitResubmitSection
+                        record={editingRecord}
+                        onResubmitted={async () => {
+                          handleCloseForm();
+                          await fetchRecords();
+                        }}
+                        className="mt-2"
+                      />
+                    )}
+                    {isViewMode && editingRecord && (
                       <>
                         <RvLegacyZohoInvoiceSection
                           record={editingRecord}
@@ -3066,6 +3483,8 @@ export const RCSiteCalibration: React.FC = () => {
                       mobileFloatingChrome={mobileFloatingChrome}
                       lockKind={showAddForm}
                       ovQuota={sessionValues.verificationType === 'OV' ? ovQuotaGate : null}
+                      isVerifier={isVerifier}
+                      verifierPincode={actorProfile?.pincode ?? null}
                     />
                   </div>
                   {mobileFloatingChrome && verificationFormFooter
@@ -3205,6 +3624,64 @@ export const RCSiteCalibration: React.FC = () => {
               </button>
             </div>
           )}
+          {canBulkFailed && selectedFailedIds.size > 0 && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {selectedFailedIds.size} failed at submit selected
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleBulkResubmitFailed()}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <span className="spinner-inline"></span>
+                ) : (
+                  <>
+                    <Send size={16} /> Resubmit selected
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3"
+                onClick={() => setSelectedFailedIds(new Set())}
+                disabled={submitting}
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
+          {canBulkPendingRc && selectedPendingRcIds.size > 0 && (
+            <div className="verification-bulk-bar">
+              <span className="verification-bulk-bar-count">
+                {selectedPendingRcIds.size} pending RC selected
+              </span>
+              <button
+                type="button"
+                className="btn btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5"
+                onClick={() => void handleBulkSubmitPendingRc()}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <span className="spinner-inline"></span>
+                ) : (
+                  <>
+                    <Send size={16} /> Submit selected
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary text-sm py-1.5 px-3"
+                onClick={() => setSelectedPendingRcIds(new Set())}
+                disabled={submitting}
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
           {loading ? (
             <div className="flex justify-center py-16">
               <span className="spinner-inline large"></span>
@@ -3237,6 +3714,10 @@ export const RCSiteCalibration: React.FC = () => {
                 onSubmit={handleSubmitRecord}
                 onApprove={isRcAdmin ? handleApproveVerifierWork : undefined}
                 onDelete={handleDelete}
+                onResubmitFailedSubmit={record => void handleResubmitFailedRecord(record)}
+                canResubmitFailedSubmit={record =>
+                  canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid })
+                }
                 submitting={submitting}
                 bulkSelect={{
                   selectedDraftIds,
@@ -3246,6 +3727,26 @@ export const RCSiteCalibration: React.FC = () => {
                   allSelectableDraftsSelected,
                   onToggleDraftSelection: toggleDraftSelection,
                   onToggleSelectAllDrafts: toggleSelectAllDrafts,
+                  failedSelect: canBulkFailed
+                    ? {
+                        selectedIds: selectedFailedIds,
+                        selectableIds: selectableFailedIds,
+                        allSelected: allSelectableFailedSelected,
+                        selectAllRef: selectAllFailedRef,
+                        onToggle: toggleFailedSelection,
+                        onToggleSelectAll: toggleSelectAllFailed,
+                      }
+                    : undefined,
+                  pendingRcSelect: canBulkPendingRc
+                    ? {
+                        selectedIds: selectedPendingRcIds,
+                        selectableIds: selectablePendingRcIds,
+                        allSelected: allSelectablePendingRcSelected,
+                        selectAllRef: selectAllPendingRcRef,
+                        onToggle: togglePendingRcSelection,
+                        onToggleSelectAll: toggleSelectAllPendingRc,
+                      }
+                    : undefined,
                 }}
               />
               <TablePagination
@@ -3285,6 +3786,7 @@ export const RCSiteCalibration: React.FC = () => {
           ovRemainingCount={quotaSeats.ready ? pickSerials.length : undefined}
           pendingSerials={pickSerials}
           verifierMode={isVerifier}
+          hasPasProducts={catalogueHasPasProducts(products)}
           onSelect={handleJobKindSelect}
           onClose={() => setShowJobKindPicker(false)}
         />

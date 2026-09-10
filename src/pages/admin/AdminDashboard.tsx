@@ -441,9 +441,22 @@ export const AdminDashboard: React.FC = () => {
           <h2 id="wl-admin-stages-title" className="wl-section__title">
             Verification Stages
           </h2>
-          <Link to={verificationHref()} className="wl-section__link">
-            View All <ChevronRight size={14} aria-hidden />
-          </Link>
+          <span className="wl-section__links">
+            {(tally.failed_submit > 0 || tally.draft > 0) && (
+              <Link
+                to={verificationListPath(VERIFICATION_PATH, {
+                  duration: listDuration,
+                  submitFailDraft: true,
+                })}
+                className="wl-section__link"
+              >
+                Submit Fail + Draft
+              </Link>
+            )}
+            <Link to={verificationHref()} className="wl-section__link">
+              View All <ChevronRight size={14} aria-hidden />
+            </Link>
+          </span>
         </div>
         <div className="wl-stages">
           {stages.map(stage => (

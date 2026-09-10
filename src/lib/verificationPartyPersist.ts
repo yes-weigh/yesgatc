@@ -5,7 +5,6 @@ import { normalizePhone } from './contactFields';
 import {
   buildCustomerProfileFields,
   isCustomerPartyReadyToPersist,
-  parseCustomerLocation,
   validateCustomerProfile,
   type CustomerFormValues,
 } from './customerProfileFields';
@@ -55,9 +54,6 @@ async function saveExistingCustomerProfile(
     ...profile,
     updatedAt,
   };
-  if (!parseCustomerLocation(customerForm)) {
-    updates.location = deleteField();
-  }
   await updateDoc(doc(db, 'customers', customerId), updates);
   const existing = existingCustomers.find(c => c.id === customerId);
   return {
@@ -95,7 +91,7 @@ export async function persistVerificationPartyProfile(
             error: 'Complete postal code and wait for district and state before saving.',
           };
     }
-    const validationError = validateCustomerProfile(rcForm);
+    const validationError = validateCustomerProfile(rcForm, { requireLocation: false });
     if (validationError) {
       return allowIncomplete ? { error: null } : { error: validationError };
     }

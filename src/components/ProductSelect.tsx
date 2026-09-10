@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Image as ImageIcon, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Image as ImageIcon, X } from 'lucide-react';
 import { StorageImage } from './StorageImage';
-import { ProductShopMedia } from './ProductShopMedia';
+import { PasTag, ProductShopCardBody, ProductShopMedia } from './ProductShopMedia';
 import type { Product } from '../types';
 import { formatProductCapacitySpecs } from '../lib/productCalculations';
 import {
@@ -87,6 +87,11 @@ function ProductSpecPickerModal({
   }, []);
 
   useEffect(() => {
+    document.body.classList.add('product-spec-picker-open');
+    return () => document.body.classList.remove('product-spec-picker-open');
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -166,22 +171,19 @@ function ProductSpecPickerModal({
           })}
         </ul>
         <p className="product-spec-picker-hint mb-0">
-          Tap a capacity (turns green). Change anytime, then Confirm.
+          Tap a capacity (turns green). Change anytime, then Serial.
         </p>
         <div className="product-spec-picker-actions">
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
           <button
             type="button"
-            className="btn btn-primary"
+            className="verification-form-btn verification-form-btn--continue"
             disabled={!selectedId}
             onClick={() => {
               if (!selectedId) return;
               onPick(selectedId);
             }}
           >
-            Confirm
+            Serial <ChevronRight size={16} aria-hidden />
           </button>
         </div>
       </div>
@@ -193,12 +195,13 @@ function ProductSpecPickerModal({
 function useProductPick(
   products: Product[],
   onChange: (value: ProductSelectValue) => void,
-  options?: { deferMultiSpec?: boolean },
+  options?: { deferMultiSpec?: boolean; onSpecCommitted?: () => void },
 ) {
   const [pendingProduct, setPendingProduct] = useState<Product | null>(null);
   const pendingRef = useRef<Product | null>(null);
   pendingRef.current = pendingProduct;
   const deferMultiSpec = Boolean(options?.deferMultiSpec);
+  const onSpecCommitted = options?.onSpecCommitted;
 
   const pickProduct = useCallback(
     (product: Product) => {
@@ -235,8 +238,9 @@ function useProductPick(
         productSpecificationId: specificationId,
       });
       setPendingProduct(null);
+      onSpecCommitted?.();
     },
-    [onChange],
+    [onChange, onSpecCommitted],
   );
 
   const cancelSpec = useCallback(() => {
@@ -269,6 +273,8 @@ export const ProductCatalogueList: React.FC<{
   variant?: 'list' | 'shop';
   /** Multi-spec: emit product only; parent shows capacity list (no modal / no auto-select). */
   deferMultiSpec?: boolean;
+  /** Spec modal Serial — commit only, not a product-card tap. */
+  onSpecCommitted?: () => void;
   /** Shop cards: media strip. Off = name-only tiles. */
   showShopMedia?: boolean;
 }> = ({
@@ -279,10 +285,12 @@ export const ProductCatalogueList: React.FC<{
   showCapacitySpecs = true,
   variant = 'list',
   deferMultiSpec = false,
+  onSpecCommitted,
   showShopMedia = true,
 }) => {
   const { activeProducts, pickProduct, specModal } = useProductPick(products, onChange, {
     deferMultiSpec,
+    onSpecCommitted,
   });
 
   if (activeProducts.length === 0) {
@@ -325,15 +333,16 @@ export const ProductCatalogueList: React.FC<{
                     {showShopMedia ? (
                       <ProductShopMedia product={product} />
                     ) : null}
-                    <span className="product-shop-card-body">
-                      <span className="product-shop-card-name">{product.name}</span>
-                    </span>
+                    <ProductShopCardBody product={product} />
                   </>
                 ) : (
                   <>
                     <ProductThumb product={product} className="product-picker-option-thumb" />
                     <span className="product-picker-option-text">
-                      <span className="product-picker-option-name">{product.name}</span>
+                      <span className="product-picker-option-name">
+                        <span className="product-picker-option-name-text">{product.name}</span>
+                        {product.pasPreAllotted ? <PasTag inline /> : null}
+                      </span>
                       {showCapacitySpecs ? (
                         <span className="product-picker-option-specs text-muted text-sm">{specs}</span>
                       ) : (
@@ -473,7 +482,10 @@ export const ProductSelect: React.FC<ProductSelectProps> = ({
                   >
                     <ProductThumb product={product} className="product-picker-option-thumb" />
                     <span className="product-picker-option-text">
-                      <span className="product-picker-option-name">{product.name}</span>
+                      <span className="product-picker-option-name">
+                        <span className="product-picker-option-name-text">{product.name}</span>
+                        {product.pasPreAllotted ? <PasTag inline /> : null}
+                      </span>
                       {!showCapacitySpecs && (
                         <span className="product-picker-option-meta text-muted text-sm">
                           {product.modelid}
