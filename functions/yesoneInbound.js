@@ -266,17 +266,41 @@ function readRenameSerial(item) {
 }
 
 function readPreviousSerial(item) {
-  const explicit = readRenameSerial(item);
-  if (explicit) return explicit;
   const rec = asRecord(item);
+  // Multi-serial invoice/dump payloads are allotments, never a 1:1 rename.
   if (Array.isArray(rec.allotments) || Array.isArray(rec.serialNumbers) || Array.isArray(rec.serials)) {
     return null;
   }
+  const explicit = readRenameSerial(item);
+  if (explicit) return explicit;
   const from = optionalTrimmed(rec.from);
   const to = optionalTrimmed(rec.to);
   const next = readSerialNumber(rec);
   if (from && next && from !== next && !to) return from;
   return null;
+}
+
+function isPasStickerSerial(serial) {
+  return String(serial || '').trim().toUpperCase().startsWith('YJ');
+}
+
+function isGasStickerSerial(serial) {
+  const key = String(serial || '').trim().toUpperCase();
+  if (!key || isPasStickerSerial(key)) return false;
+  return key.startsWith('G') || key.startsWith('X');
+}
+
+function stripRenameFields(item, event = 'serial.allotted') {
+  const rec = { ...asRecord(item), event };
+  delete rec.previousSerialNumber;
+  delete rec.oldSerialNumber;
+  delete rec.oldSerial;
+  delete rec.fromSerial;
+  delete rec.previous;
+  if (!optionalTrimmed(rec.to)) delete rec.from;
+  rec.serials = undefined;
+  rec.serialNumbers = undefined;
+  return rec;
 }
 
 function isSerialRename(item) {
@@ -500,9 +524,12 @@ function explodeItem(item) {
   const usageFields = pasUsageItemFields(usage);
   const statusBySerial = serialSeatStatusByNumber(rec);
   if (listed.length > 0 && (listed.length > 1 || !readSerialNumber(rec))) {
+    const listedEvent = event === 'serial.cancelled'
+      ? 'serial.cancelled'
+      : (listed.length > 1 ? 'serial.allotted' : (event || 'serial.allotted'));
     return listed.map(serialNumber => ({
-      ...rec,
-      event: event || 'serial.allotted',
+      ...(listed.length > 1 ? stripRenameFields(rec, listedEvent) : rec),
+      event: listedEvent,
       serialNumber,
       serials: undefined,
       serialNumbers: undefined,
@@ -636,15 +663,26 @@ function isMasterPoolSerial(serial) {
 
 function pushSerialItems(out, base, serials, extra = {}) {
   const extraClean = stripUndefined(extra);
-  for (const serial of serialValues(serials)) {
+  const listed = serialValues(serials).filter(serial => {
+    if (typeof serial === 'string' || typeof serial === 'number') {
+      return looksLikeBankSerial(String(serial).trim());
+    }
+    const row = asRecord(serial);
+    return looksLikeBankSerial(readSerialNumber(row) || optionalTrimmed(row.serial));
+  });
+  const fanout = listed.length > 1;
+  for (const serial of listed) {
     if (out.length >= MAX_EVENTS) return;
+    const namedEvent = extraClean.event === 'serial.cancelled'
+      ? 'serial.cancelled'
+      : (fanout ? 'serial.allotted' : (extraClean.event || 'serial.allotted'));
     if (typeof serial === 'string' || typeof serial === 'number') {
       const serialNumber = String(serial).trim();
-      if (!looksLikeBankSerial(serialNumber)) continue;
       out.push({
         ...base,
         ...extraClean,
-        event: extraClean.event || 'serial.allotted',
+        ...(fanout ? stripRenameFields({ ...base, ...extraClean }, namedEvent) : {}),
+        event: namedEvent,
         serialNumber,
         serials: undefined,
       });
@@ -652,12 +690,12 @@ function pushSerialItems(out, base, serials, extra = {}) {
     }
     const row = asRecord(serial);
     const serialNumber = readSerialNumber(row) || optionalTrimmed(row.serial);
-    if (!looksLikeBankSerial(serialNumber)) continue;
     out.push({
       ...base,
       ...row,
       ...extraClean,
-      event: extraClean.event || inferEventName({ ...row, ...extraClean }) || 'serial.allotted',
+      ...(fanout ? stripRenameFields({ ...base, ...row, ...extraClean }, namedEvent) : {}),
+      event: namedEvent,
       serialNumber,
       serials: undefined,
     });
@@ -1249,6 +1287,7 @@ function matchPasProduct(item, pasProducts) {
 }
 
 function isPasInbound(item, pasProduct) {
+  if (isGasStickerSerial(readSerialNumber(item))) return false;
   if (isPasTyped(item)) return true;
   const type = inboundSerialType(item);
   if (type === 'gas' || type === 'general') return false;
@@ -1674,10 +1713,25 @@ async function applySerialAllottedMany(db, items, rcCache) {
 }
 
 async function applyInboundItems(db, items) {
+  const renameCounts = new Map();
+  for (const item of items) {
+    const previous = readPreviousSerial(item);
+    if (!previous) continue;
+    const key = previous.toUpperCase();
+    renameCounts.set(key, (renameCounts.get(key) || 0) + 1);
+  }
+  const normalized = items.map(item => {
+    const previous = readPreviousSerial(item);
+    if (previous && (renameCounts.get(previous.toUpperCase()) || 0) > 1) {
+      return stripRenameFields(item);
+    }
+    return item;
+  });
+
   const rcCache = new Map();
   const allotted = [];
   const rest = [];
-  for (const item of items) {
+  for (const item of normalized) {
     const event = inferEventName(item);
     if (
       event === 'serial.allotted'
@@ -1806,8 +1860,13 @@ async function applySerialUpdated(db, item) {
   const oldId = serialDocId(previousSerial);
   const newId = serialDocId(nextSerial);
   const oldPasSnap = await db.doc(`${PAS_SERIAL_COLLECTION}/${oldId}`).get();
+  const newPasSnap = await db.doc(`${PAS_SERIAL_COLLECTION}/${newId}`).get();
   const oldSnap = await db.doc(`${SERIAL_COLLECTION}/${oldId}`).get();
   const previous = oldSnap.exists ? oldSnap.data() : {};
+
+  if (newPasSnap.exists || isGasStickerSerial(nextSerial)) {
+    return applySerialAllotted(db, stripRenameFields(item));
+  }
 
   if (oldPasSnap.exists) {
     const pasPrevious = oldPasSnap.data() || {};
@@ -1865,6 +1924,11 @@ async function applySerialUpdated(db, item) {
       verificationsUpdated: updated,
       issuedSkipped: skippedIssued,
     };
+  }
+
+  const newSnap = await db.doc(`${SERIAL_COLLECTION}/${newId}`).get();
+  if (newSnap.exists) {
+    return applySerialAllotted(db, stripRenameFields(item));
   }
 
   await db.doc(`${SERIAL_COLLECTION}/${oldId}`).set(

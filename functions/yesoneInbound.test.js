@@ -1163,6 +1163,175 @@ test('invoice serial.updated with range is allot, not rename', () => {
   assert.equal(readPreviousSerial(items[0]), null);
 });
 
+test('mixed invoice serial.updated does not rename one serial onto others', () => {
+  const items = expandInboundItems({
+    event: 'serial.updated',
+    type: 'serial.updated',
+    action: 'upsert',
+    allotments: [{
+      from: 'YJ01448',
+      to: 'X00526',
+      serialNumbers: [
+        'YJ01448', 'YJ01442', 'YJ00295', 'YJ00299', 'X00522', 'X00526',
+      ],
+    }],
+    invoice: {
+      invoiceNumber: 'YES/26-27/2180',
+      serialNumbers: [
+        'YJ01448', 'YJ01442', 'YJ00295', 'YJ00299', 'X00522', 'X00526',
+      ],
+      startNumber: 'YJ01448',
+      endNumber: 'X00526',
+      lines: [
+        {
+          sku: 'ATM30GAY',
+          name: 'ATM PC Gold',
+          serialNumbers: ['YJ01448', 'YJ01442'],
+        },
+        {
+          sku: 'KS10BAY',
+          name: 'Weighing Scale 10Kg',
+          serialNumbers: ['YJ00295', 'YJ00299'],
+        },
+        {
+          sku: 'ACS30RAD',
+          name: 'Table top scale',
+          serialNumbers: ['X00522', 'X00526'],
+        },
+      ],
+    },
+  });
+  assert.equal(items.length, 6);
+  assert.equal(items.every(item => item.event === 'serial.allotted'), true);
+  assert.equal(items.every(item => readPreviousSerial(item) == null), true);
+  assert.equal(items.find(item => item.serialNumber === 'YJ00295').sku, 'KS10BAY');
+  assert.equal(items.find(item => item.serialNumber === 'YJ01448').sku, 'ATM30GAY');
+  assert.equal(items.find(item => item.serialNumber === 'X00526').sku, 'ACS30RAD');
+});
+
+test('mixed invoice serial.updated does not overwrite KS10 PAS seats with ATM', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'products/scale10': {
+      pasPreAllotted: true,
+      yesoneSku: 'KS10BAY',
+      modelid: 'YSK10',
+      name: 'Weighing Scale 10 kg',
+    },
+    'products/atm': {
+      pasPreAllotted: true,
+      yesoneSku: 'ATM30GAY',
+      modelid: 'ATM30',
+      name: 'ATM GOLD',
+    },
+    'pasSerialBank/YJ00295': {
+      serialNumber: 'YJ00295',
+      status: 'available',
+      sku: 'KS10BAY',
+      yesoneSku: 'KS10BAY',
+      productId: 'scale10',
+      productName: 'Weighing Scale 10 kg',
+      pool: 'pas',
+    },
+    'pasSerialBank/YJ01448': {
+      serialNumber: 'YJ01448',
+      status: 'available',
+      sku: 'ATM30GAY',
+      yesoneSku: 'ATM30GAY',
+      productId: 'atm',
+      productName: 'ATM GOLD',
+      pool: 'pas',
+    },
+  });
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.updated',
+        action: 'upsert',
+        allotments: [{
+          from: 'YJ01448',
+          to: 'YJ00295',
+          serialNumbers: ['YJ01448', 'YJ00295'],
+        }],
+        invoice: {
+          invoiceNumber: 'YES/26-27/2180',
+          lines: [
+            { sku: 'ATM30GAY', serialNumbers: ['YJ01448'] },
+            { sku: 'KS10BAY', serialNumbers: ['YJ00295'] },
+          ],
+        },
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['pasSerialBank/YJ00295'].yesoneSku, 'KS10BAY');
+  assert.equal(db._store['pasSerialBank/YJ00295'].productId, 'scale10');
+  assert.equal(db._store['pasSerialBank/YJ00295'].previousSerialNumber, undefined);
+  assert.equal(db._store['pasSerialBank/YJ01448'].status, 'available');
+  assert.equal(db._store['pasSerialBank/YJ01448'].replacedBy, undefined);
+  assert.equal(db._store['pasSerialBank/X00526'], undefined);
+});
+
+test('PAS rename does not overwrite an existing other-product seat', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'products/scale10': {
+      pasPreAllotted: true,
+      yesoneSku: 'KS10BAY',
+      modelid: 'YSK10',
+      name: 'Weighing Scale 10 kg',
+    },
+    'products/atm': {
+      pasPreAllotted: true,
+      yesoneSku: 'ATM30GAY',
+      modelid: 'ATM30',
+      name: 'ATM GOLD',
+    },
+    'pasSerialBank/YJ00295': {
+      serialNumber: 'YJ00295',
+      status: 'available',
+      sku: 'KS10BAY',
+      yesoneSku: 'KS10BAY',
+      productId: 'scale10',
+      pool: 'pas',
+    },
+    'pasSerialBank/YJ01448': {
+      serialNumber: 'YJ01448',
+      status: 'available',
+      sku: 'ATM30GAY',
+      yesoneSku: 'ATM30GAY',
+      productId: 'atm',
+      pool: 'pas',
+    },
+  });
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.updated',
+        previousSerialNumber: 'YJ01448',
+        serialNumber: 'YJ00295',
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['pasSerialBank/YJ00295'].yesoneSku, 'KS10BAY');
+  assert.equal(db._store['pasSerialBank/YJ01448'].status, 'available');
+});
+
 test('dealer invoice allotments keep KLM, not IWP default', () => {
   const items = expandInboundItems({
     event: 'serial.allotted',
