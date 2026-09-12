@@ -10,13 +10,16 @@ import {
   mergePasBankCounts,
   mergePasBankUsage,
   mergePasBlockedSerials,
+  KITCHEN_PAS_META_IDS,
   pasBankListedForProduct,
   pasBankMatchesProduct,
   pasBankOptionsForJob,
   pasBankStatusError,
   pasSerialsFromMetaRanges,
+  pasSharedPoolKey,
   serialInInclusiveRange,
   summarizeSerialRows,
+  sumPasBankUsage,
   usageFromSerialRows,
   type PasAllotmentIdentity,
   type PasBankDoc,
@@ -41,6 +44,7 @@ export {
   pasBankMatchesProduct,
   pasBankOptionsForJob,
   pasSerialsFromMetaRanges,
+  pasSharedPoolKey,
   serialInInclusiveRange,
   usageFromSerialRows,
 };
@@ -302,37 +306,84 @@ function pasRowFromSnap(
   };
 }
 
+function kitchenPasProduct(product: Product): boolean {
+  return Boolean(pasSharedPoolKey({ yesoneSku: product.yesoneSku, modelid: product.modelid }));
+}
+
 function metaDocIdsForProduct(product: Product): string[] {
-  return [product.yesoneSku, product.id, product.modelid]
-    .map(value => pasSerialDocId(String(value || '')))
-    .filter((id): id is string => Boolean(id));
+  if (kitchenPasProduct(product)) return [...KITCHEN_PAS_META_IDS];
+  return [...new Set(
+    [product.yesoneSku, product.id, product.modelid]
+      .map(value => pasSerialDocId(String(value || '')))
+      .filter((id): id is string => Boolean(id)),
+  )];
+}
+
+function kitchenPasUsage(
+  rowUsage: PasBankUsage | null,
+  meta: PasBankUsage | null,
+): PasBankUsage | null {
+  const counts = mergePasBankUsage(rowUsage, meta);
+  const bounds = sumPasBankUsage([rowUsage, meta].filter((part): part is PasBankUsage => Boolean(part)));
+  if (!counts) return bounds;
+  return { ...counts, from: bounds?.from, to: bounds?.to };
+}
+
+function usageFromCountedRows(rows: ProductSerialRow[]): PasBankUsage | null {
+  if (rows.length === 0) return null;
+  const summary = summarizeSerialRows(rows);
+  const ordered = [...rows].sort(serialSortKey);
+  return {
+    qty: summary.qty,
+    linked: summary.used,
+    unused: summary.available,
+    from: ordered[0]?.serial,
+    to: ordered[ordered.length - 1]?.serial,
+  };
+}
+
+function dedupePasBankUsage(parts: PasBankUsage[]): PasBankUsage[] {
+  const seen = new Set<string>();
+  const out: PasBankUsage[] = [];
+  for (const part of parts) {
+    const key = [part.from || '', part.to || '', part.qty ?? '', part.linked ?? '', part.unused ?? ''].join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(part);
+  }
+  return out;
 }
 
 async function loadPasBankMeta(product: Product): Promise<PasBankUsage | null> {
+  const parts: PasBankUsage[] = [];
+  const pooled = kitchenPasProduct(product);
   for (const id of metaDocIdsForProduct(product)) {
     try {
       const snap = await getDoc(doc(db, PAS_SERIAL_BANK_META_COLLECTION, id));
       if (!snap.exists()) continue;
       const data = (snap.data() || {}) as PasBankUsage & { linked?: number; unused?: number };
-      return {
+      parts.push({
         qty: finitePasCount(data.qty),
         linked: finitePasCount(data.linked),
         unused: finitePasCount(data.unused),
         from: data.from,
         to: data.to,
-      };
+      });
+      if (!pooled) break;
     } catch (err) {
       if (firebaseDenied(err)) continue;
       throw err;
     }
   }
-  return null;
+  if (pooled) return sumPasBankUsage(dedupePasBankUsage(parts));
+  return parts[0] || null;
 }
 
 async function queryPasBank(product: Product): Promise<{
   rows: ProductSerialRow[];
   usage: PasBankUsage | null;
 }> {
+  const pooled = kitchenPasProduct(product);
   const col = collection(db, PAS_SERIAL_BANK_COLLECTION);
   const [listed, meta] = await Promise.all([getDocs(col), loadPasBankMeta(product)]);
   const snaps = listed.docs.map(docSnap => ({
@@ -344,7 +395,10 @@ async function queryPasBank(product: Product): Promise<{
     const row = pasRowFromSnap(snap.id, snap.data, product);
     if (row) tagged.push(row);
   }
-  const usage = mergePasBankUsage(meta, usageFromSerialRows(tagged));
+  const rowUsage = pooled ? usageFromCountedRows(tagged) : usageFromSerialRows(tagged);
+  const usage = pooled
+    ? kitchenPasUsage(rowUsage, meta)
+    : mergePasBankUsage(meta, rowUsage);
   const range = usage?.from && usage.to ? { from: usage.from, to: usage.to } : null;
   const byId = new Map<string, ProductSerialRow>();
   for (const snap of snaps) {

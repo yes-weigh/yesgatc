@@ -80,6 +80,85 @@ function parseSerialParts(value: string): { prefix: string; width: number; n: bi
   return { prefix: match[1], width: match[2].length, n: BigInt(match[2]) };
 }
 
+/** 5 kg / 10 kg kitchen PAS stickers share one tank. Never ATM or other PAS. */
+const KITCHEN_PAS_POOL = 'ks-5-10';
+const KITCHEN_PAS_SKUS = new Set(['ks05bay', 'ks10bay']);
+const KITCHEN_PAS_MODELS = new Set(['ysk5', 'ysk10']);
+
+export function pasSharedPoolKey(row: {
+  yesoneSku?: string | null;
+  sku?: string | null;
+  modelid?: string | null;
+  modelId?: string | null;
+}): string | null {
+  const sku = compactIdent(row.yesoneSku || row.sku);
+  const model = compactIdent(row.modelid || row.modelId);
+  if (KITCHEN_PAS_SKUS.has(sku) || KITCHEN_PAS_MODELS.has(model)) return KITCHEN_PAS_POOL;
+  return null;
+}
+
+export const KITCHEN_PAS_META_IDS = ['KS10BAY', 'KS05BAY'] as const;
+
+function pickSerialBound(
+  current: string | undefined,
+  candidate: string | undefined,
+  want: 'min' | 'max',
+): string | undefined {
+  const next = String(candidate || '').trim();
+  if (!next) return current;
+  if (!current) return next;
+  const a = parseSerialParts(current);
+  const b = parseSerialParts(next);
+  if (!a || !b || a.prefix !== b.prefix) return current;
+  if (want === 'min') return b.n < a.n ? next : current;
+  return b.n > a.n ? next : current;
+}
+
+export function sumPasBankUsage(parts: readonly PasBankUsage[]): PasBankUsage | null {
+  const rows = parts.filter(part =>
+    finiteCount(part.qty) != null
+    || finiteCount(part.linked) != null
+    || finiteCount(part.unused) != null
+    || part.from
+    || part.to,
+  );
+  if (rows.length === 0) return null;
+  let qty = 0;
+  let linked = 0;
+  let unused = 0;
+  let hasQty = false;
+  let hasLinked = false;
+  let hasUnused = false;
+  let from: string | undefined;
+  let to: string | undefined;
+  for (const part of rows) {
+    const q = finiteCount(part.qty);
+    const l = finiteCount(part.linked);
+    const u = finiteCount(part.unused);
+    if (q != null) {
+      qty += q;
+      hasQty = true;
+    }
+    if (l != null) {
+      linked += l;
+      hasLinked = true;
+    }
+    if (u != null) {
+      unused += u;
+      hasUnused = true;
+    }
+    from = pickSerialBound(from, part.from, 'min');
+    to = pickSerialBound(to, part.to, 'max');
+  }
+  return {
+    qty: hasQty ? qty : null,
+    linked: hasLinked ? linked : null,
+    unused: hasUnused ? unused : null,
+    from,
+    to,
+  };
+}
+
 /** PAS stickers (Yesone number bank). Never G/X GAS seats. */
 export function isPasStickerSerial(serial: string): boolean {
   return serial.trim().toUpperCase().startsWith('YJ');
@@ -100,8 +179,15 @@ export function serialInInclusiveRange(serial: string, from?: string, to?: strin
   return s.n >= a.n && s.n <= b.n;
 }
 
-/** Exact sku / productId / modelid. Never fail-open. Never prefix. Never approval/name. */
+/** Exact sku / productId / modelid, plus 5 kg / 10 kg kitchen PAS pool. Never fail-open. Never prefix. Never approval/name. */
 export function pasBankMatchesProduct(bank: PasBankDoc, product: Product): boolean {
+  const bankPool = pasSharedPoolKey(bank);
+  const productPool = pasSharedPoolKey({
+    yesoneSku: product.yesoneSku,
+    sku: product.yesoneSku,
+    modelid: product.modelid,
+  });
+  if (bankPool && productPool && bankPool === productPool) return true;
   const bankKeys = pasMatchKeys(bank);
   const productKeys = pasMatchKeys({
     id: product.id,

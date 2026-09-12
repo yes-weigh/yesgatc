@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
 import {
   listProductSerialBank,
+  pasSharedPoolKey,
   productUsesPasSerials,
   type ProductSerialBankSummary,
   type ProductSerialRow,
@@ -57,6 +58,10 @@ export function ProductSerialBankOverlay({
 
   const qty = summary?.qty ?? 0;
   const available = summary?.available ?? 0;
+  const sharedKitchen = Boolean(pasSharedPoolKey({
+    yesoneSku: product.yesoneSku,
+    modelid: product.modelid,
+  }));
 
   return createPortal(
     <div
@@ -69,6 +74,7 @@ export function ProductSerialBankOverlay({
         <h2 id="product-serial-bank-title" className="admin-setting-serial-stage-title">
           {product.name.trim() || 'Product'}
           <span>{pas ? 'PAS' : 'GAS'}</span>
+          {sharedKitchen ? <span>5 kg + 10 kg</span> : null}
           <span className="admin-setting-serial-count-num">{available}</span>
         </h2>
         <button type="button" className="rv-payment-panel-close" onClick={onClose} aria-label="Close">

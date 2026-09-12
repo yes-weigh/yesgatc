@@ -12,7 +12,9 @@ import {
   pasBankMatchesProduct,
   pasBankOptionsForJob,
   pasSerialsFromMetaRanges,
+  pasSharedPoolKey,
   serialInInclusiveRange,
+  sumPasBankUsage,
   type PasBankDoc,
   type ProductSerialRow,
 } from './pasSerialBankMatch.ts';
@@ -50,19 +52,25 @@ const scale5 = product({
   yesoneSku: 'KS05BAY',
   modelid: 'YSK5',
 });
+const atm = product({
+  id: 'atm',
+  name: 'ATM GOLD',
+  yesoneSku: 'ATM30GAY',
+  modelid: 'ATM30',
+});
 
 function row(serial: string, status = 'available', extra: Partial<ProductSerialRow> = {}): ProductSerialRow {
   return { id: serial, serial, status, pool: 'pas', ...extra };
 }
 
 describe('pasBankMatchesProduct', () => {
-  it('isolates KS10BAY and KS05BAY seats', () => {
+  it('shares KS10BAY and KS05BAY kitchen seats', () => {
     const ten: PasBankDoc = { serialNumber: 'YJ00001', yesoneSku: 'KS10BAY', sku: 'KS10BAY' };
     const five: PasBankDoc = { serialNumber: 'YJ00601', yesoneSku: 'KS05BAY', sku: 'KS05BAY' };
     assert.equal(pasBankMatchesProduct(ten, scale10), true);
-    assert.equal(pasBankMatchesProduct(ten, scale5), false);
+    assert.equal(pasBankMatchesProduct(ten, scale5), true);
     assert.equal(pasBankMatchesProduct(five, scale5), true);
-    assert.equal(pasBankMatchesProduct(five, scale10), false);
+    assert.equal(pasBankMatchesProduct(five, scale10), true);
   });
 
   it('does not fail open on empty bank identity', () => {
@@ -80,21 +88,29 @@ describe('pasBankMatchesProduct', () => {
     assert.equal(pasBankMatchesProduct(bank, scale5), false);
   });
 
-  it('does not treat all PAS seats as every PAS product', () => {
-    const bank: PasBankDoc = { serialNumber: 'YJ00001', productId: 'scale10', yesoneSku: 'KS10BAY' };
+  it('does not treat ATM PAS seats as kitchen scales', () => {
+    const bank: PasBankDoc = { serialNumber: 'YJ01001', productId: 'atm', yesoneSku: 'ATM30GAY' };
+    assert.equal(pasBankMatchesProduct(bank, scale10), false);
     assert.equal(pasBankMatchesProduct(bank, scale5), false);
+  });
+
+  it('names the shared kitchen pool', () => {
+    assert.equal(pasSharedPoolKey({ yesoneSku: 'KS10BAY' }), pasSharedPoolKey({ sku: 'KS05BAY' }));
+    assert.equal(pasSharedPoolKey({ modelid: 'YSK5' }), pasSharedPoolKey({ modelid: 'YSK10' }));
+    assert.equal(pasSharedPoolKey({ yesoneSku: 'ATM30GAY' }), null);
   });
 });
 
 describe('pasBankListedForProduct', () => {
   it('keeps untagged seats only inside that product range', () => {
     const untagged: PasBankDoc = { serialNumber: 'YJ00002' };
-    const foreign: PasBankDoc = { serialNumber: 'YJ00602', sku: 'KS05BAY' };
+    const foreign: PasBankDoc = { serialNumber: 'YJ01002', sku: 'ATM30GAY' };
     const range10 = { from: 'YJ00001', to: 'YJ00600' };
     const range5 = { from: 'YJ00601', to: 'YJ01000' };
     assert.equal(pasBankListedForProduct(untagged, scale10, range10), true);
     assert.equal(pasBankListedForProduct(untagged, scale5, range5), false);
     assert.equal(pasBankListedForProduct(foreign, scale10, range10), false);
+    assert.equal(pasBankListedForProduct({ serialNumber: 'YJ00602', sku: 'KS05BAY' }, scale10, range10), true);
     assert.equal(serialInInclusiveRange('YJ00600', 'YJ00001', 'YJ00600'), true);
     assert.equal(serialInInclusiveRange('YJ00601', 'YJ00001', 'YJ00600'), false);
   });
@@ -125,6 +141,35 @@ describe('mergePasBankCounts', () => {
     assert.equal(summary.used, 35);
     assert.equal(summary.available, 565);
   });
+
+  it('adds 5 kg and 10 kg tank usage', () => {
+    const summed = sumPasBankUsage([
+      { qty: 600, linked: 80, unused: 520, from: 'YJ00001', to: 'YJ00600' },
+      { qty: 400, linked: 86, unused: 314, from: 'YJ00601', to: 'YJ01000' },
+    ]);
+    assert.equal(summed?.qty, 1000);
+    assert.equal(summed?.linked, 166);
+    assert.equal(summed?.unused, 834);
+    assert.equal(summed?.from, 'YJ00001');
+    assert.equal(summed?.to, 'YJ01000');
+  });
+
+  it('counts shared kitchen seats as one tank', () => {
+    const rows = [
+      ...Array.from({ length: 3 }, (_, i) => row(`YJ${String(i + 1).padStart(5, '0')}`)),
+      ...Array.from({ length: 2 }, (_, i) => row(`YJ${String(i + 601).padStart(5, '0')}`, 'used')),
+    ];
+    const summary = mergePasBankCounts(rows, {
+      qty: 5,
+      linked: 2,
+      unused: 3,
+      from: 'YJ00001',
+      to: 'YJ00602',
+    });
+    assert.equal(summary.qty, 5);
+    assert.equal(summary.used, 2);
+    assert.equal(summary.available, 3);
+  });
 });
 
 describe('interpretPasBankLookup', () => {
@@ -144,11 +189,12 @@ describe('interpretPasBankLookup', () => {
 
   it('proceeds when bank hits this product', () => {
     assert.equal(interpretPasBankLookup('YJ00001', bank, scale10), null);
+    assert.equal(interpretPasBankLookup('YJ00001', bank, scale5), null);
   });
 
   it('blocks a serial allotted to a different PAS product', () => {
     assert.equal(
-      interpretPasBankLookup('YJ00001', bank, scale5),
+      interpretPasBankLookup('YJ00001', bank, atm),
       'Serial YJ00001 is not allotted to this PAS product.',
     );
   });
