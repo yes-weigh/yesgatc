@@ -468,7 +468,7 @@ exports.revertRvSubmitTest = onCall(
   async request => revertRvSubmitTestHandler(request, adminDb()),
 );
 
-/** Dev/testing — Super Admin deletes submitted OV/RV verifications. */
+/** Delete submitted OV/RV. OV serial returns to unused. Super Admin may also wipe submitted RV. */
 exports.devDeleteSubmittedVerification = onCall(
   { region: CALLABLE_REGION, cors: CALLABLE_CORS },
   async request => devDeleteSubmittedVerificationHandler(request, adminDb()),

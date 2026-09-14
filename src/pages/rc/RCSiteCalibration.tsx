@@ -68,6 +68,13 @@ import {
   verificationStatusDescription,
   type AssignableVctOption,
 } from '../../lib/verificationRequest';
+import {
+  buildDevDeleteSubmittedMessage,
+  canDeleteSubmittedOriginalVerification,
+  canWipeSubmittedVerification,
+  collectSubmittedDeleteBatchForDisplay,
+  devDeleteSubmittedVerification,
+} from '../../lib/verificationDevDelete';
 import { fetchRcVctUsers } from '../../lib/rcVctMembers';
 import { matchesVerificationSearch } from '../../lib/verificationListSearch';
 import { formatVerificationListDate } from '../../lib/verificationListFormat';
@@ -436,6 +443,7 @@ export const RCSiteCalibration: React.FC = () => {
   const [rvSessionPayment, setRvSessionPayment] = useState<{ paymentId: string; amountInr: number } | null>(null);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<VerificationStatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<VerificationTypeFilter>('all');
   const [durationFilter, setDurationFilter] = useState<VerificationDurationFilter>('all');
@@ -2826,8 +2834,40 @@ export const RCSiteCalibration: React.FC = () => {
   };
 
   const handleDelete = async (record: SiteCalibration) => {
-    if (!canDeleteVerification(record)) return;
+    const deleteActor = {
+      role: user?.role,
+      uid: user?.uid,
+      rcId: rcUid,
+    };
+    const isSubmittedWipe = canWipeSubmittedVerification(
+      record,
+      deleteActor,
+      user?.role === 'super_admin',
+    );
+    if (!canDeleteVerification(record) && !isSubmittedWipe) return;
     const label = `${verificationTypeLabel(record.verificationType)} · ${record.customerName}`;
+    if (isSubmittedWipe) {
+      const batch = collectSubmittedDeleteBatchForDisplay(record, records);
+      const ok = await confirm({
+        title: 'Delete OV?',
+        message: buildDevDeleteSubmittedMessage(batch, record.customerName || 'this record'),
+        messageFormat: 'preline',
+        confirmLabel: 'Delete OV',
+        destructive: true,
+      });
+      if (!ok) return;
+      setDeletingId(record.id);
+      setListError('');
+      try {
+        await devDeleteSubmittedVerification(record.id);
+        await fetchRecords();
+      } catch (err: unknown) {
+        setListError(err instanceof Error ? err.message : 'Failed to delete OV.');
+      } finally {
+        setDeletingId(null);
+      }
+      return;
+    }
     const ok = await confirm({
       title: 'Remove verification record?',
       message: `Remove "${label}"?\nThis cannot be undone.`,
@@ -3714,6 +3754,14 @@ export const RCSiteCalibration: React.FC = () => {
                 onSubmit={handleSubmitRecord}
                 onApprove={isRcAdmin ? handleApproveVerifierWork : undefined}
                 onDelete={handleDelete}
+                deletingId={deletingId}
+                canDeleteSubmittedRecord={record =>
+                  canDeleteSubmittedOriginalVerification(record, {
+                    role: user?.role,
+                    uid: user?.uid,
+                    rcId: rcUid,
+                  })
+                }
                 onResubmitFailedSubmit={record => void handleResubmitFailedRecord(record)}
                 canResubmitFailedSubmit={record =>
                   canActorResubmitFailedSubmit(record, { role: user?.role, uid: user?.uid })

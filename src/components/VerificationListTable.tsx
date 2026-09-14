@@ -124,6 +124,8 @@ export interface VerificationListTableProps {
   walletPaymentDueRecordIds?: Set<string>;
   /** Super Admin + local dev — show delete for submitted OV/RV on admin list. */
   adminDevDeleteEnabled?: boolean;
+  /** Submitted OV without a certificate — serial returns to unused. */
+  canDeleteSubmittedRecord?: (record: VerificationListTableRecord) => boolean;
   /** Super Admin — show move-to-draft for failed-at-submit rows. */
   adminMoveFailedSubmitEnabled?: boolean;
 }
@@ -266,6 +268,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
   walletPaymentDueRecordIds,
   adminDevDeleteEnabled = false,
   adminMoveFailedSubmitEnabled = false,
+  canDeleteSubmittedRecord,
 }) => {
   const { appSettings } = useAppSettings();
   const { products } = useAppContext();
@@ -345,6 +348,7 @@ export const VerificationListTable: React.FC<VerificationListTableProps> = ({
             const showDelete =
               onDelete
               && (canDeleteVerification(record)
+                || Boolean(canDeleteSubmittedRecord?.(record))
                 || (mode === 'admin'
                   && adminDevDeleteEnabled
                   && canDevDeleteSubmittedVerification(record, adminDevDeleteEnabled)));

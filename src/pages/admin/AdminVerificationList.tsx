@@ -53,9 +53,11 @@ import { enrichVerificationListRecords } from '../../lib/verificationListPartyPh
 import { isRvWalletPaymentOutstanding } from '../../lib/rvPaymentAmount';
 import { ensureRvWalletDebitedForRecords } from '../../lib/rvWalletAdvancePay';
 import { resolveRcFeesStructure } from '../../lib/rcProfileFields';
+import { parentRcUid } from '../../lib/parentRcUid';
 import {
   buildDevDeleteSubmittedMessage,
-  canDevDeleteSubmittedVerification,
+  canDeleteSubmittedOriginalVerification,
+  canWipeSubmittedVerification,
   collectSubmittedDeleteBatchForDisplay,
   devDeleteSubmittedVerification,
 } from '../../lib/verificationDevDelete';
@@ -125,6 +127,14 @@ export const AdminVerificationList: React.FC = () => {
   const { appSettings } = useAppSettings();
   const [searchParams, setSearchParams] = useSearchParams();
   const isSuperAdmin = user?.role === 'super_admin';
+  const deleteActor = useMemo(
+    () => ({
+      role: user?.role,
+      uid: user?.uid,
+      rcId: parentRcUid(user),
+    }),
+    [user],
+  );
   const pendingStatusFilter = searchParams.get('status');
   const pendingTypeFilter = searchParams.get('type');
   const pendingDurationFilter = parseVerificationDurationParam(searchParams.get('duration'));
@@ -499,18 +509,19 @@ export const AdminVerificationList: React.FC = () => {
   }, [durationScoped, listFilters, rcCenterNameByRcId]);
 
   const handleDelete = async (record: VerificationRow) => {
-    const isDevSubmittedDelete = canDevDeleteSubmittedVerification(record, isSuperAdmin);
-    if (!canDeleteVerification(record) && !isDevSubmittedDelete) return;
+    const isSubmittedWipe = canWipeSubmittedVerification(record, deleteActor, isSuperAdmin);
+    if (!canDeleteVerification(record) && !isSubmittedWipe) return;
 
     const label = `${record.customerName} · ${record.serialNumber || 'no serial'}`;
 
-    if (isDevSubmittedDelete) {
+    if (isSubmittedWipe) {
       const batch = collectSubmittedDeleteBatchForDisplay(record, records);
+      const ovDelete = canDeleteSubmittedOriginalVerification(record, deleteActor);
       const ok = await confirm({
-        title: 'Delete submitted verification? (dev only)',
+        title: ovDelete ? 'Delete OV?' : 'Delete submitted verification? (dev only)',
         message: buildDevDeleteSubmittedMessage(batch, record.rcCenterName || 'Regional Center'),
         messageFormat: 'preline',
-        confirmLabel: 'Delete from Firebase',
+        confirmLabel: ovDelete ? 'Delete OV' : 'Delete from Firebase',
         destructive: true,
       });
       if (!ok) return;
@@ -1324,6 +1335,9 @@ export const AdminVerificationList: React.FC = () => {
                 walletPaymentDueRecordIds={walletPaymentDueRecordIds}
                 adminDevDeleteEnabled={isSuperAdmin}
                 adminMoveFailedSubmitEnabled={isSuperAdmin}
+                canDeleteSubmittedRecord={record =>
+                  canDeleteSubmittedOriginalVerification(record, deleteActor)
+                }
                 onDelete={record => void handleDelete(record as VerificationRow)}
                 onMoveToDraft={record => void handleMoveToDraft(record as VerificationRow)}
                 onResubmitFailedSubmit={record => void handleResubmitFailedRecord(record)}

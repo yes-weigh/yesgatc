@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { FieldPath } = require('firebase-admin/firestore');
+const { FieldPath, FieldValue } = require('firebase-admin/firestore');
 const { HttpsError } = require('firebase-functions/v2/https');
 const {
   isIssuedPublicCertificate,
@@ -235,7 +235,7 @@ function verificationReadyForYesone(record) {
 }
 
 function shouldPushYesone(before, after) {
-  if (!after) return false;
+  if (!after) return Boolean(before) && verificationReadyForYesone(before);
   if (!verificationReadyForYesone(after)) return false;
   if (before && onlyYesoneMetaChanged(before, after)) return false;
   return true;
@@ -252,7 +252,68 @@ function verificationStatusEvent(after) {
   return `verification.status_${status}`;
 }
 
+function serialAllotmentDocId(serial) {
+  const trimmed = optionalTrimmed(serial);
+  if (!trimmed) return null;
+  return trimmed.toUpperCase().replace(/[/\\]/g, '_').slice(0, 700);
+}
+
+async function otherLiveOvUsesSerial(db, serial, excludeRecordId, rc) {
+  const trimmed = optionalTrimmed(serial);
+  if (!trimmed) return false;
+  const snap = await db.collection('siteCalibrations').where('serialNumber', '==', trimmed).get();
+  for (const docSnap of snap.docs) {
+    if (docSnap.id === excludeRecordId) continue;
+    if (ovShouldCount({ id: docSnap.id, ...docSnap.data() }, rc)) return true;
+  }
+  return false;
+}
+
+async function releaseOvSerialSeats(db, record, options = {}) {
+  const serial = optionalTrimmed(record?.serialNumber);
+  if (!serial || !isOvRecord(record)) return { skipped: true, reason: 'not_ov' };
+  const rc = options.rc || null;
+  if (await otherLiveOvUsesSerial(db, serial, record.id, rc)) {
+    return { skipped: true, reason: 'serial_still_used' };
+  }
+
+  const now = new Date().toISOString();
+  const id = serialAllotmentDocId(serial);
+  const result = { allotment: false, pas: false };
+  if (id) {
+    const allotRef = db.doc(`serialAllotments/${id}`);
+    const allotSnap = await allotRef.get();
+    if (allotSnap.exists && String(allotSnap.data()?.status || '').trim().toLowerCase() === 'used') {
+      await allotRef.set({
+        status: 'allotted',
+        usedAt: FieldValue.delete(),
+        updatedAt: now,
+      }, { merge: true });
+      result.allotment = true;
+    }
+
+    const pasRef = db.doc(`pasSerialBank/${id}`);
+    const pasSnap = await pasRef.get();
+    if (pasSnap.exists && String(pasSnap.data()?.status || '').trim().toLowerCase() === 'used') {
+      const usedRecordId = String(pasSnap.data()?.usedRecordId || '').trim();
+      if (!usedRecordId || usedRecordId === String(record.id || '')) {
+        await pasRef.set({
+          status: 'available',
+          usedAt: FieldValue.delete(),
+          usedByUid: FieldValue.delete(),
+          usedByRcId: FieldValue.delete(),
+          usedRecordId: FieldValue.delete(),
+          updatedAt: now,
+        }, { merge: true });
+        result.pas = true;
+      }
+    }
+  }
+  return result;
+}
+
 function yesoneCertificateEvent(before, after) {
+  if (!after && before) return 'verification.deleted';
   if (isVoidedCertificate(after) && !isVoidedCertificate(before)) return 'certificate.voided';
   if (isCertificateSigned(after) && !isCertificateSigned(before)) {
     return 'certificate.certified_signed';
@@ -661,17 +722,24 @@ async function deliverYesone(db, path, record, payload, options = {}) {
 }
 
 async function processYesoneCertificatePush(db, recordId, record, before, options = {}) {
+  const deleted = !record && Boolean(before);
+  const source = record || before;
+  if (!source) {
+    return { skipped: true, reason: 'empty' };
+  }
   const issuedOnly = options.allowIssuedWithoutPdf === true;
-  const ready = issuedOnly
-    ? isIssuedPublicCertificate(record)
-    : verificationReadyForYesone(record);
+  const ready = deleted
+    ? verificationReadyForYesone(source)
+    : issuedOnly
+      ? isIssuedPublicCertificate(record)
+      : verificationReadyForYesone(record);
   if (!ready) {
     return { skipped: true, reason: 'not_ready' };
   }
   const customer = options.customer === undefined
-    ? await loadCustomer(db, record.customerId)
+    ? await loadCustomer(db, source.customerId)
     : options.customer;
-  const rc = options.rc === undefined ? await loadRc(db, record.rcId) : options.rc;
+  const rc = options.rc === undefined ? await loadRc(db, source.rcId) : options.rc;
   const event = options.event || yesoneCertificateEvent(before, record);
   const occurredAt = new Date().toISOString();
   const quotaAction = options.liveQuota
@@ -679,20 +747,35 @@ async function processYesoneCertificatePush(db, recordId, record, before, option
     : { usedDelta: 0, unusedDelta: 0, action: 'none' };
   let liveUsed = options.liveUsed;
   if (liveUsed == null && options.liveQuota && rc) {
-    liveUsed = await countLiveOvUsed(db, rc.id || record.rcId, rc);
+    liveUsed = await countLiveOvUsed(db, rc.id || source.rcId, rc);
   }
-  const quota = buildOvQuotaPayload(record, rc, quotaAction, liveUsed);
-  const payload = buildYesoneCertificatePayload(recordId, record, customer, rc, event, occurredAt, quota);
-  const result = await deliverYesone(db, `siteCalibrations/${recordId}`, record, payload, options);
+  const quota = buildOvQuotaPayload(source, rc, quotaAction, liveUsed);
+  const payload = buildYesoneCertificatePayload(recordId, source, customer, rc, event, occurredAt, quota);
+  if (deleted) {
+    try {
+      await releaseOvSerialSeats(db, { id: recordId, ...source }, { rc });
+    } catch (err) {
+      console.warn('OV serial release failed', recordId, err);
+    }
+  }
+  const result = await deliverYesone(db, `siteCalibrations/${recordId}`, source, payload, {
+    ...options,
+    skipMetaWrite: deleted || options.skipMetaWrite,
+  });
+  if (deleted) {
+    return result;
+  }
   const serial = optionalTrimmed(record.serialNumber);
   if (serial && isIssuedPublicCertificate(record)) {
     try {
-      const id = serial.toUpperCase().replace(/[/\\]/g, '_').slice(0, 700);
-      await db.doc(`serialAllotments/${id}`).set({
-        status: 'used',
-        usedAt: occurredAt,
-        updatedAt: occurredAt,
-      }, { merge: true });
+      const id = serialAllotmentDocId(serial);
+      if (id) {
+        await db.doc(`serialAllotments/${id}`).set({
+          status: 'used',
+          usedAt: occurredAt,
+          updatedAt: occurredAt,
+        }, { merge: true });
+      }
     } catch (err) {
       console.warn('serialAllotments used mark failed', serial, err);
     }
@@ -1267,6 +1350,7 @@ module.exports = {
   shouldPushYesoneRc,
   ovQuotaAction,
   countOvUsedFromRecords,
+  releaseOvSerialSeats,
   buildOvQuotaPayload,
   buildRcOvUsedSnapshot,
   yesoneCertificateEvent,

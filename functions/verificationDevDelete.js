@@ -5,15 +5,48 @@ const {
   wipeWalletPaymentForDev,
 } = require('./verificationDevDeleteShared');
 
+function hasIssuedCertificate(record) {
+  return Boolean(
+    record?.approvedAt
+    || record?.certifiedAt
+    || String(record?.certificateNumber || '').trim(),
+  );
+}
+
 function isSubmittedVerificationRecord(record) {
   const type = record?.verificationType;
   return (
     (type === 'RV' || type === 'OV')
     && record?.status === 'submitted'
-    && !record?.approvedAt
-    && !record?.certifiedAt
-    && !String(record?.certificateNumber || '').trim()
+    && !hasIssuedCertificate(record)
   );
+}
+
+function isDeletableSubmittedOriginalVerification(record) {
+  const status = String(record?.status || '').trim();
+  return (
+    record?.verificationType === 'OV'
+    && (status === 'submitted' || status === 'pending_rc')
+    && !hasIssuedCertificate(record)
+  );
+}
+
+function callerOwnsVerification(record, uid) {
+  return record?.createdByUid === uid || record?.vctId === uid;
+}
+
+function callerMayDeleteSubmittedVerification(record, caller, uid) {
+  const role = caller?.role;
+  if (role === 'super_admin') return true;
+
+  if (isDeletableSubmittedOriginalVerification(record)) {
+    if (role === 'rc_admin' && record.rcId === uid) return true;
+    if ((role === 'vct' || role === 'verifier') && callerOwnsVerification(record, uid)) {
+      return Boolean(caller?.rcId && record.rcId === caller.rcId);
+    }
+  }
+
+  return false;
 }
 
 async function collectSubmittedDeleteBatch(db, anchor, caller) {
@@ -26,8 +59,8 @@ async function collectSubmittedDeleteBatch(db, anchor, caller) {
 }
 
 /**
- * Dev/testing — Super Admin deletes submitted OV/RV verifications (Admin SDK).
- * Wallet rows restored for RV wallet payments. Zoho cleanup is manual.
+ * Deletes submitted OV (no certificate) so the serial can be used for a later OV.
+ * Super Admin may also delete submitted RV (wallet restored). Zoho cleanup is manual.
  */
 async function devDeleteSubmittedVerificationHandler(request, db) {
   if (!request.auth) {
@@ -39,25 +72,42 @@ async function devDeleteSubmittedVerificationHandler(request, db) {
     throw new HttpsError('invalid-argument', 'recordId is required.');
   }
 
-  const callerSnap = await db.doc(`users/${request.auth.uid}`).get();
-  if (!callerSnap.exists || callerSnap.data()?.role !== 'super_admin') {
-    throw new HttpsError('permission-denied', 'Super Admin only.');
+  const uid = request.auth.uid;
+  const callerSnap = await db.doc(`users/${uid}`).get();
+  if (!callerSnap.exists) {
+    throw new HttpsError('permission-denied', 'Signed-in user was not found.');
   }
 
+  const caller = callerSnap.data();
   const anchorSnap = await db.doc(`siteCalibrations/${recordId}`).get();
   if (!anchorSnap.exists) {
     throw new HttpsError('not-found', 'Verification record not found.');
   }
 
   const anchor = { id: anchorSnap.id, ...anchorSnap.data() };
-  if (!isSubmittedVerificationRecord(anchor)) {
+  const deletableOv = isDeletableSubmittedOriginalVerification(anchor);
+  const deletableSubmitted = isSubmittedVerificationRecord(anchor);
+  if (!deletableOv && !deletableSubmitted) {
     throw new HttpsError(
       'failed-precondition',
       'Only submitted OV/RV verifications without a certificate can be deleted.',
     );
   }
 
-  const batch = await collectSubmittedDeleteBatch(db, anchor, callerSnap.data());
+  if (!callerMayDeleteSubmittedVerification(anchor, caller, uid)) {
+    throw new HttpsError(
+      'permission-denied',
+      deletableOv
+        ? 'Only this RC, the job owner, or Super Admin can delete this OV.'
+        : 'Super Admin only.',
+    );
+  }
+
+  if (!deletableOv && caller?.role !== 'super_admin') {
+    throw new HttpsError('permission-denied', 'Super Admin only.');
+  }
+
+  const batch = await collectSubmittedDeleteBatch(db, anchor, caller);
   if (!batch.length) {
     throw new HttpsError('failed-precondition', 'No submitted records found to delete.');
   }
@@ -95,6 +145,8 @@ async function devDeleteSubmittedVerificationHandler(request, db) {
 }
 
 module.exports = {
+  callerMayDeleteSubmittedVerification,
   devDeleteSubmittedVerificationHandler,
+  isDeletableSubmittedOriginalVerification,
   isSubmittedVerificationRecord,
 };

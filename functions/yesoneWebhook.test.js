@@ -237,6 +237,22 @@ test('live verification writes push before certificate issue', () => {
   assert.equal(yesoneCertificateEvent(draft, { ...draft, customerName: 'A' }), 'verification.updated');
 });
 
+test('OV delete pushes release so the serial can be used again', () => {
+  const submitted = {
+    rcId: 'rc1',
+    serialNumber: 'X00366',
+    status: 'submitted',
+    verificationType: 'OV',
+  };
+  const rc = { rcCode: 'ABC', ovQuota: 10 };
+  assert.equal(shouldPushYesone(submitted, null), true);
+  assert.equal(yesoneCertificateEvent(submitted, null), 'verification.deleted');
+  assert.deepEqual(
+    ovQuotaAction(submitted, null, rc),
+    { usedDelta: -1, unusedDelta: 1, action: 'release' },
+  );
+});
+
 test('status-only writes do not re-push', () => {
   const record = {
     certificateNumber: 'IND/GATC/KL/26/04/26/12',
