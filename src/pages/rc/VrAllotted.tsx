@@ -47,6 +47,7 @@ import { roleCanOpenVrAllotted } from '../../lib/roleNav';
 import { uploadVrAllotmentInvoice } from '../../lib/vrAllottedInvoiceUpload';
 import {
   assignmentIsPas,
+  vrAllottedAssignmentQty,
   vrAllottedAssignmentSerials,
   vrAllottedEntryMatchesFilter,
   vrAllottedEntrySerials,
@@ -469,8 +470,12 @@ export const VrAllotted: React.FC = () => {
       serialStart,
     ],
   );
-  const rangeQty = rangeCheck.qty;
   const rangeOk = rangeCheck.ok;
+  const formQty = vrAllottedAssignmentQty({
+    serialStart,
+    serialEnd,
+    listText: serialListText,
+  });
 
   const names = useMemo(
     () => new Map(verifiers.map(row => [row.uid, verifierLabel(row)])),
@@ -993,7 +998,7 @@ export const VrAllotted: React.FC = () => {
                   <input
                     id="vr-allotted-qty"
                     className="input-field text-mono"
-                    value={rangeQty || ''}
+                    value={displayQty(formQty)}
                     readOnly
                     tabIndex={-1}
                     placeholder="Qty"

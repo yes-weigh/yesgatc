@@ -10,6 +10,7 @@ import {
   roleCanOpenVrAllotted,
   shouldShowVerificationStageQuotaTiles,
   unownedReservedSerials,
+  vrAllottedAssignmentQty,
   vrAllottedAssignmentSerials,
   vrAllottedEntryMatchesFilter,
   vrAllottedEntrySerials,
@@ -131,6 +132,25 @@ describe('vrAllottedRangeQty', () => {
     assert.equal(vrAllottedRangeQty('G0001', 'G0003'), 3);
     assert.equal(vrAllottedRangeQty('X00001', 'X00003'), 3);
     assert.equal(vrAllottedRangeQty('Y10315', 'Y10315'), 1);
+  });
+});
+
+describe('vrAllottedAssignmentQty', () => {
+  it('counts unique pasted lines; empty list+range is 0', () => {
+    assert.equal(
+      vrAllottedAssignmentQty({
+        listText: 'ATM30001\nATM30002\nATM30003\nATM30004\nATM30005',
+      }),
+      5,
+    );
+    assert.equal(
+      vrAllottedAssignmentQty({
+        listText: 'ATM30001, ATM30002, ATM30003, ATM30004, ATM30005',
+      }),
+      5,
+    );
+    assert.equal(vrAllottedAssignmentQty({ listText: '', serialStart: '', serialEnd: '' }), 0);
+    assert.equal(vrAllottedAssignmentQty({ serialStart: 'G0001', serialEnd: 'G0003' }), 3);
   });
 });
 

@@ -29,6 +29,16 @@ export function vrAllottedAssignmentSerials(input: {
   return vrAllottedRangeSerials(input.serialStart || '', input.serialEnd || '');
 }
 
+/** Live form qty: unique list count, else inclusive start–end, else 0. Ignores pool / PAS gates. */
+export function vrAllottedAssignmentQty(input: {
+  serialStart?: string;
+  serialEnd?: string;
+  serials?: readonly string[];
+  listText?: string;
+}): number {
+  return vrAllottedAssignmentSerials(input).length;
+}
+
 export function serialsFullyInPool(
   serials: readonly string[],
   pool: readonly string[],
