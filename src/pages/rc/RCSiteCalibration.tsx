@@ -158,7 +158,8 @@ import {
 } from './VerificationSessionFields';
 import { VerificationJobKindPicker } from './VerificationJobKindPicker';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
-import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
+import { allotmentJobUsedSerials, pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
+import { unusedPasSeatsForActor } from '../../lib/pasAllottedSeats';
 import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { computeInterweighingDirectSeats } from '../../lib/interweighingDirectSerials';
 import {
@@ -484,6 +485,13 @@ export const RCSiteCalibration: React.FC = () => {
     const held = editingRecord?.serialNumber?.trim()
       ? [editingRecord.serialNumber.trim()]
       : [];
+    const pasSeats = unusedPasSeatsForActor({
+      assignments: quotaSeats.reservedAssignments,
+      batches: actorProfile?.interweighingDirectBatches,
+      usedSerials: allotmentJobUsedSerials(records),
+      actorUid,
+      scopedToVerifier: isVerifier,
+    });
     return {
       remaining: pickSerials,
       scopedToVerifier: isVerifier,
@@ -499,16 +507,21 @@ export const RCSiteCalibration: React.FC = () => {
           modelNo: row.modelNo,
           pool: row.pool,
         })),
+      pasRemaining: pasSeats.remaining,
+      pasAllotments: pasSeats.allotments,
       balanceQty: actorBalanceQty,
       heldSerials: held,
     };
   }, [
     pickSerials,
     actorBalanceQty,
+    actorProfile?.interweighingDirectBatches,
+    actorUid,
     editingId,
     isVerifier,
     records,
     quotaSeats.allotmentRows,
+    quotaSeats.reservedAssignments,
     products,
     directSeats.unused,
   ]);

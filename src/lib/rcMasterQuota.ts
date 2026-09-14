@@ -1,11 +1,16 @@
 import { arrayRemove, arrayUnion, doc, getDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { expandSerialRange, uniqueSerials } from './yesoneInboundData';
+import { isInvoiceAllotFrom, type InvoiceAllotFrom } from './invoiceAllotmentSource.ts';
+import { isGasStickerSerial, isPasStickerSerial } from './pasSerialBankMatch.ts';
 import {
+  assignmentIsPas,
+  isInvoiceProductType,
   nextVerifierAllottedByUid,
   normalizeVerifierAllottedByUid,
   reservedSerialsAfterVerifierAllot,
-  vrAllottedRangeSerials,
+  vrAllottedAssignmentSerials,
+  type InvoiceProductType,
 } from './vrAllotted.ts';
 import {
   MASTER_RC_CODE,
@@ -27,6 +32,7 @@ export {
   masterRcUnusedQty,
   rcOvCountsAsUsed,
   rcOvUsedFromRecords,
+  allotmentJobUsedSerials,
   remainingQuotaSerials,
   serialsLinkedToInvoice,
   type RcQuotaSeats,
@@ -38,6 +44,13 @@ export type YesoneReservedAssignment = {
   verifierUids?: string[];
   serialStart?: string;
   serialEnd?: string;
+  serials?: string[];
+  productType?: InvoiceProductType;
+  productId?: string;
+  productName?: string;
+  modelid?: string;
+  yesoneSku?: string;
+  allotFrom?: InvoiceAllotFrom;
   allottedAt?: string;
   invoiceUrl?: string;
   invoicePath?: string;
@@ -100,13 +113,31 @@ export function normalizeReservedAssignments(raw: unknown): YesoneReservedAssign
     seen.add(key);
     const serialStart = String(row.serialStart || '').trim();
     const serialEnd = String(row.serialEnd || '').trim();
+    const serials = vrAllottedAssignmentSerials({
+      serialStart,
+      serialEnd,
+      serials: Array.isArray(row.serials) ? row.serials.map(item => String(item || '')) : [],
+    });
     const allottedAt = String(row.allottedAt || row.date || '').trim();
     const verifierUids = [...new Set([verifierUid, ...extraUids])];
+    const productType = isInvoiceProductType(row.productType) ? row.productType : undefined;
+    const productId = String(row.productId || '').trim();
+    const productName = String(row.productName || '').trim();
+    const modelid = String(row.modelid || row.modelId || '').trim();
+    const yesoneSku = String(row.yesoneSku || row.sku || '').trim();
+    const allotFrom = isInvoiceAllotFrom(row.allotFrom) ? row.allotFrom : undefined;
     out.push({
       invoiceNo,
       verifierUid,
       ...(verifierUids.length > 1 ? { verifierUids } : {}),
       ...(serialStart ? { serialStart, serialEnd: serialEnd || serialStart } : {}),
+      ...(serials.length > 0 ? { serials } : {}),
+      ...(productType ? { productType } : {}),
+      ...(productId ? { productId } : {}),
+      ...(productName ? { productName } : {}),
+      ...(modelid ? { modelid } : {}),
+      ...(yesoneSku ? { yesoneSku } : {}),
+      ...(allotFrom ? { allotFrom } : {}),
       ...(allottedAt ? { allottedAt } : {}),
       ...reservedAssignmentInvoiceFields({
         url: String(row.invoiceUrl || '').trim(),
@@ -268,28 +299,53 @@ export async function saveVerifierInvoiceAllotment(input: {
   prevInvoiceNo?: string;
   serialStart: string;
   serialEnd: string;
+  listText?: string;
+  serials?: readonly string[];
+  productType?: InvoiceProductType;
+  productId?: string;
+  productName?: string;
+  modelid?: string;
+  yesoneSku?: string;
+  allotFrom?: InvoiceAllotFrom;
   verifierUids: string[];
   allottedAt?: string;
   allowedSerials: string[];
   invoice?: ReservedAssignmentInvoiceFile | null;
-}): Promise<void> {
+}): Promise<YesoneReservedAssignment> {
   const rcUid = input.rcUid.trim();
   const invoiceNo = input.invoiceNo.trim();
   const verifierUids = [...new Set(input.verifierUids.map(uid => uid.trim()).filter(Boolean))];
-  const start = input.serialStart.trim();
-  const end = (input.serialEnd || input.serialStart).trim();
-  if (!rcUid || !invoiceNo || !start || verifierUids.length === 0) {
-    throw new Error('Verifier, invoice, and serial range are required.');
+  const productType: InvoiceProductType = input.productType === 'pas' ? 'pas' : 'gas';
+  const allotFrom = input.allotFrom;
+  const consumeGas = productType === 'gas' && allotFrom !== 'interweighingDirect';
+  const serials = vrAllottedAssignmentSerials({
+    serialStart: input.serialStart,
+    serialEnd: input.serialEnd,
+    listText: input.listText,
+    serials: input.serials,
+  });
+  const start = input.serialStart.trim() || serials[0] || '';
+  const end = (input.serialEnd || input.serialStart).trim() || serials[serials.length - 1] || start;
+  if (!rcUid || !invoiceNo || verifierUids.length === 0 || serials.length === 0) {
+    throw new Error('Verifier, invoice, and serials are required.');
   }
-  const serials = uniqueSerials(vrAllottedRangeSerials(start, end));
-  if (serials.length === 0) {
-    throw new Error('Serial range is empty.');
+  if (productType === 'pas') {
+    if (!String(input.productId || '').trim()) {
+      throw new Error('Select a PAS product.');
+    }
+    if (serials.some(serial => isGasStickerSerial(serial))) {
+      throw new Error('PAS allotment cannot use GAS X/G serials.');
+    }
+  } else if (serials.some(serial => isPasStickerSerial(serial))) {
+    throw new Error('GAS allotment cannot use PAS serials.');
   }
-  const allowed = new Set(
-    uniqueSerials(input.allowedSerials).map(serial => serial.trim().toUpperCase()),
-  );
-  if (serials.some(serial => !allowed.has(serial.trim().toUpperCase()))) {
-    throw new Error('Must be unused RC seats.');
+  if (consumeGas) {
+    const allowed = new Set(
+      uniqueSerials(input.allowedSerials).map(serial => serial.trim().toUpperCase()),
+    );
+    if (serials.some(serial => !allowed.has(serial.trim().toUpperCase()))) {
+      throw new Error('Must be unused RC seats.');
+    }
   }
 
   const ref = doc(db, 'users', rcUid);
@@ -301,35 +357,44 @@ export async function saveVerifierInvoiceAllotment(input: {
   const prevRow = prevAssignments.find(
     row => row.invoiceNo.trim().toUpperCase() === prevInvoiceKey,
   );
-  const oldSerials = prevRow?.serialStart
-    ? uniqueSerials(vrAllottedRangeSerials(prevRow.serialStart, prevRow.serialEnd || prevRow.serialStart))
-    : [];
+  const oldSerials = vrAllottedAssignmentSerials(prevRow || {});
   const oldKeys = new Set(oldSerials.map(serial => serial.trim().toUpperCase()));
+  const prevConsumedGas = Boolean(prevRow) && !assignmentIsPas(prevRow) && prevRow?.allotFrom !== 'interweighingDirect';
+
+  const assignment: YesoneReservedAssignment = {
+    invoiceNo,
+    verifierUid: verifierUids[0],
+    ...(verifierUids.length > 1 ? { verifierUids } : {}),
+    serialStart: start,
+    serialEnd: end,
+    serials,
+    productType,
+    ...(input.productId?.trim() ? { productId: input.productId.trim() } : {}),
+    ...(input.productName?.trim() ? { productName: input.productName.trim() } : {}),
+    ...(input.modelid?.trim() ? { modelid: input.modelid.trim() } : {}),
+    ...(input.yesoneSku?.trim() ? { yesoneSku: input.yesoneSku.trim() } : {}),
+    ...(allotFrom ? { allotFrom } : {}),
+    ...(input.allottedAt?.trim() ? { allottedAt: input.allottedAt.trim() } : {}),
+    ...reservedAssignmentInvoiceFields(
+      input.invoice === undefined ? invoiceFileFromAssignment(prevRow) : input.invoice,
+    ),
+  };
 
   const nextAssignments: YesoneReservedAssignment[] = [
     ...prevAssignments.filter(row => {
       const key = row.invoiceNo.trim().toUpperCase();
       return key !== prevInvoiceKey && key !== nextInvoiceKey;
     }),
-    {
-      invoiceNo,
-      verifierUid: verifierUids[0],
-      ...(verifierUids.length > 1 ? { verifierUids } : {}),
-      serialStart: start,
-      serialEnd: end,
-      ...(input.allottedAt?.trim() ? { allottedAt: input.allottedAt.trim() } : {}),
-      ...reservedAssignmentInvoiceFields(
-        input.invoice === undefined ? invoiceFileFromAssignment(prevRow) : input.invoice,
-      ),
-    },
+    assignment,
   ];
 
-  const nextReserved = uniqueSerials([
-    ...uniqueSerials(data.yesoneReservedSerials).filter(
-      serial => !oldKeys.has(serial.trim().toUpperCase()),
-    ),
-    ...serials,
-  ]);
+  let nextReserved = uniqueSerials(data.yesoneReservedSerials);
+  if (prevConsumedGas && oldSerials.length > 0) {
+    nextReserved = nextReserved.filter(serial => !oldKeys.has(serial.trim().toUpperCase()));
+  }
+  if (consumeGas) {
+    nextReserved = uniqueSerials([...nextReserved, ...serials]);
+  }
 
   const invoiceSeen = new Set<string>();
   const nextInvoices: string[] = [];
@@ -346,7 +411,7 @@ export async function saveVerifierInvoiceAllotment(input: {
   }
 
   let allotted = normalizeVerifierAllottedByUid(data.yesoneVerifierAllottedByUid);
-  if (oldSerials.length > 0) {
+  if (prevConsumedGas && oldSerials.length > 0) {
     for (const uid of Object.keys(allotted)) {
       allotted = nextVerifierAllottedByUid({
         prev: allotted,
@@ -356,12 +421,14 @@ export async function saveVerifierInvoiceAllotment(input: {
       });
     }
   }
-  for (const uid of verifierUids) {
-    allotted = nextVerifierAllottedByUid({
-      prev: allotted,
-      verifierUid: uid,
-      addSerials: serials,
-    });
+  if (consumeGas) {
+    for (const uid of verifierUids) {
+      allotted = nextVerifierAllottedByUid({
+        prev: allotted,
+        verifierUid: uid,
+        addSerials: serials,
+      });
+    }
   }
 
   const assignmentUids = [
@@ -380,6 +447,7 @@ export async function saveVerifierInvoiceAllotment(input: {
     yesoneReservedForUids: assignmentUids,
     updatedAt: new Date().toISOString(),
   });
+  return assignment;
 }
 
 /** Attach / replace Yesone invoice file on an existing allotment row. Serials unchanged. */

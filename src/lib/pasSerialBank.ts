@@ -3,6 +3,7 @@ import { db } from '../firebase';
 import type { Product, SiteCalibration } from '../types';
 import {
   allotmentUsesPasProduct,
+  assignmentMatchesPasProduct,
   finitePasCount,
   interpretPasBankLookup,
   isGasStickerSerial,
@@ -31,6 +32,7 @@ export const PAS_SERIAL_BANK_META_COLLECTION = 'pasSerialBankMeta';
 
 export {
   allotmentUsesPasProduct,
+  assignmentMatchesPasProduct,
   isGasStickerSerial,
   isPasStickerSerial,
   interpretPasBankLookup,

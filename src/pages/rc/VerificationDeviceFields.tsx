@@ -41,7 +41,13 @@ import {
   SerialBankSourceToggle,
   type SerialBankSourceTab,
 } from '../../components/SerialBankSourceToggle';
-import { gasAllottedChoices, serialInChoiceList, showsGasAllottedSerialGrid } from '../../lib/serialEntryPool';
+import {
+  gasAllottedChoices,
+  pasAllottedChoices,
+  serialInChoiceList,
+  showsGasAllottedSerialGrid,
+  showsPasAllottedSerialGrid,
+} from '../../lib/serialEntryPool';
 import { usePasSerialHint } from '../../hooks/usePasSerialHint';
 
 const VerificationImageColumnHead: React.FC<{
@@ -217,6 +223,16 @@ function DeviceSerialField({
   const typePas = pasManual || productUsesPasSerials(product);
   const unknownProduct = Boolean(row.productId.trim()) && !product;
   const gasSelect = showsGasAllottedSerialGrid(product, isRv ? 'RV' : 'OV') && Boolean(ovQuota);
+  const pasChoices = pasAllottedChoices({
+    remaining: ovQuota?.pasRemaining ?? [],
+    allotments: ovQuota?.pasAllotments,
+    heldSerials: ovQuota?.heldSerials,
+    otherTaken: devices
+      .filter(device => device.localId !== row.localId && device.included)
+      .map(device => device.serialNumber),
+    product,
+  });
+  const pasSelect = showsPasAllottedSerialGrid(product, isRv ? 'RV' : 'OV', pasChoices);
   const pasHint = usePasSerialHint(
     row.serialNumber,
     product,
@@ -234,6 +250,20 @@ function DeviceSerialField({
         readOnly
         tabIndex={-1}
         title="Serial is locked"
+      />
+    );
+  }
+
+  if (pasSelect) {
+    return (
+      <GasAllottedSerialSearch
+        id={id}
+        className={`${className} gas-serial-search-input`}
+        choices={pasChoices}
+        value={serialInChoiceList(row.serialNumber, pasChoices) ? row.serialNumber : ''}
+        disabled={disabled}
+        scopedToVerifier={Boolean(ovQuota?.scopedToVerifier)}
+        onChange={serial => onDeviceChange(row.localId, { serialNumber: serial })}
       />
     );
   }

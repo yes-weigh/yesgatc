@@ -1,6 +1,42 @@
+import { uniqueDirectSerials, parseDirectSerialList } from './interweighingDirectSerials.ts';
 import { excludePasQuotaSerials } from './rcQuotaMath.ts';
 import { expandSerialRange, uniqueSerials } from './yesoneInboundData.ts';
 import type { Role } from '../types.ts';
+
+export type InvoiceProductType = 'gas' | 'pas';
+export type VrAllottedProductTypeFilter = 'all' | InvoiceProductType;
+
+export function isInvoiceProductType(value: unknown): value is InvoiceProductType {
+  return value === 'gas' || value === 'pas';
+}
+
+export function assignmentIsPas(row: { productType?: string } | null | undefined): boolean {
+  return String(row?.productType || '').trim().toLowerCase() === 'pas';
+}
+
+/** Prefer explicit list (random / non-consecutive). Else inclusive start–end. Never invents a list from a gap. */
+export function vrAllottedAssignmentSerials(input: {
+  serialStart?: string;
+  serialEnd?: string;
+  serials?: readonly string[];
+  listText?: string;
+}): string[] {
+  const listed = uniqueDirectSerials([
+    ...parseDirectSerialList(input.listText || ''),
+    ...(input.serials || []),
+  ]);
+  if (listed.length > 0) return listed;
+  return vrAllottedRangeSerials(input.serialStart || '', input.serialEnd || '');
+}
+
+export function serialsFullyInPool(
+  serials: readonly string[],
+  pool: readonly string[],
+): boolean {
+  if (serials.length === 0) return false;
+  const keys = new Set(pool.map(serial => serial.trim().toUpperCase()).filter(Boolean));
+  return serials.every(serial => keys.has(serial.trim().toUpperCase()));
+}
 
 /** RC admin + roster with ≥1 verifier they created. Super Admin / VCT / verifier never. */
 export function roleCanOpenVrAllotted(
@@ -222,20 +258,21 @@ export function vrAllottedRangeFullyInPool(
   return serials.every(serial => keys.has(serial.trim().toUpperCase()));
 }
 
-/** Serials for one allotment entry. Empty when start is missing — never invents. */
+/** Serials for one allotment entry. List wins over start–end. Empty when both missing — never invents. */
 export function vrAllottedEntrySerials(input: {
   serialStart?: string;
   serialEnd?: string;
+  serials?: readonly string[];
   usedSerials: readonly string[];
   voidedSerials?: readonly string[];
 }): Array<{ serial: string; used: boolean }> {
-  const start = (input.serialStart || '').trim();
-  if (!start) return [];
+  const serials = vrAllottedAssignmentSerials(input);
+  if (serials.length === 0) return [];
   const usedKeys = new Set(input.usedSerials.map(serial => serial.trim().toUpperCase()).filter(Boolean));
   const voidedKeys = new Set(
     (input.voidedSerials || []).map(serial => serial.trim().toUpperCase()).filter(Boolean),
   );
-  return vrAllottedRangeSerials(start, input.serialEnd || start)
+  return serials
     .filter(serial => !voidedKeys.has(serial.trim().toUpperCase()))
     .map(serial => ({
       serial,
@@ -248,9 +285,16 @@ export function vrAllottedEntryMatchesFilter(input: {
   seats: readonly { used: boolean }[];
   verifierFilter?: string;
   statusFilter?: VrAllottedStatusFilter;
+  productType?: string;
+  productTypeFilter?: VrAllottedProductTypeFilter;
 }): boolean {
   const verifierFilter = (input.verifierFilter || 'all').trim();
   if (verifierFilter !== 'all' && !input.verifierUids.includes(verifierFilter)) return false;
+  const typeFilter = input.productTypeFilter || 'all';
+  if (typeFilter !== 'all') {
+    const type = String(input.productType || 'gas').trim().toLowerCase();
+    if (type !== typeFilter) return false;
+  }
   const statusFilter = input.statusFilter || 'all';
   if (statusFilter === 'unused') return input.seats.some(seat => !seat.used);
   if (statusFilter === 'used') return input.seats.some(seat => seat.used);

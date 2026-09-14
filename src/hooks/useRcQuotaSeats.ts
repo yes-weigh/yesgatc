@@ -4,13 +4,15 @@ import { db } from '../firebase';
 import {
   serialsForReservedInvoices,
 } from '../lib/invoicedQuotaSerials';
+import { invoiceAllotmentConsumesRcGas } from '../lib/invoiceAllotmentSource';
 import {
   computeRcQuotaSeats,
   normalizeReservedAssignments,
   type RcQuotaSeats,
   type YesoneReservedAssignment,
 } from '../lib/rcMasterQuota';
-import { expandSerialRange, uniqueSerials, yesoneSerialFromDoc, type YesoneSerialAllotment } from '../lib/yesoneInboundData';
+import { assignmentIsPas, vrAllottedAssignmentSerials } from '../lib/vrAllotted';
+import { uniqueSerials, yesoneSerialFromDoc, type YesoneSerialAllotment } from '../lib/yesoneInboundData';
 import {
   filterInwardBatchesForRc,
   inwardBatchesFromInboundEvents,
@@ -195,11 +197,14 @@ export function useRcQuotaSeats(
   const mergedReserved = useMemo(() => {
     const fromAssignments: string[] = [];
     for (const row of reservedAssignments) {
-      if (row.serialStart) {
-        fromAssignments.push(
-          ...expandSerialRange(row.serialStart, row.serialEnd || row.serialStart),
-        );
+      if (assignmentIsPas(row) || !invoiceAllotmentConsumesRcGas({
+        allotFrom: row.allotFrom || 'rcQuota',
+        productType: row.productType,
+      })) {
+        continue;
       }
+      const serials = vrAllottedAssignmentSerials(row);
+      if (serials.length > 0) fromAssignments.push(...serials);
     }
     return uniqueSerials([
       ...reservedSerials,
@@ -214,9 +219,15 @@ export function useRcQuotaSeats(
     const batches = [...batchRows, ...eventRows];
     const reservedAllow = new Set(reservedSerials.map(s => s.trim().toUpperCase()).filter(Boolean));
     for (const row of reservedAssignments) {
+      if (assignmentIsPas(row) || !invoiceAllotmentConsumesRcGas({
+        allotFrom: row.allotFrom || 'rcQuota',
+        productType: row.productType,
+      })) {
+        continue;
+      }
       let serials =
-        row.serialStart
-          ? expandSerialRange(row.serialStart, row.serialEnd || row.serialStart)
+        vrAllottedAssignmentSerials(row).length > 0
+          ? vrAllottedAssignmentSerials(row)
           : serialsForReservedInvoices(batches, [row.invoiceNo]);
       // Clip to yesoneReservedSerials so leftover stickers never inflate QTY.
       if (reservedAllow.size > 0) {

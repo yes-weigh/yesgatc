@@ -106,6 +106,19 @@ export function rcOvUsedFromRecords(
   return { count: serials.size + extra, serials: [...serials] };
 }
 
+/** Used stickers on allotment entries / PAS picker. Includes PAS and Direct. Skips RV, voided, rejected. */
+export function allotmentJobUsedSerials(records: SiteCalibration[]): string[] {
+  const serials = new Set<string>();
+  for (const record of records) {
+    if (record.verificationType === 'RV') continue;
+    if (record.certificateVoidedAt?.trim()) continue;
+    if (record.status === 'rejected') continue;
+    const serial = String(record.serialNumber || '').trim();
+    if (serial) serials.add(serial);
+  }
+  return [...serials];
+}
+
 export function remainingQuotaSerials(
   allotted: string[],
   used: string[],

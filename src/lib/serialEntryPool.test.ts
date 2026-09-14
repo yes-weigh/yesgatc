@@ -9,8 +9,10 @@ import {
   gasAllottedChoices,
   gasAllottedEmptyLabel,
   gasAllottedEmptyProductHint,
+  pasAllottedChoices,
   serialEntryMode,
   showsGasAllottedSerialGrid,
+  showsPasAllottedSerialGrid,
   validateSerialForProductPool,
 } from './serialEntryPool.ts';
 
@@ -543,6 +545,56 @@ describe('validateSerialForProductPool', () => {
         serialSource: 'interweighingDirect',
       }),
       null,
+    );
+  });
+
+  it('PAS ATM30 picker is exact-match unused only', () => {
+    const atm30 = product({
+      id: 'atm-gold',
+      name: 'ATM GOLD',
+      yesoneSku: 'ATM30GAY',
+      modelid: 'ATM30',
+      pasPreAllotted: true,
+    });
+    const other = product({
+      id: 'pas-10',
+      name: 'PAS 10 kg',
+      yesoneSku: 'KS10BAY',
+      modelid: 'YSK10',
+      pasPreAllotted: true,
+    });
+    const remaining = ['YJ010085', 'YJ011228', 'YJ011440', 'YJ011775', 'YJ011778', 'X00110'];
+    const allotments = remaining.map(serialNumber => ({
+      serialNumber,
+      productId: serialNumber.startsWith('YJ') ? 'atm-gold' : 'bench-pc',
+      sku: serialNumber.startsWith('YJ') ? 'ATM30GAY' : 'GS50BAY',
+      modelid: serialNumber.startsWith('YJ') ? 'ATM30' : '',
+      pool: serialNumber.startsWith('YJ') ? 'pas' : 'gas',
+    }));
+    const choices = pasAllottedChoices({ remaining, allotments, product: atm30 });
+    assert.deepEqual(choices, ['YJ010085', 'YJ011228', 'YJ011440', 'YJ011775', 'YJ011778']);
+    assert.equal(choices.includes('X00110'), false);
+    assert.deepEqual(pasAllottedChoices({ remaining, allotments, product: other }), []);
+    assert.equal(showsPasAllottedSerialGrid(atm30, 'OV', choices), true);
+    assert.equal(
+      validateSerialForProductPool({
+        mode: 'pas-type',
+        verificationType: 'OV',
+        serial: 'YJ010085',
+        gasChoices: ['X00110'],
+        pasChoices: choices,
+      }),
+      null,
+    );
+    assert.equal(
+      validateSerialForProductPool({
+        mode: 'pas-type',
+        verificationType: 'OV',
+        serial: 'YJ99999',
+        gasChoices: ['X00110'],
+        pasChoices: choices,
+      }),
+      'Serial YJ99999 is not in the allotted list for this product.',
     );
   });
 

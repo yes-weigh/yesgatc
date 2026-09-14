@@ -8,6 +8,8 @@ import {
   INVOICE_ALLOT_FROM_INTERWEIGHING,
   INVOICE_ALLOT_FROM_RC_QUOTA,
   INVOICE_ALLOT_RANGE_ERROR,
+  INVOICE_PRODUCT_TYPE_GAS,
+  INVOICE_PRODUCT_TYPE_PAS,
   reservedSerialsAfterInvoiceAllotFrom,
   validateInterweighingDirectAllotmentRange,
   validateInvoiceAllotmentRange,
@@ -155,6 +157,121 @@ describe('invoice allotment source rules', () => {
       INVOICE_ALLOT_FROM_HINT.interweighingDirect,
       'Direct Interweighing — does not deduct RC quota.',
     );
+  });
+
+  it('random list qty is N and RC GAS list still deducts reserved', () => {
+    const listed = validateInvoiceAllotmentRange({
+      allotFrom: INVOICE_ALLOT_FROM_RC_QUOTA,
+      serialStart: '',
+      serialEnd: '',
+      listText: 'X00110\nX00112\nX00114',
+      unusedRcSerials: unused,
+    });
+    assert.equal(listed.ok, true);
+    assert.equal(listed.qty, 3);
+    assert.deepEqual(listed.serials, ['X00110', 'X00112', 'X00114']);
+
+    const before = quotaSeats();
+    const reservedAfter = reservedSerialsAfterInvoiceAllotFrom({
+      allotFrom: INVOICE_ALLOT_FROM_RC_QUOTA,
+      productType: INVOICE_PRODUCT_TYPE_GAS,
+      reservedSerials: before.reservedSerials,
+      serialStart: 'X00110',
+      serialEnd: 'X00111',
+    });
+    const afterGas = quotaSeats({
+      reservedSerials: reservedAfter,
+      reservedForUids: ['rasheed'],
+      reservedByUid: { rasheed: reservedAfter },
+    });
+    assert.equal(afterGas.reservedSerials.length, 2);
+    assert.equal(afterGas.vctRemaining.length, before.vctRemaining.length - 2);
+  });
+
+  it('PAS list of 5 does not change computeRcQuotaSeats or pickQuotaSerialsForActor', () => {
+    const pasList = ['YJ010085', 'YJ011228', 'YJ011440', 'YJ011775', 'YJ011778'];
+    const listed = validateInvoiceAllotmentRange({
+      allotFrom: INVOICE_ALLOT_FROM_INTERWEIGHING,
+      productType: INVOICE_PRODUCT_TYPE_PAS,
+      serialStart: '',
+      serialEnd: '',
+      listText: pasList.join(', '),
+      unusedRcSerials: unused,
+      hasProduct: true,
+    });
+    assert.equal(listed.ok, true);
+    assert.equal(listed.qty, 5);
+    assert.deepEqual(listed.serials, pasList);
+
+    const before = quotaSeats();
+    const reservedAfterPas = reservedSerialsAfterInvoiceAllotFrom({
+      allotFrom: INVOICE_ALLOT_FROM_INTERWEIGHING,
+      productType: INVOICE_PRODUCT_TYPE_PAS,
+      reservedSerials: before.reservedSerials,
+      serialStart: '',
+      serialEnd: '',
+      listText: pasList.join('\n'),
+    });
+    assert.deepEqual(reservedAfterPas, before.reservedSerials);
+    const afterPas = quotaSeats({
+      reservedSerials: reservedAfterPas,
+      pasProductIds: ['atm-gold'],
+      pasSerials: pasList,
+      records: [
+        ...used.map(serial => ovRecord(serial)),
+        ovRecord('YJ010085', { productId: 'atm-gold', productName: 'ATM GOLD' }),
+      ],
+    });
+    assert.equal(afterPas.usedQty, before.usedQty);
+    assert.equal(afterPas.balanceQty, before.balanceQty);
+    assert.equal(afterPas.remaining.length, before.remaining.length);
+    assert.equal(
+      pickQuotaSerialsForActor(afterPas, { isVerifier: true, actorUid: 'rasheed' }).includes(
+        'YJ010085',
+      ),
+      false,
+    );
+    assert.equal(
+      pickQuotaSerialsForActor(afterPas, { isRcAdmin: true, actorUid: 'meezan' }).includes('X00110'),
+      true,
+    );
+  });
+
+  it('RC PAS requires unused PAS bank seats and never overlays GAS reserved', () => {
+    const pasList = ['YJ010085', 'YJ011228', 'YJ011440', 'YJ011775', 'YJ011778'];
+    const missing = validateInvoiceAllotmentRange({
+      allotFrom: INVOICE_ALLOT_FROM_RC_QUOTA,
+      productType: INVOICE_PRODUCT_TYPE_PAS,
+      serialStart: '',
+      serialEnd: '',
+      listText: pasList.join(','),
+      unusedRcSerials: unused,
+      unusedPasSerials: [],
+      hasProduct: true,
+    });
+    assert.equal(missing.ok, false);
+    const ok = validateInvoiceAllotmentRange({
+      allotFrom: INVOICE_ALLOT_FROM_RC_QUOTA,
+      productType: INVOICE_PRODUCT_TYPE_PAS,
+      serialStart: '',
+      serialEnd: '',
+      listText: pasList.join(','),
+      unusedRcSerials: unused,
+      unusedPasSerials: pasList,
+      hasProduct: true,
+    });
+    assert.equal(ok.ok, true);
+    assert.equal(ok.qty, 5);
+    const before = quotaSeats();
+    const reserved = reservedSerialsAfterInvoiceAllotFrom({
+      allotFrom: INVOICE_ALLOT_FROM_RC_QUOTA,
+      productType: INVOICE_PRODUCT_TYPE_PAS,
+      reservedSerials: before.reservedSerials,
+      serialStart: '',
+      serialEnd: '',
+      serials: pasList,
+    });
+    assert.deepEqual(reserved, before.reservedSerials);
   });
 
   it('RC mode overlays reserved seats; Direct leaves computeRcQuotaSeats reserved/vct unchanged', () => {

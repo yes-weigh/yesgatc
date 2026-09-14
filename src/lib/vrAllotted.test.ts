@@ -10,6 +10,7 @@ import {
   roleCanOpenVrAllotted,
   shouldShowVerificationStageQuotaTiles,
   unownedReservedSerials,
+  vrAllottedAssignmentSerials,
   vrAllottedEntryMatchesFilter,
   vrAllottedEntrySerials,
   vrAllottedRangeFullyInPool,
@@ -465,6 +466,24 @@ describe('mergeSerialLists', () => {
 });
 
 describe('vrAllottedEntrySerials', () => {
+  it('uses an explicit list and does not invent the gap between first and last', () => {
+    assert.deepEqual(
+      vrAllottedAssignmentSerials({
+        listText: 'YJ010085, YJ011228, YJ011440, YJ011775, YJ011778',
+      }),
+      ['YJ010085', 'YJ011228', 'YJ011440', 'YJ011775', 'YJ011778'],
+    );
+    assert.deepEqual(
+      vrAllottedEntrySerials({
+        serials: ['YJ010085', 'YJ011228', 'YJ011440', 'YJ011775', 'YJ011778'],
+        serialStart: 'YJ010085',
+        serialEnd: 'YJ011778',
+        usedSerials: ['YJ011228'],
+      }).map(seat => seat.serial),
+      ['YJ010085', 'YJ011228', 'YJ011440', 'YJ011775', 'YJ011778'],
+    );
+  });
+
   it('returns nothing when start is missing', () => {
     assert.deepEqual(
       vrAllottedEntrySerials({
@@ -517,6 +536,24 @@ describe('vrAllottedEntryMatchesFilter', () => {
         statusFilter: 'unused',
       }),
       false,
+    );
+    assert.equal(
+      vrAllottedEntryMatchesFilter({
+        verifierUids: ['rasheed'],
+        seats: [{ used: false }],
+        productType: 'pas',
+        productTypeFilter: 'gas',
+      }),
+      false,
+    );
+    assert.equal(
+      vrAllottedEntryMatchesFilter({
+        verifierUids: ['rasheed'],
+        seats: [{ used: false }],
+        productType: 'pas',
+        productTypeFilter: 'pas',
+      }),
+      true,
     );
   });
 });

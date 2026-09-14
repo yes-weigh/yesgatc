@@ -306,6 +306,13 @@ export interface FirestoreUserDoc {
     verifierUids?: string[];
     serialStart?: string;
     serialEnd?: string;
+    serials?: string[];
+    productType?: 'gas' | 'pas';
+    productId?: string;
+    productName?: string;
+    modelid?: string;
+    yesoneSku?: string;
+    allotFrom?: 'rcQuota' | 'interweighingDirect';
     allottedAt?: string;
     invoiceUrl?: string;
     invoicePath?: string;
@@ -432,6 +439,12 @@ export type InterweighingDirectBatch = {
   serialStart: string;
   serialEnd: string;
   qty: number;
+  serials?: string[];
+  productType?: 'gas' | 'pas';
+  productId?: string;
+  productName?: string;
+  modelid?: string;
+  yesoneSku?: string;
   invoiceNo?: string;
   allottedAt: string;
   allottedByUid: string;

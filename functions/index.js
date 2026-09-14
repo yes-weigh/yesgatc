@@ -48,6 +48,7 @@ const { mintYesweighEmbedTokenHandler } = require('./yesweighEmbed');
 const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertificates');
 const { yesoneInboundHttpHandler } = require('./yesoneInbound');
 const { readSerialPlateHandler } = require('./readSerialPlate');
+const { allotPasSerialsHandler } = require('./allotPasSerials');
 const {
   onSiteCalibrationYesoneWebhookHandler,
   onUserYesoneWebhookHandler,
@@ -494,6 +495,17 @@ exports.readSerialPlate = onCall(
     memory: '512MiB',
   },
   async request => readSerialPlateHandler(request, getCallerRole, process.env.GEMINI_API_KEY || ''),
+);
+
+/** RC Invoice Allotment — write PAS serials onto pasSerialBank for one product + verifier. */
+exports.allotPasSerials = onCall(
+  {
+    region: CALLABLE_REGION,
+    cors: CALLABLE_CORS,
+    timeoutSeconds: 60,
+    memory: '256MiB',
+  },
+  async request => allotPasSerialsHandler(request, adminDb()),
 );
 
 /**

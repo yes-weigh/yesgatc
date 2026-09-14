@@ -581,10 +581,20 @@ html {
   cursor: pointer;
 }
 
+.vr-allotted-dialog__list {
+  min-height: 4.5rem;
+  resize: vertical;
+  line-height: 1.4;
+}
+
 .vr-allotted-dialog__range {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.5rem;
+}
+
+.vr-allotted-type--pas {
+  color: #86efac;
 }
 
 .vr-allotted-dialog__range .vr-allotted-dialog__label {

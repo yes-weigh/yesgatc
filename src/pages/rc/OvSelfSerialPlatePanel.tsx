@@ -21,9 +21,11 @@ import {
   applyOcrSerialToPool,
   gasAllottedChoices,
   gasAllottedEmptyProductHint,
+  pasAllottedChoices,
   serialEntryMode,
   serialInChoiceList,
   showsGasAllottedSerialGrid,
+  showsPasAllottedSerialGrid,
 } from '../../lib/serialEntryPool';
 import {
   SERIAL_PLATE_IMAGE_KIND,
@@ -41,6 +43,8 @@ export function OvSelfSerialPlatePanel({
   verificationType,
   allottedSerials,
   allotments,
+  pasRemaining = [],
+  pasAllotments,
   heldSerials = [],
   scopedToVerifier = false,
   allowInterweighingDirect = false,
@@ -60,6 +64,8 @@ export function OvSelfSerialPlatePanel({
   verificationType: JobType | '';
   allottedSerials: string[];
   allotments?: OvQuotaAllotment[];
+  pasRemaining?: string[];
+  pasAllotments?: OvQuotaAllotment[];
   heldSerials?: string[];
   scopedToVerifier?: boolean;
   allowInterweighingDirect?: boolean;
@@ -100,6 +106,17 @@ export function OvSelfSerialPlatePanel({
         : [],
     [isGasSelect, allottedSerials, allotments, heldSerials, product],
   );
+  const pasSeats = useMemo(
+    () =>
+      pasAllottedChoices({
+        remaining: pasRemaining,
+        allotments: pasAllotments,
+        heldSerials,
+        product,
+      }),
+    [pasRemaining, pasAllotments, heldSerials, product],
+  );
+  const isPasSelect = showsPasAllottedSerialGrid(product, verificationType, pasSeats);
   const selectedSeat =
     seats.find(serial => serial.trim().toUpperCase() === row.serialNumber.trim().toUpperCase()) ?? '';
 
@@ -162,7 +179,9 @@ export function OvSelfSerialPlatePanel({
       });
   };
 
-  const recapHint = isPas
+  const recapHint = isPasSelect
+    ? 'Select an allotted PAS serial. Plate photo still required to continue.'
+    : isPas
     ? 'Type the serial. Plate photo still required to continue.'
     : directMode
       ? 'Direct serial. RC approves. Does not use Yesone quota.'
@@ -208,7 +227,29 @@ export function OvSelfSerialPlatePanel({
         </p>
       ) : null}
 
-      {isGasSelect ? (
+      {isPasSelect ? (
+        <div className="form-group mb-0 ov-self-serial-edit">
+          <label htmlFor="ov-self-serial-select">Serial number *</label>
+          <GasAllottedSerialSearch
+            id="ov-self-serial-select"
+            className="input-field text-mono gas-serial-search-input"
+            choices={pasSeats}
+            value={
+              pasSeats.find(serial => serial.trim().toUpperCase() === row.serialNumber.trim().toUpperCase())
+              ?? ''
+            }
+            disabled={disabled}
+            showChips
+            scopedToVerifier={scopedToVerifier}
+            onChange={serial => onSerialChange(serial)}
+          />
+          {pasHint ? (
+            <p className={`ov-self-serial-hint ov-self-serial-hint--${pasHint.tone}`} role="status">
+              {pasHint.text}
+            </p>
+          ) : null}
+        </div>
+      ) : isGasSelect ? (
         <div className="form-group mb-0 ov-self-serial-edit">
           <label htmlFor="ov-self-serial-select">Serial number *</label>
           {allowInterweighingDirect ? (

@@ -4,6 +4,7 @@ import {
   remainingSerialsForProduct,
   type OvQuotaAllotment,
 } from './ovQuotaGate.ts';
+import { assignmentMatchesPasProduct, isGasStickerSerial } from './pasSerialBankMatch.ts';
 
 export type SerialEntryMode = 'gas-select' | 'pas-type';
 
@@ -18,6 +19,54 @@ export function showsGasAllottedSerialGrid(
   verificationType: string,
 ): boolean {
   return Boolean(product) && serialEntryMode(product) === 'gas-select' && verificationType === 'OV';
+}
+
+/** PAS OV picker when this actor has unused allotted PAS for that exact product. */
+export function showsPasAllottedSerialGrid(
+  product: Product | null | undefined,
+  verificationType: string,
+  pasChoices: readonly string[],
+): boolean {
+  return (
+    Boolean(product)
+    && serialEntryMode(product) === 'pas-type'
+    && verificationType === 'OV'
+    && pasChoices.length > 0
+  );
+}
+
+/**
+ * Unused PAS allotted to this actor for this product only.
+ * Exact sku / productId / modelid. Never G/X. Never fail-open.
+ */
+export function pasAllottedChoices(options: {
+  remaining: readonly string[];
+  allotments?: OvQuotaAllotment[];
+  heldSerials?: string[];
+  otherTaken?: string[];
+  product?: Product | null;
+}): string[] {
+  const product = options.product;
+  if (!product || !product.pasPreAllotted) return [];
+  const allotments = options.allotments || [];
+  const matched = new Set<string>();
+  for (const row of allotments) {
+    if (isGasStickerSerial(row.serialNumber)) continue;
+    if (!assignmentMatchesPasProduct(row, product)) continue;
+    const key = row.serialNumber.trim().toUpperCase();
+    if (key) matched.add(key);
+  }
+  if (matched.size === 0) return [];
+  const remaining = options.remaining.filter(serial => {
+    const key = serial.trim().toUpperCase();
+    return Boolean(key) && matched.has(key) && !isGasStickerSerial(serial);
+  });
+  return ovSerialChoicesForRow(
+    '',
+    remaining,
+    options.heldSerials ?? [],
+    options.otherTaken ?? [],
+  );
 }
 
 export function productAllotmentKey(
@@ -115,12 +164,21 @@ export function validateSerialForProductPool(options: {
   verificationType: string;
   serial: string;
   gasChoices: readonly string[];
+  pasChoices?: readonly string[];
   scopedToVerifier?: boolean;
   serialSource?: string;
 }): string | null {
   const serial = options.serial.trim();
   if (!serial) return 'Serial number is required.';
-  if (options.mode === 'pas-type') return null;
+  if (options.mode === 'pas-type') {
+    if (options.verificationType !== 'OV') return null;
+    const pasChoices = options.pasChoices || [];
+    if (pasChoices.length === 0) return null;
+    if (serialInChoiceList(serial, pasChoices)) return null;
+    return options.scopedToVerifier
+      ? 'No serials allotted to you for this product.'
+      : `Serial ${serial} is not in the allotted list for this product.`;
+  }
   if (options.verificationType !== 'OV') return null;
   if (String(options.serialSource || '').trim() === 'interweighingDirect') return null;
   if (serialInChoiceList(serial, options.gasChoices)) return null;

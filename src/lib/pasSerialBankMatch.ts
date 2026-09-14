@@ -278,6 +278,28 @@ export type PasAllotmentIdentity = {
   pool?: string;
 };
 
+/** Assignment / batch identity vs catalogue. Same exact keys as the bank. Never fail-open. */
+export function assignmentMatchesPasProduct(
+  row: {
+    productId?: string;
+    yesoneSku?: string;
+    sku?: string;
+    modelid?: string;
+    modelId?: string;
+  },
+  product: Product,
+): boolean {
+  return pasBankMatchesProduct(
+    {
+      productId: row.productId,
+      yesoneSku: row.yesoneSku || row.sku,
+      sku: row.yesoneSku || row.sku,
+      modelid: row.modelid || row.modelId,
+    },
+    product,
+  );
+}
+
 export function allotmentUsesPasProduct(
   row: PasAllotmentIdentity,
   pasProducts: readonly Product[],

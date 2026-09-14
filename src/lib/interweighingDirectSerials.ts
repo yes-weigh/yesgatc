@@ -1,3 +1,4 @@
+import { isPasStickerSerial } from './pasSerialBankMatch.ts';
 import { expandSerialRange } from './yesoneInboundData.ts';
 import type { InterweighingDirectBatch, SiteCalibration } from '../types.ts';
 
@@ -79,7 +80,7 @@ export function computeInterweighingDirectSeats(input: {
   allotted: unknown;
   records: SiteCalibration[];
 }): InterweighingDirectSeats {
-  const allotted = uniqueDirectSerials(input.allotted);
+  const allotted = uniqueDirectSerials(input.allotted).filter(serial => !isPasStickerSerial(serial));
   const allottedKeys = new Set(allotted.map(serialKey));
   const usedKeys = new Set<string>();
   for (const record of input.records) {
@@ -121,21 +122,37 @@ export function normalizeInterweighingDirectBatches(raw: unknown): Interweighing
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
     const row = item as Record<string, unknown>;
-    const serialStart = String(row.serialStart || '').trim();
-    if (!serialStart) continue;
-    const serialEnd = String(row.serialEnd || serialStart).trim() || serialStart;
+    const listed = uniqueDirectSerials(row.serials);
+    const serialStart = String(row.serialStart || listed[0] || '').trim();
+    if (!serialStart && listed.length === 0) continue;
+    const serialEnd = String(row.serialEnd || serialStart || listed[listed.length - 1] || '').trim() || serialStart;
     const qtyRaw = Number(row.qty);
     const qty =
       Number.isFinite(qtyRaw) && qtyRaw > 0
         ? qtyRaw
-        : expandDirectSerialInput({ serialStart, serialEnd }).length;
+        : listed.length > 0
+          ? listed.length
+          : expandDirectSerialInput({ serialStart, serialEnd }).length;
+    const productType = String(row.productType || '').trim().toLowerCase() === 'pas' ? 'pas' : undefined;
     const batch: InterweighingDirectBatch = {
-      serialStart,
-      serialEnd,
+      serialStart: serialStart || listed[0],
+      serialEnd: serialEnd || listed[listed.length - 1] || serialStart || listed[0],
       qty,
       allottedAt: String(row.allottedAt || '').trim(),
       allottedByUid: String(row.allottedByUid || '').trim(),
     };
+    if (listed.length > 0) batch.serials = listed;
+    if (productType) {
+      batch.productType = productType;
+      const productId = String(row.productId || '').trim();
+      const productName = String(row.productName || '').trim();
+      const modelid = String(row.modelid || row.modelId || '').trim();
+      const yesoneSku = String(row.yesoneSku || row.sku || '').trim();
+      if (productId) batch.productId = productId;
+      if (productName) batch.productName = productName;
+      if (modelid) batch.modelid = modelid;
+      if (yesoneSku) batch.yesoneSku = yesoneSku;
+    }
     const invoiceNo = String(row.invoiceNo || '').trim();
     if (invoiceNo) batch.invoiceNo = invoiceNo;
     const invoiceUrl = String(row.invoiceUrl || '').trim();

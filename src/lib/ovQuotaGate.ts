@@ -4,6 +4,7 @@ export type OvQuotaAllotment = {
   productId?: string;
   productName?: string;
   modelNo?: string;
+  modelid?: string;
   pool?: string;
 };
 
@@ -18,6 +19,10 @@ export type OvQuotaGate = {
   directRemaining?: string[];
   /** Verifier may start OV without Yesone remaining (direct bank / typed direct). */
   allowInterweighingDirect?: boolean;
+  /** Unused PAS serials allotted to this actor (all PAS products). */
+  pasRemaining?: string[];
+  /** PAS allotment identity for exact product match. */
+  pasAllotments?: OvQuotaAllotment[];
 };
 
 function serialKey(value: string): string {

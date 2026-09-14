@@ -54,7 +54,15 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   const [reservedInvoices, setReservedInvoices] = useState<string[]>([]);
   const [reservedForUids, setReservedForUids] = useState<string[]>([]);
   const [reservedAssignments, setReservedAssignments] = useState<
-    Array<{ invoiceNo: string; verifierUid: string; serialStart?: string; serialEnd?: string }>
+    Array<{
+      invoiceNo: string;
+      verifierUid: string;
+      serialStart?: string;
+      serialEnd?: string;
+      serials?: string[];
+      productType?: 'gas' | 'pas';
+      allotFrom?: 'rcQuota' | 'interweighingDirect';
+    }>
   >([]);
   const [verifierAllottedByUid, setVerifierAllottedByUid] = useState<Record<string, string[]>>({});
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
@@ -154,10 +162,14 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   const mergedReserved = useMemo(() => {
     const fromAssignments: string[] = [];
     for (const row of reservedAssignments) {
+      if (row.productType === 'pas' || row.allotFrom === 'interweighingDirect') continue;
       if (row.serialStart) {
         fromAssignments.push(
           ...expandSerialRange(row.serialStart, row.serialEnd || row.serialStart),
         );
+      }
+      if (Array.isArray(row.serials) && row.serials.length > 0) {
+        fromAssignments.push(...row.serials);
       }
     }
     return uniqueSerials([

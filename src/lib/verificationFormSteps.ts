@@ -38,6 +38,7 @@ import { validateVerifierOvStart } from './verifierOvInName';
 import { catalogueHasPasProducts, quotaSerialRows } from './pasSerialBank';
 import {
   gasAllottedChoices,
+  pasAllottedChoices,
   serialEntryMode,
   validateSerialForProductPool,
 } from './serialEntryPool';
@@ -387,11 +388,18 @@ function serialStepBlockReason(
       product,
       fallbackProduct: { productId: row.productId, productName: row.productName },
     });
+    const pasChoices = pasAllottedChoices({
+      remaining: context?.ovQuota?.pasRemaining ?? [],
+      allotments: context?.ovQuota?.pasAllotments,
+      heldSerials: context?.ovQuota?.heldSerials,
+      product,
+    });
     const poolError = validateSerialForProductPool({
       mode,
       verificationType: values.verificationType,
       serial: row.serialNumber,
       gasChoices,
+      pasChoices,
       scopedToVerifier: Boolean(context?.ovQuota?.scopedToVerifier),
       serialSource: row.serialSource,
     });

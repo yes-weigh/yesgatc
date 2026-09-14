@@ -14,13 +14,19 @@ import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
 import { useRcCreatedVerifierCount } from '../../hooks/useRcCreatedVerifierCount';
 import { fetchRcVerifierUsers } from '../../lib/rcVerifierMembers';
 import { allotInterweighingDirectSerials } from '../../lib/allotInterweighingDirectSerials';
+import { allotPasSerialsToBank } from '../../lib/allotPasSerials';
 import {
   INVOICE_ALLOT_FROM_HINT,
   INVOICE_ALLOT_FROM_INTERWEIGHING,
   INVOICE_ALLOT_FROM_LABEL,
   INVOICE_ALLOT_FROM_OPTIONS,
   INVOICE_ALLOT_FROM_RC_QUOTA,
+  INVOICE_PRODUCT_TYPE_GAS,
+  INVOICE_PRODUCT_TYPE_LABEL,
+  INVOICE_PRODUCT_TYPE_OPTIONS,
+  INVOICE_PRODUCT_TYPE_PAS,
   isInvoiceAllotFrom,
+  isInvoiceProductType,
   type InvoiceAllotFrom,
   validateInvoiceAllotmentRange,
 } from '../../lib/invoiceAllotmentSource';
@@ -29,25 +35,30 @@ import {
   normalizeInterweighingDirectBatches,
 } from '../../lib/interweighingDirectSerials';
 import {
+  allotmentJobUsedSerials,
   rcOvUsedFromRecords,
   saveVerifierInvoiceAllotment,
   type ReservedAssignmentInvoiceFile,
   type YesoneReservedAssignment,
 } from '../../lib/rcMasterQuota';
 import { deleteProductStorageFile, isPdfContentType } from '../../lib/productApprovalUpload';
-import { pasProductIdSet } from '../../lib/pasSerialBank';
+import { listProductSerialBank, pasProductIdSet, productUsesPasSerials } from '../../lib/pasSerialBank';
 import { roleCanOpenVrAllotted } from '../../lib/roleNav';
 import { uploadVrAllotmentInvoice } from '../../lib/vrAllottedInvoiceUpload';
 import {
+  assignmentIsPas,
+  vrAllottedAssignmentSerials,
   vrAllottedEntryMatchesFilter,
   vrAllottedEntrySerials,
-  vrAllottedRangeSerials,
   vrAllottedScopedView,
+  type InvoiceProductType,
+  type VrAllottedProductTypeFilter,
 } from '../../lib/vrAllotted';
 import { uniqueSerials } from '../../lib/yesoneInboundData';
 import type { FirestoreUserDoc, SiteCalibration } from '../../types';
 
 type StatusFilter = 'all' | 'unused' | 'used';
+type ProductTypeFilter = VrAllottedProductTypeFilter;
 
 const INVOICE_FILE_ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp,image/gif';
 
@@ -173,6 +184,10 @@ export const VrAllotted: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [allotOpen, setAllotOpen] = useState(false);
   const [allotFrom, setAllotFrom] = useState<InvoiceAllotFrom>(INVOICE_ALLOT_FROM_RC_QUOTA);
+  const [productType, setProductType] = useState<InvoiceProductType>(INVOICE_PRODUCT_TYPE_GAS);
+  const [productId, setProductId] = useState('');
+  const [serialListText, setSerialListText] = useState('');
+  const [pasUnused, setPasUnused] = useState<string[]>([]);
   const [editingInvoiceNo, setEditingInvoiceNo] = useState('');
   const [selectedUid, setSelectedUid] = useState('');
   const [invoiceNo, setInvoiceNo] = useState('');
@@ -188,8 +203,10 @@ export const VrAllotted: React.FC = () => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [verifierFilter, setVerifierFilter] = useState('all');
+  const [productTypeFilter, setProductTypeFilter] = useState<ProductTypeFilter>('all');
   const [draftStatus, setDraftStatus] = useState<StatusFilter>('all');
   const [draftVerifier, setDraftVerifier] = useState('all');
+  const [draftProductType, setDraftProductType] = useState<ProductTypeFilter>('all');
   const filterRef = useRef<HTMLDivElement>(null);
   const [filterSlots, setFilterSlots] = useState<{
     mobile: HTMLElement | null;
@@ -240,7 +257,8 @@ export const VrAllotted: React.FC = () => {
     if (!filterOpen) return;
     setDraftStatus(statusFilter);
     setDraftVerifier(verifierFilter);
-  }, [filterOpen, statusFilter, verifierFilter]);
+    setDraftProductType(productTypeFilter);
+  }, [filterOpen, statusFilter, verifierFilter, productTypeFilter]);
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -269,14 +287,17 @@ export const VrAllotted: React.FC = () => {
   const applyFilters = () => {
     setStatusFilter(draftStatus);
     setVerifierFilter(draftVerifier);
+    setProductTypeFilter(draftProductType);
     setFilterOpen(false);
   };
 
   const clearFilters = () => {
     setDraftStatus('all');
     setDraftVerifier('all');
+    setDraftProductType('all');
     setStatusFilter('all');
     setVerifierFilter('all');
+    setProductTypeFilter('all');
     setFilterOpen(false);
   };
 
@@ -287,6 +308,10 @@ export const VrAllotted: React.FC = () => {
   const resetAllotForm = useCallback((nextUid = '') => {
     setEditingInvoiceNo('');
     setAllotFrom(INVOICE_ALLOT_FROM_RC_QUOTA);
+    setProductType(INVOICE_PRODUCT_TYPE_GAS);
+    setProductId('');
+    setSerialListText('');
+    setPasUnused([]);
     setInvoiceNo('');
     setAllottedAt(todayIstDate());
     setSerialStart('');
@@ -323,6 +348,46 @@ export const VrAllotted: React.FC = () => {
     () => rcOvUsedFromRecords(records, { pasProductIds }).serials,
     [pasProductIds, records],
   );
+  const jobUsedSerials = useMemo(() => allotmentJobUsedSerials(records), [records]);
+  const pasProducts = useMemo(
+    () => products.filter(product => product.active !== false && productUsesPasSerials(product)),
+    [products],
+  );
+  const selectedPasProduct = useMemo(
+    () => pasProducts.find(item => item.id === productId) ?? null,
+    [pasProducts, productId],
+  );
+
+  useEffect(() => {
+    if (
+      !allotOpen
+      || productType !== INVOICE_PRODUCT_TYPE_PAS
+      || allotFrom !== INVOICE_ALLOT_FROM_RC_QUOTA
+      || !selectedPasProduct
+    ) {
+      setPasUnused([]);
+      return;
+    }
+    let cancelled = false;
+    void listProductSerialBank(selectedPasProduct)
+      .then(summary => {
+        if (cancelled) return;
+        setPasUnused(
+          summary.rows
+            .filter(row => {
+              const status = String(row.status || '').trim().toLowerCase();
+              return status !== 'used' && status !== 'cancelled' && status !== 'replaced';
+            })
+            .map(row => row.serial),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setPasUnused([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [allotFrom, allotOpen, productType, selectedPasProduct]);
 
   const rosterUids = useMemo(() => verifiers.map(row => row.uid), [verifiers]);
 
@@ -352,7 +417,7 @@ export const VrAllotted: React.FC = () => {
 
   const allottedSeats = scoped.allSeats;
   const tileTotals = scoped.totals;
-  const filterActive = statusFilter !== 'all' || verifierFilter !== 'all';
+  const filterActive = statusFilter !== 'all' || verifierFilter !== 'all' || productTypeFilter !== 'all';
 
   const unusedPool = useMemo(() => {
     return uniqueSerials([
@@ -366,8 +431,7 @@ export const VrAllotted: React.FC = () => {
     const row = seats.reservedAssignments.find(
       item => item.invoiceNo.trim().toUpperCase() === editingInvoiceNo.trim().toUpperCase(),
     );
-    if (!row?.serialStart) return [];
-    return vrAllottedRangeSerials(row.serialStart, row.serialEnd || row.serialStart);
+    return vrAllottedAssignmentSerials(row || {});
   }, [editingInvoiceNo, seats.reservedAssignments]);
 
   const allowedPool = useMemo(
@@ -379,11 +443,31 @@ export const VrAllotted: React.FC = () => {
     () =>
       validateInvoiceAllotmentRange({
         allotFrom,
+        productType,
         serialStart,
         serialEnd,
-        unusedRcSerials: allotFrom === INVOICE_ALLOT_FROM_RC_QUOTA ? allowedPool : [],
+        listText: serialListText,
+        unusedRcSerials:
+          allotFrom === INVOICE_ALLOT_FROM_RC_QUOTA && productType === INVOICE_PRODUCT_TYPE_GAS
+            ? allowedPool
+            : [],
+        unusedPasSerials:
+          allotFrom === INVOICE_ALLOT_FROM_RC_QUOTA && productType === INVOICE_PRODUCT_TYPE_PAS
+            ? [...pasUnused, ...editingSerials]
+            : [],
+        hasProduct: productType !== INVOICE_PRODUCT_TYPE_PAS || Boolean(selectedPasProduct),
       }),
-    [allotFrom, allowedPool, serialEnd, serialStart],
+    [
+      allotFrom,
+      allowedPool,
+      editingSerials,
+      pasUnused,
+      productType,
+      selectedPasProduct,
+      serialEnd,
+      serialListText,
+      serialStart,
+    ],
   );
   const rangeQty = rangeCheck.qty;
   const rangeOk = rangeCheck.ok;
@@ -412,7 +496,8 @@ export const VrAllotted: React.FC = () => {
       const entrySeats = vrAllottedEntrySerials({
         serialStart: row.serialStart,
         serialEnd: row.serialEnd,
-        usedSerials,
+        serials: row.serials,
+        usedSerials: jobUsedSerials,
         voidedSerials: seats.voidedSerials,
       });
       return {
@@ -421,7 +506,7 @@ export const VrAllotted: React.FC = () => {
         seats: entrySeats,
       };
     });
-  }, [seats.reservedAssignments, seats.voidedSerials, usedSerials]);
+  }, [jobUsedSerials, seats.reservedAssignments, seats.voidedSerials]);
 
   const visibleEntries = useMemo(
     () =>
@@ -431,9 +516,11 @@ export const VrAllotted: React.FC = () => {
           seats: row.seats,
           verifierFilter,
           statusFilter,
+          productType: row.productType,
+          productTypeFilter,
         }),
       ),
-    [assignmentRows, statusFilter, verifierFilter],
+    [assignmentRows, productTypeFilter, statusFilter, verifierFilter],
   );
 
   const previousAllotments = useMemo(() => {
@@ -478,11 +565,15 @@ export const VrAllotted: React.FC = () => {
 
   const openEdit = (row: YesoneReservedAssignment) => {
     setEditingInvoiceNo(row.invoiceNo);
-    setAllotFrom(INVOICE_ALLOT_FROM_RC_QUOTA);
+    setAllotFrom(row.allotFrom && isInvoiceAllotFrom(row.allotFrom) ? row.allotFrom : INVOICE_ALLOT_FROM_RC_QUOTA);
+    setProductType(row.productType === 'pas' ? INVOICE_PRODUCT_TYPE_PAS : INVOICE_PRODUCT_TYPE_GAS);
+    setProductId(row.productId || '');
+    const listed = vrAllottedAssignmentSerials(row);
+    setSerialListText(row.serials && row.serials.length > 0 ? row.serials.join('\n') : '');
     setInvoiceNo(row.invoiceNo);
     setAllottedAt((row.allottedAt || '').slice(0, 10) || todayIstDate());
-    setSerialStart(row.serialStart || '');
-    setSerialEnd(row.serialEnd || row.serialStart || '');
+    setSerialStart(row.serialStart || listed[0] || '');
+    setSerialEnd(row.serialEnd || row.serialStart || listed[listed.length - 1] || '');
     setSelectedUid(assignmentUids(row)[0] || '');
     setInvoiceFile(null);
     setExistingInvoice(invoiceFileFromRow(row));
@@ -509,12 +600,26 @@ export const VrAllotted: React.FC = () => {
           void deleteProductStorageFile(existingInvoice.path).catch(() => undefined);
         }
       }
+      const pasProduct = productType === INVOICE_PRODUCT_TYPE_PAS ? selectedPasProduct : null;
+      if (productType === INVOICE_PRODUCT_TYPE_PAS && pasProduct) {
+        await allotPasSerialsToBank({
+          verifierUid: selectedUid,
+          serials: rangeCheck.serials,
+          product: pasProduct,
+          invoiceNo,
+          source: allotFrom,
+        });
+      }
       if (allotFrom === INVOICE_ALLOT_FROM_INTERWEIGHING) {
         const result = await allotInterweighingDirectSerials({
           verifierUid: selectedUid,
           allottedByUid: rcUid,
           serialStart,
           serialEnd,
+          listText: serialListText,
+          serials: rangeCheck.serials,
+          productType,
+          product: pasProduct,
           invoiceNo,
           allottedAt,
           previousSerials: selectedVerifier?.interweighingDirectSerials,
@@ -534,19 +639,26 @@ export const VrAllotted: React.FC = () => {
               : row,
           ),
         );
-      } else {
-        await saveVerifierInvoiceAllotment({
-          rcUid,
-          invoiceNo,
-          prevInvoiceNo: editingInvoiceNo || undefined,
-          serialStart,
-          serialEnd,
-          verifierUids: [selectedUid],
-          allottedAt,
-          allowedSerials: allowedPool,
-          ...(invoice ? { invoice } : {}),
-        });
       }
+      await saveVerifierInvoiceAllotment({
+        rcUid,
+        invoiceNo,
+        prevInvoiceNo: editingInvoiceNo || undefined,
+        serialStart,
+        serialEnd,
+        listText: serialListText,
+        serials: rangeCheck.serials,
+        productType,
+        productId: pasProduct?.id,
+        productName: pasProduct?.name,
+        modelid: pasProduct?.modelid,
+        yesoneSku: pasProduct?.yesoneSku,
+        allotFrom,
+        verifierUids: [selectedUid],
+        allottedAt,
+        allowedSerials: productType === INVOICE_PRODUCT_TYPE_GAS ? allowedPool : [],
+        ...(invoice ? { invoice } : {}),
+      });
       resetAllotForm(verifiers[0]?.uid || '');
       closeAllot();
     } catch (err) {
@@ -593,6 +705,22 @@ export const VrAllotted: React.FC = () => {
             <option value="all">All</option>
             <option value="unused">Unused</option>
             <option value="used">Used</option>
+          </select>
+          <label className="wl-cert-filter__label" htmlFor="vr-allotted-type">
+            Type
+          </label>
+          <select
+            id="vr-allotted-type"
+            className="wl-cert-filter__select"
+            value={draftProductType}
+            onChange={event => {
+              const next = event.target.value;
+              if (next === 'all' || next === 'gas' || next === 'pas') setDraftProductType(next);
+            }}
+          >
+            <option value="all">All</option>
+            <option value="gas">GAS</option>
+            <option value="pas">PAS</option>
           </select>
           <label className="wl-cert-filter__label" htmlFor="vr-allotted-verifier">
             Verifier
@@ -737,6 +865,51 @@ export const VrAllotted: React.FC = () => {
                 ))}
               </select>
               <p className="vr-allotted-dialog__hint">{INVOICE_ALLOT_FROM_HINT[allotFrom]}</p>
+              <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-product-type">
+                Product type
+              </label>
+              <select
+                id="vr-allotted-product-type"
+                className="input-field"
+                value={productType}
+                onChange={event => {
+                  const next = event.target.value;
+                  if (!isInvoiceProductType(next)) return;
+                  setProductType(next);
+                  if (next !== INVOICE_PRODUCT_TYPE_PAS) setProductId('');
+                  setSaveError('');
+                }}
+                disabled={busy}
+              >
+                {INVOICE_PRODUCT_TYPE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {productType === INVOICE_PRODUCT_TYPE_PAS ? (
+                <>
+                  <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-product">
+                    Product
+                  </label>
+                  <select
+                    id="vr-allotted-product"
+                    className="input-field"
+                    value={productId}
+                    onChange={event => setProductId(event.target.value)}
+                    disabled={busy || pasProducts.length === 0}
+                  >
+                    <option value="">
+                      {pasProducts.length === 0 ? 'No PAS products' : 'Select product'}
+                    </option>
+                    {pasProducts.map(item => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {item.modelid}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : null}
               {allotFrom === INVOICE_ALLOT_FROM_INTERWEIGHING ? (
                 <p className="vr-allotted-direct-totals" aria-label="Direct serial totals">
                   Allotted {directSeats.allottedQty} · Used {directSeats.usedQty} · Balance{' '}
@@ -769,6 +942,21 @@ export const VrAllotted: React.FC = () => {
                 />
                 <Calendar className="vr-allotted-dialog__date-icon" size={16} strokeWidth={2} aria-hidden />
               </div>
+              <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-serial-list">
+                All serial numbers
+              </label>
+              <textarea
+                id="vr-allotted-serial-list"
+                className="input-field text-mono vr-allotted-dialog__list"
+                value={serialListText}
+                onChange={event => setSerialListText(event.target.value)}
+                disabled={busy}
+                rows={3}
+                placeholder="Random / non-consecutive: paste all numbers"
+              />
+              <p className="vr-allotted-dialog__hint">
+                Comma or one per line. Qty = count. Leave empty to use start–end.
+              </p>
               <div className="vr-allotted-dialog__range">
                 <div>
                   <label className="vr-allotted-dialog__label" htmlFor="vr-allotted-start">
@@ -865,7 +1053,7 @@ export const VrAllotted: React.FC = () => {
                   event.target.value = '';
                 }}
               />
-              {serialStart.trim() && rangeCheck.error ? (
+              {(serialStart.trim() || serialListText.trim()) && rangeCheck.error ? (
                 <p className="login-error">{rangeCheck.error}</p>
               ) : null}
               {saveError ? <p className="login-error">{saveError}</p> : null}
@@ -959,21 +1147,47 @@ export const VrAllotted: React.FC = () => {
                       <span className="vr-allotted-entry__value text-mono">{row.invoiceNo}</span>
                     </div>
                     <div>
-                      <span className="vr-allotted-entry__label">Start no</span>
-                      <span className="vr-allotted-entry__value text-mono">
-                        {row.serialStart || '—'}
+                      <span className="vr-allotted-entry__label">Type</span>
+                      <span
+                        className={`vr-allotted-entry__value vr-allotted-type${
+                          assignmentIsPas(row) ? ' vr-allotted-type--pas' : ''
+                        }`}
+                      >
+                        {INVOICE_PRODUCT_TYPE_LABEL[row.productType === 'pas' ? 'pas' : 'gas']}
                       </span>
                     </div>
+                    {assignmentIsPas(row) ? (
+                      <div>
+                        <span className="vr-allotted-entry__label">Product</span>
+                        <span className="vr-allotted-entry__value">
+                          {[row.productName, row.modelid].filter(Boolean).join(' · ') || '—'}
+                        </span>
+                      </div>
+                    ) : null}
                     <div>
-                      <span className="vr-allotted-entry__label">End no</span>
+                      <span className="vr-allotted-entry__label">
+                        {row.serials && row.serials.length > 0 ? 'Serials' : 'Start no'}
+                      </span>
                       <span className="vr-allotted-entry__value text-mono">
-                        {row.serialEnd || row.serialStart || '—'}
+                        {row.serials && row.serials.length > 0
+                          ? row.serials.length === 1
+                            ? row.serials[0]
+                            : `${row.serials[0]} + ${row.serials.length - 1}`
+                          : row.serialStart || '—'}
                       </span>
                     </div>
+                    {!(row.serials && row.serials.length > 0) ? (
+                      <div>
+                        <span className="vr-allotted-entry__label">End no</span>
+                        <span className="vr-allotted-entry__value text-mono">
+                          {row.serialEnd || row.serialStart || '—'}
+                        </span>
+                      </div>
+                    ) : null}
                     <div>
                       <span className="vr-allotted-entry__label">Qty</span>
                       <span className="vr-allotted-entry__value text-mono">
-                        {row.serialStart ? row.qty : '—'}
+                        {row.qty || '—'}
                       </span>
                     </div>
                   </div>
