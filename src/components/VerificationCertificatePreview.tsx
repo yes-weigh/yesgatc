@@ -114,27 +114,27 @@ export const VerificationCertificatePreview: FC<VerificationCertificatePreviewPr
             </div>
           ) : null}
           {url || preview.file ? (
-            isPhone ? (
+            <>
               <button
                 type="button"
                 className="verification-certificate-preview-action"
-                onClick={() => void handleShare()}
-                title="Share"
+                onClick={handleDownload}
+                title="Download PDF"
               >
-                <Share2 size={14} aria-hidden />
-                Share
+                <Download size={14} aria-hidden />
+                Download
               </button>
-            ) : (
-              <>
+              {isPhone ? (
                 <button
                   type="button"
                   className="verification-certificate-preview-action"
-                  onClick={handleDownload}
-                  title="Download PDF"
+                  onClick={() => void handleShare()}
+                  title="Share"
                 >
-                  <Download size={14} aria-hidden />
-                  Download
+                  <Share2 size={14} aria-hidden />
+                  Share
                 </button>
+              ) : (
                 <button
                   type="button"
                   className="verification-certificate-preview-action"
@@ -144,8 +144,8 @@ export const VerificationCertificatePreview: FC<VerificationCertificatePreviewPr
                   <Printer size={14} aria-hidden />
                   Print
                 </button>
-              </>
-            )
+              )}
+            </>
           ) : null}
         </div>
       </div>

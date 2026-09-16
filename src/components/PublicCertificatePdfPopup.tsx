@@ -1,9 +1,11 @@
 import { useEffect, useState, type FC } from 'react';
 import { createPortal } from 'react-dom';
-import { Share2, X } from 'lucide-react';
+import { Download, Share2, X } from 'lucide-react';
 import { useCertificatePdfPreview } from '../hooks/useCertificatePdfPreview';
 import { useHistoryOverlay } from '../hooks/useHistoryOverlay';
+import { downloadCertificatePdfFile } from '../lib/certificatePdfFile';
 import {
+  downloadPublicCertificatePdf,
   publicCertificateFileName,
   sharePublicCertificatePdf,
   type PublicCertificateHit,
@@ -63,6 +65,25 @@ export const PublicCertificatePdfPopup: FC<PublicCertificatePdfPopupProps> = ({
     }
   };
 
+  const handleDownload = async () => {
+    if (sharing) return;
+    setSharing(true);
+    setShareError('');
+    try {
+      if (preview.file) {
+        downloadCertificatePdfFile(preview.file);
+        return;
+      }
+      if (hit.pdfUrl) {
+        await downloadPublicCertificatePdf(hit.pdfUrl, publicCertificateFileName(hit));
+      }
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : 'Download failed.');
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return createPortal(
     <div className="pcd-pdf" role="dialog" aria-modal="true" aria-label={title}>
       <div className="pcd-pdf-chrome">
@@ -74,15 +95,26 @@ export const PublicCertificatePdfPopup: FC<PublicCertificatePdfPopupProps> = ({
         >
           <X size={18} aria-hidden />
         </button>
-        <button
-          type="button"
-          className="pcd-pdf-box pcd-pdf-box--share"
-          onClick={() => void handleShare()}
-          disabled={sharing || !preview.file}
-          aria-label="Share PDF"
-        >
-          <Share2 size={18} aria-hidden />
-        </button>
+        <div className="pcd-pdf-chrome-actions">
+          <button
+            type="button"
+            className="pcd-pdf-box pcd-pdf-box--download"
+            onClick={() => void handleDownload()}
+            disabled={sharing || (!preview.file && !hit.pdfUrl)}
+            aria-label="Download PDF"
+          >
+            <Download size={18} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="pcd-pdf-box pcd-pdf-box--share"
+            onClick={() => void handleShare()}
+            disabled={sharing || !preview.file}
+            aria-label="Share PDF"
+          >
+            <Share2 size={18} aria-hidden />
+          </button>
+        </div>
       </div>
       <div className="pcd-pdf-body">
         {preview.loading ? <p className="pcd-pdf-status mb-0">Loading certificate…</p> : null}

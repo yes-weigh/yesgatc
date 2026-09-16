@@ -7159,6 +7159,21 @@ body.pcd-pdf-open {
   background: #1d4ed8;
 }
 
+.pcd-pdf-chrome-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.pcd-pdf-box--download {
+  background: #0284c7;
+}
+
+.pcd-pdf-box--download:hover,
+.pcd-pdf-box--download:focus-visible {
+  background: #0369a1;
+}
+
 .pcd-pdf-box--share {
   background: #16a34a;
 }
@@ -7168,6 +7183,7 @@ body.pcd-pdf-open {
   background: #15803d;
 }
 
+.pcd-pdf-box--download:disabled,
 .pcd-pdf-box--share:disabled {
   opacity: 0.5;
   cursor: wait;

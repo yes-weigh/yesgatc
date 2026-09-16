@@ -130,18 +130,27 @@ export const CertificatePdfShareViewer: FC<CertificatePdfShareViewerProps> = ({
           <button
             type="button"
             className="wl-cert-pdf-viewer__share"
-            onClick={() => void (isPhone ? handleShare() : handleDownload())}
+            onClick={handleDownload}
             disabled={sharing || (!preview.file && !url && !storagePath)}
-            aria-label={isPhone ? 'Share certificate' : 'Download certificate'}
-            title={isPhone ? 'Share' : 'Download'}
+            aria-label="Download certificate"
+            title="Download"
           >
-            {isPhone ? (
-              <Share2 size={18} strokeWidth={2} aria-hidden />
-            ) : (
-              <Download size={18} strokeWidth={2} aria-hidden />
-            )}
-            {isPhone ? 'Share' : 'Download'}
+            <Download size={18} strokeWidth={2} aria-hidden />
+            Download
           </button>
+          {isPhone ? (
+            <button
+              type="button"
+              className="wl-cert-pdf-viewer__share"
+              onClick={() => void handleShare()}
+              disabled={sharing || (!preview.file && !url && !storagePath)}
+              aria-label="Share certificate"
+              title="Share"
+            >
+              <Share2 size={18} strokeWidth={2} aria-hidden />
+              Share
+            </button>
+          ) : null}
         </div>
       </header>
       <div className="wl-cert-pdf-viewer__body">
