@@ -1436,6 +1436,12 @@ public sealed class AutomationService : IAsyncDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            if (ex.Message.Contains("did not issue a new certificate", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("does not contain serial", StringComparison.OrdinalIgnoreCase))
+            {
+                throw;
+            }
+
             throw new EmaapMandatoryStepException(
                 $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but PDF download failed: {ex.Message}",
                 ex);
@@ -1458,6 +1464,12 @@ public sealed class AutomationService : IAsyncDisposable
         {
             throw new EmaapMandatoryStepException(
                 $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but downloaded file is not a valid PDF.");
+        }
+
+        if (!CertificatePdfContainsSerial(download.LocalPdfPath, instrument.SerialNumber))
+        {
+            throw new InvalidOperationException(
+                $"eMAAP PDF {download.CertificateNumber} does not contain serial {instrument.SerialNumber}.");
         }
 
         RememberClaimedEmaapCert(download.CertificateNumber);
@@ -1506,6 +1518,33 @@ public sealed class AutomationService : IAsyncDisposable
         lock (_claimedCertLock)
         {
             _claimedEmaapCertNumbers.Add(certificateNumber.Trim());
+        }
+    }
+
+    private static bool CertificatePdfContainsSerial(string pdfPath, string serial)
+    {
+        var needle = EmaapCertificatePdfSerial.Compact(serial);
+        if (needle.Length < 3)
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = UglyToad.PdfPig.PdfDocument.Open(pdfPath);
+            foreach (var page in document.GetPages())
+            {
+                if (EmaapCertificatePdfSerial.TextContainsSerial(page.Text, serial))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return true;
         }
     }
 

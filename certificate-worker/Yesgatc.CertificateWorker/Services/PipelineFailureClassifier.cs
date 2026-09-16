@@ -78,6 +78,7 @@ public static class PipelineFailureClassifier
             "duplicate",
             "Record already",
             "eMAAP rejected submit",
+            "did not issue a new certificate",
         ];
 
         return needles.Any(n => message.Contains(n, StringComparison.OrdinalIgnoreCase));

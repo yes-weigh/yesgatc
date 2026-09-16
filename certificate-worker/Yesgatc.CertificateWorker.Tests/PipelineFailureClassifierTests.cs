@@ -12,6 +12,7 @@ public sealed class PipelineFailureClassifierTests
     [InlineData("zohoInvoiceNumber missing")]
     [InlineData("Record already exists for serial")]
     [InlineData("eMAAP rejected submit: Serial number already exist")]
+    [InlineData("eMAAP did not issue a new certificate for serial X00366")]
     public void Permanent_data_errors_reject(string error)
     {
         Assert.True(PipelineFailureClassifier.IsPermanentDataFailure(error));

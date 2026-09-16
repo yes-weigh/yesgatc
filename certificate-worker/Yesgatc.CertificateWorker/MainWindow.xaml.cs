@@ -4017,7 +4017,9 @@ public partial class MainWindow : Window
         }
         catch (InvalidOperationException ex) when (
             ex.Message.Contains("eMAAP rejected submit", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("did not show Record saved successfully", StringComparison.OrdinalIgnoreCase))
+            || ex.Message.Contains("did not show Record saved successfully", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("did not issue a new certificate", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("does not contain serial", StringComparison.OrdinalIgnoreCase))
         {
             AddActivityEntry(ex.Message);
             return new JobPipelineResult(false, false, ex.Message);
