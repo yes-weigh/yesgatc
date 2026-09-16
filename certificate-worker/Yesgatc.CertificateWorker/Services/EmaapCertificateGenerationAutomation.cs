@@ -92,7 +92,10 @@ public static class EmaapCertificateGenerationAutomation
         }
 
         await ClickSubmitCertificateDetailsAsync(page, cancellationToken);
-        await EmaapCertificatesIssuedAutomation.DismissSuccessOkAsync(page, cancellationToken);
+        await EmaapCertificatesIssuedAutomation.DismissSuccessOkAsync(
+            page,
+            cancellationToken,
+            requireSubmitSuccess: true);
 
         await page.BringToFrontAsync();
     }

@@ -4015,6 +4015,13 @@ public partial class MainWindow : Window
             AddActivityEntry(ex.Message);
             return new JobPipelineResult(false, false, ex.Message, HaltBatch: true);
         }
+        catch (InvalidOperationException ex) when (
+            ex.Message.Contains("eMAAP rejected submit", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("did not show Record saved successfully", StringComparison.OrdinalIgnoreCase))
+        {
+            AddActivityEntry(ex.Message);
+            return new JobPipelineResult(false, false, ex.Message);
+        }
         catch (Exception ex) when (
             ex.Message.Contains("login page", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("Sign in to eMAAP", StringComparison.OrdinalIgnoreCase)

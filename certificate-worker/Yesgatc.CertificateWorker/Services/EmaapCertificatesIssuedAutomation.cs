@@ -25,7 +25,10 @@ public static class EmaapCertificatesIssuedAutomation
         @"IND\s*/\s*GATC\s*/\s*KL\s*/\s*26\s*/\s*04\s*/\s*26\s*/\s*([\d\s]+)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static async Task DismissSuccessOkAsync(IPage page, CancellationToken cancellationToken = default)
+    public static async Task DismissSuccessOkAsync(
+        IPage page,
+        CancellationToken cancellationToken = default,
+        bool requireSubmitSuccess = false)
     {
         // After Submit Certificate Details: spinner first, then "Record saved successfully" + OK.
         // Must click OK before any Certificates Issued navigation.
@@ -36,7 +39,15 @@ public static class EmaapCertificatesIssuedAutomation
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (await IsSuccessDialogVisibleAsync(page))
+            var alert = await ReadVisibleAlertTextAsync(page);
+            if (requireSubmitSuccess && EmaapSubmitDialog.IsFailure(alert))
+            {
+                await TryClickSweetAlertOkAsync(page);
+                throw new InvalidOperationException(
+                    $"eMAAP rejected submit: {EmaapSubmitDialog.Summarize(alert)}");
+            }
+
+            if (await IsSuccessDialogVisibleAsync(page) || EmaapSubmitDialog.IsSuccess(alert))
             {
                 sawDialog = true;
                 break;
@@ -53,6 +64,12 @@ public static class EmaapCertificatesIssuedAutomation
 
         if (!sawDialog && !await HasBlockingOverlayAsync(page))
         {
+            if (requireSubmitSuccess && !await IsCertificatesIssuedPageAsync(page))
+            {
+                throw new InvalidOperationException(
+                    "eMAAP submit did not show Record saved successfully.");
+            }
+
             // No dialog appeared in time; still clear any stray overlay/spinner briefly.
             await WaitUntilOverlaysClearAsync(page, cancellationToken, maxSeconds: 5);
             return;
@@ -366,6 +383,43 @@ public static class EmaapCertificatesIssuedAutomation
         }
     }
 
+    /// <summary>
+    /// Highest Third Party Certificate sequence on the unfiltered issued list.
+    /// Download after submit must be newer so a batch does not reuse the previous job's PDF.
+    /// </summary>
+    public static async Task<int?> PeekHighestIssuedSequenceAsync(
+        IPage page,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        try
+        {
+            await OpenCertificatesIssuedAsync(page, cancellationToken);
+            await ClearIssuedListFiltersAsync(page);
+            await TrySetPageLengthAsync(page, 100);
+            var max = await page.EvaluateAsync<int>(
+                """
+                () => {
+                  const re = /IND\s*\/\s*GATC\s*\/\s*KL\s*\/\s*26\s*\/\s*04\s*\/\s*26\s*\/\s*([\d\s]+)/gi;
+                  const text = document.body?.innerText || '';
+                  let max = 0;
+                  let m;
+                  while ((m = re.exec(text))) {
+                    const n = parseInt(String(m[1]).replace(/\s+/g, ''), 10);
+                    if (Number.isFinite(n) && n > max) max = n;
+                  }
+                  return max;
+                }
+                """);
+            return max > 0 ? max : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
     public static async Task<EmaapCertificateDownloadResult> DownloadHighestMatchingAsync(
         IPage page,
         PartyContactDetails party,
@@ -374,7 +428,8 @@ public static class EmaapCertificatesIssuedAutomation
         string? preferCertificateNumber = null,
         Func<string, Task>? onCertificateMatchedAsync = null,
         IReadOnlyCollection<string>? excludeCertificateNumbers = null,
-        int? minExclusiveSequence = null)
+        int? minExclusiveSequence = null,
+        string? serialNumber = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(party);
@@ -422,7 +477,7 @@ public static class EmaapCertificatesIssuedAutomation
             }
 
             best ??= await FindHighestMatchingRowAsync(
-                page, wantBelong, wantMobile, exclude, minSeq, includePending: true);
+                page, wantBelong, wantMobile, exclude, minSeq, includePending: true, serialNumber: serialNumber);
 
             if (best is not null
                 && (string.IsNullOrWhiteSpace(preferNormalized)
@@ -463,8 +518,9 @@ public static class EmaapCertificatesIssuedAutomation
                 ? $" Need a cert newer than sequence {minSeq} (or a pending row with no number yet)."
                 : string.Empty;
             throw new InvalidOperationException(
-                $"No Certificates Issued row matched Belongs to '{party.BelongToName}' and Mobile '{party.Mobile}'.{preferHint}{floorHint} " +
-                $"Visible sample: {sample}");
+                $"No Certificates Issued row matched Belongs to '{party.BelongToName}', Mobile '{party.Mobile}'" +
+                (string.IsNullOrWhiteSpace(serialNumber) ? "" : $", serial '{serialNumber}'") +
+                $".{preferHint}{floorHint} Visible sample: {sample}");
         }
 
         Directory.CreateDirectory(downloadDirectory);
@@ -486,7 +542,8 @@ public static class EmaapCertificatesIssuedAutomation
                         wantMobile,
                         exclude,
                         minSeq,
-                        cancellationToken);
+                        cancellationToken,
+                        serialNumber);
                     if (numbered is null)
                     {
                         throw new InvalidOperationException(
@@ -557,7 +614,7 @@ public static class EmaapCertificatesIssuedAutomation
             else
             {
                 best = await FindHighestMatchingRowAsync(
-                    page, wantBelong, wantMobile, exclude, minSeq, includePending: true) ?? best;
+                    page, wantBelong, wantMobile, exclude, minSeq, includePending: true, serialNumber: serialNumber) ?? best;
             }
         }
 
@@ -1097,14 +1154,15 @@ public static class EmaapCertificatesIssuedAutomation
         string wantMobile,
         IReadOnlyCollection<string>? exclude,
         int minSeq,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? serialNumber = null)
     {
         var deadline = DateTime.UtcNow.AddSeconds(25);
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var numbered = await FindHighestMatchingRowAsync(
-                page, wantBelong, wantMobile, exclude, minSeq, includePending: false);
+                page, wantBelong, wantMobile, exclude, minSeq, includePending: false, serialNumber: serialNumber);
             if (numbered is not null && !string.IsNullOrWhiteSpace(numbered.CertificateNumber))
             {
                 return numbered;
@@ -1718,7 +1776,8 @@ public static class EmaapCertificatesIssuedAutomation
         string wantMobile,
         IReadOnlyCollection<string>? excludeCertificateNumbers = null,
         int minExclusiveSequence = 0,
-        bool includePending = true)
+        bool includePending = true,
+        string? serialNumber = null)
     {
         var excludeCsv = string.Empty;
         if (excludeCertificateNumbers is { Count: > 0 })
@@ -1733,7 +1792,7 @@ public static class EmaapCertificatesIssuedAutomation
         // Match Belongs+Mobile. Numbered certs use sequence; pending rows have no IND/GATC until first Download.
         var json = await page.EvaluateAsync<string>(
             """
-            ([wantBelong, wantMobile, excludeCsv, minExclusiveSeq, includePending]) => {
+            ([wantBelong, wantMobile, excludeCsv, minExclusiveSeq, includePending, wantSerial]) => {
               const normName = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
               const normMobile = (s) => {
                 const d = String(s || '').replace(/\D/g, '');
@@ -1767,6 +1826,7 @@ public static class EmaapCertificatesIssuedAutomation
 
               const wantB = normName(wantBelong);
               const wantM = normMobile(wantMobile);
+              const wantS = normName(wantSerial).replace(/\s+/g, '');
               if (!wantB || wantM.length !== 10) return '';
 
               const exclude = new Set(String(excludeCsv || '').split('|').filter(Boolean).map(s => s.toUpperCase()));
@@ -1796,9 +1856,13 @@ public static class EmaapCertificatesIssuedAutomation
                     const mm = rowText.match(/\b([6-9]\d{9})\b/);
                     if (mm) mobile = mm[1];
                   }
-                  if (mobile !== wantM) continue;
 
                   const rowNorm = normName(rowText);
+                  const rowCompact = rowNorm.replace(/\s+/g, '');
+                  const serialHit = wantS.length >= 4 && (
+                    rowCompact.includes(wantS)
+                    || cells.some(c => normName(c).replace(/\s+/g, '').includes(wantS))
+                  );
                   const cap = wantB.slice(0, 50).trim();
                   const belongHit =
                     rowNorm.includes(wantB)
@@ -1809,7 +1873,14 @@ public static class EmaapCertificatesIssuedAutomation
                       return n === wantB || n.includes(wantB) || wantB.includes(n)
                         || (cap.length >= 8 && (n.includes(cap) || cap.includes(n)));
                     });
-                  if (!belongHit) continue;
+                  const mobileHit = !mobile || mobile === wantM;
+                  if (serialHit) {
+                    // RV / duplicate-serial rows may keep the original party name or mobile.
+                  } else if (belongHit && mobileHit) {
+                    // Belongs-to match; mobile optional when the cell is empty (pending rows).
+                  } else {
+                    continue;
+                  }
 
                   let parsed = null;
                   for (const c of cells) {
@@ -1865,6 +1936,7 @@ public static class EmaapCertificatesIssuedAutomation
                 excludeCsv,
                 minExclusiveSequence,
                 includePending,
+                serialNumber ?? string.Empty,
             });
 
         if (string.IsNullOrWhiteSpace(json))
@@ -2011,11 +2083,42 @@ public static class EmaapCertificatesIssuedAutomation
         return string.IsNullOrWhiteSpace(cleaned) ? "certificate" : cleaned;
     }
 
+    private static async Task<string> ReadVisibleAlertTextAsync(IPage page)
+    {
+        try
+        {
+            return await page.EvaluateAsync<string>(
+                """
+                () => {
+                  const overlay = document.querySelector(
+                    '.swal-overlay--show-modal .swal-modal, .swal-modal, .swal2-popup.swal2-show, .swal2-popup');
+                  if (!overlay) return '';
+                  const style = getComputedStyle(overlay);
+                  if (style.display === 'none' || style.visibility === 'hidden') return '';
+                  const textEl = overlay.querySelector(
+                    '.swal-text, .swal-title, .swal2-html-container, .swal2-title');
+                  return ((textEl && textEl.innerText) || overlay.innerText || '').trim();
+                }
+                """) ?? string.Empty;
+        }
+        catch (PlaywrightException)
+        {
+            return string.Empty;
+        }
+    }
+
     private static async Task<bool> HasSweetAlertAsync(IPage page) =>
         await HasBlockingOverlayAsync(page);
 
-    private static async Task<bool> IsSuccessDialogVisibleAsync(IPage page) =>
-        await page.EvaluateAsync<bool>(
+    private static async Task<bool> IsSuccessDialogVisibleAsync(IPage page)
+    {
+        var alert = await ReadVisibleAlertTextAsync(page);
+        if (EmaapSubmitDialog.IsSuccess(alert))
+        {
+            return true;
+        }
+
+        return await page.EvaluateAsync<bool>(
             """
             () => {
               const overlay = document.querySelector('.swal-overlay--show-modal, .swal2-container');
@@ -2025,11 +2128,11 @@ public static class EmaapCertificatesIssuedAutomation
               }
               const style = getComputedStyle(overlay);
               if (style.display === 'none' || style.visibility === 'hidden') return false;
-              const text = (overlay.innerText || document.body?.innerText || '');
-              return /Record saved successfully/i.test(text)
-                || !!overlay.querySelector('button.swal-button--confirm, button.swal2-confirm, button.swal-button');
+              const text = (overlay.innerText || '');
+              return /Record saved successfully/i.test(text);
             }
             """);
+    }
 
     private static async Task<bool> HasBlockingOverlayAsync(IPage page) =>
         await page.EvaluateAsync<bool>(

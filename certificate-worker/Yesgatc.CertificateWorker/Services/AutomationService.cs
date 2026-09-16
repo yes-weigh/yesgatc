@@ -1159,10 +1159,13 @@ public sealed class AutomationService : IAsyncDisposable
         int? minExclusiveSequence = null;
         if (!fillOnly)
         {
-            minExclusiveSequence = await EmaapCertificatesIssuedAutomation.PeekHighestMatchingSequenceAsync(
-                page,
-                party,
-                cancellationToken);
+            minExclusiveSequence = await EmaapCertificatesIssuedAutomation.PeekHighestIssuedSequenceAsync(
+                    page,
+                    cancellationToken)
+                ?? await EmaapCertificatesIssuedAutomation.PeekHighestMatchingSequenceAsync(
+                    page,
+                    party,
+                    cancellationToken);
         }
 
         // Submit already saved; issued row may still have an empty cert number. Download only.
@@ -1428,7 +1431,8 @@ public sealed class AutomationService : IAsyncDisposable
                     }
                 },
                 excludeCertificateNumbers: SnapshotClaimedEmaapCerts(),
-                minExclusiveSequence: preferCertificateNumber is null ? minExclusiveSequence : null);
+                minExclusiveSequence: preferCertificateNumber is null ? minExclusiveSequence : null,
+                serialNumber: instrument.SerialNumber);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

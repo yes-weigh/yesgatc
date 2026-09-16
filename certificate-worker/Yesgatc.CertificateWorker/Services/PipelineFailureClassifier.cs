@@ -74,8 +74,10 @@ public static class PipelineFailureClassifier
             "manufacturerBrandSeries",
             "minimumCapacity",
             "already exists",
+            "already exist",
             "duplicate",
             "Record already",
+            "eMAAP rejected submit",
         ];
 
         return needles.Any(n => message.Contains(n, StringComparison.OrdinalIgnoreCase));
