@@ -54,12 +54,15 @@ public static class EmaapCertificateGenerationAutomation
 
         // After instrument type, eMAAP auto-fills #gatc_user / #mobile / #belongs_to (Self Manufacture).
         // Skip GATC; overwrite mobile + belongs_to from the job.
+        var belongTo = EmaapAlphanumericText.Require(
+            party.BelongToName, EmaapAlphanumericText.BelongToMaxLength, "Belongs to");
+        var address = EmaapAlphanumericText.Require(
+            party.Address, EmaapAlphanumericText.AddressMaxLength, "Address");
+
         await ClearAndFillByIdAsync(page, "#mobile", party.Mobile);
-        await ClearAndFillByIdAsync(
-            page,
-            "#belongs_to",
-            TruncateForEmaapField(party.BelongToName, maxLength: 50));
-        await FillByIdAsync(page, "#address", party.Address);
+        await ClearAndFillByIdAsync(page, "#belongs_to", belongTo);
+        await ClearAndFillByIdAsync(page, "#address", address);
+        await AssertAlphanumericFieldAcceptedAsync(page, "#address", "Address");
         await SelectByIdLabelAsync(page, "#state_id", party.State, invokeOnchange: true);
         await page.WaitForTimeoutAsync(800);
         await SelectByIdLabelAsync(page, "#district_id", party.District);
@@ -163,8 +166,14 @@ public static class EmaapCertificateGenerationAutomation
         cancellationToken.ThrowIfCancellationRequested();
 
         await FillGenerateCertificateModeAsync(page);
-        await FillIfEditableAsync(page, "#br_belong_to", TruncateForEmaapField(party.BelongToName, 50));
-        await FillIfEditableAsync(page, "#br_address", party.Address);
+        await FillIfEditableAsync(
+            page,
+            "#br_belong_to",
+            EmaapAlphanumericText.Sanitize(party.BelongToName, EmaapAlphanumericText.BelongToMaxLength));
+        await FillIfEditableAsync(
+            page,
+            "#br_address",
+            EmaapAlphanumericText.Sanitize(party.Address, EmaapAlphanumericText.AddressMaxLength));
         await FillIfEditableAsync(page, "#br_mobile_no", party.Mobile);
         await FillValidityDateIfEmptyAsync(page);
 
@@ -187,7 +196,10 @@ public static class EmaapCertificateGenerationAutomation
         await upload.SetInputFilesAsync(standardWeightPhotoLocalPath);
 
         var remarks = string.IsNullOrWhiteSpace(instrument.Remarks) ? "Nill" : instrument.Remarks.Trim();
-        await ClearAndFillByIdAsync(page, "#br_remark", TruncateForEmaapField(remarks, 50));
+        await ClearAndFillByIdAsync(
+            page,
+            "#br_remark",
+            EmaapAlphanumericText.Sanitize(remarks, EmaapAlphanumericText.RemarksMaxLength));
 
         // Portal prefills GATC company name — always overwrite with principal officer.
         await ClearAndFillByIdAsync(page, "#name_of_officer", PrincipalOfficerName);
@@ -397,7 +409,10 @@ public static class EmaapCertificateGenerationAutomation
         await SelectByIdLabelAsync(page, "#OIML_recommendation", instrument.InstrumentConformsToOiml);
         await SelectByIdLabelAsync(page, "#verified_stamped", instrument.VerifiedAndStamped);
         var remarks = string.IsNullOrWhiteSpace(instrument.Remarks) ? "Nill" : instrument.Remarks;
-        await FillByIdAsync(page, "#remarks", remarks);
+        await FillByIdAsync(
+            page,
+            "#remarks",
+            EmaapAlphanumericText.Sanitize(remarks, EmaapAlphanumericText.RemarksMaxLength));
     }
 
     private static async Task FillChargesBlockAsync(
@@ -641,15 +656,31 @@ public static class EmaapCertificateGenerationAutomation
         return string.Empty;
     }
 
-    private static string TruncateForEmaapField(string? value, int maxLength)
+    private static async Task AssertAlphanumericFieldAcceptedAsync(
+        IPage page,
+        string selector,
+        string fieldLabel)
     {
-        var trimmed = value?.Trim() ?? string.Empty;
-        if (maxLength <= 0 || trimmed.Length <= maxLength)
+        var el = page.Locator(selector).First;
+        if (await el.CountAsync() == 0)
         {
-            return trimmed;
+            return;
         }
 
-        return trimmed[..maxLength];
+        var value = (await el.InputValueAsync()).Trim();
+        var markedInvalid = await el.EvaluateAsync<bool>(
+            """
+            el => el.classList.contains('is-invalid')
+              || el.classList.contains('error')
+              || el.getAttribute('aria-invalid') === 'true'
+              || (el.validity && el.validity.patternMismatch === true)
+            """);
+
+        if (!EmaapAlphanumericText.IsAccepted(value) || markedInvalid)
+        {
+            throw new InvalidOperationException(
+                $"eMAAP {fieldLabel} rejected '{value}'. Use letters, digits and spaces only (no &).");
+        }
     }
 
     /// <summary>Clear autofilled value, then type job data (and fire eMAAP input hooks).</summary>
