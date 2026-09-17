@@ -544,6 +544,7 @@ public static class EmaapCertificatesIssuedAutomation
 
             try
             {
+                best = WithClickIdentity(best, party.BelongToName, party.Mobile);
                 await PrimeIssuedPdfGenerationAsync(page, best, party.BelongToName, cancellationToken);
 
                 if (string.IsNullOrWhiteSpace(best.CertificateNumber))
@@ -614,7 +615,15 @@ public static class EmaapCertificatesIssuedAutomation
             // eMAAP sometimes serves HTML / empty until the certificate blob is ready.
             await page.WaitForTimeoutAsync(1_200 * attempt);
             await OpenCertificatesIssuedAsync(page, cancellationToken);
-            await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
+            if (waitForNewCert)
+            {
+                await ClearIssuedListFiltersAsync(page);
+                await TrySetPageLengthAsync(page, 100);
+            }
+            else
+            {
+                await TryFilterIssuedListAsync(page, party.BelongToName, wantMobile, cancellationToken);
+            }
             if (!string.IsNullOrWhiteSpace(preferNormalized))
             {
                 var again = await FindRowByCertificateNumberAsync(page, preferNormalized);
@@ -1136,12 +1145,16 @@ public static class EmaapCertificatesIssuedAutomation
             return;
         }
 
-        var primed = await ClickIssuedDownloadAsync(page, best, belongToName);
+        var primed = await ClickIssuedDownloadAsync(
+            page,
+            best,
+            string.IsNullOrWhiteSpace(best.BelongTo) ? belongToName : best.BelongTo);
         if (!primed)
         {
+            var label = string.IsNullOrWhiteSpace(best.BelongTo) ? belongToName : best.BelongTo;
             throw new InvalidOperationException(
                 pending
-                    ? $"Download button missing for pending {belongToName} / {best.Mobile} row."
+                    ? $"Download button missing for pending {label} / {best.Mobile} row."
                     : $"Download button missing for certificate {best.CertificateNumber}.");
         }
 
@@ -1478,8 +1491,10 @@ public static class EmaapCertificatesIssuedAutomation
     {
         var clicked = await page.EvaluateAsync<bool>(
             """
-            ([cert, mobile, belong]) => {
+            ([cert, mobile, belong, rowIndex]) => {
               const normName = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+              const stripPunct = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+              const tokens = (s) => stripPunct(s).split(' ').filter(t => t.length >= 2);
               const normMobile = (s) => {
                 const d = String(s || '').replace(/\D/g, '');
                 return d.length > 10 ? d.slice(-10) : d;
@@ -1492,9 +1507,14 @@ public static class EmaapCertificatesIssuedAutomation
               const belongHit = (rowText, cells) => {
                 if (!wantB) return true;
                 const rowNorm = normName(rowText);
-                if (rowNorm.includes(wantB)) return true;
+                if (rowNorm.includes(wantB) || stripPunct(rowText).includes(stripPunct(wantB))) return true;
                 const cap = wantB.slice(0, 50).trim();
                 if (cap.length >= 8 && rowNorm.includes(cap)) return true;
+                const wantT = tokens(wantB);
+                const haveT = tokens(rowText);
+                if (wantT.length === 0) return false;
+                const hits = wantT.filter(t => haveT.some(h => h === t || (t.length >= 4 && h.length >= 4 && (h.includes(t) || t.includes(h))))).length;
+                if (hits >= Math.min(3, wantT.length) || hits >= wantT.length - 1) return true;
                 return (cells || []).some(c => {
                   const n = normName(c);
                   if (n.length < 8) return false;
@@ -1505,7 +1525,20 @@ public static class EmaapCertificatesIssuedAutomation
               const downloadLabel = (el) => (el.innerText || el.textContent
                 || el.getAttribute('title') || el.getAttribute('aria-label') || '')
                 .replace(/\s+/g, ' ').trim();
-              const trs = Array.from(document.querySelectorAll('table tbody tr, table tr'));
+              const clickDownload = (tr) => {
+                const btn = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
+                  .find(el => /^download$/i.test(downloadLabel(el)));
+                if (!btn) return false;
+                btn.scrollIntoView({ block: 'center' });
+                btn.click();
+                return true;
+              };
+              const tbodyRows = Array.from(document.querySelectorAll('table.custom-table tbody tr, table tbody tr'));
+              const idx = Number(rowIndex);
+              if (Number.isInteger(idx) && idx >= 0 && idx < tbodyRows.length) {
+                if (clickDownload(tbodyRows[idx])) return true;
+              }
+              const trs = tbodyRows.length ? tbodyRows : Array.from(document.querySelectorAll('table tbody tr, table tr'));
               for (const tr of trs) {
                 const text = (tr.innerText || '').replace(/\s+/g, ' ');
                 const compact = text.replace(/\s+/g, '');
@@ -1524,25 +1557,45 @@ public static class EmaapCertificatesIssuedAutomation
                   if (wantM && !text.includes(wantM)) continue;
                   if (!belongHit(text, cells)) continue;
                 }
-                const btn = Array.from(tr.querySelectorAll('button, a, span, input[type="button"]'))
-                  .find(el => /^download$/i.test(downloadLabel(el)));
-                if (!btn) continue;
-                btn.scrollIntoView({ block: 'center' });
-                btn.click();
-                return true;
+                if (clickDownload(tr)) return true;
               }
               return false;
             }
             """,
-            new object[] { best.CertificateNumber, best.Mobile, belongToName });
+            new object[] { best.CertificateNumber, best.Mobile, belongToName, best.RowIndex });
 
         if (clicked)
         {
             return true;
         }
 
-        var rows = page.Locator("table tbody tr")
-            .Filter(new LocatorFilterOptions { HasText = best.Mobile });
+        if (best.RowIndex >= 0)
+        {
+            try
+            {
+                var indexed = page.Locator("table.custom-table tbody tr, table tbody tr").Nth(best.RowIndex);
+                var indexedDl = indexed.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Download" })
+                    .Or(indexed.Locator("button, a")
+                        .Filter(new LocatorFilterOptions
+                        {
+                            HasTextRegex = new Regex("^\\s*Download\\s*$", RegexOptions.IgnoreCase),
+                        }));
+                if (await indexedDl.CountAsync() > 0)
+                {
+                    await indexedDl.First.ScrollIntoViewIfNeededAsync();
+                    await indexedDl.First.ClickAsync(new LocatorClickOptions { Timeout = 8_000 });
+                    return true;
+                }
+            }
+            catch (PlaywrightException)
+            {
+            }
+        }
+
+        var rows = string.IsNullOrWhiteSpace(best.Mobile)
+            ? page.Locator("table.custom-table tbody tr, table tbody tr")
+            : page.Locator("table tbody tr")
+                .Filter(new LocatorFilterOptions { HasText = best.Mobile });
         var rowCount = await rows.CountAsync();
         for (var i = 0; i < rowCount; i++)
         {
@@ -1590,7 +1643,7 @@ public static class EmaapCertificatesIssuedAutomation
             }
 
             await downloadBtn.First.ScrollIntoViewIfNeededAsync();
-            await downloadBtn.First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+            await downloadBtn.First.ClickAsync(new LocatorClickOptions { Timeout = 8_000 });
             return true;
         }
 
@@ -1709,24 +1762,34 @@ public static class EmaapCertificatesIssuedAutomation
                 el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
               };
 
-              setVal(belongInput, belongTo);
-              setVal(mobileInput, mobile);
+              // Mobile is unique; Belongs-to typos (Sony vs Sory) make eMAAP hide the new row.
+              if (mobile && String(mobile).replace(/\D/g, '').length === 10) {
+                setVal(mobileInput, mobile);
+              } else {
+                setVal(belongInput, belongTo);
+                setVal(mobileInput, mobile);
+              }
               return true;
             }
             """,
             new object[] { TruncateEmaapBelongTo(belongTo), mobile10 });
 
-        // Orange magnifying-glass search in Action filter cell.
+        // Orange magnifying-glass search. Native click waits on SPA "navigation" and HALTs at 2s.
         try
         {
-            var searchBtn = page.Locator(
-                "table th button, table thead button, table tr button.btn-warning, button.btn-warning");
-            if (await searchBtn.CountAsync() > 0)
-            {
-                await searchBtn.Last.ClickAsync(new LocatorClickOptions { Timeout = 2_000 });
-            }
+            await page.EvaluateAsync(
+                """
+                () => {
+                  const btn = document.querySelector('table.custom-table thead tr.filter-row button.filter-search-btn')
+                    || document.querySelector('button.filter-search-btn')
+                    || document.querySelector('table thead button.btn-warning');
+                  if (!btn) return false;
+                  btn.click();
+                  return true;
+                }
+                """);
         }
-        catch (PlaywrightException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
         }
 
@@ -1814,9 +1877,20 @@ public static class EmaapCertificatesIssuedAutomation
               const exclude = new Set(String(excludeCsv || '').split('|').filter(Boolean).map(s => s.toUpperCase()));
               const minSeq = Number(minExclusiveSeq) || 0;
               const allowPending = includePending === true || includePending === 'true' || includePending === 1;
-              const tables = Array.from(document.querySelectorAll('table'));
+              const headerIndex = (table, needle) => {
+                const headers = Array.from(table.querySelectorAll('thead tr:first-child th, thead tr:first-child td'))
+                  .map(h => (h.innerText || '').replace(/\s+/g, ' ').trim().toLowerCase());
+                return headers.findIndex(h => h.includes(needle));
+              };
+              const tables = Array.from(document.querySelectorAll('table.custom-table, table'));
+              const seen = new Set();
               for (const table of tables) {
-                const trs = Array.from(table.querySelectorAll('tbody tr, tr'));
+                if (seen.has(table)) continue;
+                seen.add(table);
+                const belongIdx = headerIndex(table, 'belong');
+                const mobileIdx = headerIndex(table, 'mobile');
+                const tbody = table.querySelector('tbody') || table;
+                const trs = Array.from(tbody.querySelectorAll(':scope > tr'));
                 for (let index = 0; index < trs.length; index++) {
                   const tr = trs[index];
                   const cells = Array.from(tr.querySelectorAll('td')).map(td =>
@@ -1824,6 +1898,12 @@ public static class EmaapCertificatesIssuedAutomation
                   if (cells.length < 4) continue;
                   const rowText = (tr.innerText || '').replace(/\s+/g, ' ').trim();
                   if (/^search/i.test(rowText) && cells.every(c => !parseCert(c))) continue;
+                  const belongTo = (belongIdx >= 0 && cells[belongIdx])
+                    ? cells[belongIdx]
+                    : (cells[3] || cells.find(c => c && !parseCert(c) && !/^\d{10}$/.test(c.replace(/\D/g,''))) || '');
+                  const mobileCell = (mobileIdx >= 0 && cells[mobileIdx]) ? cells[mobileIdx] : (cells[4] || '');
+                  const mobileDigits = String(mobileCell || '').replace(/\D/g, '');
+                  const mobile = mobileDigits.length > 10 ? mobileDigits.slice(-10) : mobileDigits;
                   let parsed = null;
                   for (const c of cells) {
                     const p = parseCert(c);
@@ -1836,8 +1916,8 @@ public static class EmaapCertificatesIssuedAutomation
                     return JSON.stringify({
                       index,
                       certificateNumber: parsed.cert,
-                      belongTo: cells.find(c => c && !parseCert(c) && !/^\d{10}$/.test(c.replace(/\D/g,''))) || '',
-                      mobile: '',
+                      belongTo,
+                      mobile,
                       sequence: parsed.seq
                     });
                   }
@@ -1851,8 +1931,8 @@ public static class EmaapCertificatesIssuedAutomation
                   return JSON.stringify({
                     index,
                     certificateNumber: '',
-                    belongTo: cells[0] || '',
-                    mobile: '',
+                    belongTo,
+                    mobile,
                     sequence: 0
                   });
                 }
@@ -1891,10 +1971,14 @@ public static class EmaapCertificatesIssuedAutomation
                     return { cert: 'IND/GATC/KL/26/04/26/' + seqStr, seq: parseInt(seqStr, 10) };
                   };
                   const compact = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                  const tables = Array.from(document.querySelectorAll('table'));
+                  const tables = Array.from(document.querySelectorAll('table.custom-table, table'));
+                  const seen = new Set();
                   let best = null;
                   for (const table of tables) {
-                    const trs = Array.from(table.querySelectorAll('tbody tr, tr'));
+                    if (seen.has(table)) continue;
+                    seen.add(table);
+                    const tbody = table.querySelector('tbody') || table;
+                    const trs = Array.from(tbody.querySelectorAll(':scope > tr'));
                     for (let index = 0; index < trs.length; index++) {
                       const tr = trs[index];
                       const rowText = (tr.innerText || '');
@@ -1994,9 +2078,13 @@ public static class EmaapCertificatesIssuedAutomation
 
               let bestNumbered = null;
               let bestPending = null;
-              const tables = Array.from(document.querySelectorAll('table'));
+              const tables = Array.from(document.querySelectorAll('table.custom-table, table'));
+              const seen = new Set();
               for (const table of tables) {
-                const trs = Array.from(table.querySelectorAll('tbody tr, tr'));
+                if (seen.has(table)) continue;
+                seen.add(table);
+                const tbody = table.querySelector('tbody') || table;
+                const trs = Array.from(tbody.querySelectorAll(':scope > tr'));
                 for (let index = 0; index < trs.length; index++) {
                   const tr = trs[index];
                   const cells = Array.from(tr.querySelectorAll('td')).map(td =>
@@ -2023,9 +2111,17 @@ public static class EmaapCertificatesIssuedAutomation
                     || cells.some(c => normName(c).replace(/\s+/g, '').includes(wantS))
                   );
                   const cap = wantB.slice(0, 50).trim();
+                  const stripPunct = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+                  const tokens = (s) => stripPunct(s).split(' ').filter(t => t.length >= 2);
+                  const wantT = tokens(wantB);
+                  const haveT = tokens(rowText);
+                  const tokenHits = wantT.filter(t => haveT.some(h =>
+                    h === t || (t.length >= 4 && h.length >= 4 && (h.includes(t) || t.includes(h))))).length;
                   const belongHit =
                     rowNorm.includes(wantB)
+                    || stripPunct(rowText).includes(stripPunct(wantB))
                     || (cap.length >= 8 && rowNorm.includes(cap))
+                    || (wantT.length > 0 && (tokenHits >= Math.min(3, wantT.length) || tokenHits >= wantT.length - 1))
                     || cells.some(c => {
                       const n = normName(c);
                       if (n.length < 8) return false;
@@ -2209,29 +2305,28 @@ public static class EmaapCertificatesIssuedAutomation
             : trimmed[..EmaapBelongToMaxLength];
     }
 
-    /// <summary>
-    /// eMAAP Belongs To is maxlength 50. Issued-list cells are truncated; Firestore names can be longer.
-    /// </summary>
-    private static bool BelongNamesMatch(string? wantRaw, string haystack)
+    private static EmaapIssuedRowMatch WithClickIdentity(
+        EmaapIssuedRowMatch best,
+        string partyBelong,
+        string? partyMobile)
     {
-        var want = NormalizeName(wantRaw);
-        var have = NormalizeName(haystack);
-        if (string.IsNullOrEmpty(want) || string.IsNullOrEmpty(have))
+        var belong = (best.BelongTo ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(belong) || belong.All(char.IsDigit))
         {
-            return false;
+            belong = partyBelong;
         }
 
-        if (have.Contains(want, StringComparison.Ordinal)
-            || want.Contains(have, StringComparison.Ordinal))
+        var mobile = NormalizeMobile(best.Mobile);
+        if (mobile.Length != 10)
         {
-            return true;
+            mobile = NormalizeMobile(partyMobile);
         }
 
-        var cap = TruncateEmaapBelongTo(want);
-        return cap.Length >= 8
-            && (have.Contains(cap, StringComparison.Ordinal)
-                || cap.Contains(have, StringComparison.Ordinal));
+        return best with { BelongTo = belong, Mobile = mobile };
     }
+
+    private static bool BelongNamesMatch(string? wantRaw, string haystack) =>
+        EmaapBelongMatch.Matches(wantRaw, haystack);
 
     private static string NormalizeName(string? value) =>
         Regex.Replace((value ?? string.Empty).Trim().ToLowerInvariant(), @"\s+", " ");
