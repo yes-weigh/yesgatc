@@ -234,13 +234,7 @@ export const AdminVerificationList: React.FC = () => {
           records: rows,
           customersById: customerMap,
           rcNameByUid: rcByUid,
-        })
-          .then(async rewritten => {
-            if (rewritten <= 0) return;
-            const refreshed = await getDocs(collection(db, 'siteCalibrations'));
-            setRecords(toRows(refreshed.docs));
-          })
-          .catch(() => undefined);
+        }).catch(() => undefined);
       }
       return rows;
     } catch (err: unknown) {

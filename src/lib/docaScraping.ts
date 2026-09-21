@@ -9,7 +9,8 @@ import {
   setDoc,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app, db } from '../firebase';
 import {
   AUTOMATION_WORKER_COLLECTION,
   readInt,
@@ -19,6 +20,8 @@ import {
   type AutomationWorkerRemoteControl,
 } from './automationWorker';
 import { normalizeCertificateMatchKey } from './docaCertificateMatch';
+
+const FUNCTIONS_REGION = 'us-central1';
 
 export const DOCA_CERTIFICATES_COLLECTION = 'docaCertificates';
 export const DOCA_SCRAPE_STATUS_DOC = 'scrape';
@@ -220,27 +223,39 @@ export function subscribeDocaCertificates(
   );
 }
 
-/** Live set of certificate numbers from siteCalibrations (verification pipeline). */
+/**
+ * Certificate numbers for DOCA matching via Admin field-mask callable.
+ * Avoids live full-collection siteCalibrations downloads in APAC.
+ */
+export async function fetchVerificationCertificateNumbers(): Promise<Set<string>> {
+  const fn = httpsCallable<Record<string, never>, { numbers: string[] }>(
+    getFunctions(app, FUNCTIONS_REGION),
+    'listVerificationCertificateNumbers',
+  );
+  const result = await fn({});
+  return new Set(
+    (result.data.numbers || [])
+      .map(value => normalizeCertificateMatchKey(value))
+      .filter(Boolean),
+  );
+}
+
+/** @deprecated Prefer fetchVerificationCertificateNumbers — kept for call-site compatibility. */
 export function subscribeVerificationCertificateNumbers(
   onData: (numbers: Set<string>) => void,
   onError?: (error: Error) => void,
 ): Unsubscribe {
-  return onSnapshot(
-    collection(db, 'siteCalibrations'),
-    snapshot => {
-      const numbers = new Set<string>();
-      snapshot.docs.forEach(docSnap => {
-        const key = normalizeCertificateMatchKey(
-          readString(docSnap.data() as Record<string, unknown>, 'certificateNumber'),
-        );
-        if (key) {
-          numbers.add(key);
-        }
-      });
-      onData(numbers);
-    },
-    error => onError?.(error),
-  );
+  let cancelled = false;
+  void fetchVerificationCertificateNumbers()
+    .then(numbers => {
+      if (!cancelled) onData(numbers);
+    })
+    .catch(error => {
+      if (!cancelled) onError?.(error instanceof Error ? error : new Error(String(error)));
+    });
+  return () => {
+    cancelled = true;
+  };
 }
 
 export function subscribeDocaScrapeStatus(

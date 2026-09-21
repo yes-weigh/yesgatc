@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { RefreshCw } from 'lucide-react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { callableErrorMessage } from '../../lib/zohoRvInvoice';
 import { syncYesoneOvUsed } from '../../lib/yesoneWebhookClient';
@@ -128,10 +128,6 @@ export function RcQuotaPanel() {
   const [error, setError] = useState('');
   const [openUid, setOpenUid] = useState('');
 
-  const rcUidsKey = useMemo(
-    () => quotas.map(row => row.uid).sort().join(','),
-    [quotas],
-  );
   const masterUid = useMemo(
     () => quotas.find(row => isMasterRc(row))?.uid || '',
     [quotas],
@@ -247,44 +243,40 @@ export function RcQuotaPanel() {
     };
   }, []);
 
+  // Load used serials only when seat overlay opens — not N live listeners for every RC.
   useEffect(() => {
-    const uids = rcUidsKey ? rcUidsKey.split(',') : [];
-    if (!uids.length) {
-      setUsedByRc(new Map());
-      return;
-    }
-    const unsubs = uids.map(uid =>
-      onSnapshot(
-        query(collection(db, 'siteCalibrations'), where('rcId', '==', uid)),
-        snap => {
-          setUsedByRc(prev => {
-            const next = new Map(prev);
-            next.set(
-              uid,
-              rcOvUsedFromRecords(
-                snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
-                {
-                  ...(uid === masterUid ? { fromDate: IWP_USED_FROM_DATE } : {}),
-                  pasProductIds: pasProductIdSet(products),
-                },
-              ),
-            );
-            return next;
-          });
-        },
-        () => {
-          setUsedByRc(prev => {
-            const next = new Map(prev);
-            next.set(uid, { count: 0, serials: [] });
-            return next;
-          });
-        },
-      ),
-    );
+    if (!openUid) return;
+    let cancelled = false;
+    void getDocs(query(collection(db, 'siteCalibrations'), where('rcId', '==', openUid)))
+      .then(snap => {
+        if (cancelled) return;
+        setUsedByRc(prev => {
+          const next = new Map(prev);
+          next.set(
+            openUid,
+            rcOvUsedFromRecords(
+              snap.docs.map(item => ({ id: item.id, ...item.data() }) as SiteCalibration),
+              {
+                ...(openUid === masterUid ? { fromDate: IWP_USED_FROM_DATE } : {}),
+                pasProductIds: pasProductIdSet(products),
+              },
+            ),
+          );
+          return next;
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setUsedByRc(prev => {
+          const next = new Map(prev);
+          next.set(openUid, { count: 0, serials: [] });
+          return next;
+        });
+      });
     return () => {
-      for (const unsub of unsubs) unsub();
+      cancelled = true;
     };
-  }, [rcUidsKey, masterUid, products]);
+  }, [openUid, masterUid, products]);
 
   const pasSerials = usePasBlockedSerials(allotmentRows, products);
 
@@ -303,8 +295,15 @@ export function RcQuotaPanel() {
       const allotted = master
         ? uniqueSerials([...fromStore.filter(serial => !isMasterPoolSerial(serial)), ...masterRcPoolSerials()])
         : fromStore.filter(serial => !isMasterPoolSerial(serial));
-      const ovUsed = usedByRc.get(row.uid) || { count: 0, serials: [] };
-      const remaining = remainingQuotaSerials(allotted, ovUsed.serials, row.voidedSerials);
+      const liveUsed = usedByRc.get(row.uid);
+      const storedUsed = parseQuotaInput(row.ovQuotaUsed);
+      const ovUsed = liveUsed || {
+        count: storedUsed ?? 0,
+        serials: [] as string[],
+      };
+      const remaining = liveUsed
+        ? remainingQuotaSerials(allotted, liveUsed.serials, row.voidedSerials)
+        : remainingQuotaSerials(allotted, [], row.voidedSerials);
       return {
         ...row,
         allotted,

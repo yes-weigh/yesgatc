@@ -43,6 +43,7 @@ const {
 const { revertRvSubmitTestHandler } = require('./rvSubmitTestRevert');
 const { devDeleteSubmittedVerificationHandler } = require('./verificationDevDelete');
 const { downloadStorageFileBytesHandler } = require('./docaStorageDownload');
+const { listVerificationCertificateNumbersHandler } = require('./listVerificationCertificateNumbers');
 const { emaapOtpWebhookHandler } = require('./emaapOtpInbox');
 const { mintYesweighEmbedTokenHandler } = require('./yesweighEmbed');
 const { lookupPublicCertificatesHttpHandler } = require('./lookupPublicCertificates');
@@ -478,6 +479,12 @@ exports.devDeleteSubmittedVerification = onCall(
 exports.downloadStorageFileBytes = onCall(
   { region: CALLABLE_REGION, cors: CALLABLE_CORS, timeoutSeconds: 120, memory: '512MiB' },
   async request => downloadStorageFileBytesHandler(request, getCallerRole),
+);
+
+/** Super Admin DOCA match — certificateNumber field mask only (cuts APAC Firestore egress). */
+exports.listVerificationCertificateNumbers = onCall(
+  { region: CALLABLE_REGION, cors: CALLABLE_CORS, timeoutSeconds: 120, memory: '512MiB' },
+  async request => listVerificationCertificateNumbersHandler(request, getCallerRole),
 );
 
 /**

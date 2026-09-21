@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAppSettings } from '../../hooks/useAppSettings';
 import {
@@ -8,6 +8,7 @@ import {
   yesonePlainLogsFromLast,
   type YesonePlainLogRow,
 } from '../../lib/yesoneInboundData';
+import { YESONE_INBOUND_EVENT_LOG_LIMIT } from '../../lib/firestoreFieldSelect';
 
 function splitWhen(iso: string): { date: string; time: string } {
   if (!iso) return { date: '—', time: '—' };
@@ -33,7 +34,11 @@ export function YesoneInboundPanel() {
 
   useEffect(() => {
     return onSnapshot(
-      collection(db, 'yesoneInboundEvents'),
+      query(
+        collection(db, 'yesoneInboundEvents'),
+        orderBy('at', 'desc'),
+        limit(YESONE_INBOUND_EVENT_LOG_LIMIT),
+      ),
       snap => {
         setEventLogs(snap.docs.flatMap(item => yesonePlainLogsFromEventDoc(item.id, item.data())));
       },

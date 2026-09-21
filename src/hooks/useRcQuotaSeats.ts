@@ -12,8 +12,6 @@ import {
 } from '../lib/rcMasterQuota';
 import { expandSerialRange, uniqueSerials, yesoneSerialFromDoc, type YesoneSerialAllotment } from '../lib/yesoneInboundData';
 import {
-  filterInwardBatchesForRc,
-  inwardBatchesFromInboundEvents,
   serialInwardBatchFromDoc,
   type SerialInwardBatch,
 } from '../lib/serialInwardReport';
@@ -58,12 +56,10 @@ export function useRcQuotaSeats(
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
   const [allotmentRows, setAllotmentRows] = useState<YesoneSerialAllotment[]>([]);
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
-  const [eventRows, setEventRows] = useState<SerialInwardBatch[]>([]);
   const [rcWideRecords, setRcWideRecords] = useState<SiteCalibration[] | null>(null);
   const [userLoaded, setUserLoaded] = useState(false);
   const [allotLoaded, setAllotLoaded] = useState(!rcUid);
   const [batchLoaded, setBatchLoaded] = useState(!rcUid);
-  const [eventLoaded, setEventLoaded] = useState(!rcUid);
 
   useEffect(() => {
     if (!rcUid || isRcAdmin) {
@@ -163,35 +159,6 @@ export function useRcQuotaSeats(
     );
   }, [rcUid]);
 
-  useEffect(() => {
-    if (!rcUid) {
-      setEventRows([]);
-      setEventLoaded(true);
-      return;
-    }
-    setEventLoaded(false);
-    return onSnapshot(
-      collection(db, 'yesoneInboundEvents'),
-      snap => {
-        const events = snap.docs.map(item => {
-          const data = item.data() as { at?: string; payload?: unknown };
-          return { id: item.id, at: data.at, payload: data.payload };
-        });
-        setEventRows(
-          filterInwardBatchesForRc(inwardBatchesFromInboundEvents(events), {
-            rcId: rcUid,
-            rcCode,
-          }),
-        );
-        setEventLoaded(true);
-      },
-      () => {
-        setEventRows([]);
-        setEventLoaded(true);
-      },
-    );
-  }, [rcCode, rcUid]);
-
   const mergedReserved = useMemo(() => {
     const fromAssignments: string[] = [];
     for (const row of reservedAssignments) {
@@ -204,20 +171,19 @@ export function useRcQuotaSeats(
     return uniqueSerials([
       ...reservedSerials,
       ...fromAssignments,
-      ...serialsForReservedInvoices([...batchRows, ...eventRows], reservedInvoices),
+      ...serialsForReservedInvoices(batchRows, reservedInvoices),
       ...flattenAllottedSerials(verifierAllottedByUid),
     ]);
-  }, [batchRows, eventRows, reservedAssignments, reservedInvoices, reservedSerials, verifierAllottedByUid]);
+  }, [batchRows, reservedAssignments, reservedInvoices, reservedSerials, verifierAllottedByUid]);
 
   const invoiceReservedByUid = useMemo(() => {
     const map: Record<string, string[]> = {};
-    const batches = [...batchRows, ...eventRows];
     const reservedAllow = new Set(reservedSerials.map(s => s.trim().toUpperCase()).filter(Boolean));
     for (const row of reservedAssignments) {
       let serials =
         row.serialStart
           ? expandSerialRange(row.serialStart, row.serialEnd || row.serialStart)
-          : serialsForReservedInvoices(batches, [row.invoiceNo]);
+          : serialsForReservedInvoices(batchRows, [row.invoiceNo]);
       // Clip to yesoneReservedSerials so leftover stickers never inflate QTY.
       if (reservedAllow.size > 0) {
         const clipped = serials.filter(s => reservedAllow.has(s.trim().toUpperCase()));
@@ -233,7 +199,7 @@ export function useRcQuotaSeats(
       }
     }
     return map;
-  }, [batchRows, eventRows, reservedAssignments, reservedSerials]);
+  }, [batchRows, reservedAssignments, reservedSerials]);
 
   const persistedAllottedByUid = useMemo(
     () => mergeAllottedByUid(invoiceReservedByUid, verifierAllottedByUid),
@@ -303,6 +269,6 @@ export function useRcQuotaSeats(
     allottedByUid,
     reservedAssignments,
     voidedSerials,
-    ready: userLoaded && allotLoaded && batchLoaded && eventLoaded,
+    ready: userLoaded && allotLoaded && batchLoaded,
   };
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getCountFromServer, getDocs } from 'firebase/firestore';
 import {
   LayoutGrid,
   FileText,
@@ -148,11 +148,11 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     const load = async () => {
-      const [calibrationSnap, userSnap, customerSnap, vehicleSnap] = await Promise.all([
+      const [calibrationSnap, userSnap, customerSnap, vehicleCountSnap] = await Promise.all([
         getDocs(collection(db, 'siteCalibrations')),
         getDocs(collection(db, 'users')),
         getDocs(collection(db, 'customers')),
-        getDocs(collection(db, 'vehicles')),
+        getCountFromServer(collection(db, 'vehicles')),
       ]);
       const loaded = calibrationSnap.docs.map(d => ({
         id: d.id,
@@ -206,7 +206,7 @@ export const AdminDashboard: React.FC = () => {
       setRcUsers(rcs);
       setVctUsers(vcts);
       setVctTotal(vctCount);
-      setVehicleCount(vehicleSnap.size);
+      setVehicleCount(vehicleCountSnap.data().count);
       setCustomerDistrictById(districts);
       void saveRcCertificationRanks(rankRcsByCertifiedCount(loaded, rcs.map(rc => rc.id))).catch(
         () => undefined,

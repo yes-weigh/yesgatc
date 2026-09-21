@@ -15,8 +15,6 @@ import {
   type YesoneSerialAllotment,
 } from '../lib/yesoneInboundData';
 import {
-  filterInwardBatchesForRc,
-  inwardBatchesFromInboundEvents,
   serialInwardBatchFromDoc,
   type SerialInwardBatch,
 } from '../lib/serialInwardReport';
@@ -60,7 +58,6 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   const [allotSerials, setAllotSerials] = useState<string[]>([]);
   const [allotmentRows, setAllotmentRows] = useState<YesoneSerialAllotment[]>([]);
   const [batchRows, setBatchRows] = useState<SerialInwardBatch[]>([]);
-  const [eventRows, setEventRows] = useState<SerialInwardBatch[]>([]);
   const [quotaRecords, setQuotaRecords] = useState<SiteCalibration[]>(records);
   const [rcWideOk, setRcWideOk] = useState(false);
   const [open, setOpen] = useState(false);
@@ -70,6 +67,11 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
   }, [rcWideOk, records]);
 
   useEffect(() => {
+    // RC admin already has RC-wide records from parent — skip duplicate live download.
+    if (isRcAdmin) {
+      setRcWideOk(true);
+      return;
+    }
     setRcWideOk(false);
     return onSnapshot(
       query(collection(db, 'siteCalibrations'), where('rcId', '==', rcUid)),
@@ -84,7 +86,7 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
         /* keep list-scoped records if RC-wide read denied */
       },
     );
-  }, [rcUid]);
+  }, [isRcAdmin, rcUid]);
 
   useEffect(() => {
     return onSnapshot(doc(db, 'users', rcUid), snap => {
@@ -136,21 +138,6 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
     );
   }, [rcUid]);
 
-  useEffect(() => {
-    return onSnapshot(collection(db, 'yesoneInboundEvents'), snap => {
-      const events = snap.docs.map(item => {
-        const data = item.data() as { at?: string; payload?: unknown };
-        return { id: item.id, at: data.at, payload: data.payload };
-      });
-      setEventRows(
-        filterInwardBatchesForRc(inwardBatchesFromInboundEvents(events), {
-          rcId: rcUid,
-          rcCode,
-        }),
-      );
-    }, () => setEventRows([]));
-  }, [rcCode, rcUid]);
-
   const mergedReserved = useMemo(() => {
     const fromAssignments: string[] = [];
     for (const row of reservedAssignments) {
@@ -163,10 +150,10 @@ export function RcQuotaOverview({ rcUid, records }: RcQuotaOverviewProps) {
     return uniqueSerials([
       ...reservedSerials,
       ...fromAssignments,
-      ...serialsForReservedInvoices([...batchRows, ...eventRows], reservedInvoices),
+      ...serialsForReservedInvoices(batchRows, reservedInvoices),
       ...flattenAllottedSerials(verifierAllottedByUid),
     ]);
-  }, [batchRows, eventRows, reservedAssignments, reservedInvoices, reservedSerials, verifierAllottedByUid]);
+  }, [batchRows, reservedAssignments, reservedInvoices, reservedSerials, verifierAllottedByUid]);
 
   const pasProductIds = useMemo(() => pasProductIdSet(products), [products]);
   const pasSerials = usePasBlockedSerials(allotmentRows, products);
