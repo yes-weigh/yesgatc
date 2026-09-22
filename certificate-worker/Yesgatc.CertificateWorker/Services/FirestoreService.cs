@@ -222,6 +222,48 @@ public sealed class FirestoreService
         }
     }
 
+    public async Task<SiteCalibrationRecord?> FindOtherJobWithCertificateNumberAsync(
+        string certificateNumber,
+        string exceptJobId,
+        string idToken,
+        CancellationToken cancellationToken = default)
+    {
+        var cert = certificateNumber.Trim();
+        if (string.IsNullOrWhiteSpace(cert))
+        {
+            return null;
+        }
+
+        var documents = new FirestoreDocumentClient(_settings);
+        var rows = await documents.QueryEqualAsync(
+            "siteCalibrations",
+            "certificateNumber",
+            cert,
+            idToken,
+            cancellationToken);
+
+        foreach (var row in rows)
+        {
+            if (string.Equals(row.Id, exceptJobId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var mapped = MapFromFields(row.Id, row.Fields, new Dictionary<string, string>());
+            if (mapped.IsVoided || mapped.IsSuperseded)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(mapped.CertificateNumber))
+            {
+                return mapped;
+            }
+        }
+
+        return null;
+    }
+
     public async Task<SiteCalibrationRecord?> GetVerificationByIdAsync(
         string jobId,
         string idToken,

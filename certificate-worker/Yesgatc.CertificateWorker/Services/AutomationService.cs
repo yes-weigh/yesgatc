@@ -1412,24 +1412,7 @@ public sealed class AutomationService : IAsyncDisposable
                 WorkerDataPaths.CertificatePdfDirectory(job.Id),
                 cancellationToken,
                 preferCertificateNumber,
-                onCertificateMatchedAsync: async cert =>
-                {
-                    try
-                    {
-                        var fresh = ResolveFirebaseIdToken is not null
-                            ? await ResolveFirebaseIdToken(cancellationToken)
-                            : firebaseIdToken;
-                        await _firestoreService.SetEmaapIssuedCertificateNumberAsync(
-                            job.Id,
-                            cert,
-                            fresh,
-                            cancellationToken);
-                    }
-                    catch
-                    {
-                        // Best-effort — resume still works from HALT message later.
-                    }
-                },
+                onCertificateMatchedAsync: null,
                 excludeCertificateNumbers: SnapshotClaimedEmaapCerts(),
                 minExclusiveSequence: preferCertificateNumber is null ? minExclusiveSequence : null,
                 serialNumber: instrument.SerialNumber);
@@ -1466,13 +1449,40 @@ public sealed class AutomationService : IAsyncDisposable
                 $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but downloaded file is not a valid PDF.");
         }
 
-        if (!CertificatePdfContainsSerial(download.LocalPdfPath, instrument.SerialNumber))
+        if (!EmaapCertificatePdfSerial.FileContainsSerial(download.LocalPdfPath, instrument.SerialNumber))
         {
             throw new InvalidOperationException(
                 $"eMAAP PDF {download.CertificateNumber} does not contain serial {instrument.SerialNumber}.");
         }
 
+        var alreadyAssigned = await _firestoreService.FindOtherJobWithCertificateNumberAsync(
+            download.CertificateNumber,
+            job.Id,
+            firebaseIdToken,
+            cancellationToken);
+        if (alreadyAssigned is not null)
+        {
+            throw new InvalidOperationException(
+                $"Certificate {download.CertificateNumber} is already assigned to serial {alreadyAssigned.SerialNumber}.");
+        }
+
         RememberClaimedEmaapCert(download.CertificateNumber);
+
+        try
+        {
+            var persistToken = ResolveFirebaseIdToken is not null
+                ? await ResolveFirebaseIdToken(cancellationToken)
+                : firebaseIdToken;
+            await _firestoreService.SetEmaapIssuedCertificateNumberAsync(
+                job.Id,
+                download.CertificateNumber,
+                persistToken,
+                cancellationToken);
+        }
+        catch
+        {
+            // Mark certified still writes certificateNumber.
+        }
 
         try
         {
@@ -1518,33 +1528,6 @@ public sealed class AutomationService : IAsyncDisposable
         lock (_claimedCertLock)
         {
             _claimedEmaapCertNumbers.Add(certificateNumber.Trim());
-        }
-    }
-
-    private static bool CertificatePdfContainsSerial(string pdfPath, string serial)
-    {
-        var needle = EmaapCertificatePdfSerial.Compact(serial);
-        if (needle.Length < 3)
-        {
-            return true;
-        }
-
-        try
-        {
-            using var document = UglyToad.PdfPig.PdfDocument.Open(pdfPath);
-            foreach (var page in document.GetPages())
-            {
-                if (EmaapCertificatePdfSerial.TextContainsSerial(page.Text, serial))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-        catch
-        {
-            return true;
         }
     }
 

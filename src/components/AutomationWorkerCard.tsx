@@ -43,6 +43,10 @@ import {
   findVerificationBySerial,
   repairVerificationCertified,
   repairVerificationSubmitted,
+  requeueVerificationForNewEmaapCertificate,
+  adoptEmaapPdfAsSignedCertificate,
+  canForceRequeueEmaap,
+  canAdoptEmaapPdfAsSigned,
   type PipelineRepairDiagnosis,
 } from '../lib/verificationPipelineRepair';
 import type { SiteCalibration } from '../types';
@@ -327,6 +331,63 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
       await handleLookupSerial(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Repair failed.');
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
+  const handleRequeueEmaap = async (record: SiteCalibration | undefined) => {
+    if (!record) return;
+    const ok = await confirm({
+      title: 'Requeue for a new eMAAP certificate?',
+      message: [
+        `Serial ${record.serialNumber || '—'} is currently ${record.certificateNumber || 'uncertified'}.`,
+        'This clears that certificate from this job and puts it back on the worker queue.',
+        'Use only when this serial was bound to the wrong certificate. Do not use on a valid cert.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Requeue eMAAP',
+    });
+    if (!ok) return;
+    setError('');
+    setRepairMessage('');
+    setRepairLoading(true);
+    try {
+      await requeueVerificationForNewEmaapCertificate(record.id, record);
+      setRepairMessage(
+        `Serial ${record.serialNumber} requeued. Worker should pick it up within ~30 seconds if eMAAP is logged in.`,
+      );
+      await handleLookupSerial(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Requeue failed.');
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
+  const handleAdoptSigned = async (record: SiteCalibration | undefined) => {
+    if (!record) return;
+    const url = record.emaapCertificatePdfUrl?.trim() || '';
+    const ok = await confirm({
+      title: 'Record eMAAP PDF as DSC-signed?',
+      message: [
+        `Serial ${record.serialNumber || '—'} · ${record.certificateNumber || '—'}`,
+        'Only if that PDF is already digitally signed AND lists this serial.',
+        'This stops DSC Engine retrying “Field has been already signed”.',
+      ].join('\n'),
+      messageFormat: 'preline',
+      confirmLabel: 'Record signed PDF',
+    });
+    if (!ok) return;
+    setError('');
+    setRepairMessage('');
+    setRepairLoading(true);
+    try {
+      await adoptEmaapPdfAsSignedCertificate(record.id, url);
+      setRepairMessage(`Signed PDF recorded for ${record.serialNumber}. DSC Engine should show Signed after Refresh.`);
+      await handleLookupSerial(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not record signed PDF.');
     } finally {
       setRepairLoading(false);
     }
@@ -720,6 +781,29 @@ export const AutomationWorkerCard: React.FC<AutomationWorkerCardProps> = ({ clas
                         onClick={() => void handleRepairSubmitted(diagnosis.recordId)}
                       >
                         Restore submitted → re-queue worker
+                      </button>
+                    )}
+                    {repairRecords[index]
+                      && canAdoptEmaapPdfAsSigned(repairRecords[index], remoteReady) && (
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={repairLoading}
+                        onClick={() => void handleAdoptSigned(repairRecords[index])}
+                      >
+                        Record signed PDF
+                      </button>
+                    )}
+                    {repairRecords[index]
+                      && canForceRequeueEmaap(repairRecords[index], remoteReady)
+                      && diagnosis.repairAction !== 'set_submitted' && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={repairLoading}
+                        onClick={() => void handleRequeueEmaap(repairRecords[index])}
+                      >
+                        Requeue eMAAP
                       </button>
                     )}
                   </div>

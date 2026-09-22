@@ -52,12 +52,12 @@ public sealed class PdfDscSigner
             ? OfficerStampAnchor.Find(unsignedPdf, layout) ?? layout.ToRect(box)
             : layout.ToRect(box);
         var signerName = token.SigningCertificate.SubjectCn;
-        signer.SetFieldName("YesGATC-DSC");
+        signer.SetFieldName(PdfCertificateInspect.DscFieldName);
         signer.SetPageRect(rect);
         signer.SetPageNumber(page);
         signer.SetReason(_settings.StampReason);
         signer.SetLocation(_settings.StampLocation);
-        var appearance = new SignatureFieldAppearance("YesGATC-DSC");
+        var appearance = new SignatureFieldAppearance(PdfCertificateInspect.DscFieldName);
         appearance.SetContent(BuildTightStamp(signerName, AdobeLogoImage.TryLoad(), rect.GetHeight()));
         signer.SetSignatureAppearance(appearance);
 

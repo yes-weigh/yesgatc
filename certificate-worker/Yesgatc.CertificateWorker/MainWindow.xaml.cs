@@ -4019,7 +4019,8 @@ public partial class MainWindow : Window
             ex.Message.Contains("eMAAP rejected submit", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("did not show Record saved successfully", StringComparison.OrdinalIgnoreCase)
             || ex.Message.Contains("did not issue a new certificate", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("does not contain serial", StringComparison.OrdinalIgnoreCase))
+            || ex.Message.Contains("does not contain serial", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("already assigned to serial", StringComparison.OrdinalIgnoreCase))
         {
             AddActivityEntry(ex.Message);
             return new JobPipelineResult(false, false, ex.Message);

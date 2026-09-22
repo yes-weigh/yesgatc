@@ -96,6 +96,13 @@ export function diagnoseVerificationPipeline(record: SiteCalibration): PipelineR
     notes.push('Certified in Firebase but PDF missing — reset to submitted to re-run eMAAP.');
     queueEligible = false;
   }
+  if (
+    inferredStatus === 'certified'
+    && Boolean(record.emaapCertificatePdfUrl?.trim())
+    && !record.signedCertificatePdfUrl?.trim()
+  ) {
+    notes.push('eMAAP PDF exists but DSC signed URL is empty — record signed PDF, or requeue if the serial is wrong.');
+  }
   if (corrupted && inferredStatus === 'certified' && !hasCertNumber) {
     notes.push('Certificate number field is corrupted or missing — repair clears it; re-run eMAAP if needed.');
   }
@@ -188,11 +195,23 @@ export async function repairVerificationSubmitted(
     approvedAt: deleteField(),
     certifiedAt: deleteField(),
     certificatePdfUrl: deleteField(),
+    certificatePdfPath: deleteField(),
+    certificatePdfName: deleteField(),
+    certificatePdfContentType: deleteField(),
     certificateNumber: deleteField(),
     emaapCertificatePdfUrl: deleteField(),
+    emaapIssuedCertificateNumber: deleteField(),
+    signedCertificatePdfUrl: deleteField(),
+    signedCertificatePdfPath: deleteField(),
+    signedCertificatePdfName: deleteField(),
+    signedCertificatePdfContentType: deleteField(),
+    signedCertificateUploadedAt: deleteField(),
+    signedCertificateUploadedByUid: deleteField(),
+    emaapSignedPdfUploadedAt: deleteField(),
     pipelineFailedPhase: deleteField(),
     pipelineFailureMessage: deleteField(),
     pipelineFailedAt: deleteField(),
+    certificationLastError: deleteField(),
   });
 }
 
@@ -223,5 +242,60 @@ export async function moveFailedSubmitVerificationToDraft(recordId: string): Pro
     pipelineFailedAt: deleteField(),
     certificationLastError: deleteField(),
     rejectedAt: deleteField(),
+  });
+}
+
+export function canForceRequeueEmaap(
+  record: Pick<SiteCalibration, 'status' | 'certificateVoidedAt' | 'supersededByResubmissionId'>,
+  isSuperAdmin: boolean,
+): boolean {
+  if (!isSuperAdmin) return false;
+  if (record.supersededByResubmissionId?.trim()) return false;
+  if (record.certificateVoidedAt?.trim()) return false;
+  return record.status === 'certified' || record.status === 'approved';
+}
+
+export function canAdoptEmaapPdfAsSigned(
+  record: Pick<
+    SiteCalibration,
+    | 'status'
+    | 'certificateVoidedAt'
+    | 'supersededByResubmissionId'
+    | 'emaapCertificatePdfUrl'
+    | 'signedCertificatePdfUrl'
+  >,
+  isSuperAdmin: boolean,
+): boolean {
+  if (!isSuperAdmin) return false;
+  if (record.supersededByResubmissionId?.trim()) return false;
+  if (record.certificateVoidedAt?.trim()) return false;
+  if (record.status !== 'certified') return false;
+  if (!record.emaapCertificatePdfUrl?.trim()) return false;
+  return !record.signedCertificatePdfUrl?.trim();
+}
+
+/** Same-document requeue after a wrong eMAAP certificate was bound. */
+export async function requeueVerificationForNewEmaapCertificate(
+  recordId: string,
+  record?: Pick<SiteCalibration, 'certificateNumber' | 'approvedAt' | 'updatedAt' | 'certifiedAt' | 'submittedAt'>,
+): Promise<void> {
+  await repairVerificationSubmitted(recordId, undefined, record);
+}
+
+/** Record an already-DSC-signed eMAAP PDF so the DSC engine stops retrying. */
+export async function adoptEmaapPdfAsSignedCertificate(
+  recordId: string,
+  emaapCertificatePdfUrl: string,
+): Promise<void> {
+  const url = emaapCertificatePdfUrl.trim();
+  if (!url) {
+    throw new Error('No eMAAP PDF URL to record as signed.');
+  }
+  const now = new Date().toISOString();
+  await updateDoc(doc(db, 'siteCalibrations', recordId), {
+    signedCertificatePdfUrl: url,
+    signedCertificateUploadedAt: now,
+    emaapSignedPdfUploadedAt: now,
+    updatedAt: now,
   });
 }

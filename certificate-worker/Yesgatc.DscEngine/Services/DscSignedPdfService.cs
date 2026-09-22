@@ -90,7 +90,21 @@ public sealed class DscSignedPdfService
             throw new InvalidOperationException("Certificate PDF is larger than 20 MB.");
         }
 
-        var signed = _signer.SignVisible(unsigned, token, record, layout);
+        byte[] signed;
+        if (PdfCertificateInspect.HasSignedDscField(unsigned))
+        {
+            if (!PdfCertificateInspect.ContainsSerial(unsigned, record.SerialNumber))
+            {
+                throw new InvalidOperationException(
+                    $"{record.CertificateNumber} PDF is already DSC-signed, but serial {record.SerialNumber} is not on that file. Requeue eMAAP — do not sign.");
+            }
+
+            signed = unsigned;
+        }
+        else
+        {
+            signed = _signer.SignVisible(unsigned, token, record, layout);
+        }
         var localDir = WorkerDataPaths.CertificatePdfDirectory(record.Id);
         await File.WriteAllBytesAsync(
             Path.Combine(localDir, SuggestedSignedFileName(record)),

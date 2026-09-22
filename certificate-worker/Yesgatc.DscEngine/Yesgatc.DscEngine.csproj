@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <DefineConstants>$(DefineConstants);DSC_ENGINE</DefineConstants>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <Product>YesGATC DSC Engine</Product>
     <AssemblyTitle>YesGATC DSC Engine</AssemblyTitle>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
