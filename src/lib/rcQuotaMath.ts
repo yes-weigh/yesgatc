@@ -127,9 +127,13 @@ export function pickQuotaSerialsForActor(
     isVerifier?: boolean;
     isVct?: boolean;
     actorUid?: string | null;
+    /** Factory stamping staff under Master RC share the warehouse unused pool. */
+    isMasterRc?: boolean;
   },
 ): string[] {
   if (actor.isRcAdmin) return seats.remaining;
+  if (actor.isVerifier && actor.isMasterRc) return seats.remaining;
+  if (actor.isVct && actor.isMasterRc) return seats.remaining;
   if (actor.isVct) return seats.vctRemaining;
   const uid = String(actor.actorUid || '').trim();
   const mine = uid ? unusedAllottedToUid(seats, uid) : [];

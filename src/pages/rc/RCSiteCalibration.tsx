@@ -165,7 +165,7 @@ import {
 } from './VerificationSessionFields';
 import { VerificationJobKindPicker } from './VerificationJobKindPicker';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
-import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
+import { isMasterRc, pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
 import { ovQuotaQtyCap, type OvQuotaGate } from '../../lib/ovQuotaGate';
 import { computeInterweighingDirectSeats } from '../../lib/interweighingDirectSerials';
 import {
@@ -473,6 +473,10 @@ export const RCSiteCalibration: React.FC = () => {
     isVerifier,
     isVct,
     actorUid,
+    isMasterRc: isMasterRc({
+      rcCode: rcProfile?.rcCode,
+      companyName: rcProfile?.companyName,
+    }),
   });
   const directSeats = useMemo(
     () =>

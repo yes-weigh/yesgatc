@@ -1286,8 +1286,17 @@ function matchPasProduct(item, pasProducts) {
   return null;
 }
 
+function isMachineLotSerial(serial) {
+  const text = String(serial || '').trim().toUpperCase();
+  if (!text || text.startsWith('YJ')) return false;
+  return /^[A-Z]{2,}\d+$/.test(text);
+}
+
 function isPasInbound(item, pasProduct) {
-  if (isGasStickerSerial(readSerialNumber(item))) return false;
+  const serial = readSerialNumber(item);
+  if (isGasStickerSerial(serial)) return false;
+  // AS00276-style lots are stamping serials. YJ, digits, and P1001 stay in the PAS bank.
+  if (isMachineLotSerial(serial)) return false;
   if (isPasTyped(item)) return true;
   const type = inboundSerialType(item);
   if (type === 'gas' || type === 'general') return false;
@@ -1643,7 +1652,6 @@ async function applySerialAllottedMany(db, items, rcCache) {
     results.push(result);
     const reallot = Boolean(
       rc?.id
-      && !isMasterRcCode(rc.rcCode)
       && (
         !previous
         || previousStatus === 'cancelled'

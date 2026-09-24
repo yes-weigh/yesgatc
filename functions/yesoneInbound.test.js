@@ -748,6 +748,81 @@ test('numeric PAS serials land in number bank', async () => {
   assert.equal(db._store['serialAllotments/57677'], undefined);
 });
 
+test('AS product.bank lots stay on the IWP stamping list', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/iwp': {
+      role: 'rc_admin',
+      rcCode: 'IWP',
+      companyName: 'INTERWEIGHING PVT LTD',
+      yesoneAllottedSerials: [],
+    },
+    'products/q8': {
+      pasPreAllotted: true,
+      yesoneSku: 'LCSSW',
+      name: 'ELECTRONIC CASH SCALE Q8',
+    },
+  });
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'product.bank',
+        productBank: true,
+        sku: 'LCSSW',
+        productName: 'ELECTRONIC CASH SCALE Q8',
+        rcCode: 'IWP',
+        serials: ['AS00276', 'AS00277'],
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['pasSerialBank/AS00276'], undefined);
+  assert.equal(db._store['serialAllotments/AS00276'].rcCode, 'IWP');
+  assert.ok(db._store['users/iwp'].yesoneAllottedSerials.includes('AS00276'));
+});
+
+test('AS machine serials allotted to IWP stay on the stamping list', async () => {
+  const db = createMemoryDb({
+    'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
+    'users/iwp': {
+      role: 'rc_admin',
+      rcCode: 'IWP',
+      companyName: 'INTERWEIGHING PVT LTD',
+      yesoneAllottedSerials: [],
+    },
+  });
+  const res = mockRes();
+  await yesoneInboundHttpHandler(
+    {
+      method: 'POST',
+      query: { token: 'tok_live_aaaaaaaaaaaaaaaa' },
+      headers: {},
+      get: () => '',
+      body: {
+        event: 'serial.allotted',
+        sku: 'LCSSW',
+        productName: 'ELECTRONIC CASH SCALE Q8',
+        rcCode: 'IWP',
+        serials: ['AS00276', 'AS00277'],
+      },
+    },
+    res,
+    db,
+  );
+  assert.equal(res.body.ok, true);
+  assert.equal(db._store['serialAllotments/AS00276'].rcCode, 'IWP');
+  assert.equal(db._store['serialAllotments/AS00276'].status, 'allotted');
+  assert.ok(db._store['users/iwp'].yesoneAllottedSerials.includes('AS00276'));
+  assert.ok(db._store['users/iwp'].yesoneAllottedSerials.includes('AS00277'));
+});
+
 test('product.bank PAS range writes number bank for ATM GOLD', async () => {
   const db = createMemoryDb({
     'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },

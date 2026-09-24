@@ -39,7 +39,7 @@ import { subscribeRcWalletBalance } from '../../lib/rcWallet';
 import { verificationRecordsQuery } from '../../lib/verificationRecordsQuery';
 import { useRcQuotaSeats } from '../../hooks/useRcQuotaSeats';
 import { useRcCreatedVerifierCount } from '../../hooks/useRcCreatedVerifierCount';
-import { pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
+import { isMasterRc, pickQuotaSerialsForActor } from '../../lib/rcMasterQuota';
 import { useRoleBasePath, useRcScope } from '../../lib/roleScope';
 import { roleCanOpenCertificates, roleCanOpenVrAllotted } from '../../lib/roleNav';
 import { shouldShowVerificationStageQuotaTiles, verificationStageQuotaTotals } from '../../lib/vrAllotted';
@@ -293,6 +293,7 @@ export const RCDashboard: React.FC = () => {
       isVerifier,
       isVct,
       actorUid,
+      isMasterRc: isMasterRc({ rcCode: '', companyName: rcCompanyName }),
     });
     return verificationStageQuotaTotals({
       allottedByUid: quotaSeats.allottedByUid,
@@ -309,6 +310,7 @@ export const RCDashboard: React.FC = () => {
     isVerifier,
     isVct,
     quotaSeats,
+    rcCompanyName,
   ]);
 
   const stages = useMemo<StageCard[]>(() => {

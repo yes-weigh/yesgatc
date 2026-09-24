@@ -371,6 +371,10 @@ export function allotmentUsesPasProduct(
   if (isGasStickerSerial(row.serialNumber)) return false;
   if (isPasStickerSerial(row.serialNumber)) return true;
   if (String(row.pool || '').trim().toLowerCase() === 'pas') return true;
+  // AS and other lettered machine serials stay on the stamping list.
+  if (/[A-Za-z]/.test(String(row.serialNumber || '')) && !isPasStickerSerial(row.serialNumber)) {
+    return false;
+  }
   if (pasProducts.length === 0) return false;
   const productId = String(row.productId || '').trim();
   if (productId && pasProducts.some(product => product.id === productId)) return true;
