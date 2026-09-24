@@ -184,7 +184,7 @@ public static class EmaapCertificatesIssuedAutomation
                     }
                 }
 
-                await page.WaitForTimeoutAsync(700);
+                await page.WaitForTimeoutAsync(250);
             }
         }
 
@@ -503,7 +503,7 @@ public static class EmaapCertificatesIssuedAutomation
             }
 
             best = null;
-            await page.WaitForTimeoutAsync(waitForNewCert ? 900 : 600);
+            await page.WaitForTimeoutAsync(waitForNewCert ? 350 : 250);
             if (attempt == 2)
             {
                 await TrySetPageLengthAsync(page, 100);
@@ -1158,8 +1158,8 @@ public static class EmaapCertificatesIssuedAutomation
                     : $"Download button missing for certificate {best.CertificateNumber}.");
         }
 
-        await WaitUntilOverlaysClearAsync(page, cancellationToken, maxSeconds: 10);
-        await page.WaitForTimeoutAsync(3_000);
+        await WaitUntilOverlaysClearAsync(page, cancellationToken, maxSeconds: 4);
+        await page.WaitForTimeoutAsync(400);
 
         if (pending)
         {
@@ -1817,33 +1817,124 @@ public static class EmaapCertificatesIssuedAutomation
             return;
         }
 
-        var certInput = page.Locator("table.custom-table thead tr.filter-row input.filter-input").First;
-        await certInput.WaitForAsync(new LocatorWaitForOptions
-        {
-            State = WaitForSelectorState.Visible,
-            Timeout = 12_000,
-        });
-        await certInput.ClickAsync();
-        await certInput.FillAsync("");
-        await certInput.FillAsync(seq);
-
-        var searchBtn = page.Locator("table.custom-table thead tr.filter-row button.filter-search-btn").First;
-        await searchBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
-
-        var match = page.Locator("table.custom-table tbody tr")
-            .Filter(new LocatorFilterOptions { HasText = seq });
-        try
-        {
-            await match.First.WaitForAsync(new LocatorWaitForOptions
+        await page.Locator("table.custom-table thead tr.filter-row").First.WaitForAsync(
+            new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Visible,
-                Timeout = 15_000,
+                Timeout = 12_000,
             });
-        }
-        catch (PlaywrightException)
+
+        // Portal search button: if the list is not on page 1 it only changes the page and
+        // the refetch uses the previous filter. Playwright's click also hangs because the
+        // fetch re-renders the button mid-action. Set the certificate column, DOM-click,
+        // then set and search again so the second click runs on page 1 with this number.
+        for (var pass = 0; pass < 2; pass++)
         {
-            throw new InvalidOperationException(
-                $"Certificates Issued filter for {seq} returned no row. Type the last digits in Third Party Certificate No. and click the yellow search.");
+            cancellationToken.ThrowIfCancellationRequested();
+            var armed = await ArmCertificateColumnFilterAsync(page, seq);
+            if (!armed)
+            {
+                throw new InvalidOperationException(
+                    "Certificates Issued filter has no certificate-number column.");
+            }
+
+            await DomClickIssuedSearchAsync(page);
+            await WaitForIssuedListIdleAsync(page, cancellationToken);
+        }
+
+        var want = NormalizeCertificateNumber(certificateNumber);
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var row = await FindRowByCertificateNumberAsync(page, want);
+            if (row is not null)
+            {
+                return;
+            }
+
+            await page.WaitForTimeoutAsync(400);
+        }
+
+        throw new InvalidOperationException(
+            $"Certificates Issued filter for {seq} returned no row. Type the last digits in the certificate column and click the yellow search.");
+    }
+
+    private static async Task<bool> ArmCertificateColumnFilterAsync(IPage page, string seq)
+    {
+        return await page.EvaluateAsync<bool>(
+            """
+            (seq) => {
+              const setVal = (el, value) => {
+                const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+                proto.set.call(el, value);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              };
+              const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+              const tables = Array.from(document.querySelectorAll('table.custom-table'));
+              for (const table of tables) {
+                const headerRow = table.querySelector('thead tr:not(.filter-row)');
+                const filterRow = table.querySelector('thead tr.filter-row');
+                if (!headerRow || !filterRow) continue;
+                const headers = Array.from(headerRow.children);
+                const filters = Array.from(filterRow.children);
+                let certInput = null;
+                for (let i = 0; i < headers.length; i++) {
+                  const label = norm(headers[i].innerText || '');
+                  const input = filters[i] && filters[i].querySelector('input.filter-input, input[type="text"]');
+                  if (!input) continue;
+                  if (label.includes('certificate')) certInput = input;
+                  else setVal(input, '');
+                }
+                if (!certInput) {
+                  certInput = filterRow.querySelector('input.filter-input');
+                }
+                if (!certInput) continue;
+                setVal(certInput, seq);
+                return true;
+              }
+              return false;
+            }
+            """,
+            seq);
+    }
+
+    private static async Task DomClickIssuedSearchAsync(IPage page)
+    {
+        await page.EvaluateAsync(
+            """
+            () => {
+              const btn = document.querySelector('table.custom-table thead tr.filter-row button.filter-search-btn')
+                || document.querySelector('button.filter-search-btn');
+              if (btn) btn.click();
+            }
+            """);
+    }
+
+    private static async Task WaitForIssuedListIdleAsync(IPage page, CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        var quietSince = DateTime.UtcNow;
+        var sawSpinner = false;
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var spinning = await page.EvaluateAsync<bool>(
+                """
+                () => !!document.querySelector('table.custom-table tbody .spinner-border')
+                """);
+            if (spinning)
+            {
+                sawSpinner = true;
+                quietSince = DateTime.UtcNow;
+            }
+            else if (sawSpinner || (DateTime.UtcNow - quietSince).TotalMilliseconds >= 300)
+            {
+                return;
+            }
+
+            await page.WaitForTimeoutAsync(200);
         }
     }
 

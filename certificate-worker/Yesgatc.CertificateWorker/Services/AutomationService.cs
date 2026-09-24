@@ -1197,7 +1197,7 @@ public sealed class AutomationService : IAsyncDisposable
                 "seal", "Verification seal photo", "emaap-photo-5-seal.jpg"),
         };
 
-        foreach (var slot in slots)
+        var preparedSlotPaths = await Task.WhenAll(slots.Select(async slot =>
         {
             var downloaded = await imageDownload.TryDownloadVerificationImageAsync(
                 job.Id,
@@ -1211,8 +1211,7 @@ public sealed class AutomationService : IAsyncDisposable
 
             if (downloaded is null)
             {
-                preparedPaths.Add(string.Empty);
-                continue;
+                return string.Empty;
             }
 
             var prepared = DocaUploadImagePreparer.PrepareMachinePhotoForUpload(
@@ -1221,8 +1220,9 @@ public sealed class AutomationService : IAsyncDisposable
                 _settings.DocaUploadImageMaxBytes,
                 _settings.DocaUploadImageMaxEdgePx,
                 outputFileName: slot.OutFile);
-            preparedPaths.Add(prepared.Path);
-        }
+            return prepared.Path;
+        }));
+        preparedPaths.AddRange(preparedSlotPaths);
 
         if (string.IsNullOrWhiteSpace(preparedPaths[0]) || !File.Exists(preparedPaths[0]))
         {

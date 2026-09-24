@@ -64,7 +64,11 @@ public static class EmaapCertificateGenerationAutomation
         await ClearAndFillByIdAsync(page, "#address", address);
         await AssertAlphanumericFieldAcceptedAsync(page, "#address", "Address");
         await SelectByIdLabelAsync(page, "#state_id", party.State, invokeOnchange: true);
-        await page.WaitForTimeoutAsync(800);
+        await page.Locator("#district_id option").Nth(1).WaitForAsync(new LocatorWaitForOptions
+        {
+            State = WaitForSelectorState.Attached,
+            Timeout = 5_000,
+        });
         await SelectByIdLabelAsync(page, "#district_id", party.District);
         await FillByIdAsync(page, "#pincode", party.Pincode);
 
@@ -134,12 +138,12 @@ public static class EmaapCertificateGenerationAutomation
         {
             await page.WaitForLoadStateAsync(LoadState.NetworkIdle, new PageWaitForLoadStateOptions
             {
-                Timeout = 15_000,
+                Timeout = 3_000,
             });
         }
         catch (PlaywrightException)
         {
-            await page.WaitForTimeoutAsync(1_500);
+            await page.WaitForTimeoutAsync(300);
         }
     }
 
@@ -947,14 +951,31 @@ public static class EmaapCertificateGenerationAutomation
         }
 
         await SetSelectValueAsync(select, "", "Select", callShblocks: true);
-        await page.WaitForTimeoutAsync(1_000);
+        await page.WaitForTimeoutAsync(150);
         cancellationToken.ThrowIfCancellationRequested();
 
         await SetSelectValueAsync(select, InstrumentTypeValue, InstrumentTypeLabel, callShblocks: true);
 
-        // Portal auto-populates Select GATC (#gatc_user), Mobile, Belongs to after instrument type.
-        await page.WaitForTimeoutAsync(2_000);
-        cancellationToken.ThrowIfCancellationRequested();
+        // Portal auto-fills mobile after instrument type. Overwrite only after that value lands,
+        // otherwise the late autofill replaces the job mobile.
+        var autofillDeadline = DateTime.UtcNow.AddSeconds(3);
+        while (DateTime.UtcNow < autofillDeadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var mobileNow = (await page.Locator("#mobile").InputValueAsync()).Trim();
+                if (mobileNow.Length >= 10)
+                {
+                    break;
+                }
+            }
+            catch (PlaywrightException)
+            {
+            }
+
+            await page.WaitForTimeoutAsync(120);
+        }
 
         await page.Locator("#gatc_user").WaitForAsync(new LocatorWaitForOptions
         {
