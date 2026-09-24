@@ -1469,21 +1469,44 @@ public static class EmaapCertificatesIssuedAutomation
             await page.WaitForTimeoutAsync(200);
         }
 
-        await confirm.First.ClickAsync(new LocatorClickOptions { Timeout = 8_000 });
+        // DOM click: Playwright's click waits out the modal re-render and the title stays visible.
+        await page.EvaluateAsync(
+            """
+            () => {
+              const roots = Array.from(document.querySelectorAll('.modal.show, [role="dialog"], .swal2-popup'));
+              const root = roots.find(el => /click to select a signed pdf/i.test(el.innerText || '')) || document;
+              const btn = Array.from(root.querySelectorAll('button')).find(el =>
+                /^\s*(Upload Signed PDF|Sign and Upload|Sign & Upload|Sign PDF)\s*$/i.test(
+                  (el.innerText || '').replace(/\s+/g, ' ').trim()));
+              if (btn) btn.click();
+            }
+            """);
 
-        try
+        var hiddenDeadline = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < hiddenDeadline)
         {
-            await hint.WaitForAsync(new LocatorWaitForOptions
+            cancellationToken.ThrowIfCancellationRequested();
+            await TryClickSweetAlertOkAsync(page);
+            try
             {
-                State = WaitForSelectorState.Hidden,
-                Timeout = 25_000,
-            });
+                if (await hint.CountAsync() == 0 || !await hint.First.IsVisibleAsync())
+                {
+                    return;
+                }
+            }
+            catch (PlaywrightException)
+            {
+                return;
+            }
+
+            await page.WaitForTimeoutAsync(300);
         }
-        catch (PlaywrightException)
-        {
-            throw new InvalidOperationException(
-                $"eMAAP Upload Signed PDF confirm did not finish for {certificateNumber}.");
-        }
+
+        var alert = await ReadVisibleAlertTextAsync(page);
+        throw new InvalidOperationException(
+            string.IsNullOrWhiteSpace(alert)
+                ? $"eMAAP Upload Signed PDF confirm did not finish for {certificateNumber}."
+                : $"eMAAP Upload Signed PDF confirm did not finish for {certificateNumber}. Dialog: {alert}");
     }
 
     private static async Task<bool> ClickIssuedDownloadAsync(
