@@ -164,6 +164,13 @@ export function isPasStickerSerial(serial: string): boolean {
   return serial.trim().toUpperCase().startsWith('YJ');
 }
 
+/** Interweighing factory GATC stickers (Y10315–Y11000, YZ01420–YZ01500). */
+export function isFactoryGatcSticker(serial: string): boolean {
+  const key = serial.trim().toUpperCase();
+  return serialInInclusiveRange(key, 'Y10315', 'Y11000')
+    || serialInInclusiveRange(key, 'YZ01420', 'YZ01500');
+}
+
 /** GAS allotted stickers. YJ is PAS even if it also starts with a letter. */
 export function isGasStickerSerial(serial: string): boolean {
   const key = serial.trim().toUpperCase();
@@ -368,7 +375,7 @@ export function allotmentUsesPasProduct(
   row: PasAllotmentIdentity,
   pasProducts: readonly Product[],
 ): boolean {
-  if (isGasStickerSerial(row.serialNumber)) return false;
+  if (isGasStickerSerial(row.serialNumber) || isFactoryGatcSticker(row.serialNumber)) return false;
   if (isPasStickerSerial(row.serialNumber)) return true;
   if (String(row.pool || '').trim().toLowerCase() === 'pas') return true;
   if (pasProducts.length === 0) return false;

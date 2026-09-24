@@ -4,6 +4,7 @@ import {
   remainingSerialsForProduct,
   type OvQuotaAllotment,
 } from './ovQuotaGate.ts';
+import { isFactoryGatcSticker } from './pasSerialBankMatch.ts';
 
 export type SerialEntryMode = 'gas-select' | 'pas-type';
 
@@ -64,9 +65,11 @@ export function gasAllottedChoices(options: {
   fallbackProduct?: { productId?: string; productName?: string };
 }): string[] {
   const pasBlocked = pasPoolSerialKeys(options.allotments);
-  const actorUnused = options.remaining.filter(
-    serial => !pasBlocked.has(serial.trim().toUpperCase()),
-  );
+  const actorUnused = options.remaining.filter(serial => {
+    const key = serial.trim().toUpperCase();
+    if (isFactoryGatcSticker(key)) return true;
+    return !pasBlocked.has(key);
+  });
   const remaining = remainingSerialsForProduct(
     actorUnused,
     gasAllotmentRows(options.allotments),

@@ -1288,7 +1288,7 @@ function matchPasProduct(item, pasProducts) {
 
 function isPasInbound(item, pasProduct) {
   const serial = readSerialNumber(item);
-  if (isGasStickerSerial(serial)) return false;
+  if (isGasStickerSerial(serial) || isMasterPoolSerial(serial)) return false;
   if (isPasTyped(item)) return true;
   const type = inboundSerialType(item);
   if (type === 'gas' || type === 'general') return false;
