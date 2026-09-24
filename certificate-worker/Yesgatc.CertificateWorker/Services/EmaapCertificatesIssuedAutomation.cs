@@ -662,16 +662,18 @@ public static class EmaapCertificatesIssuedAutomation
               const norm = (s) => String(s || '').replace(/\s+/g, '');
               const want = norm(wantCert).toUpperCase();
               const seq = want.split('/').pop();
-              const trs = Array.from(document.querySelectorAll('table tbody tr, table tr'));
+              const trs = Array.from(document.querySelectorAll('table.custom-table tbody tr'));
               for (let index = 0; index < trs.length; index++) {
                 const tr = trs[index];
-                const text = (tr.innerText || '').replace(/\s+/g, ' ').trim();
-                const compact = norm(text).toUpperCase();
+                const certCell = Array.from(tr.querySelectorAll('td')).find(td =>
+                  /IND\s*\/\s*GATC/i.test(td.innerText || ''));
+                const certText = (certCell ? certCell.innerText : tr.innerText || '');
+                const compact = norm(certText).toUpperCase();
                 if (!compact.includes(want) && !(seq && compact.includes('26/04/26/' + seq))) continue;
-                const m = text.match(/IND\s*\/\s*GATC\s*\/\s*KL\s*\/\s*26\s*\/\s*04\s*\/\s*26\s*\/\s*([\d\s]+)/i);
+                const m = compact.match(/IND\/GATC\/KL\/26\/04\/26\/(\d+)/i);
                 if (!m) continue;
-                const seqStr = m[1].replace(/\s+/g, '');
-                const mobileMatch = text.match(/\b([6-9]\d{9})\b/);
+                const seqStr = m[1];
+                const mobileMatch = (tr.innerText || '').match(/\b([6-9]\d{9})\b/);
                 return JSON.stringify({
                   index,
                   certificateNumber: 'IND/GATC/KL/26/04/26/' + seqStr,
@@ -1856,8 +1858,28 @@ public static class EmaapCertificatesIssuedAutomation
             await page.WaitForTimeoutAsync(400);
         }
 
+        var snapshot = await page.EvaluateAsync<string>(
+            """
+            () => {
+              const tables = Array.from(document.querySelectorAll('table.custom-table'));
+              const bits = tables.slice(0, 2).map((table, n) => {
+                const headerRow = table.querySelector('thead tr:not(.filter-row)');
+                const filterRow = table.querySelector('thead tr.filter-row');
+                const headers = headerRow
+                  ? [...headerRow.children].map(th => (th.innerText || '').replace(/\s+/g, ' ').trim())
+                  : [];
+                const values = filterRow
+                  ? [...filterRow.querySelectorAll('input')].map(el => (el.value || '').trim()).filter(Boolean)
+                  : [];
+                const body = (table.querySelector('tbody')?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+                return `t${n} headers=${headers.join(' / ')} filters=${values.join(',')} body=${body}`;
+              });
+              return bits.join(' || ') || 'no custom-table';
+            }
+            """);
+
         throw new InvalidOperationException(
-            $"Certificates Issued filter for {seq} returned no row. Type the last digits in the certificate column and click the yellow search.");
+            $"Certificates Issued filter for {seq} returned no row. {snapshot}");
     }
 
     private static async Task<bool> ArmCertificateColumnFilterAsync(IPage page, string seq)
