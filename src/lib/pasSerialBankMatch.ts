@@ -319,7 +319,7 @@ export function interpretPasBankLookup(
   return null;
 }
 
-/** Yesone PAS meta from/to — YJ only. Never expand a G/X unused range into the block list. */
+/** Yesone PAS meta from/to. Never expand a G/X unused range into the block list. */
 export function pasSerialsFromMetaRanges(
   metas: ReadonlyArray<{ from?: string | null; to?: string | null }>,
 ): string[] {
@@ -330,7 +330,7 @@ export function pasSerialsFromMetaRanges(
     if (!from || !to) continue;
     if (isGasStickerSerial(from) || isGasStickerSerial(to)) continue;
     for (const serial of expandSerialRange(from, to)) {
-      if (isPasStickerSerial(serial)) out.push(serial);
+      if (!isGasStickerSerial(serial)) out.push(serial);
     }
   }
   return [...new Set(out)];
@@ -371,10 +371,6 @@ export function allotmentUsesPasProduct(
   if (isGasStickerSerial(row.serialNumber)) return false;
   if (isPasStickerSerial(row.serialNumber)) return true;
   if (String(row.pool || '').trim().toLowerCase() === 'pas') return true;
-  // AS and other lettered machine serials stay on the stamping list.
-  if (/[A-Za-z]/.test(String(row.serialNumber || '')) && !isPasStickerSerial(row.serialNumber)) {
-    return false;
-  }
   if (pasProducts.length === 0) return false;
   const productId = String(row.productId || '').trim();
   if (productId && pasProducts.some(product => product.id === productId)) return true;

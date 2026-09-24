@@ -31,6 +31,9 @@ function createMemoryDb(seed = {}) {
       async update(data) {
         store[path] = { ...store[path], ...data };
       },
+      async delete() {
+        delete store[path];
+      },
     };
   }
 
@@ -748,19 +751,21 @@ test('numeric PAS serials land in number bank', async () => {
   assert.equal(db._store['serialAllotments/57677'], undefined);
 });
 
-test('AS product.bank lots stay on the IWP stamping list', async () => {
+test('AS product.bank lots go to the PAS number bank', async () => {
   const db = createMemoryDb({
     'appSettings/global': { yesoneInboundToken: 'tok_live_aaaaaaaaaaaaaaaa' },
     'users/iwp': {
       role: 'rc_admin',
       rcCode: 'IWP',
       companyName: 'INTERWEIGHING PVT LTD',
-      yesoneAllottedSerials: [],
+      yesoneAllottedSerials: ['AS00276', 'AS00277'],
     },
+    'serialAllotments/AS00276': { rcId: 'iwp', rcCode: 'IWP', status: 'allotted' },
+    'serialAllotments/AS00277': { rcId: 'iwp', rcCode: 'IWP', status: 'allotted' },
     'products/q8': {
       pasPreAllotted: true,
-      yesoneSku: 'LCSSW',
-      name: 'ELECTRONIC CASH SCALE Q8',
+      yesoneSku: 'ECS5W',
+      name: 'Electronic Cash scale Q8',
     },
   });
   const res = mockRes();
@@ -773,19 +778,23 @@ test('AS product.bank lots stay on the IWP stamping list', async () => {
       body: {
         event: 'product.bank',
         productBank: true,
-        sku: 'LCSSW',
-        productName: 'ELECTRONIC CASH SCALE Q8',
+        sku: 'ECS5W',
+        productName: 'Electronic Cash scale Q8',
         rcCode: 'IWP',
-        serials: ['AS00276', 'AS00277'],
+        serials: ['AS00276', 'AS00300'],
       },
     },
     res,
     db,
   );
   assert.equal(res.body.ok, true);
-  assert.equal(db._store['pasSerialBank/AS00276'], undefined);
-  assert.equal(db._store['serialAllotments/AS00276'].rcCode, 'IWP');
-  assert.ok(db._store['users/iwp'].yesoneAllottedSerials.includes('AS00276'));
+  assert.equal(db._store['pasSerialBank/AS00276'].pool, 'pas');
+  assert.equal(db._store['pasSerialBank/AS00276'].sku, 'ECS5W');
+  assert.equal(db._store['pasSerialBank/AS00300'].pool, 'pas');
+  assert.equal(db._store['serialAllotments/AS00276'], undefined);
+  assert.equal(db._store['serialAllotments/AS00277'].status, 'allotted');
+  assert.equal(db._store['users/iwp'].yesoneAllottedSerials.includes('AS00276'), false);
+  assert.ok(db._store['users/iwp'].yesoneAllottedSerials.includes('AS00277'));
 });
 
 test('AS machine serials allotted to IWP stay on the stamping list', async () => {

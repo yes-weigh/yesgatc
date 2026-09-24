@@ -1286,17 +1286,9 @@ function matchPasProduct(item, pasProducts) {
   return null;
 }
 
-function isMachineLotSerial(serial) {
-  const text = String(serial || '').trim().toUpperCase();
-  if (!text || text.startsWith('YJ')) return false;
-  return /^[A-Z]{2,}\d+$/.test(text);
-}
-
 function isPasInbound(item, pasProduct) {
   const serial = readSerialNumber(item);
   if (isGasStickerSerial(serial)) return false;
-  // AS00276-style lots are stamping serials. YJ, digits, and P1001 stay in the PAS bank.
-  if (isMachineLotSerial(serial)) return false;
   if (isPasTyped(item)) return true;
   const type = inboundSerialType(item);
   if (type === 'gas' || type === 'general') return false;
@@ -1541,6 +1533,7 @@ async function applySerialAllottedMany(db, items, rcCache) {
   const inwardItems = [];
   const inwardResults = [];
   const pasMetaByKey = new Map();
+  const gasReleases = [];
   const now = new Date().toISOString();
   const pasProducts = await loadPasProducts(db);
 
@@ -1558,6 +1551,17 @@ async function applySerialAllottedMany(db, items, rcCache) {
     }
     const id = serialDocId(serialNumber);
     if (isPasInbound(item, pasProduct)) {
+      const gasRef = db.doc(`${SERIAL_COLLECTION}/${id}`);
+      const gasSnap = await gasRef.get();
+      if (gasSnap.exists) {
+        gasReleases.push(gasRef);
+        const prevRc = optionalTrimmed(gasSnap.data()?.rcId);
+        if (prevRc) {
+          const drop = serialsByRc.get(`drop:${prevRc}`) || [];
+          drop.push(serialNumber);
+          serialsByRc.set(`drop:${prevRc}`, drop);
+        }
+      }
       const existing = await db.doc(`${PAS_SERIAL_COLLECTION}/${id}`).get();
       const prev = existing.exists ? existing.data() || {} : {};
       const prevStatus = existing.exists ? optionalTrimmed(prev.status) : null;
@@ -1697,6 +1701,9 @@ async function applySerialAllottedMany(db, items, rcCache) {
   }
 
   await commitDocSets(db, writes);
+  for (const ref of gasReleases) {
+    if (typeof ref.delete === 'function') await ref.delete();
+  }
   for (const [rcId, serials] of serialsByRc) {
     if (rcId.startsWith('drop:')) {
       const dropId = rcId.slice(5);

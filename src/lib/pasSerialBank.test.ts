@@ -228,6 +228,11 @@ describe('PAS remaining sticker exclusion', () => {
   it('does not expand a GAS X/G unused range from PAS meta', () => {
     assert.deepEqual(pasSerialsFromMetaRanges([{ from: 'X00110', to: 'X00120' }]), []);
     assert.deepEqual(pasSerialsFromMetaRanges([{ from: 'G0535', to: 'G0583' }]), []);
+    assert.deepEqual(pasSerialsFromMetaRanges([{ from: 'AS00276', to: 'AS00278' }]), [
+      'AS00276',
+      'AS00277',
+      'AS00278',
+    ]);
     assert.equal(isPasStickerSerial('YJ00245'), true);
     assert.equal(isGasStickerSerial('X00423'), true);
     assert.equal(isGasStickerSerial('G0541'), true);
@@ -246,6 +251,18 @@ describe('PAS remaining sticker exclusion', () => {
     assert.deepEqual(
       rows.filter(row => allotmentUsesPasProduct(row, [scale10])).map(row => row.serialNumber),
       ['YJ00245'],
+    );
+  });
+
+  it('treats an AS lot on a PAS product as PAS', () => {
+    const q8 = product({ id: 'q8', name: 'Electronic Cash scale Q8', yesoneSku: 'ECS5W', modelid: 'ECSP' });
+    assert.equal(
+      allotmentUsesPasProduct({ serialNumber: 'AS00300', sku: 'ECS5W' }, [q8]),
+      true,
+    );
+    assert.equal(
+      allotmentUsesPasProduct({ serialNumber: 'AS00300', sku: 'OTHER' }, [q8]),
+      false,
     );
   });
 });
