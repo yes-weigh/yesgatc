@@ -12,6 +12,7 @@ export function usePasSerialHint(
 ): PasSerialHint | null {
   const [hint, setHint] = useState<PasSerialHint | null>(null);
   const allowUsed = Boolean(options?.allowUsed);
+  const ownRecordId = options?.ownRecordId || '';
 
   useEffect(() => {
     if (!enabled || !product) {
@@ -28,7 +29,7 @@ export function usePasSerialHint(
     }
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      void verifyPasSerialInBank(trimmed, product, { allowUsed })
+      void verifyPasSerialInBank(trimmed, product, { allowUsed, ownRecordId: ownRecordId || null })
         .then(error => {
           if (cancelled) return;
           setHint(
@@ -46,7 +47,7 @@ export function usePasSerialHint(
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [allowUsed, enabled, product, serial]);
+  }, [allowUsed, enabled, ownRecordId, product, serial]);
 
   return hint;
 }

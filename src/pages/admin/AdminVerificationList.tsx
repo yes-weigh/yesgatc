@@ -767,17 +767,6 @@ export const AdminVerificationList: React.FC = () => {
         throw new Error(pasBankError);
       }
 
-      await markPasCalibrationRecordsUsed(
-        selectedRecords.map(record => ({
-          productId: record.productId,
-          serialNumber: record.serialNumber,
-          recordId: record.id,
-          rcId: record.rcId,
-          verificationType: record.verificationType,
-        })),
-        products,
-        { uid: user?.uid, rcId: selectedRecords[0]?.rcId },
-      );
       await ensureRvWalletDebitedForRecords({
         records: selectedRecords,
         products,
@@ -791,6 +780,17 @@ export const AdminVerificationList: React.FC = () => {
         })),
         db,
         submitOptions,
+      );
+      await markPasCalibrationRecordsUsed(
+        selectedRecords.map(record => ({
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+          rcId: record.rcId,
+          verificationType: record.verificationType,
+        })),
+        products,
+        { uid: user?.uid, rcId: selectedRecords[0]?.rcId },
       );
     },
     [products, user?.uid, appSettings, submitOptions],
@@ -814,16 +814,6 @@ export const AdminVerificationList: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await markPasCalibrationRecordsUsed(
-        [{
-          productId: record.productId,
-          serialNumber: record.serialNumber,
-          recordId: record.id,
-          verificationType: record.verificationType,
-        }],
-        products,
-        { uid: user?.uid, rcId: record.rcId },
-      );
       await ensureRvWalletDebitedForRecords({
         records: [record],
         products,
@@ -837,6 +827,16 @@ export const AdminVerificationList: React.FC = () => {
         },
         db,
         submitOptions,
+      );
+      await markPasCalibrationRecordsUsed(
+        [{
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+          verificationType: record.verificationType,
+        }],
+        products,
+        { uid: user?.uid, rcId: record.rcId },
       );
       setSelectedDraftIds(prev => {
         if (!prev.has(record.id)) return prev;

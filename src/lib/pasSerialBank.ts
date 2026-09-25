@@ -15,6 +15,7 @@ import {
   pasBankMatchesProduct,
   pasBankOptionsForJob,
   pasBankStatusError,
+  pasSerialHoldIsStale,
   pasSerialsFromMetaRanges,
   pasSharedPoolKey,
   serialInInclusiveRange,
@@ -141,7 +142,14 @@ export async function verifyPasSerialInBank(
   try {
     const snap = await getDoc(doc(db, PAS_SERIAL_BANK_COLLECTION, id));
     const data = snap.exists() ? ((snap.data() || {}) as PasBankDoc) : null;
-    return interpretPasBankLookup(trimmed, data, product, options);
+    const lookup = interpretPasBankLookup(trimmed, data, product, options);
+    if (!lookup || !data || !/already used/i.test(lookup)) return lookup;
+    const holderId = String(data.usedRecordId || '').trim();
+    if (!holderId || holderId === String(options?.ownRecordId || '').trim()) return null;
+    const holder = await getDoc(doc(db, 'siteCalibrations', holderId));
+    const holderStatus = holder.exists() ? String(holder.data()?.status || '') : null;
+    if (!pasSerialHoldIsStale(holder.exists(), holderStatus)) return lookup;
+    return interpretPasBankLookup(trimmed, { ...data, status: 'available' }, product, options);
   } catch (err) {
     if (firebaseDenied(err)) {
       return 'PAS number bank is blocked. Super admin must deploy Firestore rules.';
@@ -172,14 +180,17 @@ export async function verifyPasDevicesInBank(
 }
 
 export async function verifyPasCalibrationRecords(
-  records: Array<Pick<SiteCalibration, 'productId' | 'serialNumber' | 'verificationType'>>,
+  records: Array<Pick<SiteCalibration, 'id' | 'productId' | 'serialNumber' | 'verificationType'>>,
   products: readonly Product[] | undefined,
 ): Promise<string | null> {
   for (const record of records) {
     const error = await verifyPasDevicesInBank(
       calibrationRowsForPasCheck([record]),
       products,
-      pasBankOptionsForJob(record.verificationType),
+      {
+        ...pasBankOptionsForJob(record.verificationType),
+        ownRecordId: record.id,
+      },
     );
     if (error) return error;
   }
@@ -218,7 +229,13 @@ export async function markPasSerialUsed(options: {
     if (status === 'used') {
       if (options.recordId && data.usedRecordId === options.recordId) return;
       if (options.allowUsed) return;
-      throw new Error(`Serial ${trimmed} is already used.`);
+      const holderId = String(data.usedRecordId || '').trim();
+      if (!holderId) throw new Error(`Serial ${trimmed} is already used.`);
+      const holder = await tx.get(doc(db, 'siteCalibrations', holderId));
+      const holderStatus = holder.exists() ? String(holder.data()?.status || '') : null;
+      if (!pasSerialHoldIsStale(holder.exists(), holderStatus)) {
+        throw new Error(`Serial ${trimmed} is already used.`);
+      }
     }
     const statusError = pasBankStatusError(trimmed, status, Boolean(options.allowUsed));
     if (statusError) throw new Error(statusError);

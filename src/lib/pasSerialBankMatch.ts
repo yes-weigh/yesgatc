@@ -295,10 +295,18 @@ export function mergePasBankCounts(
 export type PasBankVerifyOptions = {
   /** RV types an existing (often already used) PAS serial. OV must still be unused. */
   allowUsed?: boolean;
+  /** This verification already reserved the serial. Retry must not treat that as a conflict. */
+  ownRecordId?: string | null;
 };
 
 export function pasBankOptionsForJob(verificationType: string | undefined | null): PasBankVerifyOptions {
   return { allowUsed: verificationType === 'RV' };
+}
+
+/** A used seat whose verification never left draft is not a real use. */
+export function pasSerialHoldIsStale(holderExists: boolean, holderStatus: string | null | undefined): boolean {
+  if (!holderExists) return true;
+  return String(holderStatus || '').trim().toLowerCase() === 'draft';
 }
 
 export function pasBankStatusError(serial: string, status: string, allowUsed = false): string | null {
@@ -318,7 +326,15 @@ export function interpretPasBankLookup(
   const trimmed = serial.trim();
   if (!trimmed) return 'Serial number is required.';
   if (!data) return `Serial ${trimmed} is not in the PAS number bank.`;
-  const statusError = pasBankStatusError(trimmed, String(data.status || ''), Boolean(options?.allowUsed));
+  const ownRecordId = String(options?.ownRecordId || '').trim();
+  const reservedByThisRecord = Boolean(
+    ownRecordId && String(data.usedRecordId || '').trim() === ownRecordId,
+  );
+  const statusError = pasBankStatusError(
+    trimmed,
+    String(data.status || ''),
+    Boolean(options?.allowUsed) || reservedByThisRecord,
+  );
   if (statusError) return statusError;
   if (!pasBankMatchesProduct(data, product)) {
     return `Serial ${trimmed} is not allotted to this PAS product.`;

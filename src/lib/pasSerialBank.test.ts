@@ -11,6 +11,7 @@ import {
   pasBankListedForProduct,
   pasBankMatchesProduct,
   pasBankOptionsForJob,
+  pasSerialHoldIsStale,
   pasSerialsFromMetaRanges,
   pasSharedPoolKey,
   serialInInclusiveRange,
@@ -205,6 +206,25 @@ describe('interpretPasBankLookup', () => {
       'Serial YJ00001 is already used.',
     );
     assert.equal(pasBankOptionsForJob('OV').allowUsed, false);
+  });
+
+  it('treats a draft or missing holder as a stale lock', () => {
+    assert.equal(pasSerialHoldIsStale(false, null), true);
+    assert.equal(pasSerialHoldIsStale(true, 'draft'), true);
+    assert.equal(pasSerialHoldIsStale(true, 'certified'), false);
+    assert.equal(pasSerialHoldIsStale(true, 'submitted'), false);
+  });
+
+  it('allows a used serial reserved by the same verification', () => {
+    assert.equal(
+      interpretPasBankLookup(
+        'YJ00001',
+        { ...bank, status: 'used', usedRecordId: 'rec-1' },
+        scale10,
+        { ownRecordId: 'rec-1' },
+      ),
+      null,
+    );
   });
 
   it('allows used serial on RV', () => {

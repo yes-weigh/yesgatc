@@ -868,15 +868,41 @@ service cloud.firestore {
     }
 
     // PAS number bank. Yesone inbound webhook writes via Admin SDK only.
+    function pasHoldPath() {
+      return /databases/$(database)/documents/siteCalibrations/$(resource.data.usedRecordId);
+    }
+
+    function pasHoldIsDraft() {
+      return resource.data.usedRecordId is string
+        && resource.data.usedRecordId.size() > 0
+        && (
+          !exists(pasHoldPath())
+          || get(pasHoldPath()).data.status == 'draft'
+        );
+    }
+
+    function pasUsedFieldMask() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['status', 'usedAt', 'usedByUid', 'usedByRcId', 'usedRecordId', 'updatedAt']);
+    }
+
     match /pasSerialBank/{serialId} {
       allow get, list: if isAuthenticated()
         && (isSuperAdmin() || isRCAdmin() || isVCT() || isVerifier());
       allow create, delete: if false;
-      allow update: if (isRCAdmin() || isOperationalFieldStaff())
-        && resource.data.status in ['available', 'allotted']
-        && request.resource.data.status == 'used'
-        && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'usedAt', 'usedByUid', 'usedByRcId', 'usedRecordId', 'updatedAt']);
+      allow update: if (isSuperAdmin() || isRCAdmin() || isOperationalFieldStaff())
+        && pasUsedFieldMask()
+        && (
+          (
+            resource.data.status in ['available', 'allotted']
+            && request.resource.data.status == 'used'
+          )
+          || (
+            resource.data.status == 'used'
+            && pasHoldIsDraft()
+            && request.resource.data.status in ['used', 'available']
+          )
+        );
     }
 
     match /pasSerialBankMeta/{metaId} {

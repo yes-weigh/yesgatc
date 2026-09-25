@@ -179,6 +179,8 @@ type VerificationDeviceFieldsProps = {
   feesStructure?: RcFeesStructure;
   ovQuota?: OvQuotaGate | null;
   lockedSerial?: string;
+  /** Draft that already reserved this serial. The bank check must not call that a conflict. */
+  pasOwnRecordId?: string | null;
 };
 
 function DeviceSerialField({
@@ -192,6 +194,7 @@ function DeviceSerialField({
   locked,
   lockedSerial = '',
   onDeviceChange,
+  ownRecordId = null,
   pasManual = false,
   product = null,
 }: {
@@ -205,6 +208,7 @@ function DeviceSerialField({
   locked: boolean;
   lockedSerial?: string;
   onDeviceChange: (localId: string, patch: Partial<VerificationDeviceRowValues>) => void;
+  ownRecordId?: string | null;
   pasManual?: boolean;
   product?: Product | null;
 }) {
@@ -221,7 +225,10 @@ function DeviceSerialField({
     row.serialNumber,
     product,
     typePas && !disabled,
-    pasBankOptionsForJob(isRv ? 'RV' : 'OV'),
+    {
+      ...pasBankOptionsForJob(isRv ? 'RV' : 'OV'),
+      ownRecordId,
+    },
   );
 
   if (lockThisRow) {
@@ -378,6 +385,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
   feesStructure,
   ovQuota = null,
   lockedSerial = '',
+  pasOwnRecordId = null,
 }) => {
   const { products } = useAppContext();
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -726,6 +734,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                       isRv={isRv}
                       locked={locked}
                       lockedSerial={lockedSerial}
+                      ownRecordId={pasOwnRecordId}
                       pasManual={productUsesPasSerials(selectedProduct(products, row))}
                       product={selectedProduct(products, row)}
                       onDeviceChange={onDeviceChange}
@@ -900,6 +909,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
+                      ownRecordId={pasOwnRecordId}
                         pasManual={productUsesPasSerials(selectedProduct(products, row))}
                         product={selectedProduct(products, row)}
                         onDeviceChange={onDeviceChange}
@@ -993,6 +1003,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
+                      ownRecordId={pasOwnRecordId}
                         pasManual={productUsesPasSerials(selectedProduct(products, row))}
                         product={selectedProduct(products, row)}
                         onDeviceChange={onDeviceChange}
@@ -1065,6 +1076,7 @@ export const VerificationDeviceFields: React.FC<VerificationDeviceFieldsProps> =
                         isRv={isRv}
                         locked={locked}
                         lockedSerial={lockedSerial}
+                      ownRecordId={pasOwnRecordId}
                         pasManual={productUsesPasSerials(selectedProduct(products, row))}
                         product={selectedProduct(products, row)}
                         onDeviceChange={onDeviceChange}

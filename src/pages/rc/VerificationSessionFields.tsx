@@ -142,6 +142,8 @@ type VerificationSessionFieldsProps = {
   mobileFloatingChrome?: boolean;
   lockKind?: boolean;
   ovQuota?: OvQuotaGate | null;
+  /** Existing draft id. A serial reserved by this draft is not a conflict. */
+  pasOwnRecordId?: string | null;
   isVerifier?: boolean;
   verifierPincode?: string | null;
 };
@@ -203,6 +205,7 @@ export const VerificationSessionFields = forwardRef<
   mobileFloatingChrome = false,
   lockKind = false,
   ovQuota = null,
+  pasOwnRecordId = null,
   isVerifier = false,
   verifierPincode = null,
   },
@@ -435,7 +438,10 @@ export const VerificationSessionFields = forwardRef<
         const bankError = await verifyPasDevicesInBank(
           values.devices,
           products,
-          pasBankOptionsForJob(values.verificationType),
+          {
+            ...pasBankOptionsForJob(values.verificationType),
+            ownRecordId: pasOwnRecordId,
+          },
         );
         if (bankError) {
           setStepError(bankError);

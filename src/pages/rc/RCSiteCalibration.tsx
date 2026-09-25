@@ -1575,7 +1575,10 @@ export const RCSiteCalibration: React.FC = () => {
     const pasBankError = await verifyPasDevicesInBank(
       sessionValues.devices,
       products,
-      pasBankOptionsForJob(sessionValues.verificationType),
+      {
+        ...pasBankOptionsForJob(sessionValues.verificationType),
+        ownRecordId: editingId,
+      },
     );
     if (pasBankError) {
       setError(pasBankError);
@@ -1718,19 +1721,6 @@ export const RCSiteCalibration: React.FC = () => {
         draftRecordIds.push(recordId);
       }
 
-      if (submitAfterSave) {
-        await markPasSerialsUsedForRows(
-          includedRows.map((row, index) => ({
-            productId: row.productId,
-            serialNumber: row.serialNumber,
-            recordId: draftRecordIds[index],
-          })),
-          products,
-          { uid: actorUid, rcId: rcUid },
-          pasBankOptionsForJob(sessionForSave.verificationType),
-        );
-      }
-
       if (walletPaymentId && draftRecordIds.length > 0) {
         await linkWalletPaymentToRecords({
           paymentId: walletPaymentId,
@@ -1756,6 +1746,16 @@ export const RCSiteCalibration: React.FC = () => {
             submitOptions,
           );
         }
+        await markPasSerialsUsedForRows(
+          includedRows.map((row, index) => ({
+            productId: row.productId,
+            serialNumber: row.serialNumber,
+            recordId: draftRecordIds[index],
+          })),
+          products,
+          { uid: actorUid, rcId: rcUid },
+          pasBankOptionsForJob(sessionForSave.verificationType),
+        );
       }
 
       const submittedRecordIds = submitAfterSave && !isVerifier ? draftRecordIds : [];
@@ -1899,18 +1899,18 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await markPasCalibrationRecordsUsed(
-        [{
-          productId: record.productId,
-          serialNumber: record.serialNumber,
-          recordId: record.id,
-          verificationType: record.verificationType,
-        }],
-        products,
-        { uid: actorUid, rcId: rcUid },
-      );
       if (isVerifier) {
         await submitVerifierWorkForRcReview([record.id]);
+        await markPasCalibrationRecordsUsed(
+          [{
+            productId: record.productId,
+            serialNumber: record.serialNumber,
+            recordId: record.id,
+            verificationType: record.verificationType,
+          }],
+          products,
+          { uid: actorUid, rcId: rcUid },
+        );
         if (editingId === record.id) handleCloseForm();
         await fetchRecords();
         return;
@@ -1929,6 +1929,16 @@ export const RCSiteCalibration: React.FC = () => {
         },
         db,
         submitOptions,
+      );
+      await markPasCalibrationRecordsUsed(
+        [{
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+          verificationType: record.verificationType,
+        }],
+        products,
+        { uid: actorUid, rcId: rcUid },
       );
       if (editingId === record.id) handleCloseForm();
       await fetchRecords();
@@ -1968,18 +1978,18 @@ export const RCSiteCalibration: React.FC = () => {
     setSubmitting(true);
     setListError('');
     try {
-      await markPasCalibrationRecordsUsed(
-        selectedRecords.map(record => ({
-          productId: record.productId,
-          serialNumber: record.serialNumber,
-          recordId: record.id,
-          verificationType: record.verificationType,
-        })),
-        products,
-        { uid: actorUid, rcId: rcUid },
-      );
       if (isVerifier) {
         await submitVerifierWorkForRcReview(selectedRecords.map(record => record.id));
+        await markPasCalibrationRecordsUsed(
+          selectedRecords.map(record => ({
+            productId: record.productId,
+            serialNumber: record.serialNumber,
+            recordId: record.id,
+            verificationType: record.verificationType,
+          })),
+          products,
+          { uid: actorUid, rcId: rcUid },
+        );
         setSelectedDraftIds(new Set());
         if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
         await fetchRecords();
@@ -1999,6 +2009,16 @@ export const RCSiteCalibration: React.FC = () => {
         })),
         db,
         submitOptions,
+      );
+      await markPasCalibrationRecordsUsed(
+        selectedRecords.map(record => ({
+          productId: record.productId,
+          serialNumber: record.serialNumber,
+          recordId: record.id,
+          verificationType: record.verificationType,
+        })),
+        products,
+        { uid: actorUid, rcId: rcUid },
       );
       setSelectedDraftIds(new Set());
       if (editingId && selectedRecords.some(r => r.id === editingId)) handleCloseForm();
@@ -2250,7 +2270,10 @@ export const RCSiteCalibration: React.FC = () => {
       const pasBankError = await verifyPasDevicesInBank(
       sessionValues.devices,
       products,
-      pasBankOptionsForJob(sessionValues.verificationType),
+      {
+        ...pasBankOptionsForJob(sessionValues.verificationType),
+        ownRecordId: editingId,
+      },
     );
       if (pasBankError) {
         setError(pasBankError);
@@ -2335,17 +2358,6 @@ export const RCSiteCalibration: React.FC = () => {
         ...buildPerformerPatch(sessionForSave, existing),
       });
 
-      await markPasSerialsUsedForRows(
-        [{
-          productId: row.productId,
-          serialNumber: row.serialNumber,
-          recordId: editingId,
-        }],
-        products,
-        { uid: actorUid, rcId: rcUid },
-        pasBankOptionsForJob(sessionForSave.verificationType),
-      );
-
       if (walletPaymentId) {
         await linkWalletPaymentToRecords({
           paymentId: walletPaymentId,
@@ -2370,6 +2382,17 @@ export const RCSiteCalibration: React.FC = () => {
           submitOptions,
         );
       }
+
+      await markPasSerialsUsedForRows(
+        [{
+          productId: row.productId,
+          serialNumber: row.serialNumber,
+          recordId: editingId,
+        }],
+        products,
+        { uid: actorUid, rcId: rcUid },
+        pasBankOptionsForJob(sessionForSave.verificationType),
+      );
 
       handleCloseForm();
       await fetchRecords();
@@ -2424,7 +2447,10 @@ export const RCSiteCalibration: React.FC = () => {
     const pasBankError = await verifyPasDevicesInBank(
       sessionValues.devices,
       products,
-      pasBankOptionsForJob(sessionValues.verificationType),
+      {
+        ...pasBankOptionsForJob(sessionValues.verificationType),
+        ownRecordId: editingId,
+      },
     );
     if (pasBankError) {
       setError(pasBankError);
@@ -3527,6 +3553,7 @@ export const RCSiteCalibration: React.FC = () => {
                       mobileFloatingChrome={mobileFloatingChrome}
                       lockKind={showAddForm}
                       ovQuota={sessionValues.verificationType === 'OV' ? ovQuotaGate : null}
+                      pasOwnRecordId={editingId}
                       isVerifier={isVerifier}
                       verifierPincode={actorProfile?.pincode ?? null}
                     />

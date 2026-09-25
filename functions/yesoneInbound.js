@@ -572,14 +572,11 @@ function serialsFromGroup(rec) {
     if (looksLikeBankSerial(number)) listed.push(number);
   }
   const unique = [...new Set(listed)];
-  const qty = optionalFiniteNumber(flat.qty ?? flat.count ?? rec.qty ?? rec.count);
+  // An explicit serial list is the invoice. Do not fill from-to over it —
+  // that stamps the invoice onto numbers that were never sold.
+  if (unique.length > 0) return unique;
   const from = flat.from || rec.startNumber || rec.from || rec.start;
   const to = flat.to || rec.endNumber || rec.to || rec.end;
-  if (qty != null && unique.length < qty) {
-    const expanded = expandSerialRange(from, to, rec.missing).filter(looksLikeBankSerial);
-    if (expanded.length > unique.length) return expanded;
-  }
-  if (unique.length > 0) return unique;
   return expandSerialRange(from, to, rec.missing).filter(looksLikeBankSerial);
 }
 
