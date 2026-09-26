@@ -27,6 +27,7 @@ public sealed class PipelineFailureClassifierTests
     [InlineData("captcha failed")]
     [InlineData("browser disconnected")]
     [InlineData("Timeout waiting for page")]
+    [InlineData("Could not download serial number plate photo (503).")]
     public void Transient_errors_never_permanent(string error)
     {
         Assert.False(PipelineFailureClassifier.IsPermanentDataFailure(error));

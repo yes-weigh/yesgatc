@@ -62,22 +62,15 @@ public sealed class FirebaseStorageDownloadService
             return null;
         }
 
-        try
-        {
-            return await DownloadVerificationImageAsync(
-                jobId,
-                serialNumber,
-                downloadUrl,
-                fileName,
-                contentType,
-                imageKind,
-                imageLabel,
-                cancellationToken);
-        }
-        catch (Exception)
-        {
-            return null;
-        }
+        return await DownloadVerificationImageAsync(
+            jobId,
+            serialNumber,
+            downloadUrl,
+            fileName,
+            contentType,
+            imageKind,
+            imageLabel,
+            cancellationToken);
     }
 
     private async Task<StampingImageDownload> DownloadVerificationImageAsync(
@@ -131,17 +124,27 @@ public sealed class FirebaseStorageDownloadService
             jobId,
             serialNumber);
 
-        await WriteManifestAsync(download, fileName, contentType, cancellationToken);
+        try
+        {
+            await WriteManifestAsync(download, imageKind, fileName, contentType, cancellationToken);
+        }
+        catch (IOException)
+        {
+            // The JPEG is already on disk. A manifest clash must not drop the photo.
+        }
+
         return download;
     }
 
     private static async Task WriteManifestAsync(
         StampingImageDownload download,
+        string imageKind,
         string originalFileName,
         string contentType,
         CancellationToken cancellationToken)
     {
-        var manifestPath = Path.Combine(download.Directory, "download-info.json");
+        var manifestName = $"download-info-{SanitizePathSegment(imageKind, "image")}.json";
+        var manifestPath = Path.Combine(download.Directory, manifestName);
         var manifest = new
         {
             jobId = download.JobId,
