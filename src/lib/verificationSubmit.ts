@@ -1,4 +1,4 @@
-import { doc, updateDoc, type Firestore } from 'firebase/firestore';
+import { deleteField, doc, updateDoc, type Firestore } from 'firebase/firestore';
 import { db } from '../firebase';
 import {
   buildRcApproveVerifierPatch,
@@ -32,6 +32,10 @@ export type PendingRcApproveSubmitOptions = VerificationSubmitOptions & {
 function submitPatch(target: VerificationSubmitTarget) {
   return {
     ...buildVerificationSubmitPatch(),
+    pipelineFailedPhase: deleteField(),
+    pipelineFailureMessage: deleteField(),
+    pipelineFailedAt: deleteField(),
+    certificationLastError: deleteField(),
     ...(typeof target.fileCertificateAsRc === 'boolean'
       ? { fileCertificateAsRc: target.fileCertificateAsRc }
       : {}),
@@ -91,6 +95,10 @@ export async function submitVerificationRecords(
             ...(target.customerName ? { customerName: target.customerName } : {}),
             ...(target.sourceCustomerId ? { sourceCustomerId: target.sourceCustomerId } : {}),
             ...(target.sourceCustomerName ? { sourceCustomerName: target.sourceCustomerName } : {}),
+            pipelineFailedPhase: deleteField(),
+            pipelineFailureMessage: deleteField(),
+            pipelineFailedAt: deleteField(),
+            certificationLastError: deleteField(),
             ...verificationClientVersionFields(),
           }),
         ),

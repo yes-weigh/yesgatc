@@ -1,5 +1,6 @@
 const { defineSecret } = require('firebase-functions/params');
 const { HttpsError } = require('firebase-functions/v2/https');
+const { FieldValue } = require('firebase-admin/firestore');
 const { zohoInvoiceOrderReferenceFromCertificate } = require('./zohoInvoiceReference');
 const { pickDatedGstFeeBaseInr } = require('./rvGstBillRates');
 
@@ -699,6 +700,10 @@ async function submitRvWithZohoGateHandler(request, db) {
         status: 'submitted',
         submittedAt,
         updatedAt: submittedAt,
+        pipelineFailedPhase: FieldValue.delete(),
+        pipelineFailureMessage: FieldValue.delete(),
+        pipelineFailedAt: FieldValue.delete(),
+        certificationLastError: FieldValue.delete(),
       },
       { merge: true },
     );
