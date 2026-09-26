@@ -672,6 +672,12 @@ public sealed class FirestoreService
             return null;
         }
 
+        // That number is the rejected PDF, not this job's certificate.
+        if (text.Contains("does not contain serial", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         var search = text;
         var sampleAt = text.IndexOf("Visible sample:", StringComparison.OrdinalIgnoreCase);
         if (sampleAt >= 0)

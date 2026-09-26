@@ -1403,56 +1403,83 @@ public sealed class AutomationService : IAsyncDisposable
         int? minExclusiveSequence,
         CancellationToken cancellationToken)
     {
-        EmaapCertificateDownloadResult download;
-        try
+        var exclude = new List<string>(SnapshotClaimedEmaapCerts());
+        var prefer = preferCertificateNumber;
+        EmaapCertificateDownloadResult? download = null;
+        var rejected = new List<string>();
+        for (var attempt = 0; attempt < 5; attempt++)
         {
-            download = await EmaapCertificatesIssuedAutomation.DownloadHighestMatchingAsync(
-                page,
-                party,
-                WorkerDataPaths.CertificatePdfDirectory(job.Id),
-                cancellationToken,
-                preferCertificateNumber,
-                onCertificateMatchedAsync: null,
-                excludeCertificateNumbers: SnapshotClaimedEmaapCerts(),
-                minExclusiveSequence: preferCertificateNumber is null ? minExclusiveSequence : null,
-                serialNumber: instrument.SerialNumber);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            if (ex.Message.Contains("did not issue a new certificate", StringComparison.OrdinalIgnoreCase)
-                || ex.Message.Contains("does not contain serial", StringComparison.OrdinalIgnoreCase))
+            try
             {
-                throw;
+                download = await EmaapCertificatesIssuedAutomation.DownloadHighestMatchingAsync(
+                    page,
+                    party,
+                    WorkerDataPaths.CertificatePdfDirectory(job.Id),
+                    cancellationToken,
+                    prefer,
+                    onCertificateMatchedAsync: null,
+                    excludeCertificateNumbers: exclude,
+                    minExclusiveSequence: string.IsNullOrWhiteSpace(prefer) ? minExclusiveSequence : null,
+                    serialNumber: instrument.SerialNumber);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (ex.Message.Contains("did not issue a new certificate", StringComparison.OrdinalIgnoreCase)
+                    || ex.Message.Contains("does not contain serial", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw;
+                }
+
+                throw new EmaapMandatoryStepException(
+                    $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but PDF download failed: {ex.Message}",
+                    ex);
             }
 
-            throw new EmaapMandatoryStepException(
-                $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but PDF download failed: {ex.Message}",
-                ex);
+            if (string.IsNullOrWhiteSpace(download.CertificateNumber)
+                || string.IsNullOrWhiteSpace(download.LocalPdfPath)
+                || !File.Exists(download.LocalPdfPath))
+            {
+                throw new EmaapMandatoryStepException(
+                    $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but certificate PDF is missing on disk.");
+            }
+
+            var pdfBytes = await File.ReadAllBytesAsync(download.LocalPdfPath, cancellationToken);
+            if (pdfBytes.Length < 5
+                || pdfBytes[0] != (byte)'%'
+                || pdfBytes[1] != (byte)'P'
+                || pdfBytes[2] != (byte)'D'
+                || pdfBytes[3] != (byte)'F')
+            {
+                throw new EmaapMandatoryStepException(
+                    $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but downloaded file is not a valid PDF.");
+            }
+
+            if (EmaapCertificatePdfSerial.FileContainsSerial(download.LocalPdfPath, instrument.SerialNumber))
+            {
+                break;
+            }
+
+            // Party match picked another instrument's certificate. Do not bind it.
+            rejected.Add(download.CertificateNumber);
+            exclude.Add(download.CertificateNumber);
+            prefer = null;
+            try
+            {
+                File.Delete(download.LocalPdfPath);
+            }
+            catch
+            {
+                // Next attempt writes a different certificate file.
+            }
+
+            download = null;
         }
 
-        if (string.IsNullOrWhiteSpace(download.CertificateNumber)
-            || string.IsNullOrWhiteSpace(download.LocalPdfPath)
-            || !File.Exists(download.LocalPdfPath))
+        if (download is null)
         {
-            throw new EmaapMandatoryStepException(
-                $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but certificate PDF is missing on disk.");
-        }
-
-        var pdfBytes = await File.ReadAllBytesAsync(download.LocalPdfPath, cancellationToken);
-        if (pdfBytes.Length < 5
-            || pdfBytes[0] != (byte)'%'
-            || pdfBytes[1] != (byte)'P'
-            || pdfBytes[2] != (byte)'D'
-            || pdfBytes[3] != (byte)'F')
-        {
-            throw new EmaapMandatoryStepException(
-                $"HALT — eMAAP submit succeeded for serial {instrument.SerialNumber}, but downloaded file is not a valid PDF.");
-        }
-
-        if (!EmaapCertificatePdfSerial.FileContainsSerial(download.LocalPdfPath, instrument.SerialNumber))
-        {
+            var skipped = rejected.Count == 0 ? string.Empty : $" Skipped {string.Join(", ", rejected)}.";
             throw new InvalidOperationException(
-                $"eMAAP PDF {download.CertificateNumber} does not contain serial {instrument.SerialNumber}.");
+                $"eMAAP did not issue a certificate whose PDF contains serial {instrument.SerialNumber}.{skipped}");
         }
 
         var alreadyAssigned = await _firestoreService.FindOtherJobWithCertificateNumberAsync(

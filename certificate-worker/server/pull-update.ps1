@@ -16,7 +16,7 @@
 #   powershell -ExecutionPolicy Bypass -File .\pull-update.ps1 -Tag certificate-worker-v1.0.0 -Start
 
 param(
-    [string]$Repository = "yes-weigh/yesgatc",
+    [string]$Repository = "advtyesweigh/yesgatc",
     [string]$InstallPath = "C:\YesGATC\CertificateWorker",
     [string]$UpdatesDir = "C:\YesGATC\updates",
     [string]$Tag = "",

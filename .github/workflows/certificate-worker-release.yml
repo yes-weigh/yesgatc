@@ -75,5 +75,5 @@ jobs:
 
             ### VPS
             ```powershell
-            powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -Start
+            powershell -ExecutionPolicy Bypass -File C:\YesGATC\CertificateWorker\pull-update.ps1 -Repository advtyesweigh/yesgatc -Start
             ```
